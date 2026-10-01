@@ -1,0 +1,4 @@
+interface:
+  display_name: "Blog Studio"
+  short_description: "Start, shape, and review blogs in your own voice"
+  default_prompt: "Use $blog-studio to help me start or improve a blog and offer the appropriate source and voice choices."

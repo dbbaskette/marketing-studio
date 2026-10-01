@@ -1,0 +1,476 @@
+{
+  "date": "2026-10-01",
+  "method": "ceil(Unicode character count / 4), per file; planning estimates, not tokenizer counts or billed usage",
+  "excluded": "host context, conversation, author data, outputs, scripts, licenses, metadata, locks, preview",
+  "files": {
+    "SKILL.md": {
+      "characters": 5109,
+      "estimated_tokens": 1278,
+      "sha256": "ef3b46b2c3467cc80eafceed56c1672ac86b042ade00f4861866d29d2208c9c9"
+    },
+    "references/blogforge/generate/prompts/document.j2": {
+      "characters": 2237,
+      "estimated_tokens": 560,
+      "sha256": "6b2b71326a9062387eca7deb1ea5423d868a1a47e5166ffcdeb8d163427988fb"
+    },
+    "references/blogforge/generate/prompts/outline.j2": {
+      "characters": 3638,
+      "estimated_tokens": 910,
+      "sha256": "de2670eac5d4b745336fa8572cc58b8ee5b6cd70d61c75cd6e030901c1f51fe7"
+    },
+    "references/blogforge/voice/assets/ai-tells/patterns.md": {
+      "characters": 8506,
+      "estimated_tokens": 2127,
+      "sha256": "68ece5ca68c0c521f00bda7a1cff188ed9233b3168fc65ea60822cb357bb7bb0"
+    },
+    "references/blogforge/voice/assets/ai-tells/phrases.txt": {
+      "characters": 1704,
+      "estimated_tokens": 426,
+      "sha256": "a4b0198fa591822dd952174b4bdd966ee0606f30e42948972b700765e54bd2d8"
+    },
+    "references/blogforge/voice/assets/ai-tells/sentence-starters.txt": {
+      "characters": 219,
+      "estimated_tokens": 55,
+      "sha256": "e49645fc9f1e19cebffdfe0afbc9753640b070bfecde4b2c519b217a0030eb13"
+    },
+    "references/blogforge/voice/assets/ai-tells/words.txt": {
+      "characters": 1102,
+      "estimated_tokens": 276,
+      "sha256": "0ee879a93a97d86ba612e0f002413df6c1679efa6d81dea53fb97d040eea494b"
+    },
+    "references/blogforge/voice/assets/humanize/lenses.md": {
+      "characters": 3393,
+      "estimated_tokens": 849,
+      "sha256": "0d3814cfa31a8836931a4ccf8bf35db4c72cc4dce80a31f5cf4a73c9397cc7b8"
+    },
+    "references/composition.md": {
+      "characters": 1255,
+      "estimated_tokens": 314,
+      "sha256": "c83864165a76b39c77b6e5b0d9548e9c6f0af60ba8abdcbd9aa76a43bf5a9cdf"
+    },
+    "references/entry-flows.md": {
+      "characters": 3066,
+      "estimated_tokens": 767,
+      "sha256": "17c542fe943da3c1992d1fa13f6e2eca4ff77d55a1f2179ae8c0118281fcc46a"
+    },
+    "references/export.md": {
+      "characters": 789,
+      "estimated_tokens": 198,
+      "sha256": "9b080251b31c801868b6ad5695544275c16f4d7b7d73a9d1540ecb8b18ad0763"
+    },
+    "references/headline-lab.md": {
+      "characters": 574,
+      "estimated_tokens": 144,
+      "sha256": "4dc9950a24602bd49d17149ec36bdfbf43b72dd400a549c6281910a97f590ac8"
+    },
+    "references/intake.md": {
+      "characters": 2064,
+      "estimated_tokens": 516,
+      "sha256": "7ad892a447f023bb165f261f78695864cf01ee03c5b8fe3dcf0920c5a0bfbc40"
+    },
+    "references/library-notes.md": {
+      "characters": 4202,
+      "estimated_tokens": 1051,
+      "sha256": "3154c763acd361aaa30f7cdeaf75d15ffc7fda9c8caf6cdee2f2073ee9ef8eeb"
+    },
+    "references/modules/blog-argument-outline.md": {
+      "characters": 1296,
+      "estimated_tokens": 324,
+      "sha256": "5a64ac9411c171951e8612feb9c09777af54e7d3a524347ebe5e451fb1160ea9"
+    },
+    "references/modules/blog-author-interview.md": {
+      "characters": 1097,
+      "estimated_tokens": 275,
+      "sha256": "f531f3c7a0c372df60c29936f497dfa6c2c783cd16b3df07c84bd4654f06a9e9"
+    },
+    "references/modules/blog-fact-check.md": {
+      "characters": 1357,
+      "estimated_tokens": 340,
+      "sha256": "c5fcc6da45b16832bc551f2629cef44fc8bb34dc4ecf74117f66112688d705ff"
+    },
+    "references/modules/blog-geo-review.md": {
+      "characters": 1375,
+      "estimated_tokens": 344,
+      "sha256": "5ad27654bd7e32faea3de331661e7944a43bb098eac96d01e0d6d25a0d6600c7"
+    },
+    "references/modules/blog-humanize.md": {
+      "characters": 1319,
+      "estimated_tokens": 330,
+      "sha256": "2ba3c7d02ec0868ba13690fd44960ce6f91046e79e5c070c12d9e47b1acb5fbe"
+    },
+    "references/modules/blog-repurpose.md": {
+      "characters": 1490,
+      "estimated_tokens": 373,
+      "sha256": "675e1e28c686c470e2c192e6357fbd8b8a47691b3cd763baaa48944b3958dee7"
+    },
+    "references/modules/blog-source-intake.md": {
+      "characters": 1058,
+      "estimated_tokens": 265,
+      "sha256": "c0c88caf29bb500410bf56e6c291125a334ea167409c515bfe90a4ac16e0af08"
+    },
+    "references/modules/blog-voice-check.md": {
+      "characters": 1253,
+      "estimated_tokens": 314,
+      "sha256": "0987d009597726963081d4882d1cd4c1ca69a785f97925660e5a96ace8a6c4d9"
+    },
+    "references/modules/blog-voice-profile.md": {
+      "characters": 1253,
+      "estimated_tokens": 314,
+      "sha256": "80ef052aa67f21cd0b62cf06134030de4083a5c3c9fbf1d7e3f460a190e85add"
+    },
+    "references/modules/blog-write.md": {
+      "characters": 2385,
+      "estimated_tokens": 597,
+      "sha256": "126b0a1655715a67703c228d798989d5ed75e33c54acde088ccf347ce6781300"
+    },
+    "references/modules/blog.md": {
+      "characters": 2103,
+      "estimated_tokens": 526,
+      "sha256": "94deb5c3a39724f591730432240f09c5b5c8b74fa1a23410512603197d5cad7a"
+    },
+    "references/modules/content-strategy.md": {
+      "characters": 1396,
+      "estimated_tokens": 349,
+      "sha256": "f535aadf0224831f9773bef99bf89da00ec652eee02ce0ab3f07e982e123c24c"
+    },
+    "references/modules/copy-editing.md": {
+      "characters": 1703,
+      "estimated_tokens": 426,
+      "sha256": "ee69873bc3e5a57f54213b068276e9109418cf627f0a299505b71d3030bf2bec"
+    },
+    "references/modules/copywriting.md": {
+      "characters": 1351,
+      "estimated_tokens": 338,
+      "sha256": "0ced483cee504f1cdd6053cfb073b1abbf8cd32c4a2d5f84c180c3e2a6c37bd3"
+    },
+    "references/package-notes.md": {
+      "characters": 1524,
+      "estimated_tokens": 381,
+      "sha256": "2855572ead77627b08a9a7679b90a0de0a00daa261d4fae47eda6575d98fff6b"
+    },
+    "references/review.md": {
+      "characters": 1577,
+      "estimated_tokens": 395,
+      "sha256": "f0fb03e4cbd2cbcd050b4310e432a0e35ecf1d6fdd94a18ada183b3e448b7dc2"
+    },
+    "references/revision.md": {
+      "characters": 1122,
+      "estimated_tokens": 281,
+      "sha256": "f9be2a27afa6fa0b6bab97ec36a665a81f55d096f343e420502ac1cad26dce72"
+    },
+    "references/upstream/claude-blog/skills/blog/SOURCE.md": {
+      "characters": 24810,
+      "estimated_tokens": 6203,
+      "sha256": "7ce5833fb6905f8451552304ef95678a18eec658901e0cc975b8a19fed5ebc4c"
+    },
+    "references/upstream/claude-blog/skills/blog/references/ai-crawler-guide.md": {
+      "characters": 20098,
+      "estimated_tokens": 5025,
+      "sha256": "dd637426004b99ddc5c2c96bc49da9e0e9d79fa5d2ea985ffe4443ae50bd61ed"
+    },
+    "references/upstream/claude-blog/skills/blog/references/ai-slop-detection.md": {
+      "characters": 7919,
+      "estimated_tokens": 1980,
+      "sha256": "32f24bc6c3a064f2f54da589eac4f880256afe6a8545382c2bac615e3f0bc407"
+    },
+    "references/upstream/claude-blog/skills/blog/references/blog-delivery-contract.md": {
+      "characters": 15518,
+      "estimated_tokens": 3880,
+      "sha256": "1ee9c185a69d086e521109b4e445bc8199572a4a7b06dc9c5d64e9f6ca25895a"
+    },
+    "references/upstream/claude-blog/skills/blog/references/cognitive-load.md": {
+      "characters": 6740,
+      "estimated_tokens": 1685,
+      "sha256": "ca0f994ef813328f6bb2ed78a9d63ae0982ab5503b7634e18bdc9707617bfd57"
+    },
+    "references/upstream/claude-blog/skills/blog/references/content-rules.md": {
+      "characters": 14843,
+      "estimated_tokens": 3711,
+      "sha256": "93838dafb909991c176f4331963323a5737613f37610e2feea18fe1b229be453"
+    },
+    "references/upstream/claude-blog/skills/blog/references/content-templates.md": {
+      "characters": 23463,
+      "estimated_tokens": 5866,
+      "sha256": "37f4699c4bd79c53429481154470a181cf3c9e6f955209365f1a4f0a6e3b1d5d"
+    },
+    "references/upstream/claude-blog/skills/blog/references/cta-placement.md": {
+      "characters": 2325,
+      "estimated_tokens": 582,
+      "sha256": "2ab2b8ad6555e290c2bf96c7a78b7878152a04f40549bc3ff51d05630b99abe4"
+    },
+    "references/upstream/claude-blog/skills/blog/references/distribution-playbook.md": {
+      "characters": 19345,
+      "estimated_tokens": 4837,
+      "sha256": "9f23c80e8468cc461997f0b08bc77c35440f2ce32db2bf2e026080bd01de6eeb"
+    },
+    "references/upstream/claude-blog/skills/blog/references/editorial-heuristics.md": {
+      "characters": 10514,
+      "estimated_tokens": 2629,
+      "sha256": "8f7b31e9db91e5ac3bd66f4d81c013bb0655fe6b744971715ac68ead1cbd5e9e"
+    },
+    "references/upstream/claude-blog/skills/blog/references/eeat-signals.md": {
+      "characters": 14300,
+      "estimated_tokens": 3575,
+      "sha256": "ed0aea4025076cda88281eac01aeb875a2ed5e0232ddf2c964c05887532b86fe"
+    },
+    "references/upstream/claude-blog/skills/blog/references/flow-alignment.md": {
+      "characters": 6319,
+      "estimated_tokens": 1580,
+      "sha256": "d9febf9d512f42ce39e5d51d944e7ca07f2ab682a8268618b47bc4ac022b466d"
+    },
+    "references/upstream/claude-blog/skills/blog/references/geo-optimization.md": {
+      "characters": 11361,
+      "estimated_tokens": 2841,
+      "sha256": "8e13668c4107a9ed707f86726916206047ba00da6d23cfb6b10ddb751b34efaa"
+    },
+    "references/upstream/claude-blog/skills/blog/references/google-landscape-2026.md": {
+      "characters": 10528,
+      "estimated_tokens": 2632,
+      "sha256": "181321fc89f8570679d98bd668f8d7a1bc445e8fecd121528328904db7d36627"
+    },
+    "references/upstream/claude-blog/skills/blog/references/internal-linking.md": {
+      "characters": 13621,
+      "estimated_tokens": 3406,
+      "sha256": "ca2bc275af1fe9cb41585a6ee46e696974995238f1279010ce3fa80763ed7d92"
+    },
+    "references/upstream/claude-blog/skills/blog/references/orchestration-details.md": {
+      "characters": 3202,
+      "estimated_tokens": 801,
+      "sha256": "0f46434c3a87647f49eaf6e0f113751bf51f87d37416851b4cd69a49bafc2ae7"
+    },
+    "references/upstream/claude-blog/skills/blog/references/platform-guides.md": {
+      "characters": 34826,
+      "estimated_tokens": 8707,
+      "sha256": "cd3f400809efa8d6f2d021f7c2e639474ea33989c61472d46c474ee7ab940284"
+    },
+    "references/upstream/claude-blog/skills/blog/references/quality-scoring.md": {
+      "characters": 8521,
+      "estimated_tokens": 2131,
+      "sha256": "ab563a355938159fdbb66e3966b0864eb8197c883cd07ad70ef1d9f88e436967"
+    },
+    "references/upstream/claude-blog/skills/blog/references/research-quality.md": {
+      "characters": 11532,
+      "estimated_tokens": 2883,
+      "sha256": "7942a5a40a33eea5711592987fb6cacac29460662e23c1bb0d9a35555ce37f4d"
+    },
+    "references/upstream/claude-blog/skills/blog/references/schema-stack.md": {
+      "characters": 25841,
+      "estimated_tokens": 6461,
+      "sha256": "61958878a5789e792738cdf571828935727a4a8304d4b271c3a762c1197c4114"
+    },
+    "references/upstream/claude-blog/skills/blog/references/synthesis-contract.md": {
+      "characters": 7560,
+      "estimated_tokens": 1890,
+      "sha256": "bc358388a210e083429b9233c5087103bdc111a2974a93c3dfcb5cb3e7866cb6"
+    },
+    "references/upstream/claude-blog/skills/blog/references/video-embeds.md": {
+      "characters": 7630,
+      "estimated_tokens": 1908,
+      "sha256": "da2dd1128fdbd412186c6175a9d6de4d77af540adda357fbba3dc12c667fc615"
+    },
+    "references/upstream/claude-blog/skills/blog/references/visual-media.md": {
+      "characters": 14527,
+      "estimated_tokens": 3632,
+      "sha256": "cf972559ef46e4a712d19289fd18577a8364ed8732561940093b0a56070c7be5"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/case-study.md": {
+      "characters": 13365,
+      "estimated_tokens": 3342,
+      "sha256": "44d383f52cda7b6927cabd5c62e3b3a24d653ba3bc21d780154dc2991516fb15"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/comparison.md": {
+      "characters": 14848,
+      "estimated_tokens": 3712,
+      "sha256": "342e346a0554e9f5053176a7872094402a610c4ce99c99a9b91c276ec30b9099"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/data-research.md": {
+      "characters": 13707,
+      "estimated_tokens": 3427,
+      "sha256": "438fddb2f2ff52a2cc21ac40663cd94687c9e926d33b16f01ebc0740eff7bdee"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/faq-knowledge.md": {
+      "characters": 12874,
+      "estimated_tokens": 3219,
+      "sha256": "b7fbcfa2df520432bbb35e6b131614ff9d8bef8ad051f0211ba7c08d09bed270"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/how-to-guide.md": {
+      "characters": 10047,
+      "estimated_tokens": 2512,
+      "sha256": "78b622fe51166717584acbd1c3e7c6dbb941879b6f926cc2f0a931e2f4d28cd6"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/listicle.md": {
+      "characters": 12041,
+      "estimated_tokens": 3011,
+      "sha256": "b4af2351da7a9b530d81021d687afd2baa90847986107f7329f3f02d72d60195"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/news-analysis.md": {
+      "characters": 10210,
+      "estimated_tokens": 2553,
+      "sha256": "e146115478ca33a51e6b6afb8dc6ed5fa906b8fd9bd118727e40835e60a4187d"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/pillar-page.md": {
+      "characters": 14041,
+      "estimated_tokens": 3511,
+      "sha256": "e8409dec628cf8ac99969ae7d3e9f283d1a2c239d364041619d8ee3a7ca8ede4"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/product-review.md": {
+      "characters": 12211,
+      "estimated_tokens": 3053,
+      "sha256": "52005ac49d613fa624cc77b22de0c0e683fd03a9661e4eea2f4e52afecd6a9ce"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/roundup.md": {
+      "characters": 12987,
+      "estimated_tokens": 3247,
+      "sha256": "15bce96ce2475823102154e6684ef1a165cdd21190247ee79de9371e7aab2c21"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/thought-leadership.md": {
+      "characters": 13562,
+      "estimated_tokens": 3391,
+      "sha256": "2d4516afa8ec22aad71395d1888413350748bdc084a585ee3b6dbdcb522e3d97"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/tutorial.md": {
+      "characters": 10488,
+      "estimated_tokens": 2622,
+      "sha256": "0bf0453ecbb407bf097233c3f02d7584dcaa0b13b9ae97f83163db6f304973ad"
+    },
+    "references/upstream/claude-blog/skills/blog-write/SOURCE.md": {
+      "characters": 22340,
+      "estimated_tokens": 5585,
+      "sha256": "523bb06666235df94920de3eb7eb4d3e17c09e33c5ab7b39cfe196e29a4a5bc4"
+    },
+    "references/upstream/claude-blog/skills/blog-write/references/delivery.md": {
+      "characters": 2867,
+      "estimated_tokens": 717,
+      "sha256": "e66aee9580652279badef206cb4bccd6fe02fe8e70a771d117f1c32503069201"
+    },
+    "references/upstream/marketingskills/skills/content-strategy/SOURCE.md": {
+      "characters": 18533,
+      "estimated_tokens": 4634,
+      "sha256": "0ad572d607884c561668810f77cd21bbe3e0508c64090f2997661a728360f946"
+    },
+    "references/upstream/marketingskills/skills/content-strategy/references/content-distribution.md": {
+      "characters": 5522,
+      "estimated_tokens": 1381,
+      "sha256": "1861a1aab0627ab29c279000879a9889242da1ba85e677acdc759c66a6241778"
+    },
+    "references/upstream/marketingskills/skills/content-strategy/references/headless-cms.md": {
+      "characters": 8385,
+      "estimated_tokens": 2097,
+      "sha256": "c0a7b87f47c8f7af907ce73facf1ed4721ade811e53f86ddf22f4bc0d7ca324e"
+    },
+    "references/upstream/marketingskills/skills/copy-editing/SOURCE.md": {
+      "characters": 14974,
+      "estimated_tokens": 3744,
+      "sha256": "9b5a20be3dc5513c8f0b4f4c4960857e4d28ed83698a5b33c8dde9dc75a47bf6"
+    },
+    "references/upstream/marketingskills/skills/copy-editing/references/checklist.md": {
+      "characters": 1728,
+      "estimated_tokens": 432,
+      "sha256": "db143b969b45b0933fe6eb772992890d1472d036a6c887fc98665e4fb48da43c"
+    },
+    "references/upstream/marketingskills/skills/copy-editing/references/content-refresh.md": {
+      "characters": 2280,
+      "estimated_tokens": 570,
+      "sha256": "8a3a2d301bb2b8b2a780f5bef43093ab42295041b2fea2a9caeca2421ef3c79b"
+    },
+    "references/upstream/marketingskills/skills/copy-editing/references/plain-english-alternatives.md": {
+      "characters": 8258,
+      "estimated_tokens": 2065,
+      "sha256": "df4f820d4c63ae8a517c64a243c101658352cd07d002355bf3c97de0a00f3775"
+    },
+    "references/upstream/marketingskills/skills/copywriting/SOURCE.md": {
+      "characters": 8359,
+      "estimated_tokens": 2090,
+      "sha256": "ce18137ae31ab37f261078501431649865ab6b403054d97490754e82acb002d8"
+    },
+    "references/upstream/marketingskills/skills/copywriting/references/copy-frameworks.md": {
+      "characters": 14237,
+      "estimated_tokens": 3560,
+      "sha256": "d98818886525908bf17dd6412d0b72731b313d6eef3e1ab6b365828a3a342779"
+    },
+    "references/upstream/marketingskills/skills/copywriting/references/natural-transitions.md": {
+      "characters": 5684,
+      "estimated_tokens": 1421,
+      "sha256": "4ff23f8943af2f65b072f26f1c53ce55f19cc26d7be211c11cae8e34b43e859f"
+    },
+    "references/voice-flow.md": {
+      "characters": 2507,
+      "estimated_tokens": 627,
+      "sha256": "e3baec1f818e887e3ee2691785e0777873928e572fcf1862548a380d4f588584"
+    },
+    "references/workspace.md": {
+      "characters": 7082,
+      "estimated_tokens": 1771,
+      "sha256": "35b16261c927f1a7d41a7dc2b97ddb501b4114af8035499af3f3cc51d6c3f450"
+    }
+  },
+  "library_tokens": 162782,
+  "routes": {
+    "outline_with_sources": {
+      "files": [
+        "SKILL.md",
+        "references/entry-flows.md",
+        "references/workspace.md",
+        "references/intake.md",
+        "references/modules/blog-source-intake.md",
+        "references/modules/blog-argument-outline.md"
+      ],
+      "estimated_tokens": 4921
+    },
+    "first_draft_with_sources": {
+      "files": [
+        "SKILL.md",
+        "references/entry-flows.md",
+        "references/workspace.md",
+        "references/intake.md",
+        "references/modules/blog-source-intake.md",
+        "references/modules/blog-argument-outline.md",
+        "references/modules/blog-write.md",
+        "references/upstream/claude-blog/skills/blog-write/SOURCE.md",
+        "references/composition.md"
+      ],
+      "estimated_tokens": 11417
+    },
+    "quick_edit": {
+      "files": [
+        "SKILL.md",
+        "references/entry-flows.md",
+        "references/workspace.md",
+        "references/modules/copy-editing.md",
+        "references/upstream/marketingskills/skills/copy-editing/SOURCE.md",
+        "references/revision.md",
+        "references/modules/blog-voice-check.md"
+      ],
+      "estimated_tokens": 8581
+    },
+    "voice_setup": {
+      "files": [
+        "SKILL.md",
+        "references/entry-flows.md",
+        "references/workspace.md",
+        "references/intake.md",
+        "references/modules/blog-source-intake.md",
+        "references/voice-flow.md",
+        "references/modules/blog-voice-profile.md"
+      ],
+      "estimated_tokens": 5538
+    },
+    "comprehensive_review": {
+      "files": [
+        "SKILL.md",
+        "references/entry-flows.md",
+        "references/workspace.md",
+        "references/review.md",
+        "references/modules/copy-editing.md",
+        "references/upstream/marketingskills/skills/copy-editing/SOURCE.md",
+        "references/revision.md",
+        "references/modules/blog-voice-check.md",
+        "references/modules/blog-fact-check.md",
+        "references/modules/blog-humanize.md",
+        "references/blogforge/voice/assets/humanize/lenses.md",
+        "references/modules/blog-geo-review.md"
+      ],
+      "estimated_tokens": 10839
+    }
+  }
+}

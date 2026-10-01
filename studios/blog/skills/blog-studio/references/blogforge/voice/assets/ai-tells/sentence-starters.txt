@@ -1,0 +1,16 @@
+# Forbidden sentence openers (classic AI connectors).
+Absolutely
+Certainly
+Moreover
+Furthermore
+Additionally
+Nevertheless
+Consequently
+Similarly
+Notably
+Importantly
+Ultimately
+Subsequently
+Crucially
+Essentially
+Overall

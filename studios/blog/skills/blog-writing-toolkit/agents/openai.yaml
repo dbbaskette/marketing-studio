@@ -1,0 +1,4 @@
+interface:
+  display_name: "Blog Writing Toolkit"
+  short_description: "Plan, draft, and edit blogs with focused skill modules"
+  default_prompt: "Use $blog-writing-toolkit to select the right module for my blog planning, drafting, or editing request."

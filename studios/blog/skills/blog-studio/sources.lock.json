@@ -1,0 +1,454 @@
+{
+  "schema_version": 1,
+  "package": "blog-studio",
+  "collected_on": "2026-10-01",
+  "sources": [
+    {
+      "id": "claude-blog",
+      "repository": "https://github.com/AgriciDaniel/claude-blog",
+      "commit": "2500d4c765034864cede2bf215d00ccd4d7d6fb8",
+      "license": "MIT",
+      "license_path": "references/upstream/claude-blog/LICENSE",
+      "selected_skills": [
+        "blog",
+        "blog-write"
+      ],
+      "omitted_path_dependencies": [
+        "agents/blog-reviewer.md",
+        "agents/blog-writer.md",
+        "scripts/analyze_blog.py",
+        "scripts/blog_hygiene.py",
+        "scripts/blog_preflight.py",
+        "scripts/blog_render.py",
+        "scripts/check_google_currentness.py",
+        "scripts/cognitive_load.py",
+        "scripts/generate_hero.py",
+        "scripts/lint_prose.py",
+        "scripts/load_untrusted_root.py",
+        "scripts/sync_google_updates.py",
+        "skills/blog-brand/SKILL.md",
+        "skills/blog-flow/references/bibliography.md",
+        "skills/blog-flow/references/flow-framework.md",
+        "tests/test_blog_delivery_contract.py",
+        "tests/test_installer_sync.py"
+      ]
+    },
+    {
+      "id": "marketingskills",
+      "repository": "https://github.com/coreyhaines31/marketingskills",
+      "commit": "5b2c0007766c6a1cf1d53fd8fc73e979e0821022",
+      "license": "MIT",
+      "license_path": "references/upstream/marketingskills/LICENSE",
+      "selected_skills": [
+        "content-strategy",
+        "copywriting",
+        "copy-editing"
+      ],
+      "omitted_path_dependencies": [],
+      "optional_project_context": [
+        ".agents/product-marketing.md",
+        ".claude/product-marketing.md",
+        "product-marketing-context.md"
+      ]
+    }
+  ],
+  "modules": [
+    {
+      "id": "blog",
+      "entrypoint": "references/modules/blog.md",
+      "source_document": "references/upstream/claude-blog/skills/blog/SOURCE.md",
+      "source": "claude-blog"
+    },
+    {
+      "id": "blog-write",
+      "entrypoint": "references/modules/blog-write.md",
+      "source_document": "references/upstream/claude-blog/skills/blog-write/SOURCE.md",
+      "source": "claude-blog"
+    },
+    {
+      "id": "content-strategy",
+      "entrypoint": "references/modules/content-strategy.md",
+      "source_document": "references/upstream/marketingskills/skills/content-strategy/SOURCE.md",
+      "source": "marketingskills"
+    },
+    {
+      "id": "copywriting",
+      "entrypoint": "references/modules/copywriting.md",
+      "source_document": "references/upstream/marketingskills/skills/copywriting/SOURCE.md",
+      "source": "marketingskills"
+    },
+    {
+      "id": "copy-editing",
+      "entrypoint": "references/modules/copy-editing.md",
+      "source_document": "references/upstream/marketingskills/skills/copy-editing/SOURCE.md",
+      "source": "marketingskills"
+    }
+  ],
+  "files": [
+    {
+      "source": "claude-blog",
+      "upstream_path": "LICENSE",
+      "path": "references/upstream/claude-blog/LICENSE",
+      "sha256": "1ed335ede0a9219040a4c72bfe8d9a8fe4d7315b0e99b9e23ce240d267ce82a9"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "data/google-updates.json",
+      "path": "references/upstream/claude-blog/data/google-updates.json",
+      "sha256": "77253bb09ebafdc1bff9ad6d607c3af6f1766d076f7726b99abe6a82b1086cc1"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/SKILL.md",
+      "path": "references/upstream/claude-blog/skills/blog/SOURCE.md",
+      "sha256": "7ce5833fb6905f8451552304ef95678a18eec658901e0cc975b8a19fed5ebc4c"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/ai-crawler-guide.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/ai-crawler-guide.md",
+      "sha256": "dd637426004b99ddc5c2c96bc49da9e0e9d79fa5d2ea985ffe4443ae50bd61ed"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/ai-slop-detection.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/ai-slop-detection.md",
+      "sha256": "32f24bc6c3a064f2f54da589eac4f880256afe6a8545382c2bac615e3f0bc407"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/blog-delivery-contract.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/blog-delivery-contract.md",
+      "sha256": "1ee9c185a69d086e521109b4e445bc8199572a4a7b06dc9c5d64e9f6ca25895a"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/cognitive-load.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/cognitive-load.md",
+      "sha256": "ca0f994ef813328f6bb2ed78a9d63ae0982ab5503b7634e18bdc9707617bfd57"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/content-rules.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/content-rules.md",
+      "sha256": "93838dafb909991c176f4331963323a5737613f37610e2feea18fe1b229be453"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/content-templates.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/content-templates.md",
+      "sha256": "37f4699c4bd79c53429481154470a181cf3c9e6f955209365f1a4f0a6e3b1d5d"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/cta-placement.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/cta-placement.md",
+      "sha256": "2ab2b8ad6555e290c2bf96c7a78b7878152a04f40549bc3ff51d05630b99abe4"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/distribution-playbook.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/distribution-playbook.md",
+      "sha256": "9f23c80e8468cc461997f0b08bc77c35440f2ce32db2bf2e026080bd01de6eeb"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/editorial-heuristics.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/editorial-heuristics.md",
+      "sha256": "8f7b31e9db91e5ac3bd66f4d81c013bb0655fe6b744971715ac68ead1cbd5e9e"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/eeat-signals.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/eeat-signals.md",
+      "sha256": "ed0aea4025076cda88281eac01aeb875a2ed5e0232ddf2c964c05887532b86fe"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/flow-alignment.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/flow-alignment.md",
+      "sha256": "d9febf9d512f42ce39e5d51d944e7ca07f2ab682a8268618b47bc4ac022b466d"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/geo-optimization.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/geo-optimization.md",
+      "sha256": "8e13668c4107a9ed707f86726916206047ba00da6d23cfb6b10ddb751b34efaa"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/google-landscape-2026.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/google-landscape-2026.md",
+      "sha256": "181321fc89f8570679d98bd668f8d7a1bc445e8fecd121528328904db7d36627"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/internal-linking.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/internal-linking.md",
+      "sha256": "ca2bc275af1fe9cb41585a6ee46e696974995238f1279010ce3fa80763ed7d92"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/orchestration-details.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/orchestration-details.md",
+      "sha256": "0f46434c3a87647f49eaf6e0f113751bf51f87d37416851b4cd69a49bafc2ae7"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/platform-guides.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/platform-guides.md",
+      "sha256": "cd3f400809efa8d6f2d021f7c2e639474ea33989c61472d46c474ee7ab940284"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/quality-scoring.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/quality-scoring.md",
+      "sha256": "ab563a355938159fdbb66e3966b0864eb8197c883cd07ad70ef1d9f88e436967"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/research-quality.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/research-quality.md",
+      "sha256": "7942a5a40a33eea5711592987fb6cacac29460662e23c1bb0d9a35555ce37f4d"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/schema-stack.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/schema-stack.md",
+      "sha256": "61958878a5789e792738cdf571828935727a4a8304d4b271c3a762c1197c4114"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/synthesis-contract.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/synthesis-contract.md",
+      "sha256": "bc358388a210e083429b9233c5087103bdc111a2974a93c3dfcb5cb3e7866cb6"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/video-embeds.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/video-embeds.md",
+      "sha256": "da2dd1128fdbd412186c6175a9d6de4d77af540adda357fbba3dc12c667fc615"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/references/visual-media.md",
+      "path": "references/upstream/claude-blog/skills/blog/references/visual-media.md",
+      "sha256": "cf972559ef46e4a712d19289fd18577a8364ed8732561940093b0a56070c7be5"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/templates/case-study.md",
+      "path": "references/upstream/claude-blog/skills/blog/templates/case-study.md",
+      "sha256": "44d383f52cda7b6927cabd5c62e3b3a24d653ba3bc21d780154dc2991516fb15"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/templates/comparison.md",
+      "path": "references/upstream/claude-blog/skills/blog/templates/comparison.md",
+      "sha256": "342e346a0554e9f5053176a7872094402a610c4ce99c99a9b91c276ec30b9099"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/templates/data-research.md",
+      "path": "references/upstream/claude-blog/skills/blog/templates/data-research.md",
+      "sha256": "438fddb2f2ff52a2cc21ac40663cd94687c9e926d33b16f01ebc0740eff7bdee"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/templates/faq-knowledge.md",
+      "path": "references/upstream/claude-blog/skills/blog/templates/faq-knowledge.md",
+      "sha256": "b7fbcfa2df520432bbb35e6b131614ff9d8bef8ad051f0211ba7c08d09bed270"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/templates/how-to-guide.md",
+      "path": "references/upstream/claude-blog/skills/blog/templates/how-to-guide.md",
+      "sha256": "78b622fe51166717584acbd1c3e7c6dbb941879b6f926cc2f0a931e2f4d28cd6"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/templates/listicle.md",
+      "path": "references/upstream/claude-blog/skills/blog/templates/listicle.md",
+      "sha256": "b4af2351da7a9b530d81021d687afd2baa90847986107f7329f3f02d72d60195"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/templates/news-analysis.md",
+      "path": "references/upstream/claude-blog/skills/blog/templates/news-analysis.md",
+      "sha256": "e146115478ca33a51e6b6afb8dc6ed5fa906b8fd9bd118727e40835e60a4187d"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/templates/pillar-page.md",
+      "path": "references/upstream/claude-blog/skills/blog/templates/pillar-page.md",
+      "sha256": "e8409dec628cf8ac99969ae7d3e9f283d1a2c239d364041619d8ee3a7ca8ede4"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/templates/product-review.md",
+      "path": "references/upstream/claude-blog/skills/blog/templates/product-review.md",
+      "sha256": "52005ac49d613fa624cc77b22de0c0e683fd03a9661e4eea2f4e52afecd6a9ce"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/templates/roundup.md",
+      "path": "references/upstream/claude-blog/skills/blog/templates/roundup.md",
+      "sha256": "15bce96ce2475823102154e6684ef1a165cdd21190247ee79de9371e7aab2c21"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/templates/thought-leadership.md",
+      "path": "references/upstream/claude-blog/skills/blog/templates/thought-leadership.md",
+      "sha256": "2d4516afa8ec22aad71395d1888413350748bdc084a585ee3b6dbdcb522e3d97"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog/templates/tutorial.md",
+      "path": "references/upstream/claude-blog/skills/blog/templates/tutorial.md",
+      "sha256": "0bf0453ecbb407bf097233c3f02d7584dcaa0b13b9ae97f83163db6f304973ad"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog-write/SKILL.md",
+      "path": "references/upstream/claude-blog/skills/blog-write/SOURCE.md",
+      "sha256": "523bb06666235df94920de3eb7eb4d3e17c09e33c5ab7b39cfe196e29a4a5bc4"
+    },
+    {
+      "source": "claude-blog",
+      "upstream_path": "skills/blog-write/references/delivery.md",
+      "path": "references/upstream/claude-blog/skills/blog-write/references/delivery.md",
+      "sha256": "e66aee9580652279badef206cb4bccd6fe02fe8e70a771d117f1c32503069201"
+    },
+    {
+      "source": "marketingskills",
+      "upstream_path": "LICENSE",
+      "path": "references/upstream/marketingskills/LICENSE",
+      "sha256": "b70d71e24e40fce5da8f4b6f9cd862096a048e433db7f3c8cac5e348e6d34591"
+    },
+    {
+      "source": "marketingskills",
+      "upstream_path": "skills/content-strategy/SKILL.md",
+      "path": "references/upstream/marketingskills/skills/content-strategy/SOURCE.md",
+      "sha256": "0ad572d607884c561668810f77cd21bbe3e0508c64090f2997661a728360f946"
+    },
+    {
+      "source": "marketingskills",
+      "upstream_path": "skills/content-strategy/evals/evals.json",
+      "path": "references/upstream/marketingskills/skills/content-strategy/evals/evals.json",
+      "sha256": "10167e7125ee77cbabe4f03953750dd99ea147f7461027fdbb0cf8e089e5506d"
+    },
+    {
+      "source": "marketingskills",
+      "upstream_path": "skills/content-strategy/references/content-distribution.md",
+      "path": "references/upstream/marketingskills/skills/content-strategy/references/content-distribution.md",
+      "sha256": "1861a1aab0627ab29c279000879a9889242da1ba85e677acdc759c66a6241778"
+    },
+    {
+      "source": "marketingskills",
+      "upstream_path": "skills/content-strategy/references/headless-cms.md",
+      "path": "references/upstream/marketingskills/skills/content-strategy/references/headless-cms.md",
+      "sha256": "c0a7b87f47c8f7af907ce73facf1ed4721ade811e53f86ddf22f4bc0d7ca324e"
+    },
+    {
+      "source": "marketingskills",
+      "upstream_path": "skills/copy-editing/SKILL.md",
+      "path": "references/upstream/marketingskills/skills/copy-editing/SOURCE.md",
+      "sha256": "9b5a20be3dc5513c8f0b4f4c4960857e4d28ed83698a5b33c8dde9dc75a47bf6"
+    },
+    {
+      "source": "marketingskills",
+      "upstream_path": "skills/copy-editing/evals/evals.json",
+      "path": "references/upstream/marketingskills/skills/copy-editing/evals/evals.json",
+      "sha256": "49881baea09fd93a03da69ab249a7d37a93b1fa015debce320b5861c606593ef"
+    },
+    {
+      "source": "marketingskills",
+      "upstream_path": "skills/copy-editing/references/checklist.md",
+      "path": "references/upstream/marketingskills/skills/copy-editing/references/checklist.md",
+      "sha256": "db143b969b45b0933fe6eb772992890d1472d036a6c887fc98665e4fb48da43c"
+    },
+    {
+      "source": "marketingskills",
+      "upstream_path": "skills/copy-editing/references/content-refresh.md",
+      "path": "references/upstream/marketingskills/skills/copy-editing/references/content-refresh.md",
+      "sha256": "8a3a2d301bb2b8b2a780f5bef43093ab42295041b2fea2a9caeca2421ef3c79b"
+    },
+    {
+      "source": "marketingskills",
+      "upstream_path": "skills/copy-editing/references/plain-english-alternatives.md",
+      "path": "references/upstream/marketingskills/skills/copy-editing/references/plain-english-alternatives.md",
+      "sha256": "df4f820d4c63ae8a517c64a243c101658352cd07d002355bf3c97de0a00f3775"
+    },
+    {
+      "source": "marketingskills",
+      "upstream_path": "skills/copywriting/SKILL.md",
+      "path": "references/upstream/marketingskills/skills/copywriting/SOURCE.md",
+      "sha256": "ce18137ae31ab37f261078501431649865ab6b403054d97490754e82acb002d8"
+    },
+    {
+      "source": "marketingskills",
+      "upstream_path": "skills/copywriting/evals/evals.json",
+      "path": "references/upstream/marketingskills/skills/copywriting/evals/evals.json",
+      "sha256": "f062a21fea6ec6eff7157caf051142fa376fbfe6284c7d1d185371de6acedb9b"
+    },
+    {
+      "source": "marketingskills",
+      "upstream_path": "skills/copywriting/references/copy-frameworks.md",
+      "path": "references/upstream/marketingskills/skills/copywriting/references/copy-frameworks.md",
+      "sha256": "d98818886525908bf17dd6412d0b72731b313d6eef3e1ab6b365828a3a342779"
+    },
+    {
+      "source": "marketingskills",
+      "upstream_path": "skills/copywriting/references/natural-transitions.md",
+      "path": "references/upstream/marketingskills/skills/copywriting/references/natural-transitions.md",
+      "sha256": "4ff23f8943af2f65b072f26f1c53ce55f19cc26d7be211c11cae8e34b43e859f"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "blog-source-intake",
+      "entrypoint": "references/modules/blog-source-intake.md",
+      "adapted_from": "blogforge"
+    },
+    {
+      "id": "blog-voice-profile",
+      "entrypoint": "references/modules/blog-voice-profile.md",
+      "adapted_from": "blogforge"
+    },
+    {
+      "id": "blog-author-interview",
+      "entrypoint": "references/modules/blog-author-interview.md",
+      "adapted_from": "blogforge"
+    },
+    {
+      "id": "blog-argument-outline",
+      "entrypoint": "references/modules/blog-argument-outline.md",
+      "adapted_from": "blogforge"
+    },
+    {
+      "id": "blog-voice-check",
+      "entrypoint": "references/modules/blog-voice-check.md",
+      "adapted_from": "blogforge"
+    },
+    {
+      "id": "blog-humanize",
+      "entrypoint": "references/modules/blog-humanize.md",
+      "adapted_from": "blogforge"
+    },
+    {
+      "id": "blog-fact-check",
+      "entrypoint": "references/modules/blog-fact-check.md",
+      "adapted_from": "blogforge"
+    },
+    {
+      "id": "blog-geo-review",
+      "entrypoint": "references/modules/blog-geo-review.md",
+      "adapted_from": "blogforge"
+    },
+    {
+      "id": "blog-repurpose",
+      "entrypoint": "references/modules/blog-repurpose.md",
+      "adapted_from": "blogforge"
+    }
+  ]
+}

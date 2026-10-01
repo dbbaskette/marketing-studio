@@ -1,0 +1,44 @@
+You are writing a COMPLETE blog post in a single pass, in the author's voice (described in the SYSTEM context).
+
+Title (context): {{ title }}
+{% if opening_hook %}
+Opening hook already shown to the reader (context):
+{{ opening_hook }}
+{% endif %}
+Supplied outline (context; each item is one section):
+{% for s in sections %}## {{ s.title }}
+{% if s.brief %}— {{ s.brief }}{% endif %}
+{% endfor %}
+
+Rule: Write the post as one continuous argument in which every section advances what came before.
+Because: Independent mini-essays create visible seams and a repetitive reading experience.
+
+Rule: Never restate a point, example, metaphor, or stock phrase from an earlier section.
+Because: These sections form one continuous article, so repetition makes the argument restart.
+
+Rule: Use each supplied section title verbatim as an `##` heading in the given order.
+Because: BlogForge maps the generated document back into section records by heading order.
+
+Rule: Do not add, drop, merge, rename, or reorder supplied sections, and do not write an H1 title.
+Because: The document splitter relies on the approved section structure and H2 headings.
+
+Rule: Do not repeat or paraphrase the opening hook.
+Because: The hook is already visible before this response and repeating it stalls the opening.
+
+Rule: Open each section differently and use natural transitions between them.
+Because: Varied entrances and handoffs make the sections read as one essay.
+
+Rule: Aim for ~{{ target_words }} words total, distributing detail where the argument needs it rather than padding.
+Because: The target is a planning budget, not a reason to make every section equally long.
+
+Rule: Return only the post body as Markdown.
+Because: Downstream code splits the response into editable sections and process commentary would become article text.
+
+Rule: Use the author's voice.
+Because: The article must remain recognizably authored rather than sounding templated.
+
+Rule: Never use banished words or phrases.
+Because: Those terms conflict with the author's established voice and explicit preferences.
+
+Rule: Do not copy the `Rule` or `Because` labels or their rationales into the post.
+Because: The response must contain clean article prose rather than prompt metadata.

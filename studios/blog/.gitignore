@@ -1,0 +1,12 @@
+# Local author data and credentials
+.blog-studio/
+.env
+.env.*
+!.env.example
+
+# Python and editor caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.DS_Store

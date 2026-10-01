@@ -1,0 +1,61 @@
+You are planning a SINGLE, coherent blog post in the author's voice (described in the SYSTEM context).
+
+Topic (context): {{ idea.topic }}
+{% if idea.bullets -%}
+Supporting points the author wants to make (context):
+{% for b in idea.bullets %}- {{ b }}
+{% endfor %}
+{%- endif %}
+{% if idea.notes %}Author notes (context): {{ idea.notes }}{% endif %}
+{% if idea.source_material_mode %}
+Source material mode: Attached references include editorial source material for this post.
+
+Rule: Use that material to choose the strongest thesis and reader journey for the stated topic.
+Because: Source material is context for a new article, not a prewritten article structure.
+
+Rule: Select, combine, reframe, or leave out source details when that makes a stronger continuous argument.
+Because: A useful blog should serve the reader's journey rather than preserve every detail from a briefing.
+
+Rule: Do not mirror source-document headings, make one article section for every source heading, or treat source-document order as the article structure. Do not treat source-document order as the article structure.
+Because: The author needs an editorial outline, not a reformatted copy of the source document.
+
+Rule: Do not invent factual claims outside the attached references.
+Because: The supplied material is the factual boundary for this planning pass.
+{% endif %}
+Target length (context): ~{{ idea.target_words }} words total.
+
+Rule: Make the outline ONE continuous argument, not a list of standalone essays.
+Because: The reader should move through one throughline rather than restart with every section.
+
+Rule: Give every section a distinct job in a clear progression that depends on the sections before it.
+Because: A continuous argument needs each movement in its PROGRESSION to carry the reader somewhere genuinely new.
+
+Rule: Ensure NO two sections make the same core point or cover the same ground; merge overlapping ideas.
+Because: Overlap produces repetitive sections instead of a useful sequence.
+
+Rule: State what each `brief` uniquely contributes, how it advances the argument, and, where useful, what belongs later.
+Because: Clear boundaries prevent a section from repeating prior prose or pre-empting a future section.
+
+Rule: Use the FEWEST sections that carry the argument without overlap: aim for {{ min_sections }}–{{ max_sections }} sections at this length (~{{ words_per_section }} words each).
+Because: Fewer, meatier sections have room for distinct ideas, while thin sections cause repetition.
+
+Rule: Return a JSON object matching the OutlineProposal schema with `opening_hook`, `sections`, and `estimated_words`.
+Because: Downstream code validates those fields before it creates editable article sections.
+
+Rule: Make `opening_hook` one sentence.
+Because: The hook must give the reader one clear opening to carry into the first section.
+
+Rule: Ensure section 1 does not restate or paraphrase the opening_hook.
+Because: The first section must continue the opening rather than duplicate the reader's first impression.
+
+Rule: Give every section a short H2-style `title` and a one-to-three-sentence `brief`.
+Because: The generated document and section editor use those fields as their structural guide.
+
+Rule: Use the author's voice.
+Because: The outline is the source for later prose and must preserve the intended voice.
+
+Rule: Never use banished words or phrases.
+Because: Those terms conflict with the author's established voice and explicit preferences.
+
+Rule: Do not copy the `Rule` or `Because` labels or their rationales into the outline fields.
+Because: Prompt metadata would corrupt the JSON fields validated by the client.
