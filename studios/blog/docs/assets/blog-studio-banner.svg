@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="280" viewBox="0 0 1200 280" role="img" aria-labelledby="title desc">
+  <title id="title">Blog Studio</title>
+  <desc id="desc">Your ideas. Your voice. Writing guidance that unfolds as you need it.</desc>
+  <rect width="1200" height="280" rx="18" fill="#153d33"/>
+  <circle cx="1130" cy="20" r="230" fill="#205548"/>
+  <circle cx="1100" cy="270" r="170" fill="#286452"/>
+  <text x="64" y="66" fill="#b7d7c8" font-family="Arial, sans-serif" font-size="14" letter-spacing="3">A WRITING PARTNER IN YOUR HARNESS</text>
+  <text x="60" y="143" fill="#fbf6e9" font-family="Georgia, serif" font-size="66">Blog Studio</text>
+  <text x="64" y="192" fill="#e1ebe3" font-family="Arial, sans-serif" font-size="24">Your ideas. Your voice.</text>
+  <text x="64" y="235" fill="#b7d7c8" font-family="Arial, sans-serif" font-size="17">Start anywhere. Load what you need. Keep your work.</text>
+  <g transform="translate(886 37) rotate(8 90 106)">
+    <rect width="174" height="212" rx="10" fill="#abcaba"/>
+  </g>
+  <g transform="translate(861 30) rotate(-5 90 106)">
+    <rect width="174" height="212" rx="10" fill="#fbf6e9"/>
+    <rect x="23" y="28" width="72" height="8" rx="4" fill="#286452"/>
+    <rect x="23" y="56" width="126" height="5" rx="2.5" fill="#becdc4"/>
+    <rect x="23" y="71" width="112" height="5" rx="2.5" fill="#becdc4"/>
+    <rect x="23" y="86" width="121" height="5" rx="2.5" fill="#becdc4"/>
+    <rect x="23" y="117" width="54" height="7" rx="3.5" fill="#286452"/>
+    <rect x="23" y="141" width="126" height="5" rx="2.5" fill="#becdc4"/>
+    <rect x="23" y="156" width="105" height="5" rx="2.5" fill="#becdc4"/>
+    <rect x="23" y="171" width="119" height="5" rx="2.5" fill="#becdc4"/>
+  </g>
+</svg>
