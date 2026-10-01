@@ -12,7 +12,9 @@ provides instructions and local continuity helpers, not its own model or upload 
 
 ## Start or resume
 
-Resolve all package paths from this skill folder. On a new task read
+Resolve guidance paths from this folder. With the repository bootstrap, run
+helpers from its returned installed `runtime` path, never from the snapshot.
+The full offline package uses its own `scripts/` folder. On a new task read
 [entry flows](references/entry-flows.md). If a workspace already exists or the
 author asks to resume, read [workspace](references/workspace.md), inspect the
 saved brief and checkpoint, and reuse context before asking questions.

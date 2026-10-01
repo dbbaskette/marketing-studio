@@ -4,9 +4,9 @@
   "excluded": "host context, conversation, author data, outputs, scripts, licenses, metadata, locks, preview",
   "files": {
     "SKILL.md": {
-      "characters": 5109,
-      "estimated_tokens": 1278,
-      "sha256": "ef3b46b2c3467cc80eafceed56c1672ac86b042ade00f4861866d29d2208c9c9"
+      "characters": 5269,
+      "estimated_tokens": 1318,
+      "sha256": "997b675dafb8e83cab0514f81808a15e14b86a51bf8b2df837d34310c0189aff"
     },
     "references/blogforge/generate/prompts/document.j2": {
       "characters": 2237,
@@ -144,9 +144,9 @@
       "sha256": "0ced483cee504f1cdd6053cfb073b1abbf8cd32c4a2d5f84c180c3e2a6c37bd3"
     },
     "references/package-notes.md": {
-      "characters": 1524,
-      "estimated_tokens": 381,
-      "sha256": "2855572ead77627b08a9a7679b90a0de0a00daa261d4fae47eda6575d98fff6b"
+      "characters": 1733,
+      "estimated_tokens": 434,
+      "sha256": "0685af8dc696aa20c5c612b9d4f82ce7990d7780e8b0978f77d40572e21997b3"
     },
     "references/review.md": {
       "characters": 1577,
@@ -399,12 +399,12 @@
       "sha256": "e3baec1f818e887e3ee2691785e0777873928e572fcf1862548a380d4f588584"
     },
     "references/workspace.md": {
-      "characters": 7082,
-      "estimated_tokens": 1771,
-      "sha256": "35b16261c927f1a7d41a7dc2b97ddb501b4114af8035499af3f3cc51d6c3f450"
+      "characters": 7893,
+      "estimated_tokens": 1974,
+      "sha256": "4a97e41836d798999d76d6a0ddfcf94a4daf533f51faa30414974dfe21ed6e10"
     }
   },
-  "library_tokens": 162782,
+  "library_tokens": 163078,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -415,7 +415,7 @@
         "references/modules/blog-source-intake.md",
         "references/modules/blog-argument-outline.md"
       ],
-      "estimated_tokens": 4921
+      "estimated_tokens": 5164
     },
     "first_draft_with_sources": {
       "files": [
@@ -429,7 +429,7 @@
         "references/upstream/claude-blog/skills/blog-write/SOURCE.md",
         "references/composition.md"
       ],
-      "estimated_tokens": 11417
+      "estimated_tokens": 11660
     },
     "quick_edit": {
       "files": [
@@ -441,7 +441,7 @@
         "references/revision.md",
         "references/modules/blog-voice-check.md"
       ],
-      "estimated_tokens": 8581
+      "estimated_tokens": 8824
     },
     "voice_setup": {
       "files": [
@@ -453,7 +453,7 @@
         "references/voice-flow.md",
         "references/modules/blog-voice-profile.md"
       ],
-      "estimated_tokens": 5538
+      "estimated_tokens": 5781
     },
     "comprehensive_review": {
       "files": [
@@ -470,7 +470,13 @@
         "references/blogforge/voice/assets/humanize/lenses.md",
         "references/modules/blog-geo-review.md"
       ],
-      "estimated_tokens": 10839
+      "estimated_tokens": 11082
     }
+  },
+  "bootstrap": {
+    "path": "bootstrap/blog-studio/SKILL.md",
+    "estimated_tokens": 697,
+    "sha256": "38a3183c3f694350feb2ef492a32ef45e82793230e354de3bab2fa4b17491e00",
+    "note": "Added to repository-guidance routes; excluded from the full offline corpus."
   }
 }

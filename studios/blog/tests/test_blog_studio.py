@@ -175,6 +175,22 @@ class StudioTests(unittest.TestCase):
         self.assertFalse(text_checks.preserve(before,before)['needs_review'])
         self.assertTrue(text_checks.preserve('20 hours, then 20 hours.','20 hours.')['needs_review'])
 
+    def test_guidance_pin_is_saved_and_replaced_only_deliberately(self):
+        aid=self.article();self.save(aid,'draft','Existing draft.')
+        first='a'*32;second='b'*32
+        for task,revision in ((first,'a'*40),(second,'b'*40)):
+            path=self.root/'task-context'/'tasks'/task/'pin.json'
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({'task':task,'revision':revision}))
+        self.cli('article','guidance','--id',aid,'--task',first)
+        self.review(aid,'proofread')
+        self.cli('article','guidance','--id',aid,'--task',second,ok=False)
+        result=self.cli('article','guidance','--id',aid,'--task',second,'--adopt','--cached')
+        self.assertEqual(result['guidance']['freshness'],'cached')
+        self.assertEqual(result['guidance_history'][0]['task'],first)
+        self.assertEqual(result['reviews']['proofread']['status'],'stale')
+        self.assertEqual((self.root/'articles'/aid/'DRAFT.md').read_text(),'Existing draft.')
+
     def test_package_integrity(self):
         self.assertEqual(validator.validate(),[])
 

@@ -19,7 +19,9 @@ records the results. Workspaces live outside the installed skill.
 
 Run `python3 scripts/validate_package.py` for source integrity, routing, and
 local-link validation. It checks the five source modules plus nine new ones.
-Install the complete folder for normal discovery, or load `SKILL.md` by absolute
-path immediately. No implicit-only or explicit-only invocation restriction is
+The full offline package includes that validator. Repository snapshots retain
+provenance and references; use the installed runtime for executable helpers and
+the managed installer for runtime checks. For offline/manual discovery, install
+the complete folder, or load `SKILL.md` by absolute path immediately. No implicit-only or explicit-only invocation restriction is
 introduced. Copying a package into a skill root requires ordinary filesystem
 permissions; do not work around host restrictions.

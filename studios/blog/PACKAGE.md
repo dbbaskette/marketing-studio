@@ -1,40 +1,27 @@
-# Blog Studio
+# Blog Studio packages
 
-[Blog Studio](skills/blog-studio/SKILL.md) is the main conversational workflow.
-It offers six starting paths, optional source intake, reusable voice profiles,
-progressive capability loading, and portable article workspaces.
+The recommended [guided installer ZIP](dist/blog-studio-installer.zip) installs a small stable [bootstrap](bootstrap/blog-studio/SKILL.md) plus versioned Python helpers. The [installation guide](docs/installation.md) covers Mac setup, private GitHub access, target locations, update, repair, rollback, and removal.
 
-- [Open the interactive preview](http://127.0.0.1:8896/blog-studio.html)
-- [Preview file](preview/blog-studio.html) (works directly in a browser)
-- [Portable Blog Studio archive](dist/blog-studio.zip)
-- [State and helper reference](skills/blog-studio/references/workspace.md)
-- [Progressive disclosure roadmap and token estimates](docs/progressive-disclosure-roadmap.md)
+The bootstrap quietly fetches approved `main` when a new writing task starts. It materializes `skills/blog-studio/SKILL.md`, its references, and provenance records from that exact revision into the author's task cache. Runtime scripts from the repository are excluded from the readable guidance snapshot and are never executed. The assistant reads relevant files progressively; downloads stay outside model context.
 
-The preview lets you choose a path, source input, and voice, then copy a request
-into chat. It does not itself read URLs, upload files, or call a model. The actual
-skill runs in the host conversation and accepts its attachments/tools.
-The prompt generator is an optional starting aid for newcomers; direct chat
-uses the same workflow. The project directory is
-`/Users/dbbaskette/Projects/blog-studio`.
+`skills/blog-studio/` remains the single maintained operational guidance source, including fourteen capability modules and pinned upstream references. The compatibility manifest is [guidance/manifest.json](guidance/manifest.json). Bootstrap/runtime changes require a new managed bundle; guidance-only changes need no reinstall. The installer builder copies the three existing continuity helpers from the full package and records file hashes in the bootstrap manifest.
 
-To try it now, ask your assistant to use the skill at the absolute path to
-`skills/blog-studio/SKILL.md`. For automatic discovery, copy the complete
-`blog-studio` folder into your selected skill root (project `.agents/skills/`
-or `~/.codex/skills/`). Global installation has not been performed. The archive
-contains one self-contained skill folder with fourteen capability modules,
-source references, provenance, and dependency-free Python helpers.
+Codex uses `~/.agents/skills/blog-studio`; Claude Code uses `~/.claude/skills/blog-studio` (or its configured root). Both link to one managed local runtime. User writing lives separately, by default in `.blog-studio` under the active writing project. Articles record guidance pins and runtime paths, originals, draft history, voice revisions, and review freshness. Adopting a new guidance revision makes affected reviews stale.
 
-Saved author and article data lives outside the installed package. The default
-is `.blog-studio` in the active content project, unless another workspace is
-selected. Profiles are versioned; articles pin a voice revision. Originals and
-prior drafts are preserved, and review freshness is recomputed from actual inputs.
-No real author profile or article has been fabricated for this implementation.
+The separate [full offline ZIP](dist/blog-studio.zip) expands to a complete self-contained `blog-studio` skill. Copy that whole folder into a supported skill root for manual/offline use. It does not refresh automatically. Avoid installing the managed and manual parents with the same name at once.
 
-Validate with `python3 -m unittest discover -s tests -v` and
-`python3 skills/blog-studio/scripts/validate_package.py`. Rebuild the archive
-with `python3 scripts/package_blog_studio.py`. To serve the preview again, run
-`python3 -m http.server 8896 --bind 127.0.0.1 --directory preview` from this
-project. No third-party packages or external service accounts are required.
+The optional [prompt generator](preview/blog-studio.html) forms starting requests for newcomers; direct chat uses the same writing workflow. It does not upload content, fetch URLs, or generate articles.
+
+```sh
+python3 -m unittest discover -s tests -v
+python3 skills/blog-studio/scripts/validate_package.py
+python3 scripts/package_blog_studio.py
+python3 scripts/package_installer.py
+```
+
+Builds include ZIP checksums. Local hashes detect package changes; authenticity still depends on obtaining the bundle from the trusted private repository. Automated tests use disposable homes and local repositories, not production skill folders or Google documents. No global installation or dependency installation was performed by this implementation.
+
+See [progressive disclosure and token estimates](docs/progressive-disclosure-roadmap.md), [setup help](docs/troubleshooting.md), and [Google Docs next steps](docs/google-docs-roadmap.md).
 
 ---
 

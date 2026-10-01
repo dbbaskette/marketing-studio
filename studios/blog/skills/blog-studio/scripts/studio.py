@@ -276,7 +276,8 @@ def evidence_state(root, record):
 def fingerprints(root, directory, record):
     evidence = evidence_state(root, record)
     return {'draft': artifact_fingerprint(directory, 'DRAFT.md'), 'voice': record['voice'],
-            'evidence': digest(json.dumps(evidence, sort_keys=True).encode())}
+            'evidence': digest(json.dumps(evidence, sort_keys=True).encode()),
+            'guidance': (record.get('guidance') or {}).get('revision')}
 
 
 def ready_evidence(root, record):
@@ -295,7 +296,7 @@ def freshness(root, directory, record):
             reviews[check] = {'status': 'not-run'}
             continue
         shown = dict(saved)
-        keys = ('draft', 'voice', 'evidence') if check in SOURCE_CHECKS else ('draft', 'voice')
+        keys = ('draft', 'voice', 'guidance', 'evidence') if check in SOURCE_CHECKS else ('draft', 'voice', 'guidance')
         if any(saved['inputs'].get(key) != current[key] for key in keys):
             shown['status'] = 'stale'
             shown['previous_status'] = saved['status']
@@ -368,6 +369,21 @@ def article_command(root, args):
         record['pending_question'] = args.pending_question
         if args.stop:
             record['stop_point'] = args.stop
+    elif args.action == 'guidance':
+        if not re.fullmatch(r'[0-9a-f]{32}', args.task):
+            raise ValueError('Invalid guidance task ID.')
+        pin = read_json(inside(root, 'task-context', 'tasks', args.task, 'pin.json'))
+        if pin.get('task') != args.task or not re.fullmatch(r'[0-9a-f]{40,64}', pin.get('revision', '')):
+            raise ValueError('Invalid saved guidance pin.')
+        selected = {'task': args.task, 'revision': pin['revision'],
+                    'runtime': str(Path(__file__).resolve().parent),
+                    'freshness': 'cached' if args.cached else 'pinned'}
+        previous = record.get('guidance')
+        if previous and previous['task'] != args.task:
+            if not args.adopt:
+                raise ValueError('This article already has a guidance pin. Use --adopt only for an author-requested refresh.')
+            record.setdefault('guidance_history', []).append(previous)
+        record['guidance'] = selected
     elif args.action == 'note':
         target = inside(directory, 'INTERVIEW.md' if args.kind == 'interview' else 'DECISIONS.md')
         old = target.read_text() if target.exists() else ''
@@ -447,6 +463,8 @@ def parser():
     progress.add_argument('--stage', choices=('intake', 'interview', 'brief', 'outline', 'draft', 'review', 'complete'), required=True)
     progress.add_argument('--next-step', required=True);progress.add_argument('--pending-question')
     progress.add_argument('--stop', choices=('draft', 'outline', 'review', 'brief'))
+    guidance = articles.add_parser('guidance');guidance.add_argument('--id', required=True);guidance.add_argument('--task', required=True)
+    guidance.add_argument('--adopt', action='store_true');guidance.add_argument('--cached', action='store_true')
     note = articles.add_parser('note');note.add_argument('--id', required=True);note.add_argument('--kind', choices=('interview', 'decision'), required=True);note.add_argument('--text', required=True)
     voice = articles.add_parser('voice');voice.add_argument('--id', required=True);voice.add_argument('--profile');voice.add_argument('--revision', type=int)
     voice.add_argument('--voice', choices=('preserve', 'tone'), default='preserve');voice.add_argument('--tone')

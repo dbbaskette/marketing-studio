@@ -1,0 +1,27 @@
+name: Verify Blog Studio
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ['3.11', '3.13']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Test local helpers, refresh, installer, and extracted bundle
+        run: python -m unittest discover -s tests -v
+      - name: Validate full skill and upstream source integrity
+        run: |
+          python skills/blog-studio/scripts/validate_package.py
+          python skills/blog-writing-toolkit/scripts/validate_package.py
+          bash -n "installer/Install Blog Studio.command"

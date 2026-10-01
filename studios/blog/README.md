@@ -8,7 +8,15 @@ Bring a rough idea, a stack of notes, or a blog you've already written. Blog Stu
 
 **6 starting paths · 14 capability modules · Reusable voices · Resumable work**
 
-[Get started](#get-started) · [Progressive disclosure](#how-progressive-disclosure-works) · [Roadmap and token estimates](docs/progressive-disclosure-roadmap.md) · [Download the skill](dist/blog-studio.zip)
+[Get started](#get-started) · [Progressive disclosure](#how-progressive-disclosure-works) · [Roadmap and token estimates](docs/progressive-disclosure-roadmap.md) · [Install Blog Studio](docs/installation.md) · [Google Docs next](docs/google-docs-roadmap.md)
+
+## Install once. Keep getting better.
+
+Download the private [guided installer](dist/blog-studio-installer.zip), expand it, and open **Install Blog Studio.command** inside its `installer` folder. Choose Codex, Claude Code, or both. Setup reuses Git and Python, checks your GitHub access, and offers browser sign-in when needed. Missing tools get vendor installation instructions. See the [five-step setup guide](docs/installation.md).
+
+**Writing guidance stays maintained here.** A new task quietly checks approved `main` and pins a local snapshot. The model receives a tiny status and reads only the instructions it needs. Your marketing team gets routine instruction updates without reinstalling; ongoing articles retain their saved guidance revision. Executable helpers update separately through setup, with repair and rollback.
+
+The default author workspace holds your drafts, voices, evidence, and history outside the installed skill. Git download progress stays out of the conversation.
 
 ## Start where you are
 
@@ -52,15 +60,17 @@ These stages adapt to your request. A clear draft request can continue through a
 
 ## Token footprint
 
-Progressive disclosure keeps the full reference library available while selecting guidance for the current operation. The library contains approximately **162.8k estimated tokens**; a normal route reads a subset.
+Progressive disclosure keeps the full reference library available while selecting guidance for the current operation. The library contains approximately **163.1k estimated tokens**; a normal route reads a subset.
 
 | Route | Current guidance estimate | Target after roadmap |
 |---|---:|---:|
-| Outline with sources | 4.9k | 2–3k |
-| First draft with sources | 11.4k | 3–5k |
-| Quick edit | 8.6k | 2.5–4k |
-| Voice setup | 5.5k | 2–3.5k |
-| Comprehensive review | 10.8k | 4–6k |
+| Outline with sources | 5.9k | 2–3k |
+| First draft with sources | 12.4k | 3–5k |
+| Quick edit | 9.5k | 2.5–4k |
+| Voice setup | 6.5k | 2–3.5k |
+| Comprehensive review | 11.8k | 4–6k |
+
+The installed bootstrap is approximately **697 tokens**. Route figures include it plus the selected repository guidance; the full library total excludes the bootstrap. Downloading that library does not load it into context.
 
 Estimates use characters ÷ 4 and count each selected instruction file once. They include workspace guidance and exclude author material, generated prose, conversation history, and host/tool context. They are planning estimates rather than total billed usage. Targets are **planned refinements**, and already loaded text can remain in the conversation.
 
@@ -85,7 +95,7 @@ Or start with a concrete outcome:
 
 > Use `skills/blog-studio/SKILL.md` to build an outline from my attached notes. Keep it conversational and stop at the outline.
 
-**For skill discovery:** expand [blog-studio.zip](dist/blog-studio.zip) and copy the complete `blog-studio` folder into your harness's skill directory. Keep its references and helpers together. See [setup and package details](PACKAGE.md) for locations and local usage.
+**For a completely offline/manual installation:** expand [blog-studio.zip](dist/blog-studio.zip) and copy the complete `blog-studio` folder into your harness's skill directory. Keep its references and helpers together. See [setup and package details](PACKAGE.md) for locations and local usage.
 
 **For the newcomer prompt generator:** open [preview/blog-studio.html](preview/blog-studio.html) locally, or serve it with:
 
@@ -97,18 +107,16 @@ Then visit `http://127.0.0.1:8896/blog-studio.html`.
 
 ## What's implemented and what's next
 
-The six routes, fourteen capability modules, local continuity helpers, and portable packages are implemented. **15 deterministic tests passed**, along with package validation and portability checks. Conversational quality and route selection still need a representative harness pilot.
+The six routes, fourteen capability modules, local continuity helpers, and portable packages are implemented. **45 deterministic tests cover local helpers, guidance refresh, and managed installation**, alongside package integrity and extracted-bundle portability checks. The Mac launcher and installer are implemented; a clean-machine sign-in pilot and actual discovery/writing in both harnesses remain validation gaps.
 
 | Next milestone | Estimated development tokens |
 |---|---:|
-| Smaller entry skill and explicit loading map | 8–15k |
-| Focused workspace and continuity reads | 12–20k |
-| Concise writing, editing, strategy, and title guides | 20–35k |
-| Scoped reviews and selected evidence reads | 10–18k |
-| All-route harness pilot and newcomer handoff | 12–22k |
-| **Total remaining estimate** | **62–110k** |
+| Distill craft guides and split continuity instructions | 32–55k |
+| Scope review and evidence reads | 10–18k |
+| Complete route/discovery and clean-machine newcomer pilots | 12–22k |
+| Google Docs intake, review handoff, and return (first slice) | 15–25k |
 
-Development estimates cover implementation and verification work. They are separate from the runtime guidance estimates above. Details and dependencies live in the [roadmap](docs/progressive-disclosure-roadmap.md).
+The repository bootstrap is delivered. It adds quiet updates and task pins; reducing the underlying operational guidance remains a separate refinement. Development ranges are planning estimates, with overlapping pilot work excluded from additive totals. See the [progressive roadmap](docs/progressive-disclosure-roadmap.md) and [Google Docs roadmap](docs/google-docs-roadmap.md).
 
 ## Verify and package
 
@@ -116,6 +124,7 @@ Development estimates cover implementation and verification work. They are separ
 python3 -m unittest discover -s tests -v
 python3 skills/blog-studio/scripts/validate_package.py
 python3 scripts/package_blog_studio.py
+python3 scripts/package_installer.py
 ```
 
 Portable ZIPs and checksums are in [dist](dist/). The original five-skill collection remains available as [blog-writing-toolkit](skills/blog-writing-toolkit/SKILL.md).
