@@ -243,6 +243,46 @@ class GoogleWorkflowTests(unittest.TestCase):
         before=len(rb.hub(hub_id).graph()['revisions']);wb.publish_selected({'articles':[aid]})
         self.assertEqual(len(rb.hub(hub_id).graph()['revisions']),before)
 
+    def test_live_status_all_states_cached_failure_and_legacy_baseline(self):
+        from test_google_roundtrip import Provider
+        from google_drive import GoogleError, encoded
+        import google_roundtrip as rt
+        client = Provider()
+        self.save('draft', client.export('fixture-doc','md').decode());self.handoff()
+        directory, record = studio.item(self.root,'articles',self.aid)
+        obs = record['google']['baselines']['draft']['document']
+        obs['format_sha256'] = studio.digest(encoded(rt.semantic(client.doc)))
+        studio.persist(directory,'articles',record)
+        initial = (directory/'session.json').read_bytes()
+        self.assertEqual(self.run_command('google','status','--id',self.aid)['status'],'not-checked')
+        with patch('google_drive.Client', return_value=client):
+            checked = self.run_command('google','status','--id',self.aid,'--online')
+            self.assertEqual(checked['status'],'in-sync')
+            self.assertTrue(checked['last_checked_at']); self.assertIsNone(checked['last_saved_to_hub'])
+            cached = self.run_command('google','status','--id',self.aid)
+            self.assertEqual(cached['status'],'not-checked');self.assertEqual(cached['last_known_status'],'in-sync')
+            self.assertEqual(initial,(directory/'session.json').read_bytes())
+            self.save('draft','A local wording edit.')
+            self.assertEqual(self.run_command('google','status','--id',self.aid,'--online')['status'],'local-changes')
+            client.doc['tabs'][0]['documentTab']['body']['content'][1]['paragraph']['paragraphStyle']['lineSpacing']=160
+            self.assertEqual(self.run_command('google','status','--id',self.aid,'--online')['status'],'both-changed')
+            self.save('draft',client.export('fixture-doc','md').decode())
+            self.assertEqual(self.run_command('google','status','--id',self.aid,'--online')['status'],'google-changes')
+            with patch.object(client,'native_read',side_effect=GoogleError('Google authentication is unavailable.')):
+                failed = self.run_command('google','status','--id',self.aid,'--online')
+            self.assertEqual(failed['status'],'not-checked')
+            self.assertEqual(failed['last_known_status'],'google-changes')
+            self.assertTrue(failed['last_successful_check_at'])
+            client.doc['tabs'][0]['tabProperties']['tabId']='new-tab'
+            self.assertEqual(self.run_command('google','status','--id',self.aid,'--online')['status'],'not-checked')
+        directory, record = studio.item(self.root,'articles',self.aid)
+        del record['google']['baselines']['draft']['document']['format_sha256']
+        studio.persist(directory,'articles',record)
+        with patch('google_drive.Client') as provider:
+            legacy = self.run_command('google','status','--id',self.aid,'--online')
+            self.assertEqual(legacy['status'],'not-checked');self.assertIsNone(legacy['last_known_status'])
+            provider.assert_not_called()
+
     def test_cli_returns_compact_error_for_malformed_observation(self):
         script=Path(studio.__file__)
         result=subprocess.run([sys.executable,str(script),'--root',str(self.root),'google','source','--name','Bad','--purpose','reference',*self.obs(tab_ids=[{}])],capture_output=True,text=True)

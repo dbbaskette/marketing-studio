@@ -26,6 +26,9 @@ the author asks what is remembered or wants to correct/remove it.
 Return a short checkpoint: article/title, stage → next step, stop point, selected
 voice/guidance revisions, material gaps, and stale/unavailable reviews. Mention
 sync status when present; do not paste full JSON or saved source bodies.
+For a linked Google article, load [freshness status](../google/status.md) and check
+the selected artifact online before calling it current. Show status, Last checked,
+and Last confirmed saved to Hub; failed/unavailable reads remain Not checked.
 
 With the bootstrap, reopen the saved guidance task/runtime using
 `sync_guidance.py resume --workspace <root> --task <saved-task>`.

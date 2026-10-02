@@ -13,7 +13,7 @@ import subprocess
 import sys
 import uuid
 
-VERSION = '1.5.0'
+VERSION = '1.6.0'
 TRUSTED_SOURCE = 'https://github.com/dbbaskette/blog-studio.git'
 BRANCH = 'main'
 CONTENT_ROOT = 'skills/blog-studio'

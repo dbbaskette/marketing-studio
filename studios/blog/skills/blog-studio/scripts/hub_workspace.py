@@ -175,7 +175,7 @@ class Workspace:
             parents=[saved['revision']] if saved else [], data={'studio': data}, dependencies=dependencies,
             artifacts=artifacts, sync=False,
             scope={'level': 'author' if group == 'profiles' else 'team', 'key': title if group == 'profiles' else ''})
-        self.state['items'][key] = {'item': result['item'], 'revision': result['revision'], 'fingerprint': fingerprint}
+        self.state['items'][key] = {**(saved or {}), 'item': result['item'], 'revision': result['revision'], 'fingerprint': fingerprint}
         # A crash after enqueue but before this map write is recoverable by matching the operation payload.
         self.persist()
         return {'item': result['item'], 'revision': result['revision'], 'kind': GROUP_KIND[group]}
@@ -199,6 +199,21 @@ class Workspace:
         self.persist()
         return {'item': result['item'], 'revision': result['revision'], 'kind': 'voice'}
 
+    def record_confirmed_saves(self, result):
+        # A queued/review/offline result is not a save to remote main.
+        if result.get('status') not in ('shared', 'synchronized'):
+            return
+        self.state = read_json(self.path) if self.path.exists() else self.state
+        remote = self.hub.graph(include_local=False)['revisions']
+        changed = False
+        for saved in self.state['items'].values():
+            revision = saved['revision']
+            if revision in remote and saved.get('last_saved_revision') != revision:
+                saved.update(last_saved_to_hub=studio.now(), last_saved_revision=revision)
+                changed = True
+        if changed:
+            self.persist()
+
     def publish_selected(self, selections, offline=False):
         if not (self.root / 'studio.json').exists():
             raise HubError('Initialize the selected local writing workspace first.')
@@ -210,13 +225,17 @@ class Workspace:
                 for local_id in selections.get(group, []):
                     references.append(self._publish(group, local_id))
         result = self.hub.sync(offline)
+        with studio.locked(self.root):
+            self.record_confirmed_saves(result)
         return {'items': references, **result}
 
     def publish_mutation(self, group, result, offline=False):
         # Called while studio owns its workspace lock; only the concrete changed item/dependencies.
         mapped = {'article': 'articles', 'source': 'sources', 'profile': 'profiles'}[group]
         reference = self._publish(mapped, result['id'])
-        return {'item': reference, **self.hub.sync(offline)}
+        sync = self.hub.sync(offline)
+        self.record_confirmed_saves(sync)
+        return {'item': reference, **sync}
 
     def _checkout(self, item, revision=None, stack=None):
         stack = stack or set()
@@ -353,5 +372,7 @@ class Workspace:
                     if len(heads) != 1 or graph['revisions'][heads[0]]['kind'] != GROUP_KIND[group]:
                         raise HubError('Select an unambiguous item of the requested kind.')
                     results.append({'kind': GROUP_KIND[group], 'item': item, 'local_id': self._checkout(item)})
+            if self.hub.status()['fresh']:
+                self.record_confirmed_saves({'status': 'synchronized'})
         self.hub.registry.select(self.hub.id, self.root)
         return {'status': 'checked-out', 'items': results, 'hub': self.hub.id, 'fresh': self.hub.status()['fresh']}

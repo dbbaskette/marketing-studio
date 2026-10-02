@@ -47,3 +47,20 @@ requested save/return/handoff boundaries, not continuously.
 Existing managed installations need a one-time **1.5 installer update**. Hubs
 containing formatted snapshots require 1.5 clients to prevent older projections
 from dropping these artifacts. Skill guidance remains separately updateable.
+
+## Freshness status — runtime 1.6
+
+The linked-article resume route now performs a read-only live comparison and shows
+one of five statuses, the last check time, and the last confirmed save to Hub.
+The local cache never makes a cached status current. A missing formatted baseline,
+failed read, suggestions or changed tab scope stays Not checked. All five states,
+formatting changes, cache invalidation and failure behavior have deterministic
+fixtures. Hub fixtures cover offline queues, unchanged resyncs, confirmed main
+saves, another member's checkout and review-required contributions. Confirmation
+timestamps are local observations of remote main, not invented commit times.
+
+Named Google milestones remain a manual version-history action; no title changes,
+new Doc copies, approval labels or Google writes are implied by a status check.
+Status reads do not publish article revisions or alter transfer baselines. This
+slice also ships in the 1.6 installer and is covered by the required CI matrix.
+Live Google verification remains in G4, as above.

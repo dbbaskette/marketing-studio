@@ -271,6 +271,72 @@ def receipt(value):
     return {**value, 'recorded_at': studio.now()}
 
 
+
+STATUS_LABELS = {'in-sync': 'In sync', 'google-changes': 'Google has changes',
+                 'local-changes': 'Local changes pending', 'both-changed': 'Both changed',
+                 'not-checked': 'Not checked'}
+
+
+def sync_status(root, directory, record, kind='draft', online=False, account=None):
+    """Cached observations are historical only; only a live check can say in sync."""
+    from google_drive import Client, GoogleError, encoded as compact
+    from google_roundtrip import clean_read, semantic, tabs
+    base = record.get('google', {}).get('baselines', {}).get(kind)
+    cache_path = studio.inside(directory, '.google-status-' + kind + '.json')
+    cache = studio.read_json(cache_path) if cache_path.exists() else {}
+    target = base.get('document') if base else None
+    # Never reuse an observation for a newly linked document/baseline.
+    baseline_hash = studio.digest(compact(base))
+    if cache.get('baseline_sha256') != baseline_hash:
+        cache = {}
+    result = {'id': record['id'], 'kind': kind, 'status': 'not-checked',
+              'document_url': target.get('url') if target else None,
+              'last_checked_at': cache.get('last_checked_at'),
+              'last_successful_check_at': cache.get('last_successful_check_at'),
+              'last_known_status': cache.get('last_known_status'),
+              'last_saved_to_hub': None, 'hub_saved_revision': None,
+              'reason': 'Run an online check before claiming the Google copy is current.'}
+    hub_cache = studio.inside(root, '.hub-workspace.json')
+    if hub_cache.exists():
+        saved = studio.read_json(hub_cache).get('items', {}).get('articles/' + record['id'], {})
+        result['last_saved_to_hub'] = saved.get('last_saved_to_hub')
+        result['hub_saved_revision'] = saved.get('last_saved_revision')
+    if not base:
+        result['reason'] = 'No linked Google transfer baseline.'
+    elif not studio.inside(directory, kind.upper() + '.md').is_file():
+        result['reason'] = 'The selected local artifact is missing.'
+    elif online:
+        result['last_checked_at'] = studio.now()
+        try:
+            if not target.get('format_sha256'):
+                raise GoogleError('Capture and accept a formatted return once to establish a comparable baseline.')
+            before = local_body(directory, kind)
+            remote = clean_read(Client(account), target['document_id'])
+            if [tab['tabProperties']['tabId'] for tab in tabs(remote)] != target['tab_ids']:
+                raise GoogleError('Google tab scope changed; reconcile the linked document before continuing.')
+            if before != local_body(directory, kind):
+                raise GoogleError('Local content changed during the check. Check again.')
+            local_changed = studio.digest(before.encode()) != base['local_sha256']
+            remote_changed = studio.digest(compact(semantic(remote))) != target['format_sha256']
+            result['status'] = ('both-changed' if local_changed and remote_changed else
+                                'local-changes' if local_changed else 'google-changes' if remote_changed else 'in-sync')
+            result.update(last_successful_check_at=result['last_checked_at'],
+                          last_known_status=result['status'], checked_revision=remote['revisionId'],
+                          reason='Compared current Google text/formatting and the local artifact with the saved baseline.')
+        except GoogleError as exc:
+            result['reason'] = str(exc)
+        studio.write_json(cache_path, {k: result[k] for k in
+                          ('last_checked_at', 'last_successful_check_at', 'last_known_status')} |
+                          {'baseline_sha256': baseline_hash})
+    result['label'] = STATUS_LABELS[result['status']]
+    result['next_step'] = {'in-sync': 'Continue with the linked editing copy; recheck before sending changes.',
+        'google-changes': 'Bring the Google edits and formatting back before writing.',
+        'local-changes': 'Send the selected local changes when requested.',
+        'both-changed': 'Compare and reconcile both versions before sending.',
+        'not-checked': 'Check the linked Google Doc when access is available; keep local work intact.'}[result['status']]
+    return result
+
+
 def command(root, args):
     if args.action == 'capabilities':return capabilities(args, root)
     if args.action == 'source':
@@ -284,6 +350,8 @@ def command(root, args):
         studio.persist(directory, 'sources', result)
         return result
     directory, record = studio.item(root, 'articles', args.id)
+    if args.action == 'status':
+        return sync_status(root, directory, record, args.kind, args.online, args.account)
     google = state(record)
     if args.action == 'receipt':
         value = receipt(studio.read_json(Path(args.file)))
@@ -381,6 +449,9 @@ def add_parser(groups):
     source.add_argument('--purpose', action='append', choices=studio.PURPOSES, required=True)
     source.add_argument('--author', default='')
     source.add_argument('--observation', required=True);source.add_argument('--file', required=True)
+    status = commands.add_parser('status');status.add_argument('--id', required=True)
+    status.add_argument('--kind', choices=('draft', 'outline'), default='draft')
+    status.add_argument('--online', action='store_true');status.add_argument('--account')
     for name in ('prepare', 'confirm', 'compare', 'accept', 'receipt'):
         p = commands.add_parser(name);p.add_argument('--id', required=True)
         if name == 'receipt':p.add_argument('--file', required=True);continue

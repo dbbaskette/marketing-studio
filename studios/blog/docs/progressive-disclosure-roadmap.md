@@ -149,13 +149,16 @@ Current ordinary route estimates, before conditional house references:
 | --- | ---: |
 | Outline with sources | 3,999 |
 | First draft with sources | 5,615 |
-| Edit + voice-rule review | 5,119 |
+| Edit + voice-rule review | 5,181 |
 | Voice setup | 4,117 |
-| Light polish | 3,903 |
-| Comprehensive review | 5,753 |
+| Light polish | 3,965 |
+| Comprehensive review | 5,815 |
 
 Add 1,054 for the managed bootstrap. All values
 exclude author data, generated output and provider/tool overhead; character-based
 estimates are not billed token counts. Existing article guidance remains pinned.
 House-style guidance alone needs no runtime change. The accompanying Google
 formatting helpers require the 1.5 installer update.
+
+Runtime 1.6 adds a conditional Google freshness reference (~748 estimated tokens);
+resume guidance routes to it only for linked Google articles.

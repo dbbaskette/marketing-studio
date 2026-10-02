@@ -244,3 +244,6 @@ Google Docs is the shared editing copy. Blog Studio 1.5 saves a **formatted DOCX
 readable Markdown, and native formatting evidence to the private Team Hub on return.
 Targeted wording updates preserve paragraph styles and check the result.
 [How the round trip works](docs/google-docs.md#formatted-google-editing-runtime-15).
+
+Blog Studio 1.6 adds a live freshness check on linked-blog resume, clear sync
+status and check/confirmed-Hub-save timestamps. [Version status and milestones](docs/google-docs.md#freshness-and-milestone-names-runtime-16).

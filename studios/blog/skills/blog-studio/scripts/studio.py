@@ -560,7 +560,7 @@ def main():
                 else: result = article_command(root, args)
                 mutation_group = args.group
                 if args.group == 'google':
-                    mutation_group = 'source' if args.action == 'source' else 'article' if args.action not in ('compare', 'capabilities') else None
+                    mutation_group = 'source' if args.action == 'source' else 'article' if args.action not in ('compare', 'capabilities', 'status') else None
                 if mutation_group in ('profile', 'source', 'article') and args.action != 'show':
                     from hub_workspace import active
                     from hub_store import HubError

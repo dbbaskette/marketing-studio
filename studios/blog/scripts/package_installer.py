@@ -9,7 +9,7 @@ repo = Path(__file__).resolve().parents[1]
 bootstrap = repo / 'bootstrap/blog-studio'
 for name in ('studio.py', 'text_checks.py', 'linkedin_import.py', 'hub.py', 'hub_store.py', 'hub_workspace.py', 'google_workflow.py', 'experience.py', 'hub_browse.py', 'google_drive.py', 'google_roundtrip.py'):
     (bootstrap / 'scripts' / name).write_bytes((repo / 'skills/blog-studio/scripts' / name).read_bytes())
-for name in ('gcloud.md', 'checkpoints.md', 'roundtrip.md'):
+for name in ('gcloud.md', 'checkpoints.md', 'roundtrip.md', 'status.md'):
     destination = bootstrap / 'references/google' / name
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes((repo / 'skills/blog-studio/references/google' / name).read_bytes())
@@ -17,7 +17,7 @@ files = {p.relative_to(bootstrap).as_posix(): hashlib.sha256(p.read_bytes()).hex
          for p in sorted(bootstrap.rglob('*')) if p.is_file() and
          p.name not in ('install-manifest.json', 'config.json') and
          '__pycache__' not in p.parts and p.suffix != '.pyc'}
-manifest = {'schema': 1, 'version': '1.5.0', 'files': files}
+manifest = {'schema': 1, 'version': '1.6.0', 'files': files}
 (bootstrap / 'install-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
 for path in bootstrap.rglob('*.py'):
     compile(path.read_text(), str(path), 'exec')

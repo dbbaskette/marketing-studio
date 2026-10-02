@@ -64,7 +64,9 @@ def context(root, article_id):
               for key, value in record.get('memory', {}).items() if value['status'] == 'active']
     artifacts = [name for name in ('BRIEF.md', 'ORIGINAL.md', 'OUTLINE.md', 'DRAFT.md', 'INTERVIEW.md', 'DECISIONS.md')
                  if studio.inside(directory, name).is_file()]
-    return {'id': record['id'], 'title': record['title'], 'author': record.get('author'), 'stage': record['stage'],
+    from google_workflow import sync_status
+    google = sync_status(root, directory, record, 'draft' if 'DRAFT.md' in artifacts else 'outline')
+    return {'google_sync': google, 'id': record['id'], 'title': record['title'], 'author': record.get('author'), 'stage': record['stage'],
             'stop_point': record['stop_point'], 'next_step': record['next_step'],
             'pending_question': record['pending_question'], 'research_policy': record['research_policy'],
             'sharing': 'selected-team-hub' if (root / '.team-hub.json').exists() else 'local',

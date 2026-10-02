@@ -59,7 +59,7 @@ def verify_package(source):
         if (source / 'install-manifest.json').is_symlink():
             raise InstallError('The installer manifest must be a regular file.')
         manifest = json.loads((source / 'install-manifest.json').read_text())
-        if manifest['schema'] != 1 or manifest['version'] not in ('1.0.0', '1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0'):
+        if manifest['schema'] != 1 or manifest['version'] not in ('1.0.0', '1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0'):
             raise InstallError('Unsupported installer package.')
         actual = {p.relative_to(source).as_posix() for p in source.rglob('*')
                   if p.is_file() and p.name not in ('install-manifest.json', 'config.json')
@@ -76,15 +76,15 @@ def verify_package(source):
                 raise InstallError('Installer package verification failed. Download an intact bundle.')
         required = {'SKILL.md', 'scripts/sync_guidance.py', 'scripts/studio.py',
                     'scripts/text_checks.py', 'scripts/linkedin_import.py'}
-        if manifest['version'] in ('1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0'):
+        if manifest['version'] in ('1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0'):
             required.update({'scripts/hub.py', 'scripts/hub_store.py', 'scripts/hub_workspace.py'})
-        if manifest['version'] in ('1.3.0', '1.4.0', '1.5.0'):
+        if manifest['version'] in ('1.3.0', '1.4.0', '1.5.0', '1.6.0'):
             required.update({'scripts/experience.py', 'scripts/hub_browse.py'})
-        if manifest['version'] in ('1.2.0', '1.3.0', '1.4.0', '1.5.0'):
+        if manifest['version'] in ('1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0'):
             required.add('scripts/google_workflow.py')
-        if manifest['version'] in ('1.4.0', '1.5.0'):
+        if manifest['version'] in ('1.4.0', '1.5.0', '1.6.0'):
             required.add('scripts/google_drive.py')
-        if manifest['version'] == '1.5.0':
+        if manifest['version'] in ('1.5.0', '1.6.0'):
             required.add('scripts/google_roundtrip.py')
         if not required.issubset(actual):
             raise InstallError('Required runtime files are missing.')

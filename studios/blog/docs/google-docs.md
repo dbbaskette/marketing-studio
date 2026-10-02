@@ -130,3 +130,18 @@ the scoped native workflow. DOCX fidelity still needs inspection. No live docume
 is modified by installing or upgrading.
 
 [Validation evidence and live-test boundaries](google-roundtrip-validation.md).
+
+## Freshness and milestone names (runtime 1.6)
+
+On resume, check the linked Doc and show In sync, Google has changes, Local changes
+pending, Both changed, or Not checked. Include Last checked and Last confirmed
+saved to Hub. Cached results never establish current freshness; offline/pending
+saves are not shown as saved to remote main. Use one stable Doc link and name
+meaningful milestones in Google’s version-history UI. Version naming is manual;
+labels do not prove freshness. [Details](../skills/blog-studio/references/google/status.md).
+
+Try: “Continue my blog. Check whether Google or our local copy has newer changes,
+and tell me when this article was last confirmed saved to the Hub.”
+
+Update the managed installer to 1.6 once for this status command. Older text-only
+Google baselines need an inspected formatted return before native freshness checks.

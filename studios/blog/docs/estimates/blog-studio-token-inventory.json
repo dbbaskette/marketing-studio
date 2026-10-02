@@ -74,14 +74,19 @@
       "sha256": "1bb4babfef28381d7230fed8382ef464fa6b79716bf186cbe2bbb3cceaf95f43"
     },
     "references/google/gcloud.md": {
-      "characters": 6366,
-      "estimated_tokens": 1592,
-      "sha256": "ccc51aebe03f009145d11fcc9b1ac45f172236f3a3ae6f5d2fd257cac4139485"
+      "characters": 6455,
+      "estimated_tokens": 1614,
+      "sha256": "aed9062cc5cd7c6566ffdf6e6effe32b0250a346d9f15600b0a124e4a885345f"
     },
     "references/google/roundtrip.md": {
       "characters": 5179,
       "estimated_tokens": 1295,
       "sha256": "83569b1f5e6049627de522f5fba466d95daf60f4765e93478a1c93cb6a5a9d41"
+    },
+    "references/google/status.md": {
+      "characters": 2989,
+      "estimated_tokens": 748,
+      "sha256": "67965135fdebf777cee7f37d9e96b6aaafb8d5f8edf205f2bfd5a72ca9d58ce2"
     },
     "references/google/workflow.md": {
       "characters": 1425,
@@ -564,9 +569,9 @@
       "sha256": "020310916e2c15291fbd0d2267d753751d3b27d3c3250027fafaa1922efec08d"
     },
     "references/workspace/resume.md": {
-      "characters": 1860,
-      "estimated_tokens": 465,
-      "sha256": "ae54f5a44d2d4ac6b069527fb6a894740d4917fd23b3051a7a8e988c1748308f"
+      "characters": 2105,
+      "estimated_tokens": 527,
+      "sha256": "cd63d34ffad4eb12c29c1f50f7b4c0bf28daff7492833cd59e19b21ba8546c9d"
     },
     "references/workspace/reviews.md": {
       "characters": 1263,
@@ -584,7 +589,7 @@
       "sha256": "36c39ead07081df6544bf0eb981b19bb4046c17ce95805acc923d3ac7c52d40e"
     }
   },
-  "library_tokens": 189372,
+  "library_tokens": 190204,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -631,7 +636,7 @@
         "references/modules/blog-voice-check.md"
       ],
       "scenario": "Saved local article; controlled polish, selected voice-rule check and saved review. No new source/profile intake.",
-      "estimated_tokens": 5119
+      "estimated_tokens": 5181
     },
     "voice_setup": {
       "files": [
@@ -665,7 +670,7 @@
         "references/review/evidence.md"
       ],
       "scenario": "Saved article with selected evidence/voice; five requested feedback checks and stored coverage, without rewriting or an optional deep humanization rubric.",
-      "estimated_tokens": 5753
+      "estimated_tokens": 5815
     },
     "quick_polish": {
       "files": [
@@ -677,7 +682,7 @@
         "references/modules/copy-editing.md"
       ],
       "scenario": "Saved local draft; light clarity and voice polish, no separately requested check or recorded review.",
-      "estimated_tokens": 3903
+      "estimated_tokens": 3965
     }
   },
   "bootstrap": {
@@ -734,7 +739,7 @@
         "references/workspace.md",
         "references/workspace/resume.md"
       ],
-      "estimated_tokens": 693
+      "estimated_tokens": 755
     },
     "sources": {
       "files": [
@@ -890,13 +895,19 @@
       "files": [
         "references/google/gcloud.md"
       ],
-      "estimated_tokens": 1592
+      "estimated_tokens": 1614
     },
     "roundtrip": {
       "files": [
         "references/google/roundtrip.md"
       ],
       "estimated_tokens": 1295
+    },
+    "status": {
+      "files": [
+        "references/google/status.md"
+      ],
+      "estimated_tokens": 748
     }
   },
   "google_operations_note": "Unique Blog Studio instruction estimates. Each operation includes its router. Add adapter/checkpoint contracts and privacy once as applicable; parent, provider/plugin skills, document content and generated artifacts are additional.",

@@ -52,6 +52,37 @@ class HubWorkspaceTests(unittest.TestCase):
     def checkout(self, reference, workspace=None):
         return (workspace or self.wb).checkout_selected({'articles':[reference['item']]})['items'][0]['local_id']
 
+    def test_hub_saved_timestamp_requires_remote_confirmation_and_does_not_drift(self):
+        aid=self.article();self.save(self.a,aid,'draft','First version.')
+        self.assertEqual(self.wa.publish_selected({'articles':[aid]},offline=True)['status'],'queued-offline')
+        key='articles/'+aid
+        self.assertNotIn('last_saved_to_hub',self.wa.state['items'][key])
+        ref=self.export(aid)
+        first=dict(self.wa.state['items'][key])
+        self.assertTrue(first['last_saved_to_hub'])
+        self.assertEqual(first['last_saved_revision'],ref['revision'])
+        self.assertEqual(self.wa.publish_selected({'articles':[aid]})['status'],'synchronized')
+        self.assertEqual(first,self.wa.state['items'][key])
+        bid=self.checkout(ref)
+        self.assertTrue(self.wb.state['items']['articles/'+bid]['last_saved_to_hub'])
+        self.save(self.a,aid,'draft','Second version.')
+        self.wa.publish_selected({'articles':[aid]},offline=True)
+        pending=self.wa.state['items'][key]
+        self.assertEqual(pending['last_saved_revision'],first['revision'])
+        self.assertEqual(pending['last_saved_to_hub'],first['last_saved_to_hub'])
+        self.assertNotEqual(pending['revision'],first['revision'])
+        self.export(aid)
+        self.assertNotEqual(self.wa.state['items'][key]['last_saved_revision'],first['revision'])
+        confirmed = dict(self.wa.state['items'][key])
+        self.ha.registry.provider.review = True
+        self.save(self.a,aid,'draft','Review-required version.')
+        self.assertEqual(self.wa.publish_selected({'articles':[aid]})['status'],'pending-review')
+        self.assertEqual(self.wa.state['items'][key]['last_saved_to_hub'],confirmed['last_saved_to_hub'])
+        import experience
+        status = experience.context(self.a,aid)['google_sync']
+        self.assertEqual(status['last_saved_to_hub'],confirmed['last_saved_to_hub'])
+        self.assertEqual(status['hub_saved_revision'],confirmed['last_saved_revision'])
+
     def test_cross_machine_dependencies_original_review_checkpoint_and_portable_guidance(self):
         source=self.command(self.a,'source','add','--name','Evidence','--file',self.file('Observed facts.'),'--purpose','reference','--purpose','voice-sample')['id']
         profile=self.command(self.a,'profile','create','--name','Author','--guide-file',self.file('Write plainly.'),'--sample',source)['id']

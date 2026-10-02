@@ -122,3 +122,5 @@ Based on the Tanzu brand skill's gcloud/Drive transfer pattern. References:
 [Drive conversion](https://developers.google.com/workspace/drive/api/guides/manage-uploads),
 [Docs reads](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/get),
 [guarded updates](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/batchUpdate).
+
+For “Is this the newest?” and linked-article resume, use [freshness status](status.md).
