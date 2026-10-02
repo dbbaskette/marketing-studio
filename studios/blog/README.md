@@ -8,7 +8,7 @@ Bring a rough idea, a stack of notes, or a blog you've already written. Blog Stu
 
 **6 starting paths · 20 capability modules · Reusable voices · Shared Team Hub · Resumable work**
 
-[New user guide](docs/new-user-guide.md) · [Get started](#get-started) · [Progressive disclosure](#how-progressive-disclosure-works) · [Roadmap and token estimates](docs/progressive-disclosure-roadmap.md) · [Install Blog Studio](docs/installation.md) · [Team Hub](docs/team-hub.md) · [Google Docs](docs/google-docs.md)
+[Prompt cheat sheet](docs/prompt-cheat-sheet.md) · [New user guide](docs/new-user-guide.md) · [Get started](#get-started) · [Progressive disclosure](#how-progressive-disclosure-works) · [Roadmap and token estimates](docs/progressive-disclosure-roadmap.md) · [Install Blog Studio](docs/installation.md) · [Team Hub](docs/team-hub.md) · [Google Docs](docs/google-docs.md)
 
 ## Browse your team’s blogs in GitHub
 
@@ -38,6 +38,8 @@ stopping sync; edit articles through Blog Studio. Canonical records retain their
 IDs and history through renames. See [Team Hub usage](docs/team-hub.md).
 
 ## Start, continue, and control your context
+
+**Want prompts to copy and paste?** Follow the [Blog Studio cheat sheet](docs/prompt-cheat-sheet.md) from your first idea through drafting, Google Docs review, Hub sync, and resuming later.
 
 Inside Codex or Claude Code, ask Blog Studio to:
 
