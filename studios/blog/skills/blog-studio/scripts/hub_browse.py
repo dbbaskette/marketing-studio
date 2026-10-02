@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Pure, deterministic GitHub browsing views over immutable Team Hub records."""
+from datetime import datetime, timezone
 import hashlib
 import html
 import json
@@ -56,7 +57,36 @@ def managed_block(readme):
     return readme[readme.index(START):readme.index(END) + len(END)]
 
 
-def render(files, graph):
+def google_doc_links(data):
+    """Expose only validated current Google identities, never arbitrary metadata URLs."""
+    if not isinstance(data, dict):return ''
+    google = data.get('google', {})
+    baselines = google.get('baselines', {}) if isinstance(google, dict) else {}
+    if not isinstance(baselines, dict):return ''
+    result = ''
+    for kind in ('draft', 'outline'):
+        baseline = baselines.get(kind, {})
+        document = baseline.get('document', {}) if isinstance(baseline, dict) else {}
+        if not isinstance(document, dict):continue
+        doc_id = document.get('document_id')
+        if not isinstance(doc_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,200}', doc_id):continue
+        url = 'https://docs.google.com/document/d/' + doc_id + '/edit'
+        if document.get('url') != url:continue
+        label = 'Open working Google Doc' + (' (outline)' if kind == 'outline' else '')
+        result += '[' + label + '](' + url + ')\n\n'
+        try:
+            observed = datetime.fromisoformat(document['observed_at'])
+            if observed.tzinfo is not None:
+                stamp = observed.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+                result += '**Last captured from Google' + (' (outline)' if kind == 'outline' else '') + ':** ' + stamp + '\n\n'
+        except (KeyError, ValueError, TypeError):
+            pass
+    return result
+
+
+def render(files, graph, show_google_links=None):
+    if show_google_links is None:
+        show_google_links = graph['manifest'].get('google_doc_links') == 1
     rows = []
     for item, heads in sorted(graph['heads'].items()):
         records = [graph['revisions'][revision] for revision in heads]
@@ -110,6 +140,8 @@ def render(files, graph):
                 header += '- ' + link(head['title'] + ' — ' + head['status'], record_path(head), page) + '\n'
         else:
             header += link('Canonical revision', record_path(record), page) + '\n\n'
+            if show_google_links:
+                header += google_doc_links(data)
             google = data.get('google', {})
             if isinstance(google, dict):
                 baselines, transfers = google.get('baselines', {}), google.get('transfers', {})
@@ -191,10 +223,18 @@ def verify(files, graph):
 
 
 def changes(files, graph):
-    output = render(files, graph)
+    show_links = graph['manifest'].get('google_doc_links') == 1 or any(
+        google_doc_links(graph['revisions'][head]['data'].get('studio', {}))
+        for heads in graph['heads'].values() for head in heads
+        if graph['revisions'][head]['kind'] == 'article')
+    output = render(files, graph, show_google_links=show_links)
     needed = '1.5.0' if any('/history/google-' in name for name in files) else '1.3.0'
+    if show_links:
+        needed = '1.6.1'
     minimum = max((graph['manifest']['minimum_runtime'], needed), key=lambda v: tuple(map(int, v.split('.'))))
     manifest = dict(graph['manifest'], browse_schema=1, minimum_runtime=minimum)
+    if show_links:
+        manifest['google_doc_links'] = 1
     output['hub.json'] = encoded(manifest)
     return {**{name: None for name in files if name.startswith('blogs/') and name not in output},
             **{name: body for name, body in output.items() if files.get(name) != body}}

@@ -50,6 +50,36 @@ class BrowseTests(unittest.TestCase):
                 for target in re.findall(r'\]\(([^)]+)\)',body.decode()):
                     self.assertIn(posixpath.normpath(posixpath.join(posixpath.dirname(name),target)),files)
 
+    def test_google_working_link_migrates_old_views_without_rewriting_memory(self):
+        from hub_browse import changes, google_doc_links
+        doc = {'document_id':'doc_123','url':'https://docs.google.com/document/d/doc_123/edit',
+               'observed_at':'2026-10-02T17:07:34-04:00'}
+        data = {'studio':{'author':'Dan','google':{'baselines':{'draft':{'document':doc}}}}}
+        self.ha.save('article','Linked post','Body',data=data)
+        current = self.files();graph=store.validate_files(current)
+        # Reproduce a 1.6 library: metadata already has the link, generated pages lack it.
+        legacy=dict(current);legacy.update(render(current,graph,show_google_links=False))
+        manifest=dict(graph['manifest']);manifest.pop('google_doc_links');manifest['minimum_runtime']='1.5.0'
+        legacy['hub.json']=store.encoded(manifest)
+        old_graph=store.validate_files(legacy);verify(legacy,old_graph)
+        additions=changes(legacy,old_graph)
+        updated={**legacy,**{k:v for k,v in additions.items() if v is not None}}
+        new_graph=store.validate_files(updated);verify(updated,new_graph)
+        page=updated['blogs/dan/linked-post/README.md']
+        self.assertIn(b'[Open working Google Doc](https://docs.google.com/document/d/doc_123/edit)',page)
+        self.assertIn(b'2026-10-02 21:07 UTC',page)
+        self.assertEqual({k:v for k,v in legacy.items() if k.startswith('memory/')},
+                         {k:v for k,v in updated.items() if k.startswith('memory/')})
+        self.assertEqual(changes(updated,new_graph),{})
+        with patch.object(store,'VERSION','1.5.0'):
+            with self.assertRaises(store.HubError):store.validate_files(updated)
+        edited=dict(legacy);edited['blogs/dan/linked-post/README.md']+=b'User edit'
+        with self.assertRaises(store.HubError):verify(edited,old_graph)
+        for value in ('https://evil.invalid/', 'javascript:alert(1)', doc['url']+'?token=private'):
+            bad={'google':{'baselines':{'draft':{'document':{**doc,'url':value}}}}}
+            self.assertEqual(google_doc_links(bad),'')
+        self.assertIn('Google Doc (outline)',google_doc_links({'google':{'baselines':{'outline':{'document':doc}}}}))
+
     def test_explicit_author_survives_other_editor_and_title_rename_cleans_only_views(self):
         saved=self.save();old=self.files();self.hb.refresh()
         self.hb.save('article','Renamed blog','Changed manuscript.',item=saved['item'],parents=[saved['revision']],

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "1.6.0",
+  "version": "1.6.1",
   "files": {
     "SKILL.md": "7965c2b5108d570f568ddf315a0fcb466051c254a3402a7a39aa21a9000527fd",
     "agents/openai.yaml": "b1682e80524e50236a3838f86b8dc042862ee5cb936043ef4ceecbb9ea84eed3",
@@ -13,12 +13,12 @@
     "scripts/google_roundtrip.py": "5105313c25a6e173eed0ff3402fe6f1b794580992843bf3be037cbe38d844640",
     "scripts/google_workflow.py": "94dae78ee0008f49f8e9ded6d5fd499bb1aa7cf2ed8ad99ff9fd2cf504c5c5e4",
     "scripts/hub.py": "b97d42901d5de4e1fc1337e70fe7d01fcb6ac6872a15721448ae06a9185d214e",
-    "scripts/hub_browse.py": "dd7a9ff6e8bfef72b696bd62f85c7c01a0d8b25689f8022b48674c8ae1b353b2",
-    "scripts/hub_store.py": "336361cc627798578d2f4edcd82ccbea4aa70df34da9f927baf62a81a12aea68",
+    "scripts/hub_browse.py": "408113ee46768790679ac74c43501b5852e14fbc38844f6edcc3fa101f9e6cd2",
+    "scripts/hub_store.py": "e4f68e235d65d0930f395db71a5f85a6eaeb6d515c0ba0acf928a1e903d48b53",
     "scripts/hub_workspace.py": "5ac7c75815056c220560701e382504973f9d66ebe82741be7603e3fc47e3fb10",
     "scripts/linkedin_import.py": "28454bd9f00002f215019c16503f357738ff4b8522bf950479ef6caf86ebe7df",
     "scripts/studio.py": "2ee86119dca71a9769c41cf31026642da8a5329d70e621241b8d727bc7a14d72",
-    "scripts/sync_guidance.py": "6eeefa0b4e275f381af8fdcb1235bc915fba9a455f3975e06fc34659f24d508e",
+    "scripts/sync_guidance.py": "4130af491f82cb7a686aeccffc524870a32208f8d934d2521c25501d20118cbb",
     "scripts/text_checks.py": "fde3579a7e0a8d881409cdfac166d83c244f9286cb6c47c39b542a2a8f76b922"
   }
 }

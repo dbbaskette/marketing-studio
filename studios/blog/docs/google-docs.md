@@ -145,3 +145,12 @@ and tell me when this article was last confirmed saved to the Hub.”
 
 Update the managed installer to 1.6 once for this status command. Older text-only
 Google baselines need an inspected formatted return before native freshness checks.
+
+## Find the working Doc from GitHub
+
+Runtime 1.6.1 displays **Open working Google Doc** and the last Google capture
+time on each linked blog’s generated GitHub page. Draft and outline links are
+labeled separately. The next Hub sync upgrades existing generated pages without
+changing canonical article history; manual edits to generated pages remain protected.
+After that upgrade, contributing clients need 1.6.1. Google permissions are unchanged.
+The timestamp describes the saved capture, not a live freshness check.

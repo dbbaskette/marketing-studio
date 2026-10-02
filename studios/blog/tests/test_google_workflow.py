@@ -228,7 +228,7 @@ class GoogleWorkflowTests(unittest.TestCase):
         hub_id=ra.create('fixture/formatted-hub','Formatted fixtures')['hub'];rb.join('fixture/formatted-hub')
         wa=Workspace(self.root,ra.hub(hub_id))
         reference=wa.publish_selected({'articles':[self.aid]})['items'][0]
-        self.assertEqual(ra.hub(hub_id).graph()['manifest']['minimum_runtime'],'1.5.0')
+        self.assertEqual(ra.hub(hub_id).graph()['manifest']['minimum_runtime'],'1.6.1')
         from hub_browse import render
         hub = ra.hub(hub_id)
         pages = render(hub._remote_files(), hub.graph())

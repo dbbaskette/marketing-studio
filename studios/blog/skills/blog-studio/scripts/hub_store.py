@@ -11,7 +11,7 @@ import subprocess
 import uuid
 from urllib.parse import urlsplit
 
-VERSION = '1.5.0'
+VERSION = '1.6.1'
 KINDS = ('article', 'source', 'voice', 'note', 'decision', 'rule', 'context', 'review')
 MAX_TEXT = 1024 * 1024
 MAX_BINARY = 10 * MAX_TEXT
@@ -216,6 +216,8 @@ def validate_manifest(value, repository=None):
             raise HubError('This Team Hub needs a compatible newer Blog Studio runtime.')
         if 'browse_schema' in value and (value['browse_schema'] != 1 or required < (1, 3, 0)):
             raise HubError('This Team Hub library needs a compatible newer Blog Studio runtime.')
+        if 'google_doc_links' in value and (value['google_doc_links'] != 1 or required < (1, 6, 1)):
+            raise HubError('This Team Hub Google-link view needs a compatible newer runtime.')
         uid(value['hub'])
         if (value['branch'] != 'main' or value['contribution_mode'] not in ('auto', 'direct', 'review')
                 or not isinstance(value['name'], str) or not value['name'].strip()
