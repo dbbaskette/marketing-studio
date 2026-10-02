@@ -1,16 +1,21 @@
 {
   "schema": 1,
-  "version": "1.2.0",
+  "version": "1.4.0",
   "files": {
-    "SKILL.md": "49d0b9ff5a8e276c6eb8b7b6b5824168e5f196220d96d867dc343c83a3c2500c",
+    "SKILL.md": "7965c2b5108d570f568ddf315a0fcb466051c254a3402a7a39aa21a9000527fd",
     "agents/openai.yaml": "b1682e80524e50236a3838f86b8dc042862ee5cb936043ef4ceecbb9ea84eed3",
+    "references/google/checkpoints.md": "935b2e47d3607698737fa968d3f0a13c06f5348bcf193068af10e7dbd682473d",
+    "references/google/gcloud.md": "dd2feb0e8e56082b5c7c6c03ff13b534477b10030e21b192d34114478e5ff7fe",
+    "scripts/experience.py": "a4b8706cce212c9b56e8416d0b315de0474b3fc5d246687a926334c5b6dbaba9",
+    "scripts/google_drive.py": "be01ecb7ab0293638d8dd18419c2fc213b8b39b4f0edd94dd1f5ddc51ac2a860",
     "scripts/google_workflow.py": "326d3c6882ec6f25fb60b8609bf00b24fa630f7f6e186ce2bf4f6b38183e6cba",
-    "scripts/hub.py": "5096ce8f9acd76f1818c557767c205d71adea21c1ac5d4964152e900cd4fdd6d",
-    "scripts/hub_store.py": "690bbb5414d77991d85b9e602ad07a6cf397802be2bea45f2a5542b664e6f3c0",
+    "scripts/hub.py": "b97d42901d5de4e1fc1337e70fe7d01fcb6ac6872a15721448ae06a9185d214e",
+    "scripts/hub_browse.py": "6ab9741d6fdd86605805f269087c6ca638ec9aa7df201b98d25599ded48eba30",
+    "scripts/hub_store.py": "6560da5eb10616f227388d24fbf12e605bcb4bec1cd8f9ec1b104e575fa9e7c1",
     "scripts/hub_workspace.py": "8788b443292876e4e025bb8d18192a3bb431844b4523b18924eb85b248fe2f59",
     "scripts/linkedin_import.py": "28454bd9f00002f215019c16503f357738ff4b8522bf950479ef6caf86ebe7df",
-    "scripts/studio.py": "ba55f72e81617ca28252ee9b1c153fd37dfcd8e1a3b3ca1dd9b503243875a4a7",
-    "scripts/sync_guidance.py": "67153bebf8568188e21810439e254081bf2fa2be4655649f2974c89293f1f305",
+    "scripts/studio.py": "a64e72eed8e95bf0c3a59dc228330dd982205bd71be1889d8d4ab1f8055f1077",
+    "scripts/sync_guidance.py": "7e71829f5550790877c81674201eefe426b5593bdcb113e9e67acd9d5c09a271",
     "scripts/text_checks.py": "fde3579a7e0a8d881409cdfac166d83c244f9286cb6c47c39b542a2a8f76b922"
   }
 }

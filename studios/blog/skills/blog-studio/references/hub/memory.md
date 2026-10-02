@@ -49,3 +49,18 @@ python3 <runtime>/hub.py --workspace <workspace> save --kind note --title <title
 Team scope omits its key. Repeat `--tag` for discovery; `--artifact name=absolute-file`
 explicitly preserves a chosen attachment. Core studio saves already include their
 actual writing artifacts; do not separately publish duplicate generic articles.
+
+## Correct or stop using shared memory
+
+Read the exact current revision first. For a correction, use `save` with the same
+item, kind, scope/key, tags and data, and `--parent` set to the read revision; change
+only the requested content. Concurrent heads need explicit resolution, not an
+implicit overwrite. For “forget this for the team,” use `remove` with the same
+identity/kind/scope and explicit parent. It creates a tombstone excluded from new
+search/context; it does not erase Git history or update other authors' article pins.
+Explain that distinction before promising deletion. Never rewrite Git history.
+
+For “stop using this in this article,” detach the selected item through
+[article context controls](../workspace/context.md); do not retire it for everyone.
+After changing a shared rule, offer adoption for this article; leave other pins
+unchanged. Report queued/pending-review status until the change reaches shared main.

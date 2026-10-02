@@ -12,7 +12,7 @@ The installed bootstrap quietly fetches approved `main` for a new writing task, 
 
 M1 reduced the parent plus entry to **1,195 tokens** (787 + 408), down from 2,329. Required capability reads and conditional support reads are explicit. The installed bootstrap is measured separately at **857 tokens**. See the [M1 validation record](m1-entry-validation.md). M2 and M3 are now implemented: focused continuity references and four attributed working craft guides. See the [combined validation record](m2-m3-validation.md). M4 scoped reviews are implemented; I4/M5 pilot progress and remaining live checks are recorded in [the validation record](i4-m4-m5-validation.md).
 
-After adding conditional Google routing, the current parent plus entry is **1,199 tokens**. Google modules remain optional.
+The current parent plus entry is **1,240 estimated tokens**; the bootstrap is **990**. Readiness adds **477** only when needed; workspace plus context controls add **767**. Google modules remain optional. Runtime 1.3.0 adds these usability controls; see [live validation](usability-validation.md).
 
 ## Disclosure layers
 
@@ -34,7 +34,7 @@ Measured October 1, 2026 from the local package. Each file estimate is its Unico
 
 | Guidance loaded | Approximate new tokens | Condition |
 |---|---:|---|
-| Parent and entry flow | 1,195 | New task |
+| Parent and entry flow | 1,240 | New task |
 | Workspace router + one routine operation | 450–498 | Create/save, resume, sources, profiles, or reviews; read only the needed operation |
 | Workspace router + mechanical checks | 364 | Requested lint/preservation/count operation |
 | Intake and source module | 902 | Incoming material; source storage is additional |

@@ -153,7 +153,8 @@ class Registry:
                 write_json(intent_path, intent)
             seed_files = {'hub.json': encoded(manifest(intent['hub'], name, repository, mode)),
                           'README.md': ('# ' + name + '\n\nShared Blog Studio working memory. Use the installed skill to create revisions.\n').encode()}
-            validate_files(seed_files, repository)
+            from hub_browse import changes
+            seed_files.update(changes(seed_files, validate_files(seed_files, repository)))
             marker = 'Blog Studio Team Hub ' + intent['hub']
             if metadata is None:
                 intent['status'] = 'creating';write_json(intent_path, intent)
@@ -265,7 +266,9 @@ class Hub:
         for intent in published:
             intent['state'] = 'published';intent['published_commit'] = commit
             self._write_intent(intent)
-        if not any(i['state'] == 'pending-review' for i in self._intents()):
+        if state.get('library_review') and graph['manifest'].get('browse_schema') == 1:
+            state.pop('library_review', None)
+        if not state.get('library_review') and not any(i['state'] == 'pending-review' for i in self._intents()):
             state['review_branch'] = None;state.pop('pull_request', None);self._write_state(state)
         return graph
 
@@ -339,7 +342,9 @@ class Hub:
                 'pending_review': sum(i['state'] == 'pending-review' for i in intents),
                 'conflicts': sum(len(v) > 1 for v in graph['heads'].values()),
                 'clone': str(self.repository), 'error': state.get('error'),
-                'pull_request': state.get('pull_request')}
+                'pull_request': state.get('pull_request'),
+                'blog_library': 'pending-review' if state.get('library_review') else 'available' if graph['manifest'].get('browse_schema') == 1 else 'upgrade-on-next-sync',
+                'blog_library_url': self.config['url'] + '/tree/main/blogs' if graph['manifest'].get('browse_schema') == 1 else None}
 
     def save(self, kind, title, body='', *, item=None, parents=None, operation=None, data=None,
              dependencies=None, artifacts=None, scope=None, tags=None, summary='', status='active',
@@ -412,7 +417,11 @@ class Hub:
             self._refresh()
             for attempt in range(3):
                 intents = [i for i in self._intents() if i['state'] != 'published']
-                if not intents:
+                from hub_browse import changes, verify
+                original = self._remote_files()
+                original_graph = validate_files(original, self.config['repository'])
+                verify(original, original_graph)
+                if not intents and not changes(original, original_graph):
                     return {'status': 'synchronized', **self.status()}
                 state = self._state()
                 if state.get('write') is False:
@@ -425,16 +434,18 @@ class Hub:
                 policy_review = self.registry.provider.review_required(self.config['repository'])
                 mode = validate_files(original)['manifest']['contribution_mode']
                 review = policy_review or mode == 'review' or bool(state.get('review_branch'))
-                branch = state.get('review_branch') or 'codex/hub-' + intents[0]['operation']
+                branch = state.get('review_branch') or 'codex/hub-' + (intents[0]['operation'] if intents else base[:32])
                 extra_parents = []
                 if review:
-                    state['review_branch'] = branch;self._write_state(state)
+                    state['review_branch'] = branch
+                    if not intents:state['library_review'] = True
+                    self._write_state(state)
                     prior = git(self.repository, 'fetch', '--quiet', self.registry.provider.transport(self.config),
                                 'refs/heads/' + branch, allow_failure=True)
                     if prior.returncode == 0:
                         prior_commit = git(self.repository, 'rev-parse', 'FETCH_HEAD^{commit}').decode().strip()
                         branch_files = tree_files(self.repository, prior_commit)
-                        validate_files(branch_files, self.config['repository'])
+                        verify(branch_files, validate_files(branch_files, self.config['repository']))
                         for name, content in branch_files.items():
                             if name.startswith('memory/'):
                                 if name in original and original[name] != content:
@@ -444,6 +455,10 @@ class Hub:
                                 additions.setdefault(name, content)
                         extra_parents.append(prior_commit)
                 combined = dict(original);combined.update(additions)
+                additions.update(changes(combined, validate_files(combined, self.config['repository'])))
+                for name, content in additions.items():
+                    if content is None:combined.pop(name, None)
+                    else:combined[name] = content
                 validate_files(combined, self.config['repository'])
                 commit = commit_files(self.repository, base, additions, 'Save Team Hub memory',
                                       self.config.get('actor', 'Blog Studio member'), extra_parents)

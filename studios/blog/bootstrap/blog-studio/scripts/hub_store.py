@@ -11,7 +11,7 @@ import subprocess
 import uuid
 from urllib.parse import urlsplit
 
-VERSION = '1.1.0'
+VERSION = '1.3.0'
 KINDS = ('article', 'source', 'voice', 'note', 'decision', 'rule', 'context', 'review')
 MAX_TEXT = 1024 * 1024
 MAX_BINARY = 10 * MAX_TEXT
@@ -214,6 +214,8 @@ def validate_manifest(value, repository=None):
         if (not isinstance(value, dict) or value['schema'] != 1 or len(required) != 3
                 or any(x < 0 for x in required) or required > tuple(map(int, VERSION.split('.')))):
             raise HubError('This Team Hub needs a compatible newer Blog Studio runtime.')
+        if 'browse_schema' in value and (value['browse_schema'] != 1 or required < (1, 3, 0)):
+            raise HubError('This Team Hub library needs a compatible newer Blog Studio runtime.')
         uid(value['hub'])
         if (value['branch'] != 'main' or value['contribution_mode'] not in ('auto', 'direct', 'review')
                 or not isinstance(value['name'], str) or not value['name'].strip()
@@ -249,6 +251,13 @@ def validate_files(files, repository=None):
     if 'README.md' in files:
         used.add('README.md')
     for name, data in files.items():
+        if name.startswith('blogs/'):
+            if (hub.get('browse_schema') != 1 or not re.fullmatch(r'blogs/(?:README\.md|[a-z0-9-]+/[a-z0-9-]+/(?:README|outline|context|history)\.md)', name) or len(data) > MAX_TEXT):
+                raise HubError('Unsupported generated blog library file.')
+            try:data.decode('utf-8')
+            except UnicodeError as exc:raise HubError('Blog library pages must be UTF-8.') from exc
+            used.add(name)
+            continue
         if name in ('hub.json', 'README.md'):
             if len(data) > MAX_TEXT:
                 raise HubError('Hub text exceeds the size limit.')
@@ -396,6 +405,12 @@ def commit_files(repository, base, additions, message, actor, extra_parents=()):
     try:
         git(repository, 'read-tree', base if base else '--empty', extra_env=env)
         for name, data in sorted(additions.items()):
+            if data is None:
+                if not name.startswith('blogs/'):
+                    raise HubError('Only generated blog pages may be removed.')
+                git(repository, 'update-index', '--index-info',
+                    data=('0 ' + '0' * len(base or '0' * 40) + '\t' + name + '\n').encode(), extra_env=env)
+                continue
             blob = git(repository, 'hash-object', '-w', '--stdin', data=data).decode().strip()
             git(repository, 'update-index', '--add', '--cacheinfo', '100644,' + blob + ',' + name, extra_env=env)
         tree = git(repository, 'write-tree', extra_env=env).decode().strip()

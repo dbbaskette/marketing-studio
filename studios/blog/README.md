@@ -8,7 +8,57 @@ Bring a rough idea, a stack of notes, or a blog you've already written. Blog Stu
 
 **6 starting paths · 20 capability modules · Reusable voices · Shared Team Hub · Resumable work**
 
-[Get started](#get-started) · [Progressive disclosure](#how-progressive-disclosure-works) · [Roadmap and token estimates](docs/progressive-disclosure-roadmap.md) · [Install Blog Studio](docs/installation.md) · [Team Hub](docs/team-hub.md) · [Google Docs](docs/google-docs.md)
+[New user guide](docs/new-user-guide.md) · [Get started](#get-started) · [Progressive disclosure](#how-progressive-disclosure-works) · [Roadmap and token estimates](docs/progressive-disclosure-roadmap.md) · [Install Blog Studio](docs/installation.md) · [Team Hub](docs/team-hub.md) · [Google Docs](docs/google-docs.md)
+
+## Browse your team’s blogs in GitHub
+
+The Team Hub now generates a readable library alongside its revision records:
+
+```text
+README.md                          # blog index on the repo homepage
+blogs/
+  README.md                        # all shared blogs
+  dan-baskette/
+    better-engineering-handoffs/
+      README.md                    # current blog, rendered by GitHub
+      outline.md                   # when an outline is saved
+      context.md                   # selected sources, voice, and status
+      history.md                   # readable earlier versions
+```
+
+Folders use the article’s chosen author or pinned voice profile, with **Unassigned**
+for older articles that have neither. Matching title slugs get a short ID suffix.
+The library updates with shared saves; review-required changes become visible on
+main after merge. Existing hubs gain the library on their next successful save or
+explicit sync using runtime **1.3.0**. All contributors should update their runtime
+before that hub upgrade.
+
+These are generated browsing views. Direct edits are detected and preserved by
+stopping sync; edit articles through Blog Studio. Canonical records retain their
+IDs and history through renames. See [Team Hub usage](docs/team-hub.md).
+
+## Start, continue, and control your context
+
+Inside Codex or Claude Code, ask Blog Studio to:
+
+| Say | What happens |
+| --- | --- |
+| “Check my setup” | Check runtime integrity and CLI sign-in, with concrete recovery steps. Google is checked only when needed. |
+| “Help me start a blog” | Choose a writing path or continue saved work; optionally provide sources and an author voice. |
+| “Show my blogs” | See recent articles, stage, last activity, and next step in the current workspace. |
+| “Continue Handoff pilot” | Find the article by name and resume its saved state and pinned guidance. |
+| “What do you know about this article?” | Inspect selected sources, voice, article preferences, team context, and review state. |
+| “Remember/correct/forget this for this article” | Change active article preferences while preserving revision history. |
+| “Remember this for our team” | Save scoped memory in the selected private Team Hub. |
+
+Forgetting stops active use; it does not erase Git history or change other article
+pins. Team memory can be retired for everyone or detached from just one article.
+See the [new-user guide](docs/new-user-guide.md) and [live acceptance protocol](docs/live-acceptance.md).
+
+These runtime additions ship in installer **1.3.0**. Reopen the trusted installer
+once to update executable helpers; subsequent guidance updates remain automatic
+for new tasks. Existing articles keep their pins. This candidate release is not
+installed into your active testing session automatically.
 
 ## Install once. Keep getting better.
 
@@ -70,7 +120,10 @@ return, comments, templates and exports/sharing. A saved baseline detects local
 and Google edits; conflicts need a choice, originals and history survive, and
 only selected content crosses into Google.
 
-The **1.2.0 runtime** adds local checkpoints and portable Team Hub history.
+The **1.4.0 runtime** adds optional gcloud user login and Drive transfers, using
+the same setup approach as Tanzu brand. No custom Cloud project or OAuth client
+is needed. Native Docs API access is checked separately. See [Google setup](docs/google-docs.md).
+Local checkpoints and portable Team Hub history remain available.
 Google operations use your harness's connected provider. Native inline comments,
 template fidelity, exports and access changes require actual provider readback;
 capability gaps are stated. No extra Google CLI is installed. Authenticated
@@ -79,7 +132,7 @@ See [Google Docs usage](docs/google-docs.md) and the [Google roadmap](docs/googl
 
 ## Token footprint
 
-The parent now names required capability reads and conditional support reads explicitly. Parent plus entry flow is approximately **1,199 tokens**, down from 2,329 (49% less). See the [M1 validation record](docs/m1-entry-validation.md).
+The parent now names required capability reads and conditional support reads explicitly. Parent plus entry flow is approximately **1,240 estimated tokens**, down from 2,329 (47% less). See the [M1 validation record](docs/m1-entry-validation.md).
 
 M2 now loads **450–498 tokens** for a routine continuity operation, including its small router. M3 supplies concise writing, editing, strategy, and title guides; the original sources remain optional. See the [combined validation record](docs/m2-m3-validation.md).
 
@@ -118,7 +171,7 @@ The local `.blog-studio/` projection is excluded from the skill repository. Sele
 
 The administrator creates a private remote and local clone. Members with existing access join through chat. Blogs, notes, sources, voices, reviews, and user-defined rules/context share by default in the selected workspace. Offline saves queue locally; concurrent edits retain both versions; protected main uses a contribution PR.
 
-Update to runtime **1.2.0** using the trusted installer. No actual team repo is created by downloading or installing the skill. See [Team Hub usage](docs/team-hub.md) for setup, sharing, and the current verification boundary.
+Update to runtime **1.3.0** using the trusted installer. No actual team repo is created by downloading or installing the skill. See [Team Hub usage](docs/team-hub.md) for setup, sharing, and the current verification boundary.
 
 ## Your content and outside services
 
@@ -161,7 +214,7 @@ The six writing routes, **20 capability modules**, local continuity helpers and 
 | Google Docs team pilot (G4) — run last | 6–12k original range |
 | Live Codex/Claude and signed-in newcomer pilots — run last | 12–22k original range |
 
-The repository bootstrap, M1–M4 guidance refinements and G0–G3 Google workflows are delivered. Runtime 1.2.0 adds local Google transfer checkpoints; provider validation remains in G4 #15. Reviews load selected checks and retain passage-level evidence; comprehensive feedback is about 22% smaller than after M3. Live Codex/Claude validation is deferred to [M5 #9](https://github.com/dbbaskette/blog-studio/issues/9), with signed-in Mac setup in [I4 #8](https://github.com/dbbaskette/blog-studio/issues/8). Run these last, when the user is available for sign-in. Development ranges are planning estimates, with overlapping pilot work excluded from additive totals. See the [progressive roadmap](docs/progressive-disclosure-roadmap.md) and [Google Docs roadmap](docs/google-docs-roadmap.md).
+The repository bootstrap, M1–M4 guidance refinements and G0–G3 Google workflows are delivered. Runtime 1.2.0 adds local Google transfer checkpoints; provider validation remains in G4 #15. Reviews load selected checks and retain passage-level evidence; comprehensive feedback is about 22% smaller than after M3. Core live Codex/Claude writing checks and signed-in Mac setup now have [Tart evidence](docs/usability-validation.md). Remaining [M5 #9](https://github.com/dbbaskette/blog-studio/issues/9) and [I4 #8](https://github.com/dbbaskette/blog-studio/issues/8) acceptance checks remain explicit; Google and two-person tests need selected participants/destinations. Development ranges are planning estimates, with overlapping pilot work excluded from additive totals. See the [progressive roadmap](docs/progressive-disclosure-roadmap.md) and [Google Docs roadmap](docs/google-docs-roadmap.md).
 
 ## Verify and package
 

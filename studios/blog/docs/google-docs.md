@@ -14,19 +14,50 @@ operation. Your normal writing workflow needs no Google account or extra CLI.
 | “Give me a PDF/Word copy.” | Exports the selected version and inspects the actual result. |
 | “Give Alex comment access.” | Resolves the exact recipient, access and notification intent, then verifies supported permission changes. |
 
-Use the **1.2.0 installer** for the new checkpoint helper. This is a managed
+The Google checkpoint helper is included in runtime **1.2.0 and later**. Use the latest trusted installer for new setup. This is a managed
 runtime update; routine writing guidance still updates without reinstallation.
 Existing workspaces and Team Hubs retain their files and pins. Google snapshots
 use the existing portable history format. Codex and Claude installations receive
 the same runtime, but each harness's actual Google connection is discovered
 separately. Missing capabilities produce a clear local fallback.
 
+## Local Codex and Claude: gcloud setup
+
+Runtime **1.4.0** adds the same user-login approach used by `tanzu-brand`.
+You do not create a Cloud project, OAuth client or billing configuration. From
+the downloaded installer folder, run the regular shell scripts:
+
+```sh
+sh installer/google-setup.sh --install-cli
+sh installer/google-setup.sh --login
+sh installer/google-setup.sh --check
+```
+
+The login command is `gcloud auth login --enable-gdrive-access --force`. It opens
+Google consent for Drive access and may change your active gcloud account.
+The install step uses existing approved Homebrew; company-managed installations
+can supply gcloud instead. No credentials go into Blog Studio or the Team Hub.
+Optional `install.sh --google-docs gcloud` guides login after installation;
+`--google-docs gcloud-check` only checks access. JSON/noninteractive installs never
+start interactive sign-in. Default installation skips Google.
+
+Drive access enables selected HTML/DOCX/text imports as new native Google Docs,
+and PDF/Word/text exports. Native Docs read/update is checked separately; API or
+organization restrictions may still block it. The adapter cannot promise native
+editing just because login succeeds. Existing document writes require a fresh
+revision, and every handoff still requires real readback. Comments, sharing and
+native template copying continue to use a capable connector.
+
+Uploads keep a local operation receipt for recovery, check the reviewed folder
+audience, and never retry an uncertain create automatically. Exports refuse to
+overwrite local files. Full usage: [gcloud adapter](../skills/blog-studio/references/google/gcloud.md).
+
 ## A round trip
 
 1. Save the article normally, then ask to continue in Google Docs. Choose a folder
    if none is already established. Blog Studio checks the folder's inherited
    audience before placing private content there.
-2. The harness uses its connected provider to create or update the selected
+2. The harness uses the selected connector or gcloud adapter to create or update the selected
    editing copy. Local code freezes the outgoing text and records verified
    readback as the common baseline.
 3. Edit in Google Docs, then ask Blog Studio to bring the changes back. If only
@@ -45,7 +76,7 @@ resolving threads do not approve publication.
 
 Only selected content goes to Google. Internal source material, voices, rules,
 background and interviews are not added to a Doc by default. Credentials stay in
-the connected provider. The skill repository never becomes the team's data store.
+the connected provider or gcloud's user credential store. The skill repository never becomes the team's data store.
 
 The inspected Codex connector exposes Docs reads, revision-guarded writes,
 native copies, exports, comments and sharing. Exposure is not live validation:
@@ -62,8 +93,9 @@ native template, overwrites conflicting text, or broadens access.
 
 G0–G3 now have executable local checkpoint tests and six conditional skill
 workflows. These tests cover consistency and preservation with disposable data;
-they do not simulate evidence of real Google operations. The helper does not
-call Google: connected provider operations and readback belong to the harness.
+they do not simulate evidence of real Google operations. The checkpoint helper does not call Google. Runtime 1.4.0 adds the separate
+`google_drive.py` transport; connected-provider and gcloud readback both require
+task-specific verification.
 
 The authenticated [G4 pilot (#15)](https://github.com/dbbaskette/blog-studio/issues/15)
 runs last, along with [Mac setup (#8)](https://github.com/dbbaskette/blog-studio/issues/8),

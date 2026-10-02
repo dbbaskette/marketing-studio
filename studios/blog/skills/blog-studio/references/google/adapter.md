@@ -1,12 +1,13 @@
 # Harness adapter contract (G0)
 
-Use the current harness's connected Google Drive capability; in Codex load the
-installed Google Drive skill, then Google Docs or Google Drive Comments only for
-that operation. Their active route and write requirements apply. Do not vendor
-their executable helpers, add a Google CLI, create OAuth credentials, or invent
-an endpoint. Claude may expose a different supported connector: discover its
-actual schema and apply the same checks. If it lacks an operation, mark that
-operation unavailable and keep local writing usable.
+Use the user's chosen connection. For local Codex/Claude CLI sessions, the
+[gcloud adapter](gcloud.md) provides user-authenticated Drive transfers and
+capability-dependent native Docs reads/guarded writes without creating an OAuth
+client or Cloud project. Use its installed runtime helper. If a suitable Workspace
+connector is already available, use it and its current Google skill instructions.
+Discover actual operations in this harness; a synced skill alone is not a
+connection. Do not install tools or start login unless setup is requested.
+Missing operations remain unavailable while local writing continues.
 
 Ask only for missing consequential choices: selected document/tab, role of source
 versus template, target folder, or exact audience/access when sharing. Infer the
@@ -59,6 +60,6 @@ import, takes precedence over older umbrella descriptions.
 - Retry uncertain creates/copies/comments/shares only after locating the result;
   use the observed operation result/ID, never duplicate blindly.
 
-The helper performs local consistency checks only. It does not authenticate,
+The `google_workflow.py` checkpoint helper performs local consistency checks only. It does not authenticate,
 write to Google, prove provider readback, or grant permission. Runtime 1.2.0 is
 required; use installed helpers, never execute code from a guidance snapshot.

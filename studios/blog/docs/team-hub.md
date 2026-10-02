@@ -112,3 +112,31 @@ loss, protected-branch outcomes, conflicts, scopes, and cross-machine handoffs.
 A real GitHub team pilot, clean-Mac setup, and live Codex/Claude discovery remain
 separate verification steps. No live Team Hub was created during implementation.
 See the [schema](team-hub-schema.md) and [design record](team-hub-design.md).
+
+## Readable GitHub library
+
+Open the hub’s GitHub homepage or `blogs/README.md` to browse title, author, stage,
+and last update. Article folders render the current manuscript, saved outline,
+selected-context links, and readable revision history. Conflicts show competing
+versions until explicitly resolved; retired articles disappear from the current
+library while their canonical history remains.
+
+Ask “Set this blog’s author to Alex Rivera,” “Rename this blog to Better handoffs,”
+or “Sync our hub so we can browse the blogs in GitHub.” Author/title metadata
+changes do not rewrite the draft. Missing author metadata falls back to the pinned
+voice’s name, then Unassigned; the uploader/last editor is not presumed to be author.
+A title or author rename can change its folder URL, so use canonical revision links
+when a permanent reference is needed.
+
+This is part of candidate runtime **1.3.0**. Upgrade contributing clients through
+the trusted installer before migrating a hub. New hubs include an empty library;
+existing hubs upgrade with their next successful save or explicit sync. Joining or
+refreshing alone makes no remote changes. In review mode, generated files appear
+on the contribution branch first. Read-only/offline clients retain queued work.
+
+Edit through Blog Studio. If a generated page or its homepage section is edited in
+GitHub, sync stops before replacing it. Preserve the edit, import desired changes
+through the article workflow, and restore the generated file from its prior Git
+version before retrying. Custom homepage text outside the marked library block is
+preserved. No Git history is rewritten and unrelated memory is not copied into the
+blog pages.

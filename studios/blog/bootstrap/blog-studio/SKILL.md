@@ -11,9 +11,20 @@ browser prompt generator only creates a starting request.
 
 ## Guidance lifecycle
 
-Resolve this installed folder; use the interpreter in `config.json` if Python
-is absent from PATH. Default workspace: absolute `.blog-studio` under the content
+Resolve this installed folder; use its `config.json` interpreter for all helper
+commands, including examples written as `python3`. The system Python may be older. Default workspace: absolute `.blog-studio` under the content
 project. Run only installed helpers.
+
+**Setup/help or “My blogs”:** use installed `studio.py --root <workspace>
+readiness --harness <codex|claude>` or `home --query <title>` first. These read-only
+commands work before initialization. Omit the query to list saved blogs. Do not
+start a guidance task just to list work. For “continue <name>,” select the saved
+article and follow Resume below. Report only actionable readiness findings;
+Google needs a working connector or the installed gcloud adapter, plus a
+successful selected-document read. For requested Google setup/CLI transfers,
+read [gcloud access](references/google/gcloud.md). Use the current installed
+transport helper independently of an older article runtime; retain its writing
+and guidance pins.
 
 **New task:** run
 `python3 <installed-skill>/scripts/sync_guidance.py start --workspace <workspace>`.

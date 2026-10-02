@@ -9,7 +9,8 @@ Use the [workspace](../workspace.md) prefix.
 Modes/stops: existing → review; first-draft/from-outline → draft;
 outline-only/interview → outline; discover → brief. Use `--stop` to reflect an
 already requested different outcome. Policies: supplied-only, web-allowed,
-unspecified. Without a profile replace `--profile` with `--voice preserve` for an
+unspecified. Use optional `--author <name>` when the author is known; do not infer authorship
+from the editor. Without a profile replace `--profile` with `--voice preserve` for an
 imported manuscript or `--voice tone --tone <tone>` for new writing.
 
 Save audience, takeaway, required points, format/length, selected material and

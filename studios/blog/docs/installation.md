@@ -60,7 +60,7 @@ Both harnesses can use the same runtime. Existing unmanaged skill folders requir
 
 ## Enable shared Team Hub work
 
-Update to the **1.2.0** bundle using Install again, then ask Blog Studio to create or join the specific team repository. The GitHub provider requires authenticated GitHub CLI as well as Git. Team access is managed outside setup. Hubs default to `~/.local/share/blog-studio/hubs/`, separately from runtime versions and local writing projections. No repo is created or content uploaded by installation. See [Team Hub usage](team-hub.md).
+Update to the **1.3.0** bundle using Install again, then ask Blog Studio to create or join the specific team repository. The GitHub provider requires authenticated GitHub CLI as well as Git. Team access is managed outside setup. Hubs default to `~/.local/share/blog-studio/hubs/`, separately from runtime versions and local writing projections. No repo is created or content uploaded by installation. See [Team Hub usage](team-hub.md).
 
 ## How automatic updates work
 
@@ -111,4 +111,15 @@ consent and conversational checks retain their own evidence.
 
 ## Optional Google Docs
 
-Runtime 1.2.0 includes local Google transfer checkpoints. Use the harness’s existing connected Google Drive tools when requested; core setup needs no Google login or extra CLI. See [Google Docs usage](google-docs.md). Live sign-in and provider verification remain deferred.
+Runtime 1.3.0 includes readiness, article discovery/context controls, and local Google transfer checkpoints. Use the harness’s existing connected Google Drive tools when requested; core setup needs no Google login or extra CLI. See [Google Docs usage](google-docs.md). CLI sign-ins and core writing flows have been tested in Tart; live Google provider verification still needs a selected test document. See [validation evidence](usability-validation.md).
+
+## Optional Google Docs access
+
+The installer ZIP includes `installer/google-setup.sh`. Use `--install-cli` to
+install gcloud through existing approved Homebrew, then `--login` for Google
+Drive browser consent and `--check` for a read-only access check. The equivalent
+login is `gcloud auth login --enable-gdrive-access --force`. It can change the
+active gcloud account. No custom OAuth client, Cloud project or billing setup
+is required. Default installation skips Google; `--google-docs gcloud` opts in
+after setup, while `--google-docs gcloud-check` checks only. See [Google Docs](google-docs.md)
+for native editing limits and document round-trip verification.

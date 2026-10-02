@@ -5,7 +5,9 @@ description: Write and revise blogs, learn author voices, resume articles, and u
 
 # Blog Studio
 
-Read [entry flow](references/entry-flows.md) once per new task in the harness.
+Read [entry flow](references/entry-flows.md) for writing starts. For setup/help,
+“My blogs,” or memory controls, load only [getting started](references/getting-started.md),
+[resume](references/workspace/resume.md), or [context](references/workspace/context.md).
 
 ## Loading map
 

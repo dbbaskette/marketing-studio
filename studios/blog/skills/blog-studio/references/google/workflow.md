@@ -13,7 +13,8 @@ writing stays on its current route and needs no Google account or CLI.
 | Download or share | [export and sharing](../modules/blog-google-export.md) |
 
 Read [adapter contract](adapter.md) once when selecting a connection; recheck
-changed capabilities. Read [checkpoint contract](checkpoints.md) only for a
+changed capabilities. For the local CLI connection or sign-in, load
+[gcloud access](gcloud.md). Read [checkpoint contract](checkpoints.md) only for a
 local transfer/receipt command. Reuse fresh provider observations. A failed or
 unavailable operation retains local work; offer a supported local outcome.
 

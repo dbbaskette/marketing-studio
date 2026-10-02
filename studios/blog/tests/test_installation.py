@@ -51,7 +51,7 @@ class InstallationTests(unittest.TestCase):
     def test_google_runtime_requires_its_managed_helper(self):
         manifest_path = self.source / 'install-manifest.json'
         manifest = json.loads(manifest_path.read_text())
-        self.assertEqual(manifest['version'], '1.2.0')
+        self.assertEqual(manifest['version'], '1.4.0')
         name = 'scripts/google_workflow.py'
         (self.source / name).unlink()
         del manifest['files'][name]
@@ -59,6 +59,27 @@ class InstallationTests(unittest.TestCase):
         with self.assertRaisesRegex(installer.InstallError, 'Required runtime files'):
             self.install()
         self.assertFalse((self.root / 'installation.json').exists())
+
+    def test_optional_google_setup_offline_and_dry_run_do_not_start_login(self):
+        for flags in (['--offline'], ['--dry-run', '--offline']):
+            args = ['install.py', 'install', '--home', str(self.home), '--source', str(self.source),
+                    '--target', 'both', '--google-docs', 'gcloud', '--yes', '--json', *flags]
+            with patch.object(sys, 'argv', args), patch.object(installer, 'tool_status', return_value={
+                    'python_supported': True, 'git': True}), patch.object(installer, 'install', return_value={'status':'installed'}), \
+                    patch.object(installer, 'inspect', return_value={'status':'checked'}), \
+                    patch.object(installer.subprocess, 'run') as run:
+                self.assertEqual(installer.main(), 0)
+                run.assert_not_called()
+
+    def test_optional_google_json_setup_never_starts_interactive_login(self):
+        args = ['install.py', 'install', '--home', str(self.home), '--source', str(self.source),
+                '--target', 'both', '--google-docs', 'gcloud', '--yes', '--json']
+        with patch.object(sys, 'argv', args), patch.object(installer, 'ensure_repository_access', return_value={
+                'python_supported': True, 'git': True, 'repository_access':'ready'}), \
+                patch.object(installer, 'install', return_value={'status':'installed'}), \
+                patch.object(installer.subprocess, 'run') as run:
+            self.assertEqual(installer.main(), 0)
+            run.assert_not_called()
 
     def test_repair_stages_intact_runtime_without_deleting_damaged_version(self):
         self.install()

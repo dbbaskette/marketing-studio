@@ -82,6 +82,21 @@ class HubWorkspaceTests(unittest.TestCase):
         self.command(self.b,'article','guidance','--id',bid,'--task',task2)
         self.assertEqual(self.command(self.b,'article','show','--id',bid)['reviews']['proofread']['status'],'current')
 
+    def test_article_memory_round_trip_and_retirement_keep_history(self):
+        aid=self.article();self.save(self.a,aid,'draft','A preserved draft.')
+        self.command(self.a,'article','remember','--id',aid,'--key','headings','--file',self.file('Use short headings.'))
+        ref=self.export(aid);bid=self.checkout(ref)
+        shown=self.command(self.b,'article','show','--id',bid)
+        self.assertEqual(shown['memory']['headings']['text'],'Use short headings.')
+        self.command(self.b,'article','remember','--id',bid,'--key','headings','--file',self.file('Use descriptive headings.'))
+        self.command(self.b,'article','forget','--id',bid,'--key','headings')
+        self.wb.publish_selected({'articles':[bid]})
+        self.ha.refresh()
+        shared=self.ha.read(ref['item'])['record']['data']['studio']
+        self.assertEqual(shared['memory']['headings']['status'],'forgotten')
+        self.assertEqual(shared['memory']['headings']['history'][0]['text'],'Use short headings.')
+        self.assertEqual((self.b/'articles'/bid/'DRAFT.md').read_text(),'A preserved draft.')
+
     def test_clean_projection_resumes_new_shared_head_and_keeps_prior_folder(self):
         aid=self.article();self.save(self.a,aid,'draft','Initial draft.')
         ref=self.export(aid);bid=self.checkout(ref)

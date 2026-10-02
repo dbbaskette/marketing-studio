@@ -75,7 +75,10 @@ class StudioTests(unittest.TestCase):
         aid=self.article('existing');path=self.file('manuscript.md','Original manuscript.')
         self.cli('article','save','--id',aid,'--kind','draft','--file',path,ok=False)
         self.save(aid,'original','Original manuscript.')
-        self.save(aid,'draft','First edit.');self.save(aid,'draft','Second edit.')
+        saved=self.save(aid,'draft','First edit.')
+        self.assertTrue(saved['saved_artifact']['reopened'])
+        self.assertEqual(Path(saved['saved_artifact']['path']).read_text(),'First edit.')
+        self.save(aid,'draft','Second edit.')
         folder=self.root/'articles'/aid
         history=list((folder/'history').glob('draft-*.md'))
         self.assertEqual(history[0].read_text(),'First edit.')

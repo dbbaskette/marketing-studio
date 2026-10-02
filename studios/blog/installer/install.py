@@ -59,7 +59,7 @@ def verify_package(source):
         if (source / 'install-manifest.json').is_symlink():
             raise InstallError('The installer manifest must be a regular file.')
         manifest = json.loads((source / 'install-manifest.json').read_text())
-        if manifest['schema'] != 1 or manifest['version'] not in ('1.0.0', '1.1.0', '1.2.0'):
+        if manifest['schema'] != 1 or manifest['version'] not in ('1.0.0', '1.1.0', '1.2.0', '1.3.0', '1.4.0'):
             raise InstallError('Unsupported installer package.')
         actual = {p.relative_to(source).as_posix() for p in source.rglob('*')
                   if p.is_file() and p.name not in ('install-manifest.json', 'config.json')
@@ -76,10 +76,14 @@ def verify_package(source):
                 raise InstallError('Installer package verification failed. Download an intact bundle.')
         required = {'SKILL.md', 'scripts/sync_guidance.py', 'scripts/studio.py',
                     'scripts/text_checks.py', 'scripts/linkedin_import.py'}
-        if manifest['version'] in ('1.1.0', '1.2.0'):
+        if manifest['version'] in ('1.1.0', '1.2.0', '1.3.0', '1.4.0'):
             required.update({'scripts/hub.py', 'scripts/hub_store.py', 'scripts/hub_workspace.py'})
-        if manifest['version'] == '1.2.0':
+        if manifest['version'] in ('1.3.0', '1.4.0'):
+            required.update({'scripts/experience.py', 'scripts/hub_browse.py'})
+        if manifest['version'] in ('1.2.0', '1.3.0', '1.4.0'):
             required.add('scripts/google_workflow.py')
+        if manifest['version'] == '1.4.0':
+            required.add('scripts/google_drive.py')
         if not required.issubset(actual):
             raise InstallError('Required runtime files are missing.')
         return manifest
@@ -463,6 +467,7 @@ def main():
     parser.add_argument('--home', type=Path, default=Path.home())
     parser.add_argument('--root', type=Path)
     parser.add_argument('--source', type=Path, default=SOURCE_ROOT)
+    parser.add_argument('--google-docs', choices=('skip', 'connector', 'gcloud', 'gcloud-check'), default='skip', help='Optional Google setup; gcloud opens user sign-in, gcloud-check only reads Drive.')
     parser.add_argument('--yes', action='store_true')
     parser.add_argument('--replace', action='store_true')
     parser.add_argument('--offline', action='store_true', help='Skip repository-access check; installation still needs Git/Python.')
@@ -519,6 +524,22 @@ def main():
             result = rollback(root)
         else:
             result = uninstall(root, agents)
+        if args.action in ('install', 'repair') and args.google_docs != 'skip':
+            if args.offline:
+                result['google'] = {'status': 'skipped-offline', 'next_step': 'Run installer/google-setup.sh --check when online.'}
+            elif args.google_docs == 'connector':
+                result['google'] = {'status': 'connector-selected', 'verified': False}
+            else:
+                helper = root / 'current/scripts/google_drive.py'
+                action = 'check' if args.google_docs == 'gcloud-check' else 'login'
+                if action == 'login' and (args.json or not sys.stdin.isatty()):
+                    result['google'] = {'status': 'needs-interactive-login', 'next_step': 'Run installer/google-setup.sh --login in the VM shell.'}
+                else:
+                    if action == 'login':
+                        print('Google user sign-in requests Drive access and changes the active gcloud account. No Cloud project or OAuth client is created.')
+                    check = subprocess.run([sys.executable, str(helper), action], capture_output=action == 'check', text=True)
+                    result['google'] = {'status': 'drive-read' if check.returncode == 0 else 'needs-setup',
+                        'next_step': 'Use installer/google-setup.sh --install-cli, then --login. Drive read does not verify Docs writes.'}
         if args.json:
             print(json.dumps(result, indent=2))
         else:
@@ -534,6 +555,10 @@ def main():
                 if args.root:
                     check_command += ['--root', str(args.root.absolute())]
                 print('To check setup: ' + shlex.join(check_command))
+            if result.get('google'):
+                print('Google: ' + result['google']['status'])
+                if result['google'].get('next_step'):
+                    print(result['google']['next_step'])
             if result.get('retained'):
                 print(result['retained'])
         return 0

@@ -280,6 +280,7 @@ def fingerprints(root, directory, record):
     return {'draft': artifact_fingerprint(directory, 'DRAFT.md'), 'voice': record['voice'],
             'evidence': digest(json.dumps(evidence, sort_keys=True).encode()),
             'guidance': (record.get('guidance') or {}).get('revision'),
+            'memory': digest(json.dumps(record['memory'], sort_keys=True).encode()) if record.get('memory') else None,
             'hub_context': digest(json.dumps(record['hub_context']['selected'], sort_keys=True).encode()) if record.get('hub_context') else None}
 
 
@@ -299,7 +300,7 @@ def freshness(root, directory, record):
             reviews[check] = {'status': 'not-run'}
             continue
         shown = dict(saved)
-        keys = ('draft', 'voice', 'guidance', 'hub_context', 'evidence') if check in SOURCE_CHECKS else ('draft', 'voice', 'guidance', 'hub_context')
+        keys = ('draft', 'voice', 'guidance', 'hub_context', 'memory', 'evidence') if check in SOURCE_CHECKS else ('draft', 'voice', 'guidance', 'hub_context', 'memory')
         if any(saved['inputs'].get(key) != current[key] for key in keys):
             shown['status'] = 'stale'
             shown['previous_status'] = saved['status']
@@ -316,8 +317,17 @@ def save_artifact(directory, kind, body, record):
         stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f') + '-' + uuid.uuid4().hex[:8]
         atomic(inside(directory, 'history', kind + '-' + stamp + '.md'), target.read_bytes())
     atomic(target, body.encode())
+    if target.read_bytes() != body.encode():
+        raise OSError('Saved artifact readback did not match; inspect the retained file before continuing.')
     record['stage'] = 'draft' if kind == 'draft' else 'outline' if kind == 'outline' else record['stage']
     record['artifact_hashes'][kind] = digest(body.encode())
+    return {'path': str(target), 'sha256': record['artifact_hashes'][kind], 'reopened': True}
+
+
+def checked_author(value):
+    if not isinstance(value, str) or not value.strip() or len(value.strip()) > 200:
+        raise ValueError('Use an author name between 1 and 200 characters.')
+    return value.strip()
 
 
 def article_command(root, args):
@@ -333,6 +343,7 @@ def article_command(root, args):
         stops = {'existing': 'review', 'first-draft': 'draft', 'outline-only': 'outline',
                  'from-outline': 'draft', 'interview': 'outline', 'discover': 'brief'}
         record = {'id': value, 'title': args.title, 'mode': args.mode, 'stage': 'intake',
+                  'author': checked_author(args.author) if args.author else '',
                   'stop_point': args.stop or stops[args.mode], 'research_policy': args.research,
                   'voice': voice, 'sources': [], 'reviews': {}, 'artifact_hashes': {},
                   'next_step': 'Gather missing material and relevant context.', 'pending_question': None,
@@ -350,7 +361,16 @@ def article_command(root, args):
                             'content_path': str(inside(source_directory, 'content.md')) if (source_directory / 'content.md').exists() else None})
         return {**record, 'directory': str(directory), 'selected_sources': sources,
                 'reviews': freshness(root, directory, record)}
-    if args.action == 'attach':
+    if args.action in ('remember', 'forget', 'detach-context'):
+        from experience import change_context
+        change_context(record, args)
+    elif args.action == 'rename':
+        if not args.title.strip() or len(args.title.strip()) > 500:
+            raise ValueError('Use a blog title between 1 and 500 characters.')
+        record['title'] = args.title.strip()
+    elif args.action == 'author':
+        record['author'] = checked_author(args.name)
+    elif args.action == 'attach':
         _, source = item(root, 'sources', args.source)
         roles = args.purpose or source['purposes']
         entry = {'source_id': args.source, 'purposes': roles, 'revision': source['revision']}
@@ -365,7 +385,7 @@ def article_command(root, args):
             raise ValueError('Save the imported original before saving an edited draft.')
         if args.kind == 'original' and (directory / 'ORIGINAL.md').exists():
             raise ValueError('Imported original is immutable; revisions belong in DRAFT.md.')
-        save_artifact(directory, args.kind, body, record)
+        saved_artifact = save_artifact(directory, args.kind, body, record)
     elif args.action == 'progress':
         record['stage'] = args.stage
         record['next_step'] = args.next_step
@@ -438,7 +458,8 @@ def article_command(root, args):
             atomic(inside(directory, 'history', 'derived-' + name + '-' + uuid.uuid4().hex + '.md'), target.read_bytes())
         atomic(target, body.encode())
     persist(directory, 'articles', record)
-    return {**record, 'directory': str(directory), 'reviews': freshness(root, directory, record)}
+    return {**record, 'directory': str(directory), 'reviews': freshness(root, directory, record),
+            **({'saved_artifact': saved_artifact} if args.action == 'save' else {})}
 
 
 def parser():
@@ -448,6 +469,8 @@ def parser():
     groups.add_parser('init')
     listing = groups.add_parser('list')
     listing.add_argument('kind', choices=('profiles', 'sources', 'articles'))
+    from experience import add_parser as experience_parser
+    experience_parser(groups)
     profiles = groups.add_parser('profile').add_subparsers(dest='action', required=True)
     create = profiles.add_parser('create')
     create.add_argument('--name', required=True); create.add_argument('--id')
@@ -470,11 +493,20 @@ def parser():
     update.add_argument('--status', choices=('ready', 'pending', 'unavailable'));update.add_argument('--note')
     articles = groups.add_parser('article').add_subparsers(dest='action', required=True)
     create = articles.add_parser('create');create.add_argument('--title', required=True);create.add_argument('--id')
-    create.add_argument('--mode', choices=MODES, required=True);create.add_argument('--profile')
+    create.add_argument('--mode', choices=MODES, required=True);create.add_argument('--profile');create.add_argument('--author')
     create.add_argument('--voice', choices=('preserve', 'tone'), default='preserve');create.add_argument('--tone')
     create.add_argument('--research', choices=('supplied-only', 'web-allowed', 'unspecified'), default='unspecified')
     create.add_argument('--stop', choices=('draft', 'outline', 'review', 'brief'))
     show = articles.add_parser('show');show.add_argument('--id', required=True)
+    rename = articles.add_parser('rename');rename.add_argument('--id', required=True);rename.add_argument('--title', required=True)
+    author = articles.add_parser('author');author.add_argument('--id', required=True);author.add_argument('--name', required=True)
+    for operation in ('remember', 'forget'):
+        memory = articles.add_parser(operation); memory.add_argument('--id', required=True)
+        memory.add_argument('--key', required=True)
+        if operation == 'remember':
+            memory.add_argument('--file', required=True)
+    detach = articles.add_parser('detach-context');detach.add_argument('--id', required=True)
+    detach.add_argument('--item', required=True)
     attach = articles.add_parser('attach');attach.add_argument('--id', required=True);attach.add_argument('--source', required=True)
     attach.add_argument('--purpose', action='append', choices=PURPOSES)
     save = articles.add_parser('save');save.add_argument('--id', required=True)
@@ -505,7 +537,10 @@ def main():
     root = root.resolve()
     from hub_store import HubError
     try:
-        if args.group == 'init':
+        if args.group in ('home', 'context', 'readiness'):
+            from experience import command
+            result = command(root, args)
+        elif args.group == 'init':
             result = initialize(root)
         else:
             if not (root / 'studio.json').is_file():

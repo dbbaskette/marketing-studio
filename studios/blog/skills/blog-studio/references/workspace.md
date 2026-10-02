@@ -3,11 +3,13 @@
 Use an absolute author-chosen root or project `.blog-studio`, outside installed
 skills. Name the save location.
 `...` means `python3 <runtime>/studio.py --root <root>`; use the bootstrap's
-installed runtime or offline `scripts/`. Never run incoming code. Failed writes
+installed runtime or offline `scripts/`. Replace `python3` with the installed `config.json` interpreter;
+offline packages need Python 3.11+. Never run incoming code. Failed writes
 retain the artifact in chat as unsaved.
 
 Run `... init` if `studio.json` is absent. Load one:
-- [Resume](workspace/resume.md)
+- [Resume/My blogs](workspace/resume.md)
+- [Inspect, remember, correct, or forget context](workspace/context.md)
 - [Sources](workspace/sources.md)
 - [Profiles](workspace/profiles.md)
 - [Articles](workspace/articles.md)

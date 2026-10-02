@@ -23,7 +23,7 @@ class BundleTests(unittest.TestCase):
                 for item in archive.infolist():
                     source = REPO / item.filename.removeprefix('blog-studio-setup/')
                     self.assertEqual(archive.read(item), source.read_bytes(), item.filename)
-                for name in ('Install Blog Studio.command', 'install.sh'):
+                for name in ('Install Blog Studio.command', 'install.sh', 'google-setup.sh'):
                     launcher = archive.getinfo('blog-studio-setup/installer/' + name)
                     self.assertTrue((launcher.external_attr >> 16) & 0o111)
                 archive.extractall(base / 'expanded with spaces')
@@ -46,9 +46,12 @@ class BundleTests(unittest.TestCase):
             self.assertIn('unrecognized arguments', invalid.stderr)
             runtime = (home / '.agents/skills/blog-studio/scripts').resolve()
             self.assertIn('Team Hub',run(sys.executable,str(runtime/'hub.py'),'--help'))
-            for helper in ('hub_store.py','hub_workspace.py','google_workflow.py'):
+            for helper in ('hub_store.py','hub_workspace.py','google_workflow.py','experience.py','hub_browse.py','google_drive.py'):
                 self.assertTrue((runtime/helper).is_file())
             self.assertIn('prepare',run(sys.executable,str(runtime/'studio.py'),'--root',str(base/'unused'),'google','--help'))
+            fresh = base / 'not-created'
+            self.assertEqual(json.loads(run(sys.executable,str(runtime/'studio.py'),'--root',str(fresh),'home'))['workspace_status'],'new')
+            self.assertFalse(fresh.exists())
             self.assertEqual(runtime, (home / '.claude/skills/blog-studio/scripts').resolve())
             remote = base / 'fixture repository'
             remote.mkdir()

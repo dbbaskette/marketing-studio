@@ -12,7 +12,9 @@ implementation requests are not real article requests.
 | Interview me | One focused question per turn | Outline; draft if requested |
 | Discover an idea | Strategy | Options/brief; continue if requested |
 
-Offer these six choices only for an open-ended start. Offer sources once when
+For “continue” or “My blogs,” use [resume](workspace/resume.md) before new-task
+guidance or intake. For an open-ended start, offer “Continue saved work” alongside
+these six choices. Offer sources once when
 unanswered: attach files, paste notes, share links, reuse material, or proceed
 without sources. Ask for uploads in normal chat, not a text-only widget; wait
 for promised files. Reuse supplied material; distinguish evidence, inspiration,
@@ -23,8 +25,6 @@ saved voice, learn my voice, described tone, or a conversational default.
 No profile is required. Standalone voice setup creates no article; its focused
 reference handles LinkedIn background and authored blog links/samples.
 
-Ask only for consequential missing context. Record topic, reader, takeaway,
-format/length, research policy, voice, selected material, required points, and
-stop; unknowns can remain unknown. First-draft mode may outline internally and
-continue without approval. Outline-only ends before drafting. Deliver the
+Record the brief and stop using only consequential questions. Draft requests
+can continue from the internal outline. Outline-only ends before drafting. Deliver the
 chosen artifact and open issues; suggest further work without starting it.

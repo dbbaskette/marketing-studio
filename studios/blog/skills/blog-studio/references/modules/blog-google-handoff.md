@@ -15,10 +15,13 @@
    conflict, follow [return](blog-google-return.md) first. The returned revision
    guard is mandatory for the native write; a hash cannot substitute for it.
    If guarding is unavailable, offer a new copy and retain the working Doc.
-3. Load the installed Google Docs skill and select its current creation route.
+3. With a connector, load its installed Google Docs skill and current creation
+   route. With gcloud, follow the [local adapter](../google/gcloud.md) import
+   route and its operation receipt; no separate Google skill is required.
    A constrained template uses [native template reuse](blog-google-template.md).
    Basic blank creation and polished import routes follow the active provider
-   skill; don't install another CLI or hardcode an outdated import requirement.
+   skill. Setup follows the user's selected connection; never install tools merely
+   because a handoff was requested.
    Retain native headings, lists, links, tables and requested media. Never
    replace a whole existing Doc to update one section or selected tab.
 4. Write only the prepared copy. For an existing Doc, use trusted read/current
