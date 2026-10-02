@@ -10,9 +10,9 @@ use MIT licenses, retained next to their snapshots:
 The original skill documents are copied byte-for-byte as `SOURCE.md`; only their
 filename changes. Their supporting reference, template, and evaluation files
 are retained in the original directory layout. Renaming avoids presenting
-archival source documents as additional installed skill entry points. The thin
-module wrappers are the intended interfaces. Originals remain available for
-comparison or later synthesis; their runtime instructions are not automatically
+archival source documents as additional installed skill entry points. The maintained
+module guides are the intended interfaces. Four craft modules now distill their
+routine workflow; originals remain optional for comparison or deeper study; their runtime instructions are not automatically
 adopted by this package.
 
 ## Path resolution

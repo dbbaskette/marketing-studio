@@ -14,7 +14,7 @@ example, an objection/counterpoint, and the intended takeaway only where missing
 An experience can remain the author's reported experience; do not upgrade it to
 independent evidence or manufacture anecdotes for narrative texture.
 
-Save meaningful answers and the pending question using [workspace](../workspace.md).
+Save meaningful answers and the pending question using [article checkpoints](../workspace/articles.md).
 Resume from that question after interruption. Transition when enough substance
 exists, with a short explanation; there is no fixed number of interview turns.
 Load [argument outline](blog-argument-outline.md) then. Stop at the outline unless

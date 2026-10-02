@@ -32,7 +32,7 @@ do not pretend the dependency-free storage helper extracts those formats.
 Select only material relevant to the current article/stage. The source library
 can grow without every source entering every prompt. Read full evidence when
 checking a specific claim. Keep excerpts linked to their original record.
-Use the [workspace helper](workspace.md) to record source files and attach
+Use the [source storage](workspace/sources.md) to record source files and attach
 selected items. Do not automatically ingest an entire directory or account.
 
 Apply [data boundaries](privacy.md) before external extraction, public research,

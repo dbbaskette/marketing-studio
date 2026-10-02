@@ -19,7 +19,7 @@ A useful section plan names its title, unique contribution, relation to the prio
 section, evidence/examples, and what belongs elsewhere. Mark unsupported areas
 as research needs; do not invent supporting facts. Opening and first section
 should progress rather than repeat each other. Save the outline/checkpoint via
-[workspace](../workspace.md); outline-only mode stops here.
+[article storage](../workspace/articles.md); outline-only mode stops here.
 
 The [BlogForge outline prompt](../blogforge/generate/prompts/outline.j2) supplies
 conditional detail. Its JSON/Jinja contract is optional here. Templates from

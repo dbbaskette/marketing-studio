@@ -20,7 +20,7 @@ sources if useful, but do not return a clean bill of health. Unsupported means
 not established by selected evidence, not necessarily false. Outside verification
 is a distinct operation requiring available research tools and permitted scope.
 
-Save factual-support results through [workspace](../workspace.md). Include source
+Save factual-support results through [review storage](../workspace/reviews.md). Include source
 IDs and supporting excerpts/locations in findings; record incomplete coverage or
 source truncation. Never manufacture source names, quotations, or favorable verdicts.
 

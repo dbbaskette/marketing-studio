@@ -9,7 +9,10 @@ references; Blog Studio controls conversation, scope, and continuity.
 [sources.lock.json](../sources.lock.json) records the unchanged upstream files.
 [blogforge.lock.json](../blogforge.lock.json) records the inspected BlogForge
 revision and seven copied instruction assets. Adapted module text is authored
-for this package; BlogForge servers, accounts, APIs, and model providers are not
+for this package. The writing, editing, strategy, and copywriting modules are
+concise working guides with optional upstream depth; workspace operations load
+through focused references. Routine work does not require those four originals.
+BlogForge servers, accounts, APIs, and model providers are not
 required. Use the host's model and actual available tools.
 
 Local helper scripts require Python 3.10+ and the standard library. They do not

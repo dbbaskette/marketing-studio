@@ -17,7 +17,7 @@ list as an authorship detector. Do not infer professional facts from prose style
 
 An audition rewrites a short supplied passage without adding or dropping facts.
 Accept the author's corrections. Save selected sample IDs, guide, background,
-explicit rules, and confirmation state using [workspace](../workspace.md).
+explicit rules, and confirmation state using [profile storage](../workspace/profiles.md).
 Article selection pins a revision. Export a portable guide when requested.
 
 Adapted from BlogForge's voice distillation, fingerprint, audition, guide export,

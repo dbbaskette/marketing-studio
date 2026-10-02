@@ -63,15 +63,17 @@ These stages adapt to your request. A clear draft request can continue through a
 
 The parent now names required capability reads and conditional support reads explicitly. Parent plus entry flow is approximately **1,195 tokens**, down from 2,329 (49% less). See the [M1 validation record](docs/m1-entry-validation.md).
 
-Progressive disclosure keeps the full reference library available while selecting guidance for the current operation. The library contains approximately **167.2k estimated tokens**; a normal route reads a subset.
+M2 now loads **450–498 tokens** for a routine continuity operation, including its small router. M3 supplies concise writing, editing, strategy, and title guides; the original sources remain optional. See the [combined validation record](docs/m2-m3-validation.md).
+
+Progressive disclosure keeps the full reference library available while selecting guidance for the current operation. The library contains approximately **170.6k estimated tokens**; a normal route reads a subset. The total grows slightly because it includes both the retained originals and the new working guides.
 
 | Route | Current managed guidance | Offline target after roadmap |
 |---|---:|---:|
-| Outline with sources | 5.5k | 2–3k |
-| First draft with sources | 12.1k | 3–5k |
-| Quick edit | 9.1k | 2.5–4k |
-| Voice setup | 6.1k | 2–3.5k |
-| Comprehensive review | 11.5k | 4–6k |
+| Outline with sources | 4.4k | 2–3k |
+| First draft with sources | 6.0k | 3–5k |
+| Quick edit | 5.4k | 2.5–4k |
+| Voice setup | 4.8k | 2–3.5k |
+| Comprehensive review | 7.5k | 4–6k |
 
 The installed bootstrap is approximately **857 tokens**. Current route figures include it plus the selected repository guidance; offline targets and the full library total exclude the bootstrap. Downloading that library does not load it into context.
 
@@ -138,12 +140,11 @@ The six routes, fourteen capability modules, local continuity helpers, and porta
 
 | Next milestone | Estimated development tokens |
 |---|---:|
-| Distill craft guides and split continuity instructions | 32–55k |
 | Scope review and evidence reads | 10–18k |
 | Complete route/discovery and clean-machine newcomer pilots | 12–22k |
 | Google Docs intake, review handoff, and return (first slice) | 15–25k |
 
-The repository bootstrap is delivered. It adds quiet updates and task pins; reducing the underlying operational guidance remains a separate refinement. Development ranges are planning estimates, with overlapping pilot work excluded from additive totals. See the [progressive roadmap](docs/progressive-disclosure-roadmap.md) and [Google Docs roadmap](docs/google-docs-roadmap.md).
+The repository bootstrap and M1–M3 guidance refinements are delivered. M4 will further scope review/evidence reads; M5 validates the full conversational experience. Development ranges are planning estimates, with overlapping pilot work excluded from additive totals. See the [progressive roadmap](docs/progressive-disclosure-roadmap.md) and [Google Docs roadmap](docs/google-docs-roadmap.md).
 
 ## Verify and package
 

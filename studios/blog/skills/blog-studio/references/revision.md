@@ -11,7 +11,7 @@ Extend [copy-editing](modules/copy-editing.md) according to the request:
   full draft available, preserving consistent terms, stance, and transitions.
 
 Preserve the imported original and snapshot prior artifacts using
-[workspace](workspace.md). For feedback-only, do not replace the manuscript.
+[article storage](workspace/articles.md). For feedback-only, do not replace the manuscript.
 For direct edits, apply the already requested change without requiring approval
 for every sentence. Show meaningful before/after passages or a diff when helpful.
 Keep revisions reversible; explicit restoration creates a new revision rather

@@ -34,7 +34,7 @@ requests saving it, save; otherwise a setup task may save a provisional profile
 and label it clearly until the audition is confirmed. Do not invent a confirmed
 voice or train it on generated samples automatically.
 
-[Workspace](workspace.md) stores each profile revision with its guide, background,
+[Profile storage](workspace/profiles.md) stores each profile revision with its guide, background,
 explicit rules, sample IDs, and provisional/confirmed state. Articles select a
 specific revision. A later profile change affects new articles, not an existing
 article's pinned voice; switching an existing article's voice is deliberate.

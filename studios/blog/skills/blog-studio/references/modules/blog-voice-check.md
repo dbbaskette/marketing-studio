@@ -12,7 +12,7 @@ restrictions, repeated distinctive phrases, near-duplicate paragraphs, and echoe
 section entrances. A useful finding names the passage, rule/reason, proposed fix,
 and any uncertainty. Generic vocabulary alone does not establish AI authorship.
 
-Use `scripts/text_checks.py` through [workspace](../workspace.md) for mechanical
+Use `scripts/text_checks.py` through [mechanical checks](../workspace/checks.md) for mechanical
 rule and repetition findings. Read the [pattern reference](../blogforge/voice/assets/ai-tells/patterns.md)
 only for a requested deeper editorial review. The bundled word/phrase lists are
 optional heuristics, not automatic author restrictions. Punctuation bans apply

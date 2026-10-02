@@ -18,7 +18,7 @@ Source changes stale factual-support and GEO. Draft changes stale all five.
 Changing a pinned voice revision stales voice-sensitive checks. A profile update
 that an article has not adopted does not invalidate that article's voice.
 
-Save each requested check's result and input fingerprints via [workspace](workspace.md).
+Save each requested check's result and input fingerprints via [review storage](workspace/reviews.md).
 Reuse current results; reopen/check affected areas after a real change, not
 because the author reopened a chat. Report exact passages, why they matter,
 proposed changes, and unresolved evidence. Prioritize contradictions before
