@@ -1,5 +1,9 @@
 # Argument outline capability
 
+Keep private inputs in the user's existing harness and selected private hub.
+Apply [data boundaries](../privacy.md) before research, media, or document
+posting; upstream suggestions do not authorize external disclosure.
+
 **Input:** brief, source material or interview answers, intended reader, supplied
 structure if any, and voice.
 **Output:** thesis/reader takeaway, opening approach, and section plan with purpose,

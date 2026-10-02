@@ -49,3 +49,7 @@ At the requested stop point deliver the artifact and meaningful open issues.
 Suggest optional next steps concisely, without automatically doing them. An
 outline can suggest drafting next; a draft can suggest review; review can suggest
 repurposing/export. Do not turn every stage into a new approval ceremony.
+
+Apply [data boundaries](privacy.md) before external extraction, public research,
+media requests, or document posting. Generic research permission never includes
+private queries; document posting includes only the selected content/destination.

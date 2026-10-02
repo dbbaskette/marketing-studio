@@ -1,5 +1,9 @@
 # Source intake capability
 
+Keep private inputs in the user's existing harness and selected private hub.
+Apply [data boundaries](../privacy.md) before research, media, or document
+posting; upstream suggestions do not authorize external disclosure.
+
 **Input:** supplied files, links, notes, reuse selections, and item purposes.
 **Output:** selected source records plus readable content, provenance, and gaps.
 

@@ -1,5 +1,9 @@
 # Repurposing capability
 
+Keep private inputs in the user's existing harness and selected private hub.
+Apply [data boundaries](../privacy.md) before research, media, or document
+posting; upstream suggestions do not authorize external disclosure.
+
 **Input:** complete source article, voice, requested channels/length, actual post
 URL if available.
 **Output:** channel-specific text plus length results and any unresolved links.

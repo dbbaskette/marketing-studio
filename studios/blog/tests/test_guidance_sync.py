@@ -66,6 +66,18 @@ class SyncTests(unittest.TestCase):
         self.assertLess(len(json.dumps(b)), 800)
         self.assertNotIn('Updated guidance', json.dumps(b))
 
+    def test_imported_article_restores_exact_approved_history_and_rejects_side_branch(self):
+        original=self.start()['revision']
+        self.write('skills/blog-studio/SKILL.md','New approved instructions.')
+        self.commit();self.start()
+        restored=sync.start(self.workspace,source=str(self.remote),revision=original)
+        self.assertEqual(restored['revision'],original)
+        self.assertEqual(Path(restored['guidance']).read_text(),'First guidance.')
+        self.run_git('checkout','-b','unapproved')
+        self.write('skills/blog-studio/SKILL.md','Unapproved instructions.')
+        unapproved=self.commit();self.run_git('checkout','main')
+        with self.assertRaises(sync.SyncError):sync.start(self.workspace,source=str(self.remote),revision=unapproved)
+
     def test_cached_fallback_is_explicit_and_fetch_failure_preserves_pin(self):
         a = self.start()
         with self.assertRaises(sync.SyncError):

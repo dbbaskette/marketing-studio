@@ -1,5 +1,9 @@
 # Voice profile capability
 
+Keep private inputs in the user's existing harness and selected private hub.
+Apply [data boundaries](../privacy.md) before research, media, or document
+posting; upstream suggestions do not authorize external disclosure.
+
 **Input:** confirmed authored samples, author background, explicit preferences,
 and an existing profile if any.
 **Output:** an observed style guide, short audition, and reusable profile revision.

@@ -76,3 +76,9 @@ folders, review module compatibility, regenerate source hashes and dependency
 records, validate, and rebuild the archive. Do not mix files from unrecorded
 commits. The lock file is maintained provenance metadata, not a tamper-proof
 signature.
+
+## Privacy boundary
+
+Apply [data boundaries](privacy.md) when borrowing upstream techniques.
+Original service examples are archival instructions, not installed integrations
+or authorization to send private content elsewhere.

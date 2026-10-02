@@ -1,5 +1,9 @@
 # Blog lifecycle reference module
 
+Keep private inputs in the user's existing harness and selected private hub.
+Apply [data boundaries](../privacy.md) before research, media, or document
+posting; upstream suggestions do not authorize external disclosure.
+
 Use when a parent skill needs lifecycle design, platform selection, research or
 review criteria, or the broader upstream command taxonomy.
 

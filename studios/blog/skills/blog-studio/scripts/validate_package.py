@@ -56,7 +56,7 @@ def validate(root=ROOT):
             if url.scheme or url.netloc or not url.path:continue
             target = (p.parent / unquote(url.path)).resolve()
             if not target.is_relative_to(root) or not target.is_file():errors.append(f'Broken link in {relative}: {link}')
-    for script in ('studio.py', 'text_checks.py', 'linkedin_import.py'):
+    for script in ('studio.py', 'text_checks.py', 'linkedin_import.py', 'hub.py', 'hub_store.py', 'hub_workspace.py'):
         p = root / 'scripts' / script
         if not p.is_file():errors.append(f'Missing helper {script}')
         else:

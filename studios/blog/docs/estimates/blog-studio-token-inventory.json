@@ -4,9 +4,9 @@
   "excluded": "host context, conversation, author data, outputs, scripts, licenses, metadata, locks, preview",
   "files": {
     "SKILL.md": {
-      "characters": 5269,
-      "estimated_tokens": 1318,
-      "sha256": "997b675dafb8e83cab0514f81808a15e14b86a51bf8b2df837d34310c0189aff"
+      "characters": 6002,
+      "estimated_tokens": 1501,
+      "sha256": "b02a3e96e0ae35dea663cbde3919a4f54f10d3be4007dfe177f3fe4bea3ed6ea"
     },
     "references/blogforge/generate/prompts/document.j2": {
       "characters": 2237,
@@ -49,14 +49,14 @@
       "sha256": "c83864165a76b39c77b6e5b0d9548e9c6f0af60ba8abdcbd9aa76a43bf5a9cdf"
     },
     "references/entry-flows.md": {
-      "characters": 3066,
-      "estimated_tokens": 767,
-      "sha256": "17c542fe943da3c1992d1fa13f6e2eca4ff77d55a1f2179ae8c0118281fcc46a"
+      "characters": 3310,
+      "estimated_tokens": 828,
+      "sha256": "719c53b7e8581f91fed565b82e73101a256a1ce148e25a7654985a2aef32a4a8"
     },
     "references/export.md": {
-      "characters": 789,
-      "estimated_tokens": 198,
-      "sha256": "9b080251b31c801868b6ad5695544275c16f4d7b7d73a9d1540ecb8b18ad0763"
+      "characters": 1033,
+      "estimated_tokens": 259,
+      "sha256": "41745f83d95c619377a1b4ef3d26508d01005955b12a53c3c3553a5e8d3d7801"
     },
     "references/headline-lab.md": {
       "characters": 574,
@@ -64,9 +64,9 @@
       "sha256": "4dc9950a24602bd49d17149ec36bdfbf43b72dd400a549c6281910a97f590ac8"
     },
     "references/intake.md": {
-      "characters": 2064,
-      "estimated_tokens": 516,
-      "sha256": "7ad892a447f023bb165f261f78695864cf01ee03c5b8fe3dcf0920c5a0bfbc40"
+      "characters": 2308,
+      "estimated_tokens": 577,
+      "sha256": "7c7f1ff5081f48a81d9e6181cd95e1487e13e31c7ed4a35e7384c7406859b766"
     },
     "references/library-notes.md": {
       "characters": 4202,
@@ -74,79 +74,79 @@
       "sha256": "3154c763acd361aaa30f7cdeaf75d15ffc7fda9c8caf6cdee2f2073ee9ef8eeb"
     },
     "references/modules/blog-argument-outline.md": {
-      "characters": 1296,
-      "estimated_tokens": 324,
-      "sha256": "5a64ac9411c171951e8612feb9c09777af54e7d3a524347ebe5e451fb1160ea9"
+      "characters": 1517,
+      "estimated_tokens": 380,
+      "sha256": "66282b5bdc9872decd05fa6726a89f78ecb8179eb0819244b791717ccb28ab67"
     },
     "references/modules/blog-author-interview.md": {
-      "characters": 1097,
-      "estimated_tokens": 275,
-      "sha256": "f531f3c7a0c372df60c29936f497dfa6c2c783cd16b3df07c84bd4654f06a9e9"
+      "characters": 1318,
+      "estimated_tokens": 330,
+      "sha256": "b32e6faa191cd76e134eb7a034c2634c885eb5f4140af4ba33349efbecf8c1dd"
     },
     "references/modules/blog-fact-check.md": {
-      "characters": 1357,
-      "estimated_tokens": 340,
-      "sha256": "c5fcc6da45b16832bc551f2629cef44fc8bb34dc4ecf74117f66112688d705ff"
+      "characters": 1578,
+      "estimated_tokens": 395,
+      "sha256": "57159fe2e1f08e6b1e2eb4fcb9081d4bd61fda3134244777dfcbff606faab375"
     },
     "references/modules/blog-geo-review.md": {
-      "characters": 1375,
-      "estimated_tokens": 344,
-      "sha256": "5ad27654bd7e32faea3de331661e7944a43bb098eac96d01e0d6d25a0d6600c7"
+      "characters": 1596,
+      "estimated_tokens": 399,
+      "sha256": "7629ccb9d2947ea78150b473fb592154d0428d7f354babac3f56c6e9ccce57bd"
     },
     "references/modules/blog-humanize.md": {
-      "characters": 1319,
-      "estimated_tokens": 330,
-      "sha256": "2ba3c7d02ec0868ba13690fd44960ce6f91046e79e5c070c12d9e47b1acb5fbe"
+      "characters": 1540,
+      "estimated_tokens": 385,
+      "sha256": "f6207deb2dcca0beed12625f36ea5855f88bbf60fd2124882137e3273a2ffeeb"
     },
     "references/modules/blog-repurpose.md": {
-      "characters": 1490,
-      "estimated_tokens": 373,
-      "sha256": "675e1e28c686c470e2c192e6357fbd8b8a47691b3cd763baaa48944b3958dee7"
+      "characters": 1711,
+      "estimated_tokens": 428,
+      "sha256": "856b24f92ce573f6f715231ebe737136a009533ba1d86cd474eafc57501fe755"
     },
     "references/modules/blog-source-intake.md": {
-      "characters": 1058,
-      "estimated_tokens": 265,
-      "sha256": "c0c88caf29bb500410bf56e6c291125a334ea167409c515bfe90a4ac16e0af08"
+      "characters": 1279,
+      "estimated_tokens": 320,
+      "sha256": "16eca55df7b30042411ce08395c10e4fb89b3a8b1dffa9b854e638aa8826ad13"
     },
     "references/modules/blog-voice-check.md": {
-      "characters": 1253,
-      "estimated_tokens": 314,
-      "sha256": "0987d009597726963081d4882d1cd4c1ca69a785f97925660e5a96ace8a6c4d9"
+      "characters": 1474,
+      "estimated_tokens": 369,
+      "sha256": "d171664559e6bb6165148a0e107597bc4701a8ea9245d0c8fead9315d0363f92"
     },
     "references/modules/blog-voice-profile.md": {
-      "characters": 1253,
-      "estimated_tokens": 314,
-      "sha256": "80ef052aa67f21cd0b62cf06134030de4083a5c3c9fbf1d7e3f460a190e85add"
+      "characters": 1474,
+      "estimated_tokens": 369,
+      "sha256": "e2eff886f94b87d866b4b5454f8663a388e45fc090758c5bbb366344ad4f45fc"
     },
     "references/modules/blog-write.md": {
-      "characters": 2385,
-      "estimated_tokens": 597,
-      "sha256": "126b0a1655715a67703c228d798989d5ed75e33c54acde088ccf347ce6781300"
+      "characters": 2606,
+      "estimated_tokens": 652,
+      "sha256": "a399403068019fc86943cf3f10249cbc0696a58b533b44912613a55be9ca84a0"
     },
     "references/modules/blog.md": {
-      "characters": 2103,
-      "estimated_tokens": 526,
-      "sha256": "94deb5c3a39724f591730432240f09c5b5c8b74fa1a23410512603197d5cad7a"
+      "characters": 2324,
+      "estimated_tokens": 581,
+      "sha256": "a671e1d81ef74abeca3beeb275375277288eb20dcc4131ff5d89fa506952336c"
     },
     "references/modules/content-strategy.md": {
-      "characters": 1396,
-      "estimated_tokens": 349,
-      "sha256": "f535aadf0224831f9773bef99bf89da00ec652eee02ce0ab3f07e982e123c24c"
+      "characters": 1617,
+      "estimated_tokens": 405,
+      "sha256": "8cc18aa4febbfbeeb28b0414625256f82eba7fd9fab99567d7d7e61c20d577ca"
     },
     "references/modules/copy-editing.md": {
-      "characters": 1703,
-      "estimated_tokens": 426,
-      "sha256": "ee69873bc3e5a57f54213b068276e9109418cf627f0a299505b71d3030bf2bec"
+      "characters": 1924,
+      "estimated_tokens": 481,
+      "sha256": "6a393453b41ed8cd9d21c2c260e0cdf3459ff069dc42375b02a8eb934790eda7"
     },
     "references/modules/copywriting.md": {
-      "characters": 1351,
-      "estimated_tokens": 338,
-      "sha256": "0ced483cee504f1cdd6053cfb073b1abbf8cd32c4a2d5f84c180c3e2a6c37bd3"
+      "characters": 1572,
+      "estimated_tokens": 393,
+      "sha256": "6d74d523989ebfe0a7bacdbff11a60bc29d0c114fd56ec151742f60e1bb1f605"
     },
     "references/package-notes.md": {
-      "characters": 1733,
-      "estimated_tokens": 434,
-      "sha256": "0685af8dc696aa20c5c612b9d4f82ce7990d7780e8b0978f77d40572e21997b3"
+      "characters": 1959,
+      "estimated_tokens": 490,
+      "sha256": "beed5246bc1704962ec9d3db72feebfa9ecb717ce54f79e2f79091f6cd00d399"
     },
     "references/review.md": {
       "characters": 1577,
@@ -399,12 +399,37 @@
       "sha256": "e3baec1f818e887e3ee2691785e0777873928e572fcf1862548a380d4f588584"
     },
     "references/workspace.md": {
-      "characters": 7893,
-      "estimated_tokens": 1974,
-      "sha256": "4a97e41836d798999d76d6a0ddfcf94a4daf533f51faa30414974dfe21ed6e10"
+      "characters": 8786,
+      "estimated_tokens": 2197,
+      "sha256": "631e6d6a2dc6be216df24b5dbe74c6b81e649aff3434ef1ca88d7aee9dfbf8f6"
+    },
+    "references/hub/memory.md": {
+      "characters": 3077,
+      "estimated_tokens": 770,
+      "sha256": "19664c5562b5c46999f1e38e66663008f2e1fbe972fe7ab8438ea5ec1d71c939"
+    },
+    "references/hub/setup.md": {
+      "characters": 2812,
+      "estimated_tokens": 703,
+      "sha256": "1839155e8620cd112006452b15bc713febcc828128c3052760f3ade990bfd5ab"
+    },
+    "references/hub/sync.md": {
+      "characters": 2775,
+      "estimated_tokens": 694,
+      "sha256": "295733ef10fae5d3324654431cad162923b0bdcab3197974f7420e5ee8768805"
+    },
+    "references/hub/workflow.md": {
+      "characters": 2586,
+      "estimated_tokens": 647,
+      "sha256": "c509d02c2c105bc23c6162e4eb0c5510891242ab8f11c6a5a2eb02919ebdf5c0"
+    },
+    "references/privacy.md": {
+      "characters": 4006,
+      "estimated_tokens": 1002,
+      "sha256": "304d920abc108b45024a80cfe236fe38600ff2f0a264d994c1d33e488c250103"
     }
   },
-  "library_tokens": 163078,
+  "library_tokens": 168311,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -415,7 +440,7 @@
         "references/modules/blog-source-intake.md",
         "references/modules/blog-argument-outline.md"
       ],
-      "estimated_tokens": 5164
+      "estimated_tokens": 5803
     },
     "first_draft_with_sources": {
       "files": [
@@ -429,7 +454,7 @@
         "references/upstream/claude-blog/skills/blog-write/SOURCE.md",
         "references/composition.md"
       ],
-      "estimated_tokens": 11660
+      "estimated_tokens": 12354
     },
     "quick_edit": {
       "files": [
@@ -441,7 +466,7 @@
         "references/revision.md",
         "references/modules/blog-voice-check.md"
       ],
-      "estimated_tokens": 8824
+      "estimated_tokens": 9401
     },
     "voice_setup": {
       "files": [
@@ -453,7 +478,7 @@
         "references/voice-flow.md",
         "references/modules/blog-voice-profile.md"
       ],
-      "estimated_tokens": 5781
+      "estimated_tokens": 6419
     },
     "comprehensive_review": {
       "files": [
@@ -470,13 +495,43 @@
         "references/blogforge/voice/assets/humanize/lenses.md",
         "references/modules/blog-geo-review.md"
       ],
-      "estimated_tokens": 11082
+      "estimated_tokens": 11824
     }
   },
   "bootstrap": {
     "path": "bootstrap/blog-studio/SKILL.md",
-    "estimated_tokens": 697,
-    "sha256": "38a3183c3f694350feb2ef492a32ef45e82793230e354de3bab2fa4b17491e00",
+    "estimated_tokens": 1018,
+    "sha256": "1815bcabdb85c6dbdc6ee8b3413f69fd1f6ecc3fbeca9c12a9545a53c4988adb",
     "note": "Added to repository-guidance routes; excluded from the full offline corpus."
+  },
+  "team_hub_routes": {
+    "setup": {
+      "files": [
+        "references/hub/workflow.md",
+        "references/hub/setup.md"
+      ],
+      "estimated_tokens": 1350
+    },
+    "memory": {
+      "files": [
+        "references/hub/workflow.md",
+        "references/hub/memory.md"
+      ],
+      "estimated_tokens": 1417
+    },
+    "sync": {
+      "files": [
+        "references/hub/workflow.md",
+        "references/hub/sync.md"
+      ],
+      "estimated_tokens": 1341
+    }
+  },
+  "conditional_privacy_reference": {
+    "files": [
+      "references/privacy.md"
+    ],
+    "estimated_tokens": 1002,
+    "note": "Load before upstream service instructions or external research/media/posting; essential boundary is always in the parent."
   }
 }

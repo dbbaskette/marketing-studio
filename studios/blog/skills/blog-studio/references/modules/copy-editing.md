@@ -1,5 +1,9 @@
 # Copy editing module
 
+Keep private inputs in the user's existing harness and selected private hub.
+Apply [data boundaries](../privacy.md) before research, media, or document
+posting; upstream suggestions do not authorize external disclosure.
+
 Use for polishing, proofreading, editorial review, or refreshing existing blog
 content while preserving its central message and voice.
 

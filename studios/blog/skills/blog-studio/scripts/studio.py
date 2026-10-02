@@ -277,7 +277,8 @@ def fingerprints(root, directory, record):
     evidence = evidence_state(root, record)
     return {'draft': artifact_fingerprint(directory, 'DRAFT.md'), 'voice': record['voice'],
             'evidence': digest(json.dumps(evidence, sort_keys=True).encode()),
-            'guidance': (record.get('guidance') or {}).get('revision')}
+            'guidance': (record.get('guidance') or {}).get('revision'),
+            'hub_context': digest(json.dumps(record['hub_context']['selected'], sort_keys=True).encode()) if record.get('hub_context') else None}
 
 
 def ready_evidence(root, record):
@@ -296,7 +297,7 @@ def freshness(root, directory, record):
             reviews[check] = {'status': 'not-run'}
             continue
         shown = dict(saved)
-        keys = ('draft', 'voice', 'guidance', 'evidence') if check in SOURCE_CHECKS else ('draft', 'voice', 'guidance')
+        keys = ('draft', 'voice', 'guidance', 'hub_context', 'evidence') if check in SOURCE_CHECKS else ('draft', 'voice', 'guidance', 'hub_context')
         if any(saved['inputs'].get(key) != current[key] for key in keys):
             shown['status'] = 'stale'
             shown['previous_status'] = saved['status']
@@ -369,6 +370,22 @@ def article_command(root, args):
         record['pending_question'] = args.pending_question
         if args.stop:
             record['stop_point'] = args.stop
+    elif args.action == 'context':
+        from hub_workspace import active
+        adapter = active(root)
+        if adapter is None:
+            raise ValueError('Select a Team Hub before attaching shared context.')
+        context = read_json(Path(args.file))
+        if context.get('hub') != adapter.hub.id or context.get('conflicts') or context.get('truncated'):
+            raise ValueError('Choose context from this hub and resolve applicable rule conflicts first.')
+        graph = adapter.hub.graph()
+        selected = []
+        for reference in context.get('selected', []):
+            shared = graph['revisions'].get(reference.get('revision'))
+            if not shared or shared['item'] != reference.get('item') or shared['kind'] not in ('rule', 'context'):
+                raise ValueError('A selected shared context revision is unavailable.')
+            selected.append({'item': shared['item'], 'revision': shared['revision']})
+        record['hub_context'] = {'hub': adapter.hub.id, 'revision': context['revision'], 'selected': selected}
     elif args.action == 'guidance':
         if not re.fullmatch(r'[0-9a-f]{32}', args.task):
             raise ValueError('Invalid guidance task ID.')
@@ -380,9 +397,10 @@ def article_command(root, args):
                     'freshness': 'cached' if args.cached else 'pinned'}
         previous = record.get('guidance')
         if previous and previous['task'] != args.task:
-            if not args.adopt:
+            if previous['revision'] != pin['revision'] and not args.adopt:
                 raise ValueError('This article already has a guidance pin. Use --adopt only for an author-requested refresh.')
-            record.setdefault('guidance_history', []).append(previous)
+            if previous['revision'] != pin['revision']:
+                record.setdefault('guidance_history', []).append(previous)
         record['guidance'] = selected
     elif args.action == 'note':
         target = inside(directory, 'INTERVIEW.md' if args.kind == 'interview' else 'DECISIONS.md')
@@ -463,6 +481,7 @@ def parser():
     progress.add_argument('--stage', choices=('intake', 'interview', 'brief', 'outline', 'draft', 'review', 'complete'), required=True)
     progress.add_argument('--next-step', required=True);progress.add_argument('--pending-question')
     progress.add_argument('--stop', choices=('draft', 'outline', 'review', 'brief'))
+    context = articles.add_parser('context');context.add_argument('--id', required=True);context.add_argument('--file', required=True)
     guidance = articles.add_parser('guidance');guidance.add_argument('--id', required=True);guidance.add_argument('--task', required=True)
     guidance.add_argument('--adopt', action='store_true');guidance.add_argument('--cached', action='store_true')
     note = articles.add_parser('note');note.add_argument('--id', required=True);note.add_argument('--kind', choices=('interview', 'decision'), required=True);note.add_argument('--text', required=True)
@@ -480,6 +499,7 @@ def main():
     if not root.is_absolute():
         p.error('--root must be absolute')
     root = root.resolve()
+    from hub_store import HubError
     try:
         if args.group == 'init':
             result = initialize(root)
@@ -496,8 +516,18 @@ def main():
                 elif args.group == 'profile': result = profile_command(root, args)
                 elif args.group == 'source': result = source_command(root, args)
                 else: result = article_command(root, args)
+                if args.group in ('profile', 'source', 'article') and args.action != 'show':
+                    from hub_workspace import active
+                    from hub_store import HubError
+                    try:
+                        adapter = active(root)
+                        if adapter:
+                            result['hub_sync'] = adapter.publish_mutation(args.group, result)
+                    except HubError as exc:
+                        result['hub_sync'] = {'status': 'local-saved-not-shared', 'error': str(exc),
+                            'next_step': 'Retry the selected workspace import after resolving the hub issue.'}
         print(json.dumps(result, indent=2, ensure_ascii=False))
-    except (OSError, ValueError, KeyError) as exc:
+    except (HubError, OSError, ValueError, KeyError) as exc:
         print(f'Blog Studio: {exc}', file=sys.stderr)
         return 1
     return 0

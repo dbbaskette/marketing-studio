@@ -20,7 +20,7 @@ Setup verifies the local files and links and runs the helpers in a disposable wo
 | Python 3.11 or later | Use the [Python macOS installer](https://www.python.org/downloads/macos/), then reopen setup. |
 | Git | Follow the [Git macOS installation instructions](https://git-scm.com/download/mac), then reopen setup. |
 | GitHub repository access | Ask the repository owner for access, then sign into your own account. Signing in does not grant access by itself. |
-| Optional GitHub CLI | Use [GitHub CLI installation](https://cli.github.com/) if browser sign-in is needed and Homebrew is unavailable. Existing Git credentials are sufficient. |
+| Optional GitHub CLI | Use [GitHub CLI installation](https://cli.github.com/) if browser sign-in is needed and Homebrew is unavailable. Existing Git credentials are sufficient for guidance refresh; Team Hub operations require authenticated GitHub CLI. |
 
 The launcher detects missing tools before handing off to Python. Python and Git installation are guided vendor steps, not unattended installers. No Node installation, model API key, Google account, Word converter, or running web server is required for core writing.
 
@@ -35,6 +35,10 @@ The launcher detects missing tools before handing off to Python. Python and Git 
 | `<writing-project>/.blog-studio/` | Default author workspace: sources, voices, articles, reviews, pinned guidance |
 
 Both harnesses can use the same runtime. Existing unmanaged skill folders require an explicit replacement choice and a preserved backup. A legacy copy under `~/.codex/skills/blog-studio` must be moved to a backup outside discovery roots first to avoid duplicate discovery. A custom configuration that points both harnesses at the same folder is rejected.
+
+## Enable shared Team Hub work
+
+Update to the **1.1.0** bundle using Install again, then ask Blog Studio to create or join the specific team repository. The GitHub provider requires authenticated GitHub CLI as well as Git. Team access is managed outside setup. Hubs default to `~/.local/share/blog-studio/hubs/`, separately from runtime versions and local writing projections. No repo is created or content uploaded by installation. See [Team Hub usage](team-hub.md).
 
 ## How automatic updates work
 

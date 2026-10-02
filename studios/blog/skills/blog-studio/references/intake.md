@@ -34,3 +34,7 @@ can grow without every source entering every prompt. Read full evidence when
 checking a specific claim. Keep excerpts linked to their original record.
 Use the [workspace helper](workspace.md) to record source files and attach
 selected items. Do not automatically ingest an entire directory or account.
+
+Apply [data boundaries](privacy.md) before external extraction, public research,
+media requests, or document posting. Generic research permission never includes
+private queries; document posting includes only the selected content/destination.

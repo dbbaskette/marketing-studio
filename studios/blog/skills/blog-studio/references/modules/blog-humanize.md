@@ -1,5 +1,9 @@
 # Humanization capability
 
+Keep private inputs in the user's existing harness and selected private hub.
+Apply [data boundaries](../privacy.md) before research, media, or document
+posting; upstream suggestions do not authorize external disclosure.
+
 **Input:** draft, author voice, desired light/medium/strong intensity, selected scope.
 **Output:** located prose suggestions or requested edits with factual preservation checks.
 

@@ -13,7 +13,7 @@ import subprocess
 import sys
 import uuid
 
-VERSION = '1.0.0'
+VERSION = '1.1.0'
 TRUSTED_SOURCE = 'https://github.com/dbbaskette/blog-studio.git'
 BRANCH = 'main'
 CONTENT_ROOT = 'skills/blog-studio'
@@ -115,7 +115,7 @@ def result_for(snapshot, pin, fresh):
             'runtime': str(Path(__file__).resolve().parent)}
 
 
-def start(workspace, source=TRUSTED_SOURCE):
+def start(workspace, source=TRUSTED_SOURCE, revision=None):
     # source injection is a library-only seam for disposable test repositories.
     cache = cache_root(workspace)
     cache.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -125,8 +125,18 @@ def start(workspace, source=TRUSTED_SOURCE):
         repository = cache / 'repository.git'
         if not repository.exists():
             git(repository, 'init', '--bare', '--initial-branch=main')
-        git(repository, 'fetch', '--quiet', '--no-tags', '--depth=1', source, 'refs/heads/' + BRANCH)
+        if revision is not None:
+            if not re.fullmatch(r'[0-9a-f]{40,64}', revision):
+                raise SyncError('Choose a valid saved guidance revision.')
+            shallow = git(repository, 'rev-parse', '--is-shallow-repository').decode().strip() == 'true'
+            git(repository, 'fetch', '--quiet', '--no-tags', *(['--unshallow'] if shallow else []), source, 'refs/heads/' + BRANCH)
+        else:
+            git(repository, 'fetch', '--quiet', '--no-tags', '--depth=1', source, 'refs/heads/' + BRANCH)
         commit = git(repository, 'rev-parse', '--verify', 'FETCH_HEAD^{commit}').decode().strip()
+        if revision is not None:
+            try:git(repository, 'merge-base', '--is-ancestor', revision, commit)
+            except SyncError as exc:raise SyncError('The saved guidance revision is not in approved main history.') from exc
+            commit = revision
         if not re.fullmatch(r'[0-9a-f]{40,64}', commit):
             raise SyncError('The repository returned an invalid revision.')
         try:
@@ -231,15 +241,20 @@ def recent_tasks(workspace):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('start', 'resume', 'cached'))
+    parser.add_argument('action', choices=('start', 'pin', 'resume', 'cached'))
     parser.add_argument('--workspace', type=Path, required=True)
     parser.add_argument('--task')
+    parser.add_argument('--revision')
     args = parser.parse_args()
     try:
-        if args.action == 'start':
+        if args.action in ('start', 'pin'):
+            if args.action == 'pin' and not args.revision:
+                raise SyncError('A saved guidance revision is required.')
+            if args.action == 'start' and args.revision:
+                raise SyncError('Use pin to reopen a saved revision.')
             if args.task:
                 raise SyncError('A new task creates its own pin. Use resume for an existing task.')
-            result = start(args.workspace)
+            result = start(args.workspace, revision=args.revision) if args.action == 'pin' else start(args.workspace)
         else:
             if not args.task:
                 raise SyncError('A saved task ID is required.')
@@ -249,7 +264,7 @@ def main():
     except (SyncError, OSError) as exc:
         message = str(exc) if isinstance(exc, SyncError) else 'Local storage is unavailable. Check paths and permissions.'
         error = {'fresh': False, 'error': message}
-        if args.action == 'start':
+        if args.action in ('start', 'pin'):
             try:
                 error['cached_tasks'] = recent_tasks(args.workspace)
             except (OSError, SyncError):

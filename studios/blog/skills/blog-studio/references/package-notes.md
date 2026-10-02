@@ -25,3 +25,9 @@ the managed installer for runtime checks. For offline/manual discovery, install
 the complete folder, or load `SKILL.md` by absolute path immediately. No implicit-only or explicit-only invocation restriction is
 introduced. Copying a package into a skill root requires ordinary filesystem
 permissions; do not work around host restrictions.
+
+## Privacy boundary
+
+Apply [data boundaries](privacy.md) when borrowing upstream techniques.
+Original service examples are archival instructions, not installed integrations
+or authorization to send private content elsewhere.

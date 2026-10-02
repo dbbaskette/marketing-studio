@@ -1,5 +1,9 @@
 # Author interview capability
 
+Keep private inputs in the user's existing harness and selected private hub.
+Apply [data boundaries](../privacy.md) before research, media, or document
+posting; upstream suggestions do not authorize external disclosure.
+
 **Input:** topic/experience, known audience/goal, supplied material, prior answers,
 and requested stop point.
 **Output:** recorded author answers and a brief/outline grounded in those answers.

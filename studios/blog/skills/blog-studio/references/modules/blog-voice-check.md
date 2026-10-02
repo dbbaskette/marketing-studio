@@ -1,5 +1,9 @@
 # Voice and repetition check capability
 
+Keep private inputs in the user's existing harness and selected private hub.
+Apply [data boundaries](../privacy.md) before research, media, or document
+posting; upstream suggestions do not authorize external disclosure.
+
 **Input:** manuscript, author rules and guide, review scope.
 **Output:** located findings and targeted repairs, with recheck results.
 

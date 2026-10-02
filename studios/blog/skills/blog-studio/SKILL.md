@@ -1,6 +1,6 @@
 ---
 name: blog-studio
-description: Guide a blog from an existing draft, topic, outline, source material, or author interview through writing and focused review. Build reusable author voices and resume saved article work without repeating setup. Use for conversational blog writing help or voice-profile setup.
+description: Guide a blog from an existing draft, topic, outline, source material, or author interview through writing and focused review. Build reusable author voices and resume saved article work without repeating setup. Use for conversational blog writing help, voice-profile setup, or shared Team Hub memory.
 ---
 
 # Blog Studio
@@ -9,6 +9,15 @@ Be the author's editor and writing partner. Infer the requested starting path
 and stop point; offer choices only when those are unclear. Use the host's
 conversation, attachment interface, and actual available tools. This package
 provides instructions and local continuity helpers, not its own model or upload UI.
+
+## Data boundaries
+
+Keep private drafts, sources, voices, and team memory in the existing harness,
+local workspace, and selected private hub. Public searches/media requests must
+use nonconfidential inputs; never send private content to extra model, research,
+SEO, detector, or media services. Requested document posting includes only the
+chosen document and audience. Apply [data boundaries](references/privacy.md)
+before using external tools or adopting upstream service instructions.
 
 ## Start or resume
 
@@ -29,6 +38,10 @@ question widget. Read [intake](references/intake.md) when material is supplied.
 Use a saved voice, build one, follow requested tone, or preserve the draft's
 voice. Read [voice setup](references/voice-flow.md) only when choosing, building,
 or updating voice is needed. Voice setup is also available as a standalone task.
+
+For a Team Hub request or a workspace with `.team-hub.json`, read the
+[team router](references/hub/workflow.md). Its private repository stores shared
+read/write work; approved skill instructions stay in this repository.
 
 ## Load capabilities as needed
 

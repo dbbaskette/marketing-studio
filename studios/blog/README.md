@@ -6,9 +6,9 @@
 
 Bring a rough idea, a stack of notes, or a blog you've already written. Blog Studio helps you find the next useful step, uses your voice, and loads the writing guidance that step needs.
 
-**6 starting paths · 14 capability modules · Reusable voices · Resumable work**
+**6 starting paths · 14 capability modules · Reusable voices · Shared Team Hub · Resumable work**
 
-[Get started](#get-started) · [Progressive disclosure](#how-progressive-disclosure-works) · [Roadmap and token estimates](docs/progressive-disclosure-roadmap.md) · [Install Blog Studio](docs/installation.md) · [Google Docs next](docs/google-docs-roadmap.md)
+[Get started](#get-started) · [Progressive disclosure](#how-progressive-disclosure-works) · [Roadmap and token estimates](docs/progressive-disclosure-roadmap.md) · [Install Blog Studio](docs/installation.md) · [Team Hub](docs/team-hub.md) · [Google Docs next](docs/google-docs-roadmap.md)
 
 ## Install once. Keep getting better.
 
@@ -16,7 +16,7 @@ Download the private [guided installer](dist/blog-studio-installer.zip), expand 
 
 **Writing guidance stays maintained here.** A new task quietly checks approved `main` and pins a local snapshot. The model receives a tiny status and reads only the instructions it needs. Your marketing team gets routine instruction updates without reinstalling; ongoing articles retain their saved guidance revision. Executable helpers update separately through setup, with repair and rollback.
 
-The default author workspace holds your drafts, voices, evidence, and history outside the installed skill. Git download progress stays out of the conversation.
+The author workspace holds drafts, voices, evidence, and history outside the installed skill. A selected Team Hub synchronizes that working content to its separate private repository. Git download progress stays out of the conversation.
 
 ## Start where you are
 
@@ -38,6 +38,7 @@ The **parent skill** holds the brief, selected sources, voice, and requested out
 ```mermaid
 flowchart TD
     P[Blog Studio parent skill]
+    P -->|Shared work selected| H[Team Hub · focused memory]
     P -->|Material supplied| S[Source intake]
     P -->|Voice setup needed| V[Voice profile]
     P -->|Current writing task| W[Discover · interview · outline · draft · edit]
@@ -60,17 +61,17 @@ These stages adapt to your request. A clear draft request can continue through a
 
 ## Token footprint
 
-Progressive disclosure keeps the full reference library available while selecting guidance for the current operation. The library contains approximately **163.1k estimated tokens**; a normal route reads a subset.
+Progressive disclosure keeps the full reference library available while selecting guidance for the current operation. The library contains approximately **168.3k estimated tokens**; a normal route reads a subset.
 
 | Route | Current guidance estimate | Target after roadmap |
 |---|---:|---:|
-| Outline with sources | 5.9k | 2–3k |
-| First draft with sources | 12.4k | 3–5k |
-| Quick edit | 9.5k | 2.5–4k |
-| Voice setup | 6.5k | 2–3.5k |
-| Comprehensive review | 11.8k | 4–6k |
+| Outline with sources | 6.8k | 2–3k |
+| First draft with sources | 13.4k | 3–5k |
+| Quick edit | 10.4k | 2.5–4k |
+| Voice setup | 7.4k | 2–3.5k |
+| Comprehensive review | 12.8k | 4–6k |
 
-The installed bootstrap is approximately **697 tokens**. Route figures include it plus the selected repository guidance; the full library total excludes the bootstrap. Downloading that library does not load it into context.
+The installed bootstrap is approximately **1,018 tokens**. Route figures include it plus the selected repository guidance; the full library total excludes the bootstrap. Downloading that library does not load it into context.
 
 Estimates use characters ÷ 4 and count each selected instruction file once. They include workspace guidance and exclude author material, generated prose, conversation history, and host/tool context. They are planning estimates rather than total billed usage. Targets are **planned refinements**, and already loaded text can remain in the conversation.
 
@@ -83,7 +84,31 @@ See the [full roadmap](docs/progressive-disclosure-roadmap.md) for file-level es
 - **Your manuscript:** an untouched original, saved outlines and drafts, version history, and a checkpoint for resuming.
 - **Your reviews:** findings tied to the draft, voice, and evidence they checked, with clear current, stale, failed, unavailable, or not-run status.
 
-The default local `.blog-studio/` data workspace is excluded from Git. Saved work can be reopened by path in another chat; the local files provide continuity.
+The local `.blog-studio/` projection is excluded from the skill repository. Select a **Team Hub** to synchronize working content through a separate private repo; a workspace without a selected hub remains local.
+
+## Shared memory for your team
+
+> Create our Team Hub at my-org/marketing-writing.
+
+> Join our Team Hub at https://github.com/my-org/marketing-writing.
+
+> Find our onboarding draft and help me continue. Remember this new rule for the launch project.
+
+The administrator creates a private remote and local clone. Members with existing access join through chat. Blogs, notes, sources, voices, reviews, and user-defined rules/context share by default in the selected workspace. Offline saves queue locally; concurrent edits retain both versions; protected main uses a contribution PR.
+
+Update to runtime **1.1.0** using the trusted installer. No actual team repo is created by downloading or installing the skill. See [Team Hub usage](docs/team-hub.md) for setup, sharing, and the current verification boundary.
+
+## Your content and outside services
+
+Private content stays in your existing harness and, when selected, your private
+Team Hub. Borrowed research/media suggestions do not authorize sending drafts,
+voice samples, notes, or team context to additional services. Public searches
+use nonconfidential terms; requested document posting sends only the selected
+content to its intended audience. No telemetry or hidden upload client is bundled.
+
+Your harness/model provider and GitHub still process data under your account
+settings. See the [data exposure review](docs/privacy-review.md) for the checked
+surfaces, safeguards, and limits.
 
 ## Get started
 
@@ -107,7 +132,7 @@ Then visit `http://127.0.0.1:8896/blog-studio.html`.
 
 ## What's implemented and what's next
 
-The six routes, fourteen capability modules, local continuity helpers, and portable packages are implemented. **45 deterministic tests cover local helpers, guidance refresh, and managed installation**, alongside package integrity and extracted-bundle portability checks. The Mac launcher and installer are implemented; a clean-machine sign-in pilot and actual discovery/writing in both harnesses remain validation gaps.
+The six routes, fourteen capability modules, local continuity helpers, and portable packages are implemented. **87 deterministic tests cover local helpers, Team Hub, privacy boundaries, guidance refresh, and managed installation**, alongside package integrity and extracted-bundle portability checks. The Mac launcher and installer are implemented; a clean-machine sign-in pilot and actual discovery/writing in both harnesses remain validation gaps.
 
 | Next milestone | Estimated development tokens |
 |---|---:|

@@ -1,5 +1,9 @@
 # Article writing module
 
+Keep private inputs in the user's existing harness and selected private hub.
+Apply [data boundaries](../privacy.md) before research, media, or document
+posting; upstream suggestions do not authorize external disclosure.
+
 Use to produce a complete blog article from a topic, brief, or outline.
 
 **Input:** topic/brief, audience, voice samples or instructions, source material,

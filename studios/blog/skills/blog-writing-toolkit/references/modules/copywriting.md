@@ -1,5 +1,9 @@
 # Copywriting module
 
+Keep private inputs in the user's existing harness and selected private hub.
+Apply [data boundaries](../privacy.md) before research, media, or document
+posting; upstream suggestions do not authorize external disclosure.
+
 Use for blog titles, hooks, benefit framing, calls to action, or supporting
 marketing copy. For the full researched article use [blog-write](blog-write.md).
 

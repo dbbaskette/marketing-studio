@@ -11,3 +11,7 @@ are optional, use available authorized tools, and retain attribution.
 
 Publishing is a separate action requiring user authorization and actual host
 capabilities; this package does not install BlogForge's GitHub publisher.
+
+Apply [data boundaries](privacy.md) before external extraction, public research,
+media requests, or document posting. Generic research permission never includes
+private queries; document posting includes only the selected content/destination.

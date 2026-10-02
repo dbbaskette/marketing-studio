@@ -1,6 +1,6 @@
 # Google Docs: the next writing phase
 
-Status: proposed follow-up, not implemented by the installer release. Core writing remains in the harness; Google Docs adds a familiar place for the team to review and edit.
+Status: proposed follow-up. The Team Hub runtime now provides shared portable articles, dependencies, and optional Doc metadata; native Google operations are not implemented. Core writing remains in the harness; Google Docs adds a familiar place for the team to review and edit.
 
 ## Recommended first slice
 
@@ -45,7 +45,7 @@ For native template work, follow the currently installed Docs skill's copy-and-p
 
 ## State and conflicts
 
-A synchronization record should retain the Doc ID and canonical URL, selected tabs, last observed revision, last transferred local version/hash, direction, timestamp, and verification outcome. Record only revisions actually returned by the provider; if unavailable, use a content fingerprint and disclose the weaker conflict protection.
+Persist the synchronization record with the shared article in Team Hub, so every member receives the same transfer baseline. Credentials remain in the connector. A synchronization record should retain the Doc ID and canonical URL, selected tabs, last observed revision, last transferred local version/hash, direction, timestamp, and verification outcome. Record only revisions actually returned by the provider; if unavailable, use a content fingerprint and disclose the weaker conflict protection.
 
 Before writing an existing Doc, fetch current content and structure. Use an observed required revision when available and re-read after substantive edits. Before bringing changes back, compare the saved transfer baseline with both the current local draft and current Doc. If both changed, show a three-way comparison and let the author resolve material conflicts. Native suggestions/comments remain distinct from accepted manuscript text; surface unsupported suggestion handling rather than silently accepting everything.
 

@@ -10,6 +10,15 @@ paths from this folder, regardless of the working directory. Read only the
 module needed for the current stage, then its source or supporting references
 when their detail is useful. Do not preload the whole library.
 
+## Data boundaries
+
+Keep private drafts, sources, voices, and team memory in the existing harness,
+local workspace, and selected private hub. Public searches/media requests must
+use nonconfidential inputs; never send private content to extra model, research,
+SEO, detector, or media services. Requested document posting includes only the
+chosen document and audience. Apply [data boundaries](references/privacy.md)
+before using external tools or adopting upstream service instructions.
+
 ## Choose a module
 
 | Need | Module to read | Expected result |

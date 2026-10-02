@@ -58,7 +58,7 @@ def verify_package(source):
         if (source / 'install-manifest.json').is_symlink():
             raise InstallError('The installer manifest must be a regular file.')
         manifest = json.loads((source / 'install-manifest.json').read_text())
-        if manifest['schema'] != 1 or manifest['version'] != '1.0.0':
+        if manifest['schema'] != 1 or manifest['version'] not in ('1.0.0', '1.1.0'):
             raise InstallError('Unsupported installer package.')
         actual = {p.relative_to(source).as_posix() for p in source.rglob('*')
                   if p.is_file() and p.name not in ('install-manifest.json', 'config.json')
@@ -75,6 +75,8 @@ def verify_package(source):
                 raise InstallError('Installer package verification failed. Download an intact bundle.')
         required = {'SKILL.md', 'scripts/sync_guidance.py', 'scripts/studio.py',
                     'scripts/text_checks.py', 'scripts/linkedin_import.py'}
+        if manifest['version'] == '1.1.0':
+            required.update({'scripts/hub.py', 'scripts/hub_store.py', 'scripts/hub_workspace.py'})
         if not required.issubset(actual):
             raise InstallError('Required runtime files are missing.')
         return manifest
@@ -141,7 +143,7 @@ def verify_configuration(version, interpreter=None):
         if path.is_symlink():
             raise ValueError()
         config = json.loads(path.read_text())
-        if (config['trusted_source'] != TRUSTED_SOURCE or config['runtime_version'] != '1.0.0'
+        if (config['trusted_source'] != TRUSTED_SOURCE or config['runtime_version'] != verify_package(version)['version']
                 or not Path(config['python']).is_absolute()
                 or (interpreter is not None and config['python'] != str(interpreter))):
             raise ValueError()
@@ -156,6 +158,8 @@ def smoke_runtime(version, interpreter):
             workspace = Path(temporary) / 'disposable-workspace'
             calls = [('studio.py', '--root', str(workspace), 'init'),
                      ('text_checks.py', '--help'), ('linkedin_import.py', '--help')]
+            if (version / 'scripts/hub.py').exists():
+                calls.append(('hub.py', '--help'))
             for name, *arguments in calls:
                 result = subprocess.run([str(interpreter), str(version / 'scripts' / name), *arguments],
                     capture_output=True, timeout=30)

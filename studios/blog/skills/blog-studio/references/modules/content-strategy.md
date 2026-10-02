@@ -1,5 +1,9 @@
 # Content strategy module
 
+Keep private inputs in the user's existing harness and selected private hub.
+Apply [data boundaries](../privacy.md) before research, media, or document
+posting; upstream suggestions do not authorize external disclosure.
+
 Use for topic selection, content pillars, clusters, prioritization, and editorial
 planning. For a single article with an agreed brief, use [blog-write](blog-write.md).
 

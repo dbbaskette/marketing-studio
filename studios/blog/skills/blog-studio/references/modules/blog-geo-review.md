@@ -1,5 +1,9 @@
 # Retrieval and citation readiness capability
 
+Keep private inputs in the user's existing harness and selected private hub.
+Apply [data boundaries](../privacy.md) before research, media, or document
+posting; upstream suggestions do not authorize external disclosure.
+
 **Input:** draft, reader/search intent, selected evidence, relevant voice constraints.
 **Output:** prioritized useful improvements to clarity, attribution, and passage reuse.
 

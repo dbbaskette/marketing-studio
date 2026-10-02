@@ -32,38 +32,38 @@ Measured October 1, 2026 from the local package. Each file estimate is its Unico
 
 | Guidance loaded | Approximate new tokens | Condition |
 |---|---:|---|
-| Parent and entry flow | 2,085 | New task |
-| Workspace instructions | 1,974 | Saving or resuming work; currently one large reference |
-| Intake and source module | 781 | Incoming material |
-| Voice setup and profile module | 941 | Building or changing a voice |
-| Author interview | 275 | Interview route |
-| Content strategy wrapper and original | 4,983 | Idea discovery or editorial strategy |
-| Argument outline | 324 | Outline work; optional outline prompt adds 910 |
-| Writer wrapper, original, composition, and outline | 6,820 | First draft; selected templates/research guidance add more |
-| Copywriting wrapper, original, and headline lab | 2,572 | Titles, hooks, or CTA work |
-| Editing wrapper, original, and revision | 4,451 | Editing or developmental feedback |
+| Parent and entry flow | 2,329 | New task |
+| Workspace instructions | 2,197 | Saving or resuming work; currently one large reference |
+| Intake and source module | 897 | Incoming material |
+| Voice setup and profile module | 996 | Building or changing a voice |
+| Author interview | 330 | Interview route |
+| Content strategy wrapper and original | 5,039 | Idea discovery or editorial strategy |
+| Argument outline | 380 | Outline work; optional outline prompt adds 910 |
+| Writer wrapper, original, composition, and outline | 6,931 | First draft; selected templates/research guidance add more |
+| Copywriting wrapper, original, and headline lab | 2,627 | Titles, hooks, or CTA work |
+| Editing wrapper, original, and revision | 4,506 | Editing or developmental feedback |
 | Review coordination | 395 | Coordinating multiple requested checks |
-| Voice check | 314 | Author rules and repetition |
-| Factual support check | 340 | Claims against selected evidence |
-| Humanization and its four-lens rubric | 1,179 | Requested prose improvement |
-| GEO review | 344 | Requested retrieval/citation readiness assessment |
-| Repurposing and export | 571 | Requested derivative or format; channel references add more |
+| Voice check | 369 | Author rules and repetition |
+| Factual support check | 395 | Claims against selected evidence |
+| Humanization and its four-lens rubric | 1,234 | Requested prose improvement |
+| GEO review | 399 | Requested retrieval/citation readiness assessment |
+| Repurposing and export | 687 | Requested derivative or format; channel references add more |
 
-The full Markdown, text, and prompt library is approximately **163,078 tokens across 80 files**. This includes every upstream template and supporting reference. It is an inventory ceiling, not a normal task load. The parent never needs to read the whole library to begin.
+The full Markdown, text, and prompt library is approximately **168,311 tokens across 85 files**. This includes every upstream template and supporting reference. It is an inventory ceiling, not a normal task load. The parent never needs to read the whole library to begin.
 
 Read each unchanged reference once per task where possible. Disclosure avoids unnecessary reads; it does not remove already loaded text from an active conversation. Compaction or a new session can change what remains in context. Provider billing may include accumulated context repeatedly, with provider-specific caching. The unique-load figures below are therefore not total billed tokens.
 
 ## Representative routes
 
-For the managed bootstrap, add approximately 697 tokens to each offline route below. The JSON inventory separates this add-on from the offline corpus. These estimates include the current parent, entry flow, and full workspace reference. They count each selected guidance file once. They assume the minimum listed guidance, not every conditional upstream reference.
+For the managed bootstrap, add approximately 1018 tokens to each offline route below. The JSON inventory separates this add-on from the offline corpus. These estimates include the current parent, entry flow, and full workspace reference. They count each selected guidance file once. They assume the minimum listed guidance, not every conditional upstream reference.
 
 | Route | Current guidance estimate | Additional author material planning allowance | Generated artifact planning allowance |
 |---|---:|---|---|
-| Outline with supplied sources | 5,164 | 2,000–6,000 for selected evidence; 300–800 for a saved voice | 500–1,200 for outline |
-| First draft with supplied sources | 11,660 | 2,000–6,000 for evidence; 300–800 for voice; 300–800 for brief/outline | 1,500–2,200 for roughly 1,200–1,600 words |
-| Quick edit of an existing draft | 8,824 | 1,500–2,200 for manuscript; 300–800 for selected voice/rules | 1,500–2,200 for revised draft, plus short notes |
-| New voice setup | 5,781 | 4,000–10,000 for selected authored samples/background | 800–1,600 for guide and audition |
-| Comprehensive review | 11,082 | 1,500–2,200 for draft; 2,000–6,000 for evidence; 300–800 for voice | 800–2,000 for findings; a rewrite is additional |
+| Outline with supplied sources | 5,803 | 2,000–6,000 for selected evidence; 300–800 for a saved voice | 500–1,200 for outline |
+| First draft with supplied sources | 12,354 | 2,000–6,000 for evidence; 300–800 for voice; 300–800 for brief/outline | 1,500–2,200 for roughly 1,200–1,600 words |
+| Quick edit of an existing draft | 9,401 | 1,500–2,200 for manuscript; 300–800 for selected voice/rules | 1,500–2,200 for revised draft, plus short notes |
+| New voice setup | 6,419 | 4,000–10,000 for selected authored samples/background | 800–1,600 for guide and audition |
+| Comprehensive review | 11,824 | 1,500–2,200 for draft; 2,000–6,000 for evidence; 300–800 for voice | 800–2,000 for findings; a rewrite is additional |
 
 Author-material and output ranges are explicit planning assumptions, not measured user inputs. Full claim verification may require more evidence. A large upload stays in the source library; only relevant passages enter a particular writing operation. A summary helps orientation but does not replace the underlying passage when checking a claim.
 
@@ -88,11 +88,11 @@ Targets cover unique instruction loads for the normal route, with local continui
 
 | Route | Current approximate guidance | Target guidance |
 |---|---:|---:|
-| Outline with sources | 5,164 | 2,000–3,000 |
-| First draft with sources | 11,660 | 3,000–5,000 |
-| Quick edit | 8,824 | 2,500–4,000 |
-| Voice setup | 5,781 | 2,000–3,500 |
-| Comprehensive review | 11,082 | 4,000–6,000 |
+| Outline with sources | 5,803 | 2,000–3,000 |
+| First draft with sources | 12,354 | 3,000–5,000 |
+| Quick edit | 9,401 | 2,500–4,000 |
+| Voice setup | 6,419 | 2,000–3,500 |
+| Comprehensive review | 11,824 | 4,000–6,000 |
 
 Reducing guidance must preserve useful behavior rather than merely shrinking files. The next useful slice is M1 followed by one outline-only pilot: start directly in chat, optionally attach sources, reuse a voice or choose a tone, save the outline, and stop. The optional prompt generator remains available throughout.
 
@@ -103,3 +103,17 @@ The per-file inventory and route file sets are saved in `estimates/blog-studio-t
 ## Google Docs follow-up
 
 The [Google Docs roadmap](google-docs-roadmap.md) recommends source intake and a review handoff/return loop first, with native comments, templates, and export following. Its modules load only for Google work. Connector availability and the team’s primary harness need validation before implementation.
+
+## Implemented Team Hub disclosure
+
+The parent adds a conditional hub route. The following are measured character-based estimates for the current authored instructions; add them only when the operation needs them, alongside the ordinary writing route. They exclude actual shared records and artifacts.
+
+| Team operation | Router plus focused reference |
+| --- | ---: |
+| Setup | 1,350 |
+| Memory | 1,417 |
+| Sync | 1,341 |
+
+H1–H3 and the H4 installer/docs slice are implemented; the 58–95k development range in the approved Team Hub plan remains a planning estimate, not measured consumption. Deterministic local member tests are distinct from the pending real GitHub/harness pilot.
+
+The data-boundary reference adds approximately **1,002 tokens** only when external operations or upstream service suggestions are relevant. The essential privacy constraint is in every parent/module.
