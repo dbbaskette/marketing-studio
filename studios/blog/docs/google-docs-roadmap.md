@@ -88,3 +88,18 @@ Read all requested tabs rather than assuming a document’s first tab contains e
 Google Drive API custom comment anchors are not interpreted as native anchored comments by Workspace editors; native inline comments need a capability verified in the selected adapter. [Google Drive comments](https://developers.google.com/workspace/drive/api/guides/manage-comments).
 
 Use an observed required revision for guarded existing-document writes when supported. [Google Docs batchUpdate](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/batchUpdate).
+
+## Formatted shared editing — runtime 1.5
+
+Implemented: native Markdown export; version-consistent DOCX/Markdown/native
+snapshot bundles; formatting-only return checkpoints; private Hub preservation;
+minimal paragraph wording patches with revision guards and text/style readback.
+Google is the live shared formatting authority; DOCX is the formatted Git copy
+and Markdown remains the working text view. Existing manuscript conflict handling
+continues. See [round-trip guidance](../skills/blog-studio/references/google/roundtrip.md).
+
+Automatic snapshot export is limited to single-tab Docs without pending
+suggestions. Structural edits need scoped native operations. Live Google fidelity
+remains part of G4; deterministic tests cannot prove a real export’s appearance.
+The conditional round-trip reference is measured separately in the inventory;
+ordinary writing does not load it or binary snapshot content.

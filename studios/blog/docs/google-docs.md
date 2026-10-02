@@ -110,3 +110,23 @@ See the [Google roadmap](google-docs-roadmap.md) for disclosure costs and the
 [adapter contract](../skills/blog-studio/references/google/adapter.md) and
 [checkpoint contract](../skills/blog-studio/references/google/checkpoints.md) for
 implementation details.
+
+## Formatted Google editing (runtime 1.5)
+
+Google Docs remains the shared editing copy. On return, retain DOCX as the
+formatted stored copy, Markdown for readable Git diffs, and native structure for
+format verification. A formatting-only return is saved even when prose is unchanged.
+Wording updates patch existing paragraphs and verify styles instead of replacing
+sections. See [the round-trip workflow](../skills/blog-studio/references/google/roundtrip.md).
+
+Try: “Bring the Google edits back, including heading sizes and spacing. Save the
+formatted DOCX snapshot and readable Markdown to our Hub.” Then: “Send these
+wording changes back while preserving the team’s Google formatting.”
+
+This requires updating the managed installer to 1.5 once. Automatic guidance
+refresh cannot install runtime code. The automatic export bundle currently requires
+a single-tab Doc without pending suggestions; multi-tab or structural changes use
+the scoped native workflow. DOCX fidelity still needs inspection. No live document
+is modified by installing or upgrading.
+
+[Validation evidence and live-test boundaries](google-roundtrip-validation.md).

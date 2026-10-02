@@ -110,6 +110,18 @@ def render(files, graph):
                 header += '- ' + link(head['title'] + ' — ' + head['status'], record_path(head), page) + '\n'
         else:
             header += link('Canonical revision', record_path(record), page) + '\n\n'
+            google = data.get('google', {})
+            if isinstance(google, dict):
+                baselines, transfers = google.get('baselines', {}), google.get('transfers', {})
+                baseline = baselines.get('draft', {}) if isinstance(baselines, dict) else {}
+                transfer = transfers.get(baseline.get('transfer'), {}) if isinstance(transfers, dict) and isinstance(baseline, dict) else {}
+                snapshot = transfer.get('formatted_snapshot', {}) if isinstance(transfer, dict) else {}
+                if isinstance(snapshot, dict):
+                    for name, label in (('document.docx', 'Last Google snapshot (DOCX)'), ('document.md', 'Last Google text (Markdown)')):
+                        relative = snapshot.get(name, '')
+                        artifact = 'artifacts/' + relative if isinstance(relative, str) else ''
+                        if artifact in record['files']:
+                            header += link(label, record_path(record, artifact), page) + '\n\n'
             draft = 'artifacts/DRAFT.md' if record['files'].get('artifacts/DRAFT.md', {}).get('media') == 'text' else 'BODY.md'
             body = files[record_path(record, draft)].decode('utf-8')
             if not body.strip():
@@ -180,7 +192,9 @@ def verify(files, graph):
 
 def changes(files, graph):
     output = render(files, graph)
-    manifest = dict(graph['manifest'], browse_schema=1, minimum_runtime='1.3.0')
+    needed = '1.5.0' if any('/history/google-' in name for name in files) else '1.3.0'
+    minimum = max((graph['manifest']['minimum_runtime'], needed), key=lambda v: tuple(map(int, v.split('.'))))
+    manifest = dict(graph['manifest'], browse_schema=1, minimum_runtime=minimum)
     output['hub.json'] = encoded(manifest)
     return {**{name: None for name in files if name.startswith('blogs/') and name not in output},
             **{name: body for name, body in output.items() if files.get(name) != body}}

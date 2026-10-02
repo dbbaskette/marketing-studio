@@ -202,6 +202,47 @@ class GoogleWorkflowTests(unittest.TestCase):
         before=len(rb.hub(hub_id).graph()['revisions']);wb.publish_selected({'articles':[aid]})
         self.assertEqual(len(rb.hub(hub_id).graph()['revisions']),before)
 
+    def test_format_only_return_retains_docx_across_hub_and_keeps_text_reviews_current(self):
+        from test_google_roundtrip import Provider
+        import google_roundtrip as rt
+        client = Provider()
+        self.save('draft', client.export('fixture-doc', 'md').decode())
+        self.handoff()
+        self.run_command('article','review','--id',self.aid,'--check','proofread','--status','current','--file',self.file({'findings':[]}))
+        snapshots = []
+        for index in range(2):
+            folder = self.base / ('snapshot-' + str(index))
+            rt.capture(client, 'fixture-doc', 't.0', folder)
+            inputs = ['--file', str(folder/'document.md'), '--observation', str(folder/'observation.json')]
+            check = self.run_command('google','compare','--id',self.aid,*inputs)
+            self.assertEqual(check['status'],'unchanged')
+            self.assertTrue(check['format_changed'])
+            accepted = self.run_command('google','accept','--id',self.aid,*inputs,'--snapshot',str(folder),'--expected-comparison',check['comparison'])
+            snapshots.append(accepted['formatted_snapshot'])
+            self.assertEqual(accepted['reviews']['proofread']['status'],'current')
+            self.assertFalse(self.run_command('google','compare','--id',self.aid,*inputs)['format_changed'])
+            client.doc['tabs'][0]['documentTab']['body']['content'][1]['paragraph']['paragraphStyle']['lineSpacing'] = 150
+            client.doc['revisionId'] = 'r2'; client.version = '2'
+        provider=FakeProvider(self.base/'remotes')
+        ra=Registry(self.base/'hubs-a',provider);rb=Registry(self.base/'hubs-b',provider)
+        hub_id=ra.create('fixture/formatted-hub','Formatted fixtures')['hub'];rb.join('fixture/formatted-hub')
+        wa=Workspace(self.root,ra.hub(hub_id))
+        reference=wa.publish_selected({'articles':[self.aid]})['items'][0]
+        self.assertEqual(ra.hub(hub_id).graph()['manifest']['minimum_runtime'],'1.5.0')
+        from hub_browse import render
+        hub = ra.hub(hub_id)
+        pages = render(hub._remote_files(), hub.graph())
+        page = pages['blogs/unassigned/private-blog/README.md']
+        self.assertIn(b'Last Google snapshot (DOCX)', page)
+        self.assertIn(b'-document.docx', page)
+        other=self.base/'other';studio.initialize(other);wb=Workspace(other,rb.hub(hub_id))
+        aid=wb.checkout_selected({'articles':[reference['item']]})['items'][0]['local_id']
+        for snapshot in snapshots:
+            for relative in snapshot.values():
+                self.assertEqual((other/'articles'/aid/relative).read_bytes(),(self.root/'articles'/self.aid/relative).read_bytes())
+        before=len(rb.hub(hub_id).graph()['revisions']);wb.publish_selected({'articles':[aid]})
+        self.assertEqual(len(rb.hub(hub_id).graph()['revisions']),before)
+
     def test_cli_returns_compact_error_for_malformed_observation(self):
         script=Path(studio.__file__)
         result=subprocess.run([sys.executable,str(script),'--root',str(self.root),'google','source','--name','Bad','--purpose','reference',*self.obs(tab_ids=[{}])],capture_output=True,text=True)

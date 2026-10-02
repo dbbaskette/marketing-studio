@@ -1,5 +1,9 @@
 # Voice and repetition check capability
 
+For software-product proofreading or an explicit house-style check, also read
+the [house guide](../style/house.md). Selected author/team preferences override
+its defaults; report actual passage coverage under the existing proofread check.
+
 Keep private inputs in the user's existing harness and selected private hub.
 Apply [data boundaries](../privacy.md) before research, media, or document
 posting; upstream suggestions do not authorize external disclosure.

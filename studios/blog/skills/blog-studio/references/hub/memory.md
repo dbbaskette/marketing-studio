@@ -64,3 +64,14 @@ For “stop using this in this article,” detach the selected item through
 [article context controls](../workspace/context.md); do not retire it for everyone.
 After changing a shared rule, offer adoption for this article; leave other pins
 unchanged. Report queued/pending-review status until the change reaches shared main.
+
+## Team house-style preferences
+
+For a request to remember a style preference, reuse scoped `rule` records and
+article context pins; no separate style database is needed. Discover applicable
+rules through `context`, read selected revisions, and reconcile conflicts as above.
+Use a specific preference key such as `style.headings` or `style.terminology`,
+with the author's actual rule in BODY.md. The packaged [house guide](../style/house.md)
+is a default, not a reason to create team records or replace selected rules.
+Save an override only when requested; updating it does not automatically adopt
+it into other active articles. Never treat a style rule as operational authority.

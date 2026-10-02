@@ -5,6 +5,10 @@
 preserved. Apply [adapter](../google/adapter.md), [privacy](../privacy.md), and
 [checkpoint contract](../google/checkpoints.md).
 
+For formatted shared editing, load [format-preserving round trips](../google/roundtrip.md).
+Store DOCX + Markdown snapshots on return, including formatting-only changes;
+use paragraph wording patches for updates to an existing formatted Doc.
+
 1. Resume the article's saved voice, guidance, source and shared-context pins.
    Fetch the linked document and selected tab IDs; inspect structure, accepted
    text, current revision and suggestion state. A renamed tab can retain its ID;
@@ -17,7 +21,7 @@ preserved. Apply [adapter](../google/adapter.md), [privacy](../privacy.md), and
    are not Docs indexes. A fingerprint-only observation is weaker than a guarded
    provider revision and does not establish structural fidelity.
 3. Handle the result:
-   - `unchanged`: no rewrite; report no accepted-text changes.
+   - `unchanged`: no manuscript rewrite; still save an inspected formatted snapshot when formatting changed. Report text and formatting separately.
    - `remote-only`: save the returned accepted text with `google accept` and its
      exact comparison fingerprint. A return request authorizes this local save.
    - `local-only`: retain unsent local edits; offer a guarded handoff if wanted.

@@ -15,7 +15,7 @@ import studio
 
 CAPABILITIES = ('read', 'tabs', 'create', 'edit', 'copy', 'revision_guard',
                 'accepted_text', 'comments_read', 'comments_write', 'inline_anchors',
-                'export_pdf', 'export_docx', 'share', 'permissions_read', 'silent_share')
+                'export_pdf', 'export_docx', 'export_md', 'share', 'permissions_read', 'silent_share')
 
 
 def object_fields(value, allowed, required=()):
@@ -38,7 +38,7 @@ def hash_value(value):
 
 def observation(value, body):
     required = ('schema', 'document_id', 'url', 'tab_ids', 'observed_at', 'content_sha256', 'suggestions')
-    object_fields(value, (*required, 'revision_id', 'folder_id', 'structure_verified'), required)
+    object_fields(value, (*required, 'revision_id', 'folder_id', 'structure_verified', 'format_sha256'), required)
     if value['schema'] != 1:
         raise ValueError('Unsupported Google observation schema.')
     document_id = token(value['document_id'])
@@ -68,6 +68,8 @@ def observation(value, body):
             token(result[name])
     if 'structure_verified' in result and not isinstance(result['structure_verified'], bool):
         raise ValueError('Structure verification must be true or false.')
+    if result.get('format_sha256') is not None:
+        hash_value(result['format_sha256'])
     return result
 
 
@@ -115,6 +117,7 @@ def compare(directory, record, kind, obs, body):
     inputs = {'baseline': base, 'local_sha256': local_hash, 'document': obs, 'kind': kind}
     return {'status': status, 'comparison': studio.digest(json.dumps(inputs, sort_keys=True).encode()),
             'local_sha256': local_hash, 'remote_sha256': remote_hash,
+            'format_changed': (obs['format_sha256'] != base['document'].get('format_sha256')) if obs.get('format_sha256') else None,
             'baseline_file': str(snapshot_path(directory, base['transfer'], 'document')),
             'local_file': str(studio.inside(directory, kind.upper() + '.md')),
             'guard': {'requiredRevisionId': obs['revision_id']} if obs.get('revision_id') else None}
@@ -129,6 +132,56 @@ def snapshot_path(directory, transfer, name):
 
 def snapshot(directory, transfer, name, body):
     studio.atomic(snapshot_path(directory, transfer, name), body.encode())
+
+
+
+def formatted_snapshot(path, obs, body):
+    """Only attach inspected helper-generated artifacts for this exact transfer."""
+    from google_drive import validate_docx, GoogleError
+    from google_roundtrip import semantic, tabs
+    from google_drive import encoded as compact
+    directory = Path(path)
+    names = ('document.md', 'document.docx', 'native.json', 'snapshot.json')
+    files = {}
+    for name in names:
+        source = directory / name
+        if source.is_symlink() or not source.is_file():
+            raise ValueError('Snapshot files must be regular contained files.')
+        limit = 10 * 1024 * 1024 if name.endswith('.docx') else 1024 * 1024
+        if source.stat().st_size > limit:
+            raise ValueError('Snapshot exceeds the portable Hub artifact limit.')
+        files[name] = source.read_bytes()
+    meta = json.loads(files['snapshot.json'])
+    object_fields(meta, ('schema', 'document_id', 'tab_ids', 'revision_id', 'drive_version',
+                       'observed_at', 'content_sha256', 'format_sha256', 'files'),
+                       ('schema', 'document_id', 'tab_ids', 'revision_id', 'content_sha256', 'format_sha256', 'files'))
+    if meta['schema'] != 1 or any(meta[k] != obs.get(k) for k in ('document_id', 'tab_ids', 'revision_id', 'content_sha256', 'format_sha256')):
+        raise ValueError('Snapshot and observed document revision disagree.')
+    if files['document.md'] != body.encode():
+        raise ValueError('Snapshot Markdown and accepted text disagree.')
+    if meta['files'] != {name: studio.digest(data) for name, data in files.items() if name != 'snapshot.json'}:
+        raise ValueError('Snapshot file fingerprints disagree.')
+    try:
+        validate_docx(files['document.docx'])
+    except GoogleError as exc:
+        raise ValueError(str(exc)) from None
+    native = json.loads(files['native.json'])
+    if not native.get('tabs'):
+        raise ValueError('Native snapshot must contain selected tabs.')
+    if (native.get('documentId') != obs['document_id'] or native.get('revisionId') != obs.get('revision_id')
+            or [t['tabProperties']['tabId'] for t in tabs(native)] != obs['tab_ids']
+            or studio.digest(compact(semantic(native))) != obs.get('format_sha256')):
+        raise ValueError('Native snapshot identity, scope or formatting fingerprint disagrees.')
+    return files
+
+
+def save_formatted_snapshot(directory, transfer, files):
+    names = {}
+    for name, data in files.items():
+        relative = 'history/google-' + transfer + '-' + name
+        studio.atomic(studio.inside(directory, relative), data)
+        names[name] = relative
+    return names
 
 
 def capabilities(args, root):
@@ -208,8 +261,8 @@ def receipt(value):
     else:
         for entry in (requested, actual):
             object_fields(entry, ('format', 'content_sha256', 'artifact_sha256', 'inspected'), ('format', 'content_sha256', 'inspected'))
-            if entry['format'] not in ('pdf', 'docx') or not isinstance(entry['inspected'], bool):
-                raise ValueError('Export needs requested PDF/Word format and inspection status.')
+            if entry['format'] not in ('pdf', 'docx', 'md') or not isinstance(entry['inspected'], bool):
+                raise ValueError('Export needs requested PDF/Word/Markdown format and inspection status.')
             hash_value(entry['content_sha256'])
             if entry.get('artifact_sha256'):hash_value(entry['artifact_sha256'])
         verified = (requested['format'] == actual['format'] and requested['content_sha256'] == actual['content_sha256'] and actual['inspected'] and bool(actual.get('artifact_sha256')))
@@ -262,6 +315,12 @@ def command(root, args):
                 'target': target, 'guard': {'requiredRevisionId': target['revision_id']} if target else None,
                 'status': 'prepared', 'next_step': 'Use only this selected editing copy with the connected provider, then confirm readback.'}
     obs, body = observed(args)
+    snapshot_files = None
+    if args.action in ('confirm', 'accept'):
+        if getattr(args, 'snapshot', None):
+            snapshot_files = formatted_snapshot(args.snapshot, obs, body)
+        elif obs.get('format_sha256'):
+            raise ValueError('A formatting observation needs its --snapshot artifacts.')
     if args.action == 'confirm':
         transfer = args.transfer
         saved = google['transfers'].get(transfer)
@@ -308,6 +367,9 @@ def command(root, args):
         # Remote text is the common baseline. A local merge remains visibly unsent.
         google['baselines'][kind] = {'transfer': transfer, 'local_sha256': obs['content_sha256'], 'document': obs}
         result = {'id': record['id'], 'transfer': transfer, 'status': 'accepted', 'reviews': studio.freshness(root, directory, record)}
+    if snapshot_files:
+        google['transfers'][transfer]['formatted_snapshot'] = save_formatted_snapshot(directory, transfer, snapshot_files)
+        result['formatted_snapshot'] = google['transfers'][transfer]['formatted_snapshot']
     studio.persist(directory, 'articles', record)
     return result
 
@@ -326,6 +388,7 @@ def add_parser(groups):
         p.add_argument('--observation', required=name != 'prepare')
         p.add_argument('--file', required=name != 'prepare', help='Selected accepted text in the same Markdown projection used for handoff')
         if name == 'prepare':p.add_argument('--new-document', action='store_true')
+        if name in ('confirm', 'accept'):p.add_argument('--snapshot', help='Inspected formatted snapshot directory from google_roundtrip.py capture')
         if name == 'confirm':p.add_argument('--transfer', required=True)
         if name == 'accept':
             p.add_argument('--expected-comparison', required=True)

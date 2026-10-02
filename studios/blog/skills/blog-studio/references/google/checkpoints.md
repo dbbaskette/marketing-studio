@@ -78,3 +78,13 @@ The helper checks consistency, not remote execution or human authorization.
 Use bounded projections, never raw connector responses. Each module specifies
 its requested/observed fields. Readback must support any verified status. No
 receipt changes publication approval or marks an editorial check passed.
+
+## Formatted snapshots (runtime 1.5+)
+
+`confirm` and `accept` accept `--snapshot <directory>` from the
+[round-trip helper](roundtrip.md). An optional `format_sha256` observation tracks
+native text/style/structure independently of the Markdown content hash. Compare
+reports `format_changed`; even unchanged text can receive a snapshot checkpoint.
+The bundle must match the observed document, tabs, revision and Markdown exactly.
+DOCX, Markdown and native formatting evidence are retained under article history
+and shared through the existing private Hub lifecycle.

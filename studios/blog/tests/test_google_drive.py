@@ -124,6 +124,14 @@ class GoogleDriveTests(unittest.TestCase):
         self.assertEqual(self.client.request.call_args.kwargs['body']['writeControl'],{'requiredRevisionId':'fresh'})
         self.assertEqual(result['status'],'written-unverified')
 
+    def test_markdown_export_uses_google_native_mime_and_validates_utf8(self):
+        self.client.metadata = Mock(return_value={'mimeType': gd.DOC_MIME})
+        self.client.request.return_value = b'# Heading\n\n**Emphasis**'
+        self.assertEqual(self.client.export('doc','md'), b'# Heading\n\n**Emphasis**')
+        self.assertIn('text%2Fmarkdown',self.client.request.call_args.args[0])
+        self.client.request.return_value = b'\xff'
+        with self.assertRaises(gd.GoogleError):self.client.export('doc','md')
+
     def test_export_validates_file_and_refuses_overwrite(self):
         self.client.metadata = Mock(return_value={'mimeType':gd.DOC_MIME})
         self.client.request.return_value = b'<html>error</html>'

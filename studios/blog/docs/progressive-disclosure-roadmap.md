@@ -12,7 +12,7 @@ The installed bootstrap quietly fetches approved `main` for a new writing task, 
 
 M1 reduced the parent plus entry to **1,195 tokens** (787 + 408), down from 2,329. Required capability reads and conditional support reads are explicit. The installed bootstrap is measured separately at **857 tokens**. See the [M1 validation record](m1-entry-validation.md). M2 and M3 are now implemented: focused continuity references and four attributed working craft guides. See the [combined validation record](m2-m3-validation.md). M4 scoped reviews are implemented; I4/M5 pilot progress and remaining live checks are recorded in [the validation record](i4-m4-m5-validation.md).
 
-The current parent plus entry is **1,240 estimated tokens**; the bootstrap is **990**. Readiness adds **477** only when needed; workspace plus context controls add **767**. Google modules remain optional. Runtime 1.3.0 adds these usability controls; see [live validation](usability-validation.md).
+The current parent plus entry is **1,342 estimated tokens**; the bootstrap is **1,054**. Readiness adds **477** only when needed; workspace plus context controls add **767**. Google modules remain optional. Runtime 1.3.0 adds these usability controls; see [live validation](usability-validation.md).
 
 ## Disclosure layers
 
@@ -28,9 +28,9 @@ The current parent plus entry is **1,240 estimated tokens**; the bootstrap is **
 
 These are loading boundaries, not mandatory screens. A supplied manuscript can go directly to editing. A clear first-draft request can outline internally and continue. Outline-only ends at the outline. Interviews ask one useful question at a time. Voice setup can run independently of an article.
 
-## Current instruction token estimates
+## Earlier instruction token estimates (historical)
 
-Measured October 1, 2026 from the local package. Each file estimate is its Unicode character count divided by four, rounded up. This is a planning approximation, not a model-specific tokenizer or provider usage report. All numbers exclude author material, generated prose, conversation history, host instructions, tool schemas, and tool results.
+The following baseline predates the house-style addition. For the current package, use the dated table below and the machine-checked inventory. Each file estimate is its Unicode character count divided by four, rounded up. This is a planning approximation, not a model-specific tokenizer or provider usage report. All numbers exclude author material, generated prose, conversation history, host instructions, tool schemas, and tool results.
 
 | Guidance loaded | Approximate new tokens | Condition |
 |---|---:|---|
@@ -121,3 +121,41 @@ The parent adds a conditional hub route. The following are measured character-ba
 H1–H3 and the H4 installer/docs slice are implemented; the 58–95k development range in the approved Team Hub plan remains a planning estimate, not measured consumption. Deterministic local member tests are distinct from the pending real GitHub/harness pilot.
 
 The data-boundary reference adds approximately **1,002 tokens** only when external operations or upstream service suggestions are relevant. The essential privacy constraint is in every parent/module.
+
+## House-style disclosure — October 2, 2026
+
+The [house guide](house-style-guide.md) is implemented as conditional references,
+not a new globally loaded skill. Ordinary software-blog writing reads the core
+once and only applicable leaves. Setup, source intake and voice learning skip it.
+Team preferences use existing scoped rules and selected article revisions.
+
+| Selected style guidance | Additional unique estimated tokens |
+| --- | ---: |
+| Core house guide | 623 |
+| Core + article forms | 1,643 |
+| Core + software claims | 1,177 |
+| Core + software claims + practical examples | 1,661 |
+| Core + software claims + performance evidence | 1,675 |
+| Visual extension alone | 347 |
+| Source map (maintenance only) | 933 |
+
+These are additions to the relevant writing route. If planning and drafting both
+need the core, count it once; combine route file sets, not their totals. A visual
+adds only its own leaf. The source map is not required to write an article.
+
+Current ordinary route estimates, before conditional house references:
+
+| Route | Estimated tokens |
+| --- | ---: |
+| Outline with sources | 3,999 |
+| First draft with sources | 5,615 |
+| Edit + voice-rule review | 5,119 |
+| Voice setup | 4,117 |
+| Light polish | 3,903 |
+| Comprehensive review | 5,753 |
+
+Add 1,054 for the managed bootstrap. All values
+exclude author data, generated output and provider/tool overhead; character-based
+estimates are not billed token counts. Existing article guidance remains pinned.
+House-style guidance alone needs no runtime change. The accompanying Google
+formatting helpers require the 1.5 installer update.

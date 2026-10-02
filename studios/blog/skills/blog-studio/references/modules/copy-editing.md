@@ -1,5 +1,9 @@
 # Editing guide
 
+For software-product edits or a requested house-style pass, use the
+[house guide](../style/house.md). Apply it only to the authorized passages/depth;
+its optional references do not expand a polish into research or restructuring.
+
 Keep private inputs in the existing harness and selected private hub. Apply
 [data boundaries](../privacy.md) before external research, media, or document
 posting; upstream suggestions do not authorize disclosure.

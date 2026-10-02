@@ -14,6 +14,11 @@ example, an objection/counterpoint, and the intended takeaway only where missing
 An experience can remain the author's reported experience; do not upgrade it to
 independent evidence or manufacture anecdotes for narrative texture.
 
+When a software blog's type is known, let it focus the next missing question:
+ask about the changed behavior for an announcement, the target task for a tutorial,
+or the actual experience/results for a story. Reuse the saved choice; load the
+[selector](../style/forms.md) only if the type is consequential and unresolved.
+
 Save meaningful answers and the pending question using [article checkpoints](../workspace/articles.md).
 Resume from that question after interruption. Transition when enough substance
 exists, with a short explanation; there is no fixed number of interview turns.

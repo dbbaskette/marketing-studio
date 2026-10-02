@@ -22,3 +22,7 @@ For a bootstrap task, bind its actual task immediately:
 Add `--cached` only for an explicitly chosen stale fallback. Retain returned
 runtime and exact source/voice/guidance pins; a new task's latest guidance must
 not replace an existing article's pin.
+
+For software-product work, keep the inferred article form and any explicit house-style
+exceptions in that brief. Reuse selected team terminology and author voice; do not
+add a mandatory style questionnaire. [House style](../style/house.md) supplies defaults.

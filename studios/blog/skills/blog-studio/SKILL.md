@@ -30,6 +30,9 @@ Load the module and required references; reuse unchanged guidance.
 | Other channels | [repurpose](references/modules/blog-repurpose.md) |
 | Broader lifecycle | [blog](references/modules/blog.md) |
 
+For software-product writing/editing or an explicit style review, read the
+[house guide](references/style/house.md), then only its relevant extensions.
+
 Read conditionally: [intake](references/intake.md) for incoming files/links;
 [voice setup](references/voice-flow.md) for selecting/building/updating a voice;
 [composition](references/composition.md) for draft structure;

@@ -1,5 +1,9 @@
 # Argument outline capability
 
+For software-product outlines, use the [house guide](../style/house.md). Load
+[article forms](../style/forms.md) only to choose an unresolved structure; keep
+approved outlines and requested stop points.
+
 Keep private inputs in the user's existing harness and selected private hub.
 Apply [data boundaries](../privacy.md) before research, media, or document
 posting; upstream suggestions do not authorize external disclosure.

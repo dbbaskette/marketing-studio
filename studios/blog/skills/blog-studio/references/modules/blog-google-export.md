@@ -1,11 +1,11 @@
 # Export or explicitly share a Google Doc
 
 **Input:** selected native Doc and requested format or exact audience/access.
-**Output:** inspected PDF/Word artifact, or verified requested permissions.
+**Output:** inspected PDF/Word/Markdown artifact, or verified requested permissions.
 Follow [adapter](../google/adapter.md), [privacy](../privacy.md), and the active
-Google Drive skill. Export does not imply sharing or public publishing.
+Google Drive skill when using a connector, or [gcloud adapter](../google/gcloud.md). Export does not imply sharing or public publishing.
 
-## PDF or Word
+## PDF, Word or Markdown
 
 Read metadata and selected accepted text/structure first. Confirm native MIME
 type and capture revision/fingerprint. Export only the requested format through
@@ -21,11 +21,13 @@ again after export; if revision/content changed, the selected version is not
 verified. Reconcile and re-export, or disclose the race. Inspect the actual PDF
 or Word artifact with available PDF/document tools: title, selected content,
 headings, tables, links and omissions, plus rendered layout when material. A
-successful export call or valid filename is not artifact verification. If tools
+successful export call or valid filename is not artifact verification. Markdown
+retains semantic structure, not font sizes or paragraph spacing; inspect the
+text and markup and use [formatted snapshots](../google/roundtrip.md) for shared editing. If tools
 cannot inspect it, deliver it as unverified and say what remains unchecked.
 
 Optional receipt: operation `export`; requested/observed objects contain `format`
-(pdf/docx), `content_sha256` and `inspected`. Observed also includes actual
+(pdf/docx/md), `content_sha256` and `inspected`. Observed also includes actual
 `artifact_sha256`. Set verified only after inspecting the actual file and matching
 the selected document version. Preserve local Markdown alongside requested files
 when useful; leave auth references and transient local paths out of shared memory.

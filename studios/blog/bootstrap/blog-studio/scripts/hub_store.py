@@ -11,7 +11,7 @@ import subprocess
 import uuid
 from urllib.parse import urlsplit
 
-VERSION = '1.3.0'
+VERSION = '1.5.0'
 KINDS = ('article', 'source', 'voice', 'note', 'decision', 'rule', 'context', 'review')
 MAX_TEXT = 1024 * 1024
 MAX_BINARY = 10 * MAX_TEXT
@@ -205,7 +205,7 @@ class GitHub:
 
 def manifest(hub_id, name, repository, mode='auto'):
     return {'schema': 1, 'hub': uid(hub_id), 'name': name, 'repository': repository,
-            'branch': 'main', 'minimum_runtime': VERSION, 'contribution_mode': mode}
+            'branch': 'main', 'minimum_runtime': '1.3.0', 'contribution_mode': mode}
 
 
 def validate_manifest(value, repository=None):

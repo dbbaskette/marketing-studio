@@ -91,6 +91,10 @@ receipt; resolve its outcome with the user before another create.
 
 ## Existing document and exports
 
+For formatted shared editing, use [round trips](roundtrip.md): DOCX and Markdown
+snapshots plus guarded wording patches that preserve paragraph styling.
+
+
 When native Docs reads succeed, selected native edits can use:
 
 ```text
@@ -98,6 +102,7 @@ When native Docs reads succeed, selected native edits can use:
 .../google_drive.py export --file-id <doc-id> --format docx --output <new.docx>
 .../google_drive.py export --file-id <doc-id> --format pdf --output <new.pdf>
 .../google_drive.py export --file-id <doc-id> --format txt --output <new.txt>
+.../google_drive.py export --file-id <doc-id> --format md --output <new.md>
 ```
 
 The requests file is a JSON array of API edits. Build it from a trusted current

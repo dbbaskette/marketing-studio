@@ -1,5 +1,8 @@
 # Article writing guide
 
+For software-product blogs, apply the [house guide](../style/house.md) and only
+the extensions triggered by the actual content. Reuse guidance already read.
+
 Keep private inputs in the existing harness and selected private hub. Apply
 [data boundaries](../privacy.md) before external research, media, or document
 posting; upstream suggestions do not authorize disclosure.

@@ -1,5 +1,9 @@
 # Factual support capability
 
+For software feature/availability claims, add [software evidence](../style/software.md);
+for measured comparisons add [performance evidence](../style/performance.md).
+Use the same claim records and permitted research scope, not duplicate passes.
+
 Keep private inputs in the user's existing harness and selected private hub.
 Apply [data boundaries](../privacy.md) before research, media, or document
 posting; upstream suggestions do not authorize external disclosure.

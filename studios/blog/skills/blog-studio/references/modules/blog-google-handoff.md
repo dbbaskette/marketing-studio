@@ -5,6 +5,10 @@
 [Google adapter](../google/adapter.md), [privacy](../privacy.md), and
 [checkpoint contract](../google/checkpoints.md).
 
+For formatted shared editing, load [format-preserving round trips](../google/roundtrip.md).
+Store DOCX + Markdown snapshots on return, including formatting-only changes;
+use paragraph wording patches for updates to an existing formatted Doc.
+
 1. Reuse article title, brief, voice and stop point. Select `DRAFT.md` or
    `OUTLINE.md`; an outline-only task must remain an outline. Resolve folder and
    whether this is a new copy or an explicitly targeted working Doc. Inspect

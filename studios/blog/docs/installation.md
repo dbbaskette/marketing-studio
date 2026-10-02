@@ -123,3 +123,11 @@ active gcloud account. No custom OAuth client, Cloud project or billing setup
 is required. Default installation skips Google; `--google-docs gcloud` opts in
 after setup, while `--google-docs gcloud-check` checks only. See [Google Docs](google-docs.md)
 for native editing limits and document round-trip verification.
+
+### Update for formatted Google editing
+
+Runtime 1.5 adds DOCX/Markdown snapshot storage and guarded paragraph wording
+patches. Run the new installer bundle once with the same targets; existing
+credentials, workspace and rollback version remain in place. Guidance refresh
+alone does not add runtime helpers. Members of a Hub receiving formatted snapshots
+need 1.5 before contributing, so older clients cannot silently drop those files.

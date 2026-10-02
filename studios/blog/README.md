@@ -229,3 +229,18 @@ python3 scripts/package_installer.py
 Portable ZIPs and checksums are in [dist](dist/). The original five-skill collection remains available as [blog-writing-toolkit](skills/blog-writing-toolkit/SKILL.md).
 
 Upstream sources retain their licenses and pinned provenance. See [package notes](skills/blog-studio/references/package-notes.md), [source lock](skills/blog-studio/sources.lock.json), and [BlogForge asset lock](skills/blog-studio/blogforge.lock.json).
+
+## House style for software blogs
+
+A [compact house guide](docs/house-style-guide.md) adds shared defaults while
+preserving each author's voice. The skill loads only the relevant details for
+article form, software claims, runnable examples, performance evidence or visuals.
+Team overrides use existing Hub rules and article pins. This is a guidance update;
+no additional CLI or runtime installation is needed.
+
+### Keep your Google formatting
+
+Google Docs is the shared editing copy. Blog Studio 1.5 saves a **formatted DOCX**,
+readable Markdown, and native formatting evidence to the private Team Hub on return.
+Targeted wording updates preserve paragraph styles and check the result.
+[How the round trip works](docs/google-docs.md#formatted-google-editing-runtime-15).

@@ -150,9 +150,9 @@ class Client:
         return {**snapshot, 'audience_sha256': digest(encoded(snapshot)),
                 'can_add_children': meta.get('capabilities', {}).get('canAddChildren', False)}
 
-    def native_read(self, file_id):
+    def native_read(self, file_id, inline=False):
         return self.request(DOCS + identifier(file_id) + '?' + urllib.parse.urlencode({
-            'includeTabsContent': 'true', 'suggestionsViewMode': 'PREVIEW_WITHOUT_SUGGESTIONS'}))
+            'includeTabsContent': 'true', 'suggestionsViewMode': 'SUGGESTIONS_INLINE' if inline else 'PREVIEW_WITHOUT_SUGGESTIONS'}))
 
     def native_update(self, file_id, revision, requests):
         if not isinstance(revision, str) or not revision.strip():
@@ -177,13 +177,13 @@ class Client:
         meta = self.metadata(file_id)
         if meta.get('mimeType') != DOC_MIME:
             raise GoogleError('The selected file is not a native Google Doc.')
-        mime = {'txt': 'text/plain', 'pdf': 'application/pdf', 'docx': DOCX}[format]
+        mime = {'txt': 'text/plain', 'md': 'text/markdown', 'pdf': 'application/pdf', 'docx': DOCX}[format]
         data = self.request(DRIVE + 'files/' + identifier(file_id) + '/export?' + urllib.parse.urlencode({'mimeType': mime}), binary=True)
         if format == 'pdf' and not data.startswith(b'%PDF-'):
             raise GoogleError('Export was not a PDF.')
         if format == 'docx':
             validate_docx(data)
-        if format == 'txt':
+        if format in ('txt', 'md'):
             try:
                 data.decode('utf-8')
             except UnicodeError:
@@ -270,7 +270,7 @@ def main():
         if name in ('read', 'export'):
             sub.add_argument('--output', type=Path, required=True)
         if name == 'export':
-            sub.add_argument('--format', choices=('txt', 'pdf', 'docx'), required=True)
+            sub.add_argument('--format', choices=('txt', 'md', 'pdf', 'docx'), required=True)
         if name == 'update':
             sub.add_argument('--revision', required=True);sub.add_argument('--requests', type=Path, required=True)
     sub = actions.add_parser('import')
