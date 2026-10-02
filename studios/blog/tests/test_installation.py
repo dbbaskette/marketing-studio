@@ -48,6 +48,18 @@ class InstallationTests(unittest.TestCase):
         self.assertEqual(checked['runtime_integrity'], 'verified')
         self.assertNotEqual(checked['live_harness_discovery'], 'verified')
 
+    def test_google_runtime_requires_its_managed_helper(self):
+        manifest_path = self.source / 'install-manifest.json'
+        manifest = json.loads(manifest_path.read_text())
+        self.assertEqual(manifest['version'], '1.2.0')
+        name = 'scripts/google_workflow.py'
+        (self.source / name).unlink()
+        del manifest['files'][name]
+        manifest_path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(installer.InstallError, 'Required runtime files'):
+            self.install()
+        self.assertFalse((self.root / 'installation.json').exists())
+
     def test_repair_stages_intact_runtime_without_deleting_damaged_version(self):
         self.install()
         damaged = self.targets['codex'].resolve()

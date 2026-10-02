@@ -36,8 +36,9 @@ class BundleTests(unittest.TestCase):
             self.assertEqual(installed['status'], 'installed')
             runtime = (home / '.agents/skills/blog-studio/scripts').resolve()
             self.assertIn('Team Hub',run(sys.executable,str(runtime/'hub.py'),'--help'))
-            for helper in ('hub_store.py','hub_workspace.py'):
+            for helper in ('hub_store.py','hub_workspace.py','google_workflow.py'):
                 self.assertTrue((runtime/helper).is_file())
+            self.assertIn('prepare',run(sys.executable,str(runtime/'studio.py'),'--root',str(base/'unused'),'google','--help'))
             self.assertEqual(runtime, (home / '.claude/skills/blog-studio/scripts').resolve())
             remote = base / 'fixture repository'
             remote.mkdir()

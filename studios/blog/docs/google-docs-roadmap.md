@@ -1,10 +1,10 @@
-# Google Docs: the next writing phase
+# Google Docs workflow roadmap
 
-Status: proposed follow-up. The Team Hub runtime now provides shared portable articles, dependencies, and optional Doc metadata; native Google operations are not implemented. Core writing remains in the harness; Google Docs adds a familiar place for the team to review and edit.
+Status: G0–G3 skill workflows and local checkpoint runtime implemented in 1.2.0. Provider execution remains in the connected harness; authenticated verification is deferred to G4 (#15), per user direction to run live tests last. See [Google Docs usage](google-docs.md).
 
-## Recommended first slice
+## Implemented scope
 
-Build **a draft handoff and return loop** first: “Send this draft to Google Docs,” followed by “Bring the team's edits back.” Include source-Doc intake because the same identity, access, and readback handling supports it. This produces a useful end-to-end workflow before adding automation or a large collaboration dashboard.
+The central workflow is **a draft handoff and return loop**: “Send this draft to Google Docs,” followed by “Bring the team's edits back.” Source intake uses the same identity, access and readback contract. Comments, native template reuse, exports and explicitly requested sharing have focused skill routes.
 
 | Capability skill | Author's request | Result and boundary |
 | --- | --- | --- |
@@ -21,9 +21,9 @@ Share settings, email invitations, comment replies/resolution, and public publis
 
 The parent adds one optional finishing choice: **Continue in Google Docs**. It loads the Google router only for a supplied Google link or a requested Google outcome. The router chooses intake, handoff, return, comments, template, or export; each reads only its applicable instructions. Ordinary outlining and editing incur no Google guidance load.
 
-Suggested new router: `references/google/workflow.md`, with short module wrappers and focused support files. These would be repository guidance updates. Persisting new synchronization metadata or implementing a new executable adapter would require a managed runtime update.
+The router is `references/google/workflow.md`; six modules live in `references/modules/blog-google-*.md`. Adapter and checkpoint contracts load only when needed. The 1.2.0 managed runtime supplies local transfer/receipt checks; no new Google CLI or credential store is installed.
 
-Planning targets, excluding actual document content and host/plugin instructions:
+Original planning targets, excluding actual document content and host/plugin instructions:
 
 | Added Blog Studio guidance | Estimated unique tokens |
 | --- | ---: |
@@ -33,7 +33,7 @@ Planning targets, excluding actual document content and host/plugin instructions
 | Return and conflict handling | 700–1,200 |
 | Comments or template operation | 500–900 each |
 
-These are targets for unbuilt modules, not measured costs. The Google plugin’s own instructions and required preservation references may add substantial context; whole-document reads can dominate cost. Use file-backed reads and selected passages where the operation permits them.
+These are historical targets. Current measured estimates appear below; the adapter/checkpoint contract is an additional one-time load for applicable operations. The Google plugin’s own instructions and required preservation references may add substantial context; whole-document reads can dominate cost. Use file-backed reads and selected passages where the operation permits them.
 
 ## Connection strategy
 
@@ -55,13 +55,31 @@ A Google review copy is not automatically the permanent authority. The article r
 
 | Slice | Outcome | Estimated development tokens | Completion evidence |
 | --- | --- | ---: | --- |
-| G1 Intake + handoff + return | Useful round trip, transfer baseline, preserved local history | 15–25k | Disposable Doc and article round trip; headings/links survive; access failure and both-copies-changed conflict handled |
-| G2 Native comments + templates | Focused review and company template reuse | 10–18k | Anchors verified against current text; complete native template structure preserved |
-| G3 Export + optional sharing | Requested formats and explicitly selected recipients | 6–10k | Output verified; permission changes read back; no unrequested sharing |
+| G0 Capability and review contract — implemented | Per-harness discovery, folder/template/audience choices, guarded writes and explicit unsupported states | Included in G1 | Current Codex tool schemas inspected; Claude and live provider behavior remain in G4 |
+| G1 Intake + handoff + return — implemented | Useful round trip, transfer baseline, preserved local history | 15–25k | Local roundtrip/conflict/preservation fixtures; live Doc/headings/links validation deferred to G4 |
+| G2 Native comments + templates — implemented | Focused review and company template reuse | 10–18k | Conditional native comment/template contracts and receipt tests; native anchoring and template fidelity deferred to G4 |
+| G3 Export + optional sharing — implemented | Requested formats and explicitly selected recipients | 6–10k | Export/permission verification contracts and bounded receipt tests; real artifacts/access deferred to G4 |
 | G4 Team pilot | Practical workflow in each intended harness | 6–12k | Marketing users complete source → draft → review → return; actual tool/capability differences recorded |
 | **Total planning range** | | **37–65k** | Estimates revised after G1 |
 
 Test conflict logic with disposable fixtures, then validate provider behavior against explicitly authorized disposable Google Docs. Do not count mocked connector results as a live collaboration pilot. The next material choices are the team's main harness and preferred review folder/template; those need to be grounded before implementing the Google write path.
+
+## Measured G0–G3 disclosure
+
+Character-based estimates from the checked-in token inventory. Each operation
+below includes the 338-token Google router, but excludes the ordinary parent,
+provider/plugin instructions, source text and output. Reuse unchanged instructions.
+
+| Operation | Router + focused guide |
+| --- | ---: |
+| Source | 913 |
+| Handoff | 1,064 |
+| Return | 1,102 |
+| Review | 1,024 |
+| Template | 1,063 |
+| Export | 1,183 |
+
+The adapter contract adds **1,036** tokens when selecting or refreshing a connection. The local checkpoint contract adds **1,119** tokens when recording transfers/receipts; privacy adds **1,002** when not already loaded. These are explicit additions, not hidden inside the module estimates. Provider preservation instructions and full-document reads can cost considerably more. Ordinary writing loads none of this Google guidance.
 
 ## Provider references
 

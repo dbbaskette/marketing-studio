@@ -6,9 +6,9 @@
 
 Bring a rough idea, a stack of notes, or a blog you've already written. Blog Studio helps you find the next useful step, uses your voice, and loads the writing guidance that step needs.
 
-**6 starting paths · 14 capability modules · Reusable voices · Shared Team Hub · Resumable work**
+**6 starting paths · 20 capability modules · Reusable voices · Shared Team Hub · Resumable work**
 
-[Get started](#get-started) · [Progressive disclosure](#how-progressive-disclosure-works) · [Roadmap and token estimates](docs/progressive-disclosure-roadmap.md) · [Install Blog Studio](docs/installation.md) · [Team Hub](docs/team-hub.md) · [Google Docs next](docs/google-docs-roadmap.md)
+[Get started](#get-started) · [Progressive disclosure](#how-progressive-disclosure-works) · [Roadmap and token estimates](docs/progressive-disclosure-roadmap.md) · [Install Blog Studio](docs/installation.md) · [Team Hub](docs/team-hub.md) · [Google Docs](docs/google-docs.md)
 
 ## Install once. Keep getting better.
 
@@ -44,6 +44,7 @@ flowchart TD
     P -->|Current writing task| W[Discover · interview · outline · draft · edit]
     P -->|Review requested| R[Selected editorial checks]
     P -->|Next format requested| F[Repurpose · export]
+    P -->|Google work requested| G[Sources · handoff/return · comments · templates · export/share]
 ```
 
 | Stage | What appears in chat | Guidance loaded when needed |
@@ -59,13 +60,28 @@ These stages adapt to your request. A clear draft request can continue through a
 
 **The workflow stays in chat.** The optional [newcomer prompt generator](preview/blog-studio.html) helps you choose a starting request to paste into your harness. It doesn't generate the article or store your writing.
 
+## Continue in Google Docs
+
+Ask “put this draft in our review folder,” “bring back the team's edits,” or
+“use our article template.” Six optional skills handle source intake, handoff,
+return, comments, templates and exports/sharing. A saved baseline detects local
+and Google edits; conflicts need a choice, originals and history survive, and
+only selected content crosses into Google.
+
+The **1.2.0 runtime** adds local checkpoints and portable Team Hub history.
+Google operations use your harness's connected provider. Native inline comments,
+template fidelity, exports and access changes require actual provider readback;
+capability gaps are stated. No extra Google CLI is installed. Authenticated
+Codex/Claude and Google pilots remain [deferred to run last](docs/google-docs.md#verification-and-remaining-live-work).
+See [Google Docs usage](docs/google-docs.md) and the [Google roadmap](docs/google-docs-roadmap.md).
+
 ## Token footprint
 
-The parent now names required capability reads and conditional support reads explicitly. Parent plus entry flow is approximately **1,195 tokens**, down from 2,329 (49% less). See the [M1 validation record](docs/m1-entry-validation.md).
+The parent now names required capability reads and conditional support reads explicitly. Parent plus entry flow is approximately **1,199 tokens**, down from 2,329 (49% less). See the [M1 validation record](docs/m1-entry-validation.md).
 
 M2 now loads **450–498 tokens** for a routine continuity operation, including its small router. M3 supplies concise writing, editing, strategy, and title guides; the original sources remain optional. See the [combined validation record](docs/m2-m3-validation.md).
 
-Progressive disclosure keeps the full reference library available while selecting guidance for the current operation. The library contains approximately **170.6k estimated tokens**; a normal route reads a subset. The total grows slightly because it includes both the retained originals and the new working guides.
+Progressive disclosure keeps the full reference library available while selecting guidance for the current operation. The library contains approximately **178.6k estimated tokens**; a normal route reads a subset. The total grows slightly because it includes both the retained originals and the new working guides.
 
 | Route | Current managed guidance | Offline target after roadmap |
 |---|---:|---:|
@@ -100,7 +116,7 @@ The local `.blog-studio/` projection is excluded from the skill repository. Sele
 
 The administrator creates a private remote and local clone. Members with existing access join through chat. Blogs, notes, sources, voices, reviews, and user-defined rules/context share by default in the selected workspace. Offline saves queue locally; concurrent edits retain both versions; protected main uses a contribution PR.
 
-Update to runtime **1.1.0** using the trusted installer. No actual team repo is created by downloading or installing the skill. See [Team Hub usage](docs/team-hub.md) for setup, sharing, and the current verification boundary.
+Update to runtime **1.2.0** using the trusted installer. No actual team repo is created by downloading or installing the skill. See [Team Hub usage](docs/team-hub.md) for setup, sharing, and the current verification boundary.
 
 ## Your content and outside services
 
@@ -136,14 +152,14 @@ Then visit `http://127.0.0.1:8896/blog-studio.html`.
 
 ## What's implemented and what's next
 
-The six routes, fourteen capability modules, local continuity helpers, and portable packages are implemented. **91 deterministic tests cover local helpers, Team Hub, privacy boundaries, guidance refresh, and managed installation**, alongside package integrity and extracted-bundle portability checks. The suite also passed in a fresh Tart macOS 27 clone. That pilot found and fixed GUI-path Python discovery; installer diagnostics and newcomer prompts are now portable and clearer. Signed-in discovery/writing in both harnesses and the full browser sign-in handoff remain validation gaps. See the [I4/M4/M5 evidence and remaining checks](docs/i4-m4-m5-validation.md).
+The six writing routes, **20 capability modules**, local continuity helpers and portable packages are implemented. **111 deterministic tests passed locally and in a fresh Tart macOS 27 clone**, covering transfers/conflicts, Team Hub, privacy boundaries, guidance refresh and installation. G0–G3 Google skill workflows are implemented; live provider behavior remains deferred. See the [G0–G3 validation record](docs/g0-g3-validation.md) and [earlier I4/M4/M5 evidence](docs/i4-m4-m5-validation.md).
 
 | Next milestone | Estimated development tokens |
 |---|---:|
-| Google Docs intake, review handoff, and return (first slice) | 15–25k |
+| Google Docs team pilot (G4) — run last | 6–12k original range |
 | Live Codex/Claude and signed-in newcomer pilots — run last | 12–22k original range |
 
-The repository bootstrap and M1–M4 guidance refinements are delivered. Reviews load selected checks and retain passage-level evidence; comprehensive feedback is about 22% smaller than after M3. Live Codex/Claude validation is deferred to [M5 #9](https://github.com/dbbaskette/blog-studio/issues/9), with signed-in Mac setup in [I4 #8](https://github.com/dbbaskette/blog-studio/issues/8). Run these last, when the user is available for sign-in. Development ranges are planning estimates, with overlapping pilot work excluded from additive totals. See the [progressive roadmap](docs/progressive-disclosure-roadmap.md) and [Google Docs roadmap](docs/google-docs-roadmap.md).
+The repository bootstrap, M1–M4 guidance refinements and G0–G3 Google workflows are delivered. Runtime 1.2.0 adds local Google transfer checkpoints; provider validation remains in G4 #15. Reviews load selected checks and retain passage-level evidence; comprehensive feedback is about 22% smaller than after M3. Live Codex/Claude validation is deferred to [M5 #9](https://github.com/dbbaskette/blog-studio/issues/9), with signed-in Mac setup in [I4 #8](https://github.com/dbbaskette/blog-studio/issues/8). Run these last, when the user is available for sign-in. Development ranges are planning estimates, with overlapping pilot work excluded from additive totals. See the [progressive roadmap](docs/progressive-disclosure-roadmap.md) and [Google Docs roadmap](docs/google-docs-roadmap.md).
 
 ## Verify and package
 

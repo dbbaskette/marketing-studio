@@ -1,5 +1,6 @@
 # Export and delivery
 
+For Google Docs delivery, read the [Google router](google/workflow.md).
 Deliver the requested format. Markdown is the default when unspecified. Add
 frontmatter only when the target platform needs it, using its actual fields.
 For HTML retain semantic headings, working links, and image alt text; for Word

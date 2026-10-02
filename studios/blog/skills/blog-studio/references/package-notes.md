@@ -1,7 +1,8 @@
 # Package and provenance
 
-Blog Studio is self-contained: its entry point routes to fourteen modules,
-nine adapted from BlogForge and five retained from the original shortlist.
+Blog Studio is self-contained: its entry point routes to twenty modules:
+nine adapted from BlogForge, five from the original shortlist, and six authored
+Google workflows using the current harness provider.
 The collected [library notes](library-notes.md) document the original sources
 and their omitted Claude-specific runtimes. Their descriptions remain source
 references; Blog Studio controls conversation, scope, and continuity.
@@ -21,7 +22,7 @@ services. The agent performs those tasks using available host capabilities and
 records the results. Workspaces live outside the installed skill.
 
 Run `python3 scripts/validate_package.py` for source integrity, routing, and
-local-link validation. It checks the five source modules plus nine new ones.
+local-link validation. It checks all twenty modules and their conditional routes.
 The full offline package includes that validator. Repository snapshots retain
 provenance and references; use the installed runtime for executable helpers and
 the managed installer for runtime checks. For offline/manual discovery, install

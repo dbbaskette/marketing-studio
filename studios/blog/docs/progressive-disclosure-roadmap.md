@@ -4,13 +4,15 @@ Blog Studio runs inside the user's Codex or Claude harness. The parent skill use
 
 Keep the existing browser prompt generator as an optional introduction for newcomers. It produces a starting request; it does not become a required application, a writing service, or a second place to maintain an article. A user can start directly in chat with a topic, manuscript, outline, source material, or a voice-profile request.
 
-The current package implements the six routes, fourteen capability modules, and continuity helpers. The helper, refresh, and installer deterministic suite and package portability checks verify local behavior. Those results establish helper behavior and packaging; conversational quality and route selection still need a representative harness pilot.
+The current package implements the six routes, twenty capability modules, and continuity helpers. The helper, refresh, and installer deterministic suite and package portability checks verify local behavior. Those results establish helper behavior and packaging; conversational quality and route selection still need a representative harness pilot.
 
 ## Repository updates are implemented
 
 The installed bootstrap quietly fetches approved `main` for a new writing task, returns a compact status/path record, and progressively reads the pinned repository guidance. Existing articles resume their saved pin and runtime. Core executable updates are explicit managed installs with backup, repair, and rollback. See [installation](installation.md) and the [implementation record](superpowers/plans/2026-10-01-blog-studio-installation.md).
 
-M1 is implemented: parent plus entry now totals approximately **1,195 tokens** (787 + 408), down from 2,329. Required capability reads and conditional support reads are explicit. The installed bootstrap is measured separately at **857 tokens**. See the [M1 validation record](m1-entry-validation.md). M2 and M3 are now implemented: focused continuity references and four attributed working craft guides. See the [combined validation record](m2-m3-validation.md). M4 scoped reviews are implemented; I4/M5 pilot progress and remaining live checks are recorded in [the validation record](i4-m4-m5-validation.md).
+M1 reduced the parent plus entry to **1,195 tokens** (787 + 408), down from 2,329. Required capability reads and conditional support reads are explicit. The installed bootstrap is measured separately at **857 tokens**. See the [M1 validation record](m1-entry-validation.md). M2 and M3 are now implemented: focused continuity references and four attributed working craft guides. See the [combined validation record](m2-m3-validation.md). M4 scoped reviews are implemented; I4/M5 pilot progress and remaining live checks are recorded in [the validation record](i4-m4-m5-validation.md).
+
+After adding conditional Google routing, the current parent plus entry is **1,199 tokens**. Google modules remain optional.
 
 ## Disclosure layers
 
@@ -60,12 +62,12 @@ For the managed bootstrap, add approximately 857 tokens to each offline route be
 
 | Route | Current guidance estimate | Additional author material planning allowance | Generated artifact planning allowance |
 |---|---:|---|---|
-| Outline with supplied sources | 3,544 | 2,000–6,000 for selected evidence; 300–800 for a saved voice | 500–1,200 for outline |
-| First draft with supplied sources | 5,120 | 2,000–6,000 for evidence; 300–800 for voice; 300–800 for brief/outline | 1,500–2,200 for roughly 1,200–1,600 words |
-| Edit plus saved voice-rule review | 4,551 | 1,500–2,200 for manuscript; 300–800 for selected voice/rules | 1,500–2,200 for revised draft, plus short notes |
-| New voice setup | 3,904 | 4,000–10,000 for selected authored samples/background | 800–1,600 for guide and audition |
-| Light polish without a separate review | 3,395 | 1,500–2,200 for manuscript; selected voice | Revised passages or draft |
-| Comprehensive review | 5,197 | 1,500–2,200 for draft; 2,000–6,000 for evidence; 300–800 for voice | 800–2,000 for findings; a rewrite is additional |
+| Outline with supplied sources | 3,568 | 2,000–6,000 for selected evidence; 300–800 for a saved voice | 500–1,200 for outline |
+| First draft with supplied sources | 5,144 | 2,000–6,000 for evidence; 300–800 for voice; 300–800 for brief/outline | 1,500–2,200 for roughly 1,200–1,600 words |
+| Edit plus saved voice-rule review | 4,555 | 1,500–2,200 for manuscript; 300–800 for selected voice/rules | 1,500–2,200 for revised draft, plus short notes |
+| New voice setup | 3,928 | 4,000–10,000 for selected authored samples/background | 800–1,600 for guide and audition |
+| Light polish without a separate review | 3,399 | 1,500–2,200 for manuscript; selected voice | Revised passages or draft |
+| Comprehensive review | 5,201 | 1,500–2,200 for draft; 2,000–6,000 for evidence; 300–800 for voice | 800–2,000 for findings; a rewrite is additional |
 
 Author-material and output ranges are explicit planning assumptions, not measured user inputs. Full claim verification may require more evidence. A large upload stays in the source library; only relevant passages enter a particular writing operation. A summary helps orientation but does not replace the underlying passage when checking a claim.
 
@@ -90,21 +92,21 @@ Targets cover unique offline instruction loads for the normal route, with local 
 
 | Route | Current approximate guidance | Target guidance |
 |---|---:|---:|
-| Outline with sources | 3,544 | 2,000–3,000 |
-| First draft with sources | 5,120 | 3,000–5,000 |
-| Quick edit | 4,551 | 2,500–4,000 |
-| Voice setup | 3,904 | 2,000–3,500 |
-| Comprehensive review | 5,197 | 4,000–6,000 |
+| Outline with sources | 3,568 | 2,000–3,000 |
+| First draft with sources | 5,144 | 3,000–5,000 |
+| Quick edit | 4,555 | 2,500–4,000 |
+| Voice setup | 3,928 | 2,000–3,500 |
+| Comprehensive review | 5,201 | 4,000–6,000 |
 
-Reducing guidance must preserve useful behavior rather than merely shrinking files. The M1 outline-only smoke reused supplied notes and tone, saved and reopened the outline, and stopped before a draft. M2–M4 reduce continuity/craft/review reads. Comprehensive feedback is now 5,197 tokens; a light polish without separate checks is 3,395. The explicitly broader edit-plus-review scenario remains 4,551. Some routes still exceed final targets; M5 must validate behavior and revise targets from observed unique reads. The optional prompt generator remains available throughout.
+Reducing guidance must preserve useful behavior rather than merely shrinking files. The M1 outline-only smoke reused supplied notes and tone, saved and reopened the outline, and stopped before a draft. M2–M4 reduce continuity/craft/review reads. Comprehensive feedback is now 5,201 tokens; a light polish without separate checks is 3,399. The explicitly broader edit-plus-review scenario remains 4,555. Some routes still exceed final targets; M5 must validate behavior and revise targets from observed unique reads. The optional prompt generator remains available throughout.
 
 ## Measurement record
 
 The per-file inventory and route file sets are saved in `estimates/blog-studio-token-inventory.json`. Recompute after guidance changes with `python3 scripts/measure_guidance.py`; `--check` verifies the recorded inventory. Route file sets remain explicit planning scenarios, not traces of every possible conversation. The roadmap itself, scripts, licenses, lock files, metadata, and browser preview are excluded from the instruction-library total. Shell execution of a helper does not load its full source into the model unless the agent chooses to read that source.
 
-## Google Docs follow-up
+## Google Docs workflows
 
-The [Google Docs roadmap](google-docs-roadmap.md) recommends source intake and a review handoff/return loop first, with native comments, templates, and export following. Its modules load only for Google work. Connector availability and the team’s primary harness need validation before implementation.
+G0–G3 are implemented as six conditional modules plus runtime 1.2.0 transfer checkpoints. The [Google Docs roadmap](google-docs-roadmap.md) separates measured instruction costs from provider/plugin overhead. Source intake, handoff/return, comments, templates and export/sharing remain inside the harness; actual connector capabilities are discovered per session. Authenticated Google verification is deferred to G4 (#15).
 
 ## Implemented Team Hub disclosure
 

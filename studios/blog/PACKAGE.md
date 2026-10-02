@@ -4,11 +4,11 @@ The recommended [guided installer ZIP](dist/blog-studio-installer.zip) installs 
 
 The bootstrap quietly fetches approved `main` when a new writing task starts. It materializes `skills/blog-studio/SKILL.md`, its references, and provenance records from that exact revision into the author's task cache. Runtime scripts from the repository are excluded from the readable guidance snapshot and are never executed. The assistant reads relevant files progressively; downloads stay outside model context.
 
-`skills/blog-studio/` remains the single maintained operational guidance source, including fourteen capability modules and pinned upstream references. The compatibility manifest is [guidance/manifest.json](guidance/manifest.json). Bootstrap/runtime changes require a new managed bundle; guidance-only changes need no reinstall. The installer builder copies the continuity helpers and the three Team Hub modules from the full package and records file hashes in the bootstrap manifest.
+`skills/blog-studio/` remains the single maintained operational guidance source, including twenty capability modules and pinned upstream references. The compatibility manifest is [guidance/manifest.json](guidance/manifest.json). Bootstrap/runtime changes require a new managed bundle; guidance-only changes need no reinstall. The installer builder copies the continuity helpers, three Team Hub modules and local Google checkpoint helper from the full package and records file hashes in the bootstrap manifest.
 
 Codex uses `~/.agents/skills/blog-studio`; Claude Code uses `~/.claude/skills/blog-studio` (or its configured root). Both link to one managed local runtime. User writing lives separately, by default in `.blog-studio` under the active writing project. Articles record guidance pins and runtime paths, originals, draft history, voice revisions, and review freshness. Adopting a new guidance revision makes affected reviews stale.
 
-Runtime **1.1.0** includes `hub.py`, `hub_store.py`, and `hub_workspace.py`. Shared working content belongs in a separate private Team Hub repo; local projection maps, queues, and caches never enter either skill distribution. The new guidance manifest requires 1.1.0; old runtime versions remain available for installer rollback with compatible historical guidance. See [Team Hub](docs/team-hub.md).
+Runtime **1.2.0** includes `hub.py`, `hub_store.py`, `hub_workspace.py` and `google_workflow.py`. The Google helper performs local consistency checks; connected provider operations remain in the harness. Shared working content belongs in a separate private Team Hub repo; local projection maps, queues, and caches never enter either skill distribution. The new guidance manifest requires 1.2.0; old runtime versions remain available for installer rollback with compatible historical guidance. See [Team Hub](docs/team-hub.md).
 
 The separate [full offline ZIP](dist/blog-studio.zip) expands to a complete self-contained `blog-studio` skill. Copy that whole folder into a supported skill root for manual/offline use. It does not refresh automatically. Avoid installing the managed and manual parents with the same name at once.
 
@@ -23,7 +23,7 @@ python3 scripts/package_installer.py
 
 Builds include ZIP checksums. Local hashes detect package changes; authenticity still depends on obtaining the bundle from the trusted private repository. Automated tests use disposable homes and local repositories, not production skill folders or Google documents. No global installation or dependency installation was performed by this implementation.
 
-See [progressive disclosure and token estimates](docs/progressive-disclosure-roadmap.md), [setup help](docs/troubleshooting.md), and [Google Docs next steps](docs/google-docs-roadmap.md).
+See [progressive disclosure and token estimates](docs/progressive-disclosure-roadmap.md), [setup help](docs/troubleshooting.md), and [Google Docs workflows](docs/google-docs.md).
 
 ---
 

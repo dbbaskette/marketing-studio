@@ -24,7 +24,7 @@ Guidance cache lives under the selected author workspace's `task-context/`. Arti
 
 ## Team Hub work
 
-- **Missing helper/incompatible instructions:** update with the trusted 1.1.0 installer; downloading guidance does not upgrade executable code.
+- **Missing helper/incompatible instructions:** update with the trusted 1.2.0 installer; downloading guidance does not upgrade executable code.
 - **Private hub unavailable:** confirm access and GitHub CLI sign-in to your own account; team membership is administered outside the skill.
 - **Queued or pending review:** saved work is retained locally. Retry sync after access returns, or review the returned contribution PR. Pending work reaches teammates after merge to main.
 - **Competing article/rule revisions:** read each selected revision and make an explicit resolution; do not overwrite either history.

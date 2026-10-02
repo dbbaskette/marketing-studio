@@ -24,7 +24,8 @@ def refreshed(inventory):
                        if p.is_file() and p.suffix in ('.md', '.txt', '.j2')}
     result['library_tokens'] = sum(f['estimated_tokens'] for f in result['files'].values())
     for routes in (result['routes'], result['team_hub_routes'],
-                   result.get('workspace_operations', {}), result.get('craft_guides', {})):
+                   result.get('workspace_operations', {}), result.get('craft_guides', {}),
+                   result.get('google_operations', {})):
         for route in routes.values():
             route['estimated_tokens'] = sum(result['files'][p]['estimated_tokens']
                                             for p in dict.fromkeys(route['files']))
@@ -62,6 +63,8 @@ def main():
                                            for key, value in result.get('workspace_operations', {}).items()},
                       'craft_tokens': {key: value['estimated_tokens']
                                        for key, value in result.get('craft_guides', {}).items()},
+                      'google_tokens': {key: value['estimated_tokens']
+                                        for key, value in result.get('google_operations', {}).items()},
                       'route_tokens': {key: value['estimated_tokens']
                                        for key, value in result['routes'].items()}}))
     return 0

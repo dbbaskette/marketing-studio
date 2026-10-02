@@ -66,7 +66,7 @@ created with review mode always uses a PR.
 
 ## Setup and helper examples
 
-Update to the trusted **1.1.0 installer runtime** to use Team Hub. Run the new
+Update to the trusted **1.2.0 installer runtime** to use Team Hub. Run the new
 bundle through the existing setup/update flow. Git and authenticated GitHub CLI
 are required for the current provider. Credentials remain in provider storage.
 Use the interpreter in the managed runtime configuration when necessary.

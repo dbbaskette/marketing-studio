@@ -208,7 +208,9 @@ def validate_rules(rules):
 def source_command(root, args):
     if args.action == 'add':
         original = Path(args.file).read_bytes() if args.file else None
-        text = read_text(args.text_file) if args.text_file else None
+        text = getattr(args, 'content', None)
+        if text is None:
+            text = read_text(args.text_file) if args.text_file else None
         if text is None and args.file and Path(args.file).suffix.lower() in ('.md', '.txt'):
             text = original.decode('utf-8')
         status = args.status or ('ready' if text and text.strip() else 'pending')
@@ -490,6 +492,8 @@ def parser():
     review = articles.add_parser('review');review.add_argument('--id', required=True);review.add_argument('--check', choices=CHECKS, required=True)
     review.add_argument('--status', choices=('current', 'unavailable', 'failed'), required=True);review.add_argument('--file')
     derive = articles.add_parser('derive');derive.add_argument('--id', required=True);derive.add_argument('--name', required=True);derive.add_argument('--file', required=True)
+    from google_workflow import add_parser
+    add_parser(groups)
     return p
 
 
@@ -515,19 +519,25 @@ def main():
                             result.append(record)
                 elif args.group == 'profile': result = profile_command(root, args)
                 elif args.group == 'source': result = source_command(root, args)
+                elif args.group == 'google':
+                    from google_workflow import command
+                    result = command(root, args)
                 else: result = article_command(root, args)
-                if args.group in ('profile', 'source', 'article') and args.action != 'show':
+                mutation_group = args.group
+                if args.group == 'google':
+                    mutation_group = 'source' if args.action == 'source' else 'article' if args.action not in ('compare', 'capabilities') else None
+                if mutation_group in ('profile', 'source', 'article') and args.action != 'show':
                     from hub_workspace import active
                     from hub_store import HubError
                     try:
                         adapter = active(root)
                         if adapter:
-                            result['hub_sync'] = adapter.publish_mutation(args.group, result)
+                            result['hub_sync'] = adapter.publish_mutation(mutation_group, result)
                     except HubError as exc:
                         result['hub_sync'] = {'status': 'local-saved-not-shared', 'error': str(exc),
                             'next_step': 'Retry the selected workspace import after resolving the hub issue.'}
         print(json.dumps(result, indent=2, ensure_ascii=False))
-    except (HubError, OSError, ValueError, KeyError) as exc:
+    except (HubError, OSError, ValueError, KeyError, TypeError) as exc:
         print(f'Blog Studio: {exc}', file=sys.stderr)
         return 1
     return 0

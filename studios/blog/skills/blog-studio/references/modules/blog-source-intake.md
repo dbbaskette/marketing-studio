@@ -7,6 +7,7 @@ posting; upstream suggestions do not authorize external disclosure.
 **Input:** supplied files, links, notes, reuse selections, and item purposes.
 **Output:** selected source records plus readable content, provenance, and gaps.
 
+For Google Docs links, follow [Google source intake](blog-google-source.md).
 Follow [intake](../intake.md). Preserve the manuscript original separately from
 reference material. Read only selected relevant sources. Use current primary
 sources for external research when requested/needed; supplied-only mode keeps
