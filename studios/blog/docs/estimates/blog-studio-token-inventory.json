@@ -4,9 +4,9 @@
   "excluded": "host context, conversation, author data, outputs, scripts, licenses, metadata, locks, preview",
   "files": {
     "SKILL.md": {
-      "characters": 6002,
-      "estimated_tokens": 1501,
-      "sha256": "b02a3e96e0ae35dea663cbde3919a4f54f10d3be4007dfe177f3fe4bea3ed6ea"
+      "characters": 3145,
+      "estimated_tokens": 787,
+      "sha256": "1dcbbde1d0a58213168e7cf3bd1c0edf35c5012bbc162f8c60f351f76138ad18"
     },
     "references/blogforge/generate/prompts/document.j2": {
       "characters": 2237,
@@ -49,9 +49,9 @@
       "sha256": "c83864165a76b39c77b6e5b0d9548e9c6f0af60ba8abdcbd9aa76a43bf5a9cdf"
     },
     "references/entry-flows.md": {
-      "characters": 3310,
-      "estimated_tokens": 828,
-      "sha256": "719c53b7e8581f91fed565b82e73101a256a1ce148e25a7654985a2aef32a4a8"
+      "characters": 1630,
+      "estimated_tokens": 408,
+      "sha256": "0034b5def919b835bc94aea70baa2985c8e05a1f388869980595ef5bf6fc7c74"
     },
     "references/export.md": {
       "characters": 1033,
@@ -62,6 +62,26 @@
       "characters": 574,
       "estimated_tokens": 144,
       "sha256": "4dc9950a24602bd49d17149ec36bdfbf43b72dd400a549c6281910a97f590ac8"
+    },
+    "references/hub/memory.md": {
+      "characters": 3077,
+      "estimated_tokens": 770,
+      "sha256": "19664c5562b5c46999f1e38e66663008f2e1fbe972fe7ab8438ea5ec1d71c939"
+    },
+    "references/hub/setup.md": {
+      "characters": 2812,
+      "estimated_tokens": 703,
+      "sha256": "1839155e8620cd112006452b15bc713febcc828128c3052760f3ade990bfd5ab"
+    },
+    "references/hub/sync.md": {
+      "characters": 2775,
+      "estimated_tokens": 694,
+      "sha256": "295733ef10fae5d3324654431cad162923b0bdcab3197974f7420e5ee8768805"
+    },
+    "references/hub/workflow.md": {
+      "characters": 2586,
+      "estimated_tokens": 647,
+      "sha256": "c509d02c2c105bc23c6162e4eb0c5510891242ab8f11c6a5a2eb02919ebdf5c0"
     },
     "references/intake.md": {
       "characters": 2308,
@@ -147,6 +167,11 @@
       "characters": 1959,
       "estimated_tokens": 490,
       "sha256": "beed5246bc1704962ec9d3db72feebfa9ecb717ce54f79e2f79091f6cd00d399"
+    },
+    "references/privacy.md": {
+      "characters": 4006,
+      "estimated_tokens": 1002,
+      "sha256": "304d920abc108b45024a80cfe236fe38600ff2f0a264d994c1d33e488c250103"
     },
     "references/review.md": {
       "characters": 1577,
@@ -402,34 +427,9 @@
       "characters": 8786,
       "estimated_tokens": 2197,
       "sha256": "631e6d6a2dc6be216df24b5dbe74c6b81e649aff3434ef1ca88d7aee9dfbf8f6"
-    },
-    "references/hub/memory.md": {
-      "characters": 3077,
-      "estimated_tokens": 770,
-      "sha256": "19664c5562b5c46999f1e38e66663008f2e1fbe972fe7ab8438ea5ec1d71c939"
-    },
-    "references/hub/setup.md": {
-      "characters": 2812,
-      "estimated_tokens": 703,
-      "sha256": "1839155e8620cd112006452b15bc713febcc828128c3052760f3ade990bfd5ab"
-    },
-    "references/hub/sync.md": {
-      "characters": 2775,
-      "estimated_tokens": 694,
-      "sha256": "295733ef10fae5d3324654431cad162923b0bdcab3197974f7420e5ee8768805"
-    },
-    "references/hub/workflow.md": {
-      "characters": 2586,
-      "estimated_tokens": 647,
-      "sha256": "c509d02c2c105bc23c6162e4eb0c5510891242ab8f11c6a5a2eb02919ebdf5c0"
-    },
-    "references/privacy.md": {
-      "characters": 4006,
-      "estimated_tokens": 1002,
-      "sha256": "304d920abc108b45024a80cfe236fe38600ff2f0a264d994c1d33e488c250103"
     }
   },
-  "library_tokens": 168311,
+  "library_tokens": 167177,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -440,7 +440,7 @@
         "references/modules/blog-source-intake.md",
         "references/modules/blog-argument-outline.md"
       ],
-      "estimated_tokens": 5803
+      "estimated_tokens": 4669
     },
     "first_draft_with_sources": {
       "files": [
@@ -454,7 +454,7 @@
         "references/upstream/claude-blog/skills/blog-write/SOURCE.md",
         "references/composition.md"
       ],
-      "estimated_tokens": 12354
+      "estimated_tokens": 11220
     },
     "quick_edit": {
       "files": [
@@ -466,7 +466,7 @@
         "references/revision.md",
         "references/modules/blog-voice-check.md"
       ],
-      "estimated_tokens": 9401
+      "estimated_tokens": 8267
     },
     "voice_setup": {
       "files": [
@@ -478,7 +478,7 @@
         "references/voice-flow.md",
         "references/modules/blog-voice-profile.md"
       ],
-      "estimated_tokens": 6419
+      "estimated_tokens": 5285
     },
     "comprehensive_review": {
       "files": [
@@ -495,13 +495,13 @@
         "references/blogforge/voice/assets/humanize/lenses.md",
         "references/modules/blog-geo-review.md"
       ],
-      "estimated_tokens": 11824
+      "estimated_tokens": 10690
     }
   },
   "bootstrap": {
     "path": "bootstrap/blog-studio/SKILL.md",
-    "estimated_tokens": 1018,
-    "sha256": "1815bcabdb85c6dbdc6ee8b3413f69fd1f6ecc3fbeca9c12a9545a53c4988adb",
+    "estimated_tokens": 857,
+    "sha256": "49d0b9ff5a8e276c6eb8b7b6b5824168e5f196220d96d867dc343c83a3c2500c",
     "note": "Added to repository-guidance routes; excluded from the full offline corpus."
   },
   "team_hub_routes": {
@@ -533,5 +533,17 @@
     ],
     "estimated_tokens": 1002,
     "note": "Load before upstream service instructions or external research/media/posting; essential boundary is always in the parent."
+  },
+  "entry_guidance": {
+    "files": [
+      "SKILL.md",
+      "references/entry-flows.md"
+    ],
+    "estimated_tokens": 1195,
+    "target_tokens": [
+      800,
+      1200
+    ],
+    "note": "Parent plus entry flow; bootstrap measured separately. Conditional reads are additional."
   }
 }

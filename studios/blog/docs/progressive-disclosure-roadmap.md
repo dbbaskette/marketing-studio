@@ -10,7 +10,7 @@ The current package implements the six routes, fourteen capability modules, and 
 
 The installed bootstrap quietly fetches approved `main` for a new writing task, returns a compact status/path record, and progressively reads the pinned repository guidance. Existing articles resume their saved pin and runtime. Core executable updates are explicit managed installs with backup, repair, and rollback. See [installation](installation.md) and the [implementation record](superpowers/plans/2026-10-01-blog-studio-installation.md).
 
-The bootstrap improves distribution and freshness. The craft/workspace instruction reductions below remain future work; a small installed entry does not by itself reduce the guidance read after it.
+M1 is implemented: parent plus entry now totals approximately **1,195 tokens** (787 + 408), down from 2,329. Required capability reads and conditional support reads are explicit. The installed bootstrap is measured separately at **857 tokens**. See the [M1 validation record](m1-entry-validation.md). Craft/workspace reductions and the final multi-route, dual-harness pilot remain M2–M5 work.
 
 ## Disclosure layers
 
@@ -32,7 +32,7 @@ Measured October 1, 2026 from the local package. Each file estimate is its Unico
 
 | Guidance loaded | Approximate new tokens | Condition |
 |---|---:|---|
-| Parent and entry flow | 2,329 | New task |
+| Parent and entry flow | 1,195 | New task |
 | Workspace instructions | 2,197 | Saving or resuming work; currently one large reference |
 | Intake and source module | 897 | Incoming material |
 | Voice setup and profile module | 996 | Building or changing a voice |
@@ -49,21 +49,21 @@ Measured October 1, 2026 from the local package. Each file estimate is its Unico
 | GEO review | 399 | Requested retrieval/citation readiness assessment |
 | Repurposing and export | 687 | Requested derivative or format; channel references add more |
 
-The full Markdown, text, and prompt library is approximately **168,311 tokens across 85 files**. This includes every upstream template and supporting reference. It is an inventory ceiling, not a normal task load. The parent never needs to read the whole library to begin.
+The full Markdown, text, and prompt library is approximately **167,177 tokens across 85 files**. This includes every upstream template and supporting reference. It is an inventory ceiling, not a normal task load. The parent never needs to read the whole library to begin.
 
 Read each unchanged reference once per task where possible. Disclosure avoids unnecessary reads; it does not remove already loaded text from an active conversation. Compaction or a new session can change what remains in context. Provider billing may include accumulated context repeatedly, with provider-specific caching. The unique-load figures below are therefore not total billed tokens.
 
 ## Representative routes
 
-For the managed bootstrap, add approximately 1018 tokens to each offline route below. The JSON inventory separates this add-on from the offline corpus. These estimates include the current parent, entry flow, and full workspace reference. They count each selected guidance file once. They assume the minimum listed guidance, not every conditional upstream reference.
+For the managed bootstrap, add approximately 857 tokens to each offline route below. The JSON inventory separates this add-on from the offline corpus. These estimates include the current parent, entry flow, and full workspace reference. They count each selected guidance file once. They assume the minimum listed guidance, not every conditional upstream reference.
 
 | Route | Current guidance estimate | Additional author material planning allowance | Generated artifact planning allowance |
 |---|---:|---|---|
-| Outline with supplied sources | 5,803 | 2,000–6,000 for selected evidence; 300–800 for a saved voice | 500–1,200 for outline |
-| First draft with supplied sources | 12,354 | 2,000–6,000 for evidence; 300–800 for voice; 300–800 for brief/outline | 1,500–2,200 for roughly 1,200–1,600 words |
-| Quick edit of an existing draft | 9,401 | 1,500–2,200 for manuscript; 300–800 for selected voice/rules | 1,500–2,200 for revised draft, plus short notes |
-| New voice setup | 6,419 | 4,000–10,000 for selected authored samples/background | 800–1,600 for guide and audition |
-| Comprehensive review | 11,824 | 1,500–2,200 for draft; 2,000–6,000 for evidence; 300–800 for voice | 800–2,000 for findings; a rewrite is additional |
+| Outline with supplied sources | 4,669 | 2,000–6,000 for selected evidence; 300–800 for a saved voice | 500–1,200 for outline |
+| First draft with supplied sources | 11,220 | 2,000–6,000 for evidence; 300–800 for voice; 300–800 for brief/outline | 1,500–2,200 for roughly 1,200–1,600 words |
+| Quick edit of an existing draft | 8,267 | 1,500–2,200 for manuscript; 300–800 for selected voice/rules | 1,500–2,200 for revised draft, plus short notes |
+| New voice setup | 5,285 | 4,000–10,000 for selected authored samples/background | 800–1,600 for guide and audition |
+| Comprehensive review | 10,690 | 1,500–2,200 for draft; 2,000–6,000 for evidence; 300–800 for voice | 800–2,000 for findings; a rewrite is additional |
 
 Author-material and output ranges are explicit planning assumptions, not measured user inputs. Full claim verification may require more evidence. A large upload stays in the source library; only relevant passages enter a particular writing operation. A summary helps orientation but does not replace the underlying passage when checking a claim.
 
@@ -73,32 +73,32 @@ This roadmap extends the existing package. It does not authorize publication, in
 
 | Milestone | Change and existing foundation | Dependency | Development budget | Acceptance |
 |---|---|---|---:|---|
-| M1 Smaller entry and explicit loading map | Keep the six implemented routes; reduce duplicated startup prose and document exactly which references are required versus conditional | Existing package | 8,000–15,000 | Parent plus entry approximately 800–1,200 tokens; direct draft/outline/voice requests skip unrelated menus; newcomer prompt still produces a valid request |
+| M1 Smaller entry and explicit loading map — implemented | Six routes retained; concise entry and explicit required/conditional reads | Existing package | 8,000–15,000 original estimate | Parent + entry 1,195 tokens; current-session outline-only smoke and generated request checks recorded; full live discovery/route validation remains M5 |
 | M2 Smaller continuity reads | Split the existing workspace reference into discovery/resume, sources, profiles, articles, and reviews; return concise checkpoint summaries | M1 loading map | 12,000–20,000 | Routine operation loads approximately 200–500 tokens of helper guidance; pinned voice and original/history behavior preserved; all helper tests pass |
 | M3 Concise craft guides | Distill the large upstream writing, editing, strategy, and title instructions into attributed working guides; retain immutable originals as optional deeper references | M1 | 20,000–35,000 | Routine writing guide approximately 1,000–1,600 tokens; edit guide 900–1,400; strategy guide 800–1,200; source support, voice, structure, and user stop points preserved |
 | M4 Scoped reviews and evidence reads | Use existing fingerprints/statuses to reuse current checks; make targeted passage loading and requested review depth explicit | M2 and M3 | 10,000–18,000 | A quick polish loads only relevant checks; a changed draft stales affected findings; failed/unavailable checks never report clean results; evidence remains attributable |
 | M5 Harness pilot and newcomer handoff | Exercise all six routes plus standalone voice setup inside the harness; keep the optional prompt generator aligned with the entry choices | M1–M4 | 12,000–22,000 | Direct chat and generated prompts reach the same workflow; attachments/URLs use real host tools; outline-only stops; interview asks one question; resume does not repeat setup; access failures are explicit |
 | **Original refinement estimate** | **Five milestones** | | **62,000–110,000** | **Measured pilot results update the estimates** |
 
-M2 and M3 can be sequenced independently after M1. No sub-agent execution or implementation is started by this roadmap.
+M2 and M3 can be sequenced independently now that M1 is implemented. Roadmap estimates are not execution budgets or permission for additional services.
 
 ## Runtime targets after the roadmap
 
-Targets cover unique instruction loads for the normal route, with local continuity, and exclude author data and output. They are goals pending implementation and harness validation.
+Targets cover unique offline instruction loads for the normal route, with local continuity, and exclude author data and output. Add the separately measured bootstrap for a managed installation. They are goals pending implementation and harness validation.
 
 | Route | Current approximate guidance | Target guidance |
 |---|---:|---:|
-| Outline with sources | 5,803 | 2,000–3,000 |
-| First draft with sources | 12,354 | 3,000–5,000 |
-| Quick edit | 9,401 | 2,500–4,000 |
-| Voice setup | 6,419 | 2,000–3,500 |
-| Comprehensive review | 11,824 | 4,000–6,000 |
+| Outline with sources | 4,669 | 2,000–3,000 |
+| First draft with sources | 11,220 | 3,000–5,000 |
+| Quick edit | 8,267 | 2,500–4,000 |
+| Voice setup | 5,285 | 2,000–3,500 |
+| Comprehensive review | 10,690 | 4,000–6,000 |
 
-Reducing guidance must preserve useful behavior rather than merely shrinking files. The next useful slice is M1 followed by one outline-only pilot: start directly in chat, optionally attach sources, reuse a voice or choose a tone, save the outline, and stop. The optional prompt generator remains available throughout.
+Reducing guidance must preserve useful behavior rather than merely shrinking files. The M1 outline-only smoke reused supplied notes and tone, saved and reopened the outline, and stopped before a draft. Next, split continuity guidance (M2) and distill craft guides (M3); validate broader conversational behavior in M5. The optional prompt generator remains available throughout.
 
 ## Measurement record
 
-The per-file inventory and route file sets are saved in `estimates/blog-studio-token-inventory.json`. Recompute after guidance changes. The roadmap itself, scripts, licenses, lock files, metadata, and browser preview are excluded from the instruction-library total. Shell execution of a helper does not load its full source into the model unless the agent chooses to read that source.
+The per-file inventory and route file sets are saved in `estimates/blog-studio-token-inventory.json`. Recompute after guidance changes with `python3 scripts/measure_guidance.py`; `--check` verifies the recorded inventory. Route file sets remain explicit planning scenarios, not traces of every possible conversation. The roadmap itself, scripts, licenses, lock files, metadata, and browser preview are excluded from the instruction-library total. Shell execution of a helper does not load its full source into the model unless the agent chooses to read that source.
 
 ## Google Docs follow-up
 

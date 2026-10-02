@@ -2,7 +2,7 @@
   "schema": 1,
   "version": "1.1.0",
   "files": {
-    "SKILL.md": "1815bcabdb85c6dbdc6ee8b3413f69fd1f6ecc3fbeca9c12a9545a53c4988adb",
+    "SKILL.md": "49d0b9ff5a8e276c6eb8b7b6b5824168e5f196220d96d867dc343c83a3c2500c",
     "agents/openai.yaml": "b1682e80524e50236a3838f86b8dc042862ee5cb936043ef4ceecbb9ea84eed3",
     "scripts/hub.py": "5096ce8f9acd76f1818c557767c205d71adea21c1ac5d4964152e900cd4fdd6d",
     "scripts/hub_store.py": "690bbb5414d77991d85b9e602ad07a6cf397802be2bea45f2a5542b664e6f3c0",

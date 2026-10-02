@@ -22,6 +22,7 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Validate full skill and upstream source integrity
         run: |
+          python scripts/measure_guidance.py --check
           python skills/blog-studio/scripts/validate_package.py
           python skills/blog-writing-toolkit/scripts/validate_package.py
           bash -n "installer/Install Blog Studio.command"

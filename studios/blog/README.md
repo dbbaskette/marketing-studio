@@ -61,17 +61,19 @@ These stages adapt to your request. A clear draft request can continue through a
 
 ## Token footprint
 
-Progressive disclosure keeps the full reference library available while selecting guidance for the current operation. The library contains approximately **168.3k estimated tokens**; a normal route reads a subset.
+The parent now names required capability reads and conditional support reads explicitly. Parent plus entry flow is approximately **1,195 tokens**, down from 2,329 (49% less). See the [M1 validation record](docs/m1-entry-validation.md).
 
-| Route | Current guidance estimate | Target after roadmap |
+Progressive disclosure keeps the full reference library available while selecting guidance for the current operation. The library contains approximately **167.2k estimated tokens**; a normal route reads a subset.
+
+| Route | Current managed guidance | Offline target after roadmap |
 |---|---:|---:|
-| Outline with sources | 6.8k | 2–3k |
-| First draft with sources | 13.4k | 3–5k |
-| Quick edit | 10.4k | 2.5–4k |
-| Voice setup | 7.4k | 2–3.5k |
-| Comprehensive review | 12.8k | 4–6k |
+| Outline with sources | 5.5k | 2–3k |
+| First draft with sources | 12.1k | 3–5k |
+| Quick edit | 9.1k | 2.5–4k |
+| Voice setup | 6.1k | 2–3.5k |
+| Comprehensive review | 11.5k | 4–6k |
 
-The installed bootstrap is approximately **1,018 tokens**. Route figures include it plus the selected repository guidance; the full library total excludes the bootstrap. Downloading that library does not load it into context.
+The installed bootstrap is approximately **857 tokens**. Current route figures include it plus the selected repository guidance; offline targets and the full library total exclude the bootstrap. Downloading that library does not load it into context.
 
 Estimates use characters ÷ 4 and count each selected instruction file once. They include workspace guidance and exclude author material, generated prose, conversation history, and host/tool context. They are planning estimates rather than total billed usage. Targets are **planned refinements**, and already loaded text can remain in the conversation.
 
@@ -148,6 +150,7 @@ The repository bootstrap is delivered. It adds quiet updates and task pins; redu
 ```sh
 python3 -m unittest discover -s tests -v
 python3 skills/blog-studio/scripts/validate_package.py
+python3 scripts/measure_guidance.py --check
 python3 scripts/package_blog_studio.py
 python3 scripts/package_installer.py
 ```
