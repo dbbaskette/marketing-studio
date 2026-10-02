@@ -2,6 +2,7 @@
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -22,18 +23,27 @@ class BundleTests(unittest.TestCase):
                 for item in archive.infolist():
                     source = REPO / item.filename.removeprefix('blog-studio-setup/')
                     self.assertEqual(archive.read(item), source.read_bytes(), item.filename)
-                launcher = archive.getinfo('blog-studio-setup/installer/Install Blog Studio.command')
-                self.assertTrue((launcher.external_attr >> 16) & 0o111)
+                for name in ('Install Blog Studio.command', 'install.sh'):
+                    launcher = archive.getinfo('blog-studio-setup/installer/' + name)
+                    self.assertTrue((launcher.external_attr >> 16) & 0o111)
                 archive.extractall(base / 'expanded with spaces')
             setup = base / 'expanded with spaces/blog-studio-setup'
             home = base / 'disposable home'
+            environment = dict(os.environ, PATH=str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""))
             def run(*arguments, cwd=base):
-                result = subprocess.run(list(arguments), capture_output=True, text=True, cwd=cwd)
+                result = subprocess.run(list(arguments), capture_output=True, text=True, cwd=cwd, env=environment, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 return result.stdout
-            installed = json.loads(run(sys.executable, str(setup / 'installer/install.py'),
+            installed = json.loads(run('sh', str(setup / 'installer/install.sh'),
                 'install', '--home', str(home), '--target', 'both', '--offline', '--yes', '--json'))
             self.assertEqual(installed['status'], 'installed')
+            checked = json.loads(run('sh', str(setup / 'installer/install.sh'), 'check',
+                '--home', str(home), '--target', 'both', '--offline', '--json'))
+            self.assertEqual(checked['runtime_integrity'], 'verified')
+            invalid = subprocess.run(['sh', str(setup / 'installer/install.sh'), '--invalid-option'],
+                capture_output=True, text=True, cwd=base, env=environment, timeout=30)
+            self.assertEqual(invalid.returncode, 2)
+            self.assertIn('unrecognized arguments', invalid.stderr)
             runtime = (home / '.agents/skills/blog-studio/scripts').resolve()
             self.assertIn('Team Hub',run(sys.executable,str(runtime/'hub.py'),'--help'))
             for helper in ('hub_store.py','hub_workspace.py','google_workflow.py'):

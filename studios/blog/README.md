@@ -12,7 +12,9 @@ Bring a rough idea, a stack of notes, or a blog you've already written. Blog Stu
 
 ## Install once. Keep getting better.
 
-Download the private [guided installer](dist/blog-studio-installer.zip), expand it, and open **Install Blog Studio.command** inside its `installer` folder. Choose Codex, Claude Code, or both. Setup reuses Git and Python, checks your GitHub access, and offers browser sign-in when needed. Missing tools get vendor installation instructions. See the [five-step setup guide](docs/installation.md).
+Download the private [guided installer](dist/blog-studio-installer.zip), expand it, and open **Install Blog Studio.command** inside its `installer` folder. Choose Codex, Claude Code, or both. Setup reuses Git and Python, checks your GitHub access, and offers browser sign-in when needed. Missing tools get vendor installation instructions. See the [setup guide](docs/installation.md).
+
+**Using a company laptop that blocks `.command` launchers?** From an approved terminal in the expanded `blog-studio-setup` folder, run `sh installer/install.sh`. This uses the same guided setup without launching a new terminal window. Keep the whole expanded bundle together; the shell script uses its bundled Python installer and runtime. See [shell setup](docs/installation.md#install-from-an-existing-shell).
 
 **Writing guidance stays maintained here.** A new task quietly checks approved `main` and pins a local snapshot. The model receives a tiny status and reads only the instructions it needs. Your marketing team gets routine instruction updates without reinstalling; ongoing articles retain their saved guidance revision. Executable helpers update separately through setup, with repair and rollback.
 

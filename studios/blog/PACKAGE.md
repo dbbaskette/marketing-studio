@@ -1,6 +1,6 @@
 # Blog Studio packages
 
-The recommended [guided installer ZIP](dist/blog-studio-installer.zip) installs a small stable [bootstrap](bootstrap/blog-studio/SKILL.md) plus versioned Python helpers. The [installation guide](docs/installation.md) covers Mac setup, private GitHub access, target locations, update, repair, rollback, and removal.
+The recommended [guided installer ZIP](dist/blog-studio-installer.zip) installs a small stable [bootstrap](bootstrap/blog-studio/SKILL.md) plus versioned Python helpers. The [installation guide](docs/installation.md) covers both the Finder `.command` launcher and `sh installer/install.sh` for existing terminals, private GitHub access, target locations, update, repair, rollback, and removal.
 
 The bootstrap quietly fetches approved `main` when a new writing task starts. It materializes `skills/blog-studio/SKILL.md`, its references, and provenance records from that exact revision into the author's task cache. Runtime scripts from the repository are excluded from the readable guidance snapshot and are never executed. The assistant reads relevant files progressively; downloads stay outside model context.
 

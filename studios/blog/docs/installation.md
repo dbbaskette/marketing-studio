@@ -12,6 +12,28 @@ Blog Studio runs in your existing local Codex or Claude Code chat. Install once;
 
 Setup verifies the local files and links and runs the helpers in a disposable workspace. Confirming discovery and an actual writing flow happens in the harness. Claude Cowork and cloud-hosted sessions are outside this installer’s scope.
 
+## Install from an existing shell
+
+If your company permits shell scripts but blocks opening `.command` launchers, download and expand the same trusted installer ZIP. Open your approved terminal, change into the expanded `blog-studio-setup` folder, and run:
+
+```sh
+sh installer/install.sh
+```
+
+Choose Codex, Claude Code, or both in the guided prompts. To select both in advance:
+
+```sh
+sh installer/install.sh install --target both
+```
+
+The script runs in your current terminal and returns when setup finishes. It finds Python 3.11+ (including common Homebrew locations) and runs the same bundled installer, with the same private repository checks, installation locations, updates, and backups. Keep the entire expanded bundle together: `install.sh` is an entry point, not a standalone download. It also works from a source checkout or with a quoted absolute path from any working directory:
+
+```sh
+sh "/path with spaces/blog-studio-setup/installer/install.sh" check --offline
+```
+
+No `sudo`, executable-bit change, or terminal auto-launch is required. If your organization also blocks shell scripts or the required tools, use its normal IT approval process; this option does not change device security settings. Installation still requires Python and Git. Local Codex and Claude Code CLIs are installed and signed into separately.
+
 ## If a prerequisite is missing
 
 | Requirement | What to do |
@@ -22,7 +44,7 @@ Setup verifies the local files and links and runs the helpers in a disposable wo
 | GitHub repository access | Ask the repository owner for access, then sign into your own account. Signing in does not grant access by itself. |
 | Optional GitHub CLI | Use [GitHub CLI installation](https://cli.github.com/) if browser sign-in is needed and Homebrew is unavailable. Existing Git credentials are sufficient for guidance refresh; Team Hub operations require authenticated GitHub CLI. |
 
-The launcher detects missing tools before handing off to Python. Python and Git installation are guided vendor steps, not unattended installers. No Node installation, model API key, Google account, Word converter, or running web server is required for core writing.
+The shell entry point detects a supported Python; the Python installer checks Git and repository access before installation. Python and Git installation are guided vendor steps, not unattended installers. No Node installation, model API key, Google account, Word converter, or running web server is required for core writing.
 
 ## Where setup puts things
 
@@ -50,14 +72,14 @@ Writing instructions, templates, and rubrics update from the repository without 
 
 ## Check, update, repair, roll back, or remove
 
-Keep the installer download, or download a fresh trusted copy when updating. Advanced commands below run from its top-level folder; the Mac launcher accepts the same arguments.
+Keep the installer download, or download a fresh trusted copy when updating. Advanced commands below run from its top-level folder; both launchers accept the same arguments. `sh installer/install.sh` is the recommended command for an existing shell; direct Python invocation remains supported.
 
 ```sh
-python3 installer/install.py check
-python3 installer/install.py install --target both
-python3 installer/install.py repair --target both
-python3 installer/install.py rollback
-python3 installer/install.py uninstall --target both
+sh installer/install.sh check
+sh installer/install.sh install --target both
+sh installer/install.sh repair --target both
+sh installer/install.sh rollback
+sh installer/install.sh uninstall --target both
 ```
 
 - **Check** inspects tools, repository access, links, and runtime integrity. `check --offline` avoids the network.
