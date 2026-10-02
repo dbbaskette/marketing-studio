@@ -133,6 +133,33 @@ class StudioTests(unittest.TestCase):
         self.cli('article','review','--id',aid,'--check','geo','--status','failed')
         self.assertEqual(self.cli('article','show','--id',aid)['reviews']['geo']['status'],'failed')
 
+    def test_scoped_evidence_survives_resume_and_replacement_without_false_coverage(self):
+        aid=self.article();self.save(aid,'draft','Two of six notes omitted an owner. Throughput rose 30%.')
+        sid=self.source(text='Tuesday: six notes inspected; two omitted next owner. No throughput measurement.')
+        self.cli('article','attach','--id',aid,'--source',sid)
+        evidence={'source_id':sid,'revision':1,'origin':'source.md',
+                  'locator':'line 1','excerpt':'No throughput measurement.'}
+        result={'coverage':{'draft':'sentence 2','excluded':['sentence 1']},
+                'findings':[{'claim':'Throughput rose 30%.','location':'sentence 2',
+                             'verdict':'unsupported','evidence':[evidence]}]}
+        self.cli('article','review','--id',aid,'--check','factual-support','--status','current',
+                 '--file',self.file('partial.json',json.dumps(result)))
+        shown=self.cli('article','show','--id',aid)
+        self.assertEqual(shown['reviews']['factual-support']['result'],result)
+        self.assertEqual(shown['reviews']['shape']['status'],'not-run')
+        self.cli('article','review','--id',aid,'--check','humanization','--status','failed')
+        self.cli('article','review','--id',aid,'--check','geo','--status','unavailable')
+        self.save(aid,'draft','Two of six notes omitted an owner. No outcome has been measured.')
+        shown=self.cli('article','show','--id',aid)['reviews']
+        self.assertEqual(shown['factual-support']['status'],'stale')
+        self.assertEqual(shown['factual-support']['result'],result)
+        self.assertEqual(shown['humanization']['previous_status'],'failed')
+        self.assertEqual(shown['geo']['previous_status'],'unavailable')
+        self.assertEqual(shown['proofread']['status'],'not-run')
+        self.review(aid,'factual-support')
+        history=list((self.root/'articles'/aid/'history').glob('review-factual-support-*.json'))
+        self.assertEqual(json.loads(history[0].read_text())['result'],result)
+
     def test_binary_intake_preserves_original_and_waits_for_extraction(self):
         path=self.base/'upload.pdf';path.write_bytes(b'%PDF-disposable-fixture')
         result=self.cli('source','add','--name','PDF','--file',str(path),'--purpose','reference')

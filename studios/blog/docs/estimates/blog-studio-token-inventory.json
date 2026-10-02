@@ -104,9 +104,9 @@
       "sha256": "b7a6de1ca3deb8201ede842b343cdd946792a1f79a76d3509a4a8d543f610480"
     },
     "references/modules/blog-fact-check.md": {
-      "characters": 1591,
-      "estimated_tokens": 398,
-      "sha256": "cf342cb05b535baa259b56ecf1bc79ea4bf171912ce2c1e5b3f3fe6ed1e8ce2e"
+      "characters": 1768,
+      "estimated_tokens": 442,
+      "sha256": "d1eb6e4cf81f588e9f2282546cacb211734f70927a4e57de052b1f72b757a5bf"
     },
     "references/modules/blog-geo-review.md": {
       "characters": 1596,
@@ -114,9 +114,9 @@
       "sha256": "7629ccb9d2947ea78150b473fb592154d0428d7f354babac3f56c6e9ccce57bd"
     },
     "references/modules/blog-humanize.md": {
-      "characters": 1540,
-      "estimated_tokens": 385,
-      "sha256": "f6207deb2dcca0beed12625f36ea5855f88bbf60fd2124882137e3273a2ffeeb"
+      "characters": 1740,
+      "estimated_tokens": 435,
+      "sha256": "c6488fbb6c2881b615e491ffeed661de96724c166e063f522c69ae3f8a39e677"
     },
     "references/modules/blog-repurpose.md": {
       "characters": 1711,
@@ -173,10 +173,20 @@
       "estimated_tokens": 1002,
       "sha256": "304d920abc108b45024a80cfe236fe38600ff2f0a264d994c1d33e488c250103"
     },
+    "references/review/evidence.md": {
+      "characters": 2094,
+      "estimated_tokens": 524,
+      "sha256": "1f38b6e47e6cd706d043fa8e32a76583f1c63fb30a26fb4423e3ed134bd0bc86"
+    },
+    "references/review/shape.md": {
+      "characters": 991,
+      "estimated_tokens": 248,
+      "sha256": "44c9b114d7fad8adcddc1764396ba14870bf76867852468133baff175bed75c8"
+    },
     "references/review.md": {
-      "characters": 1590,
-      "estimated_tokens": 398,
-      "sha256": "729851d574159e680695ef685f8c10733ae42b65baa80f449974889d3a55223e"
+      "characters": 2362,
+      "estimated_tokens": 591,
+      "sha256": "ec1e53c5b7722e32d7ea1ecd3c3361d381ae2ef9852838ec619b24310f4d70dc"
     },
     "references/revision.md": {
       "characters": 1137,
@@ -454,9 +464,9 @@
       "sha256": "d345581a2214a93400f4b84354b293301e9a1af62d81010b742d959b116635df"
     },
     "references/workspace/reviews.md": {
-      "characters": 1134,
-      "estimated_tokens": 284,
-      "sha256": "2feba83efbf16b0dde5e9ea36290f227662448001f57dfd4f58a876a361e27e5"
+      "characters": 1263,
+      "estimated_tokens": 316,
+      "sha256": "cddc257af48ee021c6f527a51ccc599dd499a66bb0a216bd0a0a651f58d23e81"
     },
     "references/workspace/sources.md": {
       "characters": 1220,
@@ -469,7 +479,7 @@
       "sha256": "7e8eaf57e647240d8ee521c6f7f506e949d1e1bcf5793cb7239faa81ecf05407"
     }
   },
-  "library_tokens": 170621,
+  "library_tokens": 171712,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -516,7 +526,7 @@
         "references/modules/blog-voice-check.md"
       ],
       "scenario": "Saved local article; controlled polish, selected voice-rule check and saved review. No new source/profile intake.",
-      "estimated_tokens": 4519
+      "estimated_tokens": 4551
     },
     "voice_setup": {
       "files": [
@@ -542,16 +552,27 @@
         "references/workspace/reviews.md",
         "references/workspace/checks.md",
         "references/review.md",
-        "references/modules/copy-editing.md",
-        "references/revision.md",
         "references/modules/blog-voice-check.md",
         "references/modules/blog-fact-check.md",
         "references/modules/blog-humanize.md",
-        "references/blogforge/voice/assets/humanize/lenses.md",
-        "references/modules/blog-geo-review.md"
+        "references/modules/blog-geo-review.md",
+        "references/review/shape.md",
+        "references/review/evidence.md"
       ],
-      "scenario": "Saved local article with selected evidence/voice; five requested checks and stored findings, without a rewritten manuscript.",
-      "estimated_tokens": 6639
+      "scenario": "Saved article with selected evidence/voice; five requested feedback checks and stored coverage, without rewriting or an optional deep humanization rubric.",
+      "estimated_tokens": 5197
+    },
+    "quick_polish": {
+      "files": [
+        "SKILL.md",
+        "references/entry-flows.md",
+        "references/workspace.md",
+        "references/workspace/resume.md",
+        "references/workspace/articles.md",
+        "references/modules/copy-editing.md"
+      ],
+      "scenario": "Saved local draft; light clarity and voice polish, no separately requested check or recorded review.",
+      "estimated_tokens": 3395
     }
   },
   "bootstrap": {
@@ -643,7 +664,7 @@
         "references/workspace.md",
         "references/workspace/reviews.md"
       ],
-      "estimated_tokens": 466
+      "estimated_tokens": 498
     },
     "guidance_restore": {
       "files": [

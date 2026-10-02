@@ -24,7 +24,7 @@ with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
         for path in sorted((repo / folder).rglob('*')):
             if path.is_file() and '__pycache__' not in path.parts and path.suffix != '.pyc':
                 archive.write(path, 'blog-studio-setup/' + path.relative_to(repo).as_posix())
-    for name in ('installation.md', 'troubleshooting.md', 'team-hub.md'):
+    for name in ('installation.md', 'troubleshooting.md', 'team-hub.md', 'i4-m4-m5-validation.md'):
         path = repo / 'docs' / name
         if path.exists():
             archive.write(path, 'blog-studio-setup/docs/' + name)

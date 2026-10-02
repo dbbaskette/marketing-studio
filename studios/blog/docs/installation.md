@@ -72,6 +72,17 @@ For an existing unmanaged folder, review it first, then explicitly use `install 
 
 ## Validation status
 
-Disposable-home and local-Git tests cover both target layouts, task pins, updates, repair, rollback, access failures, backups, and draft preservation. CI exercises supported Python versions on macOS and Linux. A clean-Mac double-click/sign-in pilot and live discovery/writing in both harnesses remain to be completed; fixture tests do not establish those results. Windows link behavior and a Windows launcher are not validated.
+Disposable-home and local-Git tests cover both target layouts, task pins, updates, repair, rollback, access failures, backups, and draft preservation. CI exercises supported Python versions on macOS and Linux. A fresh Tart macOS 27 clone passed 91 tests plus real CLI installation for Codex-only, Claude-only and both targets. It exposed a GUI-PATH Python discovery bug that is fixed. Full browser sign-in and signed-in discovery/writing in both harnesses remain to be completed. See the [dated pilot record](i4-m4-m5-validation.md); automated placement is not live discovery. Windows link behavior and a Windows launcher are not validated.
 
 See [troubleshooting](troubleshooting.md), [package notes](../PACKAGE.md), and the [Google Docs next phase](google-docs-roadmap.md).
+
+## Repeat the isolated Mac checks
+
+From the source checkout, maintainers can run `bash scripts/ci/tart-macos.sh` with the existing
+`macos-test-suite` runner. Set `MACOS_TEST_SUITE` to its checkout and `TART_BASE`
+to a stopped prepared base if different from the defaults. The guest needs
+Python 3.11+, Git and Node (Node tests the optional prompt generator). The wrapper
+clones the base, mounts source read-only, runs in a guest copy, and retains results
+and the stopped clone. It never mounts host credentials or starts model calls.
+The guest result proves the listed automated checks only; live sign-in, trust
+consent and conversational checks retain their own evidence.

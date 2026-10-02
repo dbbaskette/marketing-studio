@@ -171,6 +171,28 @@ class InstallationTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)['tools']['repository_access'], 'not-checked')
         self.assertFalse(self.root.exists())
 
+    def test_setup_summary_does_not_claim_discovery_or_advertise_unselected_target(self):
+        installer.install(self.source,self.root,{'codex':self.targets['codex']})
+        checked=installer.inspect(self.root,{'codex':self.targets['codex']})
+        checked['tools']['codex_available']=True
+        summary=installer.setup_summary(checked)
+        self.assertIn('$blog-studio',summary)
+        self.assertNotIn('/blog-studio',summary.replace(str(self.targets['codex']),''))
+        self.assertIn('verify discovery',summary)
+        (self.targets['codex'].resolve()/'scripts/studio.py').write_text('damaged')
+        damaged=installer.setup_summary(installer.inspect(self.root,{'codex':self.targets['codex']}))
+        self.assertNotIn('managed files verified',damaged)
+        self.assertIn('repair',damaged)
+
+    def test_human_check_reports_missing_prerequisites_without_mutation(self):
+        checked=installer.inspect(self.root,{'claude':self.targets['claude']})
+        checked['tools'].update(python_supported=False,git=False,repository_access='unavailable',claude_code_available=False)
+        summary=installer.setup_summary(checked)
+        for expected in ('python.org','git-scm.com','membership','Install/open Claude Code','not installed'):
+            self.assertIn(expected,summary)
+        self.assertNotIn('$blog-studio',summary)
+        self.assertFalse(self.root.exists())
+
     def test_configuration_collision_and_busy_lock(self):
         with self.assertRaises(installer.InstallError):
             installer.targets(self.home, ('codex', 'claude'), str(self.home / '.agents'))

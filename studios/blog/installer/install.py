@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -421,6 +422,38 @@ def inspect(root, selected, online=False):
     return result
 
 
+def setup_summary(result):
+    """Human setup status; placement and executable detection are not discovery."""
+    tools = result['tools']
+    lines = ['Blog Studio setup check']
+    lines.append('Python: ' + tools['python'] + (' (supported)' if tools['python_supported'] else ' — install Python 3.11+ from https://www.python.org/downloads/macos/'))
+    lines.append('Git: ' + ('available' if tools['git'] else 'install from https://git-scm.com/install/mac'))
+    access = tools['repository_access']
+    lines.append('Private repository: ' + {'ready': 'accessible with existing sign-in',
+        'not-checked': 'not checked offline; network access is needed for new guidance'}.get(access,
+        'access unavailable; confirm membership and GitHub sign-in, then retry setup'))
+    verified = result.get('runtime_integrity') == 'verified'
+    lines.append('Local runtime: ' + ('verified' if verified else result.get('runtime_integrity', 'not installed')))
+    for agent, target in result['targets'].items():
+        label = 'Codex' if agent == 'codex' else 'Claude Code'
+        detected = tools['codex_available' if agent == 'codex' else 'claude_code_available']
+        placed = target['managed_link'] and target['skill_present'] and verified
+        lines.append(label + ': ' + ('managed files verified' if placed else 'setup or repair needed') + ' at ' + target['path'])
+        if not detected:
+            lines.append('  Install/open ' + label + ' before writing; automatic detection did not find it.')
+        elif placed:
+            invocation = '$blog-studio' if agent == 'codex' else '/blog-studio'
+            lines.append('  Open a new local session and use ' + invocation + ' to verify discovery.')
+    if result.get('planned_changes'):
+        lines.append('Preview only: no installation changed. Run setup to install at the locations above.')
+    elif not verified:
+        lines.append('Next: reopen the trusted installer; use repair if an installation is damaged.')
+    else:
+        lines.append('Try: Help me build an outline from my notes. Stop at the outline.')
+    lines.append('Drafts and voices stay in the author workspace. These checks do not prove live skill discovery.')
+    return '\n'.join(lines)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', nargs='?', choices=('install', 'check', 'repair', 'rollback', 'uninstall'), default='install')
@@ -449,7 +482,7 @@ def main():
             if args.dry_run:
                 result['planned_changes'] = {k: str(v) for k, v in selected.items()}
                 result['package_verified'] = verify_package(args.source)['version']
-            print(json.dumps(result, indent=2))
+            print(json.dumps(result, indent=2) if args.json else setup_summary(result))
             return 0
         if not args.yes:
             if args.action in ('install', 'repair'):
@@ -490,9 +523,15 @@ def main():
             print('Blog Studio: ' + result['status'].replace('-', ' ') + '.')
             if 'targets' in result:
                 print('Skill files and runtime verified. Open a new local harness session to verify discovery.')
-                print('Codex: $blog-studio  |  Claude Code: /blog-studio')
+                for agent in result['targets']:
+                    print('Codex: $blog-studio' if agent == 'codex' else 'Claude Code: /blog-studio')
                 print('Try: Help me build an outline from my notes. Stop at the outline.')
-                print('To check setup: python3 installer/install.py check')
+                check_command = [sys.executable, str(Path(__file__).resolve()), 'check', '--target', args.target or 'both']
+                if args.home != Path.home():
+                    check_command += ['--home', str(args.home.absolute())]
+                if args.root:
+                    check_command += ['--root', str(args.root.absolute())]
+                print('To check setup: ' + shlex.join(check_command))
             if result.get('retained'):
                 print(result['retained'])
         return 0

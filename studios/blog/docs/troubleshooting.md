@@ -3,7 +3,7 @@
 | What you see | Next step |
 | --- | --- |
 | macOS blocks the downloaded launcher | Follow your organization's normal process for approving trusted unsigned downloads. This release is a terminal launcher, not a signed native app. |
-| Python or Git is missing | Follow the vendor link in setup, then reopen it. Python must be 3.11 or later. |
+| Python or Git is missing | Follow the vendor link in setup, then reopen it. Python must be 3.11 or later. The launcher also finds versioned Homebrew Python in common locations when a GUI session has a short PATH. |
 | GitHub sign-in succeeded but access fails | Confirm your account can open the private repository. Membership, organization approval, and credentials are separate checks. |
 | Repository check times out | Check connectivity and your Git credentials. Retry; existing article pins are preserved. |
 | Skill is missing in chat | Open a new local session and use the harness's skill picker/invocation. Run installer `check` to inspect links. File placement alone does not verify discovery. |
@@ -16,7 +16,9 @@
 | A discovery link was changed outside setup | Inspect and preserve that folder/link. Setup refuses to remove an unowned target. |
 | Rollback rejects a damaged old version | Use `repair` with an intact bundle instead. |
 
-For diagnostics, run `python3 installer/install.py check --json` from the installer download. Add `--offline` to inspect only local state. Diagnostics deliberately omit Git stderr and credentials. If asking for help, provide the reported status; do not paste access tokens or a credential-bearing URL.
+For a readable setup summary, run `python3 installer/install.py check`; add `--target codex` or `--target claude` to inspect one harness. The result distinguishes verified files from actual discovery and tells you the next step.
+
+For structured diagnostics, run `python3 installer/install.py check --json` from the installer download. Add `--offline` to inspect only local state. Diagnostics deliberately omit Git stderr and credentials. If asking for help, provide the reported status; do not paste access tokens or a credential-bearing URL.
 
 Guidance cache lives under the selected author workspace's `task-context/`. Articles, profiles, drafts, and sources live alongside it. Uninstalling discovery links preserves those files. No real writing data needs to be deleted to fix an installation.
 

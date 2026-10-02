@@ -71,9 +71,9 @@ Progressive disclosure keeps the full reference library available while selectin
 |---|---:|---:|
 | Outline with sources | 4.4k | 2–3k |
 | First draft with sources | 6.0k | 3–5k |
-| Quick edit | 5.4k | 2.5–4k |
+| Edit plus voice-rule review | 5.4k | 2.5–4k |
 | Voice setup | 4.8k | 2–3.5k |
-| Comprehensive review | 7.5k | 4–6k |
+| Comprehensive review | 6.1k | 4–6k |
 
 The installed bootstrap is approximately **857 tokens**. Current route figures include it plus the selected repository guidance; offline targets and the full library total exclude the bootstrap. Downloading that library does not load it into context.
 
@@ -136,15 +136,14 @@ Then visit `http://127.0.0.1:8896/blog-studio.html`.
 
 ## What's implemented and what's next
 
-The six routes, fourteen capability modules, local continuity helpers, and portable packages are implemented. **87 deterministic tests cover local helpers, Team Hub, privacy boundaries, guidance refresh, and managed installation**, alongside package integrity and extracted-bundle portability checks. The Mac launcher and installer are implemented; a clean-machine sign-in pilot and actual discovery/writing in both harnesses remain validation gaps.
+The six routes, fourteen capability modules, local continuity helpers, and portable packages are implemented. **91 deterministic tests cover local helpers, Team Hub, privacy boundaries, guidance refresh, and managed installation**, alongside package integrity and extracted-bundle portability checks. The suite also passed in a fresh Tart macOS 27 clone. That pilot found and fixed GUI-path Python discovery; installer diagnostics and newcomer prompts are now portable and clearer. Signed-in discovery/writing in both harnesses and the full browser sign-in handoff remain validation gaps. See the [I4/M4/M5 evidence and remaining checks](docs/i4-m4-m5-validation.md).
 
 | Next milestone | Estimated development tokens |
 |---|---:|
-| Scope review and evidence reads | 10–18k |
-| Complete route/discovery and clean-machine newcomer pilots | 12–22k |
 | Google Docs intake, review handoff, and return (first slice) | 15–25k |
+| Live Codex/Claude and signed-in newcomer pilots — run last | 12–22k original range |
 
-The repository bootstrap and M1–M3 guidance refinements are delivered. M4 will further scope review/evidence reads; M5 validates the full conversational experience. Development ranges are planning estimates, with overlapping pilot work excluded from additive totals. See the [progressive roadmap](docs/progressive-disclosure-roadmap.md) and [Google Docs roadmap](docs/google-docs-roadmap.md).
+The repository bootstrap and M1–M4 guidance refinements are delivered. Reviews load selected checks and retain passage-level evidence; comprehensive feedback is about 22% smaller than after M3. Live Codex/Claude validation is deferred to [M5 #9](https://github.com/dbbaskette/blog-studio/issues/9), with signed-in Mac setup in [I4 #8](https://github.com/dbbaskette/blog-studio/issues/8). Run these last, when the user is available for sign-in. Development ranges are planning estimates, with overlapping pilot work excluded from additive totals. See the [progressive roadmap](docs/progressive-disclosure-roadmap.md) and [Google Docs roadmap](docs/google-docs-roadmap.md).
 
 ## Verify and package
 

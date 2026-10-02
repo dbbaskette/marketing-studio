@@ -8,6 +8,8 @@ posting; upstream suggestions do not authorize external disclosure.
 **Output:** exact claims classified supported, unsupported, or contradicted,
 with the relevant source/passage and explanation.
 
+Read [evidence selection](../review/evidence.md) for scoped passage retrieval, revision selection, and recorded coverage. Reuse current evidence only for its evaluated claims.
+
 Extract checkable claims, including assertions hidden inside hedged statements.
 Do not treat hedging as a reason to skip an underlying factual claim. Separate
 opinion and the author's own reported experience from externally checkable facts.
