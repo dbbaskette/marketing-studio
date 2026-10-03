@@ -2,100 +2,113 @@
 
 **Turn ideas, notes, and rough drafts into blogs that sound like you.**
 
-Blog Studio works inside **Codex or Claude Code**, the AI chat tools you already use.
-Start with a conversation. Bring your notes, ask for an outline, improve a draft,
-or let Blog Studio interview you one question at a time.
+Blog Studio works inside **Codex or Claude Code**. Tell it what you want to do:
+plan an article, write a draft, improve something you already wrote, or talk through
+an idea one question at a time. You stay in the same chat.
 
 [**Get started**](#get-started) · [Simple commands](docs/prompt-cheat-sheet.md) · [First blog walkthrough](docs/new-user-guide.md)
 
 ## Get started
 
-1. **Install Blog Studio.** [Download the installer](dist/blog-studio-installer.zip),
-   expand it, and open **Install Blog Studio.command** in the `installer` folder.
-   Choose Codex, Claude Code, or both. You need access to this private repository.
-2. **Open a new chat** in your chosen tool after setup finishes.
-3. **Say:** “Use Blog Studio. Help me start a blog.”
+1. **[Download the installer](dist/blog-studio-installer.zip).** On GitHub, choose
+   **Download raw file**. You need access to this private repository; your team
+   administrator can also give you the installer.
+2. **Expand the ZIP** and open **Install Blog Studio.command** in its `installer`
+   folder. Choose Codex, Claude Code, or both, and follow the setup instructions.
+3. **Open a new chat** in your chosen tool and say:
+   **“Use Blog Studio. Help me start a blog.”**
 
-Setup checks the tools and sign-ins you need and explains anything missing.
-Already have a draft? Attach it and say **“Improve this draft.”**
+Already installed? Run the latest installer again to update. **Version 1.11** adds
+starting from an existing Google Doc and improves proofreading suggestions.
 
-Company laptop or prefer a shell script? Keep the expanded bundle together and
-run `sh installer/install.sh` from its top folder in your approved terminal.
-[Setup, updates, and troubleshooting →](docs/installation.md)
+[Setup help, company laptop instructions, and updates →](docs/installation.md)
 
-## Just ask
+## Start with what you have
 
-| Say | Blog Studio helps you… |
+| You have… | Say… |
 | --- | --- |
-| **Interview me.** | Turn your experience into an idea worth writing about |
-| **Use these notes.** | Bring sources into the current blog |
-| **Help me set up my voice.** | Learn from your writing and preferences |
-| **Make an outline.** | Plan the article before drafting |
-| **Write the draft.** | Build on your topic, notes, and outline |
-| **Proofread.** | Fix spelling, grammar, and punctuation |
-| **Continue [title].** | Pick up saved work and see the next step |
-| **Show status.** | See the blog’s links and save status |
+| A Google Doc | **Start from this Google Doc: [link].** |
+| A draft on your computer | Attach it and say **Improve this draft.** |
+| Notes or source material | **Use these notes to help me write a blog.** |
+| An idea | **Make an outline about [topic].** |
+| Experience you want to share | **Interview me.** |
 
-You can also start from a blank page, supply an outline, or request feedback only.
-Blog Studio asks for the missing details; you do not need a long prompt.
-[More simple commands →](docs/prompt-cheat-sheet.md)
+Blog Studio asks for any missing details. You can ask for an outline, a first
+draft, or feedback only. **“Help me set up my voice”** lets it learn from your
+writing and preferences.
 
-## Write here. Review together in Google Docs.
+## Work with your team in Google Docs
 
-Say **“Push to Google Docs.”** After your team edits the document, say
-**“Pull from Google Docs.”** Or combine it with **“Pull and proofread.”**
-To let the team approve proofreading changes, say **“Push as suggestions.”**
-Blog Studio checks the latest Google copy before submitting. When native suggestions
-are unavailable, it posts readable review comments. Say **“Apply edits 2 and 4”**
-to apply selected comment findings.
+If you start from a Google Doc, Blog Studio saves the original and a formatted
+copy, then keeps **that same Doc** linked to your blog. Importing it does not
+change the Google document or create a duplicate.
 
-A supported pull keeps a formatted **Word/DOCX snapshot** alongside readable
-Markdown. Blog Studio checks for competing edits and preserves formatting during
-supported wording updates. Your working Google Doc link stays with the blog.
-Google access needs a separate connection; setup will identify what is available.
-[Connect Google Docs →](docs/google-docs.md)
+A typical review looks like this:
 
-## Keep your team’s work together
+1. **“Start from this Google Doc: [link].”**
+2. **“Proofread.”**
+3. **“Push as suggestions.”**
 
-A **Team Hub** is your team’s private writing library on GitHub. It holds blogs,
-sources, notes, voices, and shared writing rules, with readable author and title
-folders and earlier versions you can revisit.
+Suggestions go back to the linked Doc so your team can review them. Blog Studio
+checks the latest Google copy first. If suggested edits are unavailable, it uses
+readable review comments and tells you where to find them. Say **“Show review
+edits”**, then **“Apply edits 2 and 4”** to choose which comment proposals to apply.
 
-Ask **“Join our Hub: [repository link].”** Normal saves then synchronize the selected
-workspace. Without a Hub, your work stays local. Offline or review-required saves
-show as waiting until they are actually shared.
-[Create or join a Team Hub →](docs/team-hub.md)
+After someone edits in Google, say **“Pull from Google Docs”** or **“Pull and
+proofread.”** Blog Studio brings back the latest writing and saves a formatted
+Word copy. It checks for competing edits before replacing local work.
+
+Starting a blog in chat instead? **“Push to Google Docs”** sends it to Google.
+Later pushes update the linked Doc. Use **“Push as suggestions”** when you want
+review proposals instead of direct edits.
+
+Google access needs a separate connection. Some document layouts need extra
+handling; Blog Studio will tell you when an import or update cannot be completed.
+[Google Docs setup and help →](docs/google-docs.md)
+
+## Pick up where you left off
+
+| Say… | To… |
+| --- | --- |
+| **My blogs.** | Find saved work |
+| **Continue [title].** | Resume a blog |
+| **Show status.** | See its working Doc link, save status, and next step |
+| **Save and sync.** | Save your work and share it with your selected Team Hub |
+
+A **Team Hub** is your team's private writing library on GitHub. It keeps blogs,
+sources, notes, voices, and writing rules together, organized by author and title.
+Earlier versions remain available.
+
+Say **“Join our Hub: [repository link].”** Normal saves then share the selected
+workspace with that Hub. Without one, your work stays on your computer. Blog
+Studio tells you when a save is still waiting to be shared.
+
+[Create or join a Team Hub →](docs/team-hub.md) · [More simple commands →](docs/prompt-cheat-sheet.md)
 
 ## The right help at the right time
 
-Blog Studio loads guidance as you need it:
+**Idea → sources and voice → outline or draft → review → shared editing**
 
-**Your idea → sources and voice → outline or draft → requested checks → handoff**
+You can start at any step. Blog Studio opens only the instructions needed for your
+request—a design called *progressive disclosure*. You do not need to manage the
+individual skills yourself.
 
-This is called *progressive disclosure*. You stay in chat while the skill opens
-only the relevant writing instructions. On resume, it starts with a compact
-summary and reads the passages or full documents needed for your next request.
-Unchanged mechanical checks can be reused; new edits still trigger fresh checks.
-
-Routine writing guidance updates arrive automatically for new tasks. Existing
-blogs retain their saved guidance so an update does not change a draft’s rules
-midway through. New helper features, including runtime **1.8**, need a one-time
-update through the installer.
+Writing guidance updates automatically for new blogs. Existing blogs keep their
+saved guidance for consistency. New features sometimes need an installer update.
 
 [How it works and token estimates →](docs/progressive-disclosure-roadmap.md)
 
 ## Your content stays under your control
 
-Work stays in your chosen AI tool, local workspace, and selected private Team Hub.
-Google transfers send the selected content to the chosen document. Blog Studio
-adds no telemetry uploads. Your AI provider, GitHub, and Google still process
-content under your account settings.
+Work stays in your chosen AI tool, on your computer, and in your selected private
+Team Hub. Google transfers use the content and document you select. Blog Studio
+adds no telemetry uploads. Your AI provider, GitHub, and Google process content
+under your account settings.
 
-[Privacy details](docs/privacy-review.md) · [House style](docs/house-style-guide.md) ·
-[Status card](docs/status-card.md) · [Troubleshooting](docs/troubleshooting.md)
+[Privacy details](docs/privacy-review.md) · [House style](docs/house-style-guide.md) · [Troubleshooting](docs/troubleshooting.md)
 
 ---
 
-**Building or administering Blog Studio?** See the [developer guide](docs/development.md),
-[performance evidence](docs/performance.md), [roadmap](https://github.com/dbbaskette/blog-studio/issues/3),
-and [package details](PACKAGE.md). Live account and team pilots are tracked separately.
+**For developers and team administrators:** [Developer guide](docs/development.md) ·
+[Roadmap](https://github.com/dbbaskette/blog-studio/issues/3) ·
+[Performance evidence](docs/performance.md) · [Package details](PACKAGE.md)

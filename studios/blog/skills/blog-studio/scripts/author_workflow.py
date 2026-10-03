@@ -51,6 +51,12 @@ def resolve(root, article_id=None, query=None):
 
 def route(root, text, article_id=None, destination=None):
     key = ' '.join(text.casefold().strip(' .?!').split())
+    # Intake works with an empty workspace, before current-article resolution.
+    intake = re.fullmatch(r'(?:start (?:a blog )?from (?:this |a )?google doc|use (?:this )?google doc as (?:my |a )?(?:draft|starting manuscript))(?:\s*:\s*(.+))?', text.strip().rstrip('.?!'), re.IGNORECASE)
+    if intake:
+        return {'status': 'routed', 'actions': ['google-start'],
+                'references': ['references/google/start.md'],
+                'document_input': intake[1], 'execution': 'Capture and inspect the selected Doc, then establish its manuscript and working baseline.'}
     if key in ('push', 'pull'):
         if destination is None:
             return {'status': 'needs-destination', 'question': 'Google Docs or the Team Hub?'}

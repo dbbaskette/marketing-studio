@@ -348,29 +348,35 @@ def checked_author(value):
     return value.strip()
 
 
+def article_record(root, args, value):
+    """Build new-article metadata without publishing a partially initialized article."""
+    from writing_defaults import for_create
+    default_voice = for_create(root, args)
+    if default_voice:
+        voice = {'mode': 'profile', **default_voice}
+    elif args.profile:
+        voice = {'mode': 'profile', **voice_pin(root, args.profile)}
+    else:
+        voice = {'mode': args.voice or 'preserve', 'tone': args.tone or ''}
+    stops = {'existing': 'review', 'first-draft': 'draft', 'outline-only': 'outline',
+             'from-outline': 'draft', 'interview': 'outline', 'discover': 'brief'}
+    record = {'id': value, 'title': args.title, 'mode': args.mode, 'stage': 'intake',
+              'author': checked_author(args.author) if args.author else '',
+              'stop_point': args.stop or stops[args.mode], 'research_policy': args.research,
+              'voice': voice, 'sources': [], 'reviews': {}, 'artifact_hashes': {},
+              'next_step': 'Gather missing material and relevant context.', 'pending_question': None,
+              'created_at': now()}
+    record['writing_preferences'] = {key: getattr(args, key) for key in ('audience', 'blog_type', 'review_folder') if getattr(args, key, None) is not None}
+    return record
+
+
 def article_command(root, args):
     if args.action == 'create':
         value = identifier(args.id) if args.id else new_id(args.title)
         directory = inside(root, 'articles', value)
         if directory.exists():
             raise ValueError('Article already exists.')
-        from writing_defaults import for_create
-        default_voice = for_create(root, args)
-        if default_voice:
-            voice = {'mode': 'profile', **default_voice}
-        elif args.profile:
-            voice = {'mode': 'profile', **voice_pin(root, args.profile)}
-        else:
-            voice = {'mode': args.voice or 'preserve', 'tone': args.tone or ''}
-        stops = {'existing': 'review', 'first-draft': 'draft', 'outline-only': 'outline',
-                 'from-outline': 'draft', 'interview': 'outline', 'discover': 'brief'}
-        record = {'id': value, 'title': args.title, 'mode': args.mode, 'stage': 'intake',
-                  'author': checked_author(args.author) if args.author else '',
-                  'stop_point': args.stop or stops[args.mode], 'research_policy': args.research,
-                  'voice': voice, 'sources': [], 'reviews': {}, 'artifact_hashes': {},
-                  'next_step': 'Gather missing material and relevant context.', 'pending_question': None,
-                  'created_at': now()}
-        record['writing_preferences'] = {key: getattr(args, key) for key in ('audience', 'blog_type', 'review_folder') if getattr(args, key, None) is not None}
+        record = article_record(root, args, value)
         directory.mkdir()
         persist(directory, 'articles', record)
         write_json(inside(root, '.active-article.json'), {'id': value})
@@ -614,6 +620,10 @@ def main():
                         adapter = active(root)
                         if adapter:
                             result['hub_sync'] = adapter.publish_mutation(mutation_group, result)
+                    except OSError as exc:
+                        result['hub_sync'] = {'status': 'local-saved-not-shared',
+                            'error': 'Hub filesystem access failed (' + type(exc).__name__ + ').',
+                            'next_step': 'Local work is saved. Check sandbox/filesystem access to the selected Hub clone, then retry Hub sync; do not repeat the local operation.'}
                     except HubError as exc:
                         result['hub_sync'] = {'status': 'local-saved-not-shared', 'error': str(exc),
                             'next_step': 'Retry the selected workspace import after resolving the hub issue.'}

@@ -15,6 +15,9 @@ For synonyms outside its small alias set, infer ordinary intent and use the same
 routes. Bare “push”/“pull” needs a destination if context cannot distinguish Google
 from Git; pass `--destination google|hub` only when already established.
 
+- **Start from this Google Doc: [link]:** use [Google manuscript intake](google/start.md)
+  to preserve the original, formatted snapshot, and working Doc link together.
+  Subsequent proofreading suggestions use that same Doc.
 - **Proofread:** correct spelling, grammar, punctuation; keep facts, author voice,
   and structure. Use [exact-input diagnostics](workspace/performance.md) when
   repeating mechanical checks. Read the current draft and save with `article save ... --label

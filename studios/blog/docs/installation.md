@@ -160,3 +160,13 @@ and resolves completed comments. A resolved comment alone never means approval.
 Afterward, say **“Pull from Google Docs.”** Runtime **1.10** provides this workflow;
 run the current installer once and start a new session. A hosted connector's
 missing option does not require changing the document's settings.
+
+## Runtime 1.11: start from a Google Doc
+
+Run the current installer again to update executable helpers. “Start from this
+Google Doc: [link]” now saves the original, draft, formatted snapshot and working
+Doc link in one local operation. Future proofreading suggestions target that Doc.
+The update also handles review targets after inline charts, Google’s native anchor
+and inherited-style representations, actionable authorization failures, and Hub
+filesystem failures after a successful local save. A previous formatting baseline
+may need a fresh inspected pull; the updater does not rewrite review receipts.

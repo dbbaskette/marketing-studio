@@ -156,13 +156,8 @@ def build(document_value, findings, selected_tabs):
             if not isinstance(f.get('after'),str) or any(ord(c)<32 or c in '\u2028\u2029' for c in f['after']) or f['after']==f['before']:
                 raise GoogleError('Provide a changed, single-paragraph replacement (empty means deletion).')
         elif 'after' in f:raise GoogleError('Comments cannot also replace text.')
-        match=None
-        for (tab,start), paragraph in paragraphs.items():
-            if tab!=f['tab_id'] or start>f['start_index']:continue
-            text=''.join(e.get('textRun',{}).get('content','') for e in paragraph['elements'])
-            if f['start_index'] < start+rt.utf16(text):match=(tab,start,paragraph,text)
-        if not match:raise GoogleError('Anchor is outside supported body paragraphs; use a native scoped review for other structures.')
-        tab,start,paragraph,text=match
+        (tab,start), paragraph = rt.paragraph_at(expected, f['tab_id'], f['start_index'])
+        text=''.join(e.get('textRun',{}).get('content','') for e in paragraph['elements'])
         if any(set(e)-{'startIndex','endIndex','textRun'} or 'textRun' not in e for e in paragraph['elements']):
             raise GoogleError('Paragraph contains unsupported objects; no proposal submitted.')
         offset=start
@@ -283,6 +278,36 @@ def apply(client, root, saved):
         return comments_apply(client,root,saved,reserved=reserved)
 
 
+def native_anchors(document_value):
+    """Keep native anchor ranges scoped to their enclosing tab."""
+    found = []
+    def walk(value, tab_id=None):
+        if isinstance(value, dict):
+            if 'tabProperties' in value:
+                tab_id = value['tabProperties'].get('tabId')
+            if 'anchorId' in value and 'ranges' in value:
+                ranges = []
+                for original in value['ranges']:
+                    if tab_id and original.get('tabId', tab_id) != tab_id:
+                        continue
+                    r = dict(original)
+                    if tab_id: r.setdefault('tabId', tab_id)
+                    ranges.append(r)
+                found.append({**value, 'ranges': ranges})
+            for child in value.values(): walk(child, tab_id)
+        elif isinstance(value, list):
+            for child in value: walk(child, tab_id)
+    walk(document_value)
+    return found
+
+
+def quote_matches(actual, expected):
+    # Google may trim ASCII boundary whitespace from plainTextQuote. This is only
+    # used together with exact native ranges and unchanged comment content.
+    trimmed = expected.strip(' \t\r\n')
+    return actual == expected or (bool(trimmed) and actual == trimmed)
+
+
 def verify(client, root, saved):
     path=contained(ledger(root),operation_key(saved)+'.json')
     if not path.is_file():raise GoogleError('No recorded attempt exists for this plan.')
@@ -296,18 +321,10 @@ def verify(client, root, saved):
     again=review_read(client,saved['document_id'])
     stable=len({v['revisionId'] for v in (inline,before,after,again)})==1
     comments=[]
-    def anchors(value):
-        found=[]
-        if isinstance(value,dict):
-            if 'anchorId' in value and 'ranges' in value:found.append(value)
-            for child in value.values():found.extend(anchors(child))
-        elif isinstance(value,list):
-            for child in value:found.extend(anchors(child))
-        return found
-    located=anchors(inline)
+    located=native_anchors(inline)
     for expected in saved['comments']:
         matches=[t for t in inline.get('comments',[]) if t.get('headPost',{}).get('content')==expected['content']
-                 and t.get('plainTextQuote')==expected['quote'] and t.get('status')=='OPEN'
+                 and quote_matches(t.get('plainTextQuote'),expected['quote']) and t.get('status')=='OPEN'
                  and any(a['anchorId']==t.get('anchorId') and any(all(r.get(k)==v for k,v in expected['range'].items()) for r in a['ranges']) for a in located)]
         comments.append({'id':expected['id'],'verified':len(matches)==1,
                          'thread_id':matches[0]['commentId'] if len(matches)==1 else None})

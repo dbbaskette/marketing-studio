@@ -128,3 +128,13 @@ For “Is this the newest?” and linked-article resume, use [freshness status](
 Runtime 1.10 adds a separate [review helper](suggestions.md) for native suggestions,
 anchored comments, and ordinary Drive-comment fallback. It bypasses connector
 schemas that lack `writeMode` using the existing gcloud account and Docs API.
+
+## Diagnose authorization before changing review modes
+
+Runtime 1.11 distinguishes local gcloud credential/sandbox access failures from
+sign-in failures. Restore authorized filesystem access for local credential denials;
+repeating login does not fix those. Google errors expose only bounded, allowlisted
+status/reason labels. `ACCESS_TOKEN_SCOPE_INSUFFICIENT` or `insufficientPermissions`
+requires consent for the intended account, not comment fallback. On an explicit
+setup request, use `gcloud auth login --enable-gdrive-access --force --no-activate`
+with the intended account; never broaden consent automatically.

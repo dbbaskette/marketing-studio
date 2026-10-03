@@ -5,6 +5,7 @@ writing stays on its current route and needs no Google account or CLI.
 
 | Intent | Load |
 | --- | --- |
+| Start/edit a blog from an existing Doc | [start from Google](start.md) |
 | Use a Doc as material | [source](../modules/blog-google-source.md) |
 | Continue drafting in Docs | [handoff](../modules/blog-google-handoff.md) |
 | Bring edits back | [return](../modules/blog-google-return.md) |

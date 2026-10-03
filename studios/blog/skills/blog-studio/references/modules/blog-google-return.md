@@ -15,8 +15,8 @@ use paragraph wording patches for updates to an existing formatted Doc.
    Fetch the linked document and selected tab IDs; inspect structure, accepted
    text, current revision and suggestion state. A renamed tab can retain its ID;
    a different ID/scope requires explicit reconciliation, not a silent baseline
-   switch. No baseline: import the Doc as material or establish a matching
-   handoff. Do not pretend an unrelated file is the same editing copy.
+   switch. No baseline: use [start from Google](../google/start.md) for a starting
+   manuscript; use source intake for reference material. Do not pretend an unrelated file is the same editing copy.
 2. Run `google compare` on a faithful Markdown projection of the provider
    readback. Read just the relevant baseline/local/remote passages to explain
    differences. Retain provider indexes for native work; local Markdown offsets

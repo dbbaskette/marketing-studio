@@ -35,6 +35,10 @@ For “Push as suggestions,” runtime 1.10+ loads
 If the connector omits `writeMode`, use the already configured installed gcloud
 adapter. The same route handles readable comment fallback and numbered edit selection.
 
+For “Start from this Google Doc” or a Google manuscript supplied for proofreading,
+load [Google manuscript intake](references/google/start.md) (runtime 1.11+).
+It establishes the original Doc as the working destination for later suggestions.
+
 **New task:** run
 `python3 <installed-skill>/scripts/sync_guidance.py start --workspace <workspace>`.
 The small JSON result identifies the pinned `guidance`, `runtime`, and task.

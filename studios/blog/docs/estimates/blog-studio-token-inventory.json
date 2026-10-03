@@ -49,9 +49,9 @@
       "sha256": "c83864165a76b39c77b6e5b0d9548e9c6f0af60ba8abdcbd9aa76a43bf5a9cdf"
     },
     "references/entry-flows.md": {
-      "characters": 1865,
-      "estimated_tokens": 467,
-      "sha256": "fbcb5a556f84c569a2b898f6898c88e2efe4eab411f54eea6e6a564bde01db8e"
+      "characters": 1980,
+      "estimated_tokens": 495,
+      "sha256": "16fbc129e27b5e726962ea0d9cf31cf92ec7c6c525698d96f94c650eef79d513"
     },
     "references/export.md": {
       "characters": 1105,
@@ -74,14 +74,19 @@
       "sha256": "1bb4babfef28381d7230fed8382ef464fa6b79716bf186cbe2bbb3cceaf95f43"
     },
     "references/google/gcloud.md": {
-      "characters": 6701,
-      "estimated_tokens": 1676,
-      "sha256": "7c8663bbcaa554ddf18cf97ed8785eb385dd68233116c8de7073291a8f2fd6d1"
+      "characters": 7319,
+      "estimated_tokens": 1830,
+      "sha256": "3117eefa15bb5ef795c41fd905a40109097ad1869bdb2b146d5202a63b89c192"
     },
     "references/google/roundtrip.md": {
       "characters": 6377,
       "estimated_tokens": 1595,
       "sha256": "616fbd33120b9d23a90bbee5562d879c5990eb71c127c350f260f38cb09520db"
+    },
+    "references/google/start.md": {
+      "characters": 3333,
+      "estimated_tokens": 834,
+      "sha256": "a03194a40053048df3a604acc0fffb701e5a1d42f89b9c5a3efa9f342be0f6b1"
     },
     "references/google/status.md": {
       "characters": 3202,
@@ -89,14 +94,14 @@
       "sha256": "80264c882bbe0e09d1cd2c9b634444d20f6ff8e02d71fff7cd5604d826eb0e96"
     },
     "references/google/suggestions.md": {
-      "characters": 9959,
-      "estimated_tokens": 2490,
-      "sha256": "2df1321bb43273f5e40ab11ae14e3fb6c15b7243480b43e086b0957ca84d7b35"
+      "characters": 10560,
+      "estimated_tokens": 2640,
+      "sha256": "b0fc65dddec0818e03e92a2b45d039619f8eb7a938a993afb656a1607531787d"
     },
     "references/google/workflow.md": {
-      "characters": 1498,
-      "estimated_tokens": 375,
-      "sha256": "480c1f9be3ac22ff57e06e7a3133ce0d1d469002b493a8828523aee8986e0262"
+      "characters": 1573,
+      "estimated_tokens": 394,
+      "sha256": "54994a954ea23acf3e84f41017a3a04b6d76d937bb4834c84c6d0c556cad8ddd"
     },
     "references/headline-lab.md": {
       "characters": 574,
@@ -169,9 +174,9 @@
       "sha256": "a0b189d9c99287a4f973822eafe708f5d314b45ffeb6cd87b8ff2928df567e97"
     },
     "references/modules/blog-google-return.md": {
-      "characters": 3541,
-      "estimated_tokens": 886,
-      "sha256": "b4997d8685e5e3a28e88da43634db7ef489a9d49f0a05f337d789010e2177ea0"
+      "characters": 3594,
+      "estimated_tokens": 899,
+      "sha256": "9110000e38d8e671d973a2e58c3228d3497b33115a6eba7c31ee47bed26967a6"
     },
     "references/modules/blog-google-review.md": {
       "characters": 3116,
@@ -179,9 +184,9 @@
       "sha256": "7bb777e200718091362aa6444559bc9addc306f83c5247da6abf35595b04e45d"
     },
     "references/modules/blog-google-source.md": {
-      "characters": 2297,
-      "estimated_tokens": 575,
-      "sha256": "682a9bfab55ab371b35718cdc00fcb418f432a9396a77a3a6ddbfa4937824bb1"
+      "characters": 2524,
+      "estimated_tokens": 631,
+      "sha256": "e3ffefdca2d394422dd1983d8583e36d32c0475a1f87846527a5b1a380d77e74"
     },
     "references/modules/blog-google-template.md": {
       "characters": 2897,
@@ -269,9 +274,9 @@
       "sha256": "ff220715a53d4b42937990a5d40a484c0a3eee145109e7154b96d1555ba30100"
     },
     "references/short-commands.md": {
-      "characters": 3233,
-      "estimated_tokens": 809,
-      "sha256": "020d931b770b8fe6ef9d79d33469686c5d1e9758f95af64d04892c45647fae25"
+      "characters": 3459,
+      "estimated_tokens": 865,
+      "sha256": "ae56081ba31a5e22e0595b56d4da9ea3a9770178a17c65908429614fa2dbd0e2"
     },
     "references/style/examples.md": {
       "characters": 1936,
@@ -619,7 +624,7 @@
       "sha256": "36c39ead07081df6544bf0eb981b19bb4046c17ce95805acc923d3ac7c52d40e"
     }
   },
-  "library_tokens": 196454,
+  "library_tokens": 197764,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -634,7 +639,7 @@
         "references/modules/blog-argument-outline.md"
       ],
       "scenario": "New local outline-only article from readable supplied notes and an explicit tone; no voice profile or hub.",
-      "estimated_tokens": 4104
+      "estimated_tokens": 4132
     },
     "first_draft_with_sources": {
       "files": [
@@ -650,7 +655,7 @@
         "references/modules/blog-write.md"
       ],
       "scenario": "New local draft from supplied notes and explicit tone; internal outline, no specialized template or extra composition reference.",
-      "estimated_tokens": 5720
+      "estimated_tokens": 5748
     },
     "quick_edit": {
       "files": [
@@ -666,7 +671,7 @@
         "references/modules/blog-voice-check.md"
       ],
       "scenario": "Saved local article; controlled polish, selected voice-rule check and saved review. No new source/profile intake.",
-      "estimated_tokens": 5240
+      "estimated_tokens": 5268
     },
     "voice_setup": {
       "files": [
@@ -681,7 +686,7 @@
         "references/workspace/profiles.md"
       ],
       "scenario": "New standalone profile from selected readable authored samples; no article creation.",
-      "estimated_tokens": 4201
+      "estimated_tokens": 4229
     },
     "comprehensive_review": {
       "files": [
@@ -700,7 +705,7 @@
         "references/review/evidence.md"
       ],
       "scenario": "Saved article with selected evidence/voice; five requested feedback checks and stored coverage, without rewriting or an optional deep humanization rubric.",
-      "estimated_tokens": 5827
+      "estimated_tokens": 5855
     },
     "quick_polish": {
       "files": [
@@ -712,13 +717,13 @@
         "references/modules/copy-editing.md"
       ],
       "scenario": "Saved local draft; light clarity and voice polish, no separately requested check or recorded review.",
-      "estimated_tokens": 4024
+      "estimated_tokens": 4052
     }
   },
   "bootstrap": {
     "path": "bootstrap/blog-studio/SKILL.md",
-    "estimated_tokens": 1217,
-    "sha256": "0caaa88e7ba1fb7e4540bbdaaa821c54f9f5364ff96d24d4c249a8b6832a0166",
+    "estimated_tokens": 1277,
+    "sha256": "7001657e5e0f8ffc000204a4a39f2849abae736aeaa1d25a1e788e85cf0545b5",
     "note": "Added to repository-guidance routes; excluded from the full offline corpus."
   },
   "team_hub_routes": {
@@ -756,7 +761,7 @@
       "SKILL.md",
       "references/entry-flows.md"
     ],
-    "estimated_tokens": 1380,
+    "estimated_tokens": 1408,
     "target_tokens": [
       800,
       1200
@@ -858,7 +863,7 @@
       "files": [
         "references/short-commands.md"
       ],
-      "estimated_tokens": 809,
+      "estimated_tokens": 865,
       "note": "Conditional runtime 1.7 author operation; ordinary entry and author data are additional."
     }
   },
@@ -893,7 +898,7 @@
       "files": [
         "references/google/workflow.md"
       ],
-      "estimated_tokens": 375
+      "estimated_tokens": 394
     },
     "adapter_contract": {
       "files": [
@@ -912,48 +917,48 @@
         "references/google/workflow.md",
         "references/modules/blog-google-source.md"
       ],
-      "estimated_tokens": 950
+      "estimated_tokens": 1025
     },
     "handoff": {
       "files": [
         "references/google/workflow.md",
         "references/modules/blog-google-handoff.md"
       ],
-      "estimated_tokens": 1210
+      "estimated_tokens": 1229
     },
     "return": {
       "files": [
         "references/google/workflow.md",
         "references/modules/blog-google-return.md"
       ],
-      "estimated_tokens": 1261
+      "estimated_tokens": 1293
     },
     "review": {
       "files": [
         "references/google/workflow.md",
         "references/modules/blog-google-review.md"
       ],
-      "estimated_tokens": 1154
+      "estimated_tokens": 1173
     },
     "template": {
       "files": [
         "references/google/workflow.md",
         "references/modules/blog-google-template.md"
       ],
-      "estimated_tokens": 1100
+      "estimated_tokens": 1119
     },
     "export": {
       "files": [
         "references/google/workflow.md",
         "references/modules/blog-google-export.md"
       ],
-      "estimated_tokens": 1285
+      "estimated_tokens": 1304
     },
     "gcloud": {
       "files": [
         "references/google/gcloud.md"
       ],
-      "estimated_tokens": 1676
+      "estimated_tokens": 1830
     },
     "roundtrip": {
       "files": [
@@ -971,7 +976,13 @@
       "files": [
         "references/google/suggestions.md"
       ],
-      "estimated_tokens": 2490
+      "estimated_tokens": 2640
+    },
+    "start": {
+      "files": [
+        "references/google/start.md"
+      ],
+      "estimated_tokens": 834
     }
   },
   "google_operations_note": "Unique Blog Studio instruction estimates. Each operation includes its router. Add adapter/checkpoint contracts and privacy once as applicable; parent, provider/plugin skills, document content and generated artifacts are additional.",

@@ -29,7 +29,9 @@ explicitly prefers comments. `--mode native` disables fallback. Comment fallback
 is included in “Push as suggestions”; explain the chosen mode without asking for
 another routine confirmation. Failed login, revision conflicts, timeouts, partial
 responses and uncertain writes are not evidence to switch modes. Only explicit
-unsupported/denied review responses or read-only capability evidence permit it.
+unsupported review responses or read-only capability evidence permit it. Generic
+403 denials, missing OAuth scopes, file permissions and organization policy errors
+require resolving the cause; they do not establish review unavailability.
 
 ## Refresh first, automatically
 
@@ -156,3 +158,10 @@ client behavior only.
 
 Provider contracts: [suggestions and comments](https://developers.google.com/workspace/docs/api/how-tos/suggestions),
 [guarded batch updates](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/batchUpdate).
+
+Runtime 1.11 verifies tab-scoped native anchors, permits only ASCII boundary quote
+trimming with exact range/content evidence, and compares explicitly observed
+inherited boolean text styles. It never guesses unknown defaults or table styles.
+A prior formatting fingerprint may need a fresh inspected pull after upgrading.
+Keep old uncertain receipts for read-only reconciliation; an upgrade alone does
+not prove that a prior write succeeded.

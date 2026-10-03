@@ -244,3 +244,11 @@ and resolves completed comments. A resolved comment alone never means approval.
 Afterward, say **“Pull from Google Docs.”** Runtime **1.10** provides this workflow;
 run the current installer once and start a new session. A hosted connector's
 missing option does not require changing the document's settings.
+
+## Start with an existing Google Doc
+
+Say **“Start from this Google Doc: [link].”** Blog Studio saves the original, a
+working draft and a formatted snapshot, then links that same Google Doc. You can
+then say **“Proofread”**, **“Push as suggestions”**, or **“Pull from Google Docs.”**
+Suggestions go to the original document. Importing alone makes no Google edits.
+Use the runtime **1.11** installer update for this combined intake workflow.

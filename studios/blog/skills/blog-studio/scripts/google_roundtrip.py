@@ -38,25 +38,36 @@ def clean_read(client, file_id):
     return doc
 
 
-def semantic(value):
+def semantic(value, _named=None):
     """Compare text/style per character, independent of provider run fragmentation."""
     if isinstance(value, dict):
+        if 'namedStyles' in value:
+            _named = {n.get('namedStyleType'): n.get('textStyle', {})
+                      for n in value['namedStyles'].get('styles', [])}
         if 'elements' in value:  # Paragraph
-            result = {k: semantic(v) for k, v in value.items() if k != 'elements'}
+            result = {k: semantic(v, _named) for k, v in value.items() if k != 'elements'}
+            inherited = dict((_named or {}).get('NORMAL_TEXT', {}))
+            inherited.update((_named or {}).get(value.get('paragraphStyle', {}).get('namedStyleType', 'NORMAL_TEXT'), {}))
             items = []
             for element in value['elements']:
                 if set(element) <= {'startIndex', 'endIndex', 'textRun'} and 'textRun' in element:
                     run = element['textRun']
-                    items.extend({'char': c, 'style': run.get('textStyle', {})} for c in run['content'])
+                    style = dict(run.get('textStyle', {}))
+                    # Only normalize booleans with an observed inherited value. Unknown
+                    # editor defaults and table inheritance stay representation-sensitive.
+                    for key in ('italic', 'bold', 'underline', 'strikethrough'):
+                        if type(inherited.get(key)) is bool and type(style.get(key)) is bool and style[key] == inherited[key]:
+                            del style[key]
+                    items.extend({'char': c, 'style': style} for c in run['content'])
                 else:
-                    items.append(semantic(element))
+                    items.append(semantic(element, _named))
             result['elements'] = items
             return result
-        return {k: semantic(v) for k, v in value.items()
+        return {k: semantic(v, {} if k == 'table' else _named) for k, v in value.items()
                 if k not in ('startIndex', 'endIndex', 'revisionId', 'suggestionsViewMode', 'contentUri',
                              'comments', 'suggestions', 'commentAnchors', 'commentsViewMode')}
     if isinstance(value, list):
-        return [semantic(v) for v in value]
+        return [semantic(v, _named) for v in value]
     return value
 
 
@@ -135,6 +146,16 @@ def paragraphs(document):
             if 'paragraph' in block:
                 result[(tab_id, block['startIndex'])] = block['paragraph']
     return result
+
+
+def paragraph_at(document, tab_id, index):
+    for tab in tabs(document):
+        if tab['tabProperties']['tabId'] != tab_id:
+            continue
+        for block in tab.get('documentTab', {}).get('body', {}).get('content', []):
+            if 'paragraph' in block and block.get('startIndex', -1) <= index < block.get('endIndex', -1):
+                return (tab_id, block['startIndex']), block['paragraph']
+    raise GoogleError('Anchor is outside supported body paragraphs; use a scoped native review.')
 
 
 def build_plan(document, edits):

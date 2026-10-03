@@ -70,8 +70,15 @@ def token(account=None):
         args += ['--account', account]
     try:
         result = subprocess.run(args, capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired):
-        raise GoogleError('Google authentication failed. Run ' + LOGIN) from None
+    except PermissionError:
+        raise GoogleError('Local gcloud execution or credential access was denied. Check sandbox/filesystem access; signing in again will not fix a local access denial.') from None
+    except OSError:
+        raise GoogleError('Could not run local gcloud. Check executable and filesystem access before attempting sign-in.') from None
+    except subprocess.TimeoutExpired:
+        raise GoogleError('Local gcloud token lookup timed out. Check connectivity and the local CLI before retrying; no Google write was sent.') from None
+    diagnostic = (result.stderr or '')[:8192].lower()
+    if result.returncode and any(k in diagnostic for k in ('permission denied', 'operation not permitted', 'unable to open database file')) and any(k in diagnostic for k in ('credentials.db', 'gcloud', 'sqlite')):
+        raise GoogleError('Local gcloud credential access was denied. Check sandbox/filesystem access to the gcloud configuration; do not repeat login to fix a local access denial.')
     value = result.stdout.strip()
     if result.returncode or not value or any(c.isspace() for c in value):
         raise GoogleError('Google authentication is unavailable. Run ' + LOGIN)
@@ -108,24 +115,46 @@ class Client:
                 raise GoogleError('Google returned an unexpected response; reconcile any write before retrying.')
             return value
         except urllib.error.HTTPError as exc:
-            # Never echo provider bodies, request headers, tokens or auth diagnostics.
-            if exc.code == 401:
+            # Parse only bounded diagnostics and expose fixed allowlisted labels.
+            error = {}
+            try:
+                payload = json.loads(exc.read(16384))
+                if isinstance(payload, dict) and isinstance(payload.get('error'), dict):
+                    error = payload['error']
+            except (OSError, ValueError):
+                pass
+            allowed = {'PERMISSION_DENIED', 'UNAUTHENTICATED', 'INVALID_ARGUMENT',
+                       'ACCESS_TOKEN_SCOPE_INSUFFICIENT', 'ACCESS_TOKEN_EXPIRED',
+                       'insufficientPermissions', 'insufficientFilePermissions',
+                       'SERVICE_DISABLED', 'accessNotConfigured', 'RATE_LIMIT_EXCEEDED',
+                       'rateLimitExceeded', 'userRateLimitExceeded'}
+            labels = set()
+            if isinstance(error.get('status'), str) and error['status'] in allowed:
+                labels.add(error['status'])
+            for group in ('details', 'errors'):
+                rows = error.get(group, [])
+                if not isinstance(rows, list): continue
+                for row in rows:
+                    reason = row.get('reason') if isinstance(row, dict) else None
+                    if isinstance(reason, str) and reason in allowed: labels.add(reason)
+            detail = error.get('message', '')
+            detail = detail.lower() if isinstance(detail, str) else ''
+            scope_failure = bool(labels & {'ACCESS_TOKEN_SCOPE_INSUFFICIENT', 'insufficientPermissions'})
+            if scope_failure:
+                message = 'Google authorization lacks required OAuth scopes. With explicit setup approval, reauthorize the intended account with gcloud auth login --enable-gdrive-access --force --no-activate. Do not switch to comments or broaden consent automatically.'
+            elif exc.code == 401:
                 message = 'Google sign-in expired; run ' + LOGIN
             elif exc.code == 403:
-                message = 'Google denied this operation. Check Drive consent, file permissions, API availability and organization policy; do not broaden access automatically.'
+                message = 'Google denied this operation. Check file permission, API access and organization policy. This alone does not establish review unavailability.'
             elif exc.code in (400, 409, 412) and method != 'GET':
                 message = 'Google rejected the write. Reread the document and revision before making another request.'
             else:
                 message = 'Google request failed (HTTP ' + str(exc.code) + ').'
-            # Classify only definite API rejections; never expose raw error bodies.
-            unsupported = exc.code == 403
-            if exc.code == 400:
-                try:
-                    detail = json.loads(exc.read(16384)).get('error', {}).get('message', '').lower()
-                    unsupported = (any(k in detail for k in ('writemode', 'commentsviewmode', 'insertcomment'))
-                        and any(k in detail for k in ('unknown name', 'not supported', 'unsupported', 'not available')))
-                except (OSError, ValueError, AttributeError):
-                    pass
+            if labels: message += ' [' + ', '.join(sorted(labels)) + ']'
+            unsupported = (exc.code in (400, 403) and not (labels - {'INVALID_ARGUMENT', 'PERMISSION_DENIED'})
+                and not any(isinstance(row, dict) and row.get('reason') not in allowed for group in ('details', 'errors') for row in (error.get(group, []) if isinstance(error.get(group, []), list) else []))
+                and any(k in detail for k in ('writemode', 'commentsviewmode', 'insertcomment'))
+                and any(k in detail for k in ('unknown name', 'not supported', 'unsupported', 'not available')))
             raise GoogleError(message, status=exc.code, review_unavailable=unsupported) from None
         except (OSError, ValueError):
             raise GoogleError('Google response was unavailable or invalid. A write may have completed; reconcile before retrying.') from None

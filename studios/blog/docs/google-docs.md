@@ -6,6 +6,7 @@ operation. Your normal writing workflow needs no Google account or extra CLI.
 
 | Ask Blog Studio | What happens |
 | --- | --- |
+| “Start from this Google Doc: [link].” | Saves the original, draft and formatted snapshot; links that same Doc for future edits and suggestions. |
 | “Use this Google Doc as a source.” | Imports selected accepted text with its source role, tabs, URL and version. |
 | “Put this draft in our review folder.” | Posts only the chosen draft/outline, checks content and structure, and saves a transfer baseline. |
 | “Bring back the team's edits.” | Compares Google, local text and the saved baseline; preserves history and asks about conflicting edits. |
@@ -192,3 +193,18 @@ and resolves completed comments. A resolved comment alone never means approval.
 Afterward, say **“Pull from Google Docs.”** Runtime **1.10** provides this workflow;
 run the current installer once and start a new session. A hosted connector's
 missing option does not require changing the document's settings.
+
+## Start from a blog already in Google Docs
+
+Say **“Start from this Google Doc: [link].”** Blog Studio imports accepted text as
+your draft, preserves the original and formatted DOCX snapshot, and makes that
+same document the working Google copy. Then **“Proofread”** and **“Push as
+suggestions”** send your selected proposals back to the original Doc.
+
+Importing does not edit Google or create a duplicate document. Repeating the
+request resumes the saved blog and preserves local edits. **“Use this as a
+source”** still adds reference material without changing the working Doc.
+
+Requires runtime **1.11** and an inspected capture. Automatic formatted intake
+currently supports single-tab Docs; unsupported content or ambiguous tabs need
+resolution before a linked baseline can be established.

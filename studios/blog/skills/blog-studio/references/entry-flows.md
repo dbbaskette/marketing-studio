@@ -5,6 +5,7 @@ implementation requests are not real article requests.
 
 | Route | Next operation | Stop |
 | --- | --- | --- |
+| Start from a Google Doc | [Import and link manuscript](google/start.md), then requested checks | Intake/review |
 | Help with my draft | Editing/requested checks | Revision/feedback |
 | First draft | Internal outline → write | Draft |
 | Outline only | Argument outline | Outline |

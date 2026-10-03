@@ -99,3 +99,45 @@ Extend the separate live pilot above with the following checks:
 
 Existing installations need the runtime **1.10 installer update** for the new
 comment helper. The active review plan and retry ledger remain machine-local.
+
+
+## Runtime 1.11 — original-Doc intake and live-report regressions
+
+“Start from this Google Doc” now captures an inspected manuscript, retains the
+original and formatted snapshots, and establishes the same Doc as the working
+Google destination. Creation is staged so interrupted local saves do not expose
+a partial article. Repeated intake selects the linked article without replacing
+local edits or its baseline. Source-only intake remains separate.
+
+The four reported live failures have sanitized regression coverage:
+
+- Review planning uses native paragraph ranges, so unrelated inline charts do not
+  crash findings after them. Unsupported target paragraphs still fail safely.
+- Native verification derives anchor tab IDs from their enclosing tabs and allows
+  only ASCII boundary quote trimming alongside exact ranges/content. Boolean style
+  differences normalize only when inherited values are observed; unknown defaults
+  and table inheritance are not guessed. See Google's [TextStyle inheritance
+  contract](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents#TextStyle).
+- Local gcloud execution/credential access failures are distinguished from expired
+  sign-in. Bounded, allowlisted Google status/reason labels report missing OAuth
+  scopes, permissions and policy failures without exposing raw diagnostics. Scope
+  failures and generic 403s never establish review unavailability.
+- Hub filesystem failures after successful local mutation return the saved result
+  with `local-saved-not-shared`; callers are told to retry sync, not the local write.
+
+Verification: disposable Tart clone `blog-studio-google-start-ci-20261003`, macOS
+27.0 / Python 3.13.15: **235 tests passed in 104.177 seconds**. This includes 19 new
+intake/live-regression tests, an original-Doc suggestion submission fixture, CLI
+intake, pending accepted-text capture and a complete Team Hub checkout. Package
+validation, guidance inventory, shell syntax, newcomer prompts, and real offline
+install/check/uninstall for Codex, Claude and both passed. Skill metadata and
+whitespace validation also passed. Evidence is local under
+`/private/tmp/blog-studio-google-start-ci-results`.
+
+This run used disposable fixtures only. No live Google document, credential,
+suggestion or old review receipt was read or changed, and no private writing was
+committed as test data. The signed-in author VM was untouched. Automatic formatted
+intake still requires a single-tab inspected capture; unsupported accepted-text
+structures require scoped conversion. Earlier formatting fingerprints may need a
+fresh inspected pull after the inherited-style normalization update. Old uncertain
+receipts remain reconciliation cases, never automatically relabeled successes.

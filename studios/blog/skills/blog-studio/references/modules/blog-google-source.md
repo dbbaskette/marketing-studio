@@ -4,6 +4,10 @@
 with provenance, or a clear access/capability gap. Follow the
 [Google adapter](../google/adapter.md) and [privacy](../privacy.md) boundaries.
 
+For a starting manuscript or “proofread this Google Doc,” use
+[start from Google](../google/start.md) to preserve the original and establish the
+working Doc link together. The source-only path below is for reference material.
+
 1. Ground the exact native document with the connected provider. Enumerate tabs
    before selecting content; clarify scope only if ambiguous. Resolve whether
    this is a manuscript, outline, factual reference, inspiration, authored voice

@@ -187,7 +187,7 @@ class CommentTests(unittest.TestCase):
     def test_error_classification_never_treats_race_or_server_failure_as_fallback(self):
         client=gd.Client.__new__(gd.Client)
         from unittest.mock import patch
-        for status,detail,expected in ((400,'Unknown name "writeMode"',True),(400,'Revision mismatch',False),(403,'Denied',True),(500,'Unknown name "writeMode"',False)):
+        for status,detail,expected in ((400,'Unknown name "writeMode"',True),(400,'Revision mismatch',False),(403,'Denied',False),(500,'Unknown name "writeMode"',False)):
             client.opener=Mock();client.opener.open.side_effect=urllib.error.HTTPError('https://docs.googleapis.com',status,'error',{},io.BytesIO(json.dumps({'error':{'message':detail}}).encode()))
             with patch('google_drive.token',return_value='fixture'):
                 client.account=None

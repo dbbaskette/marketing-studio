@@ -25,8 +25,7 @@ def build(doc, findings, selected_tabs):
             sections[(tid,start)]=section
     entries=[]; groups=[]
     for number,f in enumerate(findings,1):
-        key=next((key for key,para in paragraphs.items() if key[0]==f['tab_id']
-            and key[1]<=f['start_index']<key[1]+rt.utf16(''.join(e['textRun']['content'] for e in para['elements']))),None)
+        key,_=rt.paragraph_at(doc,f['tab_id'],f['start_index'])
         para=paragraphs[key]; text=''.join(e.get('textRun',{}).get('content','') for e in para['elements'])[:-1]
         entry={'number':number,'finding':f,'paragraph':text,'paragraph_start':key[1],
                'section':sections[key], 'tab_title':titles[key[0]]}
@@ -76,14 +75,7 @@ def current(client, saved):
 
 def read_threads(client, saved, backend):
     if backend=='native-comments':
-        doc=gs.review_read(client,saved['document_id']);anchors=[]
-        def walk(v):
-            if isinstance(v,dict):
-                if 'anchorId' in v and 'ranges' in v:anchors.append(v)
-                for x in v.values():walk(x)
-            elif isinstance(v,list):
-                for x in v:walk(x)
-        walk(doc)
+        doc=gs.review_read(client,saved['document_id']);anchors=gs.native_anchors(doc)
         return [{'id':t.get('commentId'),'content':t.get('headPost',{}).get('content'),
                  'quote':t.get('plainTextQuote'),'resolved':t.get('status')=='RESOLVED',
                  'ranges':[r for a in anchors if a['anchorId']==t.get('anchorId') for r in a['ranges']]}
@@ -95,7 +87,7 @@ def read_threads(client, saved, backend):
 
 def matches(thread, expected, backend):
     return (thread.get('id') and not thread.get('deleted') and thread.get('content')==expected['content']
-        and thread.get('quote')==expected['quote'] and (backend!='native-comments'
+        and (gs.quote_matches(thread.get('quote'),expected['quote']) if backend=='native-comments' else thread.get('quote')==expected['quote']) and (backend!='native-comments'
         or any(all(r.get(k)==v for k,v in expected['range'].items()) for r in thread.get('ranges',[]))))
 
 

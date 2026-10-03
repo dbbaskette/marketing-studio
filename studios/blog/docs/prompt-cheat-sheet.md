@@ -39,6 +39,7 @@ approve first, say **“Push as suggestions.”**
 | Say | To… |
 | --- | --- |
 | Use these notes. | Add supplied source material |
+| Start from this Google Doc: [link]. | Import the draft, preserve formatting, and link the same Doc for push/pull and suggestions |
 | Use this as a source: [link]. | Add a web page or Google Doc |
 | Help me set up my voice. | Provide background and writing samples |
 | Save this voice. | Confirm the voice you have reviewed |

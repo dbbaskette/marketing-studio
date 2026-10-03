@@ -6,6 +6,9 @@ These checks verify consistency, not that a provider call actually happened.
 """
 import argparse
 import json
+import os
+import shutil
+import tempfile
 from pathlib import Path
 import re
 from urllib.parse import urlsplit
@@ -114,7 +117,7 @@ def compare(directory, record, kind, obs, body):
     google = state(record)
     base = google['baselines'].get(kind)
     if not base:
-        raise ValueError('No confirmed transfer baseline. Import as a source or confirm a matching handoff first.')
+        raise ValueError('No confirmed transfer baseline. Use google start for a starting manuscript, or import as a reference source.')
     same_target(base['document'], obs)
     local = local_body(directory, kind)
     local_hash = studio.digest(local.encode())
@@ -379,7 +382,72 @@ def sync_status(root, directory, record, kind='draft', online=False, account=Non
     return result
 
 
+def start(root, args):
+    """Adopt an inspected existing Doc as a new manuscript and working baseline.
+
+    Called under studio's workspace lock. No provider calls or Google writes.
+    """
+    obs, body = observed(args)
+    if not obs.get('structure_verified') or not obs.get('revision_id') or not obs.get('format_sha256'):
+        raise ValueError('Inspect a fresh formatted Google capture before starting this blog.')
+    files = formatted_snapshot(args.snapshot, obs, body)
+    if not args.title.strip() or len(args.title.strip()) > 500:
+        raise ValueError('Use a blog title between 1 and 500 characters.')
+    # A repeated start selects the existing blog; never replace local edits or its baseline.
+    matches = []
+    for folder in sorted(studio.inside(root, 'articles').iterdir()):
+        if not folder.is_dir():
+            continue
+        _, existing = studio.item(root, 'articles', folder.name)
+        for base in existing.get('google', {}).get('baselines', {}).values():
+            doc = base['document']
+            if doc['document_id'] == obs['document_id']:
+                if doc['tab_ids'] != obs['tab_ids']:
+                    raise ValueError('This Doc is already linked with different tabs; reconcile its scope first.')
+                matches.append(existing)
+                break
+    if len(matches) > 1:
+        raise ValueError('Several blogs link to this Doc; choose the existing blog before continuing.')
+    if matches:
+        record = matches[0]
+        studio.write_json(studio.inside(root, '.active-article.json'), {'id': record['id']})
+        return {'id': record['id'], 'title': record['title'], 'status': 'already-linked',
+                'linked_document': obs['url'], 'next_step': 'Resume this blog and compare Google before editing; local work was retained.'}
+    value = studio.new_id(args.title)
+    create = studio.parser().parse_args(['--root', str(root), 'article', 'create',
+        '--title', args.title.strip(), '--mode', 'existing', '--voice', 'preserve'])
+    record = studio.article_record(root, create, value)
+    transfer = uuid.uuid4().hex
+    stage = Path(tempfile.mkdtemp(prefix='.google-start-', dir=root))
+    directory = studio.inside(root, 'articles', value)
+    try:
+        studio.save_artifact(stage, 'original', body, record, label='Google manuscript intake')
+        studio.save_artifact(stage, 'draft', body, record, label='Google manuscript intake')
+        snapshot(stage, transfer, 'local', body)
+        snapshot(stage, transfer, 'document', body)
+        formatted = save_formatted_snapshot(stage, transfer, files)
+        google = state(record)
+        google['transfers'][transfer] = {'status': 'confirmed', 'kind': 'draft',
+            'direction': 'from-google', 'document': obs, 'local_sha256': obs['content_sha256'],
+            'confirmed_at': studio.now(), 'formatted_snapshot': formatted}
+        google['baselines']['draft'] = {'transfer': transfer,
+            'local_sha256': obs['content_sha256'], 'document': obs}
+        record['next_step'] = 'Proofread or edit this manuscript; Google operations use the linked original Doc.'
+        studio.persist(stage, 'articles', record)
+        if directory.exists():
+            raise ValueError('Article already exists; no local writing was replaced.')
+        os.rename(stage, directory)
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
+    studio.write_json(studio.inside(root, '.active-article.json'), {'id': value})
+    return {'id': value, 'title': record['title'], 'status': 'started-from-google',
+            'linked_document': obs['url'], 'transfer': transfer, 'formatted_snapshot': formatted,
+            'next_step': record['next_step']}
+
+
 def command(root, args):
+    if args.action == 'start':return start(root, args)
     if args.action == 'capabilities':return capabilities(args, root)
     if args.action == 'source':
         obs, body = observed(args)
@@ -486,6 +554,10 @@ def command(root, args):
 
 def add_parser(groups):
     commands = groups.add_parser('google', help='Local Google Docs checkpoints; provider calls stay in the harness').add_subparsers(dest='action', required=True)
+    intake = commands.add_parser('start', help='Start a blog from an inspected existing Google Doc')
+    intake.add_argument('--title', required=True)
+    intake.add_argument('--observation', required=True);intake.add_argument('--file', required=True)
+    intake.add_argument('--snapshot', required=True)
     cap = commands.add_parser('capabilities');cap.add_argument('--file', required=True)
     source = commands.add_parser('source');source.add_argument('--name', required=True)
     source.add_argument('--purpose', action='append', choices=studio.PURPOSES, required=True)
