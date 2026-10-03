@@ -22,11 +22,14 @@ network means **Not checked**, never “In sync.” Keep writing locally when ap
 | Google has changes | Bring the team's edits/formatting back |
 | Local changes pending | Send the selected local edits when requested |
 | Both changed | Compare and reconcile before sending; changes may overlap or have converged |
+| Suggestions pending | Runtime 1.9+: accepted text matches; review pending Google suggestions, then pull |
 | Not checked | No fresh comparable read; resolve access, scope or baseline when needed |
 
 The live check uses the native formatting fingerprint established by the formatted
 return workflow. Older text-only baselines need one inspected formatted return.
-Pending suggestions, changed tab scope or failed reads remain Not checked. A status
+Runtime 1.9 separates pending suggestions from accepted text and reports review
+counts after a stable native read. Changed tab scope or failed/incomplete reads
+remain Not checked. A status
 is true at its check time, not a guarantee against later edits. Writes still need
 fresh revision guards. A connector-only session uses its fresh read and the existing
 compare contract; if equivalent evidence is unavailable, report Not checked rather

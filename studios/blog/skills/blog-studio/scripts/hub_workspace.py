@@ -77,7 +77,7 @@ class Workspace:
             # Share concrete writing artifacts, never incidental configuration or arbitrary local files.
             if group == 'articles':
                 allowed = name in ('DRAFT.md','OUTLINE.md','BRIEF.md','ORIGINAL.md','INTERVIEW.md','DECISIONS.md') or bool(re.fullmatch(r'(?:derived/[A-Za-z0-9_.-]+\.md|history/(?:draft|outline|brief|original|derived-[A-Za-z0-9_.-]+)-[A-Za-z0-9_.-]+\.md|history/review-[A-Za-z0-9_.-]+\.json)', name))
-                allowed = allowed or bool(re.fullmatch(r'history/google-[a-f0-9]{32}-(?:document\.md|document\.docx|native\.json|snapshot\.json)', name))
+                allowed = allowed or bool(re.fullmatch(r'history/google-[a-f0-9]{32}-(?:document\.md|document\.docx|native\.json|accepted\.json|snapshot\.json)', name))
             elif group == 'profiles':
                 allowed = name in ('VOICE.md','BACKGROUND.md','rules.json') or bool(re.fullmatch(r'(?:imported-history/)*revisions/[0-9]+/(?:record\.json|VOICE\.md|BACKGROUND\.md|rules\.json)', name))
             else:

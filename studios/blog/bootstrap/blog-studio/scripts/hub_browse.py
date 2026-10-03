@@ -228,9 +228,9 @@ def changes(files, graph):
         for heads in graph['heads'].values() for head in heads
         if graph['revisions'][head]['kind'] == 'article')
     output = render(files, graph, show_google_links=show_links)
-    needed = '1.5.0' if any('/history/google-' in name for name in files) else '1.3.0'
+    needed = '1.9.0' if any('/history/google-' in name and name.endswith('-accepted.json') for name in files) else '1.5.0' if any('/history/google-' in name for name in files) else '1.3.0'
     if show_links:
-        needed = '1.6.1'
+        needed = max((needed, '1.6.1'), key=lambda v: tuple(map(int, v.split('.'))))
     minimum = max((graph['manifest']['minimum_runtime'], needed), key=lambda v: tuple(map(int, v.split('.'))))
     manifest = dict(graph['manifest'], browse_schema=1, minimum_runtime=minimum)
     if show_links:

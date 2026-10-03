@@ -14,7 +14,7 @@ import uuid
 import studio
 
 CAPABILITIES = ('read', 'tabs', 'create', 'edit', 'copy', 'revision_guard',
-                'accepted_text', 'comments_read', 'comments_write', 'inline_anchors',
+                'accepted_text', 'comments_read', 'comments_write', 'inline_anchors', 'suggestions_read', 'suggestions_write',
                 'export_pdf', 'export_docx', 'export_md', 'share', 'permissions_read', 'silent_share')
 
 
@@ -38,7 +38,7 @@ def hash_value(value):
 
 def observation(value, body):
     required = ('schema', 'document_id', 'url', 'tab_ids', 'observed_at', 'content_sha256', 'suggestions')
-    object_fields(value, (*required, 'revision_id', 'folder_id', 'structure_verified', 'format_sha256'), required)
+    object_fields(value, (*required, 'revision_id', 'folder_id', 'structure_verified', 'format_sha256', 'review_state'), required)
     if value['schema'] != 1:
         raise ValueError('Unsupported Google observation schema.')
     document_id = token(value['document_id'])
@@ -70,7 +70,17 @@ def observation(value, body):
         raise ValueError('Structure verification must be true or false.')
     if result.get('format_sha256') is not None:
         hash_value(result['format_sha256'])
+    if 'review_state' in result:
+        review_state(result['review_state'])
     return result
+
+
+def review_state(value):
+    keys=('pending','accepted','rejected','unresolved_comments')
+    object_fields(value, keys, keys)
+    if any(type(v) is not int or v < 0 for v in value.values()):
+        raise ValueError('Review counts must be nonnegative integers.')
+    return value
 
 
 def observed(args):
@@ -152,10 +162,15 @@ def formatted_snapshot(path, obs, body):
             raise ValueError('Snapshot exceeds the portable Hub artifact limit.')
         files[name] = source.read_bytes()
     meta = json.loads(files['snapshot.json'])
+    if meta.get('schema') == 2:
+        source=directory/'accepted.json'
+        if source.is_symlink() or not source.is_file() or source.stat().st_size > 1024*1024:
+            raise ValueError('Accepted native snapshot must be a bounded regular file.')
+        files['accepted.json']=source.read_bytes()
     object_fields(meta, ('schema', 'document_id', 'tab_ids', 'revision_id', 'drive_version',
-                       'observed_at', 'content_sha256', 'format_sha256', 'files'),
+                       'observed_at', 'content_sha256', 'format_sha256', 'files', 'review_state'),
                        ('schema', 'document_id', 'tab_ids', 'revision_id', 'content_sha256', 'format_sha256', 'files'))
-    if meta['schema'] != 1 or any(meta[k] != obs.get(k) for k in ('document_id', 'tab_ids', 'revision_id', 'content_sha256', 'format_sha256')):
+    if meta['schema'] not in (1,2) or any(meta[k] != obs.get(k) for k in ('document_id', 'tab_ids', 'revision_id', 'content_sha256', 'format_sha256')):
         raise ValueError('Snapshot and observed document revision disagree.')
     if files['document.md'] != body.encode():
         raise ValueError('Snapshot Markdown and accepted text disagree.')
@@ -166,6 +181,19 @@ def formatted_snapshot(path, obs, body):
     except GoogleError as exc:
         raise ValueError(str(exc)) from None
     native = json.loads(files['native.json'])
+    if meta['schema'] == 2:
+        from google_suggestions import accepted_markdown, summary
+        accepted=json.loads(files['accepted.json'])
+        if (review_state(meta.get('review_state')) != obs.get('review_state')
+                or meta['review_state'] != summary(native)
+                or native.get('suggestionsViewMode') != 'SUGGESTIONS_INLINE'
+                or native.get('commentsViewMode') != 'COMMENTS_VIEW_MODE_INCLUDED'
+                or native.get('documentId') != obs['document_id']
+                or native.get('revisionId') != obs.get('revision_id')
+                or [t['tabProperties']['tabId'] for t in tabs(native)] != obs['tab_ids']
+                or accepted_markdown(accepted) != files['document.md']):
+            raise ValueError('Review snapshot and accepted projection disagree.')
+        native=accepted
     if not native.get('tabs'):
         raise ValueError('Native snapshot must contain selected tabs.')
     if (native.get('documentId') != obs['document_id'] or native.get('revisionId') != obs.get('revision_id')
@@ -274,13 +302,13 @@ def receipt(value):
 
 STATUS_LABELS = {'in-sync': 'In sync', 'google-changes': 'Google has changes',
                  'local-changes': 'Local changes pending', 'both-changed': 'Both changed',
-                 'not-checked': 'Not checked'}
+                 'pending-review': 'Suggestions pending', 'not-checked': 'Not checked'}
 
 
 def sync_status(root, directory, record, kind='draft', online=False, account=None):
     """Cached observations are historical only; only a live check can say in sync."""
     from google_drive import Client, GoogleError, encoded as compact
-    from google_roundtrip import clean_read, semantic, tabs
+    from google_roundtrip import semantic, tabs
     base = record.get('google', {}).get('baselines', {}).get(kind)
     cache_path = studio.inside(directory, '.google-status-' + kind + '.json')
     cache = studio.read_json(cache_path) if cache_path.exists() else {}
@@ -311,7 +339,18 @@ def sync_status(root, directory, record, kind='draft', online=False, account=Non
             if not target.get('format_sha256'):
                 raise GoogleError('Capture and accept a formatted return once to establish a comparable baseline.')
             before = local_body(directory, kind)
-            remote = clean_read(Client(account), target['document_id'])
+            client=Client(account)
+            from google_suggestions import document, review_read, summary
+            from google_roundtrip import suggestions
+            remote=document(client,target['document_id'],inline=True)
+            if suggestions(remote):
+                review=review_read(client,target['document_id'])
+                accepted=document(client,target['document_id'])
+                again=document(client,target['document_id'],inline=True)
+                if len({d['revisionId'] for d in (remote,review,accepted,again)}) != 1:
+                    raise GoogleError('Google changed during the check. Check again.')
+                result['review_state']=summary(review)
+                remote=accepted
             if [tab['tabProperties']['tabId'] for tab in tabs(remote)] != target['tab_ids']:
                 raise GoogleError('Google tab scope changed; reconcile the linked document before continuing.')
             if before != local_body(directory, kind):
@@ -320,6 +359,8 @@ def sync_status(root, directory, record, kind='draft', online=False, account=Non
             remote_changed = studio.digest(compact(semantic(remote))) != target['format_sha256']
             result['status'] = ('both-changed' if local_changed and remote_changed else
                                 'local-changes' if local_changed else 'google-changes' if remote_changed else 'in-sync')
+            if result['status']=='in-sync' and result.get('review_state',{}).get('pending'):
+                result['status']='pending-review'
             result.update(last_successful_check_at=result['last_checked_at'],
                           last_known_status=result['status'], checked_revision=remote['revisionId'],
                           reason='Compared current Google text/formatting and the local artifact with the saved baseline.')
@@ -333,6 +374,7 @@ def sync_status(root, directory, record, kind='draft', online=False, account=Non
         'google-changes': 'Bring the Google edits and formatting back before writing.',
         'local-changes': 'Send the selected local changes when requested.',
         'both-changed': 'Compare and reconcile both versions before sending.',
+        'pending-review': 'Review pending suggestions in Google Docs, then pull accepted changes.',
         'not-checked': 'Check the linked Google Doc when access is available; keep local work intact.'}[result['status']]
     return result
 

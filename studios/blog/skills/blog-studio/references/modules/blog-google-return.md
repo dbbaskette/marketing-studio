@@ -6,6 +6,8 @@ preserved. Apply [adapter](../google/adapter.md), [privacy](../privacy.md), and
 [checkpoint contract](../google/checkpoints.md).
 
 For formatted shared editing, load [format-preserving round trips](../google/roundtrip.md).
+For pending suggestions or a saved review submission, use runtime 1.9+ capture
+with `--include-review`; preserve native threads separately from accepted text.
 Store DOCX + Markdown snapshots on return, including formatting-only changes;
 use paragraph wording patches for updates to an existing formatted Doc.
 

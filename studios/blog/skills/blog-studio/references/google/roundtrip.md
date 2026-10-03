@@ -44,6 +44,25 @@ export-normalization differences once; never hide substantive conflicts as
 normalization. No timer or file watcher is added: snapshots happen on requested
 returns, formatting saves and verified handoffs.
 
+## Return while suggestions are pending (runtime 1.9+)
+
+For the suggestions workflow use the same capture command with `--include-review`.
+It reads current native threads and an explicit suggestions-excluded preview,
+exports DOCX, and checks revision/Drive version again. It writes a schema 2
+snapshot with `accepted.json` in addition to the four existing artifacts. The
+checkpoint retains bounded pending/accepted/rejected/comment counts. Markdown
+comes from accepted body text; it never silently includes proposed insertions or
+removes proposed deletions. DOCX is the formatted review export and can contain
+pending changes; native JSON is the thread/anchor record.
+
+This bounded accepted-text renderer handles body paragraphs, heading levels,
+bold/italic, ordinary URL links and unordered lists. It refuses tables, embedded
+objects, footnotes and ordered lists rather than losing content or numbering.
+For those structures, use the existing scoped native return with explicit
+accepted-text inspection. Keep local work intact if no faithful conversion is
+available. Inspect export-normalization changes and use normal conflict handling.
+Never accept/reject Google suggestions as part of a pull.
+
 ## Send wording changes back
 
 First return current Google changes and prepare the frozen local copy using the

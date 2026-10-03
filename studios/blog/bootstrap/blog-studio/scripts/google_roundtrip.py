@@ -53,25 +53,36 @@ def semantic(value):
             result['elements'] = items
             return result
         return {k: semantic(v) for k, v in value.items()
-                if k not in ('startIndex', 'endIndex', 'revisionId', 'suggestionsViewMode', 'contentUri')}
+                if k not in ('startIndex', 'endIndex', 'revisionId', 'suggestionsViewMode', 'contentUri',
+                             'comments', 'suggestions', 'commentAnchors', 'commentsViewMode')}
     if isinstance(value, list):
         return [semantic(v) for v in value]
     return value
 
 
-def capture(client, file_id, tab_id, output):
+def capture(client, file_id, tab_id, output, include_review=False):
     """Capture whole single-tab Doc, checking revision/version across both exports."""
     output = Path(output)
     if output.exists():
         raise GoogleError('Choose a new snapshot directory.')
     before = client.metadata(file_id)
-    doc = clean_read(client, file_id)
+    if include_review:
+        from google_suggestions import review_read, document, summary, accepted_markdown
+        doc = review_read(client, file_id)
+        accepted = document(client, file_id)
+        if accepted.get('suggestionsViewMode') != 'PREVIEW_WITHOUT_SUGGESTIONS':
+            raise GoogleError('Accepted-text preview is unavailable; no snapshot saved.')
+        if accepted['revisionId'] != doc['revisionId']:
+            raise GoogleError('Google changed during review capture; reread.')
+    else:
+        doc = clean_read(client, file_id)
+        accepted = doc
     selected = tabs(doc)
     if len(selected) != 1 or selected[0]['tabProperties']['tabId'] != tab_id:
         raise GoogleError('Markdown/DOCX exports cover a document. Automatic snapshots require a single-tab Doc so other tabs are not copied.')
-    markdown = client.export(file_id, 'md')
+    markdown = accepted_markdown(accepted) if include_review else client.export(file_id, 'md')
     word = client.export(file_id, 'docx')
-    after_doc = clean_read(client, file_id)
+    after_doc = review_read(client, file_id) if include_review else clean_read(client, file_id)
     after = client.metadata(file_id)
     if (not before.get('version') or before['version'] != after.get('version')
             or doc['revisionId'] != after_doc['revisionId']):
@@ -87,11 +98,16 @@ def capture(client, file_id, tab_id, output):
             for child in value: redact(child)
     redact(native)
     files = {'document.md': markdown, 'document.docx': word, 'native.json': encoded(native)}
+    if include_review:
+        redact(accepted)
+        files['accepted.json'] = encoded(accepted)
     stamp = datetime.now(timezone.utc).isoformat()
-    meta = {'schema': 1, 'document_id': file_id, 'tab_ids': [tab_id],
+    meta = {'schema': 2 if include_review else 1, 'document_id': file_id, 'tab_ids': [tab_id],
             'revision_id': doc['revisionId'], 'drive_version': before['version'], 'observed_at': stamp,
-            'content_sha256': digest(markdown), 'format_sha256': digest(encoded(semantic(native))),
+            'content_sha256': digest(markdown), 'format_sha256': digest(encoded(semantic(accepted))),
             'files': {name: digest(data) for name, data in files.items()}}
+    if include_review:
+        meta['review_state'] = summary(doc)
     output.mkdir(mode=0o700)
     for name, data in files.items(): write_new(output / name, data)
     write_new(output / 'snapshot.json', encoded(meta))
@@ -99,6 +115,8 @@ def capture(client, file_id, tab_id, output):
            'tab_ids': [tab_id], 'revision_id': doc['revisionId'], 'observed_at': stamp,
            'content_sha256': digest(markdown), 'format_sha256': meta['format_sha256'],
            'suggestions': 'none', 'structure_verified': False}
+    if include_review:
+        obs.update(suggestions='excluded', review_state=summary(doc))
     write_new(output / 'observation.json', encoded(obs))
     return {'status': 'captured-unreviewed', 'directory': str(output),
             'next_step': 'Inspect Markdown, native structure and DOCX fidelity. Use observation and document.md for compare/accept with --snapshot; confirm requires actual structure inspection.'}
@@ -209,7 +227,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--account')
     commands = parser.add_subparsers(dest='action', required=True)
-    p = commands.add_parser('capture'); p.add_argument('--file-id', required=True); p.add_argument('--tab-id', required=True); p.add_argument('--output', type=Path, required=True)
+    p = commands.add_parser('capture'); p.add_argument('--file-id', required=True); p.add_argument('--tab-id', required=True); p.add_argument('--output', type=Path, required=True); p.add_argument('--include-review', action='store_true')
     p = commands.add_parser('plan'); p.add_argument('--file-id', required=True); p.add_argument('--edits', type=Path, required=True); p.add_argument('--output', type=Path, required=True)
     for action in ('apply', 'verify'):
         p = commands.add_parser(action); p.add_argument('--plan', type=Path, required=True)
@@ -217,7 +235,7 @@ def main():
     args = parser.parse_args()
     try:
         client = Client(args.account)
-        if args.action == 'capture': result = capture(client, identifier(args.file_id), args.tab_id, args.output)
+        if args.action == 'capture': result = capture(client, identifier(args.file_id), args.tab_id, args.output, args.include_review)
         elif args.action == 'plan': result = plan(client, identifier(args.file_id), json.loads(args.edits.read_text()), args.output)
         elif args.action == 'apply': result = apply(client, json.loads(args.plan.read_text()), args.receipt)
         else: result = verify(client, json.loads(args.plan.read_text()))

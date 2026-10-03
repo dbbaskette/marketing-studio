@@ -134,6 +134,30 @@ The default author workspace is `.blog-studio` inside the folder where you launc
 
 Keep your writing out of the skill installation directory. To share work, create or join a private [Team Hub](team-hub.md). Once selected, normal saves synchronize changed items and their selected dependencies; offline saves queue until they can sync. Without a Hub, your work stays local. [Google Docs](google-docs.md) requires its own connection and a request to send or bring back edits.
 
+## Review together in Google Docs
+
+Connect Google using the [Google Docs guide](google-docs.md). To create your shared
+editing copy, say **“Push to Google Docs.”** Blog Studio remembers its link.
+
+For proofreading changes your team should approve:
+
+1. Say **“Proofread.”** Review the proposed changes.
+2. Say **“Push as suggestions.”** Blog Studio checks the latest Google copy,
+   brings back changes, and refreshes affected findings before submitting. If
+   both copies changed, it preserves your work and helps resolve the differences.
+3. Review the pending suggestions and comments in Google Docs.
+4. Say **“Pull from Google Docs.”** Accepted wording returns to your draft.
+   Pending suggestions stay separate; the formatted DOCX snapshot is retained.
+
+You do not need a separate pull before sending suggestions. If someone edits the
+Doc during submission, Blog Studio stops and refreshes the review. Ordinary
+**“Push to Google Docs”** applies updates directly; **“Push as suggestions”** leaves
+proposals for the team to accept or reject.
+
+This feature needs the **1.9 installer update** once. Download the current trusted
+bundle, run Install for the same writing tools, and start a new session. The
+writing-instruction refresh does not install new executable helpers.
+
 ## If something fails
 
 If the skill is missing, first start a new CLI session. If Blog Studio is available,

@@ -131,3 +131,16 @@ patches. Run the new installer bundle once with the same targets; existing
 credentials, workspace and rollback version remain in place. Guidance refresh
 alone does not add runtime helpers. Members of a Hub receiving formatted snapshots
 need 1.5 before contributing, so older clients cannot silently drop those files.
+
+### Update for Google review suggestions
+
+Runtime **1.9** adds **“Push as suggestions,”** automatic checks of the latest
+linked Doc before submission, and separate storage of pending suggestions on
+pull. Download the current trusted installer bundle, run Install again for your
+existing targets, and start a new Codex or Claude Code session. Writing, account
+credentials and saved guidance pins remain in place. No additional CLI is needed
+beyond the existing Google connection.
+
+Members contributing to a Hub containing the new review snapshots need runtime
+1.9 so older clients cannot drop the accepted-text evidence. See the
+[Google workflow](google-docs.md) and [validation record](google-suggestions-validation.md).

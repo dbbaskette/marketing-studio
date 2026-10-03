@@ -27,7 +27,7 @@ Example:
 
 A linked blog also shows **Google Doc** and, when shared, **GitHub copy** links.
 For linked Docs, a live check reports In sync, Google has changes, Local changes
-pending, Both changed, or Not checked. Offline observations remain historical.
+pending, Both changed, Suggestions pending (runtime 1.9+), or Not checked. Offline observations remain historical.
 The Hub line distinguishes local-only, queued, pending review, shared, conflicts,
 and unavailable state. A previous confirmed save is not proof that newer edits
 have reached the team.

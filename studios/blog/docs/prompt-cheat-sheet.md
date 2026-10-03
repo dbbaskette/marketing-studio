@@ -18,7 +18,8 @@ It asks for missing details or a choice when there is more than one match.
 
 Skip steps or combine them: **“Pull from Google Docs and proofread.”**
 That brings the edits back and proofreads locally. Ask **“Push to Google Docs”**
-when you want to send the revised wording back.
+when you want to send the revised wording back. For changes the team should
+approve first, say **“Push as suggestions.”**
 
 ## Start or continue
 
@@ -62,6 +63,7 @@ when you want to send the revised wording back.
 | Say | To… |
 | --- | --- |
 | Push to Google Docs. | Send the current draft or its updates to the working Doc |
+| Push as suggestions. | Refresh the linked Doc, then post selected proofreading findings for approval |
 | Pull from Google Docs. | Bring back the team's text and formatting changes |
 | Which copy is newest? | Check Google against the local copy |
 | Show me the Google Doc link. | Find the working Doc |
@@ -76,6 +78,11 @@ already established. Later requests reuse the linked Doc. Formatting preservatio
 verification, and conflict checks belong to the skill—you do not need to repeat
 them in every prompt. If access or an operation is unavailable, it explains what
 is needed rather than claiming success.
+
+“Push as suggestions” checks the latest Google copy automatically. It refreshes
+affected findings and stops for competing edits; no separate pull prompt is needed.
+After the team accepts or rejects proposals in Google, say **“Pull from Google Docs.”**
+The returned Markdown contains accepted text; pending suggestions stay separate.
 
 Pulling retains a formatted DOCX snapshot and readable Markdown when supported.
 Google edits are pulled on request. Normal Blog Studio saves sync to a selected

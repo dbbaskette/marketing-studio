@@ -154,3 +154,23 @@ labeled separately. The next Hub sync upgrades existing generated pages without
 changing canonical article history; manual edits to generated pages remain protected.
 After that upgrade, contributing clients need 1.6.1. Google permissions are unchanged.
 The timestamp describes the saved capture, not a live freshness check.
+
+## Send proofreading for team review
+
+Say **“Proofread”**, then **“Push as suggestions.”** Blog Studio refreshes the
+linked Google Doc first, reconciles changes, and rechecks affected findings.
+Selected replacements become pending suggested edits with explanatory comments.
+Broader feedback becomes comments. A revision guard stops a submission if someone
+edits the Doc in the meantime. Ordinary “Push to Google Docs” still applies edits.
+
+After the team reviews in Google, say **“Pull from Google Docs.”** Accepted text
+returns to Markdown; DOCX preserves the formatted export, while native snapshots
+retain pending suggestions and comments separately. Pull never accepts or rejects
+a suggestion. Complex structures may require a scoped native conversion rather
+than the bounded paragraph renderer. No API capability means no suggestion write;
+Blog Studio retains the review locally.
+
+Requires the runtime 1.9 installer update. Guidance refresh alone cannot install
+the new helper. Live Google account validation is separate from fixture tests.
+
+Developer evidence and remaining live checks: [suggestion validation](google-suggestions-validation.md).

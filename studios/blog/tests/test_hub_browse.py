@@ -80,6 +80,15 @@ class BrowseTests(unittest.TestCase):
             self.assertEqual(google_doc_links(bad),'')
         self.assertIn('Google Doc (outline)',google_doc_links({'google':{'baselines':{'outline':{'document':doc}}}}))
 
+    def test_review_snapshots_require_runtime_19_even_with_google_links(self):
+        doc={'document_id':'doc_123','url':'https://docs.google.com/document/d/doc_123/edit','observed_at':'2026-10-03T12:00:00+00:00'}
+        self.ha.save('article','Review copy','Body',data={'studio':{'google':{'baselines':{'draft':{'document':doc}}}}},
+                     artifacts={'history/google-'+'a'*32+'-accepted.json':(b'{}','text')})
+        files=self.files()
+        self.assertEqual(json.loads(files['hub.json'])['minimum_runtime'],'1.9.0')
+        with patch.object(store,'VERSION','1.8.0'):
+            with self.assertRaises(store.HubError):store.validate_files(files)
+
     def test_explicit_author_survives_other_editor_and_title_rename_cleans_only_views(self):
         saved=self.save();old=self.files();self.hb.refresh()
         self.hb.save('article','Renamed blog','Changed manuscript.',item=saved['item'],parents=[saved['revision']],

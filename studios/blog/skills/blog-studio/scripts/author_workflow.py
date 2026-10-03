@@ -7,6 +7,9 @@ import studio
 from hub_store import HubError, encoded, sha
 
 ROUTES = {
+    'push as suggestions': (['google-suggest'], ['references/google/suggestions.md']),
+    'push as suggestions to google docs': (['google-suggest'], ['references/google/suggestions.md']),
+    'push these as suggestions to google docs': (['google-suggest'], ['references/google/suggestions.md']),
     'clear local caches': (['cache-clear'], ['references/workspace/performance.md']),
     'proofread': (['proofread'], ['references/modules/copy-editing.md']),
     'push to google docs': (['google-push'], ['references/modules/blog-google-handoff.md']),
@@ -133,11 +136,12 @@ def status(root, article_id=None, query=None, online=False, account=None, detail
     hub = hub_state(root, record)
     next_step = record.get('next_step') or 'Continue writing.'
     if hub['status'] in ('conflicted', 'newer-hub-revision'): next_step = 'Compare the shared versions before continuing.'
-    elif google['status'] in ('google-changes', 'both-changed'): next_step = google['next_step']
+    elif google['status'] in ('google-changes', 'both-changed', 'pending-review'): next_step = google['next_step']
     elif hub['status'] in ('queued', 'pending-review', 'local-changes-not-shared'): next_step = 'Finish sharing the saved work with the Hub.'
     result = {'status': 'ready', 'id': record['id'], 'title': record['title'], 'stage': record['stage'],
               'local': local, 'hub': hub, 'google': {k: google[k] for k in ('label', 'status', 'document_url', 'last_checked_at', 'last_successful_check_at')},
               'next_step': next_step}
+    if 'review_state' in google:result['google']['review_state']=google['review_state']
     lines = ['**' + safe(record['title']) + '**', safe(record['stage']) + ' · Google: ' + google['label'],
              'Local: ' + local.replace('-', ' ') + ' · Hub (last known): ' + hub['status'].replace('-', ' '),
              'Last checked: ' + str(google['last_checked_at'] or 'Not checked'),

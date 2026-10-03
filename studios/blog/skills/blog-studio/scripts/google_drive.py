@@ -150,9 +150,21 @@ class Client:
         return {**snapshot, 'audience_sha256': digest(encoded(snapshot)),
                 'can_add_children': meta.get('capabilities', {}).get('canAddChildren', False)}
 
-    def native_read(self, file_id, inline=False):
-        return self.request(DOCS + identifier(file_id) + '?' + urllib.parse.urlencode({
-            'includeTabsContent': 'true', 'suggestionsViewMode': 'SUGGESTIONS_INLINE' if inline else 'PREVIEW_WITHOUT_SUGGESTIONS'}))
+    def native_read(self, file_id, inline=False, comments=False, accepted_preview=False):
+        if comments and (not inline or accepted_preview):
+            raise GoogleError('Thread reads require inline suggestions.')
+        mode = ('PREVIEW_SUGGESTIONS_ACCEPTED' if accepted_preview else
+                'SUGGESTIONS_INLINE' if inline else 'PREVIEW_WITHOUT_SUGGESTIONS')
+        params = {'includeTabsContent': 'true', 'suggestionsViewMode': mode}
+        if comments: params['commentsViewMode'] = 'COMMENTS_VIEW_MODE_INCLUDED'
+        return self.request(DOCS + identifier(file_id) + '?' + urllib.parse.urlencode(params))
+
+    def native_review_update(self, file_id, revision, requests):
+        if not isinstance(revision, str) or not revision.strip() or not requests:
+            raise GoogleError('A fresh revision and selected review operations are required.')
+        return self.request(DOCS + identifier(file_id) + ':batchUpdate', method='POST',
+            body={'writeControl': {'requiredRevisionId': revision, 'writeMode': 'SUGGEST'},
+                  'requests': requests})
 
     def native_update(self, file_id, revision, requests):
         if not isinstance(revision, str) or not revision.strip():

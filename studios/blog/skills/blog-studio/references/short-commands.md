@@ -41,3 +41,5 @@ from Git; pass `--destination google|hub` only when already established.
 After a completed operation show a short result; open the full status card when
 requested or on resume. Never require the user to repeat formatting, checkpoint,
 privacy, or verification instructions already supplied by the skill.
+
+**“Push as suggestions”** loads [Google suggestions](google/suggestions.md). Refresh the linked Doc first, reconcile conflicts, then post selected findings as guarded native suggestions/comments. Requires installed runtime 1.9+.
