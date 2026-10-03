@@ -217,6 +217,8 @@ def add_parser(groups):
     listing.add_argument('--limit', type=int, default=10);listing.add_argument('--offset', type=int, default=0)
     inspect = groups.add_parser('context', help='Show selected article context and memory')
     inspect.add_argument('--id', required=True)
+    inspect.add_argument('--compact', action='store_true')
+    inspect.add_argument('--limit', type=int, default=5);inspect.add_argument('--offset', type=int, default=0)
     check = groups.add_parser('readiness', help='Read-only setup and sign-in check; no model requests')
     check.add_argument('--harness', choices=('codex', 'claude', 'both'), default='both')
     check.add_argument('--online', action='store_true')
@@ -226,5 +228,8 @@ def command(root, args):
     if args.group == 'home':
         return home(root, args.query, args.stage, args.limit, args.offset)
     if args.group == 'context':
+        if args.compact:
+            from performance import compact
+            return compact(root,args.id,args.limit,args.offset)
         return context(root, args.id)
     return readiness(root, args.harness, args.online)

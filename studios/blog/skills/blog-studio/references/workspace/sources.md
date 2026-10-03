@@ -10,8 +10,10 @@ Use the [workspace](../workspace.md) command prefix after host extraction.
 ... article attach --id <article-id> --source <source-id> --purpose reference
 ```
 
-Raw bytes and prior revisions remain available. Markdown/text may supply their
-own readable text; binary originals need extraction or stay pending. Ready means
+Raw bytes and prior revisions remain available. Markdown/text supply their own readable text. UTF-8 HTML extracts readable text
+with a versioned local cache; script/style bodies are excluded. Binary originals
+need host extraction or stay pending. See [focused context](performance.md) for
+pinned source passages and cache controls. Ready means
 nonempty content was actually read. Preserve provenance and access limitations.
 Repeat `--purpose` for multiple roles: manuscript, outline, reference, inspiration,
 voice-sample, author-background. Article roles may differ from library roles.

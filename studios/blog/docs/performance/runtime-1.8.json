@@ -1,0 +1,1153 @@
+{
+  "schema": 1,
+  "environment": {
+    "python": "3.12.11",
+    "os": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64"
+  },
+  "optimized": true,
+  "workload": {
+    "sections": 24,
+    "sources": 40,
+    "draft_characters": 15580,
+    "warm_repeats": 3
+  },
+  "runtime_source_sha256": "feb0530c84373e095485951c53a7b3fab7367b6caec4ad2e62f2365a6aa5906f",
+  "selected_guidance_characters": 17515,
+  "selected_guidance_character_token_estimate": 4379,
+  "notes": [
+    "Synthetic local fixtures only; Google operations measure checkpoint logic, not live transfers.",
+    "Hub uses local bare Git repositories. Timings include profiler overhead.",
+    "Cold is first operation in a prepared process, not a flushed OS cache.",
+    "Missing model/provider metrics are unavailable, not zero. Character estimates are not billing.",
+    "No manuscript, identity, credential, provider output, or absolute workspace paths recorded."
+  ],
+  "operations": {
+    "resume": {
+      "cold": {
+        "elapsed_seconds": 0.10722,
+        "local_phases": [
+          {
+            "function": "<method 'poll' of 'select.poll' objects>",
+            "self_seconds": 0.028821,
+            "calls": 365
+          },
+          {
+            "function": "<built-in method posix.lstat>",
+            "self_seconds": 0.00623,
+            "calls": 6599
+          },
+          {
+            "function": "join",
+            "self_seconds": 0.003476,
+            "calls": 7103
+          },
+          {
+            "function": "_parse_path",
+            "self_seconds": 0.003326,
+            "calls": 2246
+          },
+          {
+            "function": "_joinrealpath",
+            "self_seconds": 0.003209,
+            "calls": 634
+          },
+          {
+            "function": "<built-in method _posixsubprocess.fork_exec>",
+            "self_seconds": 0.002671,
+            "calls": 2
+          },
+          {
+            "function": "<built-in method _io.open>",
+            "self_seconds": 0.002552,
+            "calls": 135
+          },
+          {
+            "function": "__init__",
+            "self_seconds": 0.0021,
+            "calls": 5810
+          }
+        ],
+        "calls": {
+          "read_text": 42,
+          "read_bytes": 88,
+          "subprocess_run": 2
+        },
+        "response_characters": 3762,
+        "measured_model_tokens": null,
+        "provider_seconds": null,
+        "model_seconds": null,
+        "harness_tool_calls": null
+      },
+      "warm": [
+        {
+          "elapsed_seconds": 0.099581,
+          "local_phases": [
+            {
+              "function": "<method 'poll' of 'select.poll' objects>",
+              "self_seconds": 0.028175,
+              "calls": 362
+            },
+            {
+              "function": "<built-in method posix.lstat>",
+              "self_seconds": 0.006341,
+              "calls": 6599
+            },
+            {
+              "function": "join",
+              "self_seconds": 0.003604,
+              "calls": 7103
+            },
+            {
+              "function": "_joinrealpath",
+              "self_seconds": 0.003241,
+              "calls": 634
+            },
+            {
+              "function": "_parse_path",
+              "self_seconds": 0.003229,
+              "calls": 2246
+            },
+            {
+              "function": "<built-in method _posixsubprocess.fork_exec>",
+              "self_seconds": 0.002708,
+              "calls": 2
+            },
+            {
+              "function": "__init__",
+              "self_seconds": 0.002164,
+              "calls": 5810
+            },
+            {
+              "function": "<built-in method _io.open>",
+              "self_seconds": 0.002119,
+              "calls": 135
+            }
+          ],
+          "calls": {
+            "read_text": 42,
+            "read_bytes": 88,
+            "subprocess_run": 2
+          },
+          "response_characters": 3762,
+          "measured_model_tokens": null,
+          "provider_seconds": null,
+          "model_seconds": null,
+          "harness_tool_calls": null
+        },
+        {
+          "elapsed_seconds": 0.099928,
+          "local_phases": [
+            {
+              "function": "<method 'poll' of 'select.poll' objects>",
+              "self_seconds": 0.028023,
+              "calls": 363
+            },
+            {
+              "function": "<built-in method posix.lstat>",
+              "self_seconds": 0.006285,
+              "calls": 6599
+            },
+            {
+              "function": "join",
+              "self_seconds": 0.003589,
+              "calls": 7103
+            },
+            {
+              "function": "_parse_path",
+              "self_seconds": 0.003273,
+              "calls": 2246
+            },
+            {
+              "function": "_joinrealpath",
+              "self_seconds": 0.003256,
+              "calls": 634
+            },
+            {
+              "function": "<built-in method _posixsubprocess.fork_exec>",
+              "self_seconds": 0.002668,
+              "calls": 2
+            },
+            {
+              "function": "__init__",
+              "self_seconds": 0.002206,
+              "calls": 5810
+            },
+            {
+              "function": "<built-in method _io.open>",
+              "self_seconds": 0.002026,
+              "calls": 135
+            }
+          ],
+          "calls": {
+            "read_text": 42,
+            "read_bytes": 88,
+            "subprocess_run": 2
+          },
+          "response_characters": 3762,
+          "measured_model_tokens": null,
+          "provider_seconds": null,
+          "model_seconds": null,
+          "harness_tool_calls": null
+        },
+        {
+          "elapsed_seconds": 0.105484,
+          "local_phases": [
+            {
+              "function": "<method 'poll' of 'select.poll' objects>",
+              "self_seconds": 0.029925,
+              "calls": 357
+            },
+            {
+              "function": "<built-in method posix.lstat>",
+              "self_seconds": 0.00724,
+              "calls": 6599
+            },
+            {
+              "function": "join",
+              "self_seconds": 0.003742,
+              "calls": 7103
+            },
+            {
+              "function": "_joinrealpath",
+              "self_seconds": 0.003452,
+              "calls": 634
+            },
+            {
+              "function": "_parse_path",
+              "self_seconds": 0.00344,
+              "calls": 2246
+            },
+            {
+              "function": "<built-in method _io.open>",
+              "self_seconds": 0.00258,
+              "calls": 135
+            },
+            {
+              "function": "<built-in method _posixsubprocess.fork_exec>",
+              "self_seconds": 0.00257,
+              "calls": 2
+            },
+            {
+              "function": "__init__",
+              "self_seconds": 0.002207,
+              "calls": 5810
+            }
+          ],
+          "calls": {
+            "read_text": 42,
+            "read_bytes": 88,
+            "subprocess_run": 2
+          },
+          "response_characters": 3762,
+          "measured_model_tokens": null,
+          "provider_seconds": null,
+          "model_seconds": null,
+          "harness_tool_calls": null
+        }
+      ],
+      "warm_median_seconds": 0.099928
+    },
+    "proofread-mechanical": {
+      "cold": {
+        "elapsed_seconds": 0.117134,
+        "local_phases": [
+          {
+            "function": "find_longest_match",
+            "self_seconds": 0.042639,
+            "calls": 828
+          },
+          {
+            "function": "<method 'get' of 'dict' objects>",
+            "self_seconds": 0.025615,
+            "calls": 524914
+          },
+          {
+            "function": "__chain_b",
+            "self_seconds": 0.017768,
+            "calls": 276
+          },
+          {
+            "function": "<method 'setdefault' of 'dict' objects>",
+            "self_seconds": 0.007042,
+            "calls": 173144
+          },
+          {
+            "function": "<method 'append' of 'list' objects>",
+            "self_seconds": 0.006812,
+            "calls": 176193
+          },
+          {
+            "function": "<built-in method posix.lstat>",
+            "self_seconds": 0.001744,
+            "calls": 1671
+          },
+          {
+            "function": "<built-in method _io.open>",
+            "self_seconds": 0.00114,
+            "calls": 84
+          },
+          {
+            "function": "join",
+            "self_seconds": 0.000979,
+            "calls": 1801
+          }
+        ],
+        "calls": {
+          "read_text": 1,
+          "read_bytes": 82,
+          "subprocess_run": 0
+        },
+        "response_characters": 719,
+        "measured_model_tokens": null,
+        "provider_seconds": null,
+        "model_seconds": null,
+        "harness_tool_calls": null
+      },
+      "warm": [
+        {
+          "elapsed_seconds": 0.011033,
+          "local_phases": [
+            {
+              "function": "<built-in method posix.lstat>",
+              "self_seconds": 0.001608,
+              "calls": 1637
+            },
+            {
+              "function": "<built-in method _io.open>",
+              "self_seconds": 0.0011,
+              "calls": 84
+            },
+            {
+              "function": "join",
+              "self_seconds": 0.000909,
+              "calls": 1763
+            },
+            {
+              "function": "_joinrealpath",
+              "self_seconds": 0.000822,
+              "calls": 168
+            },
+            {
+              "function": "_parse_path",
+              "self_seconds": 0.00056,
+              "calls": 378
+            },
+            {
+              "function": "<built-in method posix.stat>",
+              "self_seconds": 0.000385,
+              "calls": 254
+            },
+            {
+              "function": "<built-in method sys.intern>",
+              "self_seconds": 0.000283,
+              "calls": 3735
+            },
+            {
+              "function": "__str__",
+              "self_seconds": 0.000267,
+              "calls": 799
+            }
+          ],
+          "calls": {
+            "read_text": 2,
+            "read_bytes": 82,
+            "subprocess_run": 0
+          },
+          "response_characters": 718,
+          "measured_model_tokens": null,
+          "provider_seconds": null,
+          "model_seconds": null,
+          "harness_tool_calls": null
+        },
+        {
+          "elapsed_seconds": 0.010825,
+          "local_phases": [
+            {
+              "function": "<built-in method posix.lstat>",
+              "self_seconds": 0.001556,
+              "calls": 1637
+            },
+            {
+              "function": "<built-in method _io.open>",
+              "self_seconds": 0.001068,
+              "calls": 84
+            },
+            {
+              "function": "join",
+              "self_seconds": 0.00091,
+              "calls": 1763
+            },
+            {
+              "function": "_joinrealpath",
+              "self_seconds": 0.000819,
+              "calls": 168
+            },
+            {
+              "function": "_parse_path",
+              "self_seconds": 0.000562,
+              "calls": 378
+            },
+            {
+              "function": "<built-in method posix.stat>",
+              "self_seconds": 0.00035,
+              "calls": 254
+            },
+            {
+              "function": "<built-in method sys.intern>",
+              "self_seconds": 0.000272,
+              "calls": 3735
+            },
+            {
+              "function": "__str__",
+              "self_seconds": 0.00027,
+              "calls": 799
+            }
+          ],
+          "calls": {
+            "read_text": 2,
+            "read_bytes": 82,
+            "subprocess_run": 0
+          },
+          "response_characters": 718,
+          "measured_model_tokens": null,
+          "provider_seconds": null,
+          "model_seconds": null,
+          "harness_tool_calls": null
+        },
+        {
+          "elapsed_seconds": 0.010707,
+          "local_phases": [
+            {
+              "function": "<built-in method posix.lstat>",
+              "self_seconds": 0.0016,
+              "calls": 1637
+            },
+            {
+              "function": "<built-in method _io.open>",
+              "self_seconds": 0.001039,
+              "calls": 84
+            },
+            {
+              "function": "join",
+              "self_seconds": 0.000929,
+              "calls": 1763
+            },
+            {
+              "function": "_joinrealpath",
+              "self_seconds": 0.000811,
+              "calls": 168
+            },
+            {
+              "function": "_parse_path",
+              "self_seconds": 0.000555,
+              "calls": 378
+            },
+            {
+              "function": "<built-in method posix.stat>",
+              "self_seconds": 0.00035,
+              "calls": 254
+            },
+            {
+              "function": "__str__",
+              "self_seconds": 0.000268,
+              "calls": 799
+            },
+            {
+              "function": "<built-in method sys.intern>",
+              "self_seconds": 0.000268,
+              "calls": 3735
+            }
+          ],
+          "calls": {
+            "read_text": 2,
+            "read_bytes": 82,
+            "subprocess_run": 0
+          },
+          "response_characters": 718,
+          "measured_model_tokens": null,
+          "provider_seconds": null,
+          "model_seconds": null,
+          "harness_tool_calls": null
+        }
+      ],
+      "warm_median_seconds": 0.010825
+    },
+    "push-checkpoint": {
+      "cold": {
+        "elapsed_seconds": 0.018033,
+        "local_phases": [
+          {
+            "function": "add_argument",
+            "self_seconds": 0.000822,
+            "calls": 444
+          },
+          {
+            "function": "<built-in method _io.open>",
+            "self_seconds": 0.000694,
+            "calls": 20
+          },
+          {
+            "function": "_iterencode_dict",
+            "self_seconds": 0.000651,
+            "calls": 7018
+          },
+          {
+            "function": "_expand_lang",
+            "self_seconds": 0.000581,
+            "calls": 636
+          },
+          {
+            "function": "<method '__exit__' of '_io._IOBase' objects>",
+            "self_seconds": 0.000552,
+            "calls": 20
+          },
+          {
+            "function": "__getitem__",
+            "self_seconds": 0.000552,
+            "calls": 1548
+          },
+          {
+            "function": "register",
+            "self_seconds": 0.000518,
+            "calls": 3922
+          },
+          {
+            "function": "__init__",
+            "self_seconds": 0.000486,
+            "calls": 318
+          }
+        ],
+        "calls": {
+          "read_text": 8,
+          "read_bytes": 4,
+          "subprocess_run": 0
+        },
+        "response_characters": 102,
+        "measured_model_tokens": null,
+        "provider_seconds": null,
+        "model_seconds": null,
+        "harness_tool_calls": null
+      },
+      "warm": [
+        {
+          "elapsed_seconds": 0.018114,
+          "local_phases": [
+            {
+              "function": "add_argument",
+              "self_seconds": 0.000833,
+              "calls": 444
+            },
+            {
+              "function": "_iterencode_dict",
+              "self_seconds": 0.000782,
+              "calls": 8914
+            },
+            {
+              "function": "<built-in method _io.open>",
+              "self_seconds": 0.000655,
+              "calls": 20
+            },
+            {
+              "function": "_expand_lang",
+              "self_seconds": 0.000599,
+              "calls": 636
+            },
+            {
+              "function": "register",
+              "self_seconds": 0.000537,
+              "calls": 3922
+            },
+            {
+              "function": "__getitem__",
+              "self_seconds": 0.000521,
+              "calls": 1548
+            },
+            {
+              "function": "__init__",
+              "self_seconds": 0.000493,
+              "calls": 318
+            },
+            {
+              "function": "find",
+              "self_seconds": 0.000487,
+              "calls": 318
+            }
+          ],
+          "calls": {
+            "read_text": 8,
+            "read_bytes": 4,
+            "subprocess_run": 0
+          },
+          "response_characters": 102,
+          "measured_model_tokens": null,
+          "provider_seconds": null,
+          "model_seconds": null,
+          "harness_tool_calls": null
+        },
+        {
+          "elapsed_seconds": 0.017827,
+          "local_phases": [
+            {
+              "function": "_iterencode_dict",
+              "self_seconds": 0.000888,
+              "calls": 10810
+            },
+            {
+              "function": "add_argument",
+              "self_seconds": 0.000808,
+              "calls": 444
+            },
+            {
+              "function": "<built-in method _io.open>",
+              "self_seconds": 0.000598,
+              "calls": 20
+            },
+            {
+              "function": "_expand_lang",
+              "self_seconds": 0.00058,
+              "calls": 636
+            },
+            {
+              "function": "__getitem__",
+              "self_seconds": 0.000555,
+              "calls": 1548
+            },
+            {
+              "function": "register",
+              "self_seconds": 0.000526,
+              "calls": 3922
+            },
+            {
+              "function": "<method 'write' of '_io.BufferedWriter' objects>",
+              "self_seconds": 0.000485,
+              "calls": 4
+            },
+            {
+              "function": "__init__",
+              "self_seconds": 0.000484,
+              "calls": 318
+            }
+          ],
+          "calls": {
+            "read_text": 8,
+            "read_bytes": 4,
+            "subprocess_run": 0
+          },
+          "response_characters": 102,
+          "measured_model_tokens": null,
+          "provider_seconds": null,
+          "model_seconds": null,
+          "harness_tool_calls": null
+        },
+        {
+          "elapsed_seconds": 0.018124,
+          "local_phases": [
+            {
+              "function": "_iterencode_dict",
+              "self_seconds": 0.00104,
+              "calls": 12706
+            },
+            {
+              "function": "add_argument",
+              "self_seconds": 0.000795,
+              "calls": 444
+            },
+            {
+              "function": "<built-in method _io.open>",
+              "self_seconds": 0.000635,
+              "calls": 20
+            },
+            {
+              "function": "_expand_lang",
+              "self_seconds": 0.00058,
+              "calls": 636
+            },
+            {
+              "function": "<method '__exit__' of '_io._IOBase' objects>",
+              "self_seconds": 0.000547,
+              "calls": 20
+            },
+            {
+              "function": "__getitem__",
+              "self_seconds": 0.000503,
+              "calls": 1548
+            },
+            {
+              "function": "register",
+              "self_seconds": 0.000492,
+              "calls": 3922
+            },
+            {
+              "function": "join",
+              "self_seconds": 0.000488,
+              "calls": 560
+            }
+          ],
+          "calls": {
+            "read_text": 8,
+            "read_bytes": 4,
+            "subprocess_run": 0
+          },
+          "response_characters": 102,
+          "measured_model_tokens": null,
+          "provider_seconds": null,
+          "model_seconds": null,
+          "harness_tool_calls": null
+        }
+      ],
+      "warm_median_seconds": 0.018114
+    },
+    "pull-checkpoint": {
+      "cold": {
+        "elapsed_seconds": 0.02659,
+        "local_phases": [
+          {
+            "function": "<built-in method posix.lstat>",
+            "self_seconds": 0.001753,
+            "calls": 1823
+          },
+          {
+            "function": "<built-in method _io.open>",
+            "self_seconds": 0.00143,
+            "calls": 97
+          },
+          {
+            "function": "join",
+            "self_seconds": 0.001325,
+            "calls": 2281
+          },
+          {
+            "function": "_joinrealpath",
+            "self_seconds": 0.000894,
+            "calls": 186
+          },
+          {
+            "function": "add_argument",
+            "self_seconds": 0.000817,
+            "calls": 444
+          },
+          {
+            "function": "<built-in method posix.stat>",
+            "self_seconds": 0.000733,
+            "calls": 596
+          },
+          {
+            "function": "_parse_path",
+            "self_seconds": 0.000631,
+            "calls": 423
+          },
+          {
+            "function": "_iterencode_dict",
+            "self_seconds": 0.000601,
+            "calls": 6860
+          }
+        ],
+        "calls": {
+          "read_text": 7,
+          "read_bytes": 85,
+          "subprocess_run": 0
+        },
+        "response_characters": 638,
+        "measured_model_tokens": null,
+        "provider_seconds": null,
+        "model_seconds": null,
+        "harness_tool_calls": null
+      },
+      "warm": [
+        {
+          "elapsed_seconds": 0.02603,
+          "local_phases": [
+            {
+              "function": "<built-in method posix.lstat>",
+              "self_seconds": 0.001747,
+              "calls": 1823
+            },
+            {
+              "function": "<built-in method _io.open>",
+              "self_seconds": 0.001433,
+              "calls": 97
+            },
+            {
+              "function": "join",
+              "self_seconds": 0.001319,
+              "calls": 2281
+            },
+            {
+              "function": "_joinrealpath",
+              "self_seconds": 0.000913,
+              "calls": 186
+            },
+            {
+              "function": "add_argument",
+              "self_seconds": 0.00078,
+              "calls": 444
+            },
+            {
+              "function": "<built-in method posix.stat>",
+              "self_seconds": 0.000705,
+              "calls": 596
+            },
+            {
+              "function": "_parse_path",
+              "self_seconds": 0.000613,
+              "calls": 423
+            },
+            {
+              "function": "_iterencode_dict",
+              "self_seconds": 0.000562,
+              "calls": 7232
+            }
+          ],
+          "calls": {
+            "read_text": 7,
+            "read_bytes": 85,
+            "subprocess_run": 0
+          },
+          "response_characters": 638,
+          "measured_model_tokens": null,
+          "provider_seconds": null,
+          "model_seconds": null,
+          "harness_tool_calls": null
+        },
+        {
+          "elapsed_seconds": 0.026198,
+          "local_phases": [
+            {
+              "function": "<built-in method posix.lstat>",
+              "self_seconds": 0.001768,
+              "calls": 1823
+            },
+            {
+              "function": "<built-in method _io.open>",
+              "self_seconds": 0.001359,
+              "calls": 97
+            },
+            {
+              "function": "join",
+              "self_seconds": 0.001314,
+              "calls": 2281
+            },
+            {
+              "function": "_joinrealpath",
+              "self_seconds": 0.00089,
+              "calls": 186
+            },
+            {
+              "function": "add_argument",
+              "self_seconds": 0.000781,
+              "calls": 444
+            },
+            {
+              "function": "<built-in method posix.stat>",
+              "self_seconds": 0.000718,
+              "calls": 596
+            },
+            {
+              "function": "_iterencode_dict",
+              "self_seconds": 0.000644,
+              "calls": 7604
+            },
+            {
+              "function": "_parse_path",
+              "self_seconds": 0.00061,
+              "calls": 423
+            }
+          ],
+          "calls": {
+            "read_text": 7,
+            "read_bytes": 85,
+            "subprocess_run": 0
+          },
+          "response_characters": 638,
+          "measured_model_tokens": null,
+          "provider_seconds": null,
+          "model_seconds": null,
+          "harness_tool_calls": null
+        },
+        {
+          "elapsed_seconds": 0.029168,
+          "local_phases": [
+            {
+              "function": "__getitem__",
+              "self_seconds": 0.002788,
+              "calls": 1548
+            },
+            {
+              "function": "<built-in method posix.lstat>",
+              "self_seconds": 0.00179,
+              "calls": 1823
+            },
+            {
+              "function": "<built-in method _io.open>",
+              "self_seconds": 0.001452,
+              "calls": 97
+            },
+            {
+              "function": "join",
+              "self_seconds": 0.001313,
+              "calls": 2281
+            },
+            {
+              "function": "_joinrealpath",
+              "self_seconds": 0.000889,
+              "calls": 186
+            },
+            {
+              "function": "add_argument",
+              "self_seconds": 0.000809,
+              "calls": 444
+            },
+            {
+              "function": "<built-in method posix.stat>",
+              "self_seconds": 0.000767,
+              "calls": 596
+            },
+            {
+              "function": "_iterencode_dict",
+              "self_seconds": 0.000626,
+              "calls": 7976
+            }
+          ],
+          "calls": {
+            "read_text": 7,
+            "read_bytes": 85,
+            "subprocess_run": 0
+          },
+          "response_characters": 638,
+          "measured_model_tokens": null,
+          "provider_seconds": null,
+          "model_seconds": null,
+          "harness_tool_calls": null
+        }
+      ],
+      "warm_median_seconds": 0.026198
+    },
+    "hub-sync": {
+      "cold": {
+        "elapsed_seconds": 2.437146,
+        "local_phases": [
+          {
+            "function": "<method 'poll' of 'select.poll' objects>",
+            "self_seconds": 0.923254,
+            "calls": 4902
+          },
+          {
+            "function": "<built-in method _posixsubprocess.fork_exec>",
+            "self_seconds": 0.100489,
+            "calls": 84
+          },
+          {
+            "function": "_str_normcase",
+            "self_seconds": 0.074216,
+            "calls": 305909
+          },
+          {
+            "function": "__init__",
+            "self_seconds": 0.066232,
+            "calls": 192771
+          },
+          {
+            "function": "_parse_path",
+            "self_seconds": 0.062836,
+            "calls": 39654
+          },
+          {
+            "function": "__getitem__",
+            "self_seconds": 0.061266,
+            "calls": 170808
+          },
+          {
+            "function": "<built-in method posix.lstat>",
+            "self_seconds": 0.053009,
+            "calls": 46968
+          },
+          {
+            "function": "<built-in method _io.open>",
+            "self_seconds": 0.050651,
+            "calls": 1817
+          }
+        ],
+        "calls": {
+          "read_text": 475,
+          "read_bytes": 822,
+          "subprocess_run": 84
+        },
+        "response_characters": 729,
+        "measured_model_tokens": null,
+        "provider_seconds": null,
+        "model_seconds": null,
+        "harness_tool_calls": null
+      },
+      "warm": [
+        {
+          "elapsed_seconds": 0.827233,
+          "local_phases": [
+            {
+              "function": "<method 'poll' of 'select.poll' objects>",
+              "self_seconds": 0.185676,
+              "calls": 1995
+            },
+            {
+              "function": "_str_normcase",
+              "self_seconds": 0.034883,
+              "calls": 143845
+            },
+            {
+              "function": "__init__",
+              "self_seconds": 0.03169,
+              "calls": 92206
+            },
+            {
+              "function": "_parse_path",
+              "self_seconds": 0.030341,
+              "calls": 19420
+            },
+            {
+              "function": "__getitem__",
+              "self_seconds": 0.02879,
+              "calls": 81433
+            },
+            {
+              "function": "<built-in method posix.lstat>",
+              "self_seconds": 0.027783,
+              "calls": 24817
+            },
+            {
+              "function": "with_segments",
+              "self_seconds": 0.023593,
+              "calls": 89382
+            },
+            {
+              "function": "<built-in method builtins.len>",
+              "self_seconds": 0.022664,
+              "calls": 355903
+            }
+          ],
+          "calls": {
+            "read_text": 217,
+            "read_bytes": 609,
+            "subprocess_run": 12
+          },
+          "response_characters": 735,
+          "measured_model_tokens": null,
+          "provider_seconds": null,
+          "model_seconds": null,
+          "harness_tool_calls": null
+        },
+        {
+          "elapsed_seconds": 0.823242,
+          "local_phases": [
+            {
+              "function": "<method 'poll' of 'select.poll' objects>",
+              "self_seconds": 0.192791,
+              "calls": 2009
+            },
+            {
+              "function": "_str_normcase",
+              "self_seconds": 0.034233,
+              "calls": 143845
+            },
+            {
+              "function": "__init__",
+              "self_seconds": 0.03109,
+              "calls": 92206
+            },
+            {
+              "function": "_parse_path",
+              "self_seconds": 0.030368,
+              "calls": 19420
+            },
+            {
+              "function": "__getitem__",
+              "self_seconds": 0.028579,
+              "calls": 81433
+            },
+            {
+              "function": "<built-in method posix.lstat>",
+              "self_seconds": 0.026955,
+              "calls": 24817
+            },
+            {
+              "function": "with_segments",
+              "self_seconds": 0.023514,
+              "calls": 89382
+            },
+            {
+              "function": "<built-in method builtins.len>",
+              "self_seconds": 0.022718,
+              "calls": 355917
+            }
+          ],
+          "calls": {
+            "read_text": 217,
+            "read_bytes": 609,
+            "subprocess_run": 12
+          },
+          "response_characters": 735,
+          "measured_model_tokens": null,
+          "provider_seconds": null,
+          "model_seconds": null,
+          "harness_tool_calls": null
+        },
+        {
+          "elapsed_seconds": 0.849998,
+          "local_phases": [
+            {
+              "function": "<method 'poll' of 'select.poll' objects>",
+              "self_seconds": 0.206417,
+              "calls": 1985
+            },
+            {
+              "function": "_str_normcase",
+              "self_seconds": 0.035228,
+              "calls": 143845
+            },
+            {
+              "function": "__init__",
+              "self_seconds": 0.031744,
+              "calls": 92206
+            },
+            {
+              "function": "_parse_path",
+              "self_seconds": 0.031327,
+              "calls": 19420
+            },
+            {
+              "function": "__getitem__",
+              "self_seconds": 0.029454,
+              "calls": 81433
+            },
+            {
+              "function": "<built-in method posix.lstat>",
+              "self_seconds": 0.027419,
+              "calls": 24817
+            },
+            {
+              "function": "with_segments",
+              "self_seconds": 0.023921,
+              "calls": 89382
+            },
+            {
+              "function": "<built-in method builtins.len>",
+              "self_seconds": 0.023165,
+              "calls": 355893
+            }
+          ],
+          "calls": {
+            "read_text": 217,
+            "read_bytes": 609,
+            "subprocess_run": 12
+          },
+          "response_characters": 735,
+          "measured_model_tokens": null,
+          "provider_seconds": null,
+          "model_seconds": null,
+          "harness_tool_calls": null
+        }
+      ],
+      "warm_median_seconds": 0.827233
+    }
+  }
+}

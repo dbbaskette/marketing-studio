@@ -7,6 +7,7 @@ import studio
 from hub_store import HubError, encoded, sha
 
 ROUTES = {
+    'clear local caches': (['cache-clear'], ['references/workspace/performance.md']),
     'proofread': (['proofread'], ['references/modules/copy-editing.md']),
     'push to google docs': (['google-push'], ['references/modules/blog-google-handoff.md']),
     'pull from google docs': (['google-pull'], ['references/modules/blog-google-return.md']),
@@ -59,7 +60,7 @@ def route(root, text, article_id=None, destination=None):
     if key not in ROUTES:
         return {'status': 'interpret-request', 'reason': 'Use normal skill intent routing; do not guess a destructive operation.'}
     actions, references = ROUTES[key]
-    if key.endswith('my defaults'):
+    if key.endswith('my defaults') or key == 'clear local caches':
         return {'status': 'routed', 'actions': actions, 'references': references}
     selected, question = resolve(root, article_id, query)
     if question: return question
@@ -84,24 +85,24 @@ def hub_state(root, record):
         saved = adapter.state['items'].get('articles/' + record['id'])
         if not saved: return output
         output['last_confirmed_saved'] = saved.get('last_saved_to_hub')
-        graph = adapter.hub.graph()
+        graph, remote_files, intents = adapter.hub.view()
         heads = graph['heads'].get(saved['item'], [])
         if len(heads) > 1:
             output['status'] = 'conflicted'
         else:
             try:
-                payload = adapter._payload('articles', record['id'], read_only=True)[0]
+                payload = adapter._payload('articles', record['id'], read_only=True, projection=studio.item(root, 'articles', record['id']))[0]
                 changed = sha(encoded(payload)) != saved['fingerprint']
             except HubError:
                 changed = True
-            pending = [i for i in adapter.hub._intents() if i['operation'] == saved['revision'] and i['state'] != 'published']
+            pending = [i for i in intents if i['operation'] == saved['revision'] and i['state'] != 'published']
             if changed: output['status'] = 'local-changes-not-shared'
             elif pending: output['status'] = pending[-1]['state']
             elif heads != [saved['revision']]: output['status'] = 'newer-hub-revision'
             elif saved.get('last_saved_revision') == saved['revision']: output['status'] = 'shared'
             else: output['status'] = 'not-verified'
         # Link only to an existing generated main page, including renamed/colliding slugs.
-        for path, body in adapter.hub.files(include_local=False).items():
+        for path, body in remote_files.items():
             if path.startswith('blogs/') and path.endswith('/README.md') and ('memory/items/' + saved['item'] + '/revisions/').encode() in body:
                 output['url'] = adapter.hub.config['url'] + '/blob/main/' + path
                 break

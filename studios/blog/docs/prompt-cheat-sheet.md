@@ -91,6 +91,8 @@ on the Hub's main branch.
 | Remember for this blog: [rule]. | Save an article preference |
 | Remember for our team: [rule]. | Save a shared preference |
 | Show my defaults. | Inspect your saved writing defaults |
+| Show the sources for this section. | Retrieve relevant source passages with their saved revisions |
+| Clear local caches. | Remove disposable derived data; keep your writing and history |
 | What changed? | Compare with the previous checkpoint |
 | Undo that edit. | Restore earlier text as a new revision |
 | Set the author to [name]. | Organize the blog under its author |

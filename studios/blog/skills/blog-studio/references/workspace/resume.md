@@ -5,11 +5,13 @@ Use the [workspace](../workspace.md) command prefix.
 ```text
 ... home --query <title-or-id> --limit 10 --offset 0
 ... list profiles
-... article show --id <id>
+... resume --id <id>
 ... profile show --id <profile-id> --revision <pinned-revision>
 ```
 
-For a pinned voice, read only its returned guide/rules.
+Use `resume` for compact context plus last-known status in one call. Read
+[focused context and reuse](performance.md) when retrieving passages or running
+mechanical checks. For a pinned voice, read only its returned guide/rules.
 
 For “My blogs,” use `home` without a query. Show title, stage, last activity, and
 next step as a short list; show the workspace and whether a hub is selected. Page
@@ -23,7 +25,7 @@ Stay within the selected project. Apply only active `memory` preferences; histor
 and forgotten entries are not current guidance. Inspect [context](context.md) when
 the author asks what is remembered or wants to correct/remove it.
 
-Select the resumed article with `select --id <id>` and show the
+Select the resumed article with `select --id <id>` and show its returned
 [status card](status.md), with one relevant next step. Keep technical pins in
 details unless requested; preserve them in the saved task.
 

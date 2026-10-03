@@ -1,254 +1,97 @@
-![Blog Studio — Your ideas. Your voice.](docs/assets/blog-studio-banner.svg)
+![Blog Studio — an author turning notes and drafts into finished blog posts](docs/assets/blog-studio-header.png)
 
-# Blog Studio
+**Turn ideas, notes, and rough drafts into blogs that sound like you.**
 
-**A writing partner inside your own Codex or Claude harness.**
+Blog Studio works inside **Codex or Claude Code**, the AI chat tools you already use.
+Start with a conversation. Bring your notes, ask for an outline, improve a draft,
+or let Blog Studio interview you one question at a time.
 
-Bring a rough idea, a stack of notes, or a blog you've already written. Blog Studio helps you find the next useful step, uses your voice, and loads the writing guidance that step needs.
-
-**6 starting paths · 20 capability modules · Reusable voices · Shared Team Hub · Resumable work**
-
-[Prompt cheat sheet](docs/prompt-cheat-sheet.md) · [New user guide](docs/new-user-guide.md) · [Get started](#get-started) · [Progressive disclosure](#how-progressive-disclosure-works) · [Roadmap and token estimates](docs/progressive-disclosure-roadmap.md) · [Install Blog Studio](docs/installation.md) · [Team Hub](docs/team-hub.md) · [Google Docs](docs/google-docs.md)
-
-## Browse your team’s blogs in GitHub
-
-The Team Hub now generates a readable library alongside its revision records:
-
-```text
-README.md                          # blog index on the repo homepage
-blogs/
-  README.md                        # all shared blogs
-  dan-baskette/
-    better-engineering-handoffs/
-      README.md                    # current blog, rendered by GitHub
-      outline.md                   # when an outline is saved
-      context.md                   # selected sources, voice, and status
-      history.md                   # readable earlier versions
-```
-
-Folders use the article’s chosen author or pinned voice profile, with **Unassigned**
-for older articles that have neither. Matching title slugs get a short ID suffix.
-The library updates with shared saves; review-required changes become visible on
-main after merge. Existing hubs gain the library on their next successful save or
-explicit sync using runtime **1.3.0**. All contributors should update their runtime
-before that hub upgrade.
-
-These are generated browsing views. Direct edits are detected and preserved by
-stopping sync; edit articles through Blog Studio. Canonical records retain their
-IDs and history through renames. See [Team Hub usage](docs/team-hub.md).
-
-## Start, continue, and control your context
-
-**Want prompts to copy and paste?** Follow the [Blog Studio cheat sheet](docs/prompt-cheat-sheet.md) from your first idea through drafting, Google Docs review, Hub sync, and resuming later.
-
-Inside Codex or Claude Code, ask Blog Studio to:
-
-| Say | What happens |
-| --- | --- |
-| “Check my setup” | Check runtime integrity and CLI sign-in, with concrete recovery steps. Google is checked only when needed. |
-| “Help me start a blog” | Choose a writing path or continue saved work; optionally provide sources and an author voice. |
-| “Show status” | See the current blog’s stage, links, save status, and next step. [Status card guide](docs/status-card.md). |
-| “Show my defaults” | Inspect personal and team writing defaults. |
-| “What changed?” / “Undo that edit” | Compare checkpoints or restore earlier text while preserving history. |
-| “Show my blogs” | See recent articles, stage, last activity, and next step in the current workspace. |
-| “Continue Handoff pilot” | Find the article by name and resume its saved state and pinned guidance. |
-| “What do you know about this article?” | Inspect selected sources, voice, article preferences, team context, and review state. |
-| “Remember/correct/forget this for this article” | Change active article preferences while preserving revision history. |
-| “Remember this for our team” | Save scoped memory in the selected private Team Hub. |
-
-Forgetting stops active use; it does not erase Git history or change other article
-pins. Team memory can be retired for everyone or detached from just one article.
-See the [new-user guide](docs/new-user-guide.md) and [live acceptance protocol](docs/live-acceptance.md).
-
-The status card, defaults, change summaries, and guarded undo ship in installer **1.7.0**. Reopen the trusted installer
-once to update executable helpers; subsequent guidance updates remain automatic
-for new tasks. Existing articles keep their pins. This candidate release is not
-installed into your active testing session automatically.
-
-## Install once. Keep getting better.
-
-Download the private [guided installer](dist/blog-studio-installer.zip), expand it, and open **Install Blog Studio.command** inside its `installer` folder. Choose Codex, Claude Code, or both. Setup reuses Git and Python, checks your GitHub access, and offers browser sign-in when needed. Missing tools get vendor installation instructions. See the [setup guide](docs/installation.md).
-
-**Using a company laptop that blocks `.command` launchers?** From an approved terminal in the expanded `blog-studio-setup` folder, run `sh installer/install.sh`. This uses the same guided setup without launching a new terminal window. Keep the whole expanded bundle together; the shell script uses its bundled Python installer and runtime. See [shell setup](docs/installation.md#install-from-an-existing-shell).
-
-**Writing guidance stays maintained here.** A new task quietly checks approved `main` and pins a local snapshot. The model receives a tiny status and reads only the instructions it needs. Your marketing team gets routine instruction updates without reinstalling; ongoing articles retain their saved guidance revision. Executable helpers update separately through setup, with repair and rollback.
-
-The author workspace holds drafts, voices, evidence, and history outside the installed skill. A selected Team Hub synchronizes that working content to its separate private repository. Git download progress stays out of the conversation.
-
-## Start where you are
-
-| What you have in mind | What Blog Studio helps you do |
-|---|---|
-| **Help with my draft** | Get feedback or a focused revision while preserving your original |
-| **Write the first draft** | Turn a topic, audience, and angle into a coherent article |
-| **Build an outline** | Develop the argument and section progression, then stop at the outline |
-| **Write from my outline** | Expand your structure into a complete draft |
-| **Interview me** | Draw out your experience through one focused question at a time |
-| **Help me find an idea** | Explore your audience, interests, and the point worth making |
-
-You can attach source content, paste notes, share links, reuse saved material, or start without it. Voice setup is available on its own: share authored writing, LinkedIn background, or a description of how you want to sound.
-
-## How progressive disclosure works
-
-The **parent skill** holds the brief, selected sources, voice, and requested outcome. It opens a capability when the current task needs it, then follows the relevant references within that capability.
-
-```mermaid
-flowchart TD
-    P[Blog Studio parent skill]
-    P -->|Shared work selected| H[Team Hub · focused memory]
-    P -->|Material supplied| S[Source intake]
-    P -->|Voice setup needed| V[Voice profile]
-    P -->|Current writing task| W[Discover · interview · outline · draft · edit]
-    P -->|Review requested| R[Selected editorial checks]
-    P -->|Next format requested| F[Repurpose · export]
-    P -->|Google work requested| G[Sources · handoff/return · comments · templates · export/share]
-```
-
-| Stage | What appears in chat | Guidance loaded when needed |
-|---|---|---|
-| **Start** | The right starting choices, or immediate work on a clear request | Parent and entry flow |
-| **Material** | Attachments, notes, links, or selected saved sources | Intake and source organization |
-| **Voice** | Saved profile, learn my voice, requested tone, or preserve this draft | Voice setup and selected profile |
-| **Write** | The next question, outline, draft, or revision | The current writing capability |
-| **Review** | Specific findings and proposed changes | Requested voice, factual-support, structure, humanization, or GEO checks |
-| **Finish** | The requested artifact and optional next step | Export or repurposing guidance |
-
-These stages adapt to your request. A clear draft request can continue through an internal outline; outline-only stops at the outline. A quick edit gets a focused review. Existing context is reused instead of asking you to repeat setup.
-
-**The workflow stays in chat.** The optional [newcomer prompt generator](preview/blog-studio.html) helps you choose a starting request to paste into your harness. It doesn't generate the article or store your writing.
-
-## Continue in Google Docs
-
-Ask “put this draft in our review folder,” “bring back the team's edits,” or
-“use our article template.” Six optional skills handle source intake, handoff,
-return, comments, templates and exports/sharing. A saved baseline detects local
-and Google edits; conflicts need a choice, originals and history survive, and
-only selected content crosses into Google.
-
-The **1.4.0 runtime** adds optional gcloud user login and Drive transfers, using
-the same setup approach as Tanzu brand. No custom Cloud project or OAuth client
-is needed. Native Docs API access is checked separately. See [Google setup](docs/google-docs.md).
-Local checkpoints and portable Team Hub history remain available.
-Google operations use your harness's connected provider. Native inline comments,
-template fidelity, exports and access changes require actual provider readback;
-capability gaps are stated. No extra Google CLI is installed. Authenticated
-Codex/Claude and Google pilots remain [deferred to run last](docs/google-docs.md#verification-and-remaining-live-work).
-See [Google Docs usage](docs/google-docs.md) and the [Google roadmap](docs/google-docs-roadmap.md).
-
-## Token footprint
-
-The parent now names required capability reads and conditional support reads explicitly. Parent plus entry flow is approximately **1,240 estimated tokens**, down from 2,329 (47% less). See the [M1 validation record](docs/m1-entry-validation.md).
-
-M2 now loads **450–498 tokens** for a routine continuity operation, including its small router. M3 supplies concise writing, editing, strategy, and title guides; the original sources remain optional. See the [combined validation record](docs/m2-m3-validation.md).
-
-Progressive disclosure keeps the full reference library available while selecting guidance for the current operation. The library contains approximately **178.6k estimated tokens**; a normal route reads a subset. The total grows slightly because it includes both the retained originals and the new working guides.
-
-| Route | Current managed guidance | Offline target after roadmap |
-|---|---:|---:|
-| Outline with sources | 4.4k | 2–3k |
-| First draft with sources | 6.0k | 3–5k |
-| Edit plus voice-rule review | 5.4k | 2.5–4k |
-| Voice setup | 4.8k | 2–3.5k |
-| Comprehensive review | 6.1k | 4–6k |
-
-The installed bootstrap is approximately **857 tokens**. Current route figures include it plus the selected repository guidance; offline targets and the full library total exclude the bootstrap. Downloading that library does not load it into context.
-
-Estimates use characters ÷ 4 and count each selected instruction file once. They include workspace guidance and exclude author material, generated prose, conversation history, and host/tool context. They are planning estimates rather than total billed usage. Targets are **planned refinements**, and already loaded text can remain in the conversation.
-
-See the [full roadmap](docs/progressive-disclosure-roadmap.md) for file-level estimates, assumptions, source/output allowances, and acceptance criteria.
-
-## Work that carries forward
-
-- **Your voice:** reusable profiles, auditions, explicit preferences, and a pinned revision for each article.
-- **Your sources:** original files, readable text, provenance, and separate roles for evidence, inspiration, background, and authored samples.
-- **Your manuscript:** an untouched original, saved outlines and drafts, version history, and a checkpoint for resuming.
-- **Your reviews:** findings tied to the draft, voice, and evidence they checked, with clear current, stale, failed, unavailable, or not-run status.
-
-The local `.blog-studio/` projection is excluded from the skill repository. Select a **Team Hub** to synchronize working content through a separate private repo; a workspace without a selected hub remains local.
-
-## Shared memory for your team
-
-> Create our Team Hub at my-org/marketing-writing.
-
-> Join our Team Hub at https://github.com/my-org/marketing-writing.
-
-> Find our onboarding draft and help me continue. Remember this new rule for the launch project.
-
-The administrator creates a private remote and local clone. Members with existing access join through chat. Blogs, notes, sources, voices, reviews, and user-defined rules/context share by default in the selected workspace. Offline saves queue locally; concurrent edits retain both versions; protected main uses a contribution PR.
-
-Update to runtime **1.3.0** using the trusted installer. No actual team repo is created by downloading or installing the skill. See [Team Hub usage](docs/team-hub.md) for setup, sharing, and the current verification boundary.
-
-## Your content and outside services
-
-Private content stays in your existing harness and, when selected, your private
-Team Hub. Borrowed research/media suggestions do not authorize sending drafts,
-voice samples, notes, or team context to additional services. Public searches
-use nonconfidential terms; requested document posting sends only the selected
-content to its intended audience. No telemetry or hidden upload client is bundled.
-
-Your harness/model provider and GitHub still process data under your account
-settings. See the [data exposure review](docs/privacy-review.md) for the checked
-surfaces, safeguards, and limits.
+[**Get started**](#get-started) · [Simple commands](docs/prompt-cheat-sheet.md) · [First blog walkthrough](docs/new-user-guide.md)
 
 ## Get started
 
-**From this repository:** open it in your harness and ask:
+1. **Install Blog Studio.** [Download the installer](dist/blog-studio-installer.zip),
+   expand it, and open **Install Blog Studio.command** in the `installer` folder.
+   Choose Codex, Claude Code, or both. You need access to this private repository.
+2. **Open a new chat** in your chosen tool after setup finishes.
+3. **Say:** “Use Blog Studio. Help me start a blog.”
 
-> Use `skills/blog-studio/SKILL.md` to help me start a blog. Show me the relevant starting choices and source and voice options.
+Setup checks the tools and sign-ins you need and explains anything missing.
+Already have a draft? Attach it and say **“Improve this draft.”**
 
-Or start with a concrete outcome:
+Company laptop or prefer a shell script? Keep the expanded bundle together and
+run `sh installer/install.sh` from its top folder in your approved terminal.
+[Setup, updates, and troubleshooting →](docs/installation.md)
 
-> Use `skills/blog-studio/SKILL.md` to build an outline from my attached notes. Keep it conversational and stop at the outline.
+## Just ask
 
-**For a completely offline/manual installation:** expand [blog-studio.zip](dist/blog-studio.zip) and copy the complete `blog-studio` folder into your harness's skill directory. Keep its references and helpers together. See [setup and package details](PACKAGE.md) for locations and local usage.
+| Say | Blog Studio helps you… |
+| --- | --- |
+| **Interview me.** | Turn your experience into an idea worth writing about |
+| **Use these notes.** | Bring sources into the current blog |
+| **Help me set up my voice.** | Learn from your writing and preferences |
+| **Make an outline.** | Plan the article before drafting |
+| **Write the draft.** | Build on your topic, notes, and outline |
+| **Proofread.** | Fix spelling, grammar, and punctuation |
+| **Continue [title].** | Pick up saved work and see the next step |
+| **Show status.** | See the blog’s links and save status |
 
-**For the newcomer prompt generator:** open [preview/blog-studio.html](preview/blog-studio.html) locally, or serve it with:
+You can also start from a blank page, supply an outline, or request feedback only.
+Blog Studio asks for the missing details; you do not need a long prompt.
+[More simple commands →](docs/prompt-cheat-sheet.md)
 
-```sh
-python3 -m http.server 8896 --bind 127.0.0.1 --directory preview
-```
+## Write here. Review together in Google Docs.
 
-Then visit `http://127.0.0.1:8896/blog-studio.html`.
+Say **“Push to Google Docs.”** After your team edits the document, say
+**“Pull from Google Docs.”** Or combine it with **“Pull and proofread.”**
 
-## What's implemented and what's next
+A supported pull keeps a formatted **Word/DOCX snapshot** alongside readable
+Markdown. Blog Studio checks for competing edits and preserves formatting during
+supported wording updates. Your working Google Doc link stays with the blog.
+Google access needs a separate connection; setup will identify what is available.
+[Connect Google Docs →](docs/google-docs.md)
 
-The six writing routes, **20 capability modules**, local continuity helpers and portable packages are implemented. **111 deterministic tests passed locally and in a fresh Tart macOS 27 clone**, covering transfers/conflicts, Team Hub, privacy boundaries, guidance refresh and installation. G0–G3 Google skill workflows are implemented; live provider behavior remains deferred. See the [G0–G3 validation record](docs/g0-g3-validation.md) and [earlier I4/M4/M5 evidence](docs/i4-m4-m5-validation.md).
+## Keep your team’s work together
 
-| Next milestone | Estimated development tokens |
-|---|---:|
-| Google Docs team pilot (G4) — run last | 6–12k original range |
-| Live Codex/Claude and signed-in newcomer pilots — run last | 12–22k original range |
+A **Team Hub** is your team’s private writing library on GitHub. It holds blogs,
+sources, notes, voices, and shared writing rules, with readable author and title
+folders and earlier versions you can revisit.
 
-The repository bootstrap, M1–M4 guidance refinements and G0–G3 Google workflows are delivered. Runtime 1.2.0 adds local Google transfer checkpoints; provider validation remains in G4 #15. Reviews load selected checks and retain passage-level evidence; comprehensive feedback is about 22% smaller than after M3. Core live Codex/Claude writing checks and signed-in Mac setup now have [Tart evidence](docs/usability-validation.md). Remaining [M5 #9](https://github.com/dbbaskette/blog-studio/issues/9) and [I4 #8](https://github.com/dbbaskette/blog-studio/issues/8) acceptance checks remain explicit; Google and two-person tests need selected participants/destinations. Development ranges are planning estimates, with overlapping pilot work excluded from additive totals. See the [progressive roadmap](docs/progressive-disclosure-roadmap.md) and [Google Docs roadmap](docs/google-docs-roadmap.md).
+Ask **“Join our Hub: [repository link].”** Normal saves then synchronize the selected
+workspace. Without a Hub, your work stays local. Offline or review-required saves
+show as waiting until they are actually shared.
+[Create or join a Team Hub →](docs/team-hub.md)
 
-## Verify and package
+## The right help at the right time
 
-```sh
-python3 -m unittest discover -s tests -v
-python3 skills/blog-studio/scripts/validate_package.py
-python3 scripts/measure_guidance.py --check
-python3 scripts/package_blog_studio.py
-python3 scripts/package_installer.py
-```
+Blog Studio loads guidance as you need it:
 
-Portable ZIPs and checksums are in [dist](dist/). The original five-skill collection remains available as [blog-writing-toolkit](skills/blog-writing-toolkit/SKILL.md).
+**Your idea → sources and voice → outline or draft → requested checks → handoff**
 
-Upstream sources retain their licenses and pinned provenance. See [package notes](skills/blog-studio/references/package-notes.md), [source lock](skills/blog-studio/sources.lock.json), and [BlogForge asset lock](skills/blog-studio/blogforge.lock.json).
+This is called *progressive disclosure*. You stay in chat while the skill opens
+only the relevant writing instructions. On resume, it starts with a compact
+summary and reads the passages or full documents needed for your next request.
+Unchanged mechanical checks can be reused; new edits still trigger fresh checks.
 
-## House style for software blogs
+Routine writing guidance updates arrive automatically for new tasks. Existing
+blogs retain their saved guidance so an update does not change a draft’s rules
+midway through. New helper features, including runtime **1.8**, need a one-time
+update through the installer.
 
-A [compact house guide](docs/house-style-guide.md) adds shared defaults while
-preserving each author's voice. The skill loads only the relevant details for
-article form, software claims, runnable examples, performance evidence or visuals.
-Team overrides use existing Hub rules and article pins. This is a guidance update;
-no additional CLI or runtime installation is needed.
+[How it works and token estimates →](docs/progressive-disclosure-roadmap.md)
 
-### Keep your Google formatting
+## Your content stays under your control
 
-Google Docs is the shared editing copy. Blog Studio 1.5 saves a **formatted DOCX**,
-readable Markdown, and native formatting evidence to the private Team Hub on return.
-Targeted wording updates preserve paragraph styles and check the result.
-[How the round trip works](docs/google-docs.md#formatted-google-editing-runtime-15).
+Work stays in your chosen AI tool, local workspace, and selected private Team Hub.
+Google transfers send the selected content to the chosen document. Blog Studio
+adds no telemetry uploads. Your AI provider, GitHub, and Google still process
+content under your account settings.
 
-Blog Studio 1.6 adds a live freshness check on linked-blog resume, clear sync
-status and check/confirmed-Hub-save timestamps. [Version status and milestones](docs/google-docs.md#freshness-and-milestone-names-runtime-16).
+[Privacy details](docs/privacy-review.md) · [House style](docs/house-style-guide.md) ·
+[Status card](docs/status-card.md) · [Troubleshooting](docs/troubleshooting.md)
+
+---
+
+**Building or administering Blog Studio?** See the [developer guide](docs/development.md),
+[performance evidence](docs/performance.md), [roadmap](https://github.com/dbbaskette/blog-studio/issues/3),
+and [package details](PACKAGE.md). Live account and team pilots are tracked separately.

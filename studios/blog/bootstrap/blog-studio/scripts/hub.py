@@ -327,6 +327,19 @@ class Hub:
                         files[name] = data
         return files
 
+    def view(self):
+        """One local Git tree observation for a read-only card; never remote freshness."""
+        remote = self._remote_files()
+        files = dict(remote)
+        intents = self._intents()
+        for intent in intents:
+            if intent['state'] != 'published':
+                for name, data in self._intent_files(intent).items():
+                    if name in files and files[name] != data:
+                        raise HubError('An operation ID has conflicting payloads.')
+                    files[name] = data
+        return validate_files(files, self.config['repository']), remote, intents
+
     def graph(self, include_local=True):
         return validate_files(self.files(include_local), self.config['repository'])
 

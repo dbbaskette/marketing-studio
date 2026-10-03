@@ -16,7 +16,8 @@ routes. Bare “push”/“pull” needs a destination if context cannot disting
 from Git; pass `--destination google|hub` only when already established.
 
 - **Proofread:** correct spelling, grammar, punctuation; keep facts, author voice,
-  and structure. Read the current draft and save with `article save ... --label
+  and structure. Use [exact-input diagnostics](workspace/performance.md) when
+  repeating mechanical checks. Read the current draft and save with `article save ... --label
   proofread`. Do not expand to research or a developmental rewrite.
 - **Push to Google Docs:** reuse the linked Doc. On first handoff, use the selected
   review-folder preference if present; obtain missing destination/access details.
@@ -30,8 +31,11 @@ from Git; pass `--destination google|hub` only when already established.
 - **Save and sync:** save completed selected work and its dependencies to the selected
   Hub; without a Hub, save locally and report that. Report queued/review/conflict
   states accurately. Do not sweep unrelated workspace content.
-- **Continue / Show status:** select the article and show the [status card](workspace/status.md).
+- **Continue:** use `resume --id <id>` once for compact context and the status card;
+  use [focused context](workspace/performance.md) for needed passages.
+- **Show status:** show the [status card](workspace/status.md).
 - **What changed / Undo that edit:** use [comparison and recovery](workspace/changes.md).
+- **Clear local caches:** use `cache --clear`; writing and history remain.
 - **Show/change my defaults:** use [defaults](workspace/defaults.md).
 
 After a completed operation show a short result; open the full status card when

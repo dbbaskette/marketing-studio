@@ -63,7 +63,8 @@ def write_json(path, value):
 
 
 def read_json(path):
-    return json.loads(path.read_text(encoding='utf-8'))
+    from local_reads import read
+    return json.loads(read(path).decode('utf-8'))
 
 
 def read_text(path):
@@ -211,8 +212,13 @@ def source_command(root, args):
         text = getattr(args, 'content', None)
         if text is None:
             text = read_text(args.text_file) if args.text_file else None
+        extraction = None
         if text is None and args.file and Path(args.file).suffix.lower() in ('.md', '.txt'):
             text = original.decode('utf-8')
+        if text is None and args.file and Path(args.file).suffix.lower() in ('.html', '.htm'):
+            from performance import extract
+            extraction, _ = extract(root, original, Path(args.file).suffix)
+            text = extraction['text']
         status = args.status or ('ready' if text and text.strip() else 'pending')
         if status == 'ready' and not (text and text.strip()):
             raise ValueError('Ready source needs nonempty extracted text; use pending/unavailable otherwise.')
@@ -231,6 +237,8 @@ def source_command(root, args):
                   'content_sha256': digest(text.encode()) if text is not None else None,
                   'purposes': args.purpose, 'author': args.author, 'status': status,
                   'note': args.note, 'revision': 1, 'created_at': now(), 'retrieved_at': now() if text else None}
+        if extraction:
+            record['extraction'] = {k:v for k,v in extraction.items() if k != 'text'}
         persist(directory, 'sources', record)
         return record
     directory, record = item(root, 'sources', args.id)
@@ -260,7 +268,8 @@ def source_command(root, args):
 
 def artifact_fingerprint(directory, filename):
     p = inside(directory, filename)
-    return digest(p.read_bytes()) if p.exists() else None
+    from local_reads import read
+    return digest(read(p)) if p.exists() else None
 
 
 def evidence_state(root, record):
@@ -269,14 +278,17 @@ def evidence_state(root, record):
         if 'reference' not in attached['purposes']:
             continue
         directory, source = item(root, 'sources', attached['source_id'])
+        from local_reads import read
+        path = inside(directory, 'content.md')
+        content = read(path) if path.is_file() else None
         evidence.append({'id': source['id'], 'revision': source['revision'], 'status': source['status'],
-                         'hash': artifact_fingerprint(directory, 'content.md'), 'origin': source['origin'],
-                         'readable': (directory / 'content.md').is_file() and bool((directory / 'content.md').read_text().strip())})
+                         'hash': digest(content) if content is not None else None, 'origin': source['origin'],
+                         'readable': bool(content and content.decode('utf-8').strip())})
     return evidence
 
 
-def fingerprints(root, directory, record):
-    evidence = evidence_state(root, record)
+def fingerprints(root, directory, record, evidence=None):
+    evidence = evidence_state(root, record) if evidence is None else evidence
     return {'draft': artifact_fingerprint(directory, 'DRAFT.md'), 'voice': record['voice'],
             'evidence': digest(json.dumps(evidence, sort_keys=True).encode()),
             'guidance': (record.get('guidance') or {}).get('revision'),
@@ -292,7 +304,8 @@ def ready_evidence(root, record):
 
 
 def freshness(root, directory, record):
-    current = fingerprints(root, directory, record)
+    evidence = evidence_state(root, record)
+    current = fingerprints(root, directory, record, evidence)
     reviews = {}
     for check in CHECKS:
         saved = record['reviews'].get(check)
@@ -304,7 +317,7 @@ def freshness(root, directory, record):
         if any(saved['inputs'].get(key) != current[key] for key in keys):
             shown['status'] = 'stale'
             shown['previous_status'] = saved['status']
-        if check == 'factual-support' and not ready_evidence(root, record):
+        if check == 'factual-support' and not any(e['status'] == 'ready' and e['readable'] for e in evidence):
             shown['status'] = 'unavailable'
             shown['detail'] = 'No readable factual references are selected.'
         reviews[check] = shown
@@ -485,6 +498,8 @@ def parser():
     listing.add_argument('kind', choices=('profiles', 'sources', 'articles'))
     from experience import add_parser as experience_parser
     experience_parser(groups)
+    from performance import add_parser as performance_parser
+    performance_parser(groups)
     from author_workflow import add_parser as author_parser
     author_parser(groups)
     profiles = groups.add_parser('profile').add_subparsers(dest='action', required=True)
@@ -559,7 +574,10 @@ def main():
     root = root.resolve()
     from hub_store import HubError
     try:
-        if args.group in ('home', 'context', 'readiness'):
+        if args.group in ('resume', 'passages', 'check', 'cache'):
+            from performance import command
+            result = command(root, args)
+        elif args.group in ('home', 'context', 'readiness'):
             from experience import command
             result = command(root, args)
         elif args.group in ('status', 'route', 'changes') or (args.group == 'defaults' and args.action == 'show'):

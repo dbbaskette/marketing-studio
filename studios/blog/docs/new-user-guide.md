@@ -196,3 +196,11 @@ merge the authorized contribution before expecting new views on main.
 For a linked blog, its page includes **Open working Google Doc** and the last
 capture time. That timestamp describes the saved snapshot; ask Blog Studio to
 check the linked Doc for a current comparison.
+
+## Faster repeat work
+
+Runtime 1.8 resumes with a compact status and opens the relevant passages as needed.
+Identical mechanical checks can be reused; this never substitutes for reading and
+editorial judgment. You can say **“Show the sources for this section”** or
+**“Clear local caches.”** Clearing these caches keeps your drafts and history.
+Reopen the trusted installer once to get the new helpers.

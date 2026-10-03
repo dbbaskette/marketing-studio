@@ -83,6 +83,10 @@ If asked to record a review, use the focused review-storage instructions and
 report its actual coverage/status. Failed, unavailable, or absent checks cannot
 produce a clean verdict. Imagined panels are not independent reviews. Polish proves neither authorship nor ranking.
 
+For repeated mechanical checks or a focused passage request, use
+[exact-input reuse and excerpts](../workspace/performance.md). Whole-article
+editing still requires reading the whole article.
+
 ## Optional depth and attribution
 
 Adapted from MIT-licensed [marketingskills copy-editing](../upstream/marketingskills/skills/copy-editing/SOURCE.md).
