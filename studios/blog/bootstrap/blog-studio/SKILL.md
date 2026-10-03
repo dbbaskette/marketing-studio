@@ -26,6 +26,11 @@ read [gcloud access](references/google/gcloud.md). Use the current installed
 transport helper independently of an older article runtime; retain its writing
 and guidance pins.
 
+**Short commands/status:** current installed runtime 1.7+ supports `status`,
+`select`, `route`, `changes`, and `defaults`. Read [short commands](references/short-commands.md)
+when requested; use these operational helpers without changing an existing article’s
+writing guidance pin. For resume, select the article and show its status card.
+
 **New task:** run
 `python3 <installed-skill>/scripts/sync_guidance.py start --workspace <workspace>`.
 The small JSON result identifies the pinned `guidance`, `runtime`, and task.

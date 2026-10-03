@@ -9,6 +9,9 @@ Read [entry flow](references/entry-flows.md) for writing starts. For setup/help,
 “My blogs,” or memory controls, load only [getting started](references/getting-started.md),
 [resume](references/workspace/resume.md), or [context](references/workspace/context.md).
 
+For short commands such as “Proofread”, “Push”, “Pull”, “Show status”, defaults,
+changes or undo, read [short commands](references/short-commands.md).
+
 ## Loading map
 
 Load the module and required references; reuse unchanged guidance.

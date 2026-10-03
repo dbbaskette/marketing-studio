@@ -47,6 +47,9 @@ Inside Codex or Claude Code, ask Blog Studio to:
 | --- | --- |
 | “Check my setup” | Check runtime integrity and CLI sign-in, with concrete recovery steps. Google is checked only when needed. |
 | “Help me start a blog” | Choose a writing path or continue saved work; optionally provide sources and an author voice. |
+| “Show status” | See the current blog’s stage, links, save status, and next step. [Status card guide](docs/status-card.md). |
+| “Show my defaults” | Inspect personal and team writing defaults. |
+| “What changed?” / “Undo that edit” | Compare checkpoints or restore earlier text while preserving history. |
 | “Show my blogs” | See recent articles, stage, last activity, and next step in the current workspace. |
 | “Continue Handoff pilot” | Find the article by name and resume its saved state and pinned guidance. |
 | “What do you know about this article?” | Inspect selected sources, voice, article preferences, team context, and review state. |
@@ -57,7 +60,7 @@ Forgetting stops active use; it does not erase Git history or change other artic
 pins. Team memory can be retired for everyone or detached from just one article.
 See the [new-user guide](docs/new-user-guide.md) and [live acceptance protocol](docs/live-acceptance.md).
 
-These runtime additions ship in installer **1.3.0**. Reopen the trusted installer
+The status card, defaults, change summaries, and guarded undo ship in installer **1.7.0**. Reopen the trusted installer
 once to update executable helpers; subsequent guidance updates remain automatic
 for new tasks. Existing articles keep their pins. This candidate release is not
 installed into your active testing session automatically.

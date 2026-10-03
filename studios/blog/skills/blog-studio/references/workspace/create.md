@@ -1,6 +1,7 @@
 # Create an article
 
-Use the [workspace](../workspace.md) prefix.
+Use the [workspace](../workspace.md) prefix. Resolve [writing defaults](defaults.md)
+for missing intake values; explicit choices win.
 
 ```text
 ... article create --title <title> --mode <mode> --research <policy> --profile <profile-id>

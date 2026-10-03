@@ -11,7 +11,7 @@ import subprocess
 import uuid
 from urllib.parse import urlsplit
 
-VERSION = '1.6.1'
+VERSION = '1.7.0'
 KINDS = ('article', 'source', 'voice', 'note', 'decision', 'rule', 'context', 'review')
 MAX_TEXT = 1024 * 1024
 MAX_BINARY = 10 * MAX_TEXT

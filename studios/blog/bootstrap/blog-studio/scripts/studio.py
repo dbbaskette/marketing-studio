@@ -311,16 +311,21 @@ def freshness(root, directory, record):
     return reviews
 
 
-def save_artifact(directory, kind, body, record):
+def save_artifact(directory, kind, body, record, label="save"):
+    previous = None
     target = inside(directory, kind.upper() + '.md')
     if target.exists():
         stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f') + '-' + uuid.uuid4().hex[:8]
-        atomic(inside(directory, 'history', kind + '-' + stamp + '.md'), target.read_bytes())
+        previous = kind + '-' + stamp + '.md'
+        atomic(inside(directory, 'history', previous), target.read_bytes())
     atomic(target, body.encode())
     if target.read_bytes() != body.encode():
         raise OSError('Saved artifact readback did not match; inspect the retained file before continuing.')
     record['stage'] = 'draft' if kind == 'draft' else 'outline' if kind == 'outline' else record['stage']
     record['artifact_hashes'][kind] = digest(body.encode())
+    record.setdefault('artifact_events', []).append({'kind': kind, 'before': previous,
+        'after_sha256': record['artifact_hashes'][kind], 'label': label[:200], 'at': now()})
+    record['artifact_events'] = record['artifact_events'][-100:]
     return {'path': str(target), 'sha256': record['artifact_hashes'][kind], 'reopened': True}
 
 
@@ -336,10 +341,14 @@ def article_command(root, args):
         directory = inside(root, 'articles', value)
         if directory.exists():
             raise ValueError('Article already exists.')
-        if args.profile:
+        from writing_defaults import for_create
+        default_voice = for_create(root, args)
+        if default_voice:
+            voice = {'mode': 'profile', **default_voice}
+        elif args.profile:
             voice = {'mode': 'profile', **voice_pin(root, args.profile)}
         else:
-            voice = {'mode': args.voice, 'tone': args.tone or ''}
+            voice = {'mode': args.voice or 'preserve', 'tone': args.tone or ''}
         stops = {'existing': 'review', 'first-draft': 'draft', 'outline-only': 'outline',
                  'from-outline': 'draft', 'interview': 'outline', 'discover': 'brief'}
         record = {'id': value, 'title': args.title, 'mode': args.mode, 'stage': 'intake',
@@ -348,8 +357,10 @@ def article_command(root, args):
                   'voice': voice, 'sources': [], 'reviews': {}, 'artifact_hashes': {},
                   'next_step': 'Gather missing material and relevant context.', 'pending_question': None,
                   'created_at': now()}
+        record['writing_preferences'] = {key: getattr(args, key) for key in ('audience', 'blog_type', 'review_folder') if getattr(args, key, None) is not None}
         directory.mkdir()
         persist(directory, 'articles', record)
+        write_json(inside(root, '.active-article.json'), {'id': value})
         return record
     directory, record = item(root, 'articles', args.id)
     if args.action == 'show':
@@ -361,6 +372,9 @@ def article_command(root, args):
                             'content_path': str(inside(source_directory, 'content.md')) if (source_directory / 'content.md').exists() else None})
         return {**record, 'directory': str(directory), 'selected_sources': sources,
                 'reviews': freshness(root, directory, record)}
+    if args.action == 'restore':
+        from author_workflow import restore
+        return restore(root, args)
     if args.action in ('remember', 'forget', 'detach-context'):
         from experience import change_context
         change_context(record, args)
@@ -385,7 +399,7 @@ def article_command(root, args):
             raise ValueError('Save the imported original before saving an edited draft.')
         if args.kind == 'original' and (directory / 'ORIGINAL.md').exists():
             raise ValueError('Imported original is immutable; revisions belong in DRAFT.md.')
-        saved_artifact = save_artifact(directory, args.kind, body, record)
+        saved_artifact = save_artifact(directory, args.kind, body, record, label=args.label)
     elif args.action == 'progress':
         record['stage'] = args.stage
         record['next_step'] = args.next_step
@@ -471,6 +485,8 @@ def parser():
     listing.add_argument('kind', choices=('profiles', 'sources', 'articles'))
     from experience import add_parser as experience_parser
     experience_parser(groups)
+    from author_workflow import add_parser as author_parser
+    author_parser(groups)
     profiles = groups.add_parser('profile').add_subparsers(dest='action', required=True)
     create = profiles.add_parser('create')
     create.add_argument('--name', required=True); create.add_argument('--id')
@@ -494,7 +510,8 @@ def parser():
     articles = groups.add_parser('article').add_subparsers(dest='action', required=True)
     create = articles.add_parser('create');create.add_argument('--title', required=True);create.add_argument('--id')
     create.add_argument('--mode', choices=MODES, required=True);create.add_argument('--profile');create.add_argument('--author')
-    create.add_argument('--voice', choices=('preserve', 'tone'), default='preserve');create.add_argument('--tone')
+    create.add_argument('--voice', choices=('preserve', 'tone'));create.add_argument('--tone')
+    create.add_argument('--audience');create.add_argument('--blog-type');create.add_argument('--review-folder')
     create.add_argument('--research', choices=('supplied-only', 'web-allowed', 'unspecified'), default='unspecified')
     create.add_argument('--stop', choices=('draft', 'outline', 'review', 'brief'))
     show = articles.add_parser('show');show.add_argument('--id', required=True)
@@ -511,6 +528,11 @@ def parser():
     attach.add_argument('--purpose', action='append', choices=PURPOSES)
     save = articles.add_parser('save');save.add_argument('--id', required=True)
     save.add_argument('--kind', choices=('brief', 'original', 'draft', 'outline'), required=True);save.add_argument('--file', required=True)
+    save.add_argument('--label', default='save', help='Operation name, such as proofread, for recovery')
+    restore = articles.add_parser('restore');restore.add_argument('--id', required=True)
+    restore.add_argument('--kind', choices=('draft', 'outline'), default='draft')
+    restore.add_argument('--revision', required=True);restore.add_argument('--expected')
+    restore.add_argument('--apply', action='store_true')
     progress = articles.add_parser('progress');progress.add_argument('--id', required=True)
     progress.add_argument('--stage', choices=('intake', 'interview', 'brief', 'outline', 'draft', 'review', 'complete'), required=True)
     progress.add_argument('--next-step', required=True);progress.add_argument('--pending-question')
@@ -540,6 +562,9 @@ def main():
         if args.group in ('home', 'context', 'readiness'):
             from experience import command
             result = command(root, args)
+        elif args.group in ('status', 'route', 'changes') or (args.group == 'defaults' and args.action == 'show'):
+            from author_workflow import command
+            result = command(root, args)
         elif args.group == 'init':
             result = initialize(root)
         else:
@@ -552,6 +577,9 @@ def main():
                         if folder.is_dir():
                             _, record = item(root, args.kind, folder.name)
                             result.append(record)
+                elif args.group in ('select', 'defaults'):
+                    from author_workflow import command
+                    result = command(root, args)
                 elif args.group == 'profile': result = profile_command(root, args)
                 elif args.group == 'source': result = source_command(root, args)
                 elif args.group == 'google':
@@ -561,7 +589,7 @@ def main():
                 mutation_group = args.group
                 if args.group == 'google':
                     mutation_group = 'source' if args.action == 'source' else 'article' if args.action not in ('compare', 'capabilities', 'status') else None
-                if mutation_group in ('profile', 'source', 'article') and args.action != 'show':
+                if mutation_group in ('profile', 'source', 'article') and args.action != 'show' and not (args.action == 'restore' and not args.apply):
                     from hub_workspace import active
                     from hub_store import HubError
                     try:
@@ -571,7 +599,10 @@ def main():
                     except HubError as exc:
                         result['hub_sync'] = {'status': 'local-saved-not-shared', 'error': str(exc),
                             'next_step': 'Retry the selected workspace import after resolving the hub issue.'}
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        if getattr(args, 'format', None) == 'markdown' and 'card' in result:
+            print(result['card'])
+        else:
+            print(json.dumps(result, indent=2, ensure_ascii=False))
     except (HubError, OSError, ValueError, KeyError, TypeError) as exc:
         print(f'Blog Studio: {exc}', file=sys.stderr)
         return 1

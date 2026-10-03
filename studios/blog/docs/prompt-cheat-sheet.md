@@ -27,7 +27,8 @@ when you want to send the revised wording back.
 | Use Blog Studio. | Start the writing flow |
 | Check my setup. | Find setup or sign-in problems |
 | Show my blogs. | Browse saved work |
-| Continue [title]. | Resume an existing blog |
+| Continue [title]. | Resume a blog and show its status card |
+| Show status. | Show the current blog’s status card and links |
 | Give me some ideas. | Explore topics |
 | Interview me. | Develop your idea one question at a time |
 | Improve this draft. | Work on a draft you supply |
@@ -89,10 +90,13 @@ on the Hub's main branch.
 | Share this blog with our Hub. | Share an existing local article |
 | Remember for this blog: [rule]. | Save an article preference |
 | Remember for our team: [rule]. | Save a shared preference |
+| Show my defaults. | Inspect your saved writing defaults |
+| What changed? | Compare with the previous checkpoint |
+| Undo that edit. | Restore earlier text as a new revision |
 | Set the author to [name]. | Organize the blog under its author |
 | Rename this blog to [title]. | Update its title |
 | Make a LinkedIn post from this. | Prepare a social draft |
 
 [Project README](https://github.com/dbbaskette/blog-studio#readme) ·
-[First-session guide](new-user-guide.md) · [Setup](installation.md) ·
+[Status card](status-card.md) · [First-session guide](new-user-guide.md) · [Setup](installation.md) ·
 [Google Docs](google-docs.md) · [Team Hub](team-hub.md)

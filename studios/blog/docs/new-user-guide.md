@@ -152,6 +152,13 @@ If you need help, include which writing tool you used, what you asked it to do,
 the response or error, and the article ID and saved location if available.
 Avoid including credentials or private source content.
 
+## See where your blog stands
+
+Say **“Show status”** in chat, or **“Continue [title]”** to select a blog. The
+[status card](status-card.md) shows stage, Google and Hub links, save status,
+and the next useful action. Runtime 1.7.0 adds this card, defaults, change summaries,
+and guarded undo; use the updated installer and start a new session.
+
 ## Everyday requests
 
 In the CLI conversation, try these plain-language requests:

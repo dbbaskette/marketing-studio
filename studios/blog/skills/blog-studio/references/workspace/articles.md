@@ -14,7 +14,7 @@ Use the [workspace](../workspace.md) prefix. For a new article first read
 
 Save the untouched original before edits in existing-draft mode. Originals
 are immutable; brief/outline/draft saves snapshot previous versions in `history/`.
-Restore by saving a prior version as a new current artifact, retaining history.
+For “undo” or a named earlier version use [guarded recovery](changes.md).
 Feedback-only leaves the manuscript intact. Draft edits stale affected reviews.
 
 Keep stage, next step, and pending question accurate at meaningful checkpoints.
