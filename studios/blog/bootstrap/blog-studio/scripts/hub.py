@@ -571,6 +571,7 @@ class Hub:
         for item, heads in graph['heads'].items():
             for revision in heads:
                 record = graph['revisions'][revision]
+                if record['data'].get('collection'):continue
                 if record['kind'] in ('rule', 'context') and record['scope'] in selected and record['status'] != 'tombstone':
                     row = {'item': item, 'revision': revision, 'scope': record['scope'], 'title': record['title'],
                            'conflicted': len(heads) > 1, 'key': record['data'].get('key')}

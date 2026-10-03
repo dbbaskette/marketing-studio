@@ -46,3 +46,8 @@ requested or on resume. Never require the user to repeat formatting, checkpoint,
 privacy, or verification instructions already supplied by the skill.
 
 **“Push as suggestions”** loads [Google suggestions](google/suggestions.md). Refresh the linked Doc first, reconcile conflicts, then post selected findings as guarded native suggestions/comments. Runtime 1.10+ uses the existing gcloud adapter when a connector lacks `writeMode`, and falls back to numbered review comments when necessary. **“Show review edits”** lists them; **“Apply edits 2 and 4”** applies only that selection after a fresh check.
+
+For “Show our pipeline,” “What needs my attention?”, “Open editorial desk,”
+“Package this for launch,” “Show evidence,” “This needs a diagram,” or old-blog
+import/find/refresh, load the [editorial router](editorial/workflow.md) and only its
+requested operation. These routes preserve writing pins and never approve release.

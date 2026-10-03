@@ -11,7 +11,7 @@ import subprocess
 import uuid
 from urllib.parse import urlsplit
 
-VERSION = '1.11.0'
+VERSION = '1.12.0'
 KINDS = ('article', 'source', 'voice', 'note', 'decision', 'rule', 'context', 'review')
 MAX_TEXT = 1024 * 1024
 MAX_BINARY = 10 * MAX_TEXT
@@ -218,6 +218,8 @@ def validate_manifest(value, repository=None):
             raise HubError('This Team Hub library needs a compatible newer Blog Studio runtime.')
         if 'google_doc_links' in value and (value['google_doc_links'] != 1 or required < (1, 6, 1)):
             raise HubError('This Team Hub Google-link view needs a compatible newer runtime.')
+        if 'editorial_views' in value and (value['editorial_views'] != 1 or required < (1, 12, 0)):
+            raise HubError('This Team Hub editorial view needs a compatible newer runtime.')
         uid(value['hub'])
         if (value['branch'] != 'main' or value['contribution_mode'] not in ('auto', 'direct', 'review')
                 or not isinstance(value['name'], str) or not value['name'].strip()
@@ -253,6 +255,11 @@ def validate_files(files, repository=None):
     if 'README.md' in files:
         used.add('README.md')
     for name, data in files.items():
+        if name in ('editorial/README.md', 'collections/README.md'):
+            if hub.get('editorial_views') != 1 or len(data) > MAX_TEXT:raise HubError('Unsupported generated editorial file.')
+            try:data.decode('utf-8')
+            except UnicodeError as exc:raise HubError('Editorial views must be UTF-8.') from exc
+            used.add(name);continue
         if name.startswith('blogs/'):
             if (hub.get('browse_schema') != 1 or not re.fullmatch(r'blogs/(?:README\.md|[a-z0-9-]+/[a-z0-9-]+/(?:README|outline|context|history)\.md)', name) or len(data) > MAX_TEXT):
                 raise HubError('Unsupported generated blog library file.')

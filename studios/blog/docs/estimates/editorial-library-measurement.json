@@ -1,0 +1,13 @@
+{
+  "date": "2026-10-03",
+  "scope": "125 short synthetic posts, local workspace; no live site or network transport",
+  "posts": 125,
+  "batches": 5,
+  "import_seconds": 0.202,
+  "index_rebuild_seconds": 0.022,
+  "cached_query_seconds": 0.017,
+  "index_bytes": 270336,
+  "retained_source_bytes": 390200,
+  "catalog_items": 3,
+  "catalog_response_characters": 1941
+}

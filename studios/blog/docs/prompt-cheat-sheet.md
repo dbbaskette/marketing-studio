@@ -112,6 +112,27 @@ on the Hub's main branch.
 | Rename this blog to [title]. | Update its title |
 | Make a LinkedIn post from this. | Prepare a social draft |
 
+## Editorial desk and earlier posts
+
+| Say | To… |
+| --- | --- |
+| Open editorial desk. | Browse blogs, upload references, and curate team memory |
+| Show our pipeline. | See stages, owners, due dates and Doc links |
+| What needs my attention? | See reviews, waiting decisions and stale work |
+| Assign this blog to [name], due [date]. | Record its owner and due date |
+| Mark this ready for review. | Make an explicit editorial decision |
+| Import our old blogs from [folder/site/feed/export]. | Preview a reference collection |
+| Find our previous blogs about [topic]. | Search retained earlier posts |
+| Use these posts as references. | Pin selected sources to your blog |
+| Refresh our blog library. | Preview changes and import a bounded batch |
+| Learn from our old blogs. | Propose source-linked writing lessons |
+| Show evidence. | Inspect selected factual claims and cited passages |
+| This needs a diagram. | Prepare a grounded visual and caption |
+| Package this for launch. | Prepare selected channel drafts and links |
+
+Blog Studio asks only for missing details. Imports and rule promotion are explicit;
+preparing a package does not send or publish it. [Desk guide](editorial-desk.md).
+
 [Project README](https://github.com/dbbaskette/blog-studio#readme) ·
 [Status card](status-card.md) · [First-session guide](new-user-guide.md) · [Setup](installation.md) ·
 [Google Docs](google-docs.md) · [Team Hub](team-hub.md)

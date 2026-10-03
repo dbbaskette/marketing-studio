@@ -502,6 +502,11 @@ def parser():
     groups.add_parser('init')
     listing = groups.add_parser('list')
     listing.add_argument('kind', choices=('profiles', 'sources', 'articles'))
+    from blog_library import add_parser as library_parser
+    library_parser(groups)
+    manage = groups.add_parser("manage");manage.add_argument("--port", type=int, default=0);manage.add_argument("--open", action="store_true")
+    from editorial import add_parser as editorial_parser
+    editorial_parser(groups)
     from experience import add_parser as experience_parser
     experience_parser(groups)
     from performance import add_parser as performance_parser
@@ -580,7 +585,13 @@ def main():
     root = root.resolve()
     from hub_store import HubError
     try:
-        if args.group in ('resume', 'passages', 'check', 'cache'):
+        if args.group == 'manage':
+            from management import main as manage
+            return manage(root, args.port, args.open)
+        if args.group == 'library' and args.action in ('collections', 'find', 'read'):
+            from blog_library import command
+            result = command(root, args)
+        elif args.group in ('resume', 'passages', 'check', 'cache'):
             from performance import command
             result = command(root, args)
         elif args.group in ('home', 'context', 'readiness'):
@@ -588,6 +599,9 @@ def main():
             result = command(root, args)
         elif args.group in ('status', 'route', 'changes') or (args.group == 'defaults' and args.action == 'show'):
             from author_workflow import command
+            result = command(root, args)
+        elif args.group == 'editorial' and args.action in ('board', 'inbox', 'assets'):
+            from editorial import command
             result = command(root, args)
         elif args.group == 'init':
             result = initialize(root)
@@ -604,13 +618,19 @@ def main():
                 elif args.group in ('select', 'defaults'):
                     from author_workflow import command
                     result = command(root, args)
+                elif args.group == 'library':
+                    from blog_library import command
+                    result = command(root, args)
+                elif args.group == 'editorial':
+                    from editorial import command
+                    result = command(root, args)
                 elif args.group == 'profile': result = profile_command(root, args)
                 elif args.group == 'source': result = source_command(root, args)
                 elif args.group == 'google':
                     from google_workflow import command
                     result = command(root, args)
                 else: result = article_command(root, args)
-                mutation_group = args.group
+                mutation_group = 'article' if args.group == 'editorial' else 'source' if args.group == 'library' and args.action == 'curate' else args.group
                 if args.group == 'google':
                     mutation_group = 'source' if args.action == 'source' else 'article' if args.action not in ('compare', 'capabilities', 'status') else None
                 if mutation_group in ('profile', 'source', 'article') and args.action != 'show' and not (args.action == 'restore' and not args.apply):

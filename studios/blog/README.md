@@ -18,8 +18,8 @@ an idea one question at a time. You stay in the same chat.
 3. **Open a new chat** in your chosen tool and say:
    **“Use Blog Studio. Help me start a blog.”**
 
-Already installed? Run the latest installer again to update. **Version 1.11** adds
-starting from an existing Google Doc and improves proofreading suggestions.
+Already installed? Run the latest installer again to update. **Version 1.12** adds an editorial desk, a team pipeline, and a searchable
+library of earlier posts.
 
 [Setup help, company laptop instructions, and updates →](docs/installation.md)
 
@@ -84,6 +84,36 @@ workspace with that Hub. Without one, your work stays on your computer. Blog
 Studio tells you when a save is still waiting to be shared.
 
 [Create or join a Team Hub →](docs/team-hub.md) · [More simple commands →](docs/prompt-cheat-sheet.md)
+
+## See the team's work
+
+Say **“Open editorial desk.”** A private page opens on your computer with:
+
+- **Blogs in progress:** owners, due dates, stages, and working Google Doc links.
+- **Needs attention:** review findings, waiting decisions, and stale companions.
+- **Reference library:** uploaded material and earlier posts you can browse and curate.
+- **Team memory:** shared notes, context, and writing rules.
+
+Everyone with write access to your Hub uses the same controls. GitHub manages
+membership. The desk runs locally; your private Hub also has readable editorial
+and collection pages. Google links reflect saved information—ask in chat to
+refresh Google content or feedback.
+
+| Say… | To… |
+| --- | --- |
+| **Show our pipeline.** | See your team's writing stages and next actions |
+| **What needs my attention?** | Find work needing a decision or review |
+| **Import our old blogs from [folder or site].** | Preview a historical reference collection |
+| **Find our previous blogs about [topic].** | Find relevant earlier writing |
+| **Show evidence.** | Inspect support for important claims |
+| **This needs a diagram.** | Prepare a visual companion |
+| **Package this for launch.** | Prepare copy for your chosen channels |
+
+Imports are previewed before a bulk save. Earlier posts remain references until
+you explicitly choose to start an editable blog. Packages and visuals stay tied
+to their draft; changes flag them for review. Preparing them does not publish.
+
+[Using the editorial desk →](docs/editorial-desk.md)
 
 ## The right help at the right time
 

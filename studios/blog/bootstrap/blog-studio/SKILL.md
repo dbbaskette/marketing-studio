@@ -1,6 +1,6 @@
 ---
 name: blog-studio
-description: Start or improve blogs, learn author voices, resume saved writing, and use shared Team Hub memory. Load pinned guidance from the trusted Blog Studio repository.
+description: Write or improve blogs, learn voices, resume work, and manage editorial pipelines, historical references, and private Team Hub memory through pinned Blog Studio guidance.
 ---
 
 # Blog Studio
@@ -38,6 +38,11 @@ adapter. The same route handles readable comment fallback and numbered edit sele
 For “Start from this Google Doc” or a Google manuscript supplied for proofreading,
 load [Google manuscript intake](references/google/start.md) (runtime 1.11+).
 It establishes the original Doc as the working destination for later suggestions.
+
+For pipeline, attention, launch packages, claim evidence, visual companions, historical
+blog collections, or “Open editorial desk,” read the [editorial router](references/editorial/workflow.md)
+and only the requested operation (runtime 1.12+). Use current operational helpers
+without replacing an existing article’s writing guidance pin.
 
 **New task:** run
 `python3 <installed-skill>/scripts/sync_guidance.py start --workspace <workspace>`.

@@ -252,3 +252,13 @@ working draft and a formatted snapshot, then links that same Google Doc. You can
 then say **“Proofread”**, **“Push as suggestions”**, or **“Pull from Google Docs.”**
 Suggestions go to the original document. Importing alone makes no Google edits.
 Use the runtime **1.11** installer update for this combined intake workflow.
+
+## See your team’s writing
+
+Say **“Open editorial desk.”** Browse saved blogs and working Google Doc links,
+upload a reference or draft, and inspect shared memory. Everyone who can
+contribute to your Hub has the same controls. Say **“What needs my attention?”**
+for review work, or **“Find our previous blogs about [topic]”** for earlier writing.
+
+The desk runs privately on your computer. Its Google links show saved information;
+ask in chat to pull current content or refresh feedback. [Desk guide](editorial-desk.md).

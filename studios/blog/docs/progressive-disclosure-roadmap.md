@@ -162,3 +162,23 @@ formatting helpers require the 1.5 installer update.
 
 Runtime 1.6 adds a conditional Google freshness reference (~748 estimated tokens);
 resume guidance routes to it only for linked Google articles.
+
+## Editorial operations (runtime 1.12)
+
+Load the editorial router and only the requested operation. The following are
+character-based estimates (`ceil(characters / 4)`), excluding entry guidance,
+conversation, author data, runtime scripts, and optional reused modules.
+
+| Operation | Estimated additional tokens |
+| --- | ---: |
+| Board | 521 |
+| Attention inbox | 509 |
+| Claim evidence | 538 |
+| Publication package | 568 |
+| Visual companion | 551 |
+| Historical library | 1,155 |
+| Local desk | 589 |
+
+The library searches a rebuildable local index, returns bounded metadata, and
+retrieves selected passages rather than loading the collection into a prompt.
+Shared records stay in the private Hub; credentials and local indexes do not.

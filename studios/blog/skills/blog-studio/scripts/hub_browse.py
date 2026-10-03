@@ -84,9 +84,10 @@ def google_doc_links(data):
     return result
 
 
-def render(files, graph, show_google_links=None):
+def render(files, graph, show_google_links=None, show_editorial=None):
     if show_google_links is None:
         show_google_links = graph['manifest'].get('google_doc_links') == 1
+    if show_editorial is None:show_editorial = graph['manifest'].get('editorial_views') == 1
     rows = []
     for item, heads in sorted(graph['heads'].items()):
         records = [graph['revisions'][revision] for revision in heads]
@@ -194,6 +195,7 @@ def render(files, graph, show_google_links=None):
         output[history_page] = history.encode()
     def index(page):
         result = '## Blog library\n\n' + NOTICE + '\n'
+        if show_editorial:result += link('Editorial board', 'editorial/README.md', page) + ' · ' + link('Reference collections', 'collections/README.md', page) + '\n\n'
         if not rows:return result + 'No blogs have been shared yet. Save or import a selected article through Blog Studio.\n'
         result += '| Blog | Author | Stage | Updated |\n| --- | --- | --- | --- |\n'
         for row in rows:
@@ -204,6 +206,7 @@ def render(files, graph, show_google_links=None):
     block = START + '\n' + index('README.md') + END
     previous = managed_block(readme)
     output['README.md'] = (readme.replace(previous, block) if previous else readme.rstrip() + '\n\n' + block + '\n').encode()
+    if show_editorial:output.update(editorial_pages(graph))
     if any(len(content) > MAX_TEXT for content in output.values()):
         raise HubError('A generated library page exceeds the hub text limit; saved work remains queued.')
     return output
@@ -211,13 +214,13 @@ def render(files, graph, show_google_links=None):
 
 def verify(files, graph):
     """Do not silently overwrite edits to generated pages or an unrelated blogs/ tree."""
-    actual = {name: body for name, body in files.items() if name.startswith('blogs/')}
+    actual = {name: body for name, body in files.items() if name.startswith('blogs/') or name in ('editorial/README.md', 'collections/README.md')}
     if graph['manifest'].get('browse_schema') != 1:
         if actual or managed_block(files.get('README.md', b'').decode()):
             raise HubError('The blog library destination already contains unmanaged content; it was preserved.')
         return
     expected = render(files, graph)
-    if (actual != {name: body for name, body in expected.items() if name.startswith('blogs/')}
+    if (actual != {name: body for name, body in expected.items() if name.startswith('blogs/') or name in ('editorial/README.md', 'collections/README.md')}
             or managed_block(files.get('README.md', b'').decode()) != managed_block(expected['README.md'].decode())):
         raise HubError('Generated blog pages were edited or removed. Preserve/import those edits and restore the generated pages before syncing; queued work is retained.')
 
@@ -227,14 +230,53 @@ def changes(files, graph):
         google_doc_links(graph['revisions'][head]['data'].get('studio', {}))
         for heads in graph['heads'].values() for head in heads
         if graph['revisions'][head]['kind'] == 'article')
-    output = render(files, graph, show_google_links=show_links)
+    show_editorial = graph['manifest'].get('editorial_views') == 1 or any(
+        r['data'].get('collection') or r['data'].get('studio', {}).get('editorial') or r['data'].get('studio', {}).get('library') or r['data'].get('studio', {}).get('editorial_assets')
+        for r in graph['revisions'].values())
+    output = render(files, graph, show_google_links=show_links, show_editorial=show_editorial)
     needed = '1.9.0' if any('/history/google-' in name and name.endswith('-accepted.json') for name in files) else '1.5.0' if any('/history/google-' in name for name in files) else '1.3.0'
+    if show_editorial:needed = '1.12.0'
     if show_links:
         needed = max((needed, '1.6.1'), key=lambda v: tuple(map(int, v.split('.'))))
     minimum = max((graph['manifest']['minimum_runtime'], needed), key=lambda v: tuple(map(int, v.split('.'))))
     manifest = dict(graph['manifest'], browse_schema=1, minimum_runtime=minimum)
+    if show_editorial:manifest['editorial_views'] = 1
     if show_links:
         manifest['google_doc_links'] = 1
     output['hub.json'] = encoded(manifest)
-    return {**{name: None for name in files if name.startswith('blogs/') and name not in output},
+    return {**{name: None for name in files if (name.startswith('blogs/') or name in ('editorial/README.md', 'collections/README.md')) and name not in output},
             **{name: body for name, body in output.items() if files.get(name) != body}}
+
+
+def editorial_pages(graph):
+    board_page = 'editorial/README.md'
+    catalog_page = 'collections/README.md'
+    board = '# Editorial board\n\n' + NOTICE + '\nSaved metadata only; Google status is not checked live here.\n\n'
+    board += '| Blog | Author | Owner | Stage | Due | Next action | Working Doc |\n| --- | --- | --- | --- | --- | --- | --- |\n'
+    library = '# Reference collections\n\n' + NOTICE + '\nHistorical posts are references. Reverify dated product claims before reuse.\n\n'
+    library += '| Source | Author | Collection | Published | Original | Curation |\n| --- | --- | --- | --- | --- | --- |\n'
+    collections = []
+    names = {r['data']['collection']['key']: r['data']['collection']['name'] for r in graph['revisions'].values() if r['data'].get('collection')}
+    from urllib.parse import urlsplit, quote
+    for heads in sorted(graph['heads'].values()):
+        saved = graph['revisions'][heads[-1]]
+        if saved['status'] == 'tombstone':continue
+        data = saved['data'].get('studio', {})
+        if saved['kind'] == 'article':
+            details = data.get('editorial', {})
+            from editorial import row
+            status = 'conflict' if len(heads) > 1 else row(data, saved['item'], 'hub')['stage']
+            from editorial import doc_link
+            doc = doc_link(data)
+            board += '| ' + link(saved['title'], record_path(saved, 'BODY.md'), board_page) + ' | ' + safe(data.get('author') or 'Unassigned') + ' | ' + safe(details.get('owner') or 'Unassigned') + ' | ' + safe(status) + ' | ' + safe(details.get('due') or '—') + ' | ' + safe(data.get('next_step') or 'Unassigned') + ' | ' + ('[Open Doc](' + doc['url'] + ')' if doc else '—') + ' |\n'
+        elif saved['kind'] == 'source' and data.get('library') and not data.get('pinned_reference'):
+            metadata = data['library'];uri = metadata.get('canonical_url') or ''
+            parsed = urlsplit(uri)
+            original = '[Original](' + quote(uri, safe=':/?=&%#') + ')' if parsed.scheme == 'https' and parsed.hostname and not parsed.username and not parsed.password else '—'
+            library += '| ' + link(saved['title'], record_path(saved, 'BODY.md'), catalog_page) + ' | ' + safe(data.get('author') or 'Unknown') + ' | ' + safe(', '.join(names.get(k, k) for k in metadata.get('collections', []))) + ' | ' + safe(metadata.get('published') or 'Unknown') + ' | ' + original + ' | ' + safe('conflict' if len(heads) > 1 else metadata.get('curation', 'active')) + ' |\n'
+        elif saved['data'].get('collection'):
+            collections.append((saved, saved['data']['collection'], saved['data'].get('coverage', {})))
+    library += '\n## Collection coverage\n\n'
+    for saved, config, coverage in collections:
+        library += '- ' + safe(config['name']) + ': ' + safe(str(coverage.get('completed', 0))) + '/' + safe(str(coverage.get('discovered', 0))) + ' discovered posts processed; last refresh ' + safe(coverage.get('last_refresh') or 'not run') + ('; discovery limited' if coverage.get('discovery_limited') else '') + '; failed ' + safe(str(coverage.get('counts', {}).get('failed', 0))) + '.\n'
+    return {board_page: board.encode(), catalog_page: library.encode()}

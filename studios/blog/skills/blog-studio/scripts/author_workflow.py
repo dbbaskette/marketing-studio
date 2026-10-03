@@ -7,6 +7,12 @@ import studio
 from hub_store import HubError, encoded, sha
 
 ROUTES = {
+    'show evidence': (['editorial-evidence'], ['references/editorial/evidence.md']),
+    'can we back this up': (['editorial-evidence'], ['references/editorial/evidence.md']),
+    'package this for launch': (['editorial-package'], ['references/editorial/package.md']),
+    'prepare a publication package': (['editorial-package'], ['references/editorial/package.md']),
+    'this needs a diagram': (['editorial-visual'], ['references/editorial/visual.md']),
+    'make a visual companion': (['editorial-visual'], ['references/editorial/visual.md']),
     'show review edits': (['google-review-list'], ['references/google/suggestions.md']),
     'push as suggestions': (['google-suggest'], ['references/google/suggestions.md']),
     'push as suggestions to google docs': (['google-suggest'], ['references/google/suggestions.md']),
@@ -51,6 +57,24 @@ def resolve(root, article_id=None, query=None):
 
 def route(root, text, article_id=None, destination=None):
     key = ' '.join(text.casefold().strip(' .?!').split())
+    global_routes = {
+        'show our pipeline': ('editorial-board', 'references/editorial/board.md'),
+        'show pipeline': ('editorial-board', 'references/editorial/board.md'),
+        'show editorial board': ('editorial-board', 'references/editorial/board.md'),
+        'open editorial desk': ('manage', 'references/editorial/management.md'),
+        'what needs my attention': ('editorial-inbox', 'references/editorial/inbox.md'),
+        'refresh our blog library': ('library-preview-refresh', 'references/editorial/library.md'),
+        'learn from our old blogs': ('library-lessons', 'references/editorial/library.md'),
+    }
+    if key in global_routes:
+        action, reference = global_routes[key]
+        return {'status': 'routed', 'actions': [action], 'references': [reference], 'execution': 'Use the current installed operational runtime; keep existing writing pins.'}
+    library_request = re.match(r'(import our (?:old|existing) blogs from|find our (?:previous|old) blogs about|what have we already said about)\s+(.+)', text.strip().rstrip('.?!'), re.I)
+    if library_request:
+        importing = library_request[1].casefold().startswith('import')
+        return {'status': 'routed', 'actions': ['library-preview' if importing else 'library-find'],
+                'references': ['references/editorial/library.md'], 'input': library_request[2],
+                'execution': 'Preview and confirm bounded import scope.' if importing else 'Search a bounded catalog, then read selected passages.'}
     # Intake works with an empty workspace, before current-article resolution.
     intake = re.fullmatch(r'(?:start (?:a blog )?from (?:this |a )?google doc|use (?:this )?google doc as (?:my |a )?(?:draft|starting manuscript))(?:\s*:\s*(.+))?', text.strip().rstrip('.?!'), re.IGNORECASE)
     if intake:

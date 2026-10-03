@@ -76,12 +76,12 @@ class Workspace:
                 continue
             # Share concrete writing artifacts, never incidental configuration or arbitrary local files.
             if group == 'articles':
-                allowed = name in ('DRAFT.md','OUTLINE.md','BRIEF.md','ORIGINAL.md','INTERVIEW.md','DECISIONS.md') or bool(re.fullmatch(r'(?:derived/[A-Za-z0-9_.-]+\.md|history/(?:draft|outline|brief|original|derived-[A-Za-z0-9_.-]+)-[A-Za-z0-9_.-]+\.md|history/review-[A-Za-z0-9_.-]+\.json)', name))
+                allowed = name in ('DRAFT.md','OUTLINE.md','BRIEF.md','ORIGINAL.md','INTERVIEW.md','DECISIONS.md') or bool(re.fullmatch(r'(?:derived/[A-Za-z0-9_.-]+\.(?:md|json)|history/(?:draft|outline|brief|original|derived-[A-Za-z0-9_.-]+)-[A-Za-z0-9_.-]+\.md|history/(?:review|editorial)-[A-Za-z0-9_.-]+\.json)', name))
                 allowed = allowed or bool(re.fullmatch(r'history/google-[a-f0-9]{32}-(?:document\.md|document\.docx|native\.json|accepted\.json|snapshot\.json)', name))
             elif group == 'profiles':
                 allowed = name in ('VOICE.md','BACKGROUND.md','rules.json') or bool(re.fullmatch(r'(?:imported-history/)*revisions/[0-9]+/(?:record\.json|VOICE\.md|BACKGROUND\.md|rules\.json)', name))
             else:
-                allowed = name == 'content.md' or bool(re.fullmatch(r'original(?:\.[A-Za-z0-9]+)?|(?:imported-history/)*revisions/[0-9]+/(?:record\.json|content\.md)', name))
+                allowed = name == 'content.md' or bool(re.fullmatch(r'original(?:\.[A-Za-z0-9]+)?|(?:imported-history/)*revisions/[0-9]+/(?:record\.json|content\.md|original(?:\.[A-Za-z0-9]+)?)', name))
             if not allowed:
                 continue
             content = path.read_bytes()
@@ -118,7 +118,13 @@ class Workspace:
         else:
             sources = []
             for selected in record['sources']:
-                reference = reference_for('sources', selected['source_id'], visiting)
+                source_id = selected['source_id']
+                _, source_record = self.local_item('sources', source_id)
+                if selected['revision'] != source_record['revision']:
+                    pin_key = source_id + '/' + str(selected['revision'])
+                    reference = self._bound_ref('source-pins', pin_key) if read_only else self._publish_source_pin(source_id, selected['revision'])
+                else:
+                    reference = reference_for('sources', source_id, visiting)
                 reference['role'] = 'source'
                 reference['purposes'] = selected['purposes']
                 dependencies.append(reference);sources.append(reference)
@@ -171,7 +177,10 @@ class Workspace:
             return {'item': saved['item'], 'revision': saved['revision'], 'kind': GROUP_KIND[group]}
         # Parent is the version this local projection actually edited, not a newly fetched head.
         operation = sha(encoded([self.hub.id, key, saved['revision'] if saved else None, fingerprint]))[:32]
-        result = self.hub.save(GROUP_KIND[group], title, body, operation=operation, item=saved['item'] if saved else None,
+        shared_item = saved['item'] if saved else None
+        if shared_item is None and group == 'sources' and data.get('library', {}).get('identity'):
+            shared_item = sha(encoded(['library-source', self.hub.id, data['library']['identity']]))[:32]
+        result = self.hub.save(GROUP_KIND[group], title, body, operation=operation, item=shared_item,
             parents=[saved['revision']] if saved else [], data={'studio': data}, dependencies=dependencies,
             artifacts=artifacts, sync=False,
             scope={'level': 'author' if group == 'profiles' else 'team', 'key': title if group == 'profiles' else ''})
@@ -179,6 +188,34 @@ class Workspace:
         # A crash after enqueue but before this map write is recoverable by matching the operation payload.
         self.persist()
         return {'item': result['item'], 'revision': result['revision'], 'kind': GROUP_KIND[group]}
+
+    def _publish_source_pin(self, local_id, revision):
+        key = 'source-pins/' + studio.identifier(local_id) + '/' + str(revision)
+        if key in self.state['items']:
+            saved = self.state['items'][key]
+            return {'item': saved['item'], 'revision': saved['revision'], 'kind': 'source'}
+        directory, _ = self.local_item('sources', local_id)
+        pinned = studio.inside(directory, 'revisions', str(revision))
+        record = studio.read_json(pinned / 'record.json')
+        data = {k: v for k, v in record.items() if k not in ('id', 'revision')}
+        data['origin'] = portable_origin(data.get('origin', ''))
+        data['pinned_reference'] = True
+        artifacts = {'content.md': ((pinned / 'content.md').read_bytes(), 'text')} if (pinned / 'content.md').exists() else {}
+        original = record.get('original_path')
+        if original and studio.inside(pinned, original).is_file():
+            content = studio.inside(pinned, original).read_bytes()
+            try: content.decode('utf-8'); media = 'text'
+            except UnicodeError: media = 'binary'
+            artifacts[original] = (content, media)
+        else:
+            data['original_path'] = None
+            data['original_sha256'] = None
+        operation = sha(encoded([self.hub.id, key, data, {n: sha(v[0]) for n, v in artifacts.items()}]))[:32]
+        result = self.hub.save('source', record['name'], artifacts.get('content.md', (b'', 'text'))[0].decode(),
+            operation=operation, data={'studio': data}, artifacts=artifacts, sync=False)
+        self.state['items'][key] = {'item': result['item'], 'revision': result['revision'], 'fingerprint': 'pinned'}
+        self.persist()
+        return {'item': result['item'], 'revision': result['revision'], 'kind': 'source'}
 
     def _publish_profile_pin(self, local_id, revision):
         key = 'profile-pins/' + studio.identifier(local_id) + '/' + str(revision)
@@ -355,8 +392,8 @@ class Workspace:
         self.persist()
 
     def _bound_ref(self, group, local_id, **extra):
-        value = self.state['items'][(group + '/' + local_id) if group == 'profile-pins' else self.key(group, local_id)]
-        return {'item': value['item'], 'revision': value['revision'], 'kind': GROUP_KIND.get(group, 'voice'), **extra}
+        value = self.state['items'][(group + '/' + local_id) if group in ('profile-pins', 'source-pins') else self.key(group, local_id)]
+        return {'item': value['item'], 'revision': value['revision'], 'kind': GROUP_KIND.get(group, 'source' if group == 'source-pins' else 'voice'), **extra}
 
     def checkout_selected(self, selections, offline=False):
         if not any(selections.values()):

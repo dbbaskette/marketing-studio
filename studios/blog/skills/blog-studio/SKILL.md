@@ -1,6 +1,6 @@
 ---
 name: blog-studio
-description: Write and revise blogs, learn author voices, resume articles, and use Team Hub memory from drafts, ideas, outlines, sources, or interviews.
+description: Write and revise blogs, learn author voices, resume work, browse an editorial desk, and use shared Team Hub memory and historical posts.
 ---
 
 # Blog Studio
@@ -51,6 +51,9 @@ and history, and stale affected reviews. For team requests or `.team-hub.json`,
 read [hub router](references/hub/workflow.md). Bootstrap helpers run from its
 returned installed `runtime`, never the snapshot; offline helpers use `scripts/`.
 Verify saved files reopen.
+
+For team pipeline, attention, launch packages, evidence, visual companions, old-blog
+collections or the editorial desk, load only the relevant [editorial operation](references/editorial/workflow.md).
 
 ## Boundaries
 

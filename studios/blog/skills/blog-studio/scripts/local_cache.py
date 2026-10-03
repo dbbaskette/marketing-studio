@@ -26,6 +26,10 @@ def entries(root):
 
 
 def maintain(root, clear=False):
+    if clear:
+        for name in ('library.sqlite3', 'library.sqlite3-journal'):
+            path = folder(root) / name
+            if path.is_file() and not path.is_symlink():path.unlink()
     rows = sorted(entries(root), key=lambda p:p.stat().st_mtime, reverse=True)
     total = count = 0
     for path in rows:
