@@ -1,4 +1,4 @@
-![Blog Studio — an author turning notes and drafts into finished blog posts](docs/assets/blog-studio-header.png)
+![Blog Studio — Sources → Outline → Draft → Review → Team Library](docs/assets/blog-studio-header.png)
 
 **Turn ideas, notes, and rough drafts into blogs that sound like you.**
 
