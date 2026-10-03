@@ -159,18 +159,36 @@ The timestamp describes the saved capture, not a live freshness check.
 
 Say **“Proofread”**, then **“Push as suggestions.”** Blog Studio refreshes the
 linked Google Doc first, reconciles changes, and rechecks affected findings.
-Selected replacements become pending suggested edits with explanatory comments.
-Broader feedback becomes comments. A revision guard stops a submission if someone
-edits the Doc in the meantime. Ordinary “Push to Google Docs” still applies edits.
+When native suggestions are available, selected replacements become pending
+suggested edits with explanatory comments. Otherwise, the comment workflow below
+keeps them as review proposals. Broader feedback becomes comments. Native writes
+use a revision guard; ordinary comments are checked against current content before
+and after posting. Ordinary “Push to Google Docs” still applies edits.
 
 After the team reviews in Google, say **“Pull from Google Docs.”** Accepted text
 returns to Markdown; DOCX preserves the formatted export, while native snapshots
 retain pending suggestions and comments separately. Pull never accepts or rejects
 a suggestion. Complex structures may require a scoped native conversion rather
-than the bounded paragraph renderer. No API capability means no suggestion write;
-Blog Studio retains the review locally.
+than the bounded paragraph renderer. If neither suggestions nor comments are
+available, Blog Studio retains the review locally.
 
-Requires the runtime 1.9 installer update. Guidance refresh alone cannot install
+Requires the runtime 1.10 installer update. Guidance refresh alone cannot install
 the new helper. Live Google account validation is separate from fixture tests.
 
 Developer evidence and remaining live checks: [suggestion validation](google-suggestions-validation.md).
+
+## When Google suggestions are unavailable
+
+Keep using **“Push as suggestions.”** If your connector lacks the needed option,
+Blog Studio can use its already configured gcloud connection. If native suggestions
+are still unavailable, it posts readable review comments and tells you which mode
+was used. Ordinary document comments appear in **All Comments**, with the section,
+current wording, proposed wording and reason; they do not have Accept/Reject buttons.
+Minor fixes in one paragraph can share a comment while keeping individual numbers.
+
+Say **“Show review edits”**, then **“Apply edits 2 and 4”** to choose changes.
+Blog Studio checks current wording, applies only your selection, verifies formatting,
+and resolves completed comments. A resolved comment alone never means approval.
+Afterward, say **“Pull from Google Docs.”** Runtime **1.10** provides this workflow;
+run the current installer once and start a new session. A hosted connector's
+missing option does not require changing the document's settings.

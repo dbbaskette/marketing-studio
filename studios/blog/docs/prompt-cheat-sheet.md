@@ -63,7 +63,9 @@ approve first, say **“Push as suggestions.”**
 | Say | To… |
 | --- | --- |
 | Push to Google Docs. | Send the current draft or its updates to the working Doc |
-| Push as suggestions. | Refresh the linked Doc, then post selected proofreading findings for approval |
+| Push as suggestions. | Refresh Google, then post native suggestions or clearly labeled review comments |
+| Show review edits. | See the numbered comment-review findings |
+| Apply edits 2 and 4. | Apply only those changes, recheck formatting, and resolve completed comments |
 | Pull from Google Docs. | Bring back the team's text and formatting changes |
 | Which copy is newest? | Check Google against the local copy |
 | Show me the Google Doc link. | Find the working Doc |
@@ -83,6 +85,9 @@ is needed rather than claiming success.
 affected findings and stops for competing edits; no separate pull prompt is needed.
 After the team accepts or rejects proposals in Google, say **“Pull from Google Docs.”**
 The returned Markdown contains accepted text; pending suggestions stay separate.
+If native suggestions are unavailable, Blog Studio posts comments with current and
+proposed wording. For ordinary comments, open **All Comments**. Use **“Apply edits
+2 and 4”** to select changes; resolving a comment does not approve it.
 
 Pulling retains a formatted DOCX snapshot and readable Markdown when supported.
 Google edits are pulled on request. Normal Blog Studio saves sync to a selected

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "minimum_runtime": "1.9.0",
+  "minimum_runtime": "1.10.0",
   "entry": "skills/blog-studio/SKILL.md",
   "content_root": "skills/blog-studio",
   "description": "Operational guidance and original reference paths; runtime scripts are installed separately."

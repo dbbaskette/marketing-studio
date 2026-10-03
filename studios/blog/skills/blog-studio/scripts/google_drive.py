@@ -26,7 +26,16 @@ LOGIN = 'gcloud auth login --enable-gdrive-access --force'
 
 
 class GoogleError(Exception):
-    pass
+    def __init__(self, message, *, status=None, review_unavailable=False):
+        super().__init__(message)
+        self.status = status
+        self.review_unavailable = review_unavailable
+
+
+class ReviewUnavailable(GoogleError):
+    """Read-only evidence that the native review surface is unavailable."""
+    def __init__(self, message):
+        super().__init__(message, review_unavailable=True)
 
 
 def identifier(value):
@@ -108,7 +117,16 @@ class Client:
                 message = 'Google rejected the write. Reread the document and revision before making another request.'
             else:
                 message = 'Google request failed (HTTP ' + str(exc.code) + ').'
-            raise GoogleError(message) from None
+            # Classify only definite API rejections; never expose raw error bodies.
+            unsupported = exc.code == 403
+            if exc.code == 400:
+                try:
+                    detail = json.loads(exc.read(16384)).get('error', {}).get('message', '').lower()
+                    unsupported = (any(k in detail for k in ('writemode', 'commentsviewmode', 'insertcomment'))
+                        and any(k in detail for k in ('unknown name', 'not supported', 'unsupported', 'not available')))
+                except (OSError, ValueError, AttributeError):
+                    pass
+            raise GoogleError(message, status=exc.code, review_unavailable=unsupported) from None
         except (OSError, ValueError):
             raise GoogleError('Google response was unavailable or invalid. A write may have completed; reconcile before retrying.') from None
 
@@ -124,7 +142,7 @@ class Client:
 
     def metadata(self, file_id):
         return self.drive('files/' + identifier(file_id), supportsAllDrives='true',
-            fields='id,name,mimeType,parents,webViewLink,modifiedTime,version,trashed,capabilities(canEdit,canAddChildren)')
+            fields='id,name,mimeType,parents,webViewLink,modifiedTime,version,trashed,capabilities(canEdit,canAddChildren,canComment)')
 
     def permissions(self, file_id):
         result = []
@@ -165,6 +183,37 @@ class Client:
         return self.request(DOCS + identifier(file_id) + ':batchUpdate', method='POST',
             body={'writeControl': {'requiredRevisionId': revision, 'writeMode': 'SUGGEST'},
                   'requests': requests})
+
+    def native_comments_update(self, file_id, revision, requests):
+        if not revision or not requests or any(set(r) != {'insertComment'} for r in requests):
+            raise GoogleError('A fresh revision and comment-only requests are required.')
+        return self.request(DOCS + identifier(file_id) + ':batchUpdate', method='POST',
+            body={'writeControl': {'requiredRevisionId': revision}, 'requests': requests})
+
+    def review_comments(self, file_id):
+        result=[]; page=None
+        for _ in range(100):
+            query={'fields':'nextPageToken,comments(id,content,quotedFileContent,resolved,deleted,author(me))',
+                   'pageSize':100, 'includeDeleted':'true'}
+            if page:query['pageToken']=page
+            response=self.drive('files/'+identifier(file_id)+'/comments', **query)
+            result.extend(response.get('comments',[]))
+            page=response.get('nextPageToken')
+            if not page:return result
+        raise GoogleError('Comment listing was incomplete; no review action performed.')
+
+    def create_review_comment(self, file_id, content, quote):
+        return self.request(DRIVE+'files/'+identifier(file_id)+'/comments?fields=id,content,quotedFileContent,resolved,author(me)',
+            method='POST',body={'content':content,'quotedFileContent':{'mimeType':'text/plain','value':quote}})
+
+    def resolve_review_comment(self, file_id, comment_id):
+        return self.request(DRIVE+'files/'+identifier(file_id)+'/comments/'+identifier(comment_id)+'/replies?fields=id,action',
+            method='POST',body={'action':'resolve','content':'Selected edits applied and verified by Blog Studio.'})
+
+    def resolve_native_comment(self, file_id, comment_id, revision):
+        return self.request(DOCS+identifier(file_id)+':batchUpdate',method='POST',body={
+            'writeControl':{'requiredRevisionId':revision}, 'requests':[{'addCommentReply':{
+                'commentId':comment_id,'post':{'commentAction':'RESOLVE'}}}]})
 
     def native_update(self, file_id, revision, requests):
         if not isinstance(revision, str) or not revision.strip():

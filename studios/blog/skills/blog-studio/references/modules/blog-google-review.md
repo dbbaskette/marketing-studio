@@ -18,7 +18,9 @@ IDs. Never guess indexes, author quotes, thread IDs or inline anchors.
 For inline comments, verify that the active provider supports a native anchor
 for this surface and that it reads back attached to the intended current text.
 Drive `anchor` JSON or a `quoted_text` field alone is not proof of an inline
-comment. If native anchoring is unavailable, explain that limit and ask whether
+comment. For “Push as suggestions,” use its authorized automatic comment fallback and
+explain when comments appear in All Comments. For other comment requests, if
+native anchoring is unavailable, explain that limit and ask whether
 a document-level comment with an exact quote is acceptable. Do not silently
 substitute an unanchored comment. Once authorized, include the quote plus tab
 and section in the body so the recipient can locate it without an anchor.

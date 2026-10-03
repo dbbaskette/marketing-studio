@@ -41,6 +41,16 @@ through that action. Claude parity is unknown. Rediscover rather than hardcode
 this inventory. Current skill routing, including native creation versus DOCX
 import, takes precedence over older umbrella descriptions.
 
+## Connector gaps versus API support
+
+A connector can omit an operation that Google itself supports. For “Push as
+suggestions,” inspect whether its write schema exposes `writeMode` and revision
+control. If not, use the already configured installed gcloud review helper for
+the intended account/document, which calls Docs directly. Follow
+[suggestion routing](suggestions.md) for automatic comment fallback and uncertainty
+handling. Do not treat missing connector fields as a Google Doc setting, invent
+parameters, change the hosted connector, or start a new login without a setup request.
+
 ## Provider obligations
 
 - Ground native MIME type, observed ID/URL, complete tab tree, selected tab IDs,

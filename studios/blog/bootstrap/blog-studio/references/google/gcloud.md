@@ -114,7 +114,7 @@ requires fresh inspection, not a blind retry. API denial leaves local work intac
 
 Exports refuse to overwrite existing files, validate PDF/DOCX signatures, and
 use private local permissions. Drive limits exports to 10 MB; inspect the actual
-result for fidelity. This route does not implement comments, native template
+result for fidelity. The base transfer helper does not implement native template
 copies or sharing mutations; retain the existing connector route for those.
 
 Based on the Tanzu brand skill's gcloud/Drive transfer pattern. References:
@@ -124,3 +124,7 @@ Based on the Tanzu brand skill's gcloud/Drive transfer pattern. References:
 [guarded updates](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/batchUpdate).
 
 For “Is this the newest?” and linked-article resume, use [freshness status](status.md).
+
+Runtime 1.10 adds a separate [review helper](suggestions.md) for native suggestions,
+anchored comments, and ordinary Drive-comment fallback. It bypasses connector
+schemas that lack `writeMode` using the existing gcloud account and Docs API.

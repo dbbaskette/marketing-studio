@@ -144,3 +144,19 @@ beyond the existing Google connection.
 Members contributing to a Hub containing the new review snapshots need runtime
 1.9 so older clients cannot drop the accepted-text evidence. See the
 [Google workflow](google-docs.md) and [validation record](google-suggestions-validation.md).
+
+## When Google suggestions are unavailable
+
+Keep using **“Push as suggestions.”** If your connector lacks the needed option,
+Blog Studio can use its already configured gcloud connection. If native suggestions
+are still unavailable, it posts readable review comments and tells you which mode
+was used. Ordinary document comments appear in **All Comments**, with the section,
+current wording, proposed wording and reason; they do not have Accept/Reject buttons.
+Minor fixes in one paragraph can share a comment while keeping individual numbers.
+
+Say **“Show review edits”**, then **“Apply edits 2 and 4”** to choose changes.
+Blog Studio checks current wording, applies only your selection, verifies formatting,
+and resolves completed comments. A resolved comment alone never means approval.
+Afterward, say **“Pull from Google Docs.”** Runtime **1.10** provides this workflow;
+run the current installer once and start a new session. A hosted connector's
+missing option does not require changing the document's settings.

@@ -9,7 +9,7 @@ import sys
 
 import studio
 import google_roundtrip as rt
-from google_drive import Client, GoogleError, digest, encoded, write_new
+from google_drive import Client, GoogleError, ReviewUnavailable, digest, encoded, write_new
 from hub_store import contained, locked, write_json
 
 
@@ -23,7 +23,7 @@ def document(client, file_id, **kwargs):
 def review_read(client, file_id):
     value = document(client, file_id, inline=True, comments=True)
     if value.get('commentsViewMode') != 'COMMENTS_VIEW_MODE_INCLUDED' or value.get('suggestionsViewMode') != 'SUGGESTIONS_INLINE':
-        raise GoogleError('Native Google review readback is unavailable; no direct-edit fallback is permitted.')
+        raise ReviewUnavailable('Native Google review readback is unavailable; use readable review comments.')
     if rt.suggestions(value) and not summary(value)['pending']:
         raise GoogleError('Pending suggestion threads are unavailable; retain local work and inspect Google.')
     return value
@@ -136,13 +136,14 @@ def build(document_value, findings, selected_tabs):
     requests=[]; ids=set(); occupied={}; changes={}; comments=[]
     for f in findings:
         required={'id','tab_id','start_index','before','reason','kind'}
-        if not isinstance(f,dict) or set(f)-required-{'after'} or required-set(f):
+        if not isinstance(f,dict) or set(f)-required-{'after','minor'} or required-set(f):
             raise GoogleError('Each finding needs id, kind, tab_id, start_index, before, reason and optional after.')
         if not isinstance(f['id'],str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}',f['id']) or f['id'] in ids:
             raise GoogleError('Use unique stable finding IDs from the saved review.')
+        if 'minor' in f and type(f['minor']) is not bool:raise GoogleError('minor must be true or false.')
         ids.add(f['id'])
-        marker='[Blog Studio '+f['id']+'] '
-        if any(t.get('headPost',{}).get('content','').startswith(marker) for t in document_value.get('comments',[])):
+        marker='[Blog Studio '+f['id']+']'
+        if any(marker in t.get('headPost',{}).get('content','') for t in document_value.get('comments',[])):
             raise GoogleError('This finding already has a Google thread. Reconcile the existing review instead of reposting.')
         if f['kind'] not in ('edit','comment') or f['tab_id'] not in selected_tabs or type(f['start_index']) is not int:
             raise GoogleError('Choose an edit/comment anchored in a selected tab.')
@@ -211,21 +212,27 @@ def build(document_value, findings, selected_tabs):
             'expected_sha256':signature(expected),'before_sha256':signature(document_value)}
 
 
-def plan(client, root, article_id, kind, findings, output):
+def plan(client, root, article_id, kind, findings, output, mode='auto'):
     directory,record,target=linked(root,article_id,kind)
     local=studio.artifact_fingerprint(directory,kind.upper()+'.md')
     if not local:raise GoogleError('Save the local manuscript before preparing review suggestions.')
     baseline=digest(encoded(record['google']['baselines'][kind]))
-    current=review_read(client,target['document_id'])
+    from google_review_comments import build as comment_build, unavailable
+    if mode not in ('auto','native','comments'):raise GoogleError('Choose auto, native or comments.')
+    try:current=review_read(client,target['document_id'])
+    except GoogleError as exc:
+        if mode=='native' or not unavailable(exc):raise
+        current=rt.clean_read(client,target['document_id']);mode='comments'
     # The proofread Google baseline must still match, including formatting.
     if not target.get('format_sha256') or signature(current)!=target['format_sha256']:
         raise GoogleError('Pull the latest Google Doc and reconcile local changes before refreshing findings and planning suggestions.')
     result={'schema':1,'article':article_id,'kind':kind,'document_id':target['document_id'],
         'tab_ids':target['tab_ids'],'revision_id':current['revisionId'],'local_sha256':local,
-        'baseline_sha256':baseline,'findings':findings,**build(current,findings,target['tab_ids'])}
+        'baseline_sha256':baseline,'findings':findings,'mode':mode,
+        'comment_plan':comment_build(current,findings,target['tab_ids']),**build(current,findings,target['tab_ids'])}
     if local!=studio.artifact_fingerprint(directory,kind.upper()+'.md'):raise GoogleError('Local writing changed during planning.')
     write_new(output,encoded(result))
-    return {'status':'planned','file':str(output),'findings':len(findings),'mode':'suggestions-and-comments',
+    return {'status':'planned','file':str(output),'findings':len(findings),'mode':mode,
             'next_step':'Submit only these selected findings. The helper rereads Google and requires this exact revision.'}
 
 
@@ -235,7 +242,7 @@ def ledger(root):return contained(root,'.google-review-operations')
 def operation_key(saved):return digest(encoded(saved))
 
 
-def apply(client, root, saved):
+def apply_native(client, root, saved):
     directory,record,target=linked(root,saved['article'],saved['kind'])
     if (target['document_id']!=saved['document_id'] or target['tab_ids']!=saved['tab_ids']
             or digest(encoded(record['google']['baselines'][saved['kind']]))!=saved['baseline_sha256']
@@ -254,16 +261,35 @@ def apply(client, root, saved):
             raise GoogleError('Local writing changed during preflight.')
         write_new(receipt,encoded({'status':'submitting','operation':key,'document_id':saved['document_id']}))
         for path in markers:write_new(path,key.encode())
-        response=client.native_review_update(saved['document_id'],saved['revision_id'],saved['requests'])
+        try:response=client.native_review_update(saved['document_id'],saved['revision_id'],saved['requests'])
+        except GoogleError as exc:
+            if exc.review_unavailable:
+                write_json(receipt,{'status':'native-rejected','operation':key,'document_id':saved['document_id']})
+            raise
         write_json(receipt,{'status':'submitted-unverified','operation':key,'document_id':saved['document_id'],
                             'comment_update_state':response.get('commentUpdateState')})
     return verify(client,root,saved)
+
+
+def apply(client, root, saved):
+    from google_review_comments import apply as comments_apply, unavailable
+    if saved.get('mode')=='comments':return comments_apply(client,root,saved)
+    try:return apply_native(client,root,saved)
+    except GoogleError as exc:
+        if saved.get('mode')!='auto' or not unavailable(exc):raise
+        receipt=contained(ledger(root),operation_key(saved)+'.json')
+        reserved=receipt.exists()
+        if reserved and json.loads(receipt.read_text()).get('status')!='native-rejected':raise
+        return comments_apply(client,root,saved,reserved=reserved)
 
 
 def verify(client, root, saved):
     path=contained(ledger(root),operation_key(saved)+'.json')
     if not path.is_file():raise GoogleError('No recorded attempt exists for this plan.')
     receipt=json.loads(path.read_text())
+    if receipt.get('backend'):
+        from google_review_comments import verify as comments_verify
+        return comments_verify(client,root,saved)
     inline=review_read(client,saved['document_id'])
     before=document(client,saved['document_id'])
     after=document(client,saved['document_id'],accepted_preview=True)
@@ -303,14 +329,22 @@ def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path,required=True);p.add_argument('--account')
     sub=p.add_subparsers(dest='action',required=True)
     prepare=sub.add_parser('plan');prepare.add_argument('--id',required=True);prepare.add_argument('--kind',choices=('draft','outline'),default='draft')
-    prepare.add_argument('--findings',type=Path,required=True);prepare.add_argument('--output',type=Path,required=True)
+    prepare.add_argument('--findings',type=Path,required=True);prepare.add_argument('--output',type=Path,required=True);prepare.add_argument('--mode',choices=('auto','native','comments'),default='auto')
     for name in ('apply','verify'):
         command=sub.add_parser(name);command.add_argument('--plan',type=Path,required=True)
+    show=sub.add_parser('show-review');show.add_argument('--id',required=True)
+    edit=sub.add_parser('apply-edits');edit.add_argument('--plan',type=Path,required=True);edit.add_argument('--numbers',type=int,nargs='+',required=True)
+    check=sub.add_parser('verify-edits');check.add_argument('--plan',type=Path,required=True)
     args=p.parse_args()
     try:
         if not args.root.is_absolute():raise GoogleError('Use an absolute writing workspace.')
         client=Client(args.account)
-        if args.action=='plan':result=plan(client,args.root,args.id,args.kind,json.loads(args.findings.read_text()),args.output)
+        if args.action=='plan':result=plan(client,args.root,args.id,args.kind,json.loads(args.findings.read_text()),args.output,args.mode)
+        elif args.action in ('show-review','apply-edits','verify-edits'):
+            import google_review_comments as comments
+            if args.action=='show-review':result=comments.show(args.root,args.id)
+            elif args.action=='apply-edits':result=comments.apply_edits(client,args.root,json.loads(args.plan.read_text()),args.numbers)
+            else:result=comments.verify_edits(client,args.root,json.loads(args.plan.read_text()))
         else:result=globals()[args.action](client,args.root,json.loads(args.plan.read_text()))
         print(json.dumps(result,indent=2));return 0
     except GoogleError as exc:error=str(exc)

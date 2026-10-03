@@ -30,8 +30,10 @@ and guidance pins.
 `select`, `route`, `changes`, and `defaults`. Read [short commands](references/short-commands.md)
 when requested; use these operational helpers without changing an existing article’s
 writing guidance pin. For resume, select the article and show its status card.
-For “Push as suggestions,” runtime 1.9+ loads
+For “Push as suggestions,” runtime 1.10+ loads
 [Google suggestions](references/google/suggestions.md); refresh the Doc before review submission.
+If the connector omits `writeMode`, use the already configured installed gcloud
+adapter. The same route handles readable comment fallback and numbered edit selection.
 
 **New task:** run
 `python3 <installed-skill>/scripts/sync_guidance.py start --workspace <workspace>`.

@@ -7,6 +7,7 @@ import studio
 from hub_store import HubError, encoded, sha
 
 ROUTES = {
+    'show review edits': (['google-review-list'], ['references/google/suggestions.md']),
     'push as suggestions': (['google-suggest'], ['references/google/suggestions.md']),
     'push as suggestions to google docs': (['google-suggest'], ['references/google/suggestions.md']),
     'push these as suggestions to google docs': (['google-suggest'], ['references/google/suggestions.md']),
@@ -56,6 +57,11 @@ def route(root, text, article_id=None, destination=None):
         key = ('push to google docs' if key == 'push' else 'pull from google docs') if destination == 'google' else 'save and sync' if key == 'push' else 'refresh hub'
     if key == 'refresh hub':
         return {'status': 'routed', 'actions': ['hub-refresh'], 'references': ['references/hub/sync.md']}
+    edit_numbers=None
+    selected_edits=re.fullmatch(r'apply (?:edits?|suggestions?) ([0-9]+(?:\s*(?:,|and)\s*[0-9]+)*)',key)
+    if selected_edits:
+        edit_numbers=[int(n) for n in re.findall(r'[0-9]+',selected_edits[1])]
+        key='show review edits'
     query = None
     if key.startswith('continue '):
         query = text.strip().rstrip('.?!')[9:].strip(' "“”')
@@ -63,6 +69,7 @@ def route(root, text, article_id=None, destination=None):
     if key not in ROUTES:
         return {'status': 'interpret-request', 'reason': 'Use normal skill intent routing; do not guess a destructive operation.'}
     actions, references = ROUTES[key]
+    if edit_numbers is not None:actions=['google-apply-review-edits']
     if key.endswith('my defaults') or key == 'clear local caches':
         return {'status': 'routed', 'actions': actions, 'references': references}
     selected, question = resolve(root, article_id, query)
@@ -71,7 +78,7 @@ def route(root, text, article_id=None, destination=None):
     kind = 'draft' if (directory / 'DRAFT.md').exists() else 'outline'
     base = record.get('google', {}).get('baselines', {}).get(kind)
     return {'status': 'routed', 'id': record['id'], 'title': record['title'], 'kind': kind,
-            'actions': actions, 'references': references,
+            'actions': actions, 'references': references, 'edit_numbers':edit_numbers,
             'linked_document': base['document']['url'] if base else None,
             'review_folder': record.get('writing_preferences', {}).get('review_folder'),
             'scope': 'spelling, grammar, punctuation; preserve meaning and voice' if 'proofread' in actions else 'requested operation',

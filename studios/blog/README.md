@@ -45,7 +45,9 @@ Blog Studio asks for the missing details; you do not need a long prompt.
 Say **“Push to Google Docs.”** After your team edits the document, say
 **“Pull from Google Docs.”** Or combine it with **“Pull and proofread.”**
 To let the team approve proofreading changes, say **“Push as suggestions.”**
-Blog Studio checks the latest Google copy before submitting.
+Blog Studio checks the latest Google copy before submitting. When native suggestions
+are unavailable, it posts readable review comments. Say **“Apply edits 2 and 4”**
+to apply selected comment findings.
 
 A supported pull keeps a formatted **Word/DOCX snapshot** alongside readable
 Markdown. Blog Studio checks for competing edits and preserves formatting during

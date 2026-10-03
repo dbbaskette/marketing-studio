@@ -154,7 +154,7 @@ Doc during submission, Blog Studio stops and refreshes the review. Ordinary
 **“Push to Google Docs”** applies updates directly; **“Push as suggestions”** leaves
 proposals for the team to accept or reject.
 
-This feature needs the **1.9 installer update** once. Download the current trusted
+This feature needs the **1.10 installer update** once. Download the current trusted
 bundle, run Install for the same writing tools, and start a new session. The
 writing-instruction refresh does not install new executable helpers.
 
@@ -228,3 +228,19 @@ Identical mechanical checks can be reused; this never substitutes for reading an
 editorial judgment. You can say **“Show the sources for this section”** or
 **“Clear local caches.”** Clearing these caches keeps your drafts and history.
 Reopen the trusted installer once to get the new helpers.
+
+## When Google suggestions are unavailable
+
+Keep using **“Push as suggestions.”** If your connector lacks the needed option,
+Blog Studio can use its already configured gcloud connection. If native suggestions
+are still unavailable, it posts readable review comments and tells you which mode
+was used. Ordinary document comments appear in **All Comments**, with the section,
+current wording, proposed wording and reason; they do not have Accept/Reject buttons.
+Minor fixes in one paragraph can share a comment while keeping individual numbers.
+
+Say **“Show review edits”**, then **“Apply edits 2 and 4”** to choose changes.
+Blog Studio checks current wording, applies only your selection, verifies formatting,
+and resolves completed comments. A resolved comment alone never means approval.
+Afterward, say **“Pull from Google Docs.”** Runtime **1.10** provides this workflow;
+run the current installer once and start a new session. A hosted connector's
+missing option does not require changing the document's settings.

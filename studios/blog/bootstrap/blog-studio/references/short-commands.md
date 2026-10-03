@@ -42,4 +42,4 @@ After a completed operation show a short result; open the full status card when
 requested or on resume. Never require the user to repeat formatting, checkpoint,
 privacy, or verification instructions already supplied by the skill.
 
-**“Push as suggestions”** loads [Google suggestions](google/suggestions.md). Refresh the linked Doc first, reconcile conflicts, then post selected findings as guarded native suggestions/comments. Requires installed runtime 1.9+.
+**“Push as suggestions”** loads [Google suggestions](google/suggestions.md). Refresh the linked Doc first, reconcile conflicts, then post selected findings as guarded native suggestions/comments. Runtime 1.10+ uses the existing gcloud adapter when a connector lacks `writeMode`, and falls back to numbered review comments when necessary. **“Show review edits”** lists them; **“Apply edits 2 and 4”** applies only that selection after a fresh check.
