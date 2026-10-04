@@ -1,5 +1,6 @@
 """Historical team reference collections: explicit preview, bounded import, local catalog."""
 import argparse
+from contextlib import closing
 from datetime import datetime
 import http.client
 from html.parser import HTMLParser
@@ -185,6 +186,11 @@ def parse_discovery(content, kind, url, scope):
                 if local(entry.tag) not in ('item', 'entry'):continue
                 values = {local(node.tag): node for node in entry}
                 link = values.get('link')
+                if local(entry.tag) == 'entry':
+                    links = [node for node in entry if local(node.tag) == 'link'
+                             and node.get('rel', 'alternate') in ('alternate', 'http://www.iana.org/assignments/relation/alternate')]
+                    link = min(links, key=lambda node: 0 if node.get('type', '').split(';', 1)[0].strip().lower()
+                               in ('text/html', 'application/xhtml+xml') else 1, default=None)
                 if link is None:continue
                 uri = urljoin(url, link.get('href') or link.text or '')
                 if not uri:continue
@@ -193,7 +199,11 @@ def parse_discovery(content, kind, url, scope):
                         node = values.get(key)
                         if node is not None:return ''.join(node.itertext()).strip()
                     return None
-                candidates.append({'url': uri, 'title': text('title'), 'author': text('creator', 'author'),
+                author = text('creator', 'author')
+                if local(entry.tag) == 'entry' and values.get('author') is not None:
+                    author = next((''.join(node.itertext()).strip() for node in values['author']
+                                   if local(node.tag) == 'name'), None)
+                candidates.append({'url': uri, 'title': text('title'), 'author': author,
                     'published': text('pubDate', 'published'), 'updated': text('updated'), 'external_id': text('guid', 'id')})
     accepted, excluded, seen = [], [], set()
     for entry in candidates[:MAX_DISCOVERY]:
@@ -413,7 +423,7 @@ def catalog(root, query='', collection=None, author=None, topic=None, product=No
     cache = studio.inside(root, '.derived-cache');cache.mkdir(mode=0o700, exist_ok=True)
     database = studio.inside(cache, 'library.sqlite3')
     if database.is_symlink():raise ValueError('Library index must not be a symlink.')
-    with sqlite3.connect(database) as db:
+    with closing(sqlite3.connect(database)) as db, db:
         database.chmod(0o600)
         db.execute('CREATE TABLE IF NOT EXISTS state (signature TEXT)')
         db.execute('CREATE TABLE IF NOT EXISTS posts (id TEXT, title TEXT, body TEXT, author TEXT, published TEXT, collections TEXT, topics TEXT, products TEXT, retired INTEGER, data TEXT)')

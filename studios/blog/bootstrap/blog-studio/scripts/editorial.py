@@ -54,6 +54,8 @@ def board(root, query='', stage=None, owner=None, limit=20, offset=0):
             try:
                 _, record = studio.item(root, 'articles', directory.name)
                 binding = adapter.state['items'].get('articles/' + record['id'], {}) if adapter else {}
+                record = dict(record, artifact_hashes={**record.get('artifact_hashes', {}),
+                              'draft': studio.artifact_fingerprint(directory, 'DRAFT.md')})
                 rows.append(row(record, record['id'], 'local', binding.get('revision')))
             except (ValueError, OSError, KeyError, TypeError):
                 errors.append({'id': directory.name, 'status': 'unreadable'})
@@ -144,7 +146,9 @@ def inbox(root, article_id=None, limit=20, offset=0, online=False, account=None,
             if record['kind'] != 'article' or record['status'] == 'tombstone' or item_id in local_items:continue
             if len(heads) > 1:rows.append({'id': item_id, 'title': record['title'], 'kind': 'Hub conflict', 'status': 'conflict', 'blocking': True, 'action': 'Resolve competing revisions before resuming.'})
             for check, review in record['data'].get('studio', {}).get('reviews', {}).items():
-                if review.get('status') in ('stale', 'unavailable') or review.get('result', {}).get('findings'):
+                unresolved = any(isinstance(finding, dict) and finding.get('status') not in ('resolved', 'dismissed', 'applied')
+                                 for finding in review.get('result', {}).get('findings', []))
+                if review.get('status') in ('stale', 'unavailable') or unresolved:
                     rows.append({'id': item_id, 'title': record['title'], 'kind': check, 'status': review['status'], 'location': 'hub', 'action': 'Resume this blog to inspect its saved review findings.'})
     if online:
         _, record = studio.item(root, 'articles', article_id)

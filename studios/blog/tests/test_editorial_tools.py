@@ -39,6 +39,24 @@ class Fixture(unittest.TestCase):
 
 
 class EditorialTests(Fixture):
+    def test_external_draft_changes_invalidate_readiness_without_mutating_saved_state(self):
+        ident = self.article()
+        directory, _ = studio.item(self.root, 'articles', ident)
+        for stage in ('ready', 'published'):
+            editorial.schedule(self.root, ident, {'stage': stage, 'publication_url': 'https://team.example/blog/gateway'})
+            saved = (directory / 'session.json').read_bytes()
+            (directory / 'DRAFT.md').write_text('External edit after the recorded decision.')
+            row = editorial.board(self.root)['items'][0]
+            self.assertEqual(row['stage'], 'review')
+            self.assertTrue(row['decision_stale'])
+            self.assertEqual(editorial.board(self.root, stage=stage)['total'], 0)
+            self.assertEqual((directory / 'session.json').read_bytes(), saved)
+            self.file.write_text('A newly saved manuscript.')
+            self.command('article', 'save', '--id', ident, '--kind', 'draft', '--file', str(self.file))
+        editorial.schedule(self.root, ident, {'stage': 'ready'})
+        (directory / 'DRAFT.md').unlink()
+        self.assertTrue(editorial.board(self.root)['items'][0]['decision_stale'])
+
     def test_board_explicit_ownership_ready_and_guarded_decisions(self):
         ident = self.article()
         self.assertEqual(editorial.board(self.root)['items'][0]['owner'], 'Unassigned')
@@ -102,6 +120,45 @@ class EditorialTests(Fixture):
 
 
 class LibraryTests(Fixture):
+    def test_catalog_releases_database_resources_after_success_and_failure(self):
+        self.collection()
+        library.import_batch(self.root, library.preview(self.root, 'team-a')['preview'], delay=0)
+        connect = library.sqlite3.connect
+        connections = []
+        def observed_connect(*args, **kwargs):
+            connection = connect(*args, **kwargs)
+            connections.append(connection)
+            self.addCleanup(connection.close)
+            return connection
+        with patch.object(library.sqlite3, 'connect', side_effect=observed_connect):
+            self.assertEqual(library.catalog(self.root)['total'], 1)
+            with self.assertRaises(library.sqlite3.ProgrammingError):
+                library.catalog(self.root, since={'invalid': 'filter'})
+        self.assertEqual(len(connections), 2)
+        for connection in connections:
+            with self.assertRaisesRegex(library.sqlite3.ProgrammingError, 'closed'):
+                connection.execute('SELECT 1')
+        self.assertEqual(library.catalog(self.root, query='routing')['total'], 1)
+
+    def test_atom_selects_the_article_link_independently_of_link_order(self):
+        html = '<link rel="alternate" type="text/html" href="https://team.example/blog/article"/>'
+        self_link = '<link rel="self" type="application/atom+xml" href="https://team.example/api/article"/>'
+        enclosure = '<link rel="enclosure" href="https://team.example/media/article.mp3"/>'
+        alternate = '<link rel="alternate" type="application/json" href="https://team.example/api/article.json"/>'
+        for links in (html + self_link + enclosure, enclosure + self_link + html,
+                      html + alternate, alternate + html, html.replace('rel="alternate" ', '') + self_link):
+            feed = ('<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>article</id><title>Article</title>'
+                    '<author><name>Avery</name><uri>https://team.example/authors/avery</uri><email>avery@example.test</email></author>'
+                    + links + '</entry></feed>').encode()
+            entries, excluded, _ = library.parse_discovery(feed, 'feed', 'https://team.example/feed', 'https://team.example/blog')
+            self.assertEqual([entry['url'] for entry in entries], ['https://team.example/blog/article'])
+            self.assertEqual(excluded, [])
+            self.assertEqual(entries[0]['external_id'], 'article')
+            self.assertEqual(entries[0]['author'], 'Avery')
+        feed = ('<feed xmlns="http://www.w3.org/2005/Atom"><entry>' + self_link + enclosure + '</entry></feed>').encode()
+        entries, _, _ = library.parse_discovery(feed, 'feed', 'https://team.example/feed', 'https://team.example')
+        self.assertEqual(entries, [])
+
     # Inherit fixture helpers, without re-running editorial cases below.
     def collection(self, key='team-a', entries=None):
         path = self.base / (key + '.json');path.write_text(json.dumps(entries or [{'external_id': key + '-1', 'title': 'Request routing', 'text': 'Gateway routes requests.\n\nVersion 1 had this behavior.', 'author': 'Avery', 'published': '2020-01-01', 'topics': ['routing'], 'products': ['Product A']}]))
@@ -206,6 +263,27 @@ class HubEditorialTests(Fixture):
         self.workspace = Workspace(self.root, self.hub)
         self.active_patch = patch('hub_workspace.active', side_effect=lambda root:self.workspace if root == self.root else self.other_workspace)
         self.active_patch.start();self.addCleanup(self.active_patch.stop)
+    def test_shared_inbox_excludes_closed_findings_but_keeps_open_and_stale_work(self):
+        ident = self.article()
+        directory, record = studio.item(self.root, 'articles', ident)
+        closed = [{'status': status, 'message': 'Handled finding.'} for status in ('resolved', 'dismissed', 'applied')]
+        record['reviews']['proofread'] = {'status': 'current', 'inputs': studio.fingerprints(self.root, directory, record),
+                                          'result': {'findings': closed}, 'checked_at': studio.now()}
+        studio.persist(directory, 'articles', record)
+        self.workspace.publish_selected({'articles': [ident]})
+        other = self.base / 'other-inbox';studio.initialize(other)
+        registry = Registry(self.base / 'other-inbox-registry', self.provider);registry.join('fixture/editorial')
+        self.other_workspace = Workspace(other, registry.hub(self.hub_id))
+        self.assertEqual(editorial.inbox(other)['total'], 0)
+        record['reviews']['proofread']['result']['findings'] = closed + [{'message': 'Still needs attention.'}]
+        studio.persist(directory, 'articles', record);self.workspace.publish_selected({'articles': [ident]})
+        self.other_workspace.hub.refresh()
+        self.assertEqual(editorial.inbox(other)['items'][0]['kind'], 'proofread')
+        record['reviews']['proofread'].update(status='stale', result={'findings': closed})
+        studio.persist(directory, 'articles', record);self.workspace.publish_selected({'articles': [ident]})
+        self.other_workspace.hub.refresh()
+        self.assertEqual(editorial.inbox(other)['items'][0]['status'], 'stale')
+
     def test_shared_board_generated_pages_manual_edits_and_source_pins(self):
         ident = self.article();source = self.source();self.command('article', 'attach', '--id', ident, '--source', source['id'])
         claim='The gateway calls the service.'
