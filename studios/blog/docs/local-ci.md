@@ -218,3 +218,9 @@ References: [Apple Rosetta guest setup](https://developer.apple.com/documentatio
 See also [GitHub skip semantics](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/skip-workflow-runs),
 [official runner token-input implementation](https://github.com/actions/runner/blob/v2.337.0/src/Runner.Listener/CommandSettings.cs),
 and [Tart local stdin transport](https://github.com/openai/tart/blob/main/Sources/tart/Commands/Exec.swift).
+
+## Automatic delivery acceptance run
+
+The controlled owner PR exercises all four native cells against its exact head
+commit before hosted CI is disabled. The installation acceptance check also
+stops and restarts the user LaunchAgent and verifies owned runner/VM cleanup.
