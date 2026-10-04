@@ -263,6 +263,47 @@ class HubEditorialTests(Fixture):
         self.workspace = Workspace(self.root, self.hub)
         self.active_patch = patch('hub_workspace.active', side_effect=lambda root:self.workspace if root == self.root else self.other_workspace)
         self.active_patch.start();self.addCleanup(self.active_patch.stop)
+    def test_shared_curation_refreshes_and_rejects_changed_head_before_checkout(self):
+        source = self.source();shared = self.workspace.publish_selected({'sources': [source['id']]})['items'][0]
+        other = self.base / 'curation-other';studio.initialize(other)
+        registry = Registry(self.base / 'curation-registry', self.provider);registry.join('fixture/editorial')
+        self.other_workspace = Workspace(other, registry.hub(self.hub_id))
+        detail = management.source_detail(other, shared['item'], 'hub')
+        library.curate(self.root, source['id'], {'topics': ['changed-by-member']})
+        newest = self.workspace.publish_selected({'sources': [source['id']]})['items'][0]
+        with self.assertRaises(management.CurationConflict):
+            management.dispatch(other, 'curate', {'id': shared['item'], 'location': 'hub', 'expected': detail['expected'], 'note': 'Old form'})
+        self.assertEqual(list((other / 'sources').iterdir()), [])
+        self.assertEqual(self.other_workspace.hub.graph()['heads'][shared['item']], [newest['revision']])
+        current = management.source_detail(other, shared['item'], 'hub')
+        result = management.dispatch(other, 'curate', {'id': shared['item'], 'location': 'hub', 'expected': current['expected'], 'note': 'Explicit resubmission'})
+        self.assertEqual(result['note'], 'Explicit resubmission')
+        self.assertEqual(result['library']['topics'], ['changed-by-member'])
+
+    def test_local_form_rejects_new_shared_head_and_unshared_edits_are_protected(self):
+        source = self.source();shared = self.workspace.publish_selected({'sources': [source['id']]})['items'][0]
+        old = management.source_detail(self.root, source['id'])
+        other = self.base / 'curation-member';studio.initialize(other)
+        registry = Registry(self.base / 'curation-member-registry', self.provider);registry.join('fixture/editorial')
+        self.other_workspace = Workspace(other, registry.hub(self.hub_id))
+        other_id = self.other_workspace._checkout(shared['item'])
+        library.curate(other, other_id, {'note': 'New shared note'})
+        self.other_workspace.publish_selected({'sources': [other_id]})
+        with self.assertRaises(management.CurationConflict):
+            management.dispatch(self.root, 'curate', {'id': source['id'], 'expected': old['expected'], 'note': 'Old local form'})
+        self.assertEqual(studio.item(self.root, 'sources', source['id'])[1]['note'], '')
+        latest = management.source_detail(self.root, source['id'])
+        self.assertEqual(latest['location'], 'hub')
+        self.assertEqual(latest['record']['note'], 'New shared note')
+        # A form inspecting shared metadata must never overwrite preexisting local changes.
+        self.workspace._checkout(shared['item'])
+        local_id = next(k.split('/', 1)[1] for k,v in self.workspace.state['items'].items() if k.startswith('sources/') and v['item'] == shared['item'] and k != 'sources/' + source['id'])
+        library.curate(self.root, local_id, {'note': 'Unshared local note'})
+        snapshot = management.source_detail(self.root, shared['item'], 'hub')
+        with self.assertRaises(management.CurationConflict):
+            management.dispatch(self.root, 'curate', {'id': shared['item'], 'location': 'hub', 'expected': snapshot['expected'], 'note': 'Shared form replacement'})
+        self.assertEqual(studio.item(self.root, 'sources', local_id)[1]['note'], 'Unshared local note')
+
     def test_shared_inbox_excludes_closed_findings_but_keeps_open_and_stale_work(self):
         ident = self.article()
         directory, record = studio.item(self.root, 'articles', ident)
@@ -388,6 +429,36 @@ class HubEditorialTests(Fixture):
         with self.assertRaises(ValueError):management.authorize_write(self.root)
 
 
+class CurationConflictTests(Fixture):
+    def test_stale_forms_preserve_tags_notes_retirement_and_source_pins(self):
+        for change in ({'topics': ['new-topic']}, {'note': 'A newer note'}, {'curation': 'retired'}):
+            with self.subTest(change=change):
+                source = self.source();ident = self.article()
+                self.command('article', 'attach', '--id', ident, '--source', source['id'])
+                before = management.source_detail(self.root, source['id'])
+                updated = library.curate(self.root, source['id'], change)
+                directory, _ = studio.item(self.root, 'sources', source['id'])
+                history = list((directory / 'revisions').iterdir())
+                with self.assertRaises(management.CurationConflict):
+                    management.dispatch(self.root, 'curate', {'id': source['id'], 'expected': before['expected'], 'topics': ['old-proposal']})
+                self.assertEqual(studio.item(self.root, 'sources', source['id'])[1], updated)
+                self.assertEqual(list((directory / 'revisions').iterdir()), history)
+                _, article = studio.item(self.root, 'articles', ident)
+                self.assertEqual(article['sources'][0]['revision'], source['revision'])
+                self.assertEqual(studio.read_json(directory / 'revisions' / str(source['revision']) / 'record.json'), source)
+                current = management.source_detail(self.root, source['id'])
+                saved = management.dispatch(self.root, 'curate', {'id': source['id'], 'expected': current['expected'], 'topics': ['explicit-proposal']})
+                self.assertEqual(saved['library']['topics'], ['explicit-proposal'])
+
+    def test_second_editor_and_missing_guard_cannot_mutate(self):
+        source = self.source();detail = management.source_detail(self.root, source['id'])
+        proposal = {'id': source['id'], 'expected': detail['expected'], 'note': 'First editor'}
+        management.dispatch(self.root, 'curate', proposal)
+        with self.assertRaises(management.CurationConflict):management.dispatch(self.root, 'curate', dict(proposal, note='Second editor'))
+        with self.assertRaises(management.CurationConflict):management.dispatch(self.root, 'curate', {'id': source['id'], 'note': 'Missing guard'})
+        self.assertEqual(studio.item(self.root, 'sources', source['id'])[1]['note'], 'First editor')
+
+
 class ManagementTests(Fixture):
     def start_server(self):
         server, url = management.server(self.root)
@@ -413,6 +484,14 @@ class ManagementTests(Fixture):
         self.assertEqual(self.request(server, token, '/api/upload', 'POST', data={}, headers={'Content-Length': str(management.MAX_BODY+1)})[0], 400)
         self.assertEqual(self.request(server, token, '/api/upload', 'POST', data={}, headers={'Content-Type':'text/plain'})[0], 400)
         self.assertEqual(self.request(server, 'bad', '/api/upload', 'POST', data={})[0], 400)
+    def test_http_curation_conflict_returns_409_without_overwrite(self):
+        source = self.source();snapshot = management.source_detail(self.root, source['id'])
+        library.curate(self.root, source['id'], {'note': 'Newest note'})
+        server, token = self.start_server()
+        status, body = self.request(server, token, '/api/curate', 'POST', {'id': source['id'], 'expected': snapshot['expected'], 'note': 'Old proposal'})
+        self.assertEqual(status, 409);self.assertEqual(body['code'], 'source-conflict')
+        self.assertEqual(studio.item(self.root, 'sources', source['id'])[1]['note'], 'Newest note')
+
     def test_upload_idempotency_original_preservation_and_pending_pdf(self):
         data = {'operation': 'a' * 32, 'filename': 'draft.md', 'content': base64.b64encode(b'A draft with a clear argument.').decode(), 'title': '<script>private</script>', 'as_blog': True}
         first = management.dispatch(self.root, 'upload', data)

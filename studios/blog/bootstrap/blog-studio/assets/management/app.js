@@ -5,6 +5,7 @@ if(token)sessionStorage.setItem('blog-studio-session',token);
 history.replaceState(null, '', location.pathname);
 let view = 'board', offset = 0, total = 0, memoryEdit = null;
 const limit = 20;
+let loadGeneration = 0, loadController = null, renderedState = null;
 const operationCache = new Map();
 function operationFor(kind,data){const key=kind+JSON.stringify(data);if(!operationCache.has(key))operationCache.set(key,crypto.randomUUID().replaceAll('-',''));return operationCache.get(key);}
 const views = {board:['Blogs in progress','Plan the next handoff. Open a Doc. Keep writing.','Writing pipeline'],inbox:['Needs attention','Find waiting decisions, review findings and stale companions.','Review inbox'],library:['Reference library','Find earlier work and curate the material your team uses.','Sources and historical posts'],memory:['Team memory','Keep useful knowledge and writing guidance easy to find.','Shared notes, context and rules']};
@@ -16,21 +17,51 @@ function notice(message, error=false) {
   target.textContent=message;target.className=error?'dialog-notice error':'dialog-notice';target.hidden=false;
 }
 function savedNotice(result) {notice((result.receipts||[]).map(r=>r.label+': '+r.message).join(' ')||result.next_step||'Saved.');}
-async function loadReceipts() {
-  const result=await api('receipts');const pending=result.items.filter(r=>!['shared','synchronized','local-only'].includes(r.sharing));
+async function loadReceipts(signal, current=()=>true) {
+  const result=await api('receipts',undefined,signal);if(!current())return;const pending=result.items.filter(r=>!['shared','synchronized','local-only'].includes(r.sharing));
   $('sync-status').replaceChildren();$('sync-status').hidden=!pending.length;
   for(const receipt of pending){const row=element('div');row.append(element('p',receipt.label+': '+receipt.message));if(receipt.retry)row.append(button('Retry sync',async()=>{const saved=await api('retry-sync',{id:receipt.id});savedNotice(saved);await loadReceipts();}));$('sync-status').append(row);}
 }
 
-async function api(route, data) {if(data)document.querySelectorAll('.dialog-notice').forEach(e=>e.hidden=true);const response=await fetch('/api/'+route,{method:data?'POST':'GET',headers:{'X-Blog-Studio-Token':token,...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined});const result=await response.json();if(!response.ok)throw new Error(result.error||'The operation could not be completed.');return result;}
+async function api(route, data, signal) {if(data)document.querySelectorAll('.dialog-notice').forEach(e=>e.hidden=true);const response=await fetch('/api/'+route,{method:data?'POST':'GET',headers:{'X-Blog-Studio-Token':token,...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined,signal});const result=await response.json();if(!response.ok){const error=new Error(result.error||'The operation could not be completed.');error.status=response.status;error.code=result.code;throw error;}return result;}
 function link(url, text) {if(!/^https:\/\//.test(url||''))return element('span',text);const a=element('a',text);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a;}
 function badge(value) {return element('span',value,'badge '+value);}
 function button(text, action, cls='secondary') {const b=element('button',text,cls);b.type='button';b.addEventListener('click',()=>Promise.resolve(action()).catch(e=>notice(e.message,true)));return b;}
 function textCell(row, text) {const cell=element('td',text??'—');row.append(cell);return cell;}
+function sameView(left, right) {
+  return left && right && ['view','query','stage'].every(key=>left[key]===right[key]);
+}
+function loading(state, pending) {
+  $('results').setAttribute('aria-busy',String(pending));
+  $('loading').hidden=!pending;
+  $('loading').textContent=pending?'Loading '+views[state.view][0].toLowerCase()+'…':'';
+  $('previous').disabled=pending || !sameView(renderedState,state) || renderedState.offset===0;
+  $('next').disabled=pending || !sameView(renderedState,state) || renderedState.offset+limit>=total;
+}
 async function load() {
-  loadReceipts().catch(e=>notice(e.message,true));
-  const args=new URLSearchParams({limit:String(limit),offset:String(offset),query:$('query').value});if(view==='board'&&$('stage').value)args.set('stage',$('stage').value);
-  const result=await api(view+'?'+args);total=result.total;
+  const state=Object.freeze({view,offset,query:$('query').value,stage:view==='board'?$('stage').value:''});
+  const generation=++loadGeneration;
+  if(loadController)loadController.abort();
+  const controller=new AbortController();loadController=controller;
+  const current=()=>generation===loadGeneration;
+  loading(state,true);
+  loadReceipts(controller.signal,current).catch(error=>{if(current()&&error.name!=='AbortError')notice(error.message,true);});
+  const args=new URLSearchParams({limit:String(limit),offset:String(state.offset),query:state.query});
+  if(state.stage)args.set('stage',state.stage);
+  try {
+    const result=await api(state.view+'?'+args,undefined,controller.signal);
+    if(!current())return;
+    render(state,result);total=result.total;renderedState=state;
+  } catch(error) {
+    if(!current()||error.name==='AbortError')return;
+    if(sameView(renderedState,state))offset=renderedState.offset;
+    throw error;
+  } finally {
+    if(current())loading(state,false);
+  }
+}
+function render(state, result) {
+  const {view,offset}=state, total=result.total;
   $('heading').textContent=views[view][0];$('subtitle').textContent=views[view][1];$('section-title').textContent=views[view][2];$('count').textContent=total+' '+(total===1?'item':'items');
   $('stage-filter').hidden=view!=='board';$('memory-open').hidden=view!=='memory';$('previous').disabled=offset===0;$('next').disabled=offset+limit>=total;$('page-label').textContent=total?`${offset+1}–${Math.min(offset+limit,total)} of ${total}`:'No items yet';
   $('observation').textContent=result.observation||result.google_observation||'Saved content only. Historical product claims need current verification.';
@@ -51,14 +82,36 @@ async function showBlog(item) {const result=await api('article?'+new URLSearchPa
   $('detail-dialog').showModal();
 }
 async function curate(item) {
-  const result=await api('source?'+new URLSearchParams({id:item.id,location:item.location}));
+  let result=await api('source?'+new URLSearchParams({id:item.id,location:item.location}));
   $('detail-title').textContent=item.title;$('detail-content').replaceChildren();
   const form=element('form'),metadata=result.record.library||{},l=element('label','Curation'),select=element('select');select.name='curation';
   for(const state of ['active','pending','retired']){const option=element('option',state);option.value=state;option.selected=state===(metadata.curation||'active');select.append(option);}l.append(select);form.append(l);
-  for(const [key,label]of [['topics','Topics (comma separated)'],['products','Products (comma separated)'],['note','Source note']]){const field=element('label',label),input=element(key==='note'?'textarea':'input');input.name=key;input.value=key==='note'?(result.record.note||''):(metadata[key]||[]).join(', ');field.append(input);form.append(field);}
+  const fields={curation:select};
+  for(const [key,label]of [['topics','Topics (comma separated)'],['products','Products (comma separated)'],['note','Source note']]){const field=element('label',label),input=element(key==='note'?'textarea':'input');input.name=key;input.value=key==='note'?(result.record.note||''):(metadata[key]||[]).join(', ');fields[key]=input;field.append(input);form.append(field);}
   const save=element('button','Save curation','primary');save.type='submit';form.append(save);
-  form.addEventListener('submit',async e=>{e.preventDefault();save.disabled=true;try{const data=Object.fromEntries(new FormData(form));if(data.curation==='retired'&&!confirm('Retire this reference from active search? Earlier snapshots remain in Git history.'))return;for(const key of ['topics','products'])data[key]=data[key].split(',').map(v=>v.trim()).filter(Boolean);const saved=await api('curate',{id:item.id,location:item.location,...data,confirmed:data.curation==='retired'});$('detail-dialog').close();await load();savedNotice(saved);}catch(error){notice(error.message,true);}finally{save.disabled=false;}});
-  $('detail-content').append(element('p',result.limitation),form,element('h3','Saved text excerpt'),element('pre',result.excerpt||'No extracted text yet.','source-excerpt'));
+  let blocked=false;
+  const conflict=element('div',undefined,'curation-conflict');conflict.hidden=true;
+  const comparison=element('div');
+  conflict.append(element('p','Your proposed changes are retained. Compare the latest saved reference before deciding what to submit.'),button('Reload and compare',async()=>{
+    const latest=await api('source?'+new URLSearchParams({id:result.id,location:result.location}));
+    const proposed=Object.fromEntries(new FormData(form));
+    const current={curation:latest.record.library?.curation||'active',topics:(latest.record.library?.topics||[]).join(', '),products:(latest.record.library?.products||[]).join(', '),note:latest.record.note||''};
+    comparison.replaceChildren(element('h3','Latest saved values'),element('pre',JSON.stringify(current,null,2),'source-excerpt'),element('h3','Your proposed values'),element('pre',JSON.stringify(proposed,null,2),'source-excerpt'),button('Keep my proposal for resubmission',()=>{result=latest;blocked=false;save.disabled=false;conflict.hidden=true;notice('Latest version selected. Review your retained proposal, then choose Save curation to submit it.');}),button('Use latest saved values',()=>{for(const [key,value]of Object.entries(current))fields[key].value=value;result=latest;blocked=false;save.disabled=false;conflict.hidden=true;notice('Latest saved values loaded. Edit them and choose Save curation when ready.');}));
+  }),comparison);
+  form.addEventListener('submit',async e=>{
+    e.preventDefault();if(blocked)return;save.disabled=true;
+    try {
+      const data=Object.fromEntries(new FormData(form));
+      if(data.curation==='retired'&&!confirm('Retire this reference from active search? Earlier snapshots remain in Git history.'))return;
+      for(const key of ['topics','products'])data[key]=data[key].split(',').map(v=>v.trim()).filter(Boolean);
+      const saved=await api('curate',{id:result.id,location:result.location,expected:result.expected,...data,confirmed:data.curation==='retired'});
+      $('detail-dialog').close();await load();savedNotice(saved);
+    } catch(error) {
+      if(error.status===409){blocked=true;conflict.hidden=false;comparison.replaceChildren();}
+      notice(error.message,true);
+    } finally {save.disabled=blocked;}
+  });
+  $('detail-content').append(element('p',result.limitation),form,conflict,element('h3','Saved text excerpt'),element('pre',result.excerpt||'No extracted text yet.','source-excerpt'));
   if(result.truncated)$('detail-content').append(element('p','Excerpt only. Ask Blog Studio for selected passages in chat.','help'));
   $('detail-dialog').showModal();
 }
@@ -66,7 +119,7 @@ async function editMemory(item) {const result=await api('memory-detail?id='+enco
 for(const b of document.querySelectorAll('[data-view]'))b.addEventListener('click',()=>{view=b.dataset.view;offset=0;$('query').value='';document.querySelectorAll('[data-view]').forEach(e=>e.removeAttribute('aria-current'));b.setAttribute('aria-current','page');load().catch(e=>notice(e.message,true));});
 for(const b of document.querySelectorAll('[data-close]'))b.addEventListener('click',()=>b.closest('dialog').close());
 $('search-go').addEventListener('click',()=>{offset=0;load().catch(e=>notice(e.message,true));});$('query').addEventListener('keydown',e=>{if(e.key==='Enter')$('search-go').click();});$('stage').addEventListener('change',()=>{$('search-go').click();});
-$('previous').addEventListener('click',()=>{offset=Math.max(0,offset-limit);load().catch(e=>notice(e.message,true));});$('next').addEventListener('click',()=>{offset+=limit;load().catch(e=>notice(e.message,true));});
+$('previous').addEventListener('click',()=>{if($('previous').disabled)return;offset=Math.max(0,offset-limit);load().catch(e=>notice(e.message,true));});$('next').addEventListener('click',()=>{if($('next').disabled)return;offset+=limit;load().catch(e=>notice(e.message,true));});
 $('refresh-hub').addEventListener('click',async()=>{try{await api('refresh',{});await load();notice('Team Hub refreshed. Google Docs content is refreshed separately in chat.');}catch(e){notice(e.message,true);}});
 $('upload-open').addEventListener('click',()=>$('upload-dialog').showModal());
 $('upload-form').addEventListener('submit',async e=>{e.preventDefault();const submit=e.target.querySelector('[type=submit]');submit.disabled=true;try{const file=$('upload-file').files[0];if(!file||file.size>10*1024*1024)throw new Error('Choose a file of at most 10 MiB.');const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));const payload={filename:file.name,content:btoa(binary),title:$('upload-title').value,author:$('upload-author').value,as_blog:$('upload-blog').checked};const result=await api('upload',{...payload,operation:operationFor('upload',payload)});$('upload-dialog').close();await load();savedNotice(result);}catch(error){notice(error.message,true);}finally{submit.disabled=false;}});

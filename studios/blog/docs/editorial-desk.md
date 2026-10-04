@@ -82,3 +82,15 @@ Open the exact returned local session URL. The process stays running until
 Ctrl+C. The session URL is for your local browser; do not share it as a team link.
 
 Save feedback distinguishes local retention, shared work and contribution review. A persistent sharing panel lists retained operations that still need attention. Use **Retry sync** for that checkpoint; it does not repeat an upload or memory edit. Errors stay in the open dialog so you can correct or reload without losing your entry.
+
+## When a reference changes while you edit
+
+Blog Studio keeps your proposed tags and notes and stops the save. Choose
+**Reload and compare** to see the latest saved values beside your proposal. Then
+choose **Use latest saved values** or **Keep my proposal for resubmission**, review
+the form, and choose **Save curation**. Reloading alone does not write anything.
+If the reference has unshared local edits, compare them in your chat first.
+
+Changing views, searches or pages cancels older list requests. The loading message
+marks the pending view; page buttons are disabled until it finishes. If loading
+fails, the previous valid results remain visible.

@@ -38,6 +38,9 @@ Build packages after the final source and bundled documentation edits. CI checks
 Linux/macOS on Python 3.11 and 3.13. See `scripts/ci/` for isolated Tart validation;
 Tart is a developer tool, not an author prerequisite.
 
+[Desk concurrency validation](desk-concurrency-validation.md) records the
+Tart-tested request-ordering and source-conflict fixes.
+
 [Performance workloads and budgets](performance.md) distinguish local synthetic
 fixtures from live provider/model latency. Run live acceptance last:
 [#9](https://github.com/dbbaskette/blog-studio/issues/9),

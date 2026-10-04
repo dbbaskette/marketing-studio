@@ -192,12 +192,50 @@ def memories(root, limit=20, offset=0, query=''):
     return __import__('experience').page(rows, limit, offset)
 
 
+class CurationConflict(ValueError):
+    """An inspected source changed; the proposal must not be applied implicitly."""
+
+
 def source_detail(root, ident, location='local'):
-    selected = next((r for r in blog_library.source_rows(root) if r['id'] == ident and r['location'] == location), None)
-    if not selected:raise ValueError('Choose a catalog source.')
+    if location not in ('local', 'hub'):raise ValueError('Choose a local or shared source.')
+    from hub_workspace import active
+    adapter = active(root)
+    rows = blog_library.source_rows(root)
+    selected = next((r for r in rows if r['id'] == ident and r['location'] == location), None)
+    # A refreshed shared head can replace the local catalog row. Reload shows
+    # that head for comparison; the changed selection invalidates the old form.
+    if not selected and location == 'local' and adapter:
+        binding = adapter.state['items'].get('sources/' + ident, {})
+        selected = next((r for r in rows if r['id'] == binding.get('item') and r['location'] == 'hub'), None)
+    if not selected and location == 'hub' and adapter:
+        # The catalog suppresses a shared row when a local checkout represents
+        # it. Explicit shared-form inspection still reads that exact shared head.
+        try:
+            saved = adapter.hub.read(ident)
+        except HubError as exc:
+            raise CurationConflict('This shared reference changed or has competing revisions. Compare them in chat before editing.') from exc
+        shared = saved['record']
+        if shared['kind'] == 'source' and shared['status'] != 'tombstone':
+            selected = {'id': ident, 'location': 'hub',
+                        'record': dict(shared['data'].get('studio', {}), name=shared['title'], revision=shared['revision']),
+                        'body': Path(saved['paths']['BODY.md']).read_bytes(),
+                        'binding': {'item': ident, 'revision': shared['revision']}}
+    if not selected:raise CurationConflict('This reference changed or is no longer available. Reload the library before editing it.')
+    binding = selected.get('binding', {})
+    local_versions = []
+    if adapter and binding:
+        for key, saved in sorted(adapter.state['items'].items()):
+            if key.startswith('sources/') and saved['item'] == binding['item']:
+                _, local = studio.item(root, 'sources', key.split('/', 1)[1])
+                local_versions.append({'key': key, 'record': local, 'binding': saved})
+    expected = sha(encoded({'id': selected['id'], 'location': selected['location'],
+                            'record': selected['record'], 'binding': binding,
+                            'hub': adapter.hub.id if adapter else None, 'local_versions': local_versions}))
+    location = selected['location']
     record = selected['record']
     text = selected.get('body', b'').decode() if location == 'hub' else selected['path'].read_text() if selected['path'].is_file() else ''
-    return {'record': record, 'excerpt': text[:8000], 'truncated': len(text) > 8000, 'location': location,
+    return {'record': record, 'id': selected['id'], 'expected': expected,
+            'excerpt': text[:8000], 'truncated': len(text) > 8000, 'location': location,
             'limitation': 'Pending extraction; no source text was read.' if record['status'] != 'ready' else 'Selected saved source; historical facts need current verification.'}
 
 
@@ -237,11 +275,29 @@ def dispatch(root, route, data):
             ident = adapter._checkout(data['item']);studio.write_json(studio.inside(root, '.active-article.json'), {'id': ident})
             return {'id': ident, 'status': 'resumed'}
         if route == 'curate':
-            values = {k: v for k, v in data.items() if k not in ('id', 'confirmed', 'location')}
+            if set(data) - {'id', 'location', 'expected', 'confirmed', 'curation', 'topics', 'products', 'note'}:
+                raise ValueError('Unknown curation field.')
+            if not isinstance(data.get('expected'), str) or not __import__('re').fullmatch(r'[a-f0-9]{64}', data['expected']):
+                raise CurationConflict('Reload this reference before saving curation.')
+            if adapter:
+                adapter = authorize_write(root)  # Resolve current selection under the workspace lock.
+                if not adapter or not adapter.hub.refresh().get('fresh'):
+                    raise HubError('Current Hub state could not be verified. Your proposed curation is retained; check access before retrying.')
+            current = source_detail(root, data['id'], data.get('location', 'local'))
+            if current['expected'] != data['expected']:
+                raise CurationConflict('This reference changed. Reload and compare before explicitly resubmitting your proposed curation.')
+            values = {k: v for k, v in data.items() if k not in ('id', 'confirmed', 'location', 'expected')}
             if values.get('curation') == 'retired' and data.get('confirmed') is not True:raise ValueError('Confirm retirement; earlier snapshots remain in Git history.')
-            ident = data['id']
-            if data.get('location') == 'hub':
+            ident = current['id']
+            if current['location'] == 'hub':
                 if not adapter:raise ValueError('Select a Hub.')
+                # Existing unshared local edits must be reconciled in chat, not
+                # overwritten by a form displaying the shared version.
+                for key, saved in adapter.state['items'].items():
+                    if key.startswith('sources/') and saved['item'] == ident:
+                        payload = adapter._payload('sources', key.split('/', 1)[1], read_only=True)[0]
+                        if sha(encoded(payload)) != saved['fingerprint']:
+                            raise CurationConflict('This reference has unshared local edits. Compare them in chat before changing the shared reference.')
                 ident = adapter._checkout(ident)
             result = share(root, 'source', blog_library.curate(root, ident, values))
             return {**result, 'receipts': [receipt(root, 'Reference curation', result, 'source')]}
@@ -323,6 +379,7 @@ def server(root, port=0):
                 data = json.loads(content)
                 if not isinstance(data, dict):raise ValueError('Supply a JSON object.')
                 self.reply(200, dispatch(root, self.path[5:], data))
+            except CurationConflict as exc:self.reply(409, {'error': str(exc)[:500], 'code': 'source-conflict'})
             except (ValueError, TypeError, KeyError, HubError) as exc:self.reply(400, {'error': str(exc)[:500]})
             except OSError:self.reply(503, {'error': 'Workspace access failed. Inspect retained work before retrying.'})
     class LocalServer(HTTPServer):

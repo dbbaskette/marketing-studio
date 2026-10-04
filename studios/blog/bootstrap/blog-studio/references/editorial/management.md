@@ -21,3 +21,10 @@ website. Ordinary GitHub Pages is public even from private repos; do not deploy
 private content there. The private Hub's generated board/catalog is the shared
 browsing view. Google content/feedback refresh stays explicit in chat; the desk
 never sends posts or changes Google sharing.
+
+Desk lists ignore superseded view/filter/page requests and show loading while
+pagination is disabled. Curation forms bind the inspected source state; a changed
+local record or shared head refuses the save. Keep the proposal, use “Reload and
+compare,” then explicitly choose the latest values or retain the proposal before
+saving again. Unshared local edits need comparison in chat; never overwrite them
+by resubmitting a shared form.
