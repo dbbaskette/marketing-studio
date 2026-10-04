@@ -15,6 +15,6 @@ printf '%s\n' \
 sudo -n env DEBIAN_FRONTEND=noninteractive apt-get update
 sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y binfmt-support python3-venv libc6:amd64 libgcc-s1:amd64 zlib1g:amd64 libstdc++6:amd64
 sudo -n /usr/sbin/update-binfmts --install rosetta /mnt/rosetta/rosetta \
-  --magic '\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x3e\x00' \
+  --magic '\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x3e\x00' \
   --mask '\xff\xff\xff\xff\xff\xfe\xfe\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff' \
   --credentials yes --preserve yes --fix-binary yes
