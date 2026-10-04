@@ -62,7 +62,9 @@ print("running" if v["Running"] else "stopped")' "$lane")
     trap cleanup EXIT
     trap 'exit 130' INT TERM
     tart clone "$base" "$vm"
-    tart run --no-graphics --dir="source:$run/source:ro" --dir="results:$run/results" "$vm" > "$run/tart.log" 2>&1 &
+    extra_args=(--no-clipboard --no-audio)
+    if [[ "$lane" == linux ]]; then extra_args+=(--rosetta=rosetta); fi
+    tart run --no-graphics "${extra_args[@]}" --dir="source:$run/source:ro" --dir="results:$run/results" "$vm" > "$run/tart.log" 2>&1 &
     pid=$!
     ready=0
     for ((attempt=0; attempt<120; attempt++)); do
@@ -72,15 +74,20 @@ print("running" if v["Running"] else "stopped")' "$lane")
     done
     ((ready)) || { echo 'Guest readiness timed out' >&2; exit 1; }
     # Bound provisioning and validation; credentials stay on the host.
-    python3 - "$vm" "$run" <<'PY'
+    python3 - "$vm" "$run" "$lane" <<'PY'
 import pathlib, subprocess, sys
-vm, run = sys.argv[1:]
-with open(pathlib.Path(run)/'source/repo/scripts/ci/matrix-guest.sh', 'rb') as source, open(pathlib.Path(run)/'console.log', 'wb') as log:
-    result = subprocess.run(['tart', 'exec', '-i', vm, '/bin/bash', '-s'], stdin=source, stdout=log, stderr=subprocess.STDOUT, timeout=1800)
+vm, run, lane = sys.argv[1:]
+if lane == 'macos':
+    command = ['/bin/bash', '/Volumes/My Shared Files/source/repo/scripts/ci/matrix-guest.sh']
+else:
+    command = ['/bin/bash', '-c', 'set -e; sudo -n mkdir -p /mnt/shared; mountpoint -q /mnt/shared || sudo -n mount -t virtiofs com.apple.virtio-fs.automount /mnt/shared; exec /bin/bash /mnt/shared/source/repo/scripts/ci/matrix-guest.sh']
+with open(pathlib.Path(run)/'console.log', 'wb') as log:
+    result = subprocess.run(['tart', 'exec', vm, *command], stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, timeout=1800)
     sys.exit(result.returncode)
 PY
-    [[ "$(cat "$run/results/result.txt")" == PASS ]]
-    [[ "$(cat "$run/results/commit.txt")" == "$commit" ]]
+    # Bash 3.2 does not reliably apply errexit to failed [[ ]] commands.
+    [[ -f "$run/results/result.txt" && "$(cat "$run/results/result.txt")" == PASS ]] || exit 1
+    [[ "$(cat "$run/results/commit.txt")" == "$commit" ]] || exit 1
   )
   lane_result=$?
   set -e

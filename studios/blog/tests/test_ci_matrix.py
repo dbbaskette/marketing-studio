@@ -31,16 +31,15 @@ if args[0] == 'stop':
     info = json.loads((root/args[1]).read_text())
     os.kill(info['pid'], signal.SIGTERM); sys.exit(0)
 if args[0] == 'exec':
-    interactive = args[1] == '-i'
-    vm = args[2] if interactive else args[1]
+    vm = args[1]
     state = root/vm
     if not state.exists(): sys.exit(1)
-    if not interactive: sys.exit(0)
-    sys.stdin.read()
+    if args[-1] == '/usr/bin/true': sys.exit(0)
     info = json.loads(state.read_text())
     results, source = pathlib.Path(info['results']), pathlib.Path(info['source'])
     # Even a failed guest that leaves a misleading PASS must fail the controller.
-    (results/'result.txt').write_text('PASS\n')
+    if os.environ.get('FAKE_MISSING_MARKER') != '1':
+        (results/'result.txt').write_text('PASS\n')
     (results/'commit.txt').write_text((source/'commit.txt').read_text())
     sys.exit(17 if os.environ.get('FAKE_GUEST_FAILURE') == '1' else 0)
 sys.exit(2)
@@ -110,6 +109,11 @@ class MatrixControllerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         calls = [json.loads(line) for line in (self.state/'calls').read_text().splitlines()]
         self.assertFalse(any(call[0] in ('clone', 'stop') for call in calls))
+
+    def test_successful_guest_without_completion_marker_is_rejected(self):
+        result = self.run_matrix(FAKE_MISSING_MARKER='1')
+        self.assertEqual(result.returncode, 1, result.stdout+result.stderr)
+        self.assertNotIn('PASS:', result.stdout)
 
 
 if __name__ == '__main__':

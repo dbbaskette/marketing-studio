@@ -24,7 +24,8 @@ minutes. Clones and logs are retained, and the runner stops only its own clones.
 ## Prepared environments
 
 The default stopped bases are `tanzu-brand-golden-gate-base` (macOS 27 ARM64)
-and `saypipe-ubuntu-24.04-base` (Ubuntu 24.04 ARM64). Override them with
+and `saypipe-ubuntu-24.04-base` (Ubuntu 24.04 ARM64 kernel, x86 Python through
+Rosetta). Override them with
 `TART_BASE` and `BLOG_STUDIO_LINUX_BASE`. The base needs Tart Guest Agent,
 Git and Node. Ubuntu also needs Python 3, curl, and passwordless guest sudo;
 macOS needs Homebrew. Base names identify provisioned local images rather
@@ -34,6 +35,12 @@ Missing Python tooling is provisioned in the disposable clone, never the base:
 Homebrew installs uv on macOS; Ubuntu installs python3-venv and uv 0.11.19 in
 a scratch virtual environment. uv installs CPython 3.11 and 3.13 in scratch
 storage, selecting the available patch releases, like hosted setup-python.
+Linux attaches the existing host Rosetta share, registers its x86 ELF handler
+per Apple's instructions and installs x86 shared libraries in the disposable
+guest. It downloads explicit x86 CPython builds and verifies their ELF format,
+`linux-x86_64` platform and `x86_64-linux-gnu` ABI. ARM Python is never used as
+evidence for the x86 lane. The Ubuntu mirror setup is for Ubuntu 24.04 only;
+do not select an incompatible Linux base without updating its provisioning.
 Provisioning requires outbound package downloads and local disk/time, but no
 GitHub Actions minutes or paid model calls. macOS additionally installs
 Homebrew Python 3.13 to exercise the launcher's minimal-PATH discovery.
@@ -50,13 +57,13 @@ Homebrew Python 3.13 to exercise the launcher's minimal-PATH discovery.
 | Real offline Codex/Claude/both install/check/uninstall | Unit fixtures only | Added in both guests |
 | GUI-PATH discovery and quarantine assessment | Not explicit | Added in macOS guest; assessment never bypasses protections |
 | Operating system/version | `ubuntu-latest`, `macos-latest` | Prepared Ubuntu 24.04 and macOS 27 |
-| CPU architecture | GitHub runner architecture | Local ARM64; Linux x86_64 is not covered |
+| CPU architecture | GitHub runner architecture | Native ARM64 macOS; x86 CPython translated by Rosetta on an ARM64 Linux kernel |
 | PR open/synchronize/reopen and main push | Automatic GitHub events | Manually invoked, no persistent queue |
 | GitHub status publication | Per-job check runs | Logs and SHA evidence; no automatic status |
 | Required merge checks | Depends on repository protection | Does not change or bypass protection |
 
 This implements check-command and Python/OS-family coverage. It does not
-establish automatic event/status parity, Linux x86_64 compatibility, or exact
+establish automatic event/status parity, native x86 kernel/performance parity, or exact
 image equality with the moving hosted runners. Keep these limitations explicit
 when evaluating replacement of the hosted workflow. The existing
 `tart-macos.sh` single-interpreter pilot remains available for historical smoke
@@ -66,5 +73,42 @@ Before merging, record the tested SHA and local result paths in the PR. Changes
 to a tested revision require a new run. Publication and merge are separate
 actions. Do not register a persistent runner or execute incoming PR code on the
 host without a separately reviewed trusted controller. The hosted workflow
-must stay active until the user accepts the remaining event/platform gaps or
+must stay active until equivalent automatic PR checks are established or
 an equivalent safe local integration is established.
+
+## Automatic PR integration pending approval
+
+The requested automatic path is native GitHub Actions delivery to ephemeral
+self-hosted runners inside Tart, rather than a custom PR polling queue.
+`scripts/ci/verify-tart.workflow.yml` is an inactive review template, outside
+`.github/workflows`. It preserves the four OS/Python checks, targets only
+dedicated self-hosted labels, limits execution to same-repository PRs by
+`dbbaskette`, and uses a read-only repository token with checkout credential
+persistence disabled. It has no main-push trigger and no hosted-runner fallback.
+
+Runner registration, persistent VM orchestration and host network isolation
+are not installed or approved by the template. The existing gh login can request
+short-lived, repository-scoped registration tokens; no broad GitHub App or new
+personal access token is needed. A one-job runner still receives temporary
+GitHub runner credentials, so registering it is a separate approved action.
+
+Softnet is installed but currently cannot start because root privileges are
+unavailable. The upstream supported alternative to passwordless sudo is a
+setuid binary. The proposed privileged operation is to copy the already
+installed Softnet 0.23.0 to a separate root-owned directory,
+`/Library/PrivilegedHelperTools/blog-studio-ci/softnet`, owned root:wheel with
+mode 4555, in a root:wheel directory with mode 0755. The source SHA-256 is
+`5982c8cde55cd039d4aa71add54356224b8b8a040df1a8786f16327b421f701d`.
+The Homebrew binary and sudoers would remain unchanged. This creates a root
+capability and must receive explicit action-time approval plus Mac administrator
+authentication. It is a proposal, not an installed security control.
+
+The network policy must block guest-initiated host-gateway traffic and private
+LAN destinations, while allowing required public package/GitHub endpoints;
+guest DNS must use public resolvers. No clipboard/audio or host credentials
+are shared. Verify the final policy with a host canary and a LAN-denial check
+before registering runners or activating the workflow. A native PR run and its
+GitHub check results must pass before disabling only the hosted `ci.yml`.
+
+References: [Apple Rosetta guest setup](https://developer.apple.com/documentation/virtualization/running-intel-binaries-in-linux-vms?language=objc),
+[Softnet privileges and isolation](https://github.com/openai/softnet#installing).

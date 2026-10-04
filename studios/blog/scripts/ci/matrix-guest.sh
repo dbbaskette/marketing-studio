@@ -17,6 +17,9 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/blog-studio-matrix.XXXXXX")
 cp -R "$source_dir/repo" "$work/repo"
 cd "$work/repo"
 cp "$source_dir/commit.txt" "$results/commit.txt"
+if [[ "$(uname -s)" == Linux ]]; then
+  bash scripts/ci/rosetta-linux.sh > "$results/rosetta-setup.log" 2>&1
+fi
 # Provision interpreters only in this disposable clone. Bases stay unchanged.
 if ! command -v uv >/dev/null; then
   if [[ "$(uname -s)" == Darwin ]]; then
@@ -32,14 +35,30 @@ if ! command -v uv >/dev/null; then
   fi
 fi
 export UV_PYTHON_INSTALL_DIR="$work/python"
-uv python install 3.11 3.13 >> "$results/provision.log" 2>&1
+targets=(3.11 3.13)
+if [[ "$(uname -s)" == Linux ]]; then
+  targets=(cpython-3.11-linux-x86_64-gnu cpython-3.13-linux-x86_64-gnu)
+fi
+uv python install "${targets[@]}" >> "$results/provision.log" 2>&1
 { uname -a; uv --version; node --version; git --version; } > "$results/environment.txt"
 failed=0
 for version in 3.11 3.13; do
   cell="$results/python-$version"
   mkdir "$cell"
-  python_bin=$(uv python find --managed-python "$version")
+  if [[ "$(uname -s)" == Linux ]]; then
+    # uv's discovery filters foreign architectures; use the explicit installed
+    # x86 target instead of accidentally selecting the native ARM interpreter.
+    python_bin="$UV_PYTHON_INSTALL_DIR/cpython-$version-linux-x86_64-gnu/bin/python3"
+  else
+    python_bin=$(uv python find --managed-python "$version")
+  fi
+  [[ -x "$python_bin" ]] || exit 1
   "$python_bin" -c 'import sys; assert "%s.%s" % sys.version_info[:2] == sys.argv[1]' "$version"
+  "$python_bin" -c 'import sysconfig; print(sysconfig.get_platform()); print(sysconfig.get_config_var("MULTIARCH"))' > "$cell/platform.txt"
+  if [[ "$(uname -s)" == Linux ]]; then
+    "$python_bin" -c 'import sysconfig; assert sysconfig.get_platform() == "linux-x86_64"'
+    file -L "$python_bin" >> "$cell/platform.txt"
+  fi
   if bash scripts/ci/check.sh "$python_bin" "$cell" > "$cell/console.log" 2>&1; then
     printf '%s PASS\n' "$version" >> "$results/matrix.txt"
   else
