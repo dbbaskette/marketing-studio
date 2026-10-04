@@ -80,8 +80,9 @@ an equivalent safe local integration is established.
 
 The requested automatic path is native GitHub Actions delivery to ephemeral
 self-hosted runners inside Tart, rather than a custom PR polling queue.
-`scripts/ci/verify-tart.workflow.yml` is an inactive review template, outside
-`.github/workflows`. It preserves the four OS/Python checks, targets only
+`.github/workflows/verify-tart.yml` is staged on the draft branch and activates
+only after an approved merge to the trusted base. The matching
+`scripts/ci/verify-tart.workflow.yml` remains a reference template. It preserves the four OS/Python checks, targets only
 dedicated self-hosted labels, limits execution to same-repository PRs by
 `dbbaskette` and events initiated by that account. Its `pull_request_target`
 definition comes from the trusted base so the job filter is evaluated before
@@ -89,8 +90,8 @@ queueing and cannot be removed by PR-supplied YAML. It explicitly checks out the
 PR head only inside the disposable guest, and uses a read-only repository token with checkout credential
 persistence disabled. It has no main-push trigger and no hosted-runner fallback.
 
-Runner registration, persistent VM orchestration and host network isolation
-are not installed or approved by the template. The existing gh login can request
+Runner registration and persistent VM orchestration are not installed or
+approved by staging the workflow. The existing gh login can request
 short-lived, repository-scoped registration tokens; no broad GitHub App or new
 personal access token is needed. A one-job runner still receives temporary
 GitHub runner credentials, so registering it is a separate approved action.
@@ -107,8 +108,8 @@ plan. No setuid helper, sudoers edit, security setting, or custom privileged
 launcher is created here.
 
 Default Tart NAT keeps the host and LAN reachable from the guest. Owner-only
-automation with that existing network configuration requires explicit informed
-approval. A disposable guest and absence of host credential mounts do not make
+automation with that existing network configuration was explicitly accepted
+by the user for their own PRs. A disposable guest and absence of host credential mounts do not make
 NAT a network isolation boundary. No clipboard/audio or host credentials are
 shared. Alternatively, a separately approved supported network-isolation
 deployment would need verification of host/LAN/IPv6 denial before automation.
@@ -123,5 +124,97 @@ private key or new personal access token is required.
 A native PR run and its
 GitHub check results must pass before disabling only the hosted `ci.yml`.
 
+## Reviewed lifecycle and installation approval
+
+`runner-service.py` is fixed host lifecycle code scoped to
+`dbbaskette/blog-studio`; it is not a PR polling scheduler. GitHub delivers jobs
+to ephemeral runners. The service boots one Mac and one Ubuntu clone, verifies
+the official ARM64 runner 2.337.0 archive SHA-256, and runs the read-only trusted
+`runner-bootstrap.sh` before requesting a registration token. Bootstrap installs
+the Python pair and Rosetta x86 libraries only inside disposable guests. No PR
+checkout, host personal folder, writable host share, or host credential is mounted.
+The service checks the approved access policy at startup, before each token
+request, and every minute during guest operations; a change stops operation.
+
+Each runner is repository-scoped, `--ephemeral` and `--disableupdate`, with the
+dedicated Mac/Linux label. No job executes on the host. After its single job,
+the service stops/deletes the clone and removes any remaining exact owned
+GitHub runner record. Interrupted cycles are recovered from token-free metadata.
+An exclusive local lock prevents duplicate supervisors. Updating the pinned
+runner version/digests is deliberate; GitHub may stop accepting an outdated
+runner, and the service never falls back to hosted execution.
+
+Safe preparation, without credentials or runner registration:
+
+```sh
+/opt/homebrew/bin/python3 scripts/ci/runner-service.py --prepare \
+  --state /tmp/blog-studio-native-preflight
+```
+
+The existing Mac and Linux bases passed this check, including actual
+`Runner.Listener --version` and `config.sh --help`. Eight lifecycle fixtures,
+four controller fixtures, ShellCheck and plist/YAML syntax passed. Credential
+creation/registration, live native PR delivery, service installation/restart,
+and actual GitHub check reporting remain untested pending action-time approval.
+
+The exact installation bundle is:
+
+1. Copy `runner-service.py`, `runner-bootstrap.sh`, and `rosetta-linux.sh` into
+   `~/.local/share/blog-studio-ci/`, with a private user-owned directory. Create
+   `~/Library/Logs/Blog Studio CI/` privately. Copy the reviewed plist to
+   `~/Library/LaunchAgents/com.dbbaskette.blog-studio-tart-runners.plist` and
+   start it as the current user's LaunchAgent. No root service, privileged
+   helper, sudoers change, new GitHub App, or other repository is involved.
+2. Authorize the service's ongoing official authentication flow: existing
+   `gh` requests one-hour registration tokens for this repository over GitHub
+   HTTPS; captured process memory sends each token via the selected VM's private
+   local Tart Unix control socket/stdin into the official runner's supported
+   `ACTIONS_RUNNER_INPUT_TOKEN` authentication input. Creation and this local
+   exchange are both explicit approval scope. The assistant never enters,
+   uploads, prints or copies a token value. Config output is suppressed, secrets
+   are masked/removed by the official parser, and registration diagnostics are
+   deleted before a PR job. Runner credentials exist only inside the one-job VM.
+3. Approve merging draft PR #63 with a `[skip ci]` merge message to activate the
+   trusted-base owner-only workflow while suppressing the old hosted push job.
+   Open a controlled same-owner validation PR with a `[skip ci]` head commit:
+   GitHub skips the old `pull_request` workflow but runs `pull_request_target`.
+   Verify all four native checks and cleanup, then carry out the already
+   authorized disable of only hosted `ci.yml` and read back its state.
+
+If authentication requires an interactive login or a credential handoff that
+the available software flow cannot perform, stop and have the user authenticate
+`gh` on their Mac or run the installed service command themselves. Never request
+a token in chat. A user-run foreground command, with the LaunchAgent stopped,
+is `/opt/homebrew/bin/python3 ~/.local/share/blog-studio-ci/runner-service.py --once`.
+Creation consent alone does not authorize a separate assistant credential upload.
+
+Resource bounds: at most two guests/one job per platform, at most four vCPUs
+and 4 GiB RAM for Mac plus four vCPUs and 8 GiB RAM for Linux (8 vCPUs/12 GiB
+combined). Bases exceeding those limits are refused. Logical disks are the
+existing 80/50 GiB APFS-copy-on-write guest disks; physical growth is released
+on clone deletion. A job has a 30-minute workflow deadline; the idle/lifecycle
+deadline is two hours with at most 35 minutes grace for an already-running job.
+Bootstrap is bounded to 30 minutes and guest readiness to four minutes. The two
+public runner downloads occupy approximately 270 MiB once in the cache. Duplicate
+archives are removed after cleanup; retain at most 30 cleaned run logs per lane
+for at most 14 days. GitHub API calls/package downloads consume local resources,
+not hosted runner minutes. No paid model calls are part of CI.
+
+Stop the service with:
+
+```sh
+launchctl bootout "gui/$(id -u)/com.dbbaskette.blog-studio-tart-runners"
+```
+
+SIGTERM stops owned guests and removes their runner records. Inspect private
+metadata/logs to confirm cleanup. To uninstall, after stopping and confirming
+no unfinished record, remove only that plist, `~/.local/share/blog-studio-ci/`
+and `~/Library/Logs/Blog Studio CI/`. Original bases, other VMs, repository
+settings and the existing gh login are untouched. Deactivating the new workflow
+is a separate GitHub operation; do not substitute all-Actions disablement.
+
 References: [Apple Rosetta guest setup](https://developer.apple.com/documentation/virtualization/running-intel-binaries-in-linux-vms?language=objc),
 [Softnet privileges and isolation](https://github.com/openai/softnet#installing).
+See also [GitHub skip semantics](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/skip-workflow-runs),
+[official runner token-input implementation](https://github.com/actions/runner/blob/v2.337.0/src/Runner.Listener/CommandSettings.cs),
+and [Tart local stdin transport](https://github.com/openai/tart/blob/main/Sources/tart/Commands/Exec.swift).
