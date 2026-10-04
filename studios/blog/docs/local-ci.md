@@ -83,7 +83,10 @@ self-hosted runners inside Tart, rather than a custom PR polling queue.
 `scripts/ci/verify-tart.workflow.yml` is an inactive review template, outside
 `.github/workflows`. It preserves the four OS/Python checks, targets only
 dedicated self-hosted labels, limits execution to same-repository PRs by
-`dbbaskette`, and uses a read-only repository token with checkout credential
+`dbbaskette` and events initiated by that account. Its `pull_request_target`
+definition comes from the trusted base so the job filter is evaluated before
+queueing and cannot be removed by PR-supplied YAML. It explicitly checks out the
+PR head only inside the disposable guest, and uses a read-only repository token with checkout credential
 persistence disabled. It has no main-push trigger and no hosted-runner fallback.
 
 Runner registration, persistent VM orchestration and host network isolation
@@ -92,22 +95,32 @@ short-lived, repository-scoped registration tokens; no broad GitHub App or new
 personal access token is needed. A one-job runner still receives temporary
 GitHub runner credentials, so registering it is a separate approved action.
 
-Softnet is installed but currently cannot start because root privileges are
-unavailable. The upstream supported alternative to passwordless sudo is a
-setuid binary. The proposed privileged operation is to copy the already
-installed Softnet 0.23.0 to a separate root-owned directory,
-`/Library/PrivilegedHelperTools/blog-studio-ci/softnet`, owned root:wheel with
-mode 4555, in a root:wheel directory with mode 0755. The source SHA-256 is
-`5982c8cde55cd039d4aa71add54356224b8b8a040df1a8786f16327b421f701d`.
-The Homebrew binary and sudoers would remain unchanged. This creates a root
-capability and must receive explicit action-time approval plus Mac administrator
-authentication. It is a proposal, not an installed security control.
+The existing repository is private, has only `dbbaskette` as a collaborator,
+and has fork PR workflow execution disabled. Those settings must be rechecked
+before runner registration; stop if the access boundary changes. Repository
+runner labels alone do not enforce who may submit jobs.
 
-The network policy must block guest-initiated host-gateway traffic and private
-LAN destinations, while allowing required public package/GitHub endpoints;
-guest DNS must use public resolvers. No clipboard/audio or host credentials
-are shared. Verify the final policy with a host canary and a LAN-denial check
-before registering runners or activating the workflow. A native PR run and its
+Softnet is installed but cannot start because root privileges are unavailable.
+The upstream setuid alternative accepts arbitrary network and privilege-drop
+arguments and is a broad root capability; it is not an approved installation
+plan. No setuid helper, sudoers edit, security setting, or custom privileged
+launcher is created here.
+
+Default Tart NAT keeps the host and LAN reachable from the guest. Owner-only
+automation with that existing network configuration requires explicit informed
+approval. A disposable guest and absence of host credential mounts do not make
+NAT a network isolation boundary. No clipboard/audio or host credentials are
+shared. Alternatively, a separately approved supported network-isolation
+deployment would need verification of host/LAN/IPv6 denial before automation.
+
+Persistent orchestration and short-lived registration-token creation remain
+approval steps. Tokens must stay in captured process memory, be sent only over
+the local Tart guest control stream, never appear in tool arguments/logs/notes,
+and be discarded after registration. Runner credentials live only in a one-job
+guest; after its job, deregister and delete that clone. No long-lived GitHub App
+private key or new personal access token is required.
+
+A native PR run and its
 GitHub check results must pass before disabling only the hosted `ci.yml`.
 
 References: [Apple Rosetta guest setup](https://developer.apple.com/documentation/virtualization/running-intel-binaries-in-linux-vms?language=objc),

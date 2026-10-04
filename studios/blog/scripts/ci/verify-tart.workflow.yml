@@ -1,7 +1,8 @@
 # INACTIVE REVIEW TEMPLATE. Activate only after runner/network approval and validation.
 name: Verify Blog Studio on local Tart
 on:
-  pull_request:
+  # Filtering must come from the trusted base, never PR-supplied workflow code.
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
 permissions:
   contents: read
@@ -12,7 +13,8 @@ jobs:
   verify:
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.user.login == 'dbbaskette'
+      github.event.pull_request.user.login == 'dbbaskette' &&
+      github.actor == 'dbbaskette'
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -34,6 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - name: Select exact Python architecture and version
         shell: bash
