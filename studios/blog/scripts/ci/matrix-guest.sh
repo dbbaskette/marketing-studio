@@ -22,7 +22,9 @@ if ! command -v uv >/dev/null; then
   if [[ "$(uname -s)" == Darwin ]]; then
     HOMEBREW_NO_AUTO_UPDATE=1 brew install uv > "$results/provision.log" 2>&1
   else
+    # shellcheck disable=SC2024 # Result mounts are writable by the guest user.
     sudo -n env DEBIAN_FRONTEND=noninteractive apt-get update > "$results/provision.log" 2>&1
+    # shellcheck disable=SC2024
     sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv >> "$results/provision.log" 2>&1
     python3 -m venv "$work/tools"
     "$work/tools/bin/pip" install uv==0.11.19 >> "$results/provision.log" 2>&1
@@ -47,7 +49,8 @@ for version in 3.11 3.13; do
 done
 ((failed == 0)) || exit 1
 # Real install/check/uninstall supplements the unit upgrade/repair/bundle tests.
-export PATH="$(dirname "$python_bin"):$PATH"
+python_dir=$(dirname "$python_bin")
+export PATH="$python_dir:$PATH"
 for target in codex claude both; do
   pilot_home="$work/pilot-$target"
   sh installer/install.sh install --home "$pilot_home" --target "$target" --yes --offline > "$results/install-$target.txt"

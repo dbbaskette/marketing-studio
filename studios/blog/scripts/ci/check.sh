@@ -4,7 +4,8 @@ set -euo pipefail
 python_bin=${1:?Pass the Python interpreter}
 results=${2:?Pass a new results directory}
 mkdir -p "$results"
-export PATH="$(dirname "$python_bin"):$PATH"
+python_dir=$(dirname "$python_bin")
+export PATH="$python_dir:$PATH"
 "$python_bin" --version > "$results/python.txt"
 "$python_bin" -m unittest discover -s tests -v > "$results/tests.log" 2>&1
 node scripts/ci/check-newcomer.cjs > "$results/newcomer-prompts.json"

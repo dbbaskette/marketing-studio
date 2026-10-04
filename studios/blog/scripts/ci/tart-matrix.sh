@@ -31,7 +31,11 @@ for lane in $platforms; do
     continue
   fi
   # Inspect only this base; an unrelated busy VM must not break discovery.
-  state=$(tart get "$base" --format json | python3 -c 'import json,sys; print("running" if json.load(sys.stdin)["Running"] else "stopped")')
+  state=$(tart get "$base" --format json | python3 -c 'import json,sys
+v=json.load(sys.stdin)
+expected="darwin" if sys.argv[1]=="macos" else "linux"
+if v["OS"] != expected: sys.exit("Base OS does not match requested lane")
+print("running" if v["Running"] else "stopped")' "$lane")
   [[ "$state" == stopped ]] || { echo "Base $base must be stopped" >&2; exit 1; }
   vm="blog-studio-$lane-matrix-$(date -u +%Y%m%d%H%M%S)-$$"
   run="$runs/$vm"
@@ -41,8 +45,13 @@ for lane in $platforms; do
   printf '%s\n' "$commit" > "$run/source/commit.txt"
   printf 'Commit: %s\nBase: %s\nVM: %s\nPlatform: %s\n' "$commit" "$base" "$vm" "$lane" > "$run/run.txt"
   tart --version >> "$run/run.txt"
+  # Keep the subshell outside an if/&&/|| condition: Bash otherwise disables
+  # errexit inside it, allowing a failed guest operation to look successful.
+  set +e
   (
+    set -e
     pid=0
+    # shellcheck disable=SC2329 # Invoked by traps.
     cleanup() {
       result=$?
       trap - EXIT INT TERM
@@ -72,6 +81,14 @@ with open(pathlib.Path(run)/'source/repo/scripts/ci/matrix-guest.sh', 'rb') as s
 PY
     [[ "$(cat "$run/results/result.txt")" == PASS ]]
     [[ "$(cat "$run/results/commit.txt")" == "$commit" ]]
-  ) && printf '%s PASS: %s\n' "$lane" "$commit" || { failed=1; printf '%s FAIL: %s\n' "$lane" "$commit" >&2; }
+  )
+  lane_result=$?
+  set -e
+  if ((lane_result == 0)); then
+    printf '%s PASS: %s\n' "$lane" "$commit"
+  else
+    failed=1
+    printf '%s FAIL: %s\n' "$lane" "$commit" >&2
+  fi
 done
 exit "$failed"

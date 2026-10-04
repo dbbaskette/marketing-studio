@@ -35,7 +35,10 @@ python3 scripts/package_installer.py
 
 When guidance changes, run `scripts/measure_guidance.py` without `--check` first.
 Build packages after the final source and bundled documentation edits. CI checks
-Linux/macOS on Python 3.11 and 3.13. See `scripts/ci/` for isolated Tart validation;
+Linux/macOS on Python 3.11 and 3.13. Run `bash scripts/ci/tart-matrix.sh HEAD`
+for the same four check cells locally; see [local CI](local-ci.md) for setup,
+logs and the remaining automatic-trigger and architecture limitations.
+See `scripts/ci/` for isolated Tart validation;
 Tart is a developer tool, not an author prerequisite.
 
 [Desk concurrency validation](desk-concurrency-validation.md) records the
