@@ -1,0 +1,67 @@
+# INACTIVE REVIEW TEMPLATE. Activate only after runner/network approval and validation.
+name: Verify Blog Studio on local Tart
+on:
+  # Filtering must come from the trusted base, never PR-supplied workflow code.
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions:
+  contents: read
+concurrency:
+  group: tart-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == 'dbbaskette' &&
+      github.actor == 'dbbaskette'
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            python: '3.11'
+            label: blog-studio-tart-macos
+          - platform: macos
+            python: '3.13'
+            label: blog-studio-tart-macos
+          - platform: linux
+            python: '3.11'
+            label: blog-studio-tart-linux
+          - platform: linux
+            python: '3.13'
+            label: blog-studio-tart-linux
+    runs-on: [self-hosted, '${{ matrix.label }}']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Select exact Python architecture and version
+        shell: bash
+        env:
+          CI_PLATFORM: ${{ matrix.platform }}
+          CI_VERSION: ${{ matrix.python }}
+        run: |
+          set -euo pipefail
+          export UV_PYTHON_INSTALL_DIR="$RUNNER_TEMP/python"
+          if [[ "$CI_PLATFORM" == linux ]]; then
+            bash scripts/ci/rosetta-linux.sh
+            uv python install "cpython-$CI_VERSION-linux-x86_64-gnu"
+            python_bin="$UV_PYTHON_INSTALL_DIR/cpython-$CI_VERSION-linux-x86_64-gnu/bin/python3"
+            "$python_bin" -c 'import sysconfig; assert sysconfig.get_platform() == "linux-x86_64"'
+            file -L "$python_bin"
+          else
+            uv python install "$CI_VERSION"
+            python_bin=$(uv python find --managed-python "$CI_VERSION")
+          fi
+          "$python_bin" -c 'import sys; assert "%s.%s" % sys.version_info[:2] == sys.argv[1]' "$CI_VERSION"
+          printf 'CI_PYTHON=%s\n' "$python_bin" >> "$GITHUB_ENV"
+      - name: Test helpers, installer, bundle, guidance and source integrity
+        shell: bash
+        run: |
+          bash scripts/ci/check.sh "$CI_PYTHON" "$RUNNER_TEMP/blog-studio-checks" || {
+            cat "$RUNNER_TEMP/blog-studio-checks/tests.log" || true
+            exit 1
+          }
