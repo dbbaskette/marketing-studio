@@ -80,3 +80,5 @@ python3 /path/to/runtime/studio.py --root /path/to/writing/.blog-studio manage
 
 Open the exact returned local session URL. The process stays running until
 Ctrl+C. The session URL is for your local browser; do not share it as a team link.
+
+Save feedback distinguishes local retention, shared work and contribution review. A persistent sharing panel lists retained operations that still need attention. Use **Retry sync** for that checkpoint; it does not repeat an upload or memory edit. Errors stay in the open dialog so you can correct or reload without losing your entry.

@@ -40,6 +40,93 @@ def share(root, group, record):
     return record
 
 
+SHARING_MESSAGES = {
+    'shared': 'Shared with the Team Hub.',
+    'synchronized': 'Shared with the Team Hub.',
+    'pending-review': 'Saved; waiting for contribution review.',
+    'conflicting': 'Saved; competing Hub revisions need resolution in chat.',
+    'local-only': 'Saved in this workspace; no Team Hub selected.',
+}
+
+
+def receipt(root, label, result, group=None):
+    """A durable local receipt, without manuscript content or provider credentials."""
+    from hub_workspace import active
+    adapter = active(root)
+    sync = result.get('hub_sync', {}) if group else result
+    sharing = sync.get('status', 'local-saved-not-shared' if adapter else 'local-only')
+    reference = sync.get('item', {}) if group else sync
+    value = {'label': label, 'local_saved': True, 'sharing': sharing,
+             'hub': adapter.hub.id if adapter else None,
+             'group': group, 'local_id': result.get('id') if group else None,
+             'item': reference.get('item') if isinstance(reference, dict) else None,
+             'revision': reference.get('revision') if isinstance(reference, dict) else None,
+             'checked_at': studio.now()}
+    if adapter and group:
+        try:
+            value['checkpoint'] = local_checkpoint(root, adapter, group, result['id'])
+        except (HubError, OSError, ValueError):
+            value['checkpoint'] = None
+    ident = sha(encoded([value['hub'], group, value['local_id'] or value['item']]))
+    value['id'] = ident
+    studio.write_json(studio.inside(root, '.desk-receipts', ident + '.json'), value)
+    return public_receipt(value)
+
+
+def local_checkpoint(root, adapter, group, ident):
+    directory, record = studio.item(root, {'source': 'sources', 'article': 'articles'}[group], ident)
+    artifacts = adapter.read_artifacts(directory, {'source': 'sources', 'article': 'articles'}[group])
+    inputs = studio.fingerprints(root, directory, record) if group == 'article' else {}
+    return sha(encoded({'record': record, 'inputs': inputs, 'files': {n:sha(v[0]) for n,v in artifacts.items()}}))
+
+
+def public_receipt(value):
+    status = value['sharing']
+    message = SHARING_MESSAGES.get(status, 'Saved locally; Hub sync needs attention.')
+    retry = bool(value['hub'] and status not in ('shared', 'synchronized', 'conflicting', 'local-only'))
+    return {k: value[k] for k in ('id', 'label', 'local_saved', 'sharing', 'checked_at')} | {'message': message, 'retry': retry}
+
+
+def receipts(root):
+    from hub_workspace import active
+    adapter = active(root)
+    folder = studio.inside(root, '.desk-receipts')
+    if not folder.exists():return {'items': []}
+    remote = adapter.hub.graph(include_local=False) if adapter else None
+    local = adapter.hub.graph() if adapter else None
+    items = []
+    for path in sorted(folder.glob('*.json'), key=lambda p:p.stat().st_mtime, reverse=True)[:50]:
+        value = studio.read_json(studio.inside(folder, path.name))
+        if value['hub'] != (adapter.hub.id if adapter else None):continue
+        if remote and value.get('revision') in remote['revisions']:
+            value['sharing'] = 'conflicting' if len(local['heads'].get(value['item'], [])) > 1 else 'shared'
+        items.append(public_receipt(value))
+    return {'items': items, 'observation': 'Saved operation receipts; refresh the Hub to check remote changes.'}
+
+
+def retry_receipt(root, adapter, data):
+    if set(data) != {'id'} or not __import__('re').fullmatch(r'[a-f0-9]{64}', data.get('id', '')):
+        raise ValueError('Choose a saved operation to retry.')
+    path = studio.inside(root, '.desk-receipts', data['id'] + '.json')
+    value = studio.read_json(path)
+    if not adapter or value['hub'] != adapter.hub.id:raise ValueError('Select the original Team Hub before retrying.')
+    if value.get('group') and not value.get('revision'):
+        group = {'source': 'sources', 'article': 'articles'}[value['group']]
+        if not value.get('checkpoint') or local_checkpoint(root, adapter, value['group'], value['local_id']) != value['checkpoint']:
+            raise ValueError('This saved work changed. Inspect it in chat before sharing a new checkpoint.')
+        reference = adapter._publish(group, value['local_id'])
+        value.update(item=reference['item'], revision=reference['revision'])
+        studio.write_json(path, value)  # Retain identity before a potentially uncertain transport.
+    result = adapter.hub.sync()
+    adapter.record_confirmed_saves(result)
+    value.update(sharing=result['status'], checked_at=studio.now())
+    remote = adapter.hub.graph(include_local=False)
+    if value.get('revision') in remote['revisions']:
+        value['sharing'] = 'conflicting' if len(adapter.hub.graph()['heads'].get(value['item'], [])) > 1 else 'shared'
+    studio.write_json(path, value)
+    return {'receipts': [public_receipt(value)]}
+
+
 def upload(root, data):
     if set(data) - {'operation', 'filename', 'content', 'title', 'purpose', 'as_blog', 'author'}:raise ValueError('Unknown upload field.')
     operation = data.get('operation', '')
@@ -83,6 +170,8 @@ def upload(root, data):
         article['sources'] = [{'source_id': source['id'], 'revision': source['revision'], 'purposes': ['manuscript']}]
         studio.persist(directory, 'articles', article)
         result['article'] = share(root, 'article', article)
+    result['receipts'] = [receipt(root, 'Uploaded reference', result['source'], 'source')]
+    if result.get('article'):result['receipts'].append(receipt(root, 'Uploaded blog', result['article'], 'article'))
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'saved', 'result': result})
     return result
 
@@ -134,11 +223,13 @@ def dispatch(root, route, data):
         if not adapter:raise ValueError('Select a Team Hub to refresh shared work.')
         return adapter.hub.refresh()
     with studio.locked(root):
+        if route == 'retry-sync':return retry_receipt(root, adapter, data)
         if route == 'upload':return upload(root, data)
         if route == 'schedule':
             if not data.get('expected'):raise ValueError('Reload this blog before changing its editorial decision.')
             ident = data.get('id');values = {k: v for k, v in data.items() if k != 'id'}
-            return share(root, 'article', editorial.schedule(root, ident, values))
+            result = share(root, 'article', editorial.schedule(root, ident, values))
+            return {**result, 'receipts': [receipt(root, 'Editorial decision', result, 'article')]}
         if route == 'resume':
             if set(data) != {'item'} or not adapter:raise ValueError('Choose a shared blog.')
             graph = adapter.hub.graph();heads = graph['heads'].get(data['item'], [])
@@ -152,7 +243,8 @@ def dispatch(root, route, data):
             if data.get('location') == 'hub':
                 if not adapter:raise ValueError('Select a Hub.')
                 ident = adapter._checkout(ident)
-            return share(root, 'source', blog_library.curate(root, ident, values))
+            result = share(root, 'source', blog_library.curate(root, ident, values))
+            return {**result, 'receipts': [receipt(root, 'Reference curation', result, 'source')]}
         if route == 'memory':
             if not adapter:raise ValueError('Select a Team Hub to save shared memory.')
             if set(data) - {'kind', 'title', 'body', 'item', 'revision', 'scope', 'scope_key', 'operation'}:raise ValueError('Unknown memory field.')
@@ -166,9 +258,10 @@ def dispatch(root, route, data):
                     raise ValueError('Use the focused collection or lesson workflow to change this record.')
             scope = data.get('scope', 'team')
             if scope not in ('team', 'project', 'author', 'article'):raise ValueError('Choose a memory scope.')
-            return adapter.hub.save(data['kind'], data['title'], data['body'], item=data.get('item'),
+            result = adapter.hub.save(data['kind'], data['title'], data['body'], item=data.get('item'),
                 parents=[data['revision']] if data.get('item') else None, operation=data.get('operation'),
                 scope={'level': scope, 'key': data.get('scope_key', '')}, sync=True)
+            return {**result, 'receipts': [receipt(root, 'Shared memory', result)]}
     raise ValueError('Unknown management action.')
 
 
@@ -199,6 +292,7 @@ def server(root, port=0):
                 elif parsed.path == '/api/inbox':result = editorial.inbox(root, arg('id'), limit, offset)
                 elif parsed.path == '/api/library':result = blog_library.catalog(root, arg('query', ''), arg('collection'), arg('author'), arg('topic'), arg('product'), arg('since'), arg('until'), limit, offset, arg('retired') == 'true')
                 elif parsed.path == '/api/memory':result = memories(root, limit, offset, arg('query', ''))
+                elif parsed.path == '/api/receipts':result = receipts(root)
                 elif parsed.path == '/api/collections':result = {'items': [{k: v for k, v in c.items() if k != 'local_path'} for c in blog_library.collections(root).values()]}
                 elif parsed.path == '/api/source':result = source_detail(root, arg('id'), arg('location', 'local'))
                 elif parsed.path == '/api/article':result = detail(root, arg('id'), arg('location', 'local'))

@@ -340,6 +340,45 @@ class HubEditorialTests(Fixture):
         graph=self.hub.graph()
         self.assertEqual(sum(graph['revisions'][heads[0]]['kind']=='source' for heads in graph['heads'].values()),1)
 
+    def test_receipts_report_partial_upload_and_retry_without_duplicate_mutations(self):
+        data = {'operation': 'd' * 32, 'filename': 'receipt.md', 'content': base64.b64encode(b'Retained draft.').decode(), 'as_blog': True}
+        publish = self.workspace.publish_mutation
+        def partial(group, record):
+            if group == 'article':raise OSError('Fixture transport unavailable.')
+            return publish(group, record)
+        with patch.object(self.workspace, 'publish_mutation', side_effect=partial):
+            saved = management.dispatch(self.root, 'upload', data)
+        self.assertEqual([r['sharing'] for r in saved['receipts']], ['shared', 'local-saved-not-shared'])
+        pending = management.receipts(self.root)['items']
+        failed = next(r for r in pending if r['sharing'] == 'local-saved-not-shared')
+        before = len(self.hub.graph()['revisions'])
+        result = management.dispatch(self.root, 'retry-sync', {'id': failed['id']})
+        self.assertEqual(result['receipts'][0]['sharing'], 'shared')
+        after = len(self.hub.graph()['revisions'])
+        self.assertEqual(after, before + 1)
+        management.dispatch(self.root, 'retry-sync', {'id': failed['id']})
+        self.assertEqual(len(self.hub.graph()['revisions']), after)
+        self.assertEqual(len(list((self.root / 'articles').iterdir())), 1)
+        self.assertEqual(len(list((self.root / 'sources').iterdir())), 1)
+
+    def test_receipts_keep_review_queue_and_reject_changed_unqueued_checkpoint(self):
+        self.provider.review = True
+        saved = management.dispatch(self.root, 'memory', {'kind':'note', 'title':'Context', 'body':'Fixture', 'operation':'e'*32})
+        self.assertEqual(saved['receipts'][0]['sharing'], 'pending-review')
+        retried = management.dispatch(self.root, 'retry-sync', {'id':saved['receipts'][0]['id']})
+        self.assertEqual(retried['receipts'][0]['sharing'], 'pending-review')
+        self.provider.merge_review(*next(iter(self.provider.prs)))
+        # The actual contribution branch is recorded in the intent; no provider identity is changed.
+        self.hub.refresh()
+        self.assertEqual(management.receipts(self.root)['items'][0]['sharing'], 'shared')
+        self.provider.review = False
+        data = {'operation':'f'*32,'filename':'source.md','content':base64.b64encode(b'Source').decode()}
+        with patch.object(self.workspace, 'publish_mutation', side_effect=OSError('Fixture unavailable')):
+            upload = management.dispatch(self.root, 'upload', data)
+        library.curate(self.root, upload['source']['id'], {'note':'Newer work'})
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            management.dispatch(self.root, 'retry-sync', {'id':upload['receipts'][0]['id']})
+
     def test_one_access_level_uses_fresh_github_permissions(self):
         self.assertEqual(management.authorize_write(self.root), self.workspace)
         self.provider.repos['fixture/editorial']['write'] = False
