@@ -46,6 +46,10 @@ fixtures from live provider/model latency. Run live acceptance last:
 
 ## Architecture, history, and attribution
 
+[October 4 implementation and issue review](implementation-review-2026-10-04.md)
+prioritizes correctness, desk usability, deterministic operations, progressive
+loading, and measured performance follow-ups.
+
 - [Progressive disclosure roadmap](progressive-disclosure-roadmap.md) and [guidance inventory](estimates/blog-studio-token-inventory.json).
 - [Team Hub](team-hub.md), [Google Docs](google-docs.md), and [Google roadmap](google-docs-roadmap.md).
 - [Entry-flow validation](m1-entry-validation.md), [focused guidance](m2-m3-validation.md), and [Google fixtures](g0-g3-validation.md).
