@@ -18,8 +18,9 @@ an idea one question at a time. You stay in the same chat.
 3. **Open a new chat** in your chosen tool and say:
    **“Use Blog Studio. Help me start a blog.”**
 
-Already installed? Run the latest installer again to update. **Version 1.12** adds an editorial desk, a team pipeline, and a searchable
-library of earlier posts.
+Already installed? Download the latest installer and run it again, then open a
+new chat. **Version 1.12.1** includes the editorial desk, team pipeline, searchable
+library of earlier posts, and safer editing when teammates make changes.
 
 [Setup help, company laptop instructions, and updates →](docs/installation.md)
 
@@ -112,6 +113,15 @@ refresh Google content or feedback.
 Imports are previewed before a bulk save. Earlier posts remain references until
 you explicitly choose to start an editable blog. Packages and visuals stay tied
 to their draft; changes flag them for review. Preparing them does not publish.
+
+The desk tells you whether work was **saved on your computer**, **shared with
+your Hub**, or **waiting to sync**. Pending saves offer **Retry sync**. While a
+view, search, or page loads, a message appears and page buttons pause.
+
+If a reference changes while you edit its tags or notes, your proposed changes
+stay in the form. Choose **Reload and compare**, then choose the latest saved
+values or keep your proposal before saving again. Reloading alone does not save
+changes.
 
 [Using the editorial desk →](docs/editorial-desk.md)
 
