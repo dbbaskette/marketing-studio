@@ -11,7 +11,7 @@ import subprocess
 import uuid
 from urllib.parse import urlsplit
 
-VERSION = '1.12.2'
+VERSION = '1.12.3'
 KINDS = ('article', 'source', 'voice', 'note', 'decision', 'rule', 'context', 'review')
 MAX_TEXT = 1024 * 1024
 MAX_BINARY = 10 * MAX_TEXT
@@ -221,7 +221,9 @@ def validate_manifest(value, repository=None):
         if (not isinstance(value, dict) or value['schema'] != 1 or len(required) != 3
                 or any(x < 0 for x in required) or required > tuple(map(int, VERSION.split('.')))):
             raise HubError('This Team Hub needs a compatible newer Blog Studio runtime.')
-        if 'browse_schema' in value and (value['browse_schema'] != 1 or required < (1, 3, 0)):
+        browse_schema = value.get('browse_schema')
+        browse_runtime = (1, 3, 0) if browse_schema == 1 else (1, 12, 3) if browse_schema == 2 else None
+        if 'browse_schema' in value and (browse_runtime is None or required < browse_runtime):
             raise HubError('This Team Hub library needs a compatible newer Blog Studio runtime.')
         if 'google_doc_links' in value and (value['google_doc_links'] != 1 or required < (1, 6, 1)):
             raise HubError('This Team Hub Google-link view needs a compatible newer runtime.')
@@ -268,7 +270,7 @@ def validate_files(files, repository=None):
             except UnicodeError as exc:raise HubError('Editorial views must be UTF-8.') from exc
             used.add(name);continue
         if name.startswith('blogs/'):
-            if (hub.get('browse_schema') != 1 or not re.fullmatch(r'blogs/(?:README\.md|[a-z0-9-]+/[a-z0-9-]+/(?:README|outline|context|history)\.md)', name) or len(data) > MAX_TEXT):
+            if (hub.get('browse_schema') not in (1, 2) or not re.fullmatch(r'blogs/(?:README\.md|[a-z0-9-]+/[a-z0-9-]+/(?:README|outline|context|history)\.md)', name) or len(data) > MAX_TEXT):
                 raise HubError('Unsupported generated blog library file.')
             try:data.decode('utf-8')
             except UnicodeError as exc:raise HubError('Blog library pages must be UTF-8.') from exc
