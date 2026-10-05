@@ -42,7 +42,7 @@ class CheckoutTests(unittest.TestCase):
         self.assertTrue((root / '.blog-studio/studio.json').exists())
         result = self.hub.save('note', 'Visible note', 'Team context')
         self.assertEqual(result['status'], 'shared')
-        self.assertTrue((root / 'memory/items' / result['item']).exists())
+        self.assertTrue((root / '.blog-studio/items' / result['item']).exists())
 
     def test_dirty_checkout_and_untracked_files_are_preserved(self):
         path = self.hub.checkout / 'README.md';path.write_text('Local edits')
@@ -62,6 +62,7 @@ class CheckoutTests(unittest.TestCase):
         self.assertEqual(result['preserved_legacy_copy'], str(old))
         self.assertTrue((old / 'repository.git').exists())
         migrated = self.registry.hub(self.id)
+        self.assertEqual(git(migrated.repository, 'status', '--porcelain').strip(), b'')
         self.assertEqual(migrated.read(queued['item'])['record']['title'], 'Offline note')
         self.registry.provider.unavailable = False
         self.assertEqual(migrated.sync()['status'], 'shared')

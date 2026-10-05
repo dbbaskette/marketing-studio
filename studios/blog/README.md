@@ -19,8 +19,9 @@ an idea one question at a time. You stay in the same chat.
    **“Use Blog Studio. Help me start a blog.”**
 
 Already installed? Download the latest installer and run it again, then open a
-new chat. **Version 1.12.4** includes standard Hub folders with readable Git checkouts, clearer revision histories, the editorial desk, team pipeline, searchable
-library of earlier posts, phone-friendly layouts, and clearer next steps for reviews and shared editing.
+new chat. **Version 1.13.1** uses a normal local Git checkout for each Hub and keeps drafts, originals, review edits, selected sources, and
+history together inside each blog folder. Reusable team knowledge has its own
+readable memory library. Existing hubs upgrade during an authorized save or sync.
 
 [Setup help, company laptop instructions, and updates →](docs/installation.md)
 

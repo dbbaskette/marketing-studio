@@ -59,7 +59,7 @@ def verify_package(source):
         if (source / 'install-manifest.json').is_symlink():
             raise InstallError('The installer manifest must be a regular file.')
         manifest = json.loads((source / 'install-manifest.json').read_text())
-        if manifest['schema'] != 1 or manifest['version'] not in ('1.0.0', '1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0', '1.6.1', '1.7.0', '1.8.0', '1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.12.3', '1.12.4'):
+        if manifest['schema'] != 1 or manifest['version'] not in ('1.0.0', '1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0', '1.6.1', '1.7.0', '1.8.0', '1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.13.0', '1.13.1'):
             raise InstallError('Unsupported installer package.')
         actual = {p.relative_to(source).as_posix() for p in source.rglob('*')
                   if p.is_file() and p.name not in ('install-manifest.json', 'config.json')
@@ -76,27 +76,27 @@ def verify_package(source):
                 raise InstallError('Installer package verification failed. Download an intact bundle.')
         required = {'SKILL.md', 'scripts/sync_guidance.py', 'scripts/studio.py',
                     'scripts/text_checks.py', 'scripts/linkedin_import.py'}
-        if manifest['version'] in ('1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0', '1.6.1', '1.7.0', '1.8.0', '1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.12.3', '1.12.4'):
+        if manifest['version'] in ('1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0', '1.6.1', '1.7.0', '1.8.0', '1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.13.0', '1.13.1'):
             required.update({'scripts/hub.py', 'scripts/hub_store.py', 'scripts/hub_workspace.py'})
-        if manifest['version'] in ('1.3.0', '1.4.0', '1.5.0', '1.6.0', '1.6.1', '1.7.0', '1.8.0', '1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.12.3', '1.12.4'):
+        if manifest['version'] in ('1.3.0', '1.4.0', '1.5.0', '1.6.0', '1.6.1', '1.7.0', '1.8.0', '1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.13.0', '1.13.1'):
             required.update({'scripts/experience.py', 'scripts/hub_browse.py'})
-        if manifest['version'] in ('1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0', '1.6.1', '1.7.0', '1.8.0', '1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.12.3', '1.12.4'):
+        if manifest['version'] in ('1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0', '1.6.1', '1.7.0', '1.8.0', '1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.13.0', '1.13.1'):
             required.add('scripts/google_workflow.py')
-        if manifest['version'] in ('1.4.0', '1.5.0', '1.6.0', '1.6.1', '1.7.0', '1.8.0', '1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.12.3', '1.12.4'):
+        if manifest['version'] in ('1.4.0', '1.5.0', '1.6.0', '1.6.1', '1.7.0', '1.8.0', '1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.13.0', '1.13.1'):
             required.add('scripts/google_drive.py')
-        if manifest['version'] in ('1.5.0', '1.6.0', '1.6.1', '1.7.0', '1.8.0', '1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.12.3', '1.12.4'):
+        if manifest['version'] in ('1.5.0', '1.6.0', '1.6.1', '1.7.0', '1.8.0', '1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.13.0', '1.13.1'):
             required.add('scripts/google_roundtrip.py')
-        if manifest['version'] in ('1.7.0', '1.8.0', '1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.12.3', '1.12.4'):
+        if manifest['version'] in ('1.7.0', '1.8.0', '1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.13.0', '1.13.1'):
             required.update({'scripts/author_workflow.py', 'scripts/writing_defaults.py'})
-        if manifest['version'] in ('1.8.0', '1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.12.3', '1.12.4'):
+        if manifest['version'] in ('1.8.0', '1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.13.0', '1.13.1'):
             required.update({'scripts/performance.py', 'scripts/local_cache.py', 'scripts/local_reads.py'})
-        if manifest['version'] in ('1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.12.3', '1.12.4'):
+        if manifest['version'] in ('1.9.0', '1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.13.0', '1.13.1'):
             required.add('scripts/google_suggestions.py')
-        if manifest['version'] in ('1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.12.3', '1.12.4'):
+        if manifest['version'] in ('1.10.0', '1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.13.0', '1.13.1'):
             required.add('scripts/google_review_comments.py')
-        if manifest['version'] in ('1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.12.3', '1.12.4'):
+        if manifest['version'] in ('1.11.0', '1.12.0', '1.12.1', '1.12.2', '1.13.0', '1.13.1'):
             required.add('references/google/start.md')
-        if manifest['version'] in ('1.12.0', '1.12.1', '1.12.2', '1.12.3', '1.12.4'):
+        if manifest['version'] in ('1.12.0', '1.12.1', '1.12.2', '1.13.0', '1.13.1'):
             required.update({'scripts/editorial.py', 'scripts/blog_library.py', 'scripts/management.py', 'assets/management/index.html', 'assets/management/app.js', 'assets/management/style.css'})
         if not required.issubset(actual):
             raise InstallError('Required runtime files are missing.')

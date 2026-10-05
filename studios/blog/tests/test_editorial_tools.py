@@ -402,7 +402,7 @@ class HubEditorialTests(Fixture):
         editorial.schedule(self.root, ident, {'owner': 'Morgan', 'stage': 'review'})
         result = self.workspace.publish_selected({'articles': [ident]});reference = result['items'][0]
         files = self.hub.files();self.assertIn('editorial/README.md', files);self.assertIn(b'Morgan', files['editorial/README.md'])
-        self.assertEqual(self.hub.graph()['manifest']['minimum_runtime'], '1.12.3')
+        self.assertEqual(self.hub.graph()['manifest']['minimum_runtime'], '1.13.1')
         other = self.base / 'other';studio.initialize(other)
         registry_b = Registry(self.base / 'other-hubs', self.provider);registry_b.join('fixture/editorial')
         self.other_workspace = Workspace(other, registry_b.hub(self.hub_id))

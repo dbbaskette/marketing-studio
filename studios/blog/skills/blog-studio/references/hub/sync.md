@@ -18,7 +18,12 @@ python3 <runtime>/hub.py --workspace <workspace> history --item <item-id>
 A save revision ID identifies a memory operation; `hub_commit` identifies the
 verified Git snapshot. Stable operation IDs deduplicate retries, including an
 uncertain push result. Never create another operation just because delivery was
-uncertain. Never change branch rules, overwrite existing revisions, force-push,
+uncertain. Runtime 1.13.0 may relocate immutable records from legacy `memory/items/` to
+hidden `.blog-studio/items/` during authorized sync. Every byte and identity must
+match; this is not removal of saved work. Queued old-layout operations retain
+their payload hashes and IDs while being delivered to the new path.
+
+Never change branch rules, overwrite existing revisions, force-push,
 or claim pending work is shared. Attach real contribution PR URLs with the
 host artifact tool. The user/repository policy controls review and merge.
 
