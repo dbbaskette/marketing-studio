@@ -73,6 +73,8 @@ class BrowseTests(unittest.TestCase):
             if v is None:updated.pop(k,None)
             else:updated[k]=v
         new_graph=store.validate_files(updated);verify(updated,new_graph)
+        self.assertEqual(new_graph['manifest']['browse_schema'],3)
+        self.assertEqual(new_graph['manifest']['minimum_runtime'],'1.13.0')
         page=updated['blogs/dan/linked-post/README.md']
         self.assertIn(b'[Open working Google Doc](https://docs.google.com/document/d/doc_123/edit)',page)
         self.assertIn(b'2026-10-02 21:07 UTC',page)
@@ -86,6 +88,28 @@ class BrowseTests(unittest.TestCase):
             bad={'google':{'baselines':{'draft':{'document':{**doc,'url':value}}}}}
             self.assertEqual(google_doc_links(bad),'')
         self.assertIn('Google Doc (outline)',google_doc_links({'google':{'baselines':{'outline':{'document':doc}}}}))
+
+    def test_revision_history_explains_import_and_marks_current_revision(self):
+        transfer='a'*32
+        imported={'studio':{'author':'Dan Baskette','stage':'draft','google':{
+            'transfers':{transfer:{'direction':'from-google','status':'confirmed'}}}}}
+        first=self.ha.save('article','Columnar storage','Imported manuscript.',data=imported)
+        bound=self.ha.save('article','Columnar storage','Imported manuscript.',item=first['item'],
+                           parents=[first['revision']],data={**imported,'guidance':{'task':'task-id'}})
+        history=self.files()['blogs/dan-baskette/columnar-storage/history.md'].decode()
+        self.assertIn('Current · '+bound['revision'][:8],history)
+        self.assertIn('Writing guidance pinned',history)
+        self.assertIn('Earlier · '+first['revision'][:8],history)
+        self.assertIn('Imported from Google Docs',history)
+        self.assertNotIn('| Title |',history)
+        self.assertIn('| Saved | Revision | What changed | Article state |',history)
+
+    def test_new_history_schema_requires_compatible_runtime(self):
+        manifest=store.manifest(self.id,'Our team','fixture/library');manifest.pop('storage_schema',None);manifest['browse_schema']=2;manifest['minimum_runtime']='1.12.2'
+        with self.assertRaisesRegex(store.HubError,'compatible newer'):
+            store.validate_manifest(manifest)
+        manifest['minimum_runtime']='1.12.3'
+        self.assertEqual(store.validate_manifest(manifest)['browse_schema'],2)
 
     def test_review_snapshots_require_runtime_19_even_with_google_links(self):
         doc={'document_id':'doc_123','url':'https://docs.google.com/document/d/doc_123/edit','observed_at':'2026-10-03T12:00:00+00:00'}

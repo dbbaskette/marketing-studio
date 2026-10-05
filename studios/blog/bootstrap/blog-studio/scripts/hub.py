@@ -269,7 +269,7 @@ class Hub:
         for intent in published:
             intent['state'] = 'published';intent['published_commit'] = commit
             self._write_intent(intent)
-        if state.get('library_review') and graph['manifest'].get('browse_schema') in (1, 2):
+        if state.get('library_review') and graph['manifest'].get('browse_schema') in (1, 2, 3):
             state.pop('library_review', None)
         if not state.get('library_review') and not any(i['state'] == 'pending-review' for i in self._intents()):
             state['review_branch'] = None;state.pop('pull_request', None);self._write_state(state)
@@ -361,8 +361,8 @@ class Hub:
                 'conflicts': sum(len(v) > 1 for v in graph['heads'].values()),
                 'clone': str(self.repository), 'error': state.get('error'),
                 'pull_request': state.get('pull_request'),
-                'blog_library': 'pending-review' if state.get('library_review') else 'available' if graph['manifest'].get('browse_schema') in (1, 2) else 'upgrade-on-next-sync',
-                'blog_library_url': self.config['url'] + '/tree/main/blogs' if graph['manifest'].get('browse_schema') in (1, 2) else None}
+                'blog_library': 'pending-review' if state.get('library_review') else 'available' if graph['manifest'].get('browse_schema') in (1, 2, 3) else 'upgrade-on-next-sync',
+                'blog_library_url': self.config['url'] + '/tree/main/blogs' if graph['manifest'].get('browse_schema') in (1, 2, 3) else None}
 
     def save(self, kind, title, body='', *, item=None, parents=None, operation=None, data=None,
              dependencies=None, artifacts=None, scope=None, tags=None, summary='', status='active',

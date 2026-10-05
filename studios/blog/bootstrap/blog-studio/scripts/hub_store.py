@@ -245,10 +245,10 @@ def immutable_files(files, graph):
             for relative in ('record.json', *record['files'])}
 
 
-def generated_path(name, schema=2):
+def generated_path(name, schema=3):
     if name in ('blogs/README.md', 'editorial/README.md', 'collections/README.md'):
         return True
-    if schema == 1:
+    if schema in (1, 2):
         return bool(re.fullmatch(r'blogs/[a-z0-9-]+/[a-z0-9-]+/(?:README|outline|context|history)\.md', name))
     if name == 'memory/README.md':
         return True
@@ -265,11 +265,13 @@ def validate_manifest(value, repository=None):
         if (not isinstance(value, dict) or value['schema'] != 1 or len(required) != 3
                 or any(x < 0 for x in required) or required > tuple(map(int, VERSION.split('.')))):
             raise HubError('This Team Hub needs a compatible newer Blog Studio runtime.')
-        if 'browse_schema' in value and (value['browse_schema'] not in (1, 2) or required < (1, 3, 0)):
+        browse_schema = value.get('browse_schema')
+        browse_runtime = {1: (1, 3, 0), 2: (1, 12, 3), 3: (1, 13, 0)}.get(browse_schema)
+        if 'browse_schema' in value and (browse_runtime is None or required < browse_runtime):
             raise HubError('This Team Hub library needs a compatible newer Blog Studio runtime.')
         if ('storage_schema' in value and value['storage_schema'] != 2
-                or value.get('storage_schema') == 2 and (value.get('browse_schema') != 2 or required < (1, 13, 0))
-                or value.get('browse_schema') == 2 and value.get('storage_schema') != 2):
+                or value.get('storage_schema') == 2 and (value.get('browse_schema') != 3 or required < (1, 13, 0))
+                or value.get('browse_schema') == 3 and value.get('storage_schema') != 2):
             raise HubError('This Team Hub layout needs a compatible newer Blog Studio runtime.')
         if 'google_doc_links' in value and (value['google_doc_links'] != 1 or required < (1, 6, 1)):
             raise HubError('This Team Hub Google-link view needs a compatible newer runtime.')
@@ -316,7 +318,7 @@ def validate_files(files, repository=None):
             except UnicodeError as exc:raise HubError('Editorial views must be UTF-8.') from exc
             used.add(name);continue
         if name.startswith('blogs/') or (name.startswith('memory/') and not name.startswith('memory/items/')):
-            if not generated_path(name, hub.get('browse_schema', 1)) or hub.get('browse_schema') not in (1, 2):
+            if not generated_path(name, hub.get('browse_schema', 1)) or hub.get('browse_schema') not in (1, 2, 3):
                 raise HubError('Unsupported generated blog library file.')
             if name.startswith('memory/') and hub.get('storage_schema') != 2:
                 raise HubError('Unsupported reusable memory view.')
