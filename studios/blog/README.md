@@ -19,7 +19,7 @@ an idea one question at a time. You stay in the same chat.
    **“Use Blog Studio. Help me start a blog.”**
 
 Already installed? Download the latest installer and run it again, then open a
-new chat. **Version 1.12.3** includes clearer Team Hub revision histories, the editorial desk, team pipeline, searchable
+new chat. **Version 1.12.4** includes standard Hub folders with readable Git checkouts, clearer revision histories, the editorial desk, team pipeline, searchable
 library of earlier posts, phone-friendly layouts, and clearer next steps for reviews and shared editing.
 
 [Setup help, company laptop instructions, and updates →](docs/installation.md)
@@ -88,6 +88,10 @@ Earlier versions remain available.
 Say **“Join our Hub: [repository link].”** Normal saves then share the selected
 workspace with that Hub. Without one, your work stays on your computer. Blog
 Studio tells you when a save is still waiting to be shared.
+
+Your Hub lives at `~/blogs/<hub-name>/`, with readable shared files and Git history
+together. Local drafts and sync state stay in the hidden `.blog-studio/` folder.
+Existing Hubs can be moved by saying **“Move our Hub to the standard folder.”**
 
 [Create or join a Team Hub →](docs/team-hub.md) · [More simple commands →](docs/prompt-cheat-sheet.md)
 

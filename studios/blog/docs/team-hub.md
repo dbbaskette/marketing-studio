@@ -140,3 +140,15 @@ through the article workflow, and restore the generated file from its prior Git
 version before retrying. Custom homepage text outside the marked library block is
 preserved. No Git history is rewritten and unrelated memory is not copied into the
 blog pages.
+
+## Where your Hub lives
+
+New Hubs use `~/blogs/<repository-name>/`. This is a normal Git checkout: open
+it to browse shared blogs and notes. Blog Studio keeps local drafts and sync
+state in its hidden `.blog-studio/` folder, which is excluded from Git.
+
+For an older Hub, say **“Move our Hub to the standard folder.”** Blog Studio
+preserves your drafts and queued saves, keeps the old copy as a backup, and
+shows the new location. Other files at the destination are never replaced.
+Use Blog Studio to save revisions; direct edits to shared checkout files pause
+sync until those edits are safely saved or moved.

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "1.12.3",
+  "version": "1.12.4",
   "files": {
     "SKILL.md": "e3667e4616b4c40e9c11c6178ebd520a972b35ce93aefa178c5bcc28a4a25139",
     "agents/openai.yaml": "b1682e80524e50236a3838f86b8dc042862ee5cb936043ef4ceecbb9ea84eed3",
@@ -35,9 +35,9 @@
     "scripts/google_roundtrip.py": "df48abc195fd7336f5eb110986b4a182aa25f15323c116dc73c8fbe2957c5d58",
     "scripts/google_suggestions.py": "57b7942ab4d39bec2055a08e454dd0c7e812b09aa26e7f7c2da0272fbb68baaa",
     "scripts/google_workflow.py": "f8ce4c502634147ef59e00113e5307e0e4ed9e603c02ed1888d1e92b4994080b",
-    "scripts/hub.py": "7f538dbebfc4c2dcfbbd04e8ce1e994549a034d75263b4c32011d6cff4656328",
+    "scripts/hub.py": "d199f198e5677f2be3e8249e5ce3546286039678e9cbaeb1183d57c715d57b94",
     "scripts/hub_browse.py": "7c4a0364e39bbe9ae7a2e91437f7264a5f2fb4d205961765c46483c3442fd959",
-    "scripts/hub_store.py": "ddfa89baab230ac625dd146acaf83678932392add9952f6eef798b856c4fd669",
+    "scripts/hub_store.py": "6126c9945ec6e664e7a03ccdcefda1b1770b8ae25787bb6edf233b5e6e382a71",
     "scripts/hub_workspace.py": "502f843770497e173f17767c3677ae176089773b56c8795960c9f25c36a1b46e",
     "scripts/linkedin_import.py": "28454bd9f00002f215019c16503f357738ff4b8522bf950479ef6caf86ebe7df",
     "scripts/local_cache.py": "485b6cc539a1e49989da9158bbe99b9f675a65891dd9b17cfb7a48c6f4e6809e",

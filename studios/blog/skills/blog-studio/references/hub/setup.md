@@ -8,9 +8,13 @@ to the private repository and contribution rights if they will write.
 
 For create, obtain a concrete GitHub owner/repository and friendly name. The
 create request authorizes that specific private repository and its seed; ask
-only for missing targets. Default managed clone storage is
-`~/.local/share/blog-studio/hubs/`; disclose it and the selected writing workspace.
-An explicit `--destination <absolute-new-directory>` changes clone storage.
+only for missing targets. The standard Hub folder is `~/blogs/<repository-name>/`: a normal Git checkout
+with readable shared files and history. Local drafts, selection, snapshots and
+queued work live under its ignored `.blog-studio/` directory. Report this folder
+and use its `.blog-studio/` as the writing workspace. An explicit
+`--destination <absolute-new-directory>` overrides the Hub folder. With no
+workspace argument, create/join initializes and selects the default workspace.
+An isolated custom registry defaults to `<registry>/workspaces/<repository-name>/`.
 `--registry <absolute-directory>` supports separate managed registries.
 
 ```text
@@ -49,3 +53,21 @@ python3 <runtime>/hub.py --workspace <workspace> import-workspace --article <loc
 Repeat `--article`, `--source`, or `--profile` for selected items. Selected article
 dependencies follow automatically. Do not upload unrelated projects or hidden
 configuration. The automatic adapter shares recognized writing artifacts only.
+
+## Existing Hubs
+
+A legacy bare clone remains usable until explicitly migrated. For “Move our Hub
+to the standard folder,” inspect status and the destination, then run:
+
+```text
+python3 <runtime>/hub.py --hub <hub-id> migrate --destination <absolute-hub-folder>
+```
+
+Omit destination to use the standard folder. Migration uses local Git objects,
+preserves queued and pending-review work, and retains the old clone as a backup.
+An existing folder is accepted only when it contains solely `.blog-studio/`
+selected for this same Hub; its drafts are preserved. Other occupied destinations
+are refused. Open the reported workspace after migration. Existing explicit
+workspace selections continue to resolve through the registry. Sync refuses to
+overwrite edits or different commits in the normal checkout; preserve those
+changes before retrying. Shared revisions still go through Blog Studio saves.
