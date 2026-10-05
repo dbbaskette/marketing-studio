@@ -21,7 +21,7 @@ import zipfile
 
 import studio
 from experience import page
-from hub_store import HubError, MAX_TEXT, MAX_BINARY, encoded, sha
+from hub_store import HubError, MAX_TEXT, MAX_BINARY, encoded, sha, record_path
 
 MAX_POSTS = 500
 MAX_BATCH = 25
@@ -308,7 +308,7 @@ def source_rows(root):
             data = saved['data'].get('studio', {})
             if data.get('pinned_reference'):continue
             rows.append({'id': item_id, 'location': 'hub', 'record': dict(data, name=saved['title'], revision=saved['revision']),
-                         'body': files[saved['base'] + '/BODY.md'] if 'base' in saved else files['memory/items/' + item_id + '/revisions/' + saved['revision'] + '/BODY.md'],
+                         'body': files[saved['base'] + '/BODY.md'] if 'base' in saved else files[record_path(saved, 'BODY.md')],
                          'binding': {'item': item_id, 'revision': saved['revision']}})
     return rows
 
@@ -490,7 +490,7 @@ def lesson(root, data, promote=False):
         if len(heads) != 1:raise ValueError('Choose one unambiguous candidate lesson.')
         saved = graph['revisions'][heads[0]]
         if not saved['data'].get('lesson') or lesson_state(adapter, saved) != 'current':raise ValueError('Choose a current candidate lesson before promotion.')
-        body = adapter.hub.files()['memory/items/' + item_id + '/revisions/' + saved['revision'] + '/BODY.md'].decode()
+        body = adapter.hub.files()[record_path(saved, 'BODY.md')].decode()
         return adapter.hub.save('rule', saved['title'], body, operation=sha(encoded(['promote', item_id, saved['revision']]))[:32], dependencies=saved['dependencies'], data={'approved_from': {'item': item_id, 'revision': saved['revision']}}, sync=True)
     if data.get('type') not in ('observed-pattern', 'recommendation') or not isinstance(data.get('text'), str) or not 1 <= len(data['text']) <= 4000:
         raise ValueError('Provide a short observed pattern or editorial recommendation.')
@@ -500,7 +500,7 @@ def lesson(root, data, promote=False):
     for ref in references:
         source = graph['revisions'].get(ref.get('revision'))
         if not source or source['kind'] != 'source' or source['item'] != ref.get('item'):raise ValueError('Choose saved source revisions.')
-        body = adapter.hub.files()['memory/items/' + source['item'] + '/revisions/' + source['revision'] + '/BODY.md'].decode()
+        body = adapter.hub.files()[record_path(source, 'BODY.md')].decode()
         quote = ref.get('quote', '')
         if not quote or len(quote) > 2000 or quote not in body:raise ValueError('Each lesson citation needs an exact retained passage.')
         dependencies.append({'item': source['item'], 'revision': source['revision'], 'kind': 'source', 'role': 'lesson-source'})

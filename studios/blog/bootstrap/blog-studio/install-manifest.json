@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "1.12.2",
+  "version": "1.13.0",
   "files": {
     "SKILL.md": "e3667e4616b4c40e9c11c6178ebd520a972b35ce93aefa178c5bcc28a4a25139",
     "agents/openai.yaml": "b1682e80524e50236a3838f86b8dc042862ee5cb936043ef4ceecbb9ea84eed3",
@@ -26,8 +26,8 @@
     "references/workspace/defaults.md": "fec401b456f919fda2d9f806411d80efefc549d6a9cd6c53ef93ef89db109450",
     "references/workspace/performance.md": "a0540790d42f9ff88deca4d8d3f470abdbbd04aa3a196d2ee05b12c482d48e2a",
     "references/workspace/status.md": "ed5dbd0474e167a0b524e7a13d404badb8de56b750dd2d61761942416746a75a",
-    "scripts/author_workflow.py": "5b24b5f771097c56d430ce6424f161c87b5f96585c81f6ddb4f43dcdbe699507",
-    "scripts/blog_library.py": "d8abc8d00023c8011de944a6e12760945354f19e470151f1845f4ca5746dee26",
+    "scripts/author_workflow.py": "441aac29c3c1cc491fc65c072a0ef92a7d13c7037b5c054e17b0857664a5b5ac",
+    "scripts/blog_library.py": "a6faec080583bfb643a8c88d28c3e634ea59edb9be58d9b25d81c3278181c019",
     "scripts/editorial.py": "6c98edaf323491b92b6201b1bf8f23b75fb524ae800c4fe6d9b34de2dfd8b541",
     "scripts/experience.py": "c9a7a9e370fefb84b61a05c029d6067b98f0901bd3a45034f5ba83b6f8258b5b",
     "scripts/google_drive.py": "37ac428cdb2e3a8cbe929137b4216ff335d6d8c7dd1d817b2bbe419a4b9567c5",
@@ -35,9 +35,9 @@
     "scripts/google_roundtrip.py": "df48abc195fd7336f5eb110986b4a182aa25f15323c116dc73c8fbe2957c5d58",
     "scripts/google_suggestions.py": "57b7942ab4d39bec2055a08e454dd0c7e812b09aa26e7f7c2da0272fbb68baaa",
     "scripts/google_workflow.py": "f8ce4c502634147ef59e00113e5307e0e4ed9e603c02ed1888d1e92b4994080b",
-    "scripts/hub.py": "cc42a44248596cd58a53ffbc688d91c74f1bb80e16b23ba3b655148d5e7e19d2",
-    "scripts/hub_browse.py": "47d7e3cccc325be6885b734a7f4cd678570abe6bd4943017d1f1ef0f87ba269c",
-    "scripts/hub_store.py": "296299d30e3d5941dd52086ed3ecdd9f8d81b579c5d4ed46f3b97e3c25ed5d3b",
+    "scripts/hub.py": "26d711e1052c94681cf10da99e55c13d1746e252fca53a2edb7b1f5f18cf6c5e",
+    "scripts/hub_browse.py": "3633f2e8c223764a93de40eab339b44112474d0f8bb778870a540e5b05f1865d",
+    "scripts/hub_store.py": "19202d4b30d740612acfd6fbc8cdb786ca23757059c16d790a3b3ad986017929",
     "scripts/hub_workspace.py": "502f843770497e173f17767c3677ae176089773b56c8795960c9f25c36a1b46e",
     "scripts/linkedin_import.py": "28454bd9f00002f215019c16503f357738ff4b8522bf950479ef6caf86ebe7df",
     "scripts/local_cache.py": "485b6cc539a1e49989da9158bbe99b9f675a65891dd9b17cfb7a48c6f4e6809e",
@@ -45,7 +45,7 @@
     "scripts/management.py": "5fbd4485276c169d2c972b03d5b1a19596aacaae1b2390586127c6deba34c36f",
     "scripts/performance.py": "87e1be34370489068f10135cc98b5dc7c81ee6d41333272526a0b60b1315741a",
     "scripts/studio.py": "e6e6ecbf0642b8f996fd0f7b22bb507d2a9050583820d8e6aac1674b96e9d494",
-    "scripts/sync_guidance.py": "20e11a0cac5b61c9472b4e06fab851db16adf1c46ae429e958c5b00142afda3c",
+    "scripts/sync_guidance.py": "4ed4cf81f6e340a795845cd8559bceba237e6c1ced0a5c2cb8f2e2134af78722",
     "scripts/text_checks.py": "fde3579a7e0a8d881409cdfac166d83c244f9286cb6c47c39b542a2a8f76b922",
     "scripts/writing_defaults.py": "ade7fd36000a84f19c8893826fe911596f6bbc8a9160a6987e9df14aa66c8293"
   }

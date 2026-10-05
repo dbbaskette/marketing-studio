@@ -10,7 +10,8 @@ import uuid
 
 from hub_store import (VERSION, KINDS, HubError, TransportError, GitHub, uid, now, encoded,
                        sha, atomic, write_json, read_json, contained, locked, canonical_repository,
-                       git, manifest, validate_files, artifact_name, tree_files, commit_files)
+                       git, manifest, validate_files, artifact_name, tree_files, commit_files,
+                       record_path, relocate_records, immutable_files)
 
 
 def default_registry():
@@ -249,12 +250,14 @@ class Hub:
         if graph['manifest']['hub'] != self.id:
             raise HubError('Remote hub UUID changed.')
         previous = self._remote_files()
-        for name, content in previous.items():
-            if name.startswith('memory/') and files.get(name) != content:
+        previous_records = immutable_files(previous, validate_files(previous, self.config['repository']))
+        current_records = immutable_files(files, graph)
+        for identity, content in previous_records.items():
+            if current_records.get(identity) != content:
                 raise HubError('A published memory revision was modified or removed. Existing data was preserved.')
         published = []
         for intent in self._intents():
-            additions = self._intent_files(intent)
+            additions = relocate_records(self._intent_files(intent), graph['manifest'])
             if all(name in files for name in additions):
                 if any(files[name] != data for name, data in additions.items()):
                     raise HubError('Remote operation ID was reused with different content.')
@@ -266,7 +269,7 @@ class Hub:
         for intent in published:
             intent['state'] = 'published';intent['published_commit'] = commit
             self._write_intent(intent)
-        if state.get('library_review') and graph['manifest'].get('browse_schema') == 1:
+        if state.get('library_review') and graph['manifest'].get('browse_schema') in (1, 2):
             state.pop('library_review', None)
         if not state.get('library_review') and not any(i['state'] == 'pending-review' for i in self._intents()):
             state['review_branch'] = None;state.pop('pull_request', None);self._write_state(state)
@@ -318,10 +321,11 @@ class Hub:
 
     def files(self, include_local=True):
         files = self._remote_files()
+        layout = validate_files(files, self.config['repository'])['manifest']
         if include_local:
             for intent in self._intents():
                 if intent['state'] != 'published':
-                    for name, data in self._intent_files(intent).items():
+                    for name, data in relocate_records(self._intent_files(intent), layout).items():
                         if name in files and files[name] != data:
                             raise HubError('An operation ID has conflicting payloads.')
                         files[name] = data
@@ -332,9 +336,10 @@ class Hub:
         remote = self._remote_files()
         files = dict(remote)
         intents = self._intents()
+        layout = validate_files(remote, self.config['repository'])['manifest']
         for intent in intents:
             if intent['state'] != 'published':
-                for name, data in self._intent_files(intent).items():
+                for name, data in relocate_records(self._intent_files(intent), layout).items():
                     if name in files and files[name] != data:
                         raise HubError('An operation ID has conflicting payloads.')
                     files[name] = data
@@ -356,8 +361,8 @@ class Hub:
                 'conflicts': sum(len(v) > 1 for v in graph['heads'].values()),
                 'clone': str(self.repository), 'error': state.get('error'),
                 'pull_request': state.get('pull_request'),
-                'blog_library': 'pending-review' if state.get('library_review') else 'available' if graph['manifest'].get('browse_schema') == 1 else 'upgrade-on-next-sync',
-                'blog_library_url': self.config['url'] + '/tree/main/blogs' if graph['manifest'].get('browse_schema') == 1 else None}
+                'blog_library': 'pending-review' if state.get('library_review') else 'available' if graph['manifest'].get('browse_schema') in (1, 2) else 'upgrade-on-next-sync',
+                'blog_library_url': self.config['url'] + '/tree/main/blogs' if graph['manifest'].get('browse_schema') in (1, 2) else None}
 
     def save(self, kind, title, body='', *, item=None, parents=None, operation=None, data=None,
              dependencies=None, artifacts=None, scope=None, tags=None, summary='', status='active',
@@ -397,7 +402,7 @@ class Hub:
                 return {**result, 'hub_commit': result['revision'], 'item': item, 'revision': operation, 'operation': operation}
             record = {'schema': 1, 'operation': operation, 'revision': operation, **request,
                       'actor': actor or self.config.get('actor') or 'Blog Studio member', 'created_at': now()}
-            prefix = 'memory/items/' + item + '/revisions/' + operation + '/'
+            prefix = record_path(record, '', graph['manifest'])
             additions = {prefix + name: content for name, (content, _) in files.items()}
             additions[prefix + 'record.json'] = encoded(record)
             combined = dict(self.files());combined.update(additions)
@@ -443,7 +448,7 @@ class Hub:
                 original = self._remote_files()
                 additions = {}
                 for intent in intents:
-                    additions.update(self._intent_files(intent))
+                    additions.update(relocate_records(self._intent_files(intent), original_graph['manifest']))
                 policy_review = self.registry.provider.review_required(self.config['repository'])
                 mode = validate_files(original)['manifest']['contribution_mode']
                 review = policy_review or mode == 'review' or bool(state.get('review_branch'))
@@ -459,10 +464,16 @@ class Hub:
                         prior_commit = git(self.repository, 'rev-parse', 'FETCH_HEAD^{commit}').decode().strip()
                         branch_files = tree_files(self.repository, prior_commit)
                         verify(branch_files, validate_files(branch_files, self.config['repository']))
-                        for name, content in branch_files.items():
-                            if name.startswith('memory/'):
-                                if name in original and original[name] != content:
-                                    raise HubError('A contribution branch changed an immutable memory revision.')
+                        branch_graph = validate_files(branch_files, self.config['repository'])
+                        original_records = immutable_files(original, original_graph)
+                        branch_records = immutable_files(branch_files, branch_graph)
+                        for identity in original_records.keys() & branch_records.keys():
+                            if original_records[identity] != branch_records[identity]:
+                                raise HubError('A contribution branch changed an immutable memory revision.')
+                        for saved in branch_graph['revisions'].values():
+                            for relative in ('record.json', *saved['files']):
+                                name = record_path(saved, relative, original_graph['manifest'])
+                                content = branch_files[record_path(saved, relative)]
                                 if name in additions and additions[name] != content:
                                     raise HubError('A contribution branch reused an operation ID with different content.')
                                 additions.setdefault(name, content)
@@ -473,7 +484,7 @@ class Hub:
                     if content is None:combined.pop(name, None)
                     else:combined[name] = content
                 validate_files(combined, self.config['repository'])
-                commit = commit_files(self.repository, base, additions, 'Save Team Hub memory',
+                commit = commit_files(self.repository, base, additions, 'Save Team Hub writing and memory',
                                       self.config.get('actor', 'Blog Studio member'), extra_parents)
                 target = branch if review else 'main'
                 pushed = git(self.repository, 'push', '--quiet', self.registry.provider.transport(self.config),
@@ -511,7 +522,7 @@ class Hub:
             record = graph['revisions'].get(uid(revision))
             if not record or record['item'] != item:
                 raise HubError('Unknown memory item/revision.')
-            prefix = 'memory/items/' + item + '/revisions/' + revision + '/'
+            prefix = record_path(record, '')
             contents = {name: content for name, content in files.items() if name.startswith(prefix)}
             cache = contained(self.root, 'reads', revision)
             paths = {}
@@ -545,7 +556,7 @@ class Hub:
                     if (record['status'] == 'tombstone' or (kind and record['kind'] != kind)
                             or (scope and record['scope'] != scope) or (tag and tag not in record['tags'])):
                         continue
-                    prefix = 'memory/items/' + item + '/revisions/' + revision + '/'
+                    prefix = record_path(record, '')
                     text = (record['title'] + ' ' + record['summary'] + ' ' + ' '.join(record['tags'])
                             + ' ' + files[prefix + 'BODY.md'].decode()).casefold()
                     if any(term not in text for term in terms):

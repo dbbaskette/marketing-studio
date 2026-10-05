@@ -1,10 +1,17 @@
 # Browse blogs in GitHub
 
-The private Team Hub homepage and `blogs/README.md` list shared blogs by author,
-title, stage, and update time. Each `blogs/<author>/<title>/` folder renders its
-current blog in `README.md`, with `outline.md` when saved, `context.md` for selected
-source/voice/context links, and `history.md` linking readable earlier versions.
-Unrelated notes and source bodies are not copied into the views.
+The private Team Hub homepage and `blogs/README.md` list blogs by author, title,
+stage, and update time. Each `blogs/<author>/<title>/` folder contains its rendered
+`README.md`, `draft.md`, immutable `original.md`, saved outline/brief, `reviews/`
+with readable findings and their JSON records, selected pinned `sources/`,
+`companions/`, and `history/` with prior drafts, reviews, and import attachments.
+Empty review/source indexes explain missing work. Only selected source bodies
+are copied; unrelated sources and team notes do not enter the blog folder.
+
+`memory/README.md` exposes reusable rules, voices, context, notes, and decisions.
+Article drafts, reviews, and article-scoped knowledge are excluded. Immutable
+synchronization records live in hidden `.blog-studio/items/` storage. Blog
+folders are generated browsing views; use workspace operations for edits.
 
 Set a requested author or library title through the ordinary workspace helper:
 
@@ -26,8 +33,10 @@ fictional memory. Read-only/offline saves remain queued; review-mode views remai
 on the contribution branch until merged. Report the returned library URL and actual
 shared/pending state. Joining or merely refreshing never writes an upgrade.
 
-The library requires runtime 1.3.0 on contributing machines. An upgrade records that
-minimum in the hub so older clients ask for compatible setup. Use the trusted
+The folder layout requires runtime 1.13.0 on contributing machines. Authorized
+sync relocates old records byte for byte without changing IDs, history, pins, or
+queued operation payloads. The hub records that minimum so old clients stop
+before writing. Use the trusted
 installer; guidance refresh alone does not replace executables.
 
 Views are generated browsing pages. Do not edit them directly or treat their text

@@ -149,9 +149,9 @@
       "sha256": "4dc9950a24602bd49d17149ec36bdfbf43b72dd400a549c6281910a97f590ac8"
     },
     "references/hub/library.md": {
-      "characters": 2331,
-      "estimated_tokens": 583,
-      "sha256": "2cae250914e90bf2266feb16d5751cb7d3031b6da0991cd3985890cd5a8dd220"
+      "characters": 2911,
+      "estimated_tokens": 728,
+      "sha256": "a8a4dee4c8b3ab6d8fa8d1586580c5b455c2f26a0066b26cda46ae969c17555d"
     },
     "references/hub/memory.md": {
       "characters": 4692,
@@ -164,9 +164,9 @@
       "sha256": "1839155e8620cd112006452b15bc713febcc828128c3052760f3ade990bfd5ab"
     },
     "references/hub/sync.md": {
-      "characters": 2775,
-      "estimated_tokens": 694,
-      "sha256": "295733ef10fae5d3324654431cad162923b0bdcab3197974f7420e5ee8768805"
+      "characters": 3081,
+      "estimated_tokens": 771,
+      "sha256": "ca04fae0db46b9c69327518ec6000db9b962f7f10760be39be959d9440ee2c1d"
     },
     "references/hub/workflow.md": {
       "characters": 2676,
@@ -664,7 +664,7 @@
       "sha256": "36c39ead07081df6544bf0eb981b19bb4046c17ce95805acc923d3ac7c52d40e"
     }
   },
-  "library_tokens": 201419,
+  "library_tokens": 201641,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -786,7 +786,7 @@
         "references/hub/workflow.md",
         "references/hub/sync.md"
       ],
-      "estimated_tokens": 1363
+      "estimated_tokens": 1440
     }
   },
   "conditional_privacy_reference": {

@@ -11,7 +11,7 @@ import subprocess
 import uuid
 from urllib.parse import urlsplit
 
-VERSION = '1.12.2'
+VERSION = '1.13.0'
 KINDS = ('article', 'source', 'voice', 'note', 'decision', 'rule', 'context', 'review')
 MAX_TEXT = 1024 * 1024
 MAX_BINARY = 10 * MAX_TEXT
@@ -215,14 +215,62 @@ def manifest(hub_id, name, repository, mode='auto'):
             'branch': 'main', 'minimum_runtime': '1.3.0', 'contribution_mode': mode}
 
 
+def record_path(record, file='record.json', manifest=None):
+    """Resolve a validated revision without exposing storage layout to readers."""
+    if manifest is None and '_path' in record:
+        prefix = record['_path']
+    else:
+        root = '.blog-studio/items' if (manifest or {}).get('storage_schema') == 2 else 'memory/items'
+        prefix = root + '/' + uid(record['item']) + '/revisions/' + uid(record['revision']) + '/'
+    return prefix + file
+
+
+def relocate_records(files, manifest):
+    """Adapt verified queued payloads to the current root; never edit their bytes."""
+    if manifest.get('storage_schema') != 2:
+        return dict(files)
+    output = {}
+    for name, content in files.items():
+        target = '.blog-studio/' + name[len('memory/'):] if name.startswith('memory/items/') else name
+        if target in output and output[target] != content:
+            raise HubError('An operation ID has conflicting payloads after relocation.')
+        output[target] = content
+    return output
+
+
+def immutable_files(files, graph):
+    """Compare published revision identities and bytes independently of their paths."""
+    return {(record['revision'], relative): files[record_path(record, relative)]
+            for record in graph['revisions'].values()
+            for relative in ('record.json', *record['files'])}
+
+
+def generated_path(name, schema=2):
+    if name in ('blogs/README.md', 'editorial/README.md', 'collections/README.md'):
+        return True
+    if schema == 1:
+        return bool(re.fullmatch(r'blogs/[a-z0-9-]+/[a-z0-9-]+/(?:README|outline|context|history)\.md', name))
+    if name == 'memory/README.md':
+        return True
+    match = re.fullmatch(r'(?:blogs/[a-z0-9-]+/[a-z0-9-]+|memory/(?:rules|contexts|voices|notes|decisions)/[a-z0-9-]+)/(.+)', name)
+    if match:
+        artifact_name(match[1])
+        return True
+    return False
+
+
 def validate_manifest(value, repository=None):
     try:
         required = tuple(int(x) for x in value['minimum_runtime'].split('.'))
         if (not isinstance(value, dict) or value['schema'] != 1 or len(required) != 3
                 or any(x < 0 for x in required) or required > tuple(map(int, VERSION.split('.')))):
             raise HubError('This Team Hub needs a compatible newer Blog Studio runtime.')
-        if 'browse_schema' in value and (value['browse_schema'] != 1 or required < (1, 3, 0)):
+        if 'browse_schema' in value and (value['browse_schema'] not in (1, 2) or required < (1, 3, 0)):
             raise HubError('This Team Hub library needs a compatible newer Blog Studio runtime.')
+        if ('storage_schema' in value and value['storage_schema'] != 2
+                or value.get('storage_schema') == 2 and (value.get('browse_schema') != 2 or required < (1, 13, 0))
+                or value.get('browse_schema') == 2 and value.get('storage_schema') != 2):
+            raise HubError('This Team Hub layout needs a compatible newer Blog Studio runtime.')
         if 'google_doc_links' in value and (value['google_doc_links'] != 1 or required < (1, 6, 1)):
             raise HubError('This Team Hub Google-link view needs a compatible newer runtime.')
         if 'editorial_views' in value and (value['editorial_views'] != 1 or required < (1, 12, 0)):
@@ -267,11 +315,19 @@ def validate_files(files, repository=None):
             try:data.decode('utf-8')
             except UnicodeError as exc:raise HubError('Editorial views must be UTF-8.') from exc
             used.add(name);continue
-        if name.startswith('blogs/'):
-            if (hub.get('browse_schema') != 1 or not re.fullmatch(r'blogs/(?:README\.md|[a-z0-9-]+/[a-z0-9-]+/(?:README|outline|context|history)\.md)', name) or len(data) > MAX_TEXT):
+        if name.startswith('blogs/') or (name.startswith('memory/') and not name.startswith('memory/items/')):
+            if not generated_path(name, hub.get('browse_schema', 1)) or hub.get('browse_schema') not in (1, 2):
                 raise HubError('Unsupported generated blog library file.')
-            try:data.decode('utf-8')
-            except UnicodeError as exc:raise HubError('Blog library pages must be UTF-8.') from exc
+            if name.startswith('memory/') and hub.get('storage_schema') != 2:
+                raise HubError('Unsupported reusable memory view.')
+            limit = MAX_BINARY if hub.get('storage_schema') == 2 else MAX_TEXT
+            if len(data) > limit:
+                raise HubError('Generated blog file exceeds its size limit.')
+            if name.endswith(('.md', '.json')):
+                if len(data) > MAX_TEXT:
+                    raise HubError('Generated blog text exceeds its size limit.')
+                try:data.decode('utf-8')
+                except UnicodeError as exc:raise HubError('Blog library pages must be UTF-8.') from exc
             used.add(name)
             continue
         if name in ('hub.json', 'README.md'):
@@ -280,7 +336,8 @@ def validate_files(files, repository=None):
             try:data.decode('utf-8')
             except UnicodeError as exc:raise HubError('Hub text must be UTF-8.') from exc
             continue
-        match = re.fullmatch(r'memory/items/([0-9a-f]{32})/revisions/([0-9a-f]{32})/record.json', name)
+        storage = r'\.blog-studio/items' if hub.get('storage_schema') == 2 else r'memory/items'
+        match = re.fullmatch(storage + r'/([0-9a-f]{32})/revisions/([0-9a-f]{32})/record.json', name)
         if not match:
             continue
         if len(data) > MAX_TEXT:
@@ -329,6 +386,7 @@ def validate_files(files, repository=None):
             if 'BODY.md' not in record['files'] or revision in revisions:
                 raise HubError('Memory body is missing or operation ID is duplicated.')
             used.add(name)
+            record['_path'] = prefix
             revisions[revision] = record
         except (ValueError, TypeError, KeyError, AttributeError, UnicodeError) as exc:
             raise HubError('Invalid memory revision or artifact.') from exc
@@ -392,7 +450,7 @@ def tree_files(repository, commit):
         if (mode != b'100644' or kind != b'blob' or path.is_absolute() or '..' in path.parts
                 or '\\' in name):
             raise HubError('Hub data must use regular non-executable files and safe paths.')
-        limit = MAX_BINARY if '/artifacts/' in name else MAX_TEXT
+        limit = MAX_BINARY if '/artifacts/' in name or generated_path(name) and not name.endswith(('.md', '.json')) else MAX_TEXT
         if int(size) > limit:
             raise HubError('Hub file exceeds its size limit.')
         total += int(size)
@@ -418,12 +476,21 @@ def commit_files(repository, base, additions, message, actor, extra_parents=()):
     env = {'GIT_INDEX_FILE': str(index), 'GIT_AUTHOR_NAME': actor,
            'GIT_AUTHOR_EMAIL': 'blog-studio@localhost', 'GIT_COMMITTER_NAME': actor,
            'GIT_COMMITTER_EMAIL': 'blog-studio@localhost'}
+    original_files = None
     try:
         git(repository, 'read-tree', base if base else '--empty', extra_env=env)
         for name, data in sorted(additions.items()):
             if data is None:
-                if not name.startswith('blogs/'):
-                    raise HubError('Only generated blog pages may be removed.')
+                if name.startswith('memory/items/'):
+                    target = '.blog-studio/' + name[len('memory/'):]
+                    if original_files is None:original_files = tree_files(repository, base) if base else {}
+                    original = original_files.get(name)
+                    if original is not None and additions.get(target) != original:
+                        raise HubError('Published revisions may only be relocated byte for byte.')
+                    if original is None and target not in additions:
+                        raise HubError('A relocated revision needs its retained destination.')
+                elif not generated_path(name):
+                    raise HubError('Only generated pages or byte-preserving relocations may be removed.')
                 git(repository, 'update-index', '--index-info',
                     data=('0 ' + '0' * len(base or '0' * 40) + '\t' + name + '\n').encode(), extra_env=env)
                 continue

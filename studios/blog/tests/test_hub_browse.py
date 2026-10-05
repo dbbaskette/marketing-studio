@@ -40,7 +40,8 @@ class BrowseTests(unittest.TestCase):
         self.assertIn(b'outline.md',files[folder+'README.md'])
         self.assertIn(b'Pilot notes',files[folder+'context.md'])
         views=b'\n'.join(body for name,body in files.items() if name.startswith('blogs/'))
-        self.assertNotIn(b'SECRET',views)
+        self.assertNotIn(b'SECRET unrelated planning',views)
+        self.assertIn(b'SECRET source body',views)
         self.assertIn(b'blogs/dan-baskette/better-handoffs/README.md',files['README.md'])
         self.assertEqual(self.ha.status()['blog_library'],'available')
         verify(files,store.validate_files(files))
@@ -58,18 +59,24 @@ class BrowseTests(unittest.TestCase):
         self.ha.save('article','Linked post','Body',data=data)
         current = self.files();graph=store.validate_files(current)
         # Reproduce a 1.6 library: metadata already has the link, generated pages lack it.
-        legacy=dict(current);legacy.update(render(current,graph,show_google_links=False))
-        manifest=dict(graph['manifest']);manifest.pop('google_doc_links');manifest['minimum_runtime']='1.5.0'
+        legacy={k.replace('.blog-studio/items/', 'memory/items/'):v for k,v in current.items()
+                if k == 'hub.json' or k == 'README.md' or k.startswith('.blog-studio/items/')}
+        manifest=dict(graph['manifest']);manifest.pop('storage_schema');manifest['browse_schema']=1
+        legacy['hub.json']=store.encoded(manifest)
+        legacy.update(render(legacy,store.validate_files(legacy),show_google_links=False))
+        manifest=dict(manifest);manifest.pop('google_doc_links');manifest['minimum_runtime']='1.5.0'
         legacy['hub.json']=store.encoded(manifest)
         old_graph=store.validate_files(legacy);verify(legacy,old_graph)
         additions=changes(legacy,old_graph)
-        updated={**legacy,**{k:v for k,v in additions.items() if v is not None}}
+        updated=dict(legacy)
+        for k,v in additions.items():
+            if v is None:updated.pop(k,None)
+            else:updated[k]=v
         new_graph=store.validate_files(updated);verify(updated,new_graph)
         page=updated['blogs/dan/linked-post/README.md']
         self.assertIn(b'[Open working Google Doc](https://docs.google.com/document/d/doc_123/edit)',page)
         self.assertIn(b'2026-10-02 21:07 UTC',page)
-        self.assertEqual({k:v for k,v in legacy.items() if k.startswith('memory/')},
-                         {k:v for k,v in updated.items() if k.startswith('memory/')})
+        self.assertEqual(store.immutable_files(legacy,old_graph),store.immutable_files(updated,new_graph))
         self.assertEqual(changes(updated,new_graph),{})
         with patch.object(store,'VERSION','1.5.0'):
             with self.assertRaises(store.HubError):store.validate_files(updated)
@@ -85,7 +92,7 @@ class BrowseTests(unittest.TestCase):
         self.ha.save('article','Review copy','Body',data={'studio':{'google':{'baselines':{'draft':{'document':doc}}}}},
                      artifacts={'history/google-'+'a'*32+'-accepted.json':(b'{}','text')})
         files=self.files()
-        self.assertEqual(json.loads(files['hub.json'])['minimum_runtime'],'1.9.0')
+        self.assertEqual(json.loads(files['hub.json'])['minimum_runtime'],'1.13.0')
         with patch.object(store,'VERSION','1.8.0'):
             with self.assertRaises(store.HubError):store.validate_files(files)
 
@@ -96,8 +103,8 @@ class BrowseTests(unittest.TestCase):
         files=self.files()
         self.assertIn('blogs/dan-baskette/renamed-blog/README.md',files)
         self.assertNotIn('blogs/dan-baskette/better-handoffs/README.md',files)
-        self.assertEqual({k:v for k,v in old.items() if k.startswith('memory/')},
-                         {k:files[k] for k in old if k.startswith('memory/')})
+        self.assertEqual({k:v for k,v in old.items() if k.startswith('.blog-studio/items/')},
+                         {k:files[k] for k in old if k.startswith('.blog-studio/items/')})
         history=files['blogs/dan-baskette/renamed-blog/history.md']
         self.assertIn(b'Better handoffs',history);self.assertIn(b'Renamed blog',history)
 
@@ -116,7 +123,7 @@ class BrowseTests(unittest.TestCase):
             self.save(title='Same title',operation=operation)
         self.save(title='Same title-' + 'a'*31+'1')
         files=self.files()
-        paths=[name for name in files if name.startswith('blogs/dan-baskette/same-title') and name.endswith('/README.md')]
+        paths=[name for name in files if name.startswith('blogs/dan-baskette/same-title') and name.endswith('/README.md') and name.count('/') == 3]
         self.assertEqual(len(paths),3);self.assertTrue(all(len(Path(name).parent.name)>len('same-title-')+8 for name in paths))
         self.save(title='../[click](https://bad.invalid) | @someone',author='../../<script>')
         files=self.files()
@@ -128,7 +135,7 @@ class BrowseTests(unittest.TestCase):
         saved=self.save();before=self.files()
         self.ha.save('article','Better handoffs','',item=saved['item'],parents=[saved['revision']],status='tombstone')
         files=self.files();self.assertEqual([p for p in files if p.startswith('blogs/')],['blogs/README.md'])
-        self.assertTrue(all(files[p]==body for p,body in before.items() if p.startswith('memory/')))
+        self.assertTrue(all(files[p]==body for p,body in before.items() if p.startswith('.blog-studio/items/')))
 
     def test_concurrent_edits_show_conflict_without_silently_picking_a_draft(self):
         saved=self.save();self.hb.refresh()
@@ -157,8 +164,8 @@ class BrowseTests(unittest.TestCase):
         self.assertEqual(self.ha.find('New note')['total'],1)
 
     def legacy(self):
-        files=self.files();manifest=json.loads(files['hub.json']);manifest.pop('browse_schema');manifest['minimum_runtime']='1.1.0'
-        changes={name:None for name in files if name.startswith('blogs/')}
+        files=self.files();manifest=json.loads(files['hub.json']);manifest.pop('browse_schema');manifest.pop('storage_schema');manifest['minimum_runtime']='1.1.0'
+        changes={name:None for name in files if name.startswith(('blogs/', 'memory/'))}
         changes.update({'hub.json':store.encoded(manifest),'README.md':b'# Our custom homepage\n\nKeep this explanation.\n'})
         base=store.git(self.remote,'rev-parse','main').decode().strip()
         commit=store.commit_files(self.remote,base,changes,'Legacy fixture','Fixture')
@@ -167,7 +174,7 @@ class BrowseTests(unittest.TestCase):
     def test_legacy_sync_migrates_without_memory_mutation_and_is_idempotent(self):
         self.legacy();self.assertEqual(self.ha.sync()['status'],'shared')
         files=self.files();self.assertIn(b'Keep this explanation.',files['README.md'])
-        self.assertIn(START.encode(),files['README.md']);self.assertEqual(json.loads(files['hub.json'])['minimum_runtime'],'1.3.0')
+        self.assertIn(START.encode(),files['README.md']);self.assertEqual(json.loads(files['hub.json'])['minimum_runtime'],'1.13.0')
         before=store.git(self.remote,'rev-parse','main')
         self.assertEqual(self.ha.sync()['status'],'synchronized');self.assertEqual(before,store.git(self.remote,'rev-parse','main'))
         with patch.object(store,'VERSION','1.2.0'):

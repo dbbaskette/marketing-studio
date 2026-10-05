@@ -45,6 +45,27 @@ Joining does not upload prior work. Ask to share specific existing articles,
 sources, or profiles. Their actual selected dependencies follow automatically.
 A workspace without a hub keeps the existing local-only behavior.
 
+## Where to find your work
+
+Open `blogs/README.md`, then the blog's author/title folder. Each blog contains
+its current `README.md`, `draft.md`, immutable `original.md`, saved outlines,
+`reviews/` with readable edits and their coverage/status, `sources/` with only
+selected pinned evidence, `companions/`, and `history/` with earlier drafts and
+Google import attachments. Missing artifacts are omitted; empty review/source
+indexes explain what has not been saved. Competing drafts stay separate in the
+history until you choose a resolution.
+
+`memory/README.md` contains reusable rules, voices, context, notes, and decisions.
+Article-specific drafts and reviews stay with their blog. Synchronization data
+lives in `.blog-studio/items/`; it is not the folder authors need to browse.
+
+Runtime **1.13.0** reads existing hubs and upgrades them on an authorized save or
+sync. The upgrade preserves every original record, attachment, revision ID, and
+pin byte for byte, and retains earlier Git commits. Other contributors need the
+1.13.0 installer before writing to the upgraded hub. Joining or refreshing alone
+does not migrate the repository. Generated files remain managed by Blog Studio;
+manual edits are preserved and block regeneration until reconciled.
+
 ## Saves and connection problems
 
 | Status | What it means |
@@ -66,7 +87,7 @@ created with review mode always uses a PR.
 
 ## Setup and helper examples
 
-Update to the trusted **1.2.0 installer runtime** to use Team Hub. Run the new
+Update to the trusted **1.13.0 installer runtime** to use Team Hub. Run the new
 bundle through the existing setup/update flow. Git and authenticated GitHub CLI
 are required for the current provider. Credentials remain in provider storage.
 Use the interpreter in the managed runtime configuration when necessary.

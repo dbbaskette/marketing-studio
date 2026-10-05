@@ -143,7 +143,8 @@ def hub_state(root, record):
             else: output['status'] = 'not-verified'
         # Link only to an existing generated main page, including renamed/colliding slugs.
         for path, body in remote_files.items():
-            if path.startswith('blogs/') and path.endswith('/README.md') and ('memory/items/' + saved['item'] + '/revisions/').encode() in body:
+            if (path.startswith('blogs/') and path.endswith('/README.md') and path.count('/') == 3
+                    and any((head + '/record.json)').encode() in body.split(b'---\n\n', 1)[0] for head in heads)):
                 output['url'] = adapter.hub.config['url'] + '/blob/main/' + path
                 break
     except (HubError, OSError, ValueError, KeyError, TypeError):
