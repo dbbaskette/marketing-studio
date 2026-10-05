@@ -119,7 +119,7 @@ class TeamHubTests(unittest.TestCase):
 
     def test_text_encoding_graph_cycle_and_dependency_shape_are_rejected(self):
         saved=self.ha.save('note','Valid','Valid body')
-        files=self.ha.files();prefix='memory/items/'+saved['item']+'/revisions/'+saved['revision']+'/'
+        files=self.ha.files();prefix=store.record_path(self.ha.graph()['revisions'][saved['revision']], '')
         record=json.loads(files[prefix+'record.json'])
         for changes in ({'parents':[saved['revision']]},{'dependencies':['bad']},{'dependencies':[{'item':saved['item'],'revision':saved['revision'],'kind':'note'}]},{'files':[]},{'scope':{'level':'project','key':''}}):
             mutated=dict(files);mutated[prefix+'record.json']=store.encoded({**record,**changes})
@@ -266,7 +266,7 @@ class TeamHubTests(unittest.TestCase):
     def test_remote_revision_modification_and_executable_files_are_rejected(self):
         saved = self.ha.save('note', 'Immutable', 'Original')
         self.hb.refresh()
-        files = self.ha._remote_files();prefix = 'memory/items/'+saved['item']+'/revisions/'+saved['revision']+'/'
+        files = self.ha._remote_files();prefix = store.record_path(self.ha.graph()['revisions'][saved['revision']], '')
         record = json.loads(files[prefix+'record.json']);record['files']['BODY.md']['sha256'] = store.sha(b'Changed')
         remote = self.provider.transport({'repository': 'fixture/team-hub'})
         base = store.git(remote, 'rev-parse', 'main').decode().strip()

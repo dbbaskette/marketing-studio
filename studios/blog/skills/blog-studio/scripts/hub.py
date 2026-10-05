@@ -10,7 +10,8 @@ import uuid
 
 from hub_store import (VERSION, KINDS, HubError, TransportError, GitHub, uid, now, encoded,
                        sha, atomic, write_json, read_json, contained, locked, canonical_repository,
-                       git, manifest, validate_files, artifact_name, tree_files, commit_files)
+                       git, manifest, validate_files, artifact_name, tree_files, commit_files,
+                       record_path, relocate_records, immutable_files)
 
 
 def default_registry():
@@ -29,9 +30,10 @@ def check_root(value):
 
 
 class Registry:
-    def __init__(self, root=None, provider=None):
+    def __init__(self, root=None, provider=None, workspace_root=None):
         self.root = check_root(root or default_registry())
         self.provider = provider or GitHub()
+        self.workspace_root = check_root(workspace_root or (Path.home() / "blogs" if self.root == default_registry() else self.root / "workspaces"))
 
     def state(self):
         path = contained(self.root, 'registry.json')
@@ -78,8 +80,12 @@ class Registry:
             if not metadata:
                 raise HubError('The private repository is unavailable to your account.')
             hub = self._join(metadata, destination)
-        if workspace:
-            self.select(hub.id, workspace)
+        selected_workspace = check_root(workspace) if workspace else hub.checkout / '.blog-studio'
+        if hub.normal:
+            from studio import initialize
+            initialize(selected_workspace)
+        if workspace or hub.normal:
+            self.select(hub.id, selected_workspace)
         return hub.status()
 
     def _join(self, metadata, destination=None):
@@ -100,8 +106,11 @@ class Registry:
         stage = self.root / ('.join-' + uuid.uuid4().hex)
         stage.mkdir(mode=0o700)
         try:
-            repository_path = stage / 'repository.git'
-            git(repository_path, 'init', '--bare', '--quiet', '--initial-branch=main')
+            repository_path = stage / '.git'
+            git(repository_path, 'init', '--quiet', '--initial-branch=main')
+            git(repository_path, 'config', 'core.bare', 'false')
+            git(repository_path, 'config', 'core.worktree', str(stage))
+            atomic(repository_path / 'info/exclude', b'/.blog-studio/\n.DS_Store\n')
             source = self.provider.transport(metadata)
             git(repository_path, 'remote', 'add', 'origin', source)
             git(repository_path, 'fetch', '--quiet', '--no-tags', source, 'refs/heads/main')
@@ -111,16 +120,18 @@ class Registry:
             hub_id = graph['manifest']['hub']
             if hub_id in state['hubs']:
                 raise HubError('The hub UUID is already registered to another repository.')
-            target = check_root(destination) if destination else self.root / 'clones' / hub_id
+            target = check_root(destination) if destination else self.workspace_root / repository.split('/')[1]
             if target.exists() or target.is_symlink():
                 raise HubError('The chosen local hub location already exists; it was preserved.')
             entry = {'repository': repository, 'provider_id': metadata['id'],
-                     'path': str(target), 'name': graph['manifest']['name'], 'url': metadata['url']}
-            write_json(stage / 'config.json', {'schema': 1, 'hub': hub_id, 'actor': self.provider.actor(), **entry})
-            write_json(stage / 'state.json', {'revision': commit, 'verified_at': now(),
+                     'path': str(target), 'layout': 'checkout', 'name': graph['manifest']['name'], 'url': metadata['url']}
+            local = stage / '.blog-studio/hub'
+            write_json(local / 'config.json', {'schema': 1, 'hub': hub_id, 'actor': self.provider.actor(), **entry})
+            write_json(local / 'state.json', {'revision': commit, 'verified_at': now(),
                 'fresh': True, 'write': metadata.get('write'), 'review_branch': None})
             target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             shutil.move(str(stage), str(target))
+            git(target / '.git', 'config', 'core.worktree', str(target))
             # Record activation atomically. A failed record write leaves an owned recoverable clone.
             state['hubs'][hub_id] = entry
             try:
@@ -134,6 +145,68 @@ class Registry:
         finally:
             if stage.exists():
                 shutil.rmtree(stage)
+
+    def migrate(self, hub_id, destination=None):
+        with locked(self.root, '.registry.lock'):
+            hub = self.hub(hub_id)
+            if hub.normal:
+                return {'status': 'already-migrated', **hub.status()}
+            with locked(hub.root):
+                target = check_root(destination) if destination else self.workspace_root / hub.config['repository'].split('/')[1]
+                # Only the existing writing workspace may already occupy the target.
+                workspace = target / '.blog-studio'
+                if target.exists():
+                    selection = self.selected(workspace) if workspace.is_dir() else None
+                    if not selection or selection.id != hub.id or any(p.name != '.blog-studio' for p in target.iterdir()):
+                        raise HubError('The destination contains existing files or another Hub; it was preserved.')
+                    if (workspace / 'hub').exists():
+                        raise HubError('The destination already contains Hub state; it was preserved.')
+                files = hub._remote_files()
+                commit = hub._state()['revision']
+                stage = self.root / ('.migrate-' + uuid.uuid4().hex)
+                stage.mkdir(mode=0o700)
+                installed = []
+                try:
+                    repository = stage / '.git'
+                    git(repository, 'init', '--quiet', '--initial-branch=main')
+                    git(repository, 'config', 'core.bare', 'false')
+                    git(repository, 'config', 'core.worktree', str(stage))
+                    git(repository, 'fetch', '--quiet', str(hub.repository), commit)
+                    git(repository, 'remote', 'add', 'origin', 'https://github.com/' + hub.config['repository'] + '.git')
+                    atomic(repository / 'info/exclude', b'/.blog-studio/\n.DS_Store\n')
+                    git(repository, 'checkout', '--quiet', '-B', 'main', commit)
+                    git(repository, 'update-ref', 'refs/remotes/origin/main', commit)
+                    git(repository, 'config', 'branch.main.remote', 'origin')
+                    git(repository, 'config', 'branch.main.merge', 'refs/heads/main')
+                    local = stage / '.blog-studio/hub'
+                    shutil.copytree(hub.root, local, ignore=shutil.ignore_patterns('repository.git', '.hub.lock'))
+                    state = self.state()
+                    entry = dict(state['hubs'][hub.id], path=str(target), layout='checkout')
+                    config = dict(hub.config, **entry)
+                    write_json(local / 'config.json', config)
+                    target.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    workspace.mkdir(exist_ok=True, mode=0o700)
+                    # No existing files are replaced. Roll back only task-owned additions.
+                    moves = [(child, target / child.name) for child in stage.iterdir() if child.name != '.blog-studio']
+                    moves += [(child, workspace / child.name) for child in (stage / '.blog-studio').iterdir()]
+                    if any(dest.exists() or dest.is_symlink() for source, dest in moves):
+                        raise HubError('The destination contains colliding files; it was preserved.')
+                    for source, dest in moves:
+                        shutil.move(str(source), str(dest));installed.append(dest)
+                    git(target / '.git', 'config', 'core.worktree', str(target))
+                    state['hubs'][hub.id] = entry
+                    write_json(self.root / 'registry.json', state)
+                except Exception:
+                    for path in reversed(installed):
+                        if path.is_dir():shutil.rmtree(path)
+                        else:path.unlink()
+                    raise
+                finally:
+                    shutil.rmtree(stage, ignore_errors=True)
+                from studio import initialize
+                initialize(workspace)
+                self.select(hub.id, workspace)
+                return {'status': 'migrated', 'preserved_legacy_copy': str(hub.root), **self.hub(hub.id).status()}
 
     def create(self, repository, name, destination=None, workspace=None, mode='auto'):
         repository = canonical_repository(repository)
@@ -191,8 +264,12 @@ class Registry:
             intent['status'] = 'seeded';write_json(intent_path, intent)
             hub = self._join(metadata, destination)
             intent['status'] = 'joined';write_json(intent_path, intent)
-        if workspace:
-            self.select(hub.id, workspace)
+        selected_workspace = check_root(workspace) if workspace else hub.checkout / '.blog-studio'
+        if hub.normal:
+            from studio import initialize
+            initialize(selected_workspace)
+        if workspace or hub.normal:
+            self.select(hub.id, selected_workspace)
         return {'status': 'created', **hub.status(), 'creation': 'verified'}
 
 
@@ -200,8 +277,10 @@ class Hub:
     def __init__(self, registry, hub_id, entry):
         self.registry = registry
         self.id = uid(hub_id)
-        self.root = check_root(entry['path'])
-        self.repository = contained(self.root, 'repository.git')
+        self.checkout = check_root(entry['path'])
+        self.normal = entry.get('layout') == 'checkout'
+        self.root = contained(self.checkout, '.blog-studio', 'hub') if self.normal else self.checkout
+        self.repository = contained(self.checkout, '.git') if self.normal else contained(self.root, 'repository.git')
         self.config = read_json(contained(self.root, 'config.json'))
         if (self.config.get('hub') != self.id or self.config.get('repository') != entry['repository']
                 or self.config.get('provider_id') != entry['provider_id']):
@@ -223,7 +302,25 @@ class Hub:
             raise HubError('The repository now contains a different hub UUID.')
         return files
 
+    def _checkout_clean(self):
+        if self.normal:
+            exclude = contained(self.repository, 'info', 'exclude')
+            patterns = exclude.read_bytes() if exclude.exists() else b''
+            if b'.DS_Store' not in patterns.splitlines():
+                atomic(exclude, patterns.rstrip(b'\n') + b'\n.DS_Store\n')
+            head = git(self.repository, 'rev-parse', '--verify', 'HEAD', allow_failure=True)
+            if head.returncode == 0 and head.stdout.decode().strip() != self._state()['revision']:
+                raise HubError('The Hub checkout contains a different commit. Preserve your local commits before syncing.')
+        if self.normal and git(self.repository, 'status', '--porcelain', '--untracked-files=all').strip():
+            raise HubError('The Hub checkout has local edits. Save or move those edits before syncing; no files were overwritten.')
+
     def _materialize(self, commit, files):
+        if self.normal:
+            self._checkout_clean()
+            git(self.repository, 'checkout', '--quiet', '-B', 'main', commit)
+            git(self.repository, 'update-ref', 'refs/remotes/origin/main', commit)
+            git(self.repository, 'config', 'branch.main.remote', 'origin')
+            git(self.repository, 'config', 'branch.main.merge', 'refs/heads/main')
         root = contained(self.root, 'snapshots', commit)
         for name, content in files.items():
             target = contained(root, *name.split('/'))
@@ -235,6 +332,7 @@ class Hub:
         return root
 
     def _refresh(self, metadata=None):
+        self._checkout_clean()
         metadata = metadata or self.registry.provider.lookup(self.config['repository'])
         if not metadata:
             raise TransportError('Hub repository is unavailable to this account.')
@@ -249,12 +347,14 @@ class Hub:
         if graph['manifest']['hub'] != self.id:
             raise HubError('Remote hub UUID changed.')
         previous = self._remote_files()
-        for name, content in previous.items():
-            if name.startswith('memory/') and files.get(name) != content:
+        previous_records = immutable_files(previous, validate_files(previous, self.config['repository']))
+        current_records = immutable_files(files, graph)
+        for identity, content in previous_records.items():
+            if current_records.get(identity) != content:
                 raise HubError('A published memory revision was modified or removed. Existing data was preserved.')
         published = []
         for intent in self._intents():
-            additions = self._intent_files(intent)
+            additions = relocate_records(self._intent_files(intent), graph['manifest'])
             if all(name in files for name in additions):
                 if any(files[name] != data for name, data in additions.items()):
                     raise HubError('Remote operation ID was reused with different content.')
@@ -266,7 +366,7 @@ class Hub:
         for intent in published:
             intent['state'] = 'published';intent['published_commit'] = commit
             self._write_intent(intent)
-        if state.get('library_review') and graph['manifest'].get('browse_schema') in (1, 2):
+        if state.get('library_review') and graph['manifest'].get('browse_schema') in (1, 2, 3):
             state.pop('library_review', None)
         if not state.get('library_review') and not any(i['state'] == 'pending-review' for i in self._intents()):
             state['review_branch'] = None;state.pop('pull_request', None);self._write_state(state)
@@ -318,10 +418,11 @@ class Hub:
 
     def files(self, include_local=True):
         files = self._remote_files()
+        layout = validate_files(files, self.config['repository'])['manifest']
         if include_local:
             for intent in self._intents():
                 if intent['state'] != 'published':
-                    for name, data in self._intent_files(intent).items():
+                    for name, data in relocate_records(self._intent_files(intent), layout).items():
                         if name in files and files[name] != data:
                             raise HubError('An operation ID has conflicting payloads.')
                         files[name] = data
@@ -332,9 +433,10 @@ class Hub:
         remote = self._remote_files()
         files = dict(remote)
         intents = self._intents()
+        layout = validate_files(remote, self.config['repository'])['manifest']
         for intent in intents:
             if intent['state'] != 'published':
-                for name, data in self._intent_files(intent).items():
+                for name, data in relocate_records(self._intent_files(intent), layout).items():
                     if name in files and files[name] != data:
                         raise HubError('An operation ID has conflicting payloads.')
                     files[name] = data
@@ -354,10 +456,12 @@ class Hub:
                 'queued': sum(i['state'] == 'queued' for i in intents),
                 'pending_review': sum(i['state'] == 'pending-review' for i in intents),
                 'conflicts': sum(len(v) > 1 for v in graph['heads'].values()),
-                'clone': str(self.repository), 'error': state.get('error'),
+                'clone': str(self.checkout if self.normal else self.repository),
+                'workspace': str(self.checkout / '.blog-studio') if self.normal else None,
+                'layout': 'checkout' if self.normal else 'legacy-bare', 'error': state.get('error'),
                 'pull_request': state.get('pull_request'),
-                'blog_library': 'pending-review' if state.get('library_review') else 'available' if graph['manifest'].get('browse_schema') in (1, 2) else 'upgrade-on-next-sync',
-                'blog_library_url': self.config['url'] + '/tree/main/blogs' if graph['manifest'].get('browse_schema') in (1, 2) else None}
+                'blog_library': 'pending-review' if state.get('library_review') else 'available' if graph['manifest'].get('browse_schema') in (1, 2, 3) else 'upgrade-on-next-sync',
+                'blog_library_url': self.config['url'] + '/tree/main/blogs' if graph['manifest'].get('browse_schema') in (1, 2, 3) else None}
 
     def save(self, kind, title, body='', *, item=None, parents=None, operation=None, data=None,
              dependencies=None, artifacts=None, scope=None, tags=None, summary='', status='active',
@@ -397,7 +501,7 @@ class Hub:
                 return {**result, 'hub_commit': result['revision'], 'item': item, 'revision': operation, 'operation': operation}
             record = {'schema': 1, 'operation': operation, 'revision': operation, **request,
                       'actor': actor or self.config.get('actor') or 'Blog Studio member', 'created_at': now()}
-            prefix = 'memory/items/' + item + '/revisions/' + operation + '/'
+            prefix = record_path(record, '', graph['manifest'])
             additions = {prefix + name: content for name, (content, _) in files.items()}
             additions[prefix + 'record.json'] = encoded(record)
             combined = dict(self.files());combined.update(additions)
@@ -443,7 +547,7 @@ class Hub:
                 original = self._remote_files()
                 additions = {}
                 for intent in intents:
-                    additions.update(self._intent_files(intent))
+                    additions.update(relocate_records(self._intent_files(intent), original_graph['manifest']))
                 policy_review = self.registry.provider.review_required(self.config['repository'])
                 mode = validate_files(original)['manifest']['contribution_mode']
                 review = policy_review or mode == 'review' or bool(state.get('review_branch'))
@@ -459,10 +563,16 @@ class Hub:
                         prior_commit = git(self.repository, 'rev-parse', 'FETCH_HEAD^{commit}').decode().strip()
                         branch_files = tree_files(self.repository, prior_commit)
                         verify(branch_files, validate_files(branch_files, self.config['repository']))
-                        for name, content in branch_files.items():
-                            if name.startswith('memory/'):
-                                if name in original and original[name] != content:
-                                    raise HubError('A contribution branch changed an immutable memory revision.')
+                        branch_graph = validate_files(branch_files, self.config['repository'])
+                        original_records = immutable_files(original, original_graph)
+                        branch_records = immutable_files(branch_files, branch_graph)
+                        for identity in original_records.keys() & branch_records.keys():
+                            if original_records[identity] != branch_records[identity]:
+                                raise HubError('A contribution branch changed an immutable memory revision.')
+                        for saved in branch_graph['revisions'].values():
+                            for relative in ('record.json', *saved['files']):
+                                name = record_path(saved, relative, original_graph['manifest'])
+                                content = branch_files[record_path(saved, relative)]
                                 if name in additions and additions[name] != content:
                                     raise HubError('A contribution branch reused an operation ID with different content.')
                                 additions.setdefault(name, content)
@@ -473,7 +583,7 @@ class Hub:
                     if content is None:combined.pop(name, None)
                     else:combined[name] = content
                 validate_files(combined, self.config['repository'])
-                commit = commit_files(self.repository, base, additions, 'Save Team Hub memory',
+                commit = commit_files(self.repository, base, additions, 'Save Team Hub writing and memory',
                                       self.config.get('actor', 'Blog Studio member'), extra_parents)
                 target = branch if review else 'main'
                 pushed = git(self.repository, 'push', '--quiet', self.registry.provider.transport(self.config),
@@ -511,7 +621,7 @@ class Hub:
             record = graph['revisions'].get(uid(revision))
             if not record or record['item'] != item:
                 raise HubError('Unknown memory item/revision.')
-            prefix = 'memory/items/' + item + '/revisions/' + revision + '/'
+            prefix = record_path(record, '')
             contents = {name: content for name, content in files.items() if name.startswith(prefix)}
             cache = contained(self.root, 'reads', revision)
             paths = {}
@@ -545,7 +655,7 @@ class Hub:
                     if (record['status'] == 'tombstone' or (kind and record['kind'] != kind)
                             or (scope and record['scope'] != scope) or (tag and tag not in record['tags'])):
                         continue
-                    prefix = 'memory/items/' + item + '/revisions/' + revision + '/'
+                    prefix = record_path(record, '')
                     text = (record['title'] + ' ' + record['summary'] + ' ' + ' '.join(record['tags'])
                             + ' ' + files[prefix + 'BODY.md'].decode()).casefold()
                     if any(term not in text for term in terms):
@@ -606,6 +716,7 @@ def parser():
         sub = actions.add_parser(name);sub.add_argument('--repo', required=True);sub.add_argument('--destination', type=Path)
         if name == 'create':
             sub.add_argument('--name', required=True);sub.add_argument('--mode', choices=('auto', 'direct', 'review'), default='auto')
+    sub = actions.add_parser('migrate');sub.add_argument('--destination', type=Path)
     for name in ('select', 'leave', 'status'):
         actions.add_parser(name)
     for name in ('refresh', 'sync'):
@@ -653,6 +764,7 @@ def main():
                 if not args.workspace:
                     raise HubError('A project workspace is required.')
                 result = getattr(registry, args.action)(hub.id, args.workspace)
+            elif args.action == 'migrate':result = registry.migrate(hub.id, args.destination)
             elif args.action == 'status':result = hub.status()
             elif args.action in ('sync', 'refresh'):result = getattr(hub, args.action)(args.offline)
             elif args.action == 'read':result = hub.read(args.item, args.revision)

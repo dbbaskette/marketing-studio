@@ -287,6 +287,14 @@ class Workspace:
             raise HubError('This shared item is removed; select a historical revision explicitly for recovery.')
         group = KIND_GROUP[record['kind']]
         local_id = 'hub-' + record['item'] if group == 'articles' else 'hub-' + record['item'] + '-' + record['revision']
+        if group == 'articles':
+            existing = [key.split('/', 1)[1] for key, value in self.state['items'].items()
+                        if key.startswith('articles/') and value['item'] == record['item']
+                        and studio.inside(self.root, 'articles', key.split('/', 1)[1]).is_dir()]
+            if len(existing) > 1:
+                raise HubError('Multiple local copies refer to this shared blog. Preserve and reconcile them before resuming.')
+            if existing:
+                local_id = existing[0]
         key = self.key(group, local_id)
         saved = self.state['items'].get(key)
         directory = studio.inside(self.root, group, local_id)

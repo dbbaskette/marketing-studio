@@ -83,6 +83,25 @@ class HubWorkspaceTests(unittest.TestCase):
         self.assertEqual(status['last_saved_to_hub'],confirmed['last_saved_to_hub'])
         self.assertEqual(status['hub_saved_revision'],confirmed['last_saved_revision'])
 
+    def test_original_author_resumes_other_member_edit_without_duplicate_blog(self):
+        aid = self.article();self.save(self.a, aid, 'original', 'Original manuscript.')
+        self.save(self.a, aid, 'draft', 'Shared draft.')
+        ref = self.export(aid);bid = self.checkout(ref)
+        self.save(self.b, bid, 'draft', 'Other member edit.')
+        self.wb.publish_selected({'articles': [bid]})
+        resumed = self.wa.checkout_selected({'articles': [ref['item']]})['items'][0]
+        self.assertEqual(resumed['local_id'], aid)
+        self.assertEqual((self.a / 'articles' / aid / 'DRAFT.md').read_text(), 'Other member edit.')
+        self.assertEqual((self.a / 'articles' / aid / 'ORIGINAL.md').read_text(), 'Original manuscript.')
+        self.assertEqual(len(list((self.a / 'articles').iterdir())), 1)
+        # A changed shared head cannot erase an unshared local edit.
+        (self.a / 'articles' / aid / 'DRAFT.md').write_text('Unsaved local edit.')
+        self.save(self.b, bid, 'draft', 'New shared edit.')
+        self.wb.publish_selected({'articles': [bid]})
+        with self.assertRaisesRegex(HubError, 'unshared local edits'):
+            self.wa.checkout_selected({'articles': [ref['item']]})
+        self.assertEqual((self.a / 'articles' / aid / 'DRAFT.md').read_text(), 'Unsaved local edit.')
+
     def test_cross_machine_dependencies_original_review_checkpoint_and_portable_guidance(self):
         source=self.command(self.a,'source','add','--name','Evidence','--file',self.file('Observed facts.'),'--purpose','reference','--purpose','voice-sample')['id']
         profile=self.command(self.a,'profile','create','--name','Author','--guide-file',self.file('Write plainly.'),'--sample',source)['id']

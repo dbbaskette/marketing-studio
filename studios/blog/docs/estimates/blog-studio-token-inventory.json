@@ -149,9 +149,9 @@
       "sha256": "4dc9950a24602bd49d17149ec36bdfbf43b72dd400a549c6281910a97f590ac8"
     },
     "references/hub/library.md": {
-      "characters": 2331,
-      "estimated_tokens": 583,
-      "sha256": "2cae250914e90bf2266feb16d5751cb7d3031b6da0991cd3985890cd5a8dd220"
+      "characters": 2911,
+      "estimated_tokens": 728,
+      "sha256": "a8a4dee4c8b3ab6d8fa8d1586580c5b455c2f26a0066b26cda46ae969c17555d"
     },
     "references/hub/memory.md": {
       "characters": 4692,
@@ -159,19 +159,19 @@
       "sha256": "a70c862a5c5bdb9a60d62be75f08d1daef1ecd636584b77c99f08b2a3af702cb"
     },
     "references/hub/setup.md": {
-      "characters": 2812,
-      "estimated_tokens": 703,
-      "sha256": "1839155e8620cd112006452b15bc713febcc828128c3052760f3ade990bfd5ab"
+      "characters": 4093,
+      "estimated_tokens": 1024,
+      "sha256": "6a422190b8928945975fd86bc8dc8fbc924811fdf208c98ab4aa5a29a95503de"
     },
     "references/hub/sync.md": {
-      "characters": 2775,
-      "estimated_tokens": 694,
-      "sha256": "295733ef10fae5d3324654431cad162923b0bdcab3197974f7420e5ee8768805"
+      "characters": 3081,
+      "estimated_tokens": 771,
+      "sha256": "ca04fae0db46b9c69327518ec6000db9b962f7f10760be39be959d9440ee2c1d"
     },
     "references/hub/workflow.md": {
-      "characters": 2676,
-      "estimated_tokens": 669,
-      "sha256": "d0e6cccf387f9378685768d5837eda530b6191d59bd2849ef5038d52eb76c49a"
+      "characters": 2685,
+      "estimated_tokens": 672,
+      "sha256": "b3ab3ab32ace05268104f125a3f956d6d5002733f5b64230b28ce2e949a2ba66"
     },
     "references/intake.md": {
       "characters": 2314,
@@ -664,7 +664,7 @@
       "sha256": "36c39ead07081df6544bf0eb981b19bb4046c17ce95805acc923d3ac7c52d40e"
     }
   },
-  "library_tokens": 201419,
+  "library_tokens": 201965,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -772,21 +772,21 @@
         "references/hub/workflow.md",
         "references/hub/setup.md"
       ],
-      "estimated_tokens": 1372
+      "estimated_tokens": 1696
     },
     "memory": {
       "files": [
         "references/hub/workflow.md",
         "references/hub/memory.md"
       ],
-      "estimated_tokens": 1842
+      "estimated_tokens": 1845
     },
     "sync": {
       "files": [
         "references/hub/workflow.md",
         "references/hub/sync.md"
       ],
-      "estimated_tokens": 1363
+      "estimated_tokens": 1443
     }
   },
   "conditional_privacy_reference": {

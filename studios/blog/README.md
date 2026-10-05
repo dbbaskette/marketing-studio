@@ -19,8 +19,9 @@ an idea one question at a time. You stay in the same chat.
    **“Use Blog Studio. Help me start a blog.”**
 
 Already installed? Download the latest installer and run it again, then open a
-new chat. **Version 1.12.3** includes clearer Team Hub revision histories, the editorial desk, team pipeline, searchable
-library of earlier posts, phone-friendly layouts, and clearer next steps for reviews and shared editing.
+new chat. **Version 1.13.1** uses a normal local Git checkout for each Hub and keeps drafts, originals, review edits, selected sources, and
+history together inside each blog folder. Reusable team knowledge has its own
+readable memory library. Existing hubs upgrade during an authorized save or sync.
 
 [Setup help, company laptop instructions, and updates →](docs/installation.md)
 
@@ -88,6 +89,10 @@ Earlier versions remain available.
 Say **“Join our Hub: [repository link].”** Normal saves then share the selected
 workspace with that Hub. Without one, your work stays on your computer. Blog
 Studio tells you when a save is still waiting to be shared.
+
+Your Hub lives at `~/blogs/<hub-name>/`, with readable shared files and Git history
+together. Local drafts and sync state stay in the hidden `.blog-studio/` folder.
+Existing Hubs can be moved by saying **“Move our Hub to the standard folder.”**
 
 [Create or join a Team Hub →](docs/team-hub.md) · [More simple commands →](docs/prompt-cheat-sheet.md)
 
@@ -163,4 +168,4 @@ under your account settings.
 
 **For developers and team administrators:** [Developer guide](docs/development.md) ·
 [Roadmap](https://github.com/dbbaskette/blog-studio/issues/3) ·
-[Performance evidence](docs/performance.md) · [Package details](PACKAGE.md)
+[Performance evidence](docs/performance.md) · [Hub acceptance walkthrough](docs/hub-acceptance.md) · [Package details](PACKAGE.md)
