@@ -38,6 +38,7 @@ class CheckoutTests(unittest.TestCase):
         self.assertTrue((root / 'README.md').is_file())
         self.assertEqual(git(self.hub.repository, 'rev-parse', '--is-bare-repository').strip(), b'false')
         self.assertEqual(git(self.hub.repository, 'status', '--porcelain').strip(), b'')
+        self.assertEqual(git(self.hub.repository, 'rev-parse', '--abbrev-ref', 'main@{upstream}').strip(), b'origin/main')
         self.assertEqual(self.registry.selected(root / '.blog-studio').id, self.id)
         self.assertTrue((root / '.blog-studio/studio.json').exists())
         result = self.hub.save('note', 'Visible note', 'Team context')

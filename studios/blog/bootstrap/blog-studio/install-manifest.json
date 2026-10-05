@@ -35,7 +35,7 @@
     "scripts/google_roundtrip.py": "df48abc195fd7336f5eb110986b4a182aa25f15323c116dc73c8fbe2957c5d58",
     "scripts/google_suggestions.py": "57b7942ab4d39bec2055a08e454dd0c7e812b09aa26e7f7c2da0272fbb68baaa",
     "scripts/google_workflow.py": "f8ce4c502634147ef59e00113e5307e0e4ed9e603c02ed1888d1e92b4994080b",
-    "scripts/hub.py": "9f07c24920c30b6cba539a7f05596685699f8472fe9b14cbf9ab82c06ebed8fe",
+    "scripts/hub.py": "c650551d74bd57c76460f6dd837c8bfa45b4ce4ef1a4bf723195110b6a0f21f4",
     "scripts/hub_browse.py": "9fadf6887c43b323384abec2b5ec066cfbc22d2a50bce4316950069589d8a08d",
     "scripts/hub_store.py": "af9bf19d589c6476167a41374b1a4c1e883f3786e61d90d80f4f38fb01a41a0f",
     "scripts/hub_workspace.py": "502f843770497e173f17767c3677ae176089773b56c8795960c9f25c36a1b46e",

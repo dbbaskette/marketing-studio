@@ -175,6 +175,9 @@ class Registry:
                     git(repository, 'remote', 'add', 'origin', 'https://github.com/' + hub.config['repository'] + '.git')
                     atomic(repository / 'info/exclude', b'/.blog-studio/\n')
                     git(repository, 'checkout', '--quiet', '-B', 'main', commit)
+                    git(repository, 'update-ref', 'refs/remotes/origin/main', commit)
+                    git(repository, 'config', 'branch.main.remote', 'origin')
+                    git(repository, 'config', 'branch.main.merge', 'refs/heads/main')
                     local = stage / '.blog-studio/hub'
                     shutil.copytree(hub.root, local, ignore=shutil.ignore_patterns('repository.git', '.hub.lock'))
                     state = self.state()
@@ -311,6 +314,9 @@ class Hub:
         if self.normal:
             self._checkout_clean()
             git(self.repository, 'checkout', '--quiet', '-B', 'main', commit)
+            git(self.repository, 'update-ref', 'refs/remotes/origin/main', commit)
+            git(self.repository, 'config', 'branch.main.remote', 'origin')
+            git(self.repository, 'config', 'branch.main.merge', 'refs/heads/main')
         root = contained(self.root, 'snapshots', commit)
         for name, content in files.items():
             target = contained(root, *name.split('/'))
