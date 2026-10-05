@@ -19,8 +19,8 @@ an idea one question at a time. You stay in the same chat.
    **“Use Blog Studio. Help me start a blog.”**
 
 Already installed? Download the latest installer and run it again, then open a
-new chat. **Version 1.12.1** includes the editorial desk, team pipeline, searchable
-library of earlier posts, and safer editing when teammates make changes.
+new chat. **Version 1.12.2** includes the editorial desk, team pipeline, searchable
+library of earlier posts, phone-friendly layouts, and clearer next steps for reviews and shared editing.
 
 [Setup help, company laptop instructions, and updates →](docs/installation.md)
 
@@ -122,6 +122,13 @@ If a reference changes while you edit its tags or notes, your proposed changes
 stay in the form. Choose **Reload and compare**, then choose the latest saved
 values or keep your proposal before saving again. Reloading alone does not save
 changes.
+
+Open a blog title or choose **Inspect finding** to see the saved writing and its
+review status. **Copy request** gives you a short handoff to continue that specific
+blog in chat. Editorial fields, reviews, and history open when you need them.
+
+The desk shows your Hub access before editing. Read-only members can browse and
+refresh; decisions and specialized memories explain how to continue in chat.
 
 [Using the editorial desk →](docs/editorial-desk.md)
 

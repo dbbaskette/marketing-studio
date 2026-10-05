@@ -39,6 +39,55 @@ class Fixture(unittest.TestCase):
 
 
 class EditorialTests(Fixture):
+    def test_article_details_derive_next_action_without_mutation(self):
+        empty = self.command('article','create','--title','New idea','--mode','outline-only')
+        self.assertEqual(management.detail(self.root, empty['id'])['view']['state'], 'empty')
+        self.file.write_text('An outline with a clear reader outcome.')
+        self.command('article','save','--id',empty['id'],'--kind','outline','--file',str(self.file))
+        outline = management.detail(self.root, empty['id'])['view']
+        self.assertTrue(outline['stop_reached']);self.assertIn('outline', outline['next_action']['command'])
+        ident = self.article('Manuscript text. ' * 2000);directory, record = studio.item(self.root,'articles',ident)
+        before = (directory/'session.json').read_bytes()
+        result = management.detail(self.root,ident)
+        self.assertEqual((directory/'session.json').read_bytes(),before)
+        self.assertTrue(result['view']['preview']['truncated']);self.assertLessEqual(len(result['view']['preview']['text']),16000)
+        self.assertIn(ident,result['view']['next_action']['command']);self.assertTrue(result['view']['stop_reached'])
+        self.assertNotIn('Gather missing',result['view']['next_action']['command'])
+        record['stop_point']='review';record['reviews']['proofread']={'status':'current','inputs':studio.fingerprints(self.root,directory,record),'result':{'findings':[]},'checked_at':studio.now()}
+        studio.persist(directory,'articles',record)
+        editorial.schedule(self.root,ident,{'stage':'ready'})
+        ready = management.detail(self.root,ident)['view'];self.assertEqual(ready['stage'],'ready')
+        self.assertIn('publication remains',ready['next_action']['command'])
+        (directory/'DRAFT.md').write_text('Changed outside Blog Studio.')
+        stale = management.detail(self.root,ident)['view']
+        self.assertTrue(stale['decision_stale']);self.assertEqual(stale['stage'],'review')
+        self.assertIn('no longer current',stale['blocker'])
+        self.assertEqual(next(r for r in stale['reviews'] if r['check']=='proofread')['status'],'stale')
+        self.assertIsNone(stale['google']);self.assertIn('No saved Google',stale['google_observation'])
+        with self.assertRaises(ValueError):management.detail(self.root,ident,'invalid')
+
+    def test_inbox_search_and_exact_finding_detail_keep_article_identity(self):
+        ident=self.article();directory,record=studio.item(self.root,'articles',ident)
+        source=self.source();self.command('article','attach','--id',ident,'--source',source['id'])
+        _,record=studio.item(self.root,'articles',ident)
+        record['stop_point']='review'
+        record['reviews']['proofread']={'status':'current','inputs':studio.fingerprints(self.root,directory,record),'result':{'findings':[{'message':'Fix gateway punctuation.'}]},'checked_at':studio.now()}
+        studio.persist(directory,'articles',record)
+        self.assertEqual(editorial.inbox(self.root,query='no-match-ever')['total'],0)
+        row=editorial.inbox(self.root,query='punctuation')['items'][0]
+        detail=management.finding_detail(self.root,ident,row['key'])
+        self.assertEqual(detail['finding']['finding']['message'],'Fix gateway punctuation.')
+        self.assertIn(ident,detail['command']);self.assertIn(row['key'],detail['command'])
+        self.assertEqual(detail['article']['view']['stop_point'],'review')
+        claim='The gateway calls the service.'
+        text=(directory/'DRAFT.md').read_text()
+        editorial.evidence(self.root,ident,[{'claim':claim,'start':text.index(claim),'status':'insufficient','citations':[{'source':0,'start':0,'quote':claim}]}])
+        evidence=editorial.inbox(self.root,query='claim evidence')['items'][0]
+        self.assertEqual(management.finding_detail(self.root,ident,evidence['key'])['evidence'][0]['quote'],claim)
+        _,record=studio.item(self.root,'articles',ident);record['reviews']['proofread']['result']['findings'][0]['message']='Changed finding'
+        studio.persist(directory,'articles',record)
+        with self.assertRaisesRegex(ValueError,'changed'):management.finding_detail(self.root,ident,row['key'])
+
     def test_external_draft_changes_invalidate_readiness_without_mutating_saved_state(self):
         ident = self.article()
         directory, _ = studio.item(self.root, 'articles', ident)
@@ -263,6 +312,25 @@ class HubEditorialTests(Fixture):
         self.workspace = Workspace(self.root, self.hub)
         self.active_patch = patch('hub_workspace.active', side_effect=lambda root:self.workspace if root == self.root else self.other_workspace)
         self.active_patch.start();self.addCleanup(self.active_patch.stop)
+    def test_shared_preview_conflict_and_newer_revision_offer_safe_continuation(self):
+        ident=self.article();directory,record=studio.item(self.root,'articles',ident)
+        record['reviews']['proofread']={'status':'current','inputs':studio.fingerprints(self.root,directory,record),'result':{'findings':[{'message':'Inspect saved punctuation.'}]}}
+        studio.persist(directory,'articles',record)
+        shared=self.workspace.publish_selected({'articles':[ident]})['items'][0]
+        result=management.detail(self.root,shared['item'],'hub')
+        self.assertIn('gateway',result['view']['preview']['text'])
+        self.assertEqual(result['view']['reviews'][0]['status'],'needs-local-check')
+        self.assertIn(shared['item'],result['view']['next_action']['command'])
+        finding=editorial.inbox(self.root,shared_id=shared['item'])['items'][0]
+        self.assertEqual(management.finding_detail(self.root,shared['item'],finding['key'],'hub')['finding']['location'],'hub')
+        original=self.hub.read(shared['item'])['record']
+        newer=self.hub.save('article',original['title'],'A newer draft',item=shared['item'],parents=[shared['revision']],data=original['data'],artifacts={'DRAFT.md':(b'A newer draft','text')},sync=False)
+        self.assertTrue(management.detail(self.root,ident)['view']['shared_newer'])
+        self.hub.save('article',original['title'],'Another branch',item=shared['item'],parents=[shared['revision']],data=original['data'],artifacts={'DRAFT.md':(b'Another branch','text')},sync=False)
+        conflict=management.detail(self.root,shared['item'],'hub')['view']
+        self.assertTrue(conflict['conflict']);self.assertIn('Compare competing',conflict['next_action']['command'])
+        with self.assertRaises(ValueError):management.detail(self.root,shared['item'],'hub',shared['revision'])
+
     def test_shared_curation_refreshes_and_rejects_changed_head_before_checkout(self):
         source = self.source();shared = self.workspace.publish_selected({'sources': [source['id']]})['items'][0]
         other = self.base / 'curation-other';studio.initialize(other)
@@ -420,13 +488,60 @@ class HubEditorialTests(Fixture):
         with self.assertRaisesRegex(ValueError, 'changed'):
             management.dispatch(self.root, 'retry-sync', {'id':upload['receipts'][0]['id']})
 
+    def test_memory_details_support_each_kind_and_protect_specialized_records(self):
+        for kind in ('note', 'context', 'rule', 'decision'):
+            with self.subTest(kind=kind):
+                saved = self.hub.save(kind, kind.title(), 'Saved body', sync=False)
+                result = management.memory_detail(self.root, saved['item'], saved['revision'])
+                self.assertEqual(result['record']['kind'], kind)
+                self.assertEqual(result['body'], 'Saved body')
+                self.assertEqual(result['editable'], kind != 'decision')
+                if kind == 'decision':
+                    with self.assertRaisesRegex(ValueError, 'read-only'):
+                        management.dispatch(self.root, 'memory', {'item':saved['item'], 'revision':saved['revision'], 'kind':'note', 'title':'Converted', 'body':'Changed'})
+                    self.assertEqual(self.hub.read(saved['item'])['record']['kind'], 'decision')
+        for marker in ('collection', 'lesson'):
+            saved = self.hub.save('context', marker, 'Focused body', data={marker:{'fixture':True}}, sync=False)
+            result = management.memory_detail(self.root, saved['item'])
+            self.assertFalse(result['editable']);self.assertIn(marker, result['read_only_reason'].casefold())
+            with self.assertRaisesRegex(ValueError, 'focused'):
+                management.dispatch(self.root, 'memory', {'item':saved['item'], 'revision':saved['revision'], 'kind':'context', 'title':marker, 'body':'Changed'})
+
+    def test_provider_distinguishes_expired_authentication_from_transport_failure(self):
+        from hub_store import GitHub, AuthenticationError, TransportError
+        from types import SimpleNamespace
+        for stderr, expected in ((b'HTTP 401: Bad credentials', AuthenticationError),(b'Network unavailable',TransportError)):
+            with patch('hub_store.subprocess.run', return_value=SimpleNamespace(returncode=1,stdout=b'',stderr=stderr)):
+                with self.assertRaises(expected):GitHub().lookup('fixture/editorial')
+
+    def test_read_only_refresh_and_capability_states_do_not_authorize_writes(self):
+        from hub_store import AuthenticationError, TransportError
+        self.assertEqual(management.capabilities(self.root)['status'], 'writable')
+        self.provider.repos['fixture/editorial']['write'] = False
+        result = management.capabilities(self.root)
+        self.assertEqual(result['status'], 'read-only');self.assertTrue(result['actions']['refresh'])
+        self.assertFalse(result['actions']['edit']);self.assertTrue(management.dispatch(self.root, 'refresh', {})['fresh'])
+        with self.assertRaises(ValueError):management.dispatch(self.root, 'upload', {})
+        for failure, status in ((AuthenticationError('Expired'), 'access-expired'), (TransportError('Offline'), 'unavailable')):
+            with patch.object(self.provider, 'lookup', side_effect=failure):
+                result = management.capabilities(self.root)
+                self.assertEqual(result['status'], status);self.assertFalse(any(result['actions'].values()))
+                with self.assertRaises(HubError):management.dispatch(self.root, 'refresh', {})
+        self.provider.repos['fixture/editorial']['private'] = False
+        self.assertEqual(management.capabilities(self.root)['status'], 'identity-mismatch')
+        with self.assertRaises(HubError):management.dispatch(self.root, 'refresh', {})
+        self.provider.repos['fixture/editorial']['private'] = True
+        self.provider.repos['fixture/editorial']['repository'] = 'fixture/changed'
+        self.assertEqual(management.capabilities(self.root)['status'], 'identity-mismatch')
+        with self.assertRaises(HubError):management.authorize_write(self.root)
+
     def test_one_access_level_uses_fresh_github_permissions(self):
         self.assertEqual(management.authorize_write(self.root), self.workspace)
         self.provider.repos['fixture/editorial']['write'] = False
         with self.assertRaises(ValueError):management.authorize_write(self.root)
         self.provider.repos['fixture/editorial']['write'] = True
         self.provider.repos['fixture/editorial']['private'] = False
-        with self.assertRaises(ValueError):management.authorize_write(self.root)
+        with self.assertRaises(HubError):management.authorize_write(self.root)
 
 
 class CurationConflictTests(Fixture):
@@ -475,6 +590,10 @@ class ManagementTests(Fixture):
     def test_http_auth_host_origin_paths_and_page(self):
         self.article();server, token = self.start_server()
         self.assertEqual(self.request(server, token)[0], 200)
+        self.assertEqual(self.request(server, token, '/api/capabilities')[1]['status'],'local-only')
+        self.assertEqual(self.request(server, token, '/api/inbox?query=no-match-ever')[1]['total'],0)
+        self.assertEqual(self.request(server, 'bad', '/api/capabilities')[0],400)
+        self.assertEqual(self.request(server, 'bad', '/api/finding?id=fixture&key=fixture')[0],400)
         self.assertEqual(self.request(server, 'bad')[0], 400)
         self.assertEqual(self.request(server, token, headers={'Origin': 'https://outside.example'})[0], 400)
         self.assertEqual(self.request(server, token, headers={'Host': 'outside.example'})[0], 400)

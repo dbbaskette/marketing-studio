@@ -13,6 +13,8 @@ class Element {
   querySelectorAll(selector){return this.children.flatMap(c=>[...(selector==='.dialog-notice'&&c.className.includes('dialog-notice')?[c]:selector==='[type=submit]'&&c.type==='submit'?[c]:[]),...c.querySelectorAll(selector)]);}
   showModal(){this.open=true;}
   close(){this.open=false;}
+  focus(){this.focused=true;}
+  select(){this.selected=true;}
 }
 function descendants(node){return node.children.flatMap(c=>[c,...descendants(c)]);}
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
@@ -22,6 +24,7 @@ function fixture(responder=()=>({items:[],total:0})){
   const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:()=>'',setItem:()=>{}},history:{replaceState:()=>{}},URLSearchParams,AbortController,FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:()=>true,crypto:{randomUUID:()=> 'a'.repeat(32)},fetch:async(url,options)=>{const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
   const source=fs.readFileSync('skills/blog-studio/assets/management/app.js','utf8').split("for(const b of document.querySelectorAll('[data-view]'))")[0];
   vm.runInContext(source,context);
+  vm.runInContext("access={status:'local-only',message:'Local only',actions:{edit:true,memory:false,refresh:false}}",context);
   return {get,nodes,run:code=>vm.runInContext(code,context),set:(name,value)=>{context[name]=value;}};
 }
 async function check(){
@@ -34,11 +37,13 @@ async function check(){
   f.set('result',{receipts:[{label:'Reference',message:'Shared with the Team Hub.'},{label:'Blog',message:'Saved locally; Hub sync needs attention.'}]});
   f.run('savedNotice(result)');assert.match(f.get('notice').textContent,/Blog: Saved locally/);
   const pending=fixture(()=>({items:[{id:'fixture',label:'Blog',sharing:'pending-review',message:'Waiting for contribution review.',retry:true}]}));
-  await pending.run('loadReceipts()');assert.equal(pending.get('sync-status').hidden,false);
+  pending.run('access.actions.edit=true');await pending.run('loadReceipts()');assert.equal(pending.get('sync-status').hidden,false);
   assert.equal(pending.get('sync-status').children[0].children[1].textContent,'Retry sync');
+  await capabilityAndMemory();
+  await articleDisclosure();
   await requestOrdering();
   await curationConflict();
-  console.log(JSON.stringify({status:'passed',checks:'feedback; request ordering, loading and recovery; curation conflict and explicit resubmission'}));
+  console.log(JSON.stringify({status:'passed',checks:'feedback; access and memory kinds; request ownership; curation conflicts; article/finding disclosures and clipboard fallback'}));
 }
 function controlled(){
   const requests=[];
@@ -119,3 +124,46 @@ async function curationConflict(){
   assert.equal(writes[1].note,'My proposed note');assert.equal(f.get('detail-dialog').open,false);
 }
 check().catch(e=>{console.error(e);process.exitCode=1;});
+
+async function capabilityAndMemory(){
+  const f=fixture(()=>({status:'read-only',message:'Read-only Hub access.',actions:{edit:false,memory:false,refresh:true}}));
+  await f.run('loadCapabilities()');
+  assert.equal(f.get('upload-open').disabled,true);assert.equal(f.get('memory-open').disabled,true);
+  assert.equal(f.get('refresh-hub').disabled,false);assert.match(f.get('access-status').textContent,/Read-only/);
+  for(const kind of ['note','context','rule','decision','collection','lesson']){
+    const editable=['note','context','rule'].includes(kind);
+    const m=fixture(()=>({record:{item:'memory',revision:'revision',kind:editable?kind:kind==='decision'?kind:'context',title:kind,scope:{level:'team',key:''}},body:'Saved body',editable,read_only_reason:editable?'':kind+' is read-only',continuation:'Inspect memory fixture'}));
+    const submit=new Element('button');submit.type='submit';m.get('memory-form').append(submit);
+    m.run('access.actions.memory=true');m.set('item',{item:'memory',revision:'revision'});
+    await m.run('editMemory(item)');
+    if(editable){assert.equal(m.get('memory-kind').value,kind);assert.equal(m.get('memory-dialog').open,true);}
+    else {assert.equal(m.get('detail-dialog').open,true);assert.equal(descendants(m.get('detail-content')).some(e=>e.type==='submit'),false);assert.ok(descendants(m.get('detail-content')).some(e=>e.textContent===kind+' is read-only'));}
+  }
+}
+
+async function articleDisclosure(){
+  const data={title:'Gateway guide',location:'local',expected:'guard',record:{editorial:{},stop_point:'draft'},assets:{},sources:[],history:[],view:{id:'article-id',location:'local',stage:'draft',stop_point:'draft',stop_reached:true,blocker:'',reviews:[{check:'proofread',status:'stale',detail:'Inputs changed.'}],next_action:{label:'Inspect saved draft in chat',command:'Continue blog article-id. Keep the requested stopping point (draft).'},google:null,google_observation:'No saved Google link.',preview:{kind:'draft',text:'A bounded manuscript preview.',truncated:false}}};
+  const f=fixture(url=>url.startsWith('/api/finding')?{article:data,finding:{kind:'proofread',status:'stale',action:'Inspect it.',finding:{message:'Saved finding.'}},evidence:[{name:'Specification',quote:'Exact passage.'}],command:'Continue blog article-id. Show finding fixture.'}:data);
+  f.set('item',{id:'article-id',location:'local'});await f.run('showBlog(item)');
+  const content=f.get('detail-content');
+  assert.ok(descendants(content).some(e=>e.textContent==='A bounded manuscript preview.'));
+  const details=descendants(content).filter(e=>e.tagName==='details');
+  assert.ok(details.some(e=>e.children[0].textContent==='Editorial details'));
+  assert.ok(details.some(e=>e.children[0].textContent==='Reviews and freshness'));
+  assert.ok(details.every(e=>!e.open));
+  const field=descendants(content).find(e=>e.tagName==='textarea'&&e.readOnly);
+  assert.match(field.value,/article-id/);
+  const copy=descendants(content).find(e=>e.textContent==='Copy request');await copy.listeners.click();
+  assert.equal(field.selected,true);assert.equal(field.focused,true);
+  f.run('access.actions.edit=false');await f.run('showBlog(item)');
+  assert.equal(descendants(content).some(e=>e.type==='submit'),false);
+  f.set('item',{id:'article-id',location:'local',key:'fixture'});await f.run('showFinding(item)');
+  assert.ok(descendants(content).some(e=>e.textContent==='Saved finding.'));
+  assert.ok(descendants(content).some(e=>e.textContent==='Exact passage.'));
+  for(const name of ['board','inbox','library','memory']){
+    const item={id:'blog',item:'memory',title:'A long title',location:'local',author:'Avery',stage:'draft',owner:'Morgan',kind:'proofread',key:'finding',action:'Inspect',status:'stale',library:{curation:'active'},scope:{level:'team',key:''}};
+    f.set('state',{view:name,offset:0});f.set('result',{items:[item],total:1});f.run('render(state,result)');
+    const cells=descendants(f.get('results')).filter(e=>e.tagName==='td');
+    assert.equal(cells.length,4);assert.ok(cells.every(e=>e.attributes['data-label']));
+  }
+}

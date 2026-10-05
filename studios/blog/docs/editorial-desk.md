@@ -4,9 +4,34 @@
 
 *Sample content; your desk shows your selected workspace and Team Hub.*
 
+[See the phone layout](assets/editorial-desk-phone.png).
+
 In Codex or Claude Code, say **“Use Blog Studio. Open editorial desk.”**
 The page opens on your computer against your current writing workspace and
 selected Team Hub. Keep the helper running while you use the page.
+
+## Pick up a blog or finding
+
+Open a blog title to see a saved manuscript preview or working Google Doc link,
+review freshness, and the next available action. Choose **Copy request**, then
+paste into your Codex or Claude Code chat. The request identifies the exact blog
+and keeps its requested stopping point. If copying is unavailable, select and
+copy the text yourself.
+
+Choose **Inspect finding** in **Needs attention** to open that finding with its
+blog and saved evidence. Search this view by blog, finding text, kind, or status.
+A finding that changed since the list loaded asks you to reload the inbox.
+
+**Editorial details**, **Reviews and freshness**, and **Evidence and history**
+open only when you need them. A changed manuscript explains why an earlier ready
+or published decision is no longer current. Shared reviews are saved snapshots;
+resume in chat to check them against your current local inputs. No action here
+approves or publishes a blog.
+
+On phones and tablets, results become stacked rows with title, stage/status,
+owner/due information and actions visible without sideways scrolling. Wider
+screens keep the table. Dialogs scroll internally with visible Close and Save
+controls.
 
 ## What you can do
 
@@ -30,7 +55,9 @@ want a manuscript; an ordinary reference upload does not start a new blog.
 **Team memory** lets you read and save notes, context and writing rules. Choose
 whether a memory applies to the team, a project, an author, or one blog. Changes
 create revisions; existing blogs keep their selected context until deliberately
-updated. Collection settings and candidate lessons use their focused chat flows.
+updated. Decisions are read-only here; inspect them and discuss a follow-up in
+chat. Collection settings and candidate lessons also show read-only details and
+a focused continuation, without a generic Save that could change their type.
 
 ## Bring in your earlier blogs
 
@@ -55,9 +82,15 @@ stale when those inputs change. Preparing them does not publish anything.
 ## Access and sharing
 
 There is one contributor level. Everyone with existing Hub write access can use
-the editing controls; GitHub repository admins manage membership. The desk checks
-current GitHub access for shared edits. If access cannot be verified, check your
-sign-in and repository permissions; ordinary chat saves still retain local work.
+the editing controls; GitHub repository admins manage membership. The access
+message distinguishes a local workspace, write access, read-only access, expired
+sign-in, and unavailable verification. **Check access** checks again before you
+fill out an editing form. Read-only members can still browse saved records and
+use **Refresh Hub**; editing controls are unavailable with an explanation.
+
+Every actual write checks current access again. If access cannot be verified,
+check your sign-in and repository permissions; ordinary chat saves still retain
+local work. Access observations do not grant permissions or create another role.
 
 **Refresh Hub** checks shared Git changes. It does not refresh Google Docs.
 Google links are saved working links, not proof the document is current. Use

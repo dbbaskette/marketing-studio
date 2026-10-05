@@ -11,7 +11,7 @@ import subprocess
 import uuid
 from urllib.parse import urlsplit
 
-VERSION = '1.12.1'
+VERSION = '1.12.2'
 KINDS = ('article', 'source', 'voice', 'note', 'decision', 'rule', 'context', 'review')
 MAX_TEXT = 1024 * 1024
 MAX_BINARY = 10 * MAX_TEXT
@@ -26,6 +26,11 @@ class HubError(Exception):
 
 
 class TransportError(HubError):
+    pass
+
+
+class AuthenticationError(TransportError):
+    """The provider explicitly reports an invalid or expired sign-in."""
     pass
 
 
@@ -159,6 +164,8 @@ class GitHub:
         if result.returncode:
             if allow_missing and b'HTTP 404' in result.stderr:
                 return None
+            if any(marker in result.stderr.lower() for marker in (b'http 401', b'bad credentials', b'gh auth login', b'authentication required')):
+                raise AuthenticationError('GitHub sign-in expired or is unavailable. Sign in again before refreshing or editing shared work.')
             raise TransportError('GitHub access failed. Check your account, repository permission, and organization policy.')
         try:
             return json.loads(result.stdout) if result.stdout.strip() else {}

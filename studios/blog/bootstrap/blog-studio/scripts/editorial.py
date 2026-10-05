@@ -5,7 +5,7 @@ import json
 import re
 import studio
 from experience import page
-from hub_store import HubError
+from hub_store import HubError, encoded, sha
 
 STAGES = ('idea', 'draft', 'review', 'ready', 'published')
 
@@ -102,11 +102,12 @@ def derived_status(root, directory, record):
             for name, value in record.get('editorial_assets', {}).items()}
 
 
-def inbox(root, article_id=None, limit=20, offset=0, online=False, account=None, client=None):
+def inbox(root, article_id=None, limit=20, offset=0, online=False, account=None, client=None, query='', shared_id=None):
     rows = []
     coverage = []
     if online and not article_id:raise ValueError('Choose a current blog before reading live Google feedback.')
     articles = [article_id] if article_id else [p.name for p in studio.inside(root, 'articles').iterdir() if p.is_dir()] if (root / 'articles').exists() else []
+    if shared_id:articles = []
     for ident in articles:
         directory, record = studio.item(root, 'articles', ident)
         for check, review in studio.freshness(root, directory, record).items():
@@ -130,7 +131,7 @@ def inbox(root, article_id=None, limit=20, offset=0, online=False, account=None,
         if evidence_path.is_file():
             for claim in studio.read_json(evidence_path).get('content', {}).get('claims', []):
                 if claim['status'] in ('contradicted', 'insufficient'):
-                    rows.append({'id': ident, 'title': record['title'], 'kind': 'claim evidence', 'status': claim['status'], 'blocking': True, 'finding': {'message': claim['claim']}, 'action': 'Inspect its exact cited passages before reusing the claim.'})
+                    rows.append({'id': ident, 'title': record['title'], 'kind': 'claim evidence', 'status': claim['status'], 'blocking': True, 'finding': {'message': claim['claim']}, 'claim_start':claim['start'], 'action': 'Inspect its exact cited passages before reusing the claim.'})
         if record.get('pending_question'):
             rows.append({'id': ident, 'title': record['title'], 'kind': 'question', 'status': 'waiting', 'action': record['pending_question']})
         if record.get('google'):
@@ -143,8 +144,8 @@ def inbox(root, article_id=None, limit=20, offset=0, online=False, account=None,
         graph = adapter.hub.graph()
         for item_id, heads in graph['heads'].items():
             record = graph['revisions'][heads[-1]]
-            if record['kind'] != 'article' or record['status'] == 'tombstone' or item_id in local_items:continue
-            if len(heads) > 1:rows.append({'id': item_id, 'title': record['title'], 'kind': 'Hub conflict', 'status': 'conflict', 'blocking': True, 'action': 'Resolve competing revisions before resuming.'})
+            if record['kind'] != 'article' or record['status'] == 'tombstone' or (not shared_id and item_id in local_items) or (shared_id and item_id != shared_id):continue
+            if len(heads) > 1:rows.append({'id': item_id, 'title': record['title'], 'kind': 'Hub conflict', 'status': 'conflict', 'location':'hub', 'blocking': True, 'action': 'Resolve competing revisions before resuming.'})
             for check, review in record['data'].get('studio', {}).get('reviews', {}).items():
                 unresolved = any(isinstance(finding, dict) and finding.get('status') not in ('resolved', 'dismissed', 'applied')
                                  for finding in review.get('result', {}).get('findings', []))
@@ -173,6 +174,11 @@ def inbox(root, article_id=None, limit=20, offset=0, online=False, account=None,
                 except GoogleError:
                     rows.append({'id': article_id, 'title': record['title'], 'kind': 'Google review', 'status': 'unavailable', 'action': 'Check the Google connection; local findings remain available.'})
     for entry in rows:entry.setdefault('blocking', entry['status'] in ('stale', 'unavailable', 'conflict', 'contradicted') or entry.get('finding', {}).get('severity') in ('error', 'critical', 'blocking'))
+    for entry in rows:
+        entry.setdefault('location','local')
+        entry['key'] = sha(encoded({k:entry.get(k) for k in ('id','location','kind','status','number','finding','claim_start','action')}))[:24]
+    rows = [entry for entry in rows if all(word in ' '.join(str(entry.get(key) or '') for key in
+            ('id','key','title','kind','status','action','finding')).casefold() for word in query.casefold().split())]
     rows.sort(key=lambda r: (not r['blocking'], r['title'], r['kind']))
     return {**page(rows, limit, offset), 'coverage': coverage[:100], 'coverage_truncated': len(coverage) > 100,
             'google_observation': 'Read requested against the selected Doc at ' + studio.now() if online else 'No live Google request was made.'}
@@ -312,7 +318,7 @@ def add_parser(groups):
     commands = groups.add_parser('editorial').add_subparsers(dest='action', required=True)
     for name in ('board', 'inbox'):
         p = commands.add_parser(name);p.add_argument('--id');p.add_argument('--limit', type=int, default=20);p.add_argument('--offset', type=int, default=0)
-        if name == 'inbox':p.add_argument('--online', action='store_true');p.add_argument('--account')
+        if name == 'inbox':p.add_argument('--online', action='store_true');p.add_argument('--account');p.add_argument('--query', default='')
         if name == 'board':
             p.add_argument('--query', default='');p.add_argument('--stage', choices=STAGES);p.add_argument('--owner')
     for name in ('schedule', 'evidence', 'package', 'visual'):
@@ -322,7 +328,7 @@ def add_parser(groups):
 
 def command(root, args):
     if args.action == 'board': return board(root, args.query, args.stage, args.owner, args.limit, args.offset)
-    if args.action == 'inbox': return inbox(root, args.id, args.limit, args.offset, args.online, args.account)
+    if args.action == 'inbox': return inbox(root, args.id, args.limit, args.offset, args.online, args.account, query=args.query)
     if args.action == 'assets':
         directory, record = studio.item(root, 'articles', args.id)
         return {'items': derived_status(root, directory, record)}

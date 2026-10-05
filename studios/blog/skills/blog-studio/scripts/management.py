@@ -14,20 +14,64 @@ import webbrowser
 import studio
 import editorial
 import blog_library
-from hub_store import HubError, encoded, sha
+from hub_store import HubError, TransportError, AuthenticationError, encoded, sha
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets' / 'management'
 MAX_BODY = 15 * 1024 * 1024
 
 
-def authorize_write(root):
-    """One contributor level; validate existing GitHub write access, not a new role DB."""
+def checked_access(adapter):
+    """Verify the same private repository before reporting read/write capability."""
+    metadata = adapter.hub.registry.provider.lookup(adapter.hub.config['repository'])
+    if not metadata:
+        raise TransportError('The selected Hub is unavailable to this account. Check GitHub access.')
+    if (metadata.get('private') is not True
+            or metadata.get('id') != adapter.hub.config['provider_id']
+            or metadata.get('repository') != adapter.hub.config['repository']):
+        raise HubError('Hub identity or privacy changed. Editing and refresh are blocked; saved content is preserved.')
+    return metadata
+
+
+def capabilities(root):
+    """A fresh permission observation, never a reusable authorization to mutate."""
     from hub_workspace import active
     adapter = active(root)
+    status, edit, refresh, memory = 'local-only', True, False, False
+    message = 'No Team Hub selected. Local blogs and references are editable; join a Hub for shared memory.'
     if adapter:
-        metadata = adapter.hub.registry.provider.lookup(adapter.hub.config['repository'])
-        if not metadata or metadata.get('private') is not True or metadata.get('write') is not True or metadata.get('id') != adapter.hub.config['provider_id']:
-            raise ValueError('Hub write access could not be verified. Check GitHub access before editing shared work.')
+        edit = refresh = memory = False
+        try:
+            metadata = checked_access(adapter)
+            refresh = True
+            if metadata.get('write') is True:
+                status, edit, memory = 'writable', True, True
+                message = 'Hub access verified. You can refresh and edit shared work.'
+            elif metadata.get('write') is False:
+                status = 'read-only'
+                message = 'Read-only Hub access. You can browse and refresh; shared edits need GitHub write access.'
+            else:
+                status = 'unverified'
+                message = 'Hub read access verified; contribution permission is unavailable. You can refresh and browse.'
+        except AuthenticationError:
+            status = 'access-expired'
+            message = 'GitHub sign-in expired or is missing. Sign in again, then check access. Saved content remains available.'
+        except TransportError:
+            status = 'unavailable'
+            message = 'Hub access cannot be verified right now. Check connectivity and repository access, then check again. Saved content remains available.'
+        except HubError:
+            status = 'identity-mismatch'
+            message = 'Hub identity or privacy could not be verified. Inspect the Hub in chat before refreshing or editing.'
+    return {'status': status, 'message': message, 'checked_at': studio.now(),
+            'actions': {'edit': edit, 'memory': memory, 'refresh': refresh},
+            'google': 'not-checked', 'google_message': 'Google access is checked separately in chat.'}
+
+
+def authorize_write(root):
+    """One contributor level; reverify access for each actual mutation."""
+    from hub_workspace import active
+    adapter = active(root)
+    if adapter and checked_access(adapter).get('write') is not True:
+        raise ValueError('Hub write access could not be verified. Check GitHub access before editing shared work.')
     return adapter
 
 
@@ -187,6 +231,7 @@ def memories(root, limit=20, offset=0, query=''):
             if record['kind'] not in ('rule', 'context', 'note', 'decision') or record['status'] == 'tombstone':continue
             rows.append({k: record[k] for k in ('item', 'revision', 'title', 'kind', 'scope', 'summary', 'status')} | {
                 'conflict': len(heads) > 1, 'lesson': record['data'].get('lesson'),
+                'focused_workflow': bool(record['data'].get('collection') or record['data'].get('lesson')),
                 'lesson_status': blog_library.lesson_state(adapter, record) if record['data'].get('lesson') else None})
     rows = [r for r in rows if all(term in (r['title'] + ' ' + r['summary'] + ' ' + r['kind'] + ' ' + r['scope']['key']).casefold() for term in query.casefold().split())]
     return __import__('experience').page(rows, limit, offset)
@@ -239,28 +284,161 @@ def source_detail(root, ident, location='local'):
             'limitation': 'Pending extraction; no source text was read.' if record['status'] != 'ready' else 'Selected saved source; historical facts need current verification.'}
 
 
-def detail(root, ident, location='local'):
+def manuscript_preview(paths):
+    for name in ('DRAFT.md', 'OUTLINE.md', 'BRIEF.md', 'ORIGINAL.md'):
+        path = paths.get(name)
+        if path and Path(path).is_file():
+            with Path(path).open('rb') as stream:text = stream.read(16001)
+            return {'kind': name.removesuffix('.md').lower(),
+                    'text': text[:16000].decode('utf-8', errors='replace'), 'truncated': len(text) > 16000}
+    return {'kind': None, 'text': '', 'truncated': False}
 
+
+def article_view(ident, record, location, preview, reviews, conflict=False, shared_newer=False):
+    stage = editorial.row(record, ident, location, conflict=conflict)
+    stop = record.get('stop_point', 'draft')
+    question = record.get('pending_question')
+    stale = [name for name, review in reviews.items() if review['status'] == 'stale']
+    unavailable = [name for name, review in reviews.items() if review['status'] in ('unavailable', 'failed')]
+    reached = stop in ('brief', 'outline', 'draft') and preview['kind'] == stop
+    state, blocker, label, request = stage['stage'], '', 'Continue in chat', 'Show the saved work and help me choose the next step.'
+    if conflict:
+        state, blocker, label = 'conflict', 'Competing shared revisions need comparison before resuming or editing.', 'Compare revisions in chat'
+        request = 'Compare competing Hub revisions before resuming or editing this blog.'
+    elif shared_newer:
+        state, blocker, label = 'shared-newer', 'A newer shared revision exists. Compare it with local work before continuing.', 'Compare shared changes in chat'
+        request = 'Compare the newer shared revision with my local work before making changes.'
+    elif stage['decision_stale']:
+        state, blocker, label = 'review', 'The manuscript changed after the recorded ready or published decision. That decision is no longer current.', 'Inspect changed draft in chat'
+        request = 'Show what needs a new review after the manuscript changed; do not renew readiness or publication automatically.'
+    elif question:
+        state, blocker, label = 'waiting', str(question)[:2000], 'Answer the waiting question in chat'
+        request = 'Show the waiting question and help me answer it.'
+    elif reached:
+        state, label = 'stop-reached', 'Inspect saved ' + stop + ' in chat'
+        request = 'Show the saved ' + stop + ' and its available follow-ups; do not advance beyond my requested stop.'
+    elif stale:
+        blocker, label = 'Saved reviews are stale: ' + ', '.join(stale) + '.', 'Inspect stale reviews in chat'
+        request = 'Show the stale reviews and their affected inputs before rerunning any checks.'
+    elif unavailable:
+        blocker, label = 'Some checks need attention: ' + ', '.join(unavailable) + '.', 'Inspect review coverage in chat'
+        request = 'Show unavailable or failed checks and the missing evidence or access.'
+    elif not preview['text']:
+        state, label = 'empty', 'Plan this blog in chat'
+        request = 'Help me gather the missing material for the requested writing step.'
+    elif stage['stage'] == 'ready':
+        label = 'Inspect ready blog in chat'
+        request = 'Show the saved draft and review coverage; publication remains a separate explicit choice.'
+    elif preview['kind'] == 'draft':
+        label = 'Review draft in chat'
+        request = 'Show the current draft and review coverage, then help me choose the next review.'
+    elif preview['kind'] == 'outline':
+        label = 'Continue outline in chat'
+        request = 'Show this outline and help me choose the next step.'
+    command = 'Use Blog Studio. ' + ('Inspect shared blog ' if location == 'hub' else 'Continue blog ') + ident + '. ' + request
+    command += ' Keep the requested stopping point (' + stop + ') unless I explicitly change it.'
+    return {'id': ident, 'location': location, 'state': state, 'stage': stage['stage'], 'stop_point': stop,
+            'stop_reached': reached, 'blocker': blocker, 'decision_stale': stage['decision_stale'],
+            'conflict': conflict, 'shared_newer': shared_newer, 'google': editorial.doc_link(record),
+            'google_observation': 'Saved link only; Google access and document freshness are checked in chat.' if editorial.doc_link(record) else 'No saved Google Doc link. Keep writing in chat; Google access can be checked there.',
+            'reviews': [{'check': name, 'status': review['status'], 'checked_at': review.get('checked_at'),
+                         'detail': review.get('detail') or ('Inputs changed since this review.' if review['status'] == 'stale' else '')}
+                        for name, review in reviews.items()],
+            'next_action': {'label': label, 'command': command}, 'preview': preview}
+
+
+def detail(root, ident, location='local', revision=None):
+    if location not in ('local', 'hub'):raise ValueError('Choose a local or shared blog.')
+    from hub_workspace import active
+    adapter = active(root)
     if location == 'hub':
-        from hub_workspace import active
-        adapter = active(root)
         if not adapter:raise ValueError('Select a Hub.')
-        saved = adapter.hub.read(ident)
-        record = saved['record']
-        if record['kind'] != 'article':raise ValueError('Choose a shared blog.')
-        return {'record': record['data'].get('studio', {}), 'title': record['title'], 'location': 'hub',
-                'next_step': 'Choose Resume to check out this saved revision; existing local work is protected.'}
+        graph = adapter.hub.graph();heads = graph['heads'].get(ident, [])
+        if not heads:raise ValueError('Choose an available shared blog.')
+        selected = revision or heads[-1]
+        if selected not in heads:raise ValueError('This shared blog changed. Reload before inspecting its current revision.')
+        saved = adapter.hub.read(ident, selected);shared = saved['record']
+        if shared['kind'] != 'article' or shared['status'] == 'tombstone':raise ValueError('Choose a shared blog.')
+        record = dict(shared['data'].get('studio', {}), title=shared['title'])
+        paths = {name.removeprefix('artifacts/'):path for name,path in saved['paths'].items() if name.startswith('artifacts/')}
+        preview = manuscript_preview(paths)
+        reviews = {name:{'status':'needs-local-check' if value['status'] == 'current' else value['status'],
+                          'checked_at':value.get('checked_at'), 'detail':'Shared review snapshot; resume in chat to verify current local inputs.'}
+                   for name,value in record.get('reviews', {}).items()}
+        return {'record': record, 'title': record['title'], 'location': 'hub', 'revision': selected,
+                'assets': {}, 'history': [], 'sources': shared.get('dependencies', [])[:20],
+                'view': article_view(ident, record, location, preview, reviews, conflict=len(heads)>1)}
     directory, record = studio.item(root, 'articles', ident)
+    paths = {name:studio.inside(directory, name) for name in ('DRAFT.md','OUTLINE.md','BRIEF.md','ORIGINAL.md')}
+    preview = manuscript_preview(paths)
+    current = dict(record, artifact_hashes={**record.get('artifact_hashes', {}), 'draft':studio.artifact_fingerprint(directory, 'DRAFT.md')})
+    binding = adapter.state['items'].get('articles/' + ident, {}) if adapter else {}
+    heads = adapter.hub.graph()['heads'].get(binding.get('item'), []) if binding else []
+    history = studio.inside(directory, 'history')
     return {'record': record, 'title': record['title'], 'expected': sha((directory / 'session.json').read_bytes()),
-            'assets': editorial.derived_status(root, directory, record), 'location': 'local'}
+            'assets': editorial.derived_status(root, directory, record), 'location': 'local',
+            'sources': record.get('sources', [])[:20],
+            'history': [p.name for p in sorted(history.iterdir(), key=lambda p:p.name, reverse=True)[:10]] if history.is_dir() else [],
+            'view': article_view(ident, current, location, preview, studio.freshness(root, directory, record),
+                                 conflict=len(heads)>1, shared_newer=bool(binding and binding.get('revision') not in heads))}
+
+
+def finding_detail(root, ident, key, location='local'):
+    if location not in ('local','hub'):raise ValueError('Choose a local or shared finding.')
+    result = editorial.inbox(root, article_id=ident if location=='local' else None,
+                             shared_id=ident if location=='hub' else None, query=key)
+    finding = next((entry for entry in result['items'] if entry['id']==ident and entry['key']==key), None)
+    if not finding:raise ValueError('This finding changed or is no longer available. Reload the inbox.')
+    article = detail(root, ident, location)
+    evidence = []
+    if location == 'local' and finding['kind'] == 'claim evidence':
+        directory, _ = studio.item(root, 'articles', ident)
+        saved = studio.read_json(studio.inside(directory, 'derived/evidence.json'))
+        claim = next((entry for entry in saved.get('content', {}).get('claims', [])
+                      if entry['claim']==finding['finding']['message'] and entry['start']==finding.get('claim_start')), None)
+        if claim:evidence = claim.get('citations', [])[:10]
+    command = ('Use Blog Studio. ' + ('Inspect shared blog ' if location=='hub' else 'Continue blog ') + ident
+               + '. Show the ' + finding['kind'] + ' finding ' + key + ' and its evidence before making changes. Keep the requested stopping point (' + article['view']['stop_point'] + ').')
+    return {'article':article, 'finding':finding, 'evidence':evidence, 'command':command}
+
+def memory_detail(root, ident, revision=None):
+    from hub_workspace import active
+    adapter = active(root)
+    if not adapter:raise ValueError('Select a Hub.')
+    saved = adapter.hub.read(ident, revision)
+    record = saved['record']
+    if record['kind'] not in ('note', 'context', 'rule', 'decision'):raise ValueError('Choose a memory.')
+    heads = adapter.hub.graph()['heads'].get(ident, [])
+    focused = bool(record['data'].get('collection') or record['data'].get('lesson'))
+    reason = ''
+    command = 'Use Blog Studio. Inspect team memory ' + ident + '.'
+    if record['data'].get('collection'):
+        reason = 'Collection settings are read-only here. Manage this collection in chat.'
+        command = 'Use Blog Studio. Show collection ' + ident + ' and help me manage its settings.'
+    elif record['data'].get('lesson'):
+        reason = 'Candidate lessons are read-only here. Review or promote this lesson in chat.'
+        command = 'Use Blog Studio. Review candidate lesson ' + ident + ' before changing team guidance.'
+    elif record['kind'] == 'decision':
+        reason = 'Decisions are read-only here. Inspect the decision and discuss a follow-up in chat.'
+    elif heads != [record['revision']]:
+        reason = 'This memory has changed or has competing revisions. Compare them in chat before editing.'
+    return {'record': {k: record[k] for k in ('item', 'revision', 'kind', 'title', 'scope')},
+            'focused_workflow': focused, 'editable': not bool(reason), 'read_only_reason': reason,
+            'continuation': command, 'body': Path(saved['paths']['BODY.md']).read_text()[:16000]}
 
 
 def dispatch(root, route, data):
-    adapter = authorize_write(root)
     if route == 'refresh':
+        if data:raise ValueError('Refresh takes no fields.')
+        from hub_workspace import active
+        adapter = active(root)
         if not adapter:raise ValueError('Select a Team Hub to refresh shared work.')
-        return adapter.hub.refresh()
+        result = adapter.hub.refresh()  # Existing read, identity, privacy and immutable-history checks.
+        if not result.get('fresh'):
+            raise TransportError('Hub refresh could not verify current shared work. Check connectivity and GitHub access; saved content is preserved.')
+        return result
     with studio.locked(root):
+        adapter = authorize_write(root)
         if route == 'retry-sync':return retry_receipt(root, adapter, data)
         if route == 'upload':return upload(root, data)
         if route == 'schedule':
@@ -310,7 +488,10 @@ def dispatch(root, route, data):
             if data.get('item'):
                 graph = adapter.hub.graph();heads = graph['heads'].get(data['item'])
                 if heads != [data.get('revision')]:raise ValueError('This memory changed. Reload before editing.')
-                if graph['revisions'][heads[0]]['data'].get('collection') or graph['revisions'][heads[0]]['data'].get('lesson'):
+                previous = graph['revisions'][heads[0]]
+                if previous['kind'] not in ('note', 'context', 'rule'):
+                    raise ValueError('This memory kind is read-only here. Inspect it in chat; it cannot be converted into a note.')
+                if previous['data'].get('collection') or previous['data'].get('lesson'):
                     raise ValueError('Use the focused collection or lesson workflow to change this record.')
             scope = data.get('scope', 'team')
             if scope not in ('team', 'project', 'author', 'article'):raise ValueError('Choose a memory scope.')
@@ -345,20 +526,16 @@ def server(root, port=0):
                 arg = lambda key, default=None:query.get(key, [default])[0]
                 limit, offset = int(arg('limit', 20)), int(arg('offset', 0))
                 if parsed.path == '/api/board':result = editorial.board(root, arg('query', ''), arg('stage'), arg('owner'), limit, offset)
-                elif parsed.path == '/api/inbox':result = editorial.inbox(root, arg('id'), limit, offset)
+                elif parsed.path == '/api/inbox':result = editorial.inbox(root, arg('id'), limit, offset, query=arg('query',''))
                 elif parsed.path == '/api/library':result = blog_library.catalog(root, arg('query', ''), arg('collection'), arg('author'), arg('topic'), arg('product'), arg('since'), arg('until'), limit, offset, arg('retired') == 'true')
                 elif parsed.path == '/api/memory':result = memories(root, limit, offset, arg('query', ''))
                 elif parsed.path == '/api/receipts':result = receipts(root)
+                elif parsed.path == '/api/capabilities':result = capabilities(root)
                 elif parsed.path == '/api/collections':result = {'items': [{k: v for k, v in c.items() if k != 'local_path'} for c in blog_library.collections(root).values()]}
                 elif parsed.path == '/api/source':result = source_detail(root, arg('id'), arg('location', 'local'))
-                elif parsed.path == '/api/article':result = detail(root, arg('id'), arg('location', 'local'))
-                elif parsed.path == '/api/memory-detail':
-                    from hub_workspace import active
-                    adapter = active(root)
-                    if not adapter:raise ValueError('Select a Hub.')
-                    saved = adapter.hub.read(arg('id'));record = saved['record']
-                    if record['kind'] not in ('note', 'context', 'rule', 'decision'):raise ValueError('Choose a memory.')
-                    result = {'record': {k: record[k] for k in ('item', 'revision', 'kind', 'title', 'scope')}, 'focused_workflow': bool(record['data'].get('collection') or record['data'].get('lesson')), 'body': Path(saved['paths']['BODY.md']).read_text()[:16000]}
+                elif parsed.path == '/api/article':result = detail(root, arg('id'), arg('location', 'local'), arg('revision'))
+                elif parsed.path == '/api/finding':result = finding_detail(root, arg('id'), arg('key'), arg('location', 'local'))
+                elif parsed.path == '/api/memory-detail':result = memory_detail(root, arg('id'), arg('revision'))
                 elif parsed.path in ('/', '/app.js', '/style.css'):
                     file = ASSETS / {'/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css'}[parsed.path]
                     return self.reply(200, file.read_bytes(), {'/': 'text/html; charset=utf-8', '/app.js': 'text/javascript; charset=utf-8', '/style.css': 'text/css; charset=utf-8'}[parsed.path])

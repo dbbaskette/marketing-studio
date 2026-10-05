@@ -41,6 +41,9 @@ logs and the remaining automatic-trigger and architecture limitations.
 See `scripts/ci/` for isolated Tart validation;
 Tart is a developer tool, not an author prerequisite.
 
+[Desk usability validation](desk-usability-validation.md) covers memory/access
+handling, responsive layouts and article/finding continuation.
+
 [Desk concurrency validation](desk-concurrency-validation.md) records the
 Tart-tested request-ordering and source-conflict fixes.
 

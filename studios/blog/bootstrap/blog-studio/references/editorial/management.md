@@ -28,3 +28,18 @@ local record or shared head refuses the save. Keep the proposal, use “Reload a
 compare,” then explicitly choose the latest values or retain the proposal before
 saving again. Unshared local edits need comparison in chat; never overwrite them
 by resubmitting a shared form.
+
+Runtime 1.12.2 adds phone/tablet stacked results and focused details. Article and
+finding dialogs show bounded saved previews, review freshness, explicit stop
+points, and copyable article-specific requests. Use that selected identity when
+the author returns to chat; inspect current state before editing. A saved shared
+review is not proof of local freshness, and a stale ready/published decision must
+not be renewed automatically. Metadata, reviews and evidence/history remain
+secondary disclosures. Inbox search filters before pagination.
+
+The access panel distinguishes local-only, verified write, read-only, expired
+sign-in and unavailable verification. Refresh uses existing read/identity/privacy
+checks; actual writes still reverify contribution permission. Decisions,
+collections, candidate lessons and conflicted memories have read-only details
+with focused continuation. Never convert them via the generic note editor.
+An access observation is informational, not a reusable write authorization.
