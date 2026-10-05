@@ -79,7 +79,7 @@ class Registry:
             metadata = self.provider.lookup(repository)
             if not metadata:
                 raise HubError('The private repository is unavailable to your account.')
-            hub = self._join(metadata, destination or (Path(workspace).parent if workspace and Path(workspace).name == '.blog-studio' else None))
+            hub = self._join(metadata, destination)
         selected_workspace = check_root(workspace) if workspace else hub.checkout / '.blog-studio'
         if hub.normal:
             from studio import initialize
@@ -262,7 +262,7 @@ class Registry:
                 commit = commit_files(repo, None, seed_files, 'Initialize Team Hub', actor)
                 git(repo, 'push', '--quiet', source, commit + ':refs/heads/main')
             intent['status'] = 'seeded';write_json(intent_path, intent)
-            hub = self._join(metadata, destination or (Path(workspace).parent if workspace and Path(workspace).name == '.blog-studio' else None))
+            hub = self._join(metadata, destination)
             intent['status'] = 'joined';write_json(intent_path, intent)
         selected_workspace = check_root(workspace) if workspace else hub.checkout / '.blog-studio'
         if hub.normal:

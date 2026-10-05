@@ -159,9 +159,9 @@
       "sha256": "a70c862a5c5bdb9a60d62be75f08d1daef1ecd636584b77c99f08b2a3af702cb"
     },
     "references/hub/setup.md": {
-      "characters": 4057,
-      "estimated_tokens": 1015,
-      "sha256": "bb4617182b37e818274c559b0f7536285aa6bdd3f71cbd7c08a8f64ac38bb8d9"
+      "characters": 4009,
+      "estimated_tokens": 1003,
+      "sha256": "ce4ef71b2a82764020faae7cc915744c1e9cfc789c548679c6b8d06a077661cf"
     },
     "references/hub/sync.md": {
       "characters": 3081,
@@ -664,7 +664,7 @@
       "sha256": "36c39ead07081df6544bf0eb981b19bb4046c17ce95805acc923d3ac7c52d40e"
     }
   },
-  "library_tokens": 201956,
+  "library_tokens": 201944,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -772,7 +772,7 @@
         "references/hub/workflow.md",
         "references/hub/setup.md"
       ],
-      "estimated_tokens": 1687
+      "estimated_tokens": 1675
     },
     "memory": {
       "files": [

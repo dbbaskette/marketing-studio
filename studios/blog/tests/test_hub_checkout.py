@@ -45,6 +45,14 @@ class CheckoutTests(unittest.TestCase):
         self.assertEqual(result['status'], 'shared')
         self.assertTrue((root / '.blog-studio/items' / result['item']).exists())
 
+    def test_existing_writing_workspace_does_not_change_standard_clone_location(self):
+        workspace = self.base / 'existing-writing/.blog-studio'
+        workspace.mkdir(parents=True);(workspace.parent / 'keep.txt').write_text('Existing work')
+        result = self.registry.create('fixture/second', 'Second', workspace=workspace)
+        self.assertEqual(result['clone'], str(self.base / 'blogs/second'))
+        self.assertEqual((workspace.parent / 'keep.txt').read_text(), 'Existing work')
+        self.assertEqual(self.registry.selected(workspace).id, result['hub'])
+
     def test_dirty_checkout_and_untracked_files_are_preserved(self):
         path = self.hub.checkout / 'README.md';path.write_text('Local edits')
         with self.assertRaisesRegex(HubError, 'local edits'):self.hub.refresh()

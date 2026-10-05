@@ -18,8 +18,8 @@ An isolated custom registry defaults to `<registry>/workspaces/<repository-name>
 `--registry <absolute-directory>` supports separate managed registries.
 
 ```text
-python3 <runtime>/hub.py --workspace <workspace> create --repo <owner/repository> --name <friendly-name>
-python3 <runtime>/hub.py --workspace <workspace> join --repo <GitHub-HTTPS-URL>
+python3 <runtime>/hub.py create --repo <owner/repository> --name <friendly-name>
+python3 <runtime>/hub.py join --repo <GitHub-HTTPS-URL>
 python3 <runtime>/hub.py list
 python3 <runtime>/hub.py --hub <hub-id> --workspace <workspace> select
 python3 <runtime>/hub.py --workspace <workspace> status
