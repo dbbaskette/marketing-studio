@@ -105,6 +105,7 @@ class BrowseTests(unittest.TestCase):
         self.assertIn('| Saved | Revision | What changed | Article state |',history)
 
     def test_existing_detailed_history_migrates_to_readable_layout(self):
+        from hub_browse import changes
         self.save()
         current = self.files()
         legacy = {k.replace('.blog-studio/items/', 'memory/items/'): v for k, v in current.items()
