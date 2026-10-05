@@ -85,6 +85,24 @@ class LayoutTests(unittest.TestCase):
                 if '://' not in target:
                     self.assertIn(posixpath.normpath(posixpath.join(posixpath.dirname(name), target)), after)
 
+    def test_runtime_1123_history_migrates_without_losing_meaning(self):
+        self.legacy();saved = self.save_legacy_article()
+        files = self.files();manifest = json.loads(files['hub.json'])
+        manifest['browse_schema'] = 2;manifest['minimum_runtime'] = '1.12.3'
+        legacy = {k: v for k, v in files.items() if not store.generated_path(k)}
+        legacy['hub.json'] = store.encoded(manifest)
+        legacy.update(render(legacy, store.validate_files(legacy)))
+        self.publish({**{k: None for k in files if store.generated_path(k)}, **legacy})
+        before = self.files();graph = store.validate_files(before);verify(before, graph)
+        self.ha.refresh();self.ha.sync()
+        after = self.files();new_graph = store.validate_files(after);verify(after, new_graph)
+        self.assertEqual(store.immutable_files(before, graph), store.immutable_files(after, new_graph))
+        self.assertEqual(new_graph['manifest']['browse_schema'], 3)
+        history = after['blogs/dan/columnar-filters/history.md']
+        self.assertIn(('Current · ' + saved['revision'][:8]).encode(), history)
+        self.assertIn(b'Article created', history)
+        self.assertEqual(changes(after, new_graph), {})
+
     def test_old_outbox_survives_other_writer_migrating_and_retrying(self):
         self.legacy();saved = self.save_legacy_article()
         queued = self.hb.save('article', 'Columnar filters', 'Queued revision', item=saved['item'], offline=True)

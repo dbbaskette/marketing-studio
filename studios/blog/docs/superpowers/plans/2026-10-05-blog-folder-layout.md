@@ -1,7 +1,8 @@
 # Blog-owned editorial files and reusable memory
 
 The user approved the blog-folder layout and requested implementation in Blog
-Studio and the existing private Tanzu Marketing Hub. No additional spec approval
+Studio. They subsequently chose to delete and recreate the Tanzu Marketing Hub
+after verification; do not migrate or recreate that Hub in this task. No additional spec approval
 is needed. Implement in an isolated worktree; preserve unrelated CI edits.
 
 ## Outcome
@@ -26,9 +27,9 @@ is needed. Implement in an isolated worktree; preserve unrelated CI edits.
 3. Update guidance, user documentation, installer manifest, and both packages.
    Run focused migration/sync tests, then the existing full local CI entry point
    and package/installer checks. Retain logs and tested source state.
-4. Install through the trusted local installer, sync the selected private hub,
-   and verify the remote tree, preserved records, reviews, and repeat-sync
-   idempotence. Keep originals in Git history; do not force-push.
+4. Install through the trusted local installer. Verify migration, preserved
+   records, reviews, and repeat-sync idempotence with disposable hubs only.
+   Publish the approved source updates as a pull request; preserve merge gates.
 
 ## Review focus
 

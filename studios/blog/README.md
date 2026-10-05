@@ -168,4 +168,4 @@ under your account settings.
 
 **For developers and team administrators:** [Developer guide](docs/development.md) ·
 [Roadmap](https://github.com/dbbaskette/blog-studio/issues/3) ·
-[Performance evidence](docs/performance.md) · [Package details](PACKAGE.md)
+[Performance evidence](docs/performance.md) · [Hub acceptance walkthrough](docs/hub-acceptance.md) · [Package details](PACKAGE.md)

@@ -73,7 +73,7 @@ class BrowseTests(unittest.TestCase):
             if v is None:updated.pop(k,None)
             else:updated[k]=v
         new_graph=store.validate_files(updated);verify(updated,new_graph)
-        self.assertEqual(new_graph['manifest']['browse_schema'],2)
+        self.assertEqual(new_graph['manifest']['browse_schema'],3)
         self.assertEqual(new_graph['manifest']['minimum_runtime'],'1.13.1')
         page=updated['blogs/dan/linked-post/README.md']
         self.assertIn(b'[Open working Google Doc](https://docs.google.com/document/d/doc_123/edit)',page)
@@ -112,7 +112,7 @@ class BrowseTests(unittest.TestCase):
                   if k in ('hub.json', 'README.md') or k.startswith('.blog-studio/items/')}
         manifest = json.loads(legacy['hub.json'])
         manifest.pop('storage_schema');manifest.pop('history_schema', None)
-        manifest['minimum_runtime'] = '1.12.3'
+        manifest['browse_schema'] = 2;manifest['minimum_runtime'] = '1.12.3'
         legacy['hub.json'] = store.encoded(manifest)
         graph = store.validate_files(legacy)
         legacy.update(render(legacy, graph, layout_schema=1))
@@ -127,7 +127,7 @@ class BrowseTests(unittest.TestCase):
         self.assertIn(b'What changed', next(v for k, v in updated.items() if k.endswith('/history.md')))
 
     def test_new_history_schema_requires_compatible_runtime(self):
-        manifest=store.manifest(self.id,'Our team','fixture/library');manifest['browse_schema']=2;manifest['minimum_runtime']='1.12.2'
+        manifest=store.manifest(self.id,'Our team','fixture/library');manifest.pop('storage_schema',None);manifest['browse_schema']=2;manifest['minimum_runtime']='1.12.2'
         with self.assertRaisesRegex(store.HubError,'compatible newer'):
             store.validate_manifest(manifest)
         manifest['minimum_runtime']='1.12.3'
