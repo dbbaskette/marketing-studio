@@ -46,12 +46,29 @@ Drive access enables selected HTML/DOCX/text imports as new native Google Docs,
 and PDF/Word/text exports. Native Docs read/update is checked separately; API or
 organization restrictions may still block it. The adapter cannot promise native
 editing just because login succeeds. Existing document writes require a fresh
-revision, and every handoff still requires real readback. Comments, sharing and
-native template copying continue to use a capable connector.
+revision, and every handoff still requires real readback. The configured gcloud
+review helper also supports capability-dependent suggestions and comments.
+Sharing changes and native template copying require a capable connector.
 
 Uploads keep a local operation receipt for recovery, check the reviewed folder
 audience, and never retry an uncertain create automatically. Exports refuse to
 overwrite local files. Full usage: [gcloud adapter](../skills/blog-studio/references/google/gcloud.md).
+
+## Set your team's review preferences
+
+Say **“Use this folder for team reviews: [link]”** or **“Use this as our blog
+template: [link].”** You can also explain who the reviews are intended for.
+With a selected Team Hub, these become ordinary shared team context. Without a
+Hub, keep them local. A preference is not permission to share: Blog Studio checks
+existing access before putting a draft there and asks for missing recipient or
+access details only when you request a sharing change.
+
+Existing blogs keep their linked Doc. Templates are optional; if your connection
+cannot copy one intact, Blog Studio explains that limitation rather than flattening
+it. Each author's Google login and connection checks stay on their own computer.
+Normal writing and local exports remain available without Google setup.
+
+[Connection contract and supported operations →](google-capabilities.md)
 
 ## A round trip
 
@@ -80,11 +97,15 @@ background and interviews are not added to a Doc by default. Credentials stay in
 the connected provider or gcloud's user credential store. The skill repository never becomes the team's data store.
 
 The inspected Codex connector exposes Docs reads, revision-guarded writes,
-native copies, exports, comments and sharing. Exposure is not live validation:
-accepted-text rendering, native fidelity and permissions still need the deferred
-pilot. API comment evidence does not prove an inline anchor. The inspected share
-action has no notification switch, so Blog Studio cannot promise silent sharing
-through that action. Claude capabilities are discovered independently.
+native copies, exports, comments and sharing. Disposable Codex checks verified
+round trips, headings and links, native multi-tab template preservation, and
+inspected PDF/Word exports. The configured gcloud review helper also produced a
+pending suggestion and a comment visibly anchored in the native editor.
+These checks do not establish your current document access, Claude parity, or
+a marketing-team pilot. An API comment response alone does not prove an inline
+anchor. The inspected share action has no notification switch, so Blog Studio
+cannot promise silent sharing through it; actual permission-change acceptance
+is still outstanding. Claude capabilities are discovered independently.
 
 If a native feature or required verification is missing, the skill offers an
 explicit supported fallback and retains local work. It never silently flattens a
@@ -102,10 +123,13 @@ The authenticated [G4 pilot (#15)](https://github.com/dbbaskette/blog-studio/iss
 runs last, along with [Mac setup (#8)](https://github.com/dbbaskette/blog-studio/issues/8),
 [live Codex/Claude writing (#9)](https://github.com/dbbaskette/blog-studio/issues/9),
 and [multi-member Hub work (#10)](https://github.com/dbbaskette/blog-studio/issues/10).
-It must verify a disposable Doc round trip, accepted text versus suggestions,
-visible comment location, full native template fidelity, actual PDF/Word output,
-and requested permissions/notifications in each connected harness. No sign-in or
-live Google mutation was needed to implement this batch.
+Reuse the completed disposable Codex round-trip, accepted-text/suggestion,
+visible-comment, template and PDF/Word checks for unchanged behavior. Remaining
+work is the participating-user workflow, independent Claude discovery, shared
+continuation by a second member, and an explicitly selected permission-change
+case. The [acceptance record](issue-validation-2026-10-03.md) separates live evidence
+from fixtures; the [remaining acceptance map](remaining-acceptance.md) lists what
+is still untested. Completing setup documentation performs no live operation.
 
 See the [Google roadmap](google-docs-roadmap.md) for disclosure costs and the
 [adapter contract](../skills/blog-studio/references/google/adapter.md) and

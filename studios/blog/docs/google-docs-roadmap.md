@@ -1,6 +1,6 @@
 # Google Docs workflow roadmap
 
-Status: G0–G3 skill workflows and local checkpoint runtime implemented in 1.2.0. Provider execution remains in the connected harness; authenticated verification is deferred to G4 (#15), per user direction to run live tests last. See [Google Docs usage](google-docs.md).
+Status: G0–G3 implementation is delivered in the current 1.12.2 runtime. G1/G2 are closed after authorized disposable Codex/Google acceptance; PDF/Word export inspection also passed. Remaining work is per-participant/Claude discovery, an explicitly selected sharing case, and the marketing-user pilot. See [Google Docs usage](google-docs.md), [connection contract](google-capabilities.md), and [remaining acceptance](remaining-acceptance.md).
 
 ## Implemented scope
 
@@ -21,7 +21,7 @@ Share settings, email invitations, comment replies/resolution, and public publis
 
 The parent adds one optional finishing choice: **Continue in Google Docs**. It loads the Google router only for a supplied Google link or a requested Google outcome. The router chooses intake, handoff, return, comments, template, or export; each reads only its applicable instructions. Ordinary outlining and editing incur no Google guidance load.
 
-The router is `references/google/workflow.md`; six modules live in `references/modules/blog-google-*.md`. Adapter and checkpoint contracts load only when needed. The 1.2.0 managed runtime supplies local transfer/receipt checks; no new Google CLI or credential store is installed.
+The router is `references/google/workflow.md`; six modules live in `references/modules/blog-google-*.md`. Adapter and checkpoint contracts load only when needed. The managed runtime supplies local transfer/receipt checks and optional gcloud transports. Core installation skips Google; user-selected Google setup is separate and credentials remain in the provider store.
 
 Original planning targets, excluding actual document content and host/plugin instructions:
 
@@ -55,31 +55,38 @@ A Google review copy is not automatically the permanent authority. The article r
 
 | Slice | Outcome | Estimated development tokens | Completion evidence |
 | --- | --- | ---: | --- |
-| G0 Capability and review contract — implemented | Per-harness discovery, folder/template/audience choices, guarded writes and explicit unsupported states | Included in G1 | Current Codex tool schemas inspected; Claude and live provider behavior remain in G4 |
-| G1 Intake + handoff + return — implemented | Useful round trip, transfer baseline, preserved local history | 15–25k | Local roundtrip/conflict/preservation fixtures; live Doc/headings/links validation deferred to G4 |
-| G2 Native comments + templates — implemented | Focused review and company template reuse | 10–18k | Conditional native comment/template contracts and receipt tests; native anchoring and template fidelity deferred to G4 |
-| G3 Export + optional sharing — implemented | Requested formats and explicitly selected recipients | 6–10k | Export/permission verification contracts and bounded receipt tests; real artifacts/access deferred to G4 |
+| G0 Capability and review contract — implemented | Per-harness discovery, folder/template/audience choices, guarded writes and explicit unsupported states | Included in G1 | Local contract and Codex schemas/provider subset recorded; live Claude/participant discovery remains #11/#15 |
+| G1 Intake + handoff + return — implemented | Useful round trip, transfer baseline, preserved local history | 15–25k | Closed #12: actual selected-tab intake, headings/links, stale-write rejection and three-way return verified |
+| G2 Native comments + templates — implemented | Focused review and company template reuse | 10–18k | Closed #13: visible pending review/anchor and complete native multi-tab template/control preservation verified |
+| G3 Export + optional sharing — implemented | Requested formats and explicitly selected recipients | 6–10k | PDF/Word artifacts inspected; permission fixtures passed; actual selected sharing test remains #14 |
 | G4 Team pilot | Practical workflow in each intended harness | 6–12k | Marketing users complete source → draft → review → return; actual tool/capability differences recorded |
 | **Total planning range** | | **37–65k** | Estimates revised after G1 |
 
-Test conflict logic with disposable fixtures, then validate provider behavior against explicitly authorized disposable Google Docs. Do not count mocked connector results as a live collaboration pilot. The next material choices are the team's main harness and preferred review folder/template; those need to be grounded before implementing the Google write path.
+Conflict and transfer logic are implemented and fixture-tested; authorized disposable Codex checks also exercised actual provider behavior. Mocked results do not establish a live collaboration pilot. The next material choices are participating harnesses, review destinations/audiences and the permitted sharing case, followed by the marketing pilot. Store selected team preferences through existing Hub context; discover each participant's actual connection before use.
 
 ## Measured G0–G3 disclosure
 
-Character-based estimates from the checked-in token inventory. Each operation
-below includes the 338-token Google router, but excludes the ordinary parent,
-provider/plugin instructions, source text and output. Reuse unchanged instructions.
+Character-based estimates from the current checked-in token inventory. Each
+operation below includes the 394-token Google router, but excludes the
+ordinary parent, provider/plugin instructions, source text and output. Reuse
+unchanged instructions. These are unique-load estimates, not model billing.
 
 | Operation | Router + focused guide |
 | --- | ---: |
-| Source | 913 |
-| Handoff | 1,064 |
-| Return | 1,102 |
-| Review | 1,024 |
-| Template | 1,063 |
-| Export | 1,183 |
+| Source | 1,025 |
+| Handoff | 1,229 |
+| Return | 1,293 |
+| Review | 1,173 |
+| Template | 1,119 |
+| Export | 1,304 |
 
-The adapter contract adds **1,036** tokens when selecting or refreshing a connection. The local checkpoint contract adds **1,119** tokens when recording transfers/receipts; privacy adds **1,002** when not already loaded. These are explicit additions, not hidden inside the module estimates. Provider preservation instructions and full-document reads can cost considerably more. Ordinary writing loads none of this Google guidance.
+The adapter contract adds **1,358** tokens when selecting or refreshing a
+connection. The local checkpoint contract adds **1,261** when recording
+transfers/receipts; privacy adds **1,002** when not already loaded.
+The gcloud, formatted-return and review helpers have separately measured
+conditional references in the [inventory](estimates/blog-studio-token-inventory.json).
+Provider preservation instructions and full-document reads can cost considerably
+more. Ordinary writing loads none of this Google guidance.
 
 ## Provider references
 
@@ -99,7 +106,8 @@ and Markdown remains the working text view. Existing manuscript conflict handlin
 continues. See [round-trip guidance](../skills/blog-studio/references/google/roundtrip.md).
 
 Automatic snapshot export is limited to single-tab Docs without pending
-suggestions. Structural edits need scoped native operations. Live Google fidelity
-remains part of G4; deterministic tests cannot prove a real export’s appearance.
+suggestions. Structural edits need scoped native operations. Recorded disposable Word/PDF
+inspection verifies those selected outputs; other layouts and the participating
+team workflow remain in G4. Fixtures cannot prove a real export's appearance.
 The conditional round-trip reference is measured separately in the inventory;
 ordinary writing does not load it or binary snapshot content.

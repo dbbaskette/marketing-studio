@@ -63,8 +63,13 @@ Starting a blog in chat instead? **“Push to Google Docs”** sends it to Googl
 Later pushes update the linked Doc. Use **“Push as suggestions”** when you want
 review proposals instead of direct edits.
 
-Google access needs a separate connection. Some document layouts need extra
-handling; Blog Studio will tell you when an import or update cannot be completed.
+Google access needs a separate connection. You can say **“Use this folder for
+team reviews: [link]”** and **“Use this as our blog template: [link].”** Blog Studio
+remembers selected team preferences in your Hub and checks access before use.
+These preferences do not change who can see a document.
+
+Some document layouts need extra handling; Blog Studio will tell you when an
+import or update cannot be completed.
 [Google Docs setup and help →](docs/google-docs.md)
 
 ## Pick up where you left off

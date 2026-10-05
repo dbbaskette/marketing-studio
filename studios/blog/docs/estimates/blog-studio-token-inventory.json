@@ -104,9 +104,9 @@
       "sha256": "a1f2075cceb65b7f780df948422019a34eb18e23f5f79884d698bdf7db3876db"
     },
     "references/google/adapter.md": {
-      "characters": 4853,
-      "estimated_tokens": 1214,
-      "sha256": "382c5f57e5ba78824fed6ccdc58407e160f71e4864a266fd11ffed5e53f7f0d3"
+      "characters": 5432,
+      "estimated_tokens": 1358,
+      "sha256": "4f5ce426143a7dc41ad08bd1c7c122bf4ace76d1154141eeb67f32bd5e4e31f1"
     },
     "references/google/checkpoints.md": {
       "characters": 5041,
@@ -664,7 +664,7 @@
       "sha256": "36c39ead07081df6544bf0eb981b19bb4046c17ce95805acc923d3ac7c52d40e"
     }
   },
-  "library_tokens": 201275,
+  "library_tokens": 201419,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -944,7 +944,7 @@
       "files": [
         "references/google/adapter.md"
       ],
-      "estimated_tokens": 1214
+      "estimated_tokens": 1358
     },
     "checkpoint_contract": {
       "files": [

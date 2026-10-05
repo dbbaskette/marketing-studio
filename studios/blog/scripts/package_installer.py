@@ -38,7 +38,7 @@ with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
         for path in sorted((repo / folder).rglob('*')):
             if path.is_file() and '__pycache__' not in path.parts and path.suffix != '.pyc':
                 archive.write(path, 'blog-studio-setup/' + path.relative_to(repo).as_posix())
-    for name in ('installation.md', 'troubleshooting.md', 'team-hub.md', 'i4-m4-m5-validation.md', 'google-docs.md', 'new-user-guide.md', 'prompt-cheat-sheet.md', 'status-card.md', 'live-acceptance.md', 'usability-validation.md', 'team-hub-library-validation.md', 'google-roundtrip-validation.md', 'google-suggestions-validation.md', 'editorial-desk.md', 'editorial-validation.md'):
+    for name in ('installation.md', 'troubleshooting.md', 'team-hub.md', 'i4-m4-m5-validation.md', 'google-docs.md', 'google-capabilities.md', 'remaining-acceptance.md', 'issue-validation-2026-10-03.md', 'desk-usability-validation.md', 'new-user-guide.md', 'prompt-cheat-sheet.md', 'status-card.md', 'live-acceptance.md', 'usability-validation.md', 'team-hub-library-validation.md', 'google-roundtrip-validation.md', 'google-suggestions-validation.md', 'editorial-desk.md', 'editorial-validation.md'):
         path = repo / 'docs' / name
         if path.exists():
             archive.write(path, 'blog-studio-setup/docs/' + name)

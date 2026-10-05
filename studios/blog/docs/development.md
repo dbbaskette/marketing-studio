@@ -47,6 +47,10 @@ handling, responsive layouts and article/finding continuation.
 [Desk concurrency validation](desk-concurrency-validation.md) records the
 Tart-tested request-ordering and source-conflict fixes.
 
+[Remaining acceptance](remaining-acceptance.md) maps every open issue to delivered
+implementation and its live-only remainder. [Google capabilities](google-capabilities.md)
+records the team contract and actual connection boundaries.
+
 [Performance workloads and budgets](performance.md) distinguish local synthetic
 fixtures from live provider/model latency. Run live acceptance last:
 [#9](https://github.com/dbbaskette/blog-studio/issues/9),
