@@ -53,6 +53,18 @@ class CheckoutTests(unittest.TestCase):
         self.assertEqual((workspace.parent / 'keep.txt').read_text(), 'Existing work')
         self.assertEqual(self.registry.selected(workspace).id, result['hub'])
 
+    def test_finder_metadata_does_not_block_sync(self):
+        for directory in (self.hub.checkout, self.hub.checkout / 'blogs'):
+            directory.mkdir(exist_ok=True)
+            (directory / '.DS_Store').write_bytes(b'Synthetic Finder metadata')
+        # Existing checkouts gain the exclusion without changing other patterns.
+        (self.hub.repository / 'info/exclude').write_text('/.blog-studio/\ncustom-local-file\n')
+        self.hub.refresh()
+        result = self.hub.save('note', 'Finder test', 'Synthetic content')
+        self.assertEqual(result['status'], 'shared')
+        self.assertIn('custom-local-file', (self.hub.repository / 'info/exclude').read_text())
+        self.assertEqual(git(self.hub.repository, 'status', '--porcelain').strip(), b'')
+
     def test_dirty_checkout_and_untracked_files_are_preserved(self):
         path = self.hub.checkout / 'README.md';path.write_text('Local edits')
         with self.assertRaisesRegex(HubError, 'local edits'):self.hub.refresh()

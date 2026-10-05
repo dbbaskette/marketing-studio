@@ -110,7 +110,7 @@ class Registry:
             git(repository_path, 'init', '--quiet', '--initial-branch=main')
             git(repository_path, 'config', 'core.bare', 'false')
             git(repository_path, 'config', 'core.worktree', str(stage))
-            atomic(repository_path / 'info/exclude', b'/.blog-studio/\n')
+            atomic(repository_path / 'info/exclude', b'/.blog-studio/\n.DS_Store\n')
             source = self.provider.transport(metadata)
             git(repository_path, 'remote', 'add', 'origin', source)
             git(repository_path, 'fetch', '--quiet', '--no-tags', source, 'refs/heads/main')
@@ -173,7 +173,7 @@ class Registry:
                     git(repository, 'config', 'core.worktree', str(stage))
                     git(repository, 'fetch', '--quiet', str(hub.repository), commit)
                     git(repository, 'remote', 'add', 'origin', 'https://github.com/' + hub.config['repository'] + '.git')
-                    atomic(repository / 'info/exclude', b'/.blog-studio/\n')
+                    atomic(repository / 'info/exclude', b'/.blog-studio/\n.DS_Store\n')
                     git(repository, 'checkout', '--quiet', '-B', 'main', commit)
                     git(repository, 'update-ref', 'refs/remotes/origin/main', commit)
                     git(repository, 'config', 'branch.main.remote', 'origin')
@@ -304,6 +304,10 @@ class Hub:
 
     def _checkout_clean(self):
         if self.normal:
+            exclude = contained(self.repository, 'info', 'exclude')
+            patterns = exclude.read_bytes() if exclude.exists() else b''
+            if b'.DS_Store' not in patterns.splitlines():
+                atomic(exclude, patterns.rstrip(b'\n') + b'\n.DS_Store\n')
             head = git(self.repository, 'rev-parse', '--verify', 'HEAD', allow_failure=True)
             if head.returncode == 0 and head.stdout.decode().strip() != self._state()['revision']:
                 raise HubError('The Hub checkout contains a different commit. Preserve your local commits before syncing.')
