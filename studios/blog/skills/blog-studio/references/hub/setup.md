@@ -10,7 +10,8 @@ For create, obtain a concrete GitHub owner/repository and friendly name. The
 create request authorizes that specific private repository and its seed; ask
 only for missing targets. The standard Hub folder is `~/blogs/<repository-name>/`: a normal Git checkout
 with readable shared files and history. Local drafts, selection, snapshots and
-queued work live under its ignored `.blog-studio/` directory. Report this folder
+queued work live under `.blog-studio/`; local-only files are excluded from Git.
+Canonical shared records remain tracked in `.blog-studio/items/`. Report this folder
 and use its `.blog-studio/` as the writing workspace. An explicit
 `--destination <absolute-new-directory>` overrides the Hub folder. With no
 workspace argument, create/join initializes and selects the default workspace.

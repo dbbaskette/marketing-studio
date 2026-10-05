@@ -166,7 +166,8 @@ blog pages.
 
 New Hubs use `~/blogs/<repository-name>/`. This is a normal Git checkout: open
 it to browse shared blogs and notes. Blog Studio keeps local drafts and sync
-state in its hidden `.blog-studio/` folder, which is excluded from Git.
+state in its hidden `.blog-studio/` folder. Local-only files there stay out of Git;
+shared blog records remain versioned.
 
 For an older Hub, say **“Move our Hub to the standard folder.”** Blog Studio
 preserves your drafts and queued saves, keeps the old copy as a backup, and
