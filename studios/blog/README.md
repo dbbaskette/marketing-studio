@@ -52,7 +52,9 @@ A typical review looks like this:
 3. **“Push as suggestions.”**
 
 Suggestions go back to the linked Doc so your team can review them. Blog Studio
-checks the latest Google copy first. If suggested edits are unavailable, it uses
+checks the latest Google copy first. Prefer comments? Say **“Push feedback as
+comments”** to leave feedback without changing the document text. If suggested
+edits are unavailable, it uses
 readable review comments and tells you where to find them. Say **“Show review
 edits”**, then **“Apply edits 2 and 4”** to choose which comment proposals to apply.
 

@@ -30,10 +30,12 @@ and guidance pins.
 `select`, `route`, `changes`, and `defaults`. Read [short commands](references/short-commands.md)
 when requested; use these operational helpers without changing an existing article’s
 writing guidance pin. For resume, select the article and show its status card.
-For “Push as suggestions,” runtime 1.10+ loads
+For “Push as suggestions,” “Push changes to Google,” or “Push feedback as comments,” load
 [Google suggestions](references/google/suggestions.md); refresh the Doc before review submission.
 If the connector omits `writeMode`, use the already configured installed gcloud
 adapter. The same route handles readable comment fallback and numbered edit selection.
+Explicit comments use `plan --mode comments` (runtime 1.14.4+ short routing),
+so comments are primary even when native suggestions work.
 
 For “Start from this Google Doc” or a Google manuscript supplied for proofreading,
 load [Google manuscript intake](references/google/start.md) (runtime 1.11+).

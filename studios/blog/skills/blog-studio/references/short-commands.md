@@ -45,6 +45,8 @@ After a completed operation show a short result; open the full status card when
 requested or on resume. Never require the user to repeat formatting, checkpoint,
 privacy, or verification instructions already supplied by the skill.
 
+**“Push feedback as comments”** (or **“Push as comments”**) uses the same fresh-Doc review flow with `google_suggestions.py plan --mode comments`. Carry the router’s `review_mode` into planning; omitted mode means `auto`. This explicit choice posts comments first and never attempts suggested text changes. Prefer anchored comments when supported; otherwise use numbered Drive comments. “Push changes to Google” uses the suggestion-first review route; “Push to Google Docs” retains its draft-transfer route.
+
 **“Push as suggestions”** loads [Google suggestions](google/suggestions.md). Refresh the linked Doc first, reconcile conflicts, then post selected findings as guarded native suggestions/comments. Runtime 1.10+ uses the existing gcloud adapter when a connector lacks `writeMode`, and falls back to numbered review comments when necessary. **“Show review edits”** lists them; **“Apply edits 2 and 4”** applies only that selection after a fresh check.
 
 For “Show our pipeline,” “What needs my attention?”, “Open editorial desk,”

@@ -1,6 +1,7 @@
-# Send proofreading as suggested edits
+# Send review feedback to Google Docs
 
-Load only for “Push as suggestions” / “Push these as suggestions to Google Docs.”
+Load for “Push as suggestions,” “Push changes to Google,” or
+“Push feedback as comments” / “Push as comments.”
 Use installed runtime 1.10+ `google_suggestions.py` with the existing gcloud account.
 Ordinary “Push to Google Docs” keeps its direct-edit route. A proofread request
 alone authorizes local review, not Google comments or edits. Requested suggestion
@@ -24,8 +25,10 @@ the same review contract, or keep the review local if neither route is available
 A read check alone does not prove native suggestion writes work.
 
 The default helper mode is `auto`: native suggestions, then native anchored
-comments, then ordinary Drive comments. Use `--mode comments` when the author
-explicitly prefers comments. `--mode native` disables fallback. Comment fallback
+comments, then ordinary Drive comments. Use `plan --mode comments` for “Push feedback as comments” or any explicit
+comment-only request, even when suggestions work. Carry `route.review_mode` into
+the plan command; apply and verify retain the saved mode. Comments are the primary
+output in this mode; do not attempt suggestion writes or switch to direct edits. `--mode native` disables fallback. Comment fallback
 is included in “Push as suggestions”; explain the chosen mode without asking for
 another routine confirmation. Failed login, revision conflicts, timeouts, partial
 responses and uncertain writes are not evidence to switch modes. Only explicit
@@ -39,7 +42,7 @@ require resolving the cause; they do not establish review unavailability.
    for submission, run the [return workflow](../modules/blog-google-return.md):
    capture current Google accepted text, formatting and pending review state,
    compare with the saved baseline, and bring back remote-only changes. The
-   request to send suggestions includes this prerequisite read/local refresh;
+   request to send suggestions or comments includes this prerequisite read/local refresh;
    do not ask the author to issue a separate pull command.
 2. Preserve unsent local edits. When both copies changed, show the conflict and
    obtain a resolution using the existing compare/accept contract. Never overwrite

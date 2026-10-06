@@ -9,7 +9,7 @@ writing stays on its current route and needs no Google account or CLI.
 | Use a Doc as material | [source](../modules/blog-google-source.md) |
 | Continue drafting in Docs | [handoff](../modules/blog-google-handoff.md) |
 | Bring edits back | [return](../modules/blog-google-return.md) |
-| Send proofreading as suggested edits | [suggestions](suggestions.md) |
+| Send review as suggestions or comments | [suggestions](suggestions.md) |
 | Leave/reply/resolve comments | [review](../modules/blog-google-review.md) |
 | Use a native template | [template](../modules/blog-google-template.md) |
 | Download or share | [export and sharing](../modules/blog-google-export.md) |

@@ -17,6 +17,9 @@ ROUTES = {
     'push as suggestions': (['google-suggest'], ['references/google/suggestions.md']),
     'push as suggestions to google docs': (['google-suggest'], ['references/google/suggestions.md']),
     'push these as suggestions to google docs': (['google-suggest'], ['references/google/suggestions.md']),
+    'push as comments': (['google-suggest'], ['references/google/suggestions.md']),
+    'push changes to google': (['google-suggest'], ['references/google/suggestions.md']),
+    'push changes to google docs': (['google-suggest'], ['references/google/suggestions.md']),
     'clear local caches': (['cache-clear'], ['references/workspace/performance.md']),
     'proofread': (['proofread'], ['references/modules/copy-editing.md']),
     'push to google docs': (['google-push'], ['references/modules/blog-google-handoff.md']),
@@ -57,6 +60,11 @@ def resolve(root, article_id=None, query=None):
 
 def route(root, text, article_id=None, destination=None):
     key = ' '.join(text.casefold().strip(' .?!').split())
+    review_mode = 'auto'
+    review_request = re.fullmatch(r'(?:push|send) (?:(?:feedback|changes|these|edits) )?(?:to google(?: docs)? )?as (comments|suggestions)(?: to google(?: docs)?)?', key)
+    if review_request:
+        review_mode = 'comments' if review_request[1] == 'comments' else 'auto'
+        key = 'push as ' + review_request[1]
     global_routes = {
         'show our pipeline': ('editorial-board', 'references/editorial/board.md'),
         'show pipeline': ('editorial-board', 'references/editorial/board.md'),
@@ -109,6 +117,7 @@ def route(root, text, article_id=None, destination=None):
     base = record.get('google', {}).get('baselines', {}).get(kind)
     return {'status': 'routed', 'id': record['id'], 'title': record['title'], 'kind': kind,
             'actions': actions, 'references': references, 'edit_numbers':edit_numbers,
+            **({'review_mode': review_mode} if 'google-suggest' in actions else {}),
             'linked_document': base['document']['url'] if base else None,
             'review_folder': record.get('writing_preferences', {}).get('review_folder'),
             'scope': 'spelling, grammar, punctuation; preserve meaning and voice' if 'proofread' in actions else 'requested operation',
