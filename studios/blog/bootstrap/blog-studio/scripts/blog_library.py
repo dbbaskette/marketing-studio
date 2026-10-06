@@ -411,14 +411,23 @@ def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, d
                 record.update(name=title, origin=origin, library=metadata, original_filename=Path(entry.get('file', identity)).name,
                     original_path=name, original_sha256=original_hash, content_sha256=sha(text.encode()) if text is not None else None,
                     author=entry.get('author'), status=status, retrieved_at=studio.now(), note='Historical team reference; reverify dated software claims.', revision=previous_revision + 1)
+                from source_curator import enrich
+                enrich(root, record, text, defer=True)
                 studio.persist(directory, 'sources', record)
                 result = {'status': 'updated' if previous_revision else 'imported', 'id': record['id'], 'extraction': status}
-            if adapter:adapter._publish('sources', record['id'])
+            result['analysis'] = record.get('analysis',{}).get('status','needs-analysis')
             existing[identity] = {'id': record['id'], 'location': 'local', 'record': record}
         except (OSError, ValueError, KeyError, TypeError, ET.ParseError, zipfile.BadZipFile, HubError) as exc:
             result = {'status': 'failed', 'reason': str(exc)[:400]}
         manifest['results'][identity] = result
         studio.write_json(path, manifest)
+    completed=[manifest['results'][entry['identity']] for entry in batch if manifest['results'][entry['identity']]['status']!='failed']
+    if completed and __import__('source_curator').harness(root):
+        __import__('source_curator').retry(root,[value['id'] for value in completed],sync=False)
+    for value in completed:
+        value['analysis']=studio.item(root,'sources',value['id'])[1].get('analysis',{}).get('status','needs-analysis')
+        if adapter:adapter._publish('sources',value['id'])
+    studio.write_json(path,manifest)
     counts = {name: sum(r['status'] == name for r in manifest['results'].values()) for name in ('imported', 'updated', 'unchanged', 'failed')}
     counts['pending_extraction'] = sum(r.get('extraction') == 'pending' for r in manifest['results'].values())
     coverage = {'preview': preview_id, 'discovered': len(manifest['candidates']), 'completed': len(manifest['results']),
@@ -436,7 +445,7 @@ def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, d
 def catalog(root, query='', collection=None, author=None, topic=None, product=None, since=None, until=None, limit=20, offset=0, include_retired=False, reusable_only=False):
     if not 1 <= limit <= 50 or offset < 0:raise ValueError('Choose limit 1–50 and nonnegative offset.')
     rows = source_rows(root)
-    signature = sha(encoded([{'metadata': {k: v for k, v in r['record'].items() if k in ('id', 'revision', 'name', 'library', 'content_sha256', 'updated_at', 'status', 'author', 'origin', 'purposes', 'retrieved_at', 'note')}, 'body_stat': [r['path'].stat().st_size, r['path'].stat().st_mtime_ns] if r['location'] == 'local' and r['path'].exists() else None} for r in rows]))
+    signature = sha(encoded([{'metadata': {k: v for k, v in r['record'].items() if k in ('id', 'revision', 'name', 'library', 'content_sha256', 'updated_at', 'status', 'author', 'origin', 'purposes', 'retrieved_at', 'note', 'analysis')}, 'body_stat': [r['path'].stat().st_size, r['path'].stat().st_mtime_ns] if r['location'] == 'local' and r['path'].exists() else None} for r in rows]))
     cache = studio.inside(root, '.derived-cache');cache.mkdir(mode=0o700, exist_ok=True)
     database = studio.inside(cache, 'library.sqlite3')
     if database.is_symlink():raise ValueError('Library index must not be a symlink.')
@@ -454,14 +463,14 @@ def catalog(root, query='', collection=None, author=None, topic=None, product=No
                         'origin': __import__('hub_workspace').portable_origin(record.get('origin', '')), 'status': record['status'],
                         'revision': record['revision'], 'sha256': record.get('content_sha256'),
                         'purposes': record.get('purposes', []), 'retrieved_at': record.get('retrieved_at'),
-                        'limitations': record.get('note', '')[:1000], 'library': {k: v for k, v in metadata.items() if k in ('identity', 'collections', 'canonical_url', 'author', 'published', 'updated', 'topics', 'products', 'historical', 'curation', 'extraction')},
+                        'analysis': record.get('analysis',{}), 'limitations': record.get('note', '')[:1000], 'library': {k: v for k, v in metadata.items() if k in ('identity', 'collections', 'canonical_url', 'author', 'published', 'updated', 'topics', 'products', 'historical', 'curation', 'extraction')},
                         'historical': metadata.get('historical') is True, 'warning': 'Historical claims require current verification.' if metadata.get('historical') else None}
                 db.execute('INSERT INTO posts VALUES (?,?,?,?,?,?,?,?,?,?)', (source['id'], record['name'], body, record.get('author') or '', metadata.get('published') or '',
                     json.dumps(metadata.get('collections', [])), json.dumps(metadata.get('topics', [])), json.dumps(metadata.get('products', [])),
                     int(metadata.get('curation') == 'retired'), json.dumps(data)))
         clauses, params = [], []
         for word in query.casefold().split()[:20]:
-            clauses.append('lower(title || " " || body) LIKE ? ESCAPE "!"');params.append('%' + word.replace('!', '!!').replace('%', '!%').replace('_', '!_') + '%')
+            clauses.append("lower(title || ' ' || body || topics || products || coalesce(json_extract(data,'$.analysis.summary'),'')) LIKE ? ESCAPE '!'");params.append('%' + word.replace('!', '!!').replace('%', '!%').replace('_', '!_') + '%')
         if not include_retired:clauses.append('retired = 0')
         if reusable_only:
             clauses.extend(["json_extract(data, '$.status') = 'ready'",
@@ -484,6 +493,7 @@ def curate(root, ident, data):
     directory, record = studio.item(root, 'sources', ident)
     if set(data) - {'curation', 'topics', 'products', 'note'}:raise ValueError('Unknown curation field.')
     metadata = dict(record.get('library', {}))
+    record['curation_overrides'] = sorted(set(record.get('curation_overrides',[]) + list(data)))
     if 'curation' in data:
         if data['curation'] not in ('active', 'retired', 'pending'):raise ValueError('Choose active, retired, or pending.')
         metadata['curation'] = data['curation']
@@ -570,12 +580,16 @@ def add_parser(groups):
     p = commands.add_parser('preview');p.add_argument('--collection', required=True)
     p = commands.add_parser('import');p.add_argument('--preview', required=True);p.add_argument('--limit', type=int, default=25);p.add_argument('--retry', action='store_true')
     p = commands.add_parser('find');p.add_argument('--reusable-only', action='store_true', help='Ready active references suitable for reuse across blogs.');p.add_argument('--query', default='');p.add_argument('--collection');p.add_argument('--author');p.add_argument('--topic');p.add_argument('--product');p.add_argument('--since');p.add_argument('--until');p.add_argument('--limit', type=int, default=20);p.add_argument('--offset', type=int, default=0)
+    p = commands.add_parser('curator');p.add_argument('--harness', choices=('codex','claude'), required=True)
+    p = commands.add_parser('analyze');p.add_argument('--id', action='append', required=True)
     p = commands.add_parser('curate');p.add_argument('--id', required=True);p.add_argument('--file', required=True)
     p = commands.add_parser('lesson');p.add_argument('--file', required=True)
     p = commands.add_parser('promote');p.add_argument('--item', required=True);p.add_argument('--confirm', action='store_true', required=True)
 
 
 def command(root, args):
+    if args.action == 'curator':return __import__('source_curator').configure(root,args.harness)
+    if args.action == 'analyze':return __import__('source_curator').retry(root,args.id)
     if args.action == 'read':return read_source(root, args.id, args.query, args.limit, args.max_chars)
     if args.action == 'locate':
         config = collections(root).get(args.collection)

@@ -577,8 +577,9 @@ def dispatch(root, route, data):
             if len(heads) != 1 or graph['revisions'][heads[0]]['kind'] != 'article':raise ValueError('Resolve competing revisions before resuming.')
             ident = adapter._checkout(data['item']);studio.write_json(studio.inside(root, '.active-article.json'), {'id': ident})
             return {'id': ident, 'status': 'resumed'}
-        if route == 'curate':
-            if set(data) - {'id', 'location', 'expected', 'confirmed', 'curation', 'topics', 'products', 'note'}:
+        if route in ('curate','analyze'):
+            allowed = {'id','location','expected'} if route=='analyze' else {'id', 'location', 'expected', 'confirmed', 'curation', 'topics', 'products', 'note'}
+            if set(data) - allowed:
                 raise ValueError('Unknown curation field.')
             if not isinstance(data.get('expected'), str) or not __import__('re').fullmatch(r'[a-f0-9]{64}', data['expected']):
                 raise CurationConflict('Reload this reference before saving curation.')
@@ -602,6 +603,7 @@ def dispatch(root, route, data):
                         if sha(encoded(payload)) != saved['fingerprint']:
                             raise CurationConflict('This reference has unshared local edits. Compare them in chat before changing the shared reference.')
                 ident = adapter._checkout(ident)
+            if route=='analyze':return __import__('source_curator').retry(root,[ident])
             result = share(root, 'source', blog_library.curate(root, ident, values))
             return {**result, 'receipts': [receipt(root, 'Reference curation', result, 'source')]}
         if route == 'memory':
@@ -695,7 +697,8 @@ def server(root, port=0):
     return httpd, 'http://127.0.0.1:' + str(httpd.server_port) + '/#' + token
 
 
-def main(root, port=0, open_browser=False):
+def main(root, port=0, open_browser=False, harness=None):
+    if harness:__import__('source_curator').configure(root,harness)
     studio.initialize(root)
     httpd, url = server(root, port)
     print(json.dumps({'url': url, 'access': 'local session only', 'stop': 'Press Ctrl+C to close the desk.'}), flush=True)

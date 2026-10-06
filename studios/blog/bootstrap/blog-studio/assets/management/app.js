@@ -110,7 +110,7 @@ function render(state, result) {
   for(const item of result.items){const row=element('tr');row.setAttribute('role','row');
     if(view==='board'){const cell=textCell(row,'');cell.append(button(item.title,()=>showBlog(item),'title-button'),element('p',item.author));const stage=textCell(row,'');stage.append(badge(item.stage));if(item.conflict||item.shared_newer)stage.append(element('p',item.conflict?'Competing revisions':'New shared revision'));const owner=textCell(row,item.owner);if(item.due)owner.append(element('p',(item.overdue?'Overdue · ':'Due · ')+item.due,item.overdue?'overdue':''));const doc=textCell(row,'');doc.append(item.google?link(item.google.url,'Open Google Doc ↗'):element('span',item.location==='hub'?'Saved in Team Hub':'Local writing'));if(item.google)doc.append(element('p','Saved link; refresh Google in chat'));}
     if(view==='inbox'){const blog=textCell(row,'');blog.append(button(item.title,()=>showBlog({...item,location:item.location||'local'}),'title-button'));const finding=textCell(row,'');finding.append(button(item.kind,()=>showFinding(item),'title-button'));if(item.finding)finding.append(element('p',item.finding.message||item.finding.detail||item.finding.original||'Inspect this saved finding in chat.'));const status=textCell(row,'');status.append(badge(item.status));const action=textCell(row,'');action.append(button('Inspect finding',()=>showFinding(item)),element('p',item.action));}
-    if(view==='library'){const cell=textCell(row,item.title);cell.append(element('p',item.author||'Author unknown'));if(item.library.canonical_url)cell.append(link(item.library.canonical_url,'Original post ↗'));const status=textCell(row,'');status.append(badge(item.library.curation||item.status));textCell(row,(item.collection_names||item.library.collections||[]).join(', ')+' '+(item.library.published||'Date unknown'));const action=textCell(row,'');action.append(button(access.actions.edit?'Curate':'Read reference',()=>curate(item)));if(item.historical)action.append(element('p','Historical reference'));}
+    if(view==='library'){const cell=textCell(row,item.title);cell.append(element('p',item.author||'Author unknown'));if(item.library.canonical_url)cell.append(link(item.library.canonical_url,'Original post ↗'));const status=textCell(row,'');status.append(badge(item.library.curation||item.status),badge(item.analysis?.status==='ready'?'Analyzed':item.analysis?.status==='needs-extraction'?'Needs extraction':'Needs analysis'));textCell(row,(item.collection_names||item.library.collections||[]).join(', ')+' '+(item.library.published||'Date unknown'));const action=textCell(row,'');action.append(button(access.actions.edit?'Review details':'Read reference',()=>curate(item)));if(item.historical)action.append(element('p','Historical reference'));}
     if(view==='memory'){const cell=textCell(row,'');cell.append(button(item.title,()=>editMemory(item),'title-button'));if(item.conflict)cell.append(element('p','Competing revisions'));if(item.lesson_status)cell.append(element('p','Candidate lesson · '+item.lesson_status));textCell(row,item.kind);textCell(row,item.scope.level+(item.scope.key?' · '+item.scope.key:''));textCell(row,item.lesson?'Review / promote in chat':item.focused_workflow?'Manage in chat':item.kind==='decision'||item.conflict||!access.actions.memory?'Read details':'Open to read or edit');}
     Array.from(row.children).forEach((cell,index)=>cell.setAttribute('data-label',headings[index]));
     body.append(row);
@@ -192,6 +192,14 @@ async function showFinding(item) {
 async function curate(item) {
   let result=await api('source?'+new URLSearchParams({id:item.id,location:item.location}));
   $('detail-title').textContent=item.title;$('detail-content').replaceChildren();
+  const analysis=result.record.analysis||{};
+  const overview=element('section',undefined,'analysis-overview');overview.append(element('h3',analysis.status==='ready'?'Automatic analysis':'Needs analysis'));
+  if(analysis.summary)overview.append(element('p',analysis.summary));
+  if(analysis.kind)overview.append(element('p',analysis.kind));
+  for(const caution of analysis.cautions||[])overview.append(element('p',caution,'help'));
+  if(analysis.message)overview.append(element('p',analysis.message,'help'));
+  if(analysis.status!=='ready'&&access.actions.edit)overview.append(button('Analyze reference',async()=>{notice('Analyzing with your selected writing CLI…');await api('analyze',{id:result.id,location:result.location,expected:result.expected});await load();await curate(item);}));
+  $('detail-content').append(overview);
   if(!access.actions.edit){$('detail-content').append(element('p',access.message,'context-note'),element('pre',JSON.stringify(result.record.library||{},null,2),'source-excerpt'),element('h3','Saved text excerpt'),element('pre',result.excerpt||'No extracted text yet.','source-excerpt'));$('detail-dialog').showModal();return;}
   const form=element('form'),metadata=result.record.library||{},l=element('label','Curation'),select=element('select');select.name='curation';
   for(const state of ['active','pending','retired']){const option=element('option',state);option.value=state;option.selected=state===(metadata.curation||'active');select.append(option);}l.append(select);form.append(l);
@@ -341,7 +349,7 @@ async function previewImport(){
 }
 async function saveImport(retry=false){
   if(importBusy||!importState||!access.actions.edit)return;
-  importBusyState(true,'Importing up to 25 posts. This may take a moment…');
+  importBusyState(true,'Importing and analyzing selected posts with your writing CLI. Saved originals are kept if analysis needs a retry…');
   try{
     const selected=importSelectionControls();
     if(!selected.length)throw new Error('Check the posts you want to import first.');

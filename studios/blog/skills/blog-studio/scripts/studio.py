@@ -239,6 +239,8 @@ def source_command(root, args):
                   'note': args.note, 'revision': 1, 'created_at': now(), 'retrieved_at': now() if text else None}
         if extraction:
             record['extraction'] = {k:v for k,v in extraction.items() if k != 'text'}
+        from source_curator import enrich
+        enrich(root, record, text)
         persist(directory, 'sources', record)
         return record
     directory, record = item(root, 'sources', args.id)
@@ -260,6 +262,8 @@ def source_command(root, args):
         record['retrieved_at'] = now()
     record['revision'] += 1
     record['status'] = status
+    from source_curator import enrich
+    enrich(root, record, text)
     if args.note is not None:
         record['note'] = args.note
     persist(directory, 'sources', record)
@@ -504,7 +508,7 @@ def parser():
     listing.add_argument('kind', choices=('profiles', 'sources', 'articles'))
     from blog_library import add_parser as library_parser
     library_parser(groups)
-    manage = groups.add_parser("manage");manage.add_argument("--port", type=int, default=0);manage.add_argument("--open", action="store_true")
+    manage = groups.add_parser("manage");manage.add_argument("--port", type=int, default=0);manage.add_argument("--open", action="store_true");manage.add_argument("--harness", choices=("codex","claude"))
     from editorial import add_parser as editorial_parser
     editorial_parser(groups)
     from experience import add_parser as experience_parser
@@ -587,7 +591,7 @@ def main():
     try:
         if args.group == 'manage':
             from management import main as manage
-            return manage(root, args.port, args.open)
+            return manage(root, args.port, args.open, args.harness)
         if args.group == 'library' and args.action in ('collections', 'find', 'read'):
             from blog_library import command
             result = command(root, args)

@@ -150,3 +150,9 @@ If the reference has unshared local edits, compare them in your chat first.
 Changing views, searches or pages cancels older list requests. The loading message
 marks the pending view; page buttons are disabled until it finishes. If loading
 fails, the previous valid results remain visible.
+
+Readable imports are analyzed automatically: Blog Studio adds a summary, topics,
+product tags and cautions for later reuse. **Review details** lets you correct
+those results; **Analyze reference** retries unfinished analysis. Your originals
+are retained. Analysis uses your selected signed-in Codex or Claude CLI. PDFs
+without extracted text remain marked **Needs extraction**.

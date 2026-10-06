@@ -44,10 +44,12 @@ blog collections, or “Open editorial desk,” read the [editorial router](refe
 and only the requested operation (runtime 1.12+). Use current operational helpers
 without replacing an existing article’s writing guidance pin.
 
-For supplied references or a new blog with a known topic, runtime 1.14.2+ uses
+For supplied references or a new blog with a known topic, runtime 1.14.3+ uses
 [reference memory](references/workspace/reference-memory.md) to retain sources
 and search reusable material in small batches. Respect explicit source limits;
-ordinary resume/proofreading retains existing pins.
+ordinary resume/proofreading retains existing pins. Configure the current
+harness once for automatic import-time source analysis; this route also handles
+explicit analysis of existing references.
 
 **New task:** run
 `python3 <installed-skill>/scripts/sync_guidance.py start --workspace <workspace>`.

@@ -31,6 +31,31 @@ to retired (`library curate --id <source> --file <json>` with
 `{"curation":"retired"}`) so default future retrieval excludes it. Retirement stops
 reuse; prior snapshots and existing article pins remain recoverable.
 
+## Analyze at intake
+
+Use the current installed operational runtime. Select the active writing harness
+once per workspace with `... library curator --harness codex` (or `claude` when
+that is the user's harness). Do not choose another provider merely because it is
+available. Readable source saves, updates, uploads and selected historical imports
+then analyze automatically through that CLI's existing sign-in. Opening the desk
+with `manage --harness <current-harness>` establishes the same setting.
+
+Analysis stores a compact summary, specific topics/products, document kind,
+and reuse cautions bound to the content hash. Originals and article evidence pins
+remain intact. Imports run analysis in groups of at most five, with at most
+24,000 characters per source; excerpt-only results say so. Missing extraction,
+login/usage failures and invalid output retain the import with Needs analysis or
+Needs extraction. Retry selected records with `... library analyze --id <source>`
+(repeat `--id` for up to 25), or Analyze reference in the desk. An unchanged
+analyzed body is reused. Review details lets the user correct tags, notes and
+reuse status; those corrections survive automatic analysis.
+
+The analysis run disables shell, browsing, connectors, plugins and hooks. It uses
+no extra model service, provider fallback, API key setup or persistent analysis
+chat. Custom Codex providers require interactive harness curation rather than an
+unannounced provider switch. Analysis is source interpretation, not a factual
+verification or automatic promotion into team rules/author voice.
+
 ## Find material for another blog
 
 For a new outline/draft/idea task, after identifying a topic, search once using

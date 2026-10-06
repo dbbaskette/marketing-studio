@@ -1,7 +1,7 @@
 # Local editorial desk
 
 On “Open editorial desk”, use the current installed interpreter/runtime:
-`<python> <runtime>/studio.py --root <workspace> manage`.
+`<python> <runtime>/studio.py --root <workspace> manage --harness <current-codex-or-claude-harness>`.
 The helper runs until stopped and returns a local URL with a per-run session
 fragment. Open that exact URL in the available browser. Keep the helper process
 running; stop only this desk process when the author asks. Do not open a new

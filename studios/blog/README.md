@@ -175,3 +175,9 @@ under your account settings.
 **For developers and team administrators:** [Developer guide](docs/development.md) ·
 [Roadmap](https://github.com/dbbaskette/blog-studio/issues/3) ·
 [Performance evidence](docs/performance.md) · [Hub acceptance walkthrough](docs/hub-acceptance.md) · [Package details](PACKAGE.md)
+
+Readable imports are analyzed automatically: Blog Studio adds a summary, topics,
+product tags and cautions for later reuse. **Review details** lets you correct
+those results; **Analyze reference** retries unfinished analysis. Your originals
+are retained. Analysis uses your selected signed-in Codex or Claude CLI. PDFs
+without extracted text remain marked **Needs extraction**.

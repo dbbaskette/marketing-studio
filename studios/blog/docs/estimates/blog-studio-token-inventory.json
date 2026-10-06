@@ -64,14 +64,14 @@
       "sha256": "38f12b6816ebac6cb1d3ec140ee835fde77772cf5b7377e1bd89659178c2d663"
     },
     "references/editorial/library.md": {
-      "characters": 3678,
-      "estimated_tokens": 920,
-      "sha256": "c3da9d77c6f5d5912fdd9d98d1a0b1785d390da8902bb821fbf1af263069c168"
+      "characters": 3940,
+      "estimated_tokens": 985,
+      "sha256": "8267988731176154840cb05019ff6744c93ab1885a5bc1855b909af59f539908"
     },
     "references/editorial/management.md": {
-      "characters": 3716,
-      "estimated_tokens": 929,
-      "sha256": "3e74762162fb3eeaaddf92855b695c44217d6061d3f1b770080bc47b1cf8c8b8"
+      "characters": 3760,
+      "estimated_tokens": 940,
+      "sha256": "73e5a5f35f21578399bb2b2d3e750006844a5cff893c3ba77d94cd3d213c5ca7"
     },
     "references/editorial/package.md": {
       "characters": 1331,
@@ -289,9 +289,9 @@
       "sha256": "96c8c1e623ca24f884c24afe2cafdcecd4f5d1dd54163bd0195423dfb8263c37"
     },
     "references/privacy.md": {
-      "characters": 4006,
-      "estimated_tokens": 1002,
-      "sha256": "304d920abc108b45024a80cfe236fe38600ff2f0a264d994c1d33e488c250103"
+      "characters": 4170,
+      "estimated_tokens": 1043,
+      "sha256": "7001530b5058c319ec5cdfebfcd4901644932fe7b3625bbc16c007c73d68f503"
     },
     "references/review/evidence.md": {
       "characters": 2094,
@@ -639,9 +639,9 @@
       "sha256": "020310916e2c15291fbd0d2267d753751d3b27d3c3250027fafaa1922efec08d"
     },
     "references/workspace/reference-memory.md": {
-      "characters": 3655,
-      "estimated_tokens": 914,
-      "sha256": "13e209164b2737c911506e5da2b09d8b4b697406451a9a38e660d74f7ff4d265"
+      "characters": 5236,
+      "estimated_tokens": 1309,
+      "sha256": "f05ae4c50931244e73fed839fa39c93568a8f62471d69853f5e9ac1951d6a411"
     },
     "references/workspace/resume.md": {
       "characters": 2002,
@@ -669,7 +669,7 @@
       "sha256": "36c39ead07081df6544bf0eb981b19bb4046c17ce95805acc923d3ac7c52d40e"
     }
   },
-  "library_tokens": 203270,
+  "library_tokens": 203782,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -767,8 +767,8 @@
   },
   "bootstrap": {
     "path": "bootstrap/blog-studio/SKILL.md",
-    "estimated_tokens": 1437,
-    "sha256": "6ff7584cd709c3fe850c624b0a330e229a5e847f655007a5169ad73e75b78ed0",
+    "estimated_tokens": 1473,
+    "sha256": "9354632906af7914e243ac6e8f7024e236ff27c73ea56a4e770d2fccb88fd4fc",
     "note": "Added to repository-guidance routes; excluded from the full offline corpus."
   },
   "team_hub_routes": {
@@ -798,7 +798,7 @@
     "files": [
       "references/privacy.md"
     ],
-    "estimated_tokens": 1002,
+    "estimated_tokens": 1043,
     "note": "Load before upstream service instructions or external research/media/posting; essential boundary is always in the parent."
   },
   "entry_guidance": {
@@ -915,7 +915,7 @@
       "files": [
         "references/workspace/reference-memory.md"
       ],
-      "estimated_tokens": 914,
+      "estimated_tokens": 1309,
       "note": "Conditional reference retention and bounded reuse; source bodies are retrieved separately."
     }
   },
@@ -1129,14 +1129,14 @@
         "references/editorial/workflow.md",
         "references/editorial/library.md"
       ],
-      "estimated_tokens": 1155
+      "estimated_tokens": 1220
     },
     "management": {
       "files": [
         "references/editorial/workflow.md",
         "references/editorial/management.md"
       ],
-      "estimated_tokens": 1164
+      "estimated_tokens": 1175
     }
   }
 }
