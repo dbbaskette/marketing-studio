@@ -134,14 +134,14 @@
       "sha256": "80264c882bbe0e09d1cd2c9b634444d20f6ff8e02d71fff7cd5604d826eb0e96"
     },
     "references/google/suggestions.md": {
-      "characters": 10560,
-      "estimated_tokens": 2640,
-      "sha256": "b0fc65dddec0818e03e92a2b45d039619f8eb7a938a993afb656a1607531787d"
+      "characters": 10853,
+      "estimated_tokens": 2714,
+      "sha256": "c2ea58bae8fb191b6e3f46b82626854dc9ecb465753e3f247cfc11b55c31d14b"
     },
     "references/google/workflow.md": {
-      "characters": 1573,
+      "characters": 1575,
       "estimated_tokens": 394,
-      "sha256": "54994a954ea23acf3e84f41017a3a04b6d76d937bb4834c84c6d0c556cad8ddd"
+      "sha256": "6ead74e1bcaea3972e6a3be7967fa0ee72314814e092bc02cce78cfccd5e4b2e"
     },
     "references/headline-lab.md": {
       "characters": 574,
@@ -314,9 +314,9 @@
       "sha256": "ff220715a53d4b42937990a5d40a484c0a3eee145109e7154b96d1555ba30100"
     },
     "references/short-commands.md": {
-      "characters": 3784,
-      "estimated_tokens": 946,
-      "sha256": "c3565ea7498721142b93d18a662f3ac93f17cb1af2883d937ca0277c4a92a792"
+      "characters": 4293,
+      "estimated_tokens": 1074,
+      "sha256": "16059dc04de39d19dabb86923b71e9206792b6dc56d82131c528473db492b00b"
     },
     "references/style/examples.md": {
       "characters": 1936,
@@ -669,7 +669,7 @@
       "sha256": "36c39ead07081df6544bf0eb981b19bb4046c17ce95805acc923d3ac7c52d40e"
     }
   },
-  "library_tokens": 203782,
+  "library_tokens": 203984,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -767,8 +767,8 @@
   },
   "bootstrap": {
     "path": "bootstrap/blog-studio/SKILL.md",
-    "estimated_tokens": 1473,
-    "sha256": "9354632906af7914e243ac6e8f7024e236ff27c73ea56a4e770d2fccb88fd4fc",
+    "estimated_tokens": 1518,
+    "sha256": "6db48de7b4b228621ab6b3a26810a0b35d6bb098c064e9ecd21f8a60bb23f9a6",
     "note": "Added to repository-guidance routes; excluded from the full offline corpus."
   },
   "team_hub_routes": {
@@ -908,7 +908,7 @@
       "files": [
         "references/short-commands.md"
       ],
-      "estimated_tokens": 946,
+      "estimated_tokens": 1074,
       "note": "Conditional runtime 1.7 author operation; ordinary entry and author data are additional."
     },
     "reference_memory": {
@@ -1028,7 +1028,7 @@
       "files": [
         "references/google/suggestions.md"
       ],
-      "estimated_tokens": 2640
+      "estimated_tokens": 2714
     },
     "start": {
       "files": [

@@ -66,6 +66,7 @@ approve first, say **“Push as suggestions.”**
 | --- | --- |
 | Push to Google Docs. | Send the current draft or its updates to the working Doc |
 | Push as suggestions. | Refresh Google, then post native suggestions or clearly labeled review comments |
+| Push feedback as comments. | Refresh Google, then leave review comments without changing the text |
 | Show review edits. | See the numbered comment-review findings |
 | Apply edits 2 and 4. | Apply only those changes, recheck formatting, and resolve completed comments |
 | Pull from Google Docs. | Bring back the team's text and formatting changes |
@@ -83,7 +84,11 @@ verification, and conflict checks belong to the skill—you do not need to repea
 them in every prompt. If access or an operation is unavailable, it explains what
 is needed rather than claiming success.
 
-“Push as suggestions” checks the latest Google copy automatically. It refreshes
+Want comments from the start? Say **“Push feedback as comments”** or
+**“Push as comments.”** It sends the selected feedback to the linked Doc, keeps
+its text and formatting, and never tries suggested text changes.
+
+Both review modes check the latest Google copy automatically. It refreshes
 affected findings and stops for competing edits; no separate pull prompt is needed.
 After the team accepts or rejects proposals in Google, say **“Pull from Google Docs.”**
 The returned Markdown contains accepted text; pending suggestions stay separate.

@@ -50,6 +50,48 @@ class CommentTests(unittest.TestCase):
     plan=fixtures.SuggestionsTests.plan
     def setUp(self):
         fixtures.SuggestionsTests.setUp(self);self.client=CommentProvider()
+    def test_explicit_comment_request_skips_supported_suggestions(self):
+        self.client.native_available=True
+        self.client.native_review_update=Mock(wraps=self.client.native_review_update)
+        before=gs.signature(self.client.doc)
+        routed=author_workflow.route(self.root,'Push feedback as comments',self.aid)
+        path=self.root/'comments-first.json'
+        gs.plan(self.client,self.root,self.aid,routed['kind'],self.findings(),path,mode=routed['review_mode'])
+        saved=json.loads(path.read_text())
+        result=gs.apply(self.client,self.root,saved)
+        self.assertEqual(result['status'],'verified-comments')
+        self.assertEqual(result['mode'],'native-comments')
+        self.client.native_review_update.assert_not_called()
+        self.assertFalse(self.client.threads)
+        self.assertEqual(gs.signature(self.client.doc),before)
+        self.assertEqual(len(self.client.comments),3)
+    def test_explicit_comments_keep_drive_fallback_without_suggestion_attempt(self):
+        self.client.native_available=True;self.client.native_comments=False
+        self.client.native_review_update=Mock(wraps=self.client.native_review_update)
+        path=self.root/'comments-first.json'
+        gs.plan(self.client,self.root,self.aid,'draft',self.findings(),path,mode='comments')
+        result=gs.apply(self.client,self.root,json.loads(path.read_text()))
+        self.assertEqual(result['mode'],'drive-comments')
+        self.assertEqual(result['status'],'verified-comments')
+        self.assertTrue(result['accepted_text_unchanged'])
+        self.client.native_review_update.assert_not_called()
+        self.assertEqual(self.client.writes,0)
+        self.assertEqual(self.client.creates,3)
+    def test_comment_short_requests_preserve_mode_and_destination(self):
+        for text in ('Push as comments','Push feedback as comments',
+                     'Send feedback as comments to Google Docs',
+                     'Push changes to Google as comments','Push edits as comments to Google'):
+            with self.subTest(text=text):
+                routed=author_workflow.route(self.root,text,self.aid)
+                self.assertEqual(routed['actions'],['google-suggest'])
+                self.assertEqual(routed['review_mode'],'comments')
+                self.assertEqual(routed['linked_document'],self.record['google']['baselines']['draft']['document']['url'])
+        for text in ('Push changes to Google','Push changes to Google Docs','Push as suggestions'):
+            routed=author_workflow.route(self.root,text,self.aid)
+            self.assertEqual(routed['review_mode'],'auto')
+        direct=author_workflow.route(self.root,'Push to Google Docs',self.aid)
+        self.assertEqual(direct['actions'],['google-push'])
+        self.assertNotIn('review_mode',direct)
     def test_unavailable_native_read_posts_clear_numbered_drive_comments(self):
         saved=self.plan();self.assertEqual(saved['mode'],'comments')
         result=gs.apply(self.client,self.root,saved)
