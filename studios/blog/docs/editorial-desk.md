@@ -64,7 +64,10 @@ a focused continuation, without a generic Save that could change their type.
 In the desk, open **Reference library → Import old blogs**. Choose a folder on
 this computer, a website, an RSS/Atom feed, or a JSON export. Give the collection
 a name; for web sources, choose the website/path containing the permitted posts.
-Sitemaps and a list of post links are also supported.
+Sitemaps and a list of post links are also supported. A website preview lists
+links on that page; it does not follow the rest of an archive automatically.
+Feeds may list only recent posts, and sitemap indexes are not expanded. The
+preview explains this coverage before you import.
 
 Click **Preview blogs**, inspect the collection, scope, sample posts and exclusions,
 then click **Import first 25 posts** (or the smaller number shown). Continue with

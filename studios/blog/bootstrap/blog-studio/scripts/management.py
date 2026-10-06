@@ -449,6 +449,12 @@ def library_preview_state(root, ident):
     counts = {key: sum(v['status'] == key for v in results.values()) for key in ('imported', 'updated', 'unchanged', 'failed')}
     counts['pending_extraction'] = sum(v.get('extraction') == 'pending' for v in results.values())
     return {'preview': ident, 'collection': config['name'], 'type': config['type'], 'scope': config.get('scope'),
+            'coverage_note': {'archive': 'Links from this page only. Other archive pages have not been followed.',
+                              'feed': 'Posts listed in this feed only. Older posts may be missing.',
+                              'sitemap': 'URLs in this sitemap only. Nested sitemap indexes are not expanded.',
+                              'urls': 'The post links you supplied.',
+                              'folder': 'The supported files in the selected folder.',
+                              'export': 'The posts in the selected JSON export.'}[config['type']],
             'expected': sha(encoded([manifest, config])), 'candidates': len(manifest['candidates']),
             'completed': len(results), 'remaining': len(manifest['candidates']) - len(results), 'counts': counts,
             'expected_bytes': sum(v.get('expected_bytes', 0) for v in manifest['candidates']),

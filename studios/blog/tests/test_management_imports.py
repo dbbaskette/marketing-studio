@@ -62,6 +62,7 @@ class ManagementImportTests(Fixture):
             preview=management.dispatch(self.root, 'library-preview', {'operation':'a'*32,'name':'Web posts','type':'archive',
                 'url':'https://team.example/archive','scope':'https://team.example/blog','discovery_scope':'https://team.example/archive'})
             self.assertEqual(calls, [('https://team.example/archive','https://team.example/archive')])
+            self.assertIn('Other archive pages have not been followed', preview['coverage_note'])
             self.assertEqual(preview['candidates'],1)
             self.assertEqual(len(preview['excluded']),1)
             self.save(preview)

@@ -253,7 +253,8 @@ function renderImport(result){
   $('import-form').hidden=true;$('import-new').hidden=false;
   importState=result;sessionStorage.setItem('blog-studio-import-preview',result.preview);
   const box=$('import-preview');box.replaceChildren();box.hidden=false;
-  box.append(element('h3',result.collection),element('p',result.candidates+' posts found · '+result.remaining+' not yet processed'));
+  box.append(element('h3',result.collection),element('p',result.candidates+' candidates listed · '+result.remaining+' not yet processed'));
+  if(result.coverage_note)box.append(element('p',result.coverage_note,'context-note'));
   if(result.scope)box.append(element('p','Permitted posts: '+result.scope,'help'));
   const counts=result.counts||{};
   if(result.completed)box.append(element('p',`${counts.imported||0} added · ${counts.updated||0} updated · ${counts.unchanged||0} unchanged · ${counts.failed||0} failed`));
