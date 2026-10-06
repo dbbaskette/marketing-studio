@@ -22,6 +22,7 @@ function savedNotice(result) {notice((result.receipts||[]).map(r=>r.label+': '+r
 function applyCapabilities() {
   $('access-status').textContent=access.message;
   $('upload-open').disabled=!access.actions.edit;
+  $('import-open').disabled=!access.actions.edit;
   $('memory-open').disabled=!access.actions.memory;
   $('refresh-hub').disabled=!access.actions.refresh;
 }
@@ -100,16 +101,16 @@ async function load() {
 function render(state, result) {
   const {view,offset}=state, total=result.total;
   $('heading').textContent=views[view][0];$('subtitle').textContent=views[view][1];$('section-title').textContent=views[view][2];$('count').textContent=total+' '+(total===1?'item':'items');
-  $('stage-filter').hidden=view!=='board';$('memory-open').hidden=view!=='memory';$('previous').disabled=offset===0;$('next').disabled=offset+limit>=total;$('page-label').textContent=total?`${offset+1}–${Math.min(offset+limit,total)} of ${total}`:'No items yet';
+  $('import-open').hidden=view!=='library';$('stage-filter').hidden=view!=='board';$('memory-open').hidden=view!=='memory';$('previous').disabled=offset===0;$('next').disabled=offset+limit>=total;$('page-label').textContent=total?`${offset+1}–${Math.min(offset+limit,total)} of ${total}`:'No items yet';
   $('query').placeholder={board:'Blog title, author, owner…',inbox:'Blog, finding, status…',library:'Title, author, topic…',memory:'Title, kind, scope…'}[view];
   $('observation').textContent=result.observation||result.google_observation||'Saved content only. Historical product claims need current verification.';
   $('results').replaceChildren();
-  if(!result.items.length){const box=element('div',undefined,'empty');box.append(element('h3',{board:'Your next blog starts here',inbox:'Nothing in this saved inbox',library:'Build your reference shelf',memory:'Give your team useful context'}[view]),element('p',{board:'Upload a draft, start a blog in chat, or join your team’s Hub to find shared work.',inbox:'Run a review in chat to collect findings. Google review status is not checked live here.',library:'Upload a reference here, or ask in chat: “Import our old blogs from [folder or site].”',memory:'Join a Team Hub, then save a note, context, or writing rule.'}[view]));$('results').append(box);return;}
+  if(!result.items.length){const box=element('div',undefined,'empty');box.append(element('h3',{board:'Your next blog starts here',inbox:'Nothing in this saved inbox',library:'Build your reference shelf',memory:'Give your team useful context'}[view]),element('p',{board:'Upload a draft, start a blog in chat, or join your team’s Hub to find shared work.',inbox:'Run a review in chat to collect findings. Google review status is not checked live here.',library:'Choose “Import old blogs” to add a folder, website, feed or export, or upload a single reference.',memory:'Join a Team Hub, then save a note, context, or writing rule.'}[view]));$('results').append(box);return;}
   const table=element('table'),head=element('tr');table.setAttribute('role','table');head.setAttribute('role','row');table.className='view-'+view;const headings={board:['Blog / author','Stage','Owner / due','Working copy'],inbox:['Blog','Finding','Status','Next action'],library:['Reference / author','Status','Collection / date','Actions'],memory:['Memory','Kind','Applies to','Actions']}[view];headings.forEach(h=>{const th=element('th',h);th.setAttribute('scope','col');head.append(th);});const thead=element('thead');thead.append(head);table.append(thead);const body=element('tbody');
   for(const item of result.items){const row=element('tr');row.setAttribute('role','row');
     if(view==='board'){const cell=textCell(row,'');cell.append(button(item.title,()=>showBlog(item),'title-button'),element('p',item.author));const stage=textCell(row,'');stage.append(badge(item.stage));if(item.conflict||item.shared_newer)stage.append(element('p',item.conflict?'Competing revisions':'New shared revision'));const owner=textCell(row,item.owner);if(item.due)owner.append(element('p',(item.overdue?'Overdue · ':'Due · ')+item.due,item.overdue?'overdue':''));const doc=textCell(row,'');doc.append(item.google?link(item.google.url,'Open Google Doc ↗'):element('span',item.location==='hub'?'Saved in Team Hub':'Local writing'));if(item.google)doc.append(element('p','Saved link; refresh Google in chat'));}
     if(view==='inbox'){const blog=textCell(row,'');blog.append(button(item.title,()=>showBlog({...item,location:item.location||'local'}),'title-button'));const finding=textCell(row,'');finding.append(button(item.kind,()=>showFinding(item),'title-button'));if(item.finding)finding.append(element('p',item.finding.message||item.finding.detail||item.finding.original||'Inspect this saved finding in chat.'));const status=textCell(row,'');status.append(badge(item.status));const action=textCell(row,'');action.append(button('Inspect finding',()=>showFinding(item)),element('p',item.action));}
-    if(view==='library'){const cell=textCell(row,item.title);cell.append(element('p',item.author||'Author unknown'));if(item.library.canonical_url)cell.append(link(item.library.canonical_url,'Original post ↗'));const status=textCell(row,'');status.append(badge(item.library.curation||item.status));textCell(row,(item.collection_names||item.library.collections||[]).join(', ')+' '+(item.library.published||'Date unknown'));const action=textCell(row,'');action.append(button(access.actions.edit?'Curate':'Read reference',()=>curate(item)));if(item.historical)action.append(element('p','Historical reference'));}
+    if(view==='library'){const cell=textCell(row,item.title);cell.append(element('p',item.author||'Author unknown'));if(item.library.canonical_url)cell.append(link(item.library.canonical_url,'Original post ↗'));const status=textCell(row,'');status.append(badge(item.library.curation||item.status),badge(item.analysis?.status==='ready'?'Analyzed':item.analysis?.status==='needs-extraction'?'Needs extraction':'Needs analysis'));textCell(row,(item.collection_names||item.library.collections||[]).join(', ')+' '+(item.library.published||'Date unknown'));const action=textCell(row,'');action.append(button(access.actions.edit?'Review details':'Read reference',()=>curate(item)));if(item.historical)action.append(element('p','Historical reference'));}
     if(view==='memory'){const cell=textCell(row,'');cell.append(button(item.title,()=>editMemory(item),'title-button'));if(item.conflict)cell.append(element('p','Competing revisions'));if(item.lesson_status)cell.append(element('p','Candidate lesson · '+item.lesson_status));textCell(row,item.kind);textCell(row,item.scope.level+(item.scope.key?' · '+item.scope.key:''));textCell(row,item.lesson?'Review / promote in chat':item.focused_workflow?'Manage in chat':item.kind==='decision'||item.conflict||!access.actions.memory?'Read details':'Open to read or edit');}
     Array.from(row.children).forEach((cell,index)=>cell.setAttribute('data-label',headings[index]));
     body.append(row);
@@ -191,6 +192,14 @@ async function showFinding(item) {
 async function curate(item) {
   let result=await api('source?'+new URLSearchParams({id:item.id,location:item.location}));
   $('detail-title').textContent=item.title;$('detail-content').replaceChildren();
+  const analysis=result.record.analysis||{};
+  const overview=element('section',undefined,'analysis-overview');overview.append(element('h3',analysis.status==='ready'?'Automatic analysis':'Needs analysis'));
+  if(analysis.summary)overview.append(element('p',analysis.summary));
+  if(analysis.kind)overview.append(element('p',analysis.kind));
+  for(const caution of analysis.cautions||[])overview.append(element('p',caution,'help'));
+  if(analysis.message)overview.append(element('p',analysis.message,'help'));
+  if(analysis.status!=='ready'&&access.actions.edit)overview.append(button('Analyze reference',async()=>{notice('Analyzing with your selected writing CLI…');await api('analyze',{id:result.id,location:result.location,expected:result.expected});await load();await curate(item);}));
+  $('detail-content').append(overview);
   if(!access.actions.edit){$('detail-content').append(element('p',access.message,'context-note'),element('pre',JSON.stringify(result.record.library||{},null,2),'source-excerpt'),element('h3','Saved text excerpt'),element('pre',result.excerpt||'No extracted text yet.','source-excerpt'));$('detail-dialog').showModal();return;}
   const form=element('form'),metadata=result.record.library||{},l=element('label','Curation'),select=element('select');select.name='curation';
   for(const state of ['active','pending','retired']){const option=element('option',state);option.value=state;option.selected=state===(metadata.curation||'active');select.append(option);}l.append(select);form.append(l);
@@ -232,12 +241,140 @@ async function editMemory(item) {
   $('memory-key').value=result.record.scope.key;$('memory-title').textContent='Edit shared memory';
   $('memory-form').querySelector('[type=submit]').disabled=false;$('memory-dialog').showModal();
 }
+let importState=null, importBusy=false, importChecks=new Map();
+function importSelectionControls(){
+  const selected=[...importChecks.entries()].filter(([,check])=>check.checked).map(([key])=>key);
+  const pending=importState?importState.posts.filter(p=>selected.includes(p.key)&&p.status==='pending').length:0;
+  const failed=importState?importState.posts.filter(p=>selected.includes(p.key)&&p.status==='failed').length:0;
+  $('import-save').textContent='Import selected '+Math.min(25,pending)+' posts';
+  $('import-save').disabled=importBusy||!pending;
+  $('import-retry').textContent='Retry selected '+Math.min(25,failed)+' failed posts';
+  $('import-retry').disabled=importBusy||!failed;
+  if($('import-selection-count'))$('import-selection-count').textContent=selected.length+' selected';
+  for(const [key,check] of importChecks)check.disabled=importBusy||!['pending','failed'].includes(importState.posts.find(p=>p.key===key).status);
+  return selected;
+}
+function importFields(){
+  const type=$('import-type').value, network=['archive','feed','sitemap','urls'].includes(type);
+  for(const name of ['folder','export','url','links','scope','collection','name']){
+    const visible={folder:type==='folder',export:type==='export',url:network&&type!=='urls',links:type==='urls',scope:network,collection:type==='collection',name:type!=='collection'}[name];
+    $('import-'+name+'-field').hidden=!visible;
+  }
+  $('import-name').required=type!=='collection';$('import-scope').required=network;
+  $('import-url').required=network&&type!=='urls';
+  $('import-url-label').textContent={archive:'Blog archive URL',feed:'Feed URL',sitemap:'Sitemap URL'}[type]||'Website URL';
+}
+function importBusyState(busy,message=''){
+  importBusy=busy;
+  for(const id of ['import-type','import-name','import-folder','import-export','import-url','import-links','import-scope','import-collection','import-preview-button','import-close','import-save','import-retry','import-reload','import-new'])$(id).disabled=busy;
+  $('import-progress').textContent=message;$('import-progress').hidden=!message;
+  if(importState)importSelectionControls();
+  for(const control of $('import-preview').querySelectorAll('.import-select-control'))control.disabled=busy;
+}
+function renderImport(result){
+  $('import-form').hidden=true;$('import-new').hidden=false;
+  importState=result;sessionStorage.setItem('blog-studio-import-preview',result.preview);
+  const box=$('import-preview');box.replaceChildren();box.hidden=false;
+  box.append(element('h3',result.collection),element('p',result.candidates+' candidates listed · '+result.remaining+' not yet processed'));
+  if(result.coverage_note)box.append(element('p',result.coverage_note,'context-note'));
+  if(result.scope)box.append(element('p','Permitted posts: '+result.scope,'help'));
+  const counts=result.counts||{};
+  if(result.completed)box.append(element('p',`${counts.imported||0} added · ${counts.updated||0} updated · ${counts.unchanged||0} unchanged · ${counts.failed||0} failed`));
+  if(counts.pending_extraction)box.append(element('p',counts.pending_extraction+' files need text extraction in chat.','context-note'));
+  if(result.sharing_message)box.append(element('p',result.sharing_message,'context-note'));
+  if(result.network_bytes)box.append(element('p','Download size is unknown until posts are fetched. Each batch reads up to 25 posts.','help'));
+  if(result.discovery_limited)box.append(element('p','Discovery reached its limit. Use a smaller folder or website path to cover the remaining posts.','context-note'));
+  if(result.excluded.length)box.append(disclosure('Excluded items',...result.excluded.map(v=>element('p',v.reason))));
+  box.append(element('p','Check only the posts you want. Author profiles, category pages and navigation links can appear here. Nothing is selected automatically.','context-note'));
+  importChecks=new Map();
+  const controls=element('div',undefined,'import-selection-tools'),count=element('span');count.id='import-selection-count';
+  const choose=element('button','Select all','import-select-control'),clear=element('button','Clear selection','import-select-control');
+  choose.type=clear.type='button';
+  choose.addEventListener('click',()=>{for(const check of importChecks.values())if(!check.disabled)check.checked=true;importSelectionControls();});
+  clear.addEventListener('click',()=>{for(const check of importChecks.values())check.checked=false;importSelectionControls();});
+  controls.append(choose,clear,count);box.append(controls);
+  const list=element('ul',undefined,'import-post-list');
+  for(const post of result.posts){
+    const row=element('li'),label=element('label'),check=element('input'),details=element('span');check.type='checkbox';
+    check.checked=(result.selected||[]).includes(post.key)&&['pending','failed'].includes(post.status);
+    check.setAttribute('aria-label','Import '+post.title);check.addEventListener('change',importSelectionControls);importChecks.set(post.key,check);
+    details.append(element('strong',post.title));if(post.author)details.append(element('span',post.author,'help'));
+    details.append(element('span',post.status==='pending'?'Not imported':post.status,'help'));
+    label.append(check,details);row.append(label);if(post.url)row.append(link(post.url,post.url));list.append(row);
+  }
+  box.append(list);
+  if(result.failures.length)box.append(disclosure('Why posts failed',...result.failures.map(reason=>element('p',reason))));
+  $('import-save').hidden=!result.remaining;
+  $('import-retry').hidden=!counts.failed;$('import-reload').hidden=false;importSelectionControls();
+}
+function resetImportPreview(){
+  $('import-form').hidden=false;$('import-new').hidden=true;
+  importState=null;importChecks=new Map();sessionStorage.removeItem('blog-studio-import-preview');
+  for(const id of ['import-preview','import-save','import-retry','import-reload'])$(id).hidden=true;
+}
+async function openImport(){
+  if(!access.actions.edit)return;
+  $('import-dialog').showModal();importFields();
+  try{
+    const result=await api('collections'), select=$('import-collection');select.replaceChildren();
+    for(const collection of result.items){const option=element('option',collection.name);option.value=collection.key;select.append(option);}
+    const saved=sessionStorage.getItem('blog-studio-import-preview');
+    if(!importState){const preview=await api('library-preview'+(saved?'?preview='+encodeURIComponent(saved):''));if(preview.preview)renderImport(preview);}
+  }catch(error){notice(error.message,true);}
+}
+async function encodeImportFile(file){
+  const bytes=new Uint8Array(await file.arrayBuffer());let binary='';
+  for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+  return btoa(binary);
+}
+async function previewImport(){
+  if(importBusy||!access.actions.edit)return;
+  resetImportPreview();importBusyState(true,'Preparing your preview…');
+  try{
+    const type=$('import-type').value,payload=type==='collection'?{collection:$('import-collection').value}:{name:$('import-name').value.trim(),type};
+    if(type==='folder'){
+      const files=Array.from($('import-folder').files||[]).filter(f=>/\.(md|txt|html?|docx|pdf)$/i.test(f.name)&&!(f.webkitRelativePath||f.name).split('/').some(p=>p.startsWith('.')));
+      if(!files.length||files.length>500||files.reduce((sum,f)=>sum+f.size,0)>10*1024*1024)throw new Error('Choose a folder with 1–500 supported files totaling at most 10 MiB.');
+      payload.files=[];for(const file of files)payload.files.push({path:file.webkitRelativePath||file.name,content:await encodeImportFile(file)});
+    }else if(type==='export'){
+      const file=$('import-export').files[0];if(!file||!file.size||file.size>10*1024*1024)throw new Error('Choose a nonempty JSON export of at most 10 MiB.');
+      payload.export=await encodeImportFile(file);
+    }else if(type!=='collection'){
+      payload.url=type==='urls'?$('import-links').value.trim():$('import-url').value.trim();payload.scope=$('import-scope').value.trim();
+      if(type!=='urls')payload.discovery_scope=payload.url;
+    }
+    const result=await api('library-preview',{...payload,operation:operationFor('library-preview',payload)});
+    renderImport(result);notice('Preview ready. Review the collection and scope, then choose Import.');
+  }catch(error){notice(error.message,true);}finally{importBusyState(false);}
+}
+async function saveImport(retry=false){
+  if(importBusy||!importState||!access.actions.edit)return;
+  importBusyState(true,'Importing and analyzing selected posts with your writing CLI. Saved originals are kept if analysis needs a retry…');
+  try{
+    const selected=importSelectionControls();
+    if(!selected.length)throw new Error('Check the posts you want to import first.');
+    const payload={preview:importState.preview,expected:importState.expected,confirm:true,retry,selected};
+    const result=await api('library-import',{...payload,operation:operationFor('library-import',payload)});
+    renderImport(result);await load();notice(result.sharing_message||'Posts saved to the Reference Library.');
+  }catch(error){notice(error.message,true);}finally{importBusyState(false);}
+}
+
 for(const b of document.querySelectorAll('[data-view]'))b.addEventListener('click',()=>{view=b.dataset.view;offset=0;$('query').value='';document.querySelectorAll('[data-view]').forEach(e=>e.removeAttribute('aria-current'));b.setAttribute('aria-current','page');load().catch(e=>notice(e.message,true));});
 for(const b of document.querySelectorAll('[data-close]'))b.addEventListener('click',()=>b.closest('dialog').close());
 $('search-go').addEventListener('click',()=>{offset=0;load().catch(e=>notice(e.message,true));});$('query').addEventListener('keydown',e=>{if(e.key==='Enter')$('search-go').click();});$('stage').addEventListener('change',()=>{$('search-go').click();});
 $('previous').addEventListener('click',()=>{if($('previous').disabled)return;offset=Math.max(0,offset-limit);load().catch(e=>notice(e.message,true));});$('next').addEventListener('click',()=>{if($('next').disabled)return;offset+=limit;load().catch(e=>notice(e.message,true));});
 $('refresh-hub').addEventListener('click',async()=>{try{await api('refresh',{});await loadCapabilities();await load();notice('Team Hub refreshed. Google Docs content is refreshed separately in chat.');}catch(e){notice(e.message,true);}});
 $('check-access').addEventListener('click',async()=>{await loadCapabilities();await load();});
+$('import-new').addEventListener('click',()=>{if(!importBusy)resetImportPreview();});
+$('import-open').addEventListener('click',openImport);
+$('import-type').addEventListener('change',()=>{resetImportPreview();importFields();});
+$('import-form').addEventListener('input',()=>{if(!importBusy)resetImportPreview();});
+$('import-form').addEventListener('submit',e=>{e.preventDefault();previewImport();});
+$('import-save').addEventListener('click',()=>saveImport(false));
+$('import-retry').addEventListener('click',()=>saveImport(true));
+$('import-dialog').addEventListener('cancel',e=>{if(importBusy)e.preventDefault();});
+$('import-reload').addEventListener('click',async()=>{if(importBusy||!importState)return;importBusyState(true,'Reloading your saved preview…');try{renderImport(await api('library-preview?preview='+encodeURIComponent(importState.preview)));}catch(error){notice(error.message,true);}finally{importBusyState(false);}});
+
 $('upload-open').addEventListener('click',()=>{if(access.actions.edit)$('upload-dialog').showModal();});
 $('upload-form').addEventListener('submit',async e=>{e.preventDefault();const submit=e.target.querySelector('[type=submit]');submit.disabled=true;try{const file=$('upload-file').files[0];if(!file||file.size>10*1024*1024)throw new Error('Choose a file of at most 10 MiB.');const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));const payload={filename:file.name,content:btoa(binary),title:$('upload-title').value,author:$('upload-author').value,as_blog:$('upload-blog').checked};const result=await api('upload',{...payload,operation:operationFor('upload',payload)});$('upload-dialog').close();await load();savedNotice(result);}catch(error){notice(error.message,true);}finally{submit.disabled=false;}});
 $('memory-open').addEventListener('click',()=>{if(!access.actions.memory)return;memoryEdit=null;$('memory-form').reset();$('memory-form').querySelector('[type=submit]').disabled=false;$('memory-title').textContent='Add shared memory';$('memory-dialog').showModal();});

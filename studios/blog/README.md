@@ -19,7 +19,7 @@ an idea one question at a time. You stay in the same chat.
    **“Use Blog Studio. Help me start a blog.”**
 
 Already installed? Download the latest installer and run it again, then open a
-new chat. **Version 1.13.1** uses a normal local Git checkout for each Hub and keeps drafts, originals, review edits, selected sources, and
+new chat. **Version 1.14.0** uses a normal local Git checkout for each Hub and keeps drafts, originals, review edits, selected sources, and
 history together inside each blog folder. Reusable team knowledge has its own
 readable memory library. Existing hubs upgrade during an authorized save or sync.
 
@@ -102,7 +102,7 @@ Say **“Open editorial desk.”** A private page opens on your computer with:
 
 - **Blogs in progress:** owners, due dates, stages, and working Google Doc links.
 - **Needs attention:** review findings, waiting decisions, and stale companions.
-- **Reference library:** uploaded material and earlier posts you can browse and curate.
+- **Reference library:** browse and curate earlier posts. Choose **Import old blogs** to add a folder, website, feed or export. Preview the list and check only the posts you want to save.
 - **Team memory:** shared notes, context, and writing rules.
 
 Everyone with write access to your Hub uses the same controls. GitHub manages
@@ -119,6 +119,12 @@ refresh Google content or feedback.
 | **Show evidence.** | Inspect support for important claims |
 | **This needs a diagram.** | Prepare a visual companion |
 | **Package this for launch.** | Prepare copy for your chosen channels |
+
+Reference documents and links you add are saved for reuse in later blogs, locally
+and in your selected private Hub. New-blog planning searches relevant saved
+references and earlier posts; it loads only useful passages. Source dates and
+revisions stay attached so old product claims can be checked. You can say
+**“Use our saved references about [topic].”**
 
 Imports are previewed before a bulk save. Earlier posts remain references until
 you explicitly choose to start an editable blog. Packages and visuals stay tied
@@ -169,3 +175,9 @@ under your account settings.
 **For developers and team administrators:** [Developer guide](docs/development.md) ·
 [Roadmap](https://github.com/dbbaskette/blog-studio/issues/3) ·
 [Performance evidence](docs/performance.md) · [Hub acceptance walkthrough](docs/hub-acceptance.md) · [Package details](PACKAGE.md)
+
+Readable imports are analyzed automatically: Blog Studio adds a summary, topics,
+product tags and cautions for later reuse. **Review details** lets you correct
+those results; **Analyze reference** retries unfinished analysis. Your originals
+are retained. Analysis uses your selected signed-in Codex or Claude CLI. PDFs
+without extracted text remain marked **Needs extraction**.

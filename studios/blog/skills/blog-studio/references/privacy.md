@@ -10,7 +10,9 @@ using any external tool.
 
 Use the user's existing harness/model configuration, selected local workspace,
 and selected private Team Hub. These are the agreed working destinations;
-local writing helpers do not call a separate model or content service. The
+source curation can invoke the explicitly selected signed-in Codex/Claude CLI
+with shell, browsing, connectors, plugins and hooks disabled for that run. No
+separate model API or content service is added; there is no provider fallback. The
 harness/model provider and GitHub still process data under their account settings.
 The skill cannot promise that only humans receive it or enforce those providers'
 retention, training, repository access, or administrator policies.

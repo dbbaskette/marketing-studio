@@ -31,7 +31,10 @@ for retention; inaccessible material remains unread. No background crawler.
    establish remote freshness. Shared-only references can be checked out through
    the existing Hub workspace helper. `article attach` explicitly pins a chosen
    source revision; preserve the reference role. Reverify changeable product facts.
-5. Curate with `library curate --id <source> --file <json>` (curation active/pending/
+5. Import analyzes readable posts automatically with the selected writing CLI.
+   See [reference memory](../workspace/reference-memory.md) for configuration,
+   hash-bound summaries/tags, retry behavior and limits. Review details is an
+   optional correction step. Curate with `library curate --id <source> --file <json>` (curation active/pending/
    retired, topics/products, note). Retirement removes active retrieval; earlier
    Git snapshots remain. To edit an old post, separately create a manuscript and
    preserve its original. Do not train an author voice automatically.

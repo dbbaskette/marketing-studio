@@ -21,7 +21,7 @@ function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{reso
 function fixture(responder=()=>({items:[],total:0})){
   const nodes=new Map();const get=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};
   const document={getElementById:get,createElement:t=>new Element(t),querySelector:s=>s==='dialog[open]'?[...nodes.values()].find(n=>n.open):null,querySelectorAll:s=>[...nodes.values()].flatMap(n=>n.querySelectorAll(s))};
-  const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:()=>'',setItem:()=>{}},history:{replaceState:()=>{}},URLSearchParams,AbortController,FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:()=>true,crypto:{randomUUID:()=> 'a'.repeat(32)},fetch:async(url,options)=>{const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
+  const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:()=>'',setItem:()=>{},removeItem:()=>{}},history:{replaceState:()=>{}},URLSearchParams,AbortController,Uint8Array,btoa,FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:()=>true,crypto:{randomUUID:()=> 'a'.repeat(32)},fetch:async(url,options)=>{const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
   const source=fs.readFileSync('skills/blog-studio/assets/management/app.js','utf8').split("for(const b of document.querySelectorAll('[data-view]'))")[0];
   vm.runInContext(source,context);
   vm.runInContext("access={status:'local-only',message:'Local only',actions:{edit:true,memory:false,refresh:false}}",context);
@@ -43,7 +43,8 @@ async function check(){
   await articleDisclosure();
   await requestOrdering();
   await curationConflict();
-  console.log(JSON.stringify({status:'passed',checks:'feedback; access and memory kinds; request ownership; curation conflicts; article/finding disclosures and clipboard fallback'}));
+  await historicalImport();
+  console.log(JSON.stringify({status:'passed',checks:'feedback; access and memory kinds; request ownership; curation conflicts; article/finding disclosures; historical import preview/batching and source controls'}));
 }
 function controlled(){
   const requests=[];
@@ -166,4 +167,46 @@ async function articleDisclosure(){
     const cells=descendants(f.get('results')).filter(e=>e.tagName==='td');
     assert.equal(cells.length,4);assert.ok(cells.every(e=>e.attributes['data-label']));
   }
+}
+
+async function historicalImport(){
+  const preview={preview:'a'.repeat(32),expected:'initial',collection:'Past posts',type:'folder',candidates:26,completed:0,remaining:26,counts:{},excluded:[],posts:Array.from({length:26},(_,i)=>({key:String(i),title:i===0?'A retained <post>':'Post '+i,status:'pending'})),selected:[],failures:[]};
+  const writes=[];
+  const f=fixture((url,options)=>{
+    if(url==='/api/library-preview'&&options.method==='POST'){writes.push([url,JSON.parse(options.body)]);return preview;}
+    if(url==='/api/library-import'){writes.push([url,JSON.parse(options.body)]);return {...preview,expected:'next',completed:25,remaining:1,posts:preview.posts.map((p,i)=>({...p,status:i<25?'imported':'pending'})),selected:preview.posts.map(p=>p.key),counts:{imported:25},sharing_message:'Saved locally.'};}
+    return empty();
+  });
+  for(const type of ['folder','archive','feed','export','sitemap','urls','collection']){
+    f.get('import-type').value=type;f.run('importFields()');
+    assert.equal(f.get('import-folder-field').hidden,type!=='folder');
+    assert.equal(f.get('import-export-field').hidden,type!=='export');
+    assert.equal(f.get('import-collection-field').hidden,type!=='collection');
+    assert.equal(f.get('import-scope-field').hidden,!['archive','feed','sitemap','urls'].includes(type));
+  }
+  f.get('import-type').value='folder';f.get('import-name').value='Past posts';
+  f.get('import-folder').files=[{name:'one.md',webkitRelativePath:'Posts/one.md',size:5,arrayBuffer:async()=>new TextEncoder().encode('text.').buffer}];
+  await f.run('previewImport()');
+  assert.equal(writes.length,1);assert.equal(writes[0][0],'/api/library-preview');
+  assert.equal(writes[0][1].files[0].path,'Posts/one.md');
+  assert.equal(Buffer.from(writes[0][1].files[0].content,'base64').toString(),'text.');
+  assert.equal(f.get('import-form').hidden,true);
+  assert.equal(f.get('import-new').hidden,false);
+  assert.equal(f.get('import-save').textContent,'Import selected 0 posts');
+  assert.equal(f.get('import-save').disabled,true);
+  assert.equal(f.run('importChecks.size'),26);
+  f.run("importChecks.get('21').checked=true;importSelectionControls()");
+  assert.equal(f.get('import-save').textContent,'Import selected 1 posts');
+  f.run('for(const check of importChecks.values())check.checked=true;importSelectionControls()');
+  assert.equal(f.get('import-save').textContent,'Import selected 25 posts');
+  assert.ok(descendants(f.get('import-preview')).some(e=>e.textContent==='A retained <post>'));
+  await f.run('saveImport()');
+  assert.equal(writes.length,2);assert.equal(writes[1][1].confirm,true);assert.equal(writes[1][1].expected,'initial');
+  assert.deepEqual(writes[1][1].selected,preview.posts.map(p=>p.key));
+  assert.equal(f.get('import-save').textContent,'Import selected 1 posts');
+  assert.equal(f.run("importChecks.get('0').disabled"),true);
+  assert.equal(f.run("importChecks.get('25').checked"),true);
+  f.get('import-folder').files=[];await f.run('previewImport()');
+  assert.equal(writes.length,2);assert.equal(f.get('import-save').hidden,true);
+  f.run('access.actions.edit=false');await f.run('saveImport()');assert.equal(writes.length,2);
 }

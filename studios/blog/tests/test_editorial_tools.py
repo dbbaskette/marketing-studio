@@ -625,5 +625,13 @@ class ManagementTests(Fixture):
         with self.assertRaises(ValueError):management.dispatch(self.root, 'upload', dict(pdf, operation='c' * 32, filename='../escape.md'))
     def test_ui_treats_data_as_text_and_has_no_external_assets(self):
         js = (management.ASSETS / 'app.js').read_text();html = (management.ASSETS / 'index.html').read_text()
-        self.assertNotIn('innerHTML', js);self.assertNotIn('https://', html);self.assertIn('textContent', js)
+        self.assertNotIn('innerHTML', js);self.assertIn('textContent', js)
+        from html.parser import HTMLParser
+        class Assets(HTMLParser):
+            def __init__(self):super().__init__();self.urls=[]
+            def handle_starttag(self, tag, attrs):
+                self.urls.extend(value for key,value in attrs if key == 'src' or (tag == 'link' and key == 'href'))
+        assets=Assets();assets.feed(html)
+        self.assertTrue(assets.urls)
+        for url in assets.urls:self.assertTrue(url.startswith('/') and not url.startswith('//'), url)
         self.assertNotIn('admin', html.lower())

@@ -40,7 +40,8 @@ approve first, say **“Push as suggestions.”**
 | --- | --- |
 | Use these notes. | Add supplied source material |
 | Start from this Google Doc: [link]. | Import the draft, preserve formatting, and link the same Doc for push/pull and suggestions |
-| Use this as a source: [link]. | Add a web page or Google Doc |
+| Use this as a source: [link]. | Save a reusable web page or Google Doc reference |
+| Use our saved references about [topic]. | Find relevant retained documents and earlier posts |
 | Help me set up my voice. | Provide background and writing samples |
 | Save this voice. | Confirm the voice you have reviewed |
 | Use my voice. | Apply your saved profile |

@@ -1,7 +1,7 @@
 # Local editorial desk
 
 On “Open editorial desk”, use the current installed interpreter/runtime:
-`<python> <runtime>/studio.py --root <workspace> manage`.
+`<python> <runtime>/studio.py --root <workspace> manage --harness <current-codex-or-claude-harness>`.
 The helper runs until stopped and returns a local URL with a per-run session
 fragment. Open that exact URL in the available browser. Keep the helper process
 running; stop only this desk process when the author asks. Do not open a new
@@ -43,3 +43,16 @@ checks; actual writes still reverify contribution permission. Decisions,
 collections, candidate lessons and conflicted memories have read-only details
 with focused continuation. Never convert them via the generic note editor.
 An access observation is informational, not a reusable write authorization.
+
+Runtime 1.14 adds Reference library → Import old blogs. Folder and JSON-export
+pickers stage only selected files locally (500 files / 10 MiB total). Website,
+feed, sitemap and explicit links use approved HTTPS post scopes. Preview precedes
+explicit 25-post import batches; saved checkpoints survive desk restarts, retries
+retain identity, and results distinguish extraction failures and Hub sharing.
+Use Refresh an existing collection to keep the same historical identities.
+Larger local folders still use the focused library commands in chat.
+
+Runtime 1.14.1 lists all preview candidates with checkboxes, labels and URLs.
+Nothing is selected automatically. Only checked posts are fetched; remaining
+checks persist across batches and restarts after the first import. Retry acts
+only on checked failed posts. Labels are source data, not proof a link is a blog.

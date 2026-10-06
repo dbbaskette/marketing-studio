@@ -22,3 +22,7 @@ Attach only selected material. Source changes do not silently refresh an
 article's chosen context; inspect changed-since-attach and review freshness.
 Use recorded revisions/passages for claims, not an automatically newer summary.
 Return source ID, roles, readiness, and gaps; read bodies only for the task.
+
+Reference documents and linked-page snapshots persist beyond the current blog.
+Use [reference memory](reference-memory.md) for default retention, a bounded
+search before new-blog planning, and exact revision reuse.

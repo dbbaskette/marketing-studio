@@ -156,23 +156,28 @@ def publish_config(root, config, coverage=None):
 
 
 class ArchiveLinks(HTMLParser):
-    def __init__(self):super().__init__();self.links = [];self.title = '';self.in_title = False
+    def __init__(self):
+        super().__init__();self.links = [];self.labels = [];self.anchor = None;self.title = '';self.in_title = False
     def handle_starttag(self, tag, attrs):
         if tag == 'title':self.in_title = True
         if tag == 'a':
             url = dict(attrs).get('href')
-            if url and len(self.links) < MAX_DISCOVERY:self.links.append(url)
+            self.anchor = None
+            if url and len(self.links) < MAX_DISCOVERY:
+                self.links.append(url);self.labels.append('');self.anchor = len(self.labels) - 1
     def handle_endtag(self, tag):
         if tag == 'title':self.in_title = False
+        if tag == 'a':self.anchor = None
     def handle_data(self, text):
         if self.in_title:self.title += text
+        if self.anchor is not None:self.labels[self.anchor] = (self.labels[self.anchor] + text)[:500]
 
 
 def parse_discovery(content, kind, url, scope):
     candidates = []
     if kind == 'archive':
         parser = ArchiveLinks();parser.feed(content.decode('utf-8'))
-        candidates = [{'url': urljoin(url, link)} for link in parser.links]
+        candidates = [{'url': urljoin(url, link), 'label': ' '.join(label.split())} for link, label in zip(parser.links, parser.labels)]
     else:
         try:tree = ET.fromstring(content)
         except ET.ParseError as exc:raise ValueError('Malformed discovery XML; no posts were imported.') from exc
@@ -211,7 +216,11 @@ def parse_discovery(content, kind, url, scope):
             uri = canonical(entry['url'])
             if not in_scope(uri, scope): raise ValueError('outside scope')
             identity = entry.get('external_id') or uri
-            if identity in seen:continue
+            if identity in seen:
+                if entry.get('label'):
+                    prior = next(v for v in accepted if v['identity'] == identity)
+                    if not prior.get('label'):prior['label'] = entry['label']
+                continue
             seen.add(identity);accepted.append({**entry, 'url': uri, 'identity': identity})
         except (ValueError, TypeError): excluded.append({'reason': 'invalid URL or outside permitted scope'})
     return accepted[:MAX_POSTS], excluded, len(candidates) >= MAX_POSTS
@@ -313,7 +322,7 @@ def source_rows(root):
     return rows
 
 
-def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, delay=.25):
+def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, delay=.25, selected=None):
     if not __import__('re').fullmatch(r'[a-f0-9]{32}', preview_id) or not 1 <= limit <= MAX_BATCH: raise ValueError('Choose a valid preview and batch size 1–25.')
     path = folder(root) / (preview_id + '.json');manifest = studio.read_json(path)
     config = collections(root)[manifest['collection']]
@@ -324,10 +333,18 @@ def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, d
             try:return __import__('email.utils', fromlist=['parsedate_to_datetime']).parsedate_to_datetime(value).date().isoformat()
             except (ValueError, TypeError, AttributeError):return None
     existing = {r['record'].get('library', {}).get('identity'): r for r in source_rows(root) if r['record'].get('library')}
-    selected = [entry for entry in manifest['candidates'] if entry['identity'] not in manifest['results'] or (retry and manifest['results'][entry['identity']]['status'] == 'failed')][:limit]
+    if selected is not None:
+        known = {entry['identity'] for entry in manifest['candidates']}
+        if not isinstance(selected, list) or not selected or any(not isinstance(v, str) or v not in known for v in selected) or len(set(selected)) != len(selected):
+            raise ValueError('Select valid posts from this preview.')
+    chosen = set(selected) if selected is not None else None
+    batch = [entry for entry in manifest['candidates'] if (chosen is None or entry['identity'] in chosen)
+             and ((entry['identity'] not in manifest['results'] or manifest['results'][entry['identity']]['status'] == 'failed') if retry and chosen is None
+                  else manifest['results'].get(entry['identity'], {}).get('status') == 'failed' if retry
+                  else entry['identity'] not in manifest['results'])][:limit]
     from hub_workspace import active
     adapter = active(root)
-    for entry in selected:
+    for entry in batch:
         identity = entry['identity'];result = {'status': 'failed'}
         try:
             if entry.get('file'):
@@ -393,15 +410,26 @@ def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, d
                 else:(directory / 'content.md').unlink(missing_ok=True)
                 record.update(name=title, origin=origin, library=metadata, original_filename=Path(entry.get('file', identity)).name,
                     original_path=name, original_sha256=original_hash, content_sha256=sha(text.encode()) if text is not None else None,
-                    author=entry.get('author'), status=status, retrieved_at=studio.now(), note='Historical team reference; reverify dated software claims.', revision=previous_revision + 1)
+                    author=entry.get('author'), status=status, retrieved_at=studio.now(), note=record.get('note','') if 'note' in record.get('curation_overrides',[]) else 'Historical team reference; reverify dated software claims.', revision=previous_revision + 1)
+                from source_curator import enrich
+                enrich(root, record, text, defer=True)
                 studio.persist(directory, 'sources', record)
                 result = {'status': 'updated' if previous_revision else 'imported', 'id': record['id'], 'extraction': status}
-            if adapter:adapter._publish('sources', record['id'])
+            result['analysis'] = record.get('analysis',{}).get('status','needs-analysis')
             existing[identity] = {'id': record['id'], 'location': 'local', 'record': record}
         except (OSError, ValueError, KeyError, TypeError, ET.ParseError, zipfile.BadZipFile, HubError) as exc:
             result = {'status': 'failed', 'reason': str(exc)[:400]}
         manifest['results'][identity] = result
         studio.write_json(path, manifest)
+    completed=[manifest['results'][entry['identity']] for entry in batch if manifest['results'][entry['identity']]['status']!='failed']
+    if completed and __import__('source_curator').harness(root):
+        __import__('source_curator').retry(root,list(dict.fromkeys(value['id'] for value in completed)),sync=False)
+    for value in completed:
+        value['analysis']=studio.item(root,'sources',value['id'])[1].get('analysis',{}).get('status','needs-analysis')
+        if adapter:
+            try:adapter._publish('sources',value['id'])
+            except (HubError,OSError,ValueError) as exc:value.update(status='failed',reason=str(exc)[:400])
+    studio.write_json(path,manifest)
     counts = {name: sum(r['status'] == name for r in manifest['results'].values()) for name in ('imported', 'updated', 'unchanged', 'failed')}
     counts['pending_extraction'] = sum(r.get('extraction') == 'pending' for r in manifest['results'].values())
     coverage = {'preview': preview_id, 'discovered': len(manifest['candidates']), 'completed': len(manifest['results']),
@@ -416,10 +444,10 @@ def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, d
     return result
 
 
-def catalog(root, query='', collection=None, author=None, topic=None, product=None, since=None, until=None, limit=20, offset=0, include_retired=False):
+def catalog(root, query='', collection=None, author=None, topic=None, product=None, since=None, until=None, limit=20, offset=0, include_retired=False, reusable_only=False):
     if not 1 <= limit <= 50 or offset < 0:raise ValueError('Choose limit 1–50 and nonnegative offset.')
     rows = source_rows(root)
-    signature = sha(encoded([{'metadata': {k: v for k, v in r['record'].items() if k in ('id', 'revision', 'name', 'library', 'content_sha256', 'updated_at', 'status', 'author', 'origin')}, 'body_stat': [r['path'].stat().st_size, r['path'].stat().st_mtime_ns] if r['location'] == 'local' and r['path'].exists() else None} for r in rows]))
+    signature = sha(encoded([{'metadata': {k: v for k, v in r['record'].items() if k in ('id', 'revision', 'name', 'library', 'content_sha256', 'updated_at', 'status', 'author', 'origin', 'purposes', 'retrieved_at', 'note', 'analysis')}, 'body_stat': [r['path'].stat().st_size, r['path'].stat().st_mtime_ns] if r['location'] == 'local' and r['path'].exists() else None} for r in rows]))
     cache = studio.inside(root, '.derived-cache');cache.mkdir(mode=0o700, exist_ok=True)
     database = studio.inside(cache, 'library.sqlite3')
     if database.is_symlink():raise ValueError('Library index must not be a symlink.')
@@ -435,15 +463,21 @@ def catalog(root, query='', collection=None, author=None, topic=None, product=No
                 body = source.get('body', b'').decode() if source['location'] == 'hub' else source['path'].read_text() if source['path'].exists() else ''
                 data = {'id': source['id'], 'location': source['location'], 'title': record['name'], 'author': record.get('author'),
                         'origin': __import__('hub_workspace').portable_origin(record.get('origin', '')), 'status': record['status'],
-                        'revision': record['revision'], 'sha256': record.get('content_sha256'), 'library': {k: v for k, v in metadata.items() if k in ('identity', 'collections', 'canonical_url', 'author', 'published', 'updated', 'topics', 'products', 'historical', 'curation', 'extraction')},
+                        'revision': record['revision'], 'sha256': record.get('content_sha256'),
+                        'purposes': record.get('purposes', []), 'retrieved_at': record.get('retrieved_at'),
+                        'analysis': record.get('analysis',{}), 'limitations': record.get('note', '')[:1000], 'library': {k: v for k, v in metadata.items() if k in ('identity', 'collections', 'canonical_url', 'author', 'published', 'updated', 'topics', 'products', 'historical', 'curation', 'extraction')},
                         'historical': metadata.get('historical') is True, 'warning': 'Historical claims require current verification.' if metadata.get('historical') else None}
                 db.execute('INSERT INTO posts VALUES (?,?,?,?,?,?,?,?,?,?)', (source['id'], record['name'], body, record.get('author') or '', metadata.get('published') or '',
                     json.dumps(metadata.get('collections', [])), json.dumps(metadata.get('topics', [])), json.dumps(metadata.get('products', [])),
                     int(metadata.get('curation') == 'retired'), json.dumps(data)))
         clauses, params = [], []
         for word in query.casefold().split()[:20]:
-            clauses.append('lower(title || " " || body) LIKE ? ESCAPE "!"');params.append('%' + word.replace('!', '!!').replace('%', '!%').replace('_', '!_') + '%')
+            clauses.append("lower(title || ' ' || body || topics || products || coalesce(json_extract(data,'$.analysis.summary'),'')) LIKE ? ESCAPE '!'");params.append('%' + word.replace('!', '!!').replace('%', '!%').replace('_', '!_') + '%')
         if not include_retired:clauses.append('retired = 0')
+        if reusable_only:
+            clauses.extend(["json_extract(data, '$.status') = 'ready'",
+                "coalesce(json_extract(data, '$.library.curation'), 'active') = 'active'",
+                "json_type(data, '$.purposes') = 'array' AND EXISTS (SELECT 1 FROM json_each(data, '$.purposes') WHERE value = 'reference')"])
         for column, value in (('collections', collection), ('author', author), ('topics', topic), ('products', product)):
             if value:clauses.append(column + ' LIKE ?');params.append('%' + value + '%')
         if since:clauses.append('published >= ?');params.append(since)
@@ -473,6 +507,7 @@ def curate(root, ident, data):
     if (directory / 'content.md').exists():studio.atomic(history / 'content.md', (directory / 'content.md').read_bytes())
     original = record.get('original_path')
     if original and studio.inside(directory, original).is_file():studio.atomic(studio.inside(history, original), studio.inside(directory, original).read_bytes())
+    record['curation_overrides'] = sorted(set(record.get('curation_overrides',[]) + list(data)))
     record['library'] = metadata;record['revision'] += 1
     if 'note' in data:
         if not isinstance(data['note'], str) or len(data['note']) > 4000:raise ValueError('Keep the source note under 4000 characters.')
@@ -546,13 +581,17 @@ def add_parser(groups):
     p = commands.add_parser('collections')
     p = commands.add_parser('preview');p.add_argument('--collection', required=True)
     p = commands.add_parser('import');p.add_argument('--preview', required=True);p.add_argument('--limit', type=int, default=25);p.add_argument('--retry', action='store_true')
-    p = commands.add_parser('find');p.add_argument('--query', default='');p.add_argument('--collection');p.add_argument('--author');p.add_argument('--topic');p.add_argument('--product');p.add_argument('--since');p.add_argument('--until');p.add_argument('--limit', type=int, default=20);p.add_argument('--offset', type=int, default=0)
+    p = commands.add_parser('find');p.add_argument('--reusable-only', action='store_true', help='Ready active references suitable for reuse across blogs.');p.add_argument('--query', default='');p.add_argument('--collection');p.add_argument('--author');p.add_argument('--topic');p.add_argument('--product');p.add_argument('--since');p.add_argument('--until');p.add_argument('--limit', type=int, default=20);p.add_argument('--offset', type=int, default=0)
+    p = commands.add_parser('curator');p.add_argument('--harness', choices=('codex','claude'), required=True)
+    p = commands.add_parser('analyze');p.add_argument('--id', action='append', required=True)
     p = commands.add_parser('curate');p.add_argument('--id', required=True);p.add_argument('--file', required=True)
     p = commands.add_parser('lesson');p.add_argument('--file', required=True)
     p = commands.add_parser('promote');p.add_argument('--item', required=True);p.add_argument('--confirm', action='store_true', required=True)
 
 
 def command(root, args):
+    if args.action == 'curator':return __import__('source_curator').configure(root,args.harness)
+    if args.action == 'analyze':return __import__('source_curator').retry(root,args.id)
     if args.action == 'read':return read_source(root, args.id, args.query, args.limit, args.max_chars)
     if args.action == 'locate':
         config = collections(root).get(args.collection)
@@ -563,7 +602,7 @@ def command(root, args):
         studio.write_json(folder(root) / 'collections.json', state)
         return {'status': 'local-source-selected', 'collection': config['name']}
     if args.action == 'collections':return {'items': [{k: v for k, v in r.items() if k not in ('local_path', 'urls')} for r in collections(root).values()]}
-    if args.action == 'find':return catalog(root, args.query, args.collection, args.author, args.topic, args.product, args.since, args.until, args.limit, args.offset)
+    if args.action == 'find':return catalog(root, args.query, args.collection, args.author, args.topic, args.product, args.since, args.until, args.limit, args.offset, reusable_only=getattr(args, 'reusable_only', False))
     if args.action == 'preview':return preview(root, args.collection)
     if args.action == 'import':return import_batch(root, args.preview, args.limit, args.retry)
     if args.action == 'promote':return lesson(root, {'item': args.item}, True)
