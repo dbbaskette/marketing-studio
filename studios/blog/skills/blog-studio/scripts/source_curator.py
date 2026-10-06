@@ -53,8 +53,8 @@ def codex_options():
             for key,part in value.items():add(prefix+'.'+json.dumps(key),part)
         elif isinstance(value,(str,int,bool,list)):
             options.extend(['-c',prefix+'='+json.dumps(value)])
-    if values.get('model_provider','openai') != 'openai':raise ValueError('This Codex provider needs interactive harness curation; no provider was changed.')
-    for name in ('model','model_provider','cli_auth_credentials_store','chatgpt_base_url'):
+    if values.get('model_provider','openai') != 'openai' or values.get('model_providers',{}).get('openai'):raise ValueError('This Codex provider needs interactive harness curation; no provider was changed.')
+    for name in ('model','model_provider','cli_auth_credentials_store','chatgpt_base_url','forced_login_method','forced_chatgpt_workspace_id'):
         if name in values:add(name,values[name])
     for name in DISABLED:options.extend(['-c','features.'+name+'=false'])
     options.extend(['-c','features.skip_host_skill_discovery=true','-c','project_doc_max_bytes=0',

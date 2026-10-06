@@ -45,7 +45,7 @@
     "scripts/local_reads.py": "ed3e0bf8a37d98e38c7b088f02649bc1d02a95a4dc337eec3b45d570a2d71c31",
     "scripts/management.py": "a3ec44074a4db232f24cdc73894c84562ab018085023d90321809aebfab62d6b",
     "scripts/performance.py": "87e1be34370489068f10135cc98b5dc7c81ee6d41333272526a0b60b1315741a",
-    "scripts/source_curator.py": "435d6a32c3b537a8ac4285cef0d289a6be6e33dc2f993da7fa7c0e4cdbc9d6e3",
+    "scripts/source_curator.py": "d77ae488079a77514ab7f783abe6c5ea7fd159bb49a587b2c3dc75adfba2999c",
     "scripts/studio.py": "efd2e8ca7a7016d2e8a030fe6667d0d698ba2fe794e08394b7c0ff3f4082d759",
     "scripts/sync_guidance.py": "4ed4cf81f6e340a795845cd8559bceba237e6c1ced0a5c2cb8f2e2134af78722",
     "scripts/text_checks.py": "fde3579a7e0a8d881409cdfac166d83c244f9286cb6c47c39b542a2a8f76b922",

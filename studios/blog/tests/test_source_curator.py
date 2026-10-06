@@ -95,6 +95,9 @@ class CurationTests(Fixture):
             self.assertIn('features.'+gate+'=false',flat)
         self.assertIn('--ignore-user-config',options);self.assertIn('web_search="disabled"',flat)
         self.assertNotIn('DO-NOT-COPY',flat);self.assertNotIn('dangerous',flat)
+        (cfg/'config.toml').write_text('[model_providers.openai]\nbase_url="https://configured.example/"\n')
+        with patch.dict('os.environ',{'CODEX_HOME':str(cfg)}),self.assertRaisesRegex(ValueError,'interactive harness curation'):
+            curator.codex_options()
 
 
 class SharedCurationTests(Fixture):
