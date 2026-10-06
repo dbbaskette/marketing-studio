@@ -433,10 +433,10 @@ def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, d
     return result
 
 
-def catalog(root, query='', collection=None, author=None, topic=None, product=None, since=None, until=None, limit=20, offset=0, include_retired=False):
+def catalog(root, query='', collection=None, author=None, topic=None, product=None, since=None, until=None, limit=20, offset=0, include_retired=False, reusable_only=False):
     if not 1 <= limit <= 50 or offset < 0:raise ValueError('Choose limit 1–50 and nonnegative offset.')
     rows = source_rows(root)
-    signature = sha(encoded([{'metadata': {k: v for k, v in r['record'].items() if k in ('id', 'revision', 'name', 'library', 'content_sha256', 'updated_at', 'status', 'author', 'origin')}, 'body_stat': [r['path'].stat().st_size, r['path'].stat().st_mtime_ns] if r['location'] == 'local' and r['path'].exists() else None} for r in rows]))
+    signature = sha(encoded([{'metadata': {k: v for k, v in r['record'].items() if k in ('id', 'revision', 'name', 'library', 'content_sha256', 'updated_at', 'status', 'author', 'origin', 'purposes', 'retrieved_at', 'note')}, 'body_stat': [r['path'].stat().st_size, r['path'].stat().st_mtime_ns] if r['location'] == 'local' and r['path'].exists() else None} for r in rows]))
     cache = studio.inside(root, '.derived-cache');cache.mkdir(mode=0o700, exist_ok=True)
     database = studio.inside(cache, 'library.sqlite3')
     if database.is_symlink():raise ValueError('Library index must not be a symlink.')
@@ -452,7 +452,9 @@ def catalog(root, query='', collection=None, author=None, topic=None, product=No
                 body = source.get('body', b'').decode() if source['location'] == 'hub' else source['path'].read_text() if source['path'].exists() else ''
                 data = {'id': source['id'], 'location': source['location'], 'title': record['name'], 'author': record.get('author'),
                         'origin': __import__('hub_workspace').portable_origin(record.get('origin', '')), 'status': record['status'],
-                        'revision': record['revision'], 'sha256': record.get('content_sha256'), 'library': {k: v for k, v in metadata.items() if k in ('identity', 'collections', 'canonical_url', 'author', 'published', 'updated', 'topics', 'products', 'historical', 'curation', 'extraction')},
+                        'revision': record['revision'], 'sha256': record.get('content_sha256'),
+                        'purposes': record.get('purposes', []), 'retrieved_at': record.get('retrieved_at'),
+                        'limitations': record.get('note', '')[:1000], 'library': {k: v for k, v in metadata.items() if k in ('identity', 'collections', 'canonical_url', 'author', 'published', 'updated', 'topics', 'products', 'historical', 'curation', 'extraction')},
                         'historical': metadata.get('historical') is True, 'warning': 'Historical claims require current verification.' if metadata.get('historical') else None}
                 db.execute('INSERT INTO posts VALUES (?,?,?,?,?,?,?,?,?,?)', (source['id'], record['name'], body, record.get('author') or '', metadata.get('published') or '',
                     json.dumps(metadata.get('collections', [])), json.dumps(metadata.get('topics', [])), json.dumps(metadata.get('products', [])),
@@ -461,6 +463,10 @@ def catalog(root, query='', collection=None, author=None, topic=None, product=No
         for word in query.casefold().split()[:20]:
             clauses.append('lower(title || " " || body) LIKE ? ESCAPE "!"');params.append('%' + word.replace('!', '!!').replace('%', '!%').replace('_', '!_') + '%')
         if not include_retired:clauses.append('retired = 0')
+        if reusable_only:
+            clauses.extend(["json_extract(data, '$.status') = 'ready'",
+                "coalesce(json_extract(data, '$.library.curation'), 'active') = 'active'",
+                "json_type(data, '$.purposes') = 'array' AND EXISTS (SELECT 1 FROM json_each(data, '$.purposes') WHERE value = 'reference')"])
         for column, value in (('collections', collection), ('author', author), ('topics', topic), ('products', product)):
             if value:clauses.append(column + ' LIKE ?');params.append('%' + value + '%')
         if since:clauses.append('published >= ?');params.append(since)
@@ -563,7 +569,7 @@ def add_parser(groups):
     p = commands.add_parser('collections')
     p = commands.add_parser('preview');p.add_argument('--collection', required=True)
     p = commands.add_parser('import');p.add_argument('--preview', required=True);p.add_argument('--limit', type=int, default=25);p.add_argument('--retry', action='store_true')
-    p = commands.add_parser('find');p.add_argument('--query', default='');p.add_argument('--collection');p.add_argument('--author');p.add_argument('--topic');p.add_argument('--product');p.add_argument('--since');p.add_argument('--until');p.add_argument('--limit', type=int, default=20);p.add_argument('--offset', type=int, default=0)
+    p = commands.add_parser('find');p.add_argument('--reusable-only', action='store_true', help='Ready active references suitable for reuse across blogs.');p.add_argument('--query', default='');p.add_argument('--collection');p.add_argument('--author');p.add_argument('--topic');p.add_argument('--product');p.add_argument('--since');p.add_argument('--until');p.add_argument('--limit', type=int, default=20);p.add_argument('--offset', type=int, default=0)
     p = commands.add_parser('curate');p.add_argument('--id', required=True);p.add_argument('--file', required=True)
     p = commands.add_parser('lesson');p.add_argument('--file', required=True)
     p = commands.add_parser('promote');p.add_argument('--item', required=True);p.add_argument('--confirm', action='store_true', required=True)
@@ -580,7 +586,7 @@ def command(root, args):
         studio.write_json(folder(root) / 'collections.json', state)
         return {'status': 'local-source-selected', 'collection': config['name']}
     if args.action == 'collections':return {'items': [{k: v for k, v in r.items() if k not in ('local_path', 'urls')} for r in collections(root).values()]}
-    if args.action == 'find':return catalog(root, args.query, args.collection, args.author, args.topic, args.product, args.since, args.until, args.limit, args.offset)
+    if args.action == 'find':return catalog(root, args.query, args.collection, args.author, args.topic, args.product, args.since, args.until, args.limit, args.offset, reusable_only=getattr(args, 'reusable_only', False))
     if args.action == 'preview':return preview(root, args.collection)
     if args.action == 'import':return import_batch(root, args.preview, args.limit, args.retry)
     if args.action == 'promote':return lesson(root, {'item': args.item}, True)

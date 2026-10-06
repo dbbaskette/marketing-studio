@@ -51,7 +51,7 @@ class InstallationTests(unittest.TestCase):
     def test_google_runtime_requires_its_managed_helper(self):
         manifest_path = self.source / 'install-manifest.json'
         manifest = json.loads(manifest_path.read_text())
-        self.assertEqual(manifest['version'], '1.14.1')
+        self.assertEqual(manifest['version'], '1.14.2')
         name = 'scripts/google_workflow.py'
         (self.source / name).unlink()
         del manifest['files'][name]

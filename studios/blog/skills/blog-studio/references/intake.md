@@ -29,7 +29,8 @@ step: attach a copy, paste the passage, or use another source. For PDF, Word,
 slides, or spreadsheets use host extraction tools and relevant available skills;
 do not pretend the dependency-free storage helper extracts those formats.
 
-Select only material relevant to the current article/stage. The source library
+Select only material relevant to the current article/stage. Reference documents and linked-page snapshots are retained for later blogs;
+see [reference memory](workspace/reference-memory.md). The source library
 can grow without every source entering every prompt. Read full evidence when
 checking a specific claim. Keep excerpts linked to their original record.
 Use the [source storage](workspace/sources.md) to record source files and attach

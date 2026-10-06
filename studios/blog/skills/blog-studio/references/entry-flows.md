@@ -21,6 +21,10 @@ without sources. Ask for uploads in normal chat, not a text-only widget; wait
 for promised files. Reuse supplied material; distinguish evidence, inspiration,
 background, and authored samples. Clarify outside research when scope needs it.
 
+Once a new blog topic is known, use [reference memory](workspace/reference-memory.md)
+for a bounded search of reusable sources and historical posts, unless the user
+limits the source set. This does not change the requested route or stop point.
+
 For software-product starts, infer the blog type separately from the writing route.
 If unresolved, offer the [blog-type selector](style/forms.md#intake-choice) once;
 reuse a saved choice on resume. Do not interrupt a clear request or a passage edit.

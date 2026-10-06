@@ -89,9 +89,9 @@
       "sha256": "61d473b4e99547b5b90f2cad57d2ed314a402d07e964e209668b492b213de338"
     },
     "references/entry-flows.md": {
-      "characters": 1980,
-      "estimated_tokens": 495,
-      "sha256": "16fbc129e27b5e726962ea0d9cf31cf92ec7c6c525698d96f94c650eef79d513"
+      "characters": 2225,
+      "estimated_tokens": 557,
+      "sha256": "74705e1bdaa6e1f226454ac15d57d3f17a57c7d0081f4ffb2594776aeb408380"
     },
     "references/export.md": {
       "characters": 1105,
@@ -174,9 +174,9 @@
       "sha256": "b3ab3ab32ace05268104f125a3f956d6d5002733f5b64230b28ce2e949a2ba66"
     },
     "references/intake.md": {
-      "characters": 2314,
-      "estimated_tokens": 579,
-      "sha256": "a56171a302364c06fb278a6070831c1c3a5b0ca327b9b035aac64b53b8238491"
+      "characters": 2445,
+      "estimated_tokens": 612,
+      "sha256": "ba24832c5ce1179bcafc3651ce0d261f8fe100cd9678069a35e84110402776a2"
     },
     "references/library-notes.md": {
       "characters": 4257,
@@ -244,9 +244,9 @@
       "sha256": "856b24f92ce573f6f715231ebe737136a009533ba1d86cd474eafc57501fe755"
     },
     "references/modules/blog-source-intake.md": {
-      "characters": 1369,
-      "estimated_tokens": 343,
-      "sha256": "f556cfcd41f998738dab8fa58514a32057336ad46be9374613d2d9daf7aa4a13"
+      "characters": 1480,
+      "estimated_tokens": 370,
+      "sha256": "14e2f5fd7835da81448d4051a052830a70213cab143aaf74606f5b655fbb15cf"
     },
     "references/modules/blog-voice-check.md": {
       "characters": 1729,
@@ -638,6 +638,11 @@
       "estimated_tokens": 316,
       "sha256": "020310916e2c15291fbd0d2267d753751d3b27d3c3250027fafaa1922efec08d"
     },
+    "references/workspace/reference-memory.md": {
+      "characters": 3655,
+      "estimated_tokens": 914,
+      "sha256": "13e209164b2737c911506e5da2b09d8b4b697406451a9a38e660d74f7ff4d265"
+    },
     "references/workspace/resume.md": {
       "characters": 2002,
       "estimated_tokens": 501,
@@ -649,9 +654,9 @@
       "sha256": "cddc257af48ee021c6f527a51ccc599dd499a66bb0a216bd0a0a651f58d23e81"
     },
     "references/workspace/sources.md": {
-      "characters": 1404,
-      "estimated_tokens": 351,
-      "sha256": "07470a2943c941182f5025dbc0e67ae2f16b72a55b04e01bb19b8800258d55a3"
+      "characters": 1620,
+      "estimated_tokens": 405,
+      "sha256": "4d2d6c77bf419d36cade432461c543a318fbedda670956ed6f3884ab90d5b554"
     },
     "references/workspace/status.md": {
       "characters": 1536,
@@ -664,7 +669,7 @@
       "sha256": "36c39ead07081df6544bf0eb981b19bb4046c17ce95805acc923d3ac7c52d40e"
     }
   },
-  "library_tokens": 202180,
+  "library_tokens": 203270,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -679,7 +684,7 @@
         "references/modules/blog-argument-outline.md"
       ],
       "scenario": "New local outline-only article from readable supplied notes and an explicit tone; no voice profile or hub.",
-      "estimated_tokens": 4181
+      "estimated_tokens": 4357
     },
     "first_draft_with_sources": {
       "files": [
@@ -695,7 +700,7 @@
         "references/modules/blog-write.md"
       ],
       "scenario": "New local draft from supplied notes and explicit tone; internal outline, no specialized template or extra composition reference.",
-      "estimated_tokens": 5797
+      "estimated_tokens": 5973
     },
     "quick_edit": {
       "files": [
@@ -711,7 +716,7 @@
         "references/modules/blog-voice-check.md"
       ],
       "scenario": "Saved local article; controlled polish, selected voice-rule check and saved review. No new source/profile intake.",
-      "estimated_tokens": 5317
+      "estimated_tokens": 5379
     },
     "voice_setup": {
       "files": [
@@ -726,7 +731,7 @@
         "references/workspace/profiles.md"
       ],
       "scenario": "New standalone profile from selected readable authored samples; no article creation.",
-      "estimated_tokens": 4278
+      "estimated_tokens": 4454
     },
     "comprehensive_review": {
       "files": [
@@ -745,7 +750,7 @@
         "references/review/evidence.md"
       ],
       "scenario": "Saved article with selected evidence/voice; five requested feedback checks and stored coverage, without rewriting or an optional deep humanization rubric.",
-      "estimated_tokens": 5904
+      "estimated_tokens": 5966
     },
     "quick_polish": {
       "files": [
@@ -757,13 +762,13 @@
         "references/modules/copy-editing.md"
       ],
       "scenario": "Saved local draft; light clarity and voice polish, no separately requested check or recorded review.",
-      "estimated_tokens": 4101
+      "estimated_tokens": 4163
     }
   },
   "bootstrap": {
     "path": "bootstrap/blog-studio/SKILL.md",
-    "estimated_tokens": 1365,
-    "sha256": "e3667e4616b4c40e9c11c6178ebd520a972b35ce93aefa178c5bcc28a4a25139",
+    "estimated_tokens": 1437,
+    "sha256": "6ff7584cd709c3fe850c624b0a330e229a5e847f655007a5169ad73e75b78ed0",
     "note": "Added to repository-guidance routes; excluded from the full offline corpus."
   },
   "team_hub_routes": {
@@ -801,7 +806,7 @@
       "SKILL.md",
       "references/entry-flows.md"
     ],
-    "estimated_tokens": 1457,
+    "estimated_tokens": 1519,
     "target_tokens": [
       800,
       1200
@@ -821,7 +826,7 @@
         "references/workspace.md",
         "references/workspace/sources.md"
       ],
-      "estimated_tokens": 579
+      "estimated_tokens": 633
     },
     "profiles": {
       "files": [
@@ -905,6 +910,13 @@
       ],
       "estimated_tokens": 946,
       "note": "Conditional runtime 1.7 author operation; ordinary entry and author data are additional."
+    },
+    "reference_memory": {
+      "files": [
+        "references/workspace/reference-memory.md"
+      ],
+      "estimated_tokens": 914,
+      "note": "Conditional reference retention and bounded reuse; source bodies are retrieved separately."
     }
   },
   "craft_guides": {

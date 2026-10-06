@@ -120,6 +120,12 @@ refresh Google content or feedback.
 | **This needs a diagram.** | Prepare a visual companion |
 | **Package this for launch.** | Prepare copy for your chosen channels |
 
+Reference documents and links you add are saved for reuse in later blogs, locally
+and in your selected private Hub. New-blog planning searches relevant saved
+references and earlier posts; it loads only useful passages. Source dates and
+revisions stay attached so old product claims can be checked. You can say
+**“Use our saved references about [topic].”**
+
 Imports are previewed before a bulk save. Earlier posts remain references until
 you explicitly choose to start an editable blog. Packages and visuals stay tied
 to their draft; changes flag them for review. Preparing them does not publish.
