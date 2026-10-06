@@ -10,7 +10,7 @@
 <div id="notice" role="status" aria-live="polite" hidden></div>
 <section id="sync-status" class="sync-status" aria-label="Sharing status" aria-live="polite" hidden></section>
 
-<section class="toolbar" aria-label="Filter results"><label class="search"><span>Search this view</span><input id="query" type="search" placeholder="Title, author, topic…"></label><label id="stage-filter">Stage<select id="stage"><option value="">All stages</option><option>idea</option><option>draft</option><option>review</option><option>ready</option><option>published</option></select></label><button id="search-go" class="secondary">Search</button><button id="memory-open" class="primary" hidden>＋ Add memory</button></section>
+<section class="toolbar" aria-label="Filter results"><label class="search"><span>Search this view</span><input id="query" type="search" placeholder="Title, author, topic…"></label><label id="stage-filter">Stage<select id="stage"><option value="">All stages</option><option>idea</option><option>draft</option><option>review</option><option>ready</option><option>published</option></select></label><button id="search-go" class="secondary">Search</button><button id="import-open" class="primary" hidden>＋ Import old blogs</button><button id="memory-open" class="primary" hidden>＋ Add memory</button></section>
 
 <section class="desk-panel"><div class="panel-heading"><h2 id="section-title">Writing pipeline</h2><span id="count"></span></div><p id="loading" role="status" aria-live="polite" hidden></p><div id="results" aria-live="polite"></div><footer class="pagination"><button id="previous" class="secondary">← Previous</button><span id="page-label"></span><button id="next" class="secondary">Next →</button></footer></section>
 
@@ -22,5 +22,25 @@
 <dialog id="upload-dialog"><form id="upload-form"><div class="dialog-header"><h2>Bring in your work</h2><button type="button" data-close class="close" aria-label="Close dialog">×</button></div><p>Upload a reference, or start an editable blog from a draft. The original stays saved.</p><label>File<input id="upload-file" type="file" accept=".md,.txt,.html,.htm,.docx,.pdf" required></label><label>Title<input id="upload-title" maxlength="500" placeholder="Use the filename"></label><label>Author, if known<input id="upload-author" maxlength="200" placeholder="Leave blank if unknown"></label><label class="check"><input id="upload-blog" type="checkbox">Start an editable blog from this file</label><p class="help">Markdown, text, HTML and DOCX can supply text. PDF needs extraction in chat. Files stay in this workspace and your selected private Hub.</p><button class="primary form-actions" type="submit">Upload and save</button></form></dialog>
 
 <dialog id="memory-dialog"><form id="memory-form"><div class="dialog-header"><h2 id="memory-title">Add shared memory</h2><button type="button" data-close class="close" aria-label="Close dialog">×</button></div><p>Notes and context help the team. A rule governs future writing when selected; existing blog pins stay intact.</p><label>Title<input id="memory-name" required maxlength="200"></label><label>Kind<select id="memory-kind"><option value="note">Note</option><option value="context">Context</option><option value="rule">Writing rule</option></select></label><label>Applies to<select id="memory-scope"><option value="team">Whole team</option><option value="project">Project</option><option value="author">Author</option><option value="article">Blog</option></select></label><label>Scope key (for a project, author or blog)<input id="memory-key" maxlength="200"></label><label>Memory<textarea id="memory-body" rows="8" required maxlength="16000"></textarea></label><button class="primary form-actions" type="submit">Save shared memory</button></form></dialog>
+
+<dialog id="import-dialog"><div class="dialog-header"><h2>Import old blogs</h2><button id="import-close" data-close class="close" aria-label="Close dialog">×</button></div><div class="dialog-content">
+<p>Build a collection of past posts your team can find and learn from. Review the preview before importing.</p>
+<form id="import-form">
+<label>Where are your blogs?<select id="import-type"><option value="folder">Folder on this computer</option><option value="archive">Website / blog archive</option><option value="feed">RSS or Atom feed</option><option value="export">JSON export</option><option value="sitemap">Sitemap</option><option value="urls">List of post links</option><option value="collection">Refresh an existing collection</option></select></label>
+<label id="import-name-field">Collection name<input id="import-name" maxlength="200" required placeholder="Our engineering blogs"></label>
+<label id="import-folder-field">Choose a folder<input id="import-folder" type="file" webkitdirectory multiple><span class="help">Markdown, text, HTML, DOCX and PDF. Up to 500 files and 10 MiB in total. For larger folders, import in chat.</span></label>
+<label id="import-export-field" hidden>Choose a JSON export<input id="import-export" type="file" accept=".json,application/json"><span class="help">A list of posts with title, text, and a URL or external_id. Author, dates, topics and products are optional.</span></label>
+<label id="import-url-field" hidden><span id="import-url-label">Website URL</span><input id="import-url" type="url" placeholder="https://example.com/blog"></label>
+<label id="import-links-field" hidden>Post links, one per line<textarea id="import-links" rows="4" placeholder="https://example.com/blog/first-post"></textarea></label>
+<label id="import-scope-field" hidden>Only import posts under this URL<input id="import-scope" type="url" placeholder="https://example.com/blog"><span class="help">Choose the website and path that contain your team's posts. Other links are excluded.</span></label>
+<label id="import-collection-field" hidden>Collection<select id="import-collection"></select></label>
+<p class="help">Files go to this local workspace and your selected private Hub. Website imports read the public URLs you select. PDFs may need text extraction in chat.</p>
+<button id="import-preview-button" class="primary" type="submit">Preview blogs</button>
+</form>
+<button id="import-new" class="secondary" hidden>Choose another source</button>
+<p id="import-progress" role="status" aria-live="polite" hidden></p>
+<section id="import-preview" aria-label="Import preview" hidden></section>
+<div class="import-actions"><button id="import-save" class="primary" hidden>Import first batch</button><button id="import-retry" class="secondary" hidden>Retry failed posts</button><button id="import-reload" class="secondary" hidden>Reload saved preview</button></div>
+</div></dialog>
 
 </body></html>

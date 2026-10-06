@@ -69,9 +69,9 @@
       "sha256": "c3da9d77c6f5d5912fdd9d98d1a0b1785d390da8902bb821fbf1af263069c168"
     },
     "references/editorial/management.md": {
-      "characters": 2855,
-      "estimated_tokens": 714,
-      "sha256": "0b607982c07899325fa6ea9785decc5f2b9e74b90c09b80f92bba07ec9095af8"
+      "characters": 3400,
+      "estimated_tokens": 850,
+      "sha256": "84a7816af473ce9dc33ec462511dbafe1c29bd738c665fea3090a44fb78b36c8"
     },
     "references/editorial/package.md": {
       "characters": 1331,
@@ -664,7 +664,7 @@
       "sha256": "36c39ead07081df6544bf0eb981b19bb4046c17ce95805acc923d3ac7c52d40e"
     }
   },
-  "library_tokens": 201965,
+  "library_tokens": 202101,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -1124,7 +1124,7 @@
         "references/editorial/workflow.md",
         "references/editorial/management.md"
       ],
-      "estimated_tokens": 949
+      "estimated_tokens": 1085
     }
   }
 }

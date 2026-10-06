@@ -19,7 +19,7 @@ an idea one question at a time. You stay in the same chat.
    **“Use Blog Studio. Help me start a blog.”**
 
 Already installed? Download the latest installer and run it again, then open a
-new chat. **Version 1.13.1** uses a normal local Git checkout for each Hub and keeps drafts, originals, review edits, selected sources, and
+new chat. **Version 1.14.0** uses a normal local Git checkout for each Hub and keeps drafts, originals, review edits, selected sources, and
 history together inside each blog folder. Reusable team knowledge has its own
 readable memory library. Existing hubs upgrade during an authorized save or sync.
 
@@ -102,7 +102,7 @@ Say **“Open editorial desk.”** A private page opens on your computer with:
 
 - **Blogs in progress:** owners, due dates, stages, and working Google Doc links.
 - **Needs attention:** review findings, waiting decisions, and stale companions.
-- **Reference library:** uploaded material and earlier posts you can browse and curate.
+- **Reference library:** browse and curate earlier posts. Choose **Import old blogs** to add a folder, website, feed or export.
 - **Team memory:** shared notes, context, and writing rules.
 
 Everyone with write access to your Hub uses the same controls. GitHub manages

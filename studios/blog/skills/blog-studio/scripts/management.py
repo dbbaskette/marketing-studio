@@ -427,6 +427,106 @@ def memory_detail(root, ident, revision=None):
             'continuation': command, 'body': Path(saved['paths']['BODY.md']).read_text()[:16000]}
 
 
+def import_operation(root, data):
+    operation = data.get('operation', '')
+    if not isinstance(operation, str) or not __import__('re').fullmatch(r'[a-f0-9]{32}', operation):
+        raise ValueError('An import operation ID is required.')
+    ledger = studio.inside(root, '.desk-imports', operation + '.json')
+    fingerprint = sha(encoded(data))
+    saved = studio.read_json(ledger) if ledger.exists() else None
+    if saved and saved['fingerprint'] != fingerprint:
+        raise ValueError('This operation belongs to a different import request.')
+    return ledger, fingerprint, saved
+
+
+def library_preview_state(root, ident):
+    if not isinstance(ident, str) or not __import__('re').fullmatch(r'[a-f0-9]{32}', ident):
+        raise ValueError('Choose a saved import preview.')
+    path = studio.inside(root, '.library', ident + '.json')
+    manifest = studio.read_json(path)
+    config = blog_library.collections(root)[manifest['collection']]
+    results = manifest['results']
+    counts = {key: sum(v['status'] == key for v in results.values()) for key in ('imported', 'updated', 'unchanged', 'failed')}
+    counts['pending_extraction'] = sum(v.get('extraction') == 'pending' for v in results.values())
+    return {'preview': ident, 'collection': config['name'], 'type': config['type'], 'scope': config.get('scope'),
+            'expected': sha(encoded([manifest, config])), 'candidates': len(manifest['candidates']),
+            'completed': len(results), 'remaining': len(manifest['candidates']) - len(results), 'counts': counts,
+            'expected_bytes': sum(v.get('expected_bytes', 0) for v in manifest['candidates']),
+            'network_bytes': 'unknown until fetched' if config['type'] not in ('folder', 'export') else None,
+            'excluded': manifest['excluded'][:20], 'discovery_limited': manifest['discovery_limited'],
+            'sample': [{k:v for k,v in entry.items() if k in ('title', 'url', 'author', 'identity')} for entry in manifest['candidates'][:20]],
+            'failures': [v['reason'] for v in results.values() if v['status'] == 'failed'][:20]}
+
+
+def library_preview(root, data):
+    """Explicit source selection; stage only browser-selected files, then reuse CLI discovery."""
+    if set(data) - {'operation', 'collection', 'name', 'type', 'files', 'export', 'url', 'scope', 'discovery_scope'}:
+        raise ValueError('Unknown import preview field.')
+    ledger, fingerprint, saved = import_operation(root, data)
+    if saved and saved.get('preview'):return library_preview_state(root, saved['preview'])
+    collection = data.get('collection')
+    if collection:
+        if set(data) != {'operation', 'collection'}:raise ValueError('Choose an existing collection or a new source.')
+        if collection not in blog_library.collections(root):raise ValueError('Choose a configured collection.')
+    else:
+        kind = data.get('type')
+        if kind not in ('folder', 'export', 'archive', 'feed', 'sitemap', 'urls'):
+            raise ValueError('Choose a folder, website, feed, sitemap, links, or JSON export.')
+        collection = 'desk-' + data['operation']
+        config = {'key': collection, 'name': data.get('name'), 'type': kind}
+        if not saved and any(str(c['name']).strip().casefold() == str(config['name']).strip().casefold() for c in blog_library.collections(root).values()):
+            raise ValueError('A collection already has that name. Choose Refresh an existing collection or use a different name.')
+        if kind in ('folder', 'export'):
+            files = data.get('files') if kind == 'folder' else [{'path':'export.json', 'content':data.get('export')}]
+            if not isinstance(files, list) or not 1 <= len(files) <= blog_library.MAX_POSTS:
+                raise ValueError('Select 1–500 supported files.')
+            decoded, paths, size = [], set(), 0
+            for file in files:
+                if not isinstance(file, dict) or set(file) != {'path', 'content'}:raise ValueError('Choose files with a relative path and content.')
+                name = file['path']
+                if (not isinstance(name, str) or len(name) > 500 or '\\' in name or '\x00' in name
+                        or name.startswith('/') or any(p.startswith('.') or not p for p in name.split('/'))
+                        or len(name.split('/')) > 12 or name in paths):
+                    raise ValueError('Selected files need unique relative paths without hidden or parent folders.')
+                if Path(name).suffix.lower() not in (('.json',) if kind == 'export' else ('.md', '.txt', '.html', '.htm', '.docx', '.pdf')):
+                    raise ValueError('Choose Markdown, text, HTML, DOCX or PDF files; exports must be JSON.')
+                content = base64.b64decode(file['content'], validate=True)
+                size += len(content)
+                if not content or size > blog_library.MAX_BINARY:raise ValueError('Select nonempty files totaling at most 10 MiB. Use a smaller folder or import a larger local folder in chat.')
+                paths.add(name);decoded.append((name, content))
+            base = studio.inside(root, '.library', 'desk-inputs', data['operation'])
+            for name, content in decoded:studio.atomic(studio.inside(base, *name.split('/')), content)
+            config['path'] = str(base if kind == 'folder' else base / 'export.json')
+        else:
+            config.update(url=data.get('url'), scope=data.get('scope'), discovery_scope=data.get('discovery_scope'))
+            if kind == 'urls':
+                config['urls'] = [u.strip() for u in str(data.get('url') or '').splitlines() if u.strip()]
+        studio.write_json(ledger, {'fingerprint': fingerprint, 'collection': collection})
+        if collection not in blog_library.collections(root):blog_library.setup(root, config)
+    result = blog_library.preview(root, collection, reader=blog_library.fetch)
+    studio.write_json(ledger, {'fingerprint': fingerprint, 'collection': collection, 'preview': result['preview']})
+    studio.write_json(studio.inside(root, '.desk-imports', 'current.json'), {'preview': result['preview']})
+    return library_preview_state(root, result['preview'])
+
+
+def library_import(root, data):
+    if set(data) != {'operation', 'preview', 'expected', 'confirm', 'retry'} or data['confirm'] is not True or not isinstance(data['retry'], bool):
+        raise ValueError('Review the preview, then explicitly choose Import or Retry failed posts.')
+    ledger, fingerprint, saved = import_operation(root, data)
+    if saved and saved.get('result'):return saved['result']
+    current = library_preview_state(root, data['preview'])
+    if current['expected'] != data['expected']:
+        raise ValueError('This preview changed. Reload the saved preview before continuing; retained posts are safe.')
+    studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
+    result = blog_library.import_batch(root, data['preview'], limit=25, retry=data['retry'], reader=blog_library.fetch)
+    state = library_preview_state(root, data['preview'])
+    sync = result.get('hub_sync', {'status': 'local-only'})
+    state['sharing'] = sync.get('status', 'local-saved-not-shared')
+    state['sharing_message'] = SHARING_MESSAGES.get(state['sharing'], 'Saved locally; Hub sync needs attention. Retry Hub sync in chat.')
+    studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'saved', 'result': state})
+    return state
+
+
 def dispatch(root, route, data):
     if route == 'refresh':
         if data:raise ValueError('Refresh takes no fields.')
@@ -439,6 +539,8 @@ def dispatch(root, route, data):
         return result
     with studio.locked(root):
         adapter = authorize_write(root)
+        if route == 'library-preview':return library_preview(root, data)
+        if route == 'library-import':return library_import(root, data)
         if route == 'retry-sync':return retry_receipt(root, adapter, data)
         if route == 'upload':return upload(root, data)
         if route == 'schedule':
@@ -532,6 +634,10 @@ def server(root, port=0):
                 elif parsed.path == '/api/receipts':result = receipts(root)
                 elif parsed.path == '/api/capabilities':result = capabilities(root)
                 elif parsed.path == '/api/collections':result = {'items': [{k: v for k, v in c.items() if k != 'local_path'} for c in blog_library.collections(root).values()]}
+                elif parsed.path == '/api/library-preview':
+                    current = studio.inside(root, '.desk-imports', 'current.json')
+                    ident = arg('preview') or (studio.read_json(current)['preview'] if current.exists() else None)
+                    result = library_preview_state(root, ident) if ident else {'available': False}
                 elif parsed.path == '/api/source':result = source_detail(root, arg('id'), arg('location', 'local'))
                 elif parsed.path == '/api/article':result = detail(root, arg('id'), arg('location', 'local'), arg('revision'))
                 elif parsed.path == '/api/finding':result = finding_detail(root, arg('id'), arg('key'), arg('location', 'local'))

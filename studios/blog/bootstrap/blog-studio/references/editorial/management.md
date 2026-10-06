@@ -43,3 +43,11 @@ checks; actual writes still reverify contribution permission. Decisions,
 collections, candidate lessons and conflicted memories have read-only details
 with focused continuation. Never convert them via the generic note editor.
 An access observation is informational, not a reusable write authorization.
+
+Runtime 1.14 adds Reference library → Import old blogs. Folder and JSON-export
+pickers stage only selected files locally (500 files / 10 MiB total). Website,
+feed, sitemap and explicit links use approved HTTPS post scopes. Preview precedes
+explicit 25-post import batches; saved checkpoints survive desk restarts, retries
+retain identity, and results distinguish extraction failures and Hub sharing.
+Use Refresh an existing collection to keep the same historical identities.
+Larger local folders still use the focused library commands in chat.

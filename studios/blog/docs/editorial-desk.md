@@ -61,7 +61,24 @@ a focused continuation, without a generic Save that could change their type.
 
 ## Bring in your earlier blogs
 
-Say **“Import our old blogs from [folder, feed, website, or export].”** Blog Studio
+In the desk, open **Reference library → Import old blogs**. Choose a folder on
+this computer, a website, an RSS/Atom feed, or a JSON export. Give the collection
+a name; for web sources, choose the website/path containing the permitted posts.
+Sitemaps and a list of post links are also supported.
+
+Click **Preview blogs**, inspect the collection, scope, sample posts and exclusions,
+then click **Import first 25 posts** (or the smaller number shown). Continue with
+**Import next…** until the preview is complete. The result shows added, updated,
+unchanged, failed, and pending-extraction posts, plus whether the Hub save succeeded.
+You can reload a saved preview, retry failed posts, or select **Refresh an existing
+collection**. Closing and reopening the desk retains the latest import checkpoint.
+
+The browser folder/export picker accepts up to 500 supported files and 10 MiB
+in total. For a larger local folder, use the chat command. A JSON export is a list
+of objects with `title`, `text`, and `url` or `external_id`; author, dates and tags
+are optional. Ordinary uploads remain available for single references or drafts.
+
+You can also say **“Import our old blogs from [folder, feed, website, or export].”** Blog Studio
 asks for a collection name and any missing scope details, then previews posts,
 exclusions and limits before importing. A refresh uses the same preview-and-batch
 approach. It preserves originals, metadata and earlier versions, and reports
