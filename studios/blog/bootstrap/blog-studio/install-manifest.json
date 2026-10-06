@@ -28,7 +28,7 @@
     "references/workspace/reference-memory.md": "f05ae4c50931244e73fed839fa39c93568a8f62471d69853f5e9ac1951d6a411",
     "references/workspace/status.md": "ed5dbd0474e167a0b524e7a13d404badb8de56b750dd2d61761942416746a75a",
     "scripts/author_workflow.py": "441aac29c3c1cc491fc65c072a0ef92a7d13c7037b5c054e17b0857664a5b5ac",
-    "scripts/blog_library.py": "513119aec7f5af7992600d25fb7b364c27dd49ff44086c9b56b8041ad171bcb1",
+    "scripts/blog_library.py": "6b05ff0d170a0389363a9ad92cfa701a0dccc4ad1c3717e1e1302e465a489095",
     "scripts/editorial.py": "6c98edaf323491b92b6201b1bf8f23b75fb524ae800c4fe6d9b34de2dfd8b541",
     "scripts/experience.py": "c9a7a9e370fefb84b61a05c029d6067b98f0901bd3a45034f5ba83b6f8258b5b",
     "scripts/google_drive.py": "37ac428cdb2e3a8cbe929137b4216ff335d6d8c7dd1d817b2bbe419a4b9567c5",

@@ -495,7 +495,6 @@ def curate(root, ident, data):
     directory, record = studio.item(root, 'sources', ident)
     if set(data) - {'curation', 'topics', 'products', 'note'}:raise ValueError('Unknown curation field.')
     metadata = dict(record.get('library', {}))
-    record['curation_overrides'] = sorted(set(record.get('curation_overrides',[]) + list(data)))
     if 'curation' in data:
         if data['curation'] not in ('active', 'retired', 'pending'):raise ValueError('Choose active, retired, or pending.')
         metadata['curation'] = data['curation']
@@ -508,6 +507,7 @@ def curate(root, ident, data):
     if (directory / 'content.md').exists():studio.atomic(history / 'content.md', (directory / 'content.md').read_bytes())
     original = record.get('original_path')
     if original and studio.inside(directory, original).is_file():studio.atomic(studio.inside(history, original), studio.inside(directory, original).read_bytes())
+    record['curation_overrides'] = sorted(set(record.get('curation_overrides',[]) + list(data)))
     record['library'] = metadata;record['revision'] += 1
     if 'note' in data:
         if not isinstance(data['note'], str) or len(data['note']) > 4000:raise ValueError('Keep the source note under 4000 characters.')
