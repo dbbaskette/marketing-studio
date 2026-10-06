@@ -184,5 +184,10 @@ def retry(root, ids, sync=True):
                 record['revision']+=1;studio.persist(directory,'sources',record)
                 if adapter:adapter._publish('sources',local)
             results.append({'id':local,'title':record['name'],'analysis':record['analysis']})
-    sharing=adapter.synchronize() if adapter and sync else {'status':'local-only'}
+    sharing={'status':'local-only'}
+    if adapter:
+        sharing={'status':'queued'}
+        if sync:
+            try:sharing=adapter.hub.sync()
+            except (__import__('hub_store').HubError,OSError):sharing={'status':'local-saved-not-shared','next_step':'Retry Hub sync; analysis is retained.'}
     return {'results':results,'sharing':sharing}

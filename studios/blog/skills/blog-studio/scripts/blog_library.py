@@ -410,7 +410,7 @@ def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, d
                 else:(directory / 'content.md').unlink(missing_ok=True)
                 record.update(name=title, origin=origin, library=metadata, original_filename=Path(entry.get('file', identity)).name,
                     original_path=name, original_sha256=original_hash, content_sha256=sha(text.encode()) if text is not None else None,
-                    author=entry.get('author'), status=status, retrieved_at=studio.now(), note='Historical team reference; reverify dated software claims.', revision=previous_revision + 1)
+                    author=entry.get('author'), status=status, retrieved_at=studio.now(), note=record.get('note','') if 'note' in record.get('curation_overrides',[]) else 'Historical team reference; reverify dated software claims.', revision=previous_revision + 1)
                 from source_curator import enrich
                 enrich(root, record, text, defer=True)
                 studio.persist(directory, 'sources', record)
@@ -423,10 +423,12 @@ def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, d
         studio.write_json(path, manifest)
     completed=[manifest['results'][entry['identity']] for entry in batch if manifest['results'][entry['identity']]['status']!='failed']
     if completed and __import__('source_curator').harness(root):
-        __import__('source_curator').retry(root,[value['id'] for value in completed],sync=False)
+        __import__('source_curator').retry(root,list(dict.fromkeys(value['id'] for value in completed)),sync=False)
     for value in completed:
         value['analysis']=studio.item(root,'sources',value['id'])[1].get('analysis',{}).get('status','needs-analysis')
-        if adapter:adapter._publish('sources',value['id'])
+        if adapter:
+            try:adapter._publish('sources',value['id'])
+            except (HubError,OSError,ValueError) as exc:value.update(status='failed',reason=str(exc)[:400])
     studio.write_json(path,manifest)
     counts = {name: sum(r['status'] == name for r in manifest['results'].values()) for name in ('imported', 'updated', 'unchanged', 'failed')}
     counts['pending_extraction'] = sum(r.get('extraction') == 'pending' for r in manifest['results'].values())

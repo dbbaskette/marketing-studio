@@ -239,6 +239,7 @@ def source_command(root, args):
                   'note': args.note, 'revision': 1, 'created_at': now(), 'retrieved_at': now() if text else None}
         if extraction:
             record['extraction'] = {k:v for k,v in extraction.items() if k != 'text'}
+        persist(directory, 'sources', record)  # Recoverable intake before a potentially slow CLI call.
         from source_curator import enrich
         enrich(root, record, text)
         persist(directory, 'sources', record)
@@ -262,10 +263,13 @@ def source_command(root, args):
         record['retrieved_at'] = now()
     record['revision'] += 1
     record['status'] = status
-    from source_curator import enrich
-    enrich(root, record, text)
+    if record.get('analysis',{}).get('sha256') != record.get('content_sha256') and record.get('analysis'):
+        record['analysis']['status']='needs-analysis'
     if args.note is not None:
         record['note'] = args.note
+    persist(directory, 'sources', record)
+    from source_curator import enrich
+    enrich(root, record, text)
     persist(directory, 'sources', record)
     return record
 
