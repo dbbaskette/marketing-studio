@@ -156,3 +156,5 @@ product tags and cautions for later reuse. **Review details** lets you correct
 those results; **Analyze reference** retries unfinished analysis. Your originals
 are retained. Analysis uses your selected signed-in Codex or Claude CLI. PDFs
 without extracted text remain marked **Needs extraction**.
+
+Developer verification: [import-time curation checks](reference-curation-validation.md).
