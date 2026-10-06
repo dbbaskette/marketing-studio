@@ -102,7 +102,7 @@ Say **“Open editorial desk.”** A private page opens on your computer with:
 
 - **Blogs in progress:** owners, due dates, stages, and working Google Doc links.
 - **Needs attention:** review findings, waiting decisions, and stale companions.
-- **Reference library:** browse and curate earlier posts. Choose **Import old blogs** to add a folder, website, feed or export.
+- **Reference library:** browse and curate earlier posts. Choose **Import old blogs** to add a folder, website, feed or export. Preview the list and check only the posts you want to save.
 - **Team memory:** shared notes, context, and writing rules.
 
 Everyone with write access to your Hub uses the same controls. GitHub manages

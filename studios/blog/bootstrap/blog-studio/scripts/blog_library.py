@@ -156,23 +156,28 @@ def publish_config(root, config, coverage=None):
 
 
 class ArchiveLinks(HTMLParser):
-    def __init__(self):super().__init__();self.links = [];self.title = '';self.in_title = False
+    def __init__(self):
+        super().__init__();self.links = [];self.labels = [];self.anchor = None;self.title = '';self.in_title = False
     def handle_starttag(self, tag, attrs):
         if tag == 'title':self.in_title = True
         if tag == 'a':
             url = dict(attrs).get('href')
-            if url and len(self.links) < MAX_DISCOVERY:self.links.append(url)
+            self.anchor = None
+            if url and len(self.links) < MAX_DISCOVERY:
+                self.links.append(url);self.labels.append('');self.anchor = len(self.labels) - 1
     def handle_endtag(self, tag):
         if tag == 'title':self.in_title = False
+        if tag == 'a':self.anchor = None
     def handle_data(self, text):
         if self.in_title:self.title += text
+        if self.anchor is not None:self.labels[self.anchor] = (self.labels[self.anchor] + text)[:500]
 
 
 def parse_discovery(content, kind, url, scope):
     candidates = []
     if kind == 'archive':
         parser = ArchiveLinks();parser.feed(content.decode('utf-8'))
-        candidates = [{'url': urljoin(url, link)} for link in parser.links]
+        candidates = [{'url': urljoin(url, link), 'label': ' '.join(label.split())} for link, label in zip(parser.links, parser.labels)]
     else:
         try:tree = ET.fromstring(content)
         except ET.ParseError as exc:raise ValueError('Malformed discovery XML; no posts were imported.') from exc
@@ -211,7 +216,11 @@ def parse_discovery(content, kind, url, scope):
             uri = canonical(entry['url'])
             if not in_scope(uri, scope): raise ValueError('outside scope')
             identity = entry.get('external_id') or uri
-            if identity in seen:continue
+            if identity in seen:
+                if entry.get('label'):
+                    prior = next(v for v in accepted if v['identity'] == identity)
+                    if not prior.get('label'):prior['label'] = entry['label']
+                continue
             seen.add(identity);accepted.append({**entry, 'url': uri, 'identity': identity})
         except (ValueError, TypeError): excluded.append({'reason': 'invalid URL or outside permitted scope'})
     return accepted[:MAX_POSTS], excluded, len(candidates) >= MAX_POSTS
@@ -313,7 +322,7 @@ def source_rows(root):
     return rows
 
 
-def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, delay=.25):
+def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, delay=.25, selected=None):
     if not __import__('re').fullmatch(r'[a-f0-9]{32}', preview_id) or not 1 <= limit <= MAX_BATCH: raise ValueError('Choose a valid preview and batch size 1–25.')
     path = folder(root) / (preview_id + '.json');manifest = studio.read_json(path)
     config = collections(root)[manifest['collection']]
@@ -324,10 +333,18 @@ def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, d
             try:return __import__('email.utils', fromlist=['parsedate_to_datetime']).parsedate_to_datetime(value).date().isoformat()
             except (ValueError, TypeError, AttributeError):return None
     existing = {r['record'].get('library', {}).get('identity'): r for r in source_rows(root) if r['record'].get('library')}
-    selected = [entry for entry in manifest['candidates'] if entry['identity'] not in manifest['results'] or (retry and manifest['results'][entry['identity']]['status'] == 'failed')][:limit]
+    if selected is not None:
+        known = {entry['identity'] for entry in manifest['candidates']}
+        if not isinstance(selected, list) or not selected or any(not isinstance(v, str) or v not in known for v in selected) or len(set(selected)) != len(selected):
+            raise ValueError('Select valid posts from this preview.')
+    chosen = set(selected) if selected is not None else None
+    batch = [entry for entry in manifest['candidates'] if (chosen is None or entry['identity'] in chosen)
+             and ((entry['identity'] not in manifest['results'] or manifest['results'][entry['identity']]['status'] == 'failed') if retry and chosen is None
+                  else manifest['results'].get(entry['identity'], {}).get('status') == 'failed' if retry
+                  else entry['identity'] not in manifest['results'])][:limit]
     from hub_workspace import active
     adapter = active(root)
-    for entry in selected:
+    for entry in batch:
         identity = entry['identity'];result = {'status': 'failed'}
         try:
             if entry.get('file'):

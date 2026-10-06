@@ -69,11 +69,14 @@ links on that page; it does not follow the rest of an archive automatically.
 Feeds may list only recent posts, and sitemap indexes are not expanded. The
 preview explains this coverage before you import.
 
-Click **Preview blogs**, inspect the collection, scope, sample posts and exclusions,
-then click **Import first 25 posts** (or the smaller number shown). Continue with
-**Import next…** until the preview is complete. The result shows added, updated,
+Click **Preview blogs** to see every candidate with a checkbox, label and URL.
+Nothing is selected automatically. Check only actual posts; author profiles,
+category pages and navigation links may also appear. **Select all** and **Clear
+selection** are available. Click **Import selected…** to save up to 25 checked
+posts. Remaining checkmarks are retained for the next batch; unchecked pages
+are never fetched. The result shows added, updated,
 unchanged, failed, and pending-extraction posts, plus whether the Hub save succeeded.
-You can reload a saved preview, retry failed posts, or select **Refresh an existing
+You can reload a saved preview, check failed posts to retry, or select **Refresh an existing
 collection**. Closing and reopening the desk retains the latest import checkpoint.
 
 The browser folder/export picker accepts up to 500 supported files and 10 MiB

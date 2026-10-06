@@ -233,7 +233,19 @@ async function editMemory(item) {
   $('memory-key').value=result.record.scope.key;$('memory-title').textContent='Edit shared memory';
   $('memory-form').querySelector('[type=submit]').disabled=false;$('memory-dialog').showModal();
 }
-let importState=null, importBusy=false;
+let importState=null, importBusy=false, importChecks=new Map();
+function importSelectionControls(){
+  const selected=[...importChecks.entries()].filter(([,check])=>check.checked).map(([key])=>key);
+  const pending=importState?importState.posts.filter(p=>selected.includes(p.key)&&p.status==='pending').length:0;
+  const failed=importState?importState.posts.filter(p=>selected.includes(p.key)&&p.status==='failed').length:0;
+  $('import-save').textContent='Import selected '+Math.min(25,pending)+' posts';
+  $('import-save').disabled=importBusy||!pending;
+  $('import-retry').textContent='Retry selected '+Math.min(25,failed)+' failed posts';
+  $('import-retry').disabled=importBusy||!failed;
+  if($('import-selection-count'))$('import-selection-count').textContent=selected.length+' selected';
+  for(const [key,check] of importChecks)check.disabled=importBusy||!['pending','failed'].includes(importState.posts.find(p=>p.key===key).status);
+  return selected;
+}
 function importFields(){
   const type=$('import-type').value, network=['archive','feed','sitemap','urls'].includes(type);
   for(const name of ['folder','export','url','links','scope','collection','name']){
@@ -248,6 +260,8 @@ function importBusyState(busy,message=''){
   importBusy=busy;
   for(const id of ['import-type','import-name','import-folder','import-export','import-url','import-links','import-scope','import-collection','import-preview-button','import-close','import-save','import-retry','import-reload','import-new'])$(id).disabled=busy;
   $('import-progress').textContent=message;$('import-progress').hidden=!message;
+  if(importState)importSelectionControls();
+  for(const control of $('import-preview').querySelectorAll('.import-select-control'))control.disabled=busy;
 }
 function renderImport(result){
   $('import-form').hidden=true;$('import-new').hidden=false;
@@ -263,16 +277,31 @@ function renderImport(result){
   if(result.network_bytes)box.append(element('p','Download size is unknown until posts are fetched. Each batch reads up to 25 posts.','help'));
   if(result.discovery_limited)box.append(element('p','Discovery reached its limit. Use a smaller folder or website path to cover the remaining posts.','context-note'));
   if(result.excluded.length)box.append(disclosure('Excluded items',...result.excluded.map(v=>element('p',v.reason))));
-  const list=element('ul',undefined,'detail-list');
-  for(const post of result.sample){const row=element('li');row.append(element('strong',post.title||post.url||post.identity));if(post.author)row.append(element('p',post.author));if(post.url)row.append(link(post.url,'Original post ↗'));list.append(row);}
-  box.append(disclosure('Preview posts'+(result.candidates>20?' (first 20)':''),list));
+  box.append(element('p','Check only the posts you want. Author profiles, category pages and navigation links can appear here. Nothing is selected automatically.','context-note'));
+  importChecks=new Map();
+  const controls=element('div',undefined,'import-selection-tools'),count=element('span');count.id='import-selection-count';
+  const choose=element('button','Select all','import-select-control'),clear=element('button','Clear selection','import-select-control');
+  choose.type=clear.type='button';
+  choose.addEventListener('click',()=>{for(const check of importChecks.values())if(!check.disabled)check.checked=true;importSelectionControls();});
+  clear.addEventListener('click',()=>{for(const check of importChecks.values())check.checked=false;importSelectionControls();});
+  controls.append(choose,clear,count);box.append(controls);
+  const list=element('ul',undefined,'import-post-list');
+  for(const post of result.posts){
+    const row=element('li'),label=element('label'),check=element('input'),details=element('span');check.type='checkbox';
+    check.checked=(result.selected||[]).includes(post.key)&&['pending','failed'].includes(post.status);
+    check.setAttribute('aria-label','Import '+post.title);check.addEventListener('change',importSelectionControls);importChecks.set(post.key,check);
+    details.append(element('strong',post.title));if(post.author)details.append(element('span',post.author,'help'));
+    details.append(element('span',post.status==='pending'?'Not imported':post.status,'help'));
+    label.append(check,details);row.append(label);if(post.url)row.append(link(post.url,post.url));list.append(row);
+  }
+  box.append(list);
   if(result.failures.length)box.append(disclosure('Why posts failed',...result.failures.map(reason=>element('p',reason))));
-  $('import-save').hidden=!result.remaining;$('import-save').textContent=(result.completed?'Import next ':'Import first ')+Math.min(25,result.remaining)+' posts';
-  $('import-retry').hidden=!counts.failed;$('import-reload').hidden=false;
+  $('import-save').hidden=!result.remaining;
+  $('import-retry').hidden=!counts.failed;$('import-reload').hidden=false;importSelectionControls();
 }
 function resetImportPreview(){
   $('import-form').hidden=false;$('import-new').hidden=true;
-  importState=null;sessionStorage.removeItem('blog-studio-import-preview');
+  importState=null;importChecks=new Map();sessionStorage.removeItem('blog-studio-import-preview');
   for(const id of ['import-preview','import-save','import-retry','import-reload'])$(id).hidden=true;
 }
 async function openImport(){
@@ -314,7 +343,9 @@ async function saveImport(retry=false){
   if(importBusy||!importState||!access.actions.edit)return;
   importBusyState(true,'Importing up to 25 posts. This may take a moment…');
   try{
-    const payload={preview:importState.preview,expected:importState.expected,confirm:true,retry};
+    const selected=importSelectionControls();
+    if(!selected.length)throw new Error('Check the posts you want to import first.');
+    const payload={preview:importState.preview,expected:importState.expected,confirm:true,retry,selected};
     const result=await api('library-import',{...payload,operation:operationFor('library-import',payload)});
     renderImport(result);await load();notice(result.sharing_message||'Posts saved to the Reference Library.');
   }catch(error){notice(error.message,true);}finally{importBusyState(false);}

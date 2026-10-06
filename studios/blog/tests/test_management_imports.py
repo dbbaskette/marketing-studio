@@ -13,9 +13,10 @@ class ManagementImportTests(Fixture):
                 'export': base64.b64encode(json.dumps([{'external_id': str(n), 'title': 'Post ' + str(n),
                     'text': 'A retained technical example.'} for n in range(posts)]).encode()).decode()}
 
-    def save(self, preview, operation='b' * 32, retry=False):
+    def save(self, preview, operation='b' * 32, retry=False, selected=None):
         return management.dispatch(self.root, 'library-import', {'operation': operation, 'preview': preview['preview'],
-            'expected': preview['expected'], 'confirm': True, 'retry': retry})
+            'expected': preview['expected'], 'confirm': True, 'retry': retry,
+            'selected': selected if selected is not None else [p['key'] for p in preview['posts']]})
 
     def test_export_preview_import_batches_and_safe_replay(self):
         preview = management.dispatch(self.root, 'library-preview', self.payload(26))
@@ -93,3 +94,49 @@ class ManagementImportTests(Fixture):
         result=self.save(management.library_preview_state(self.root,preview['preview']),'c'*32)
         self.assertEqual(result['counts']['imported'],2)
         self.assertEqual(library.catalog(self.root)['total'],2)
+
+    def test_only_checked_posts_import_and_all_candidates_are_visible(self):
+        preview=management.dispatch(self.root,'library-preview',self.payload(29))
+        self.assertEqual(len(preview['posts']),29)
+        self.assertEqual(preview['selected'],[])
+        chosen=[preview['posts'][i]['key'] for i in (1,21,28)]
+        result=self.save(preview,selected=chosen)
+        self.assertEqual(result['counts']['imported'],3)
+        self.assertEqual(result['remaining'],26)
+        self.assertEqual({r['title'] for r in library.catalog(self.root)['items']},{'Post 1','Post 21','Post 28'})
+        self.assertEqual(result['selected'],chosen)
+        for selection in ([],['unknown'],[preview['posts'][0]['key']]*2):
+            with self.subTest(selection=selection),self.assertRaises(ValueError):
+                self.save(result,operation='c'*32,selected=selection)
+        self.assertEqual(library.catalog(self.root)['total'],3)
+
+    def test_unchecked_author_and_category_links_are_never_fetched(self):
+        calls=[]
+        archive=b'<a href="/blog/post"><b>Useful post</b></a><a href="/blog/author/sam">Sam</a><a href="/blog/category/news">News</a>'
+        def fetch(url,scope):
+            calls.append(url)
+            return (archive if url.endswith('/blog') else b'<title>Useful post title</title><p>Text</p>',url,'text/html')
+        with patch.object(library,'fetch',side_effect=fetch):
+            preview=management.dispatch(self.root,'library-preview',{'operation':'a'*32,'name':'Archive','type':'archive',
+                'url':'https://team.example/blog','scope':'https://team.example/blog'})
+            self.assertEqual([p['title'] for p in preview['posts']],['Useful post','Sam','News'])
+            self.save(preview,selected=[preview['posts'][0]['key']])
+        self.assertEqual(calls,['https://team.example/blog','https://team.example/blog/post'])
+        self.assertEqual(library.catalog(self.root)['items'][0]['title'],'Useful post title')
+
+    def test_retry_only_selected_failure_and_preserves_unchecked_posts(self):
+        preview=management.dispatch(self.root,'library-preview',{'operation':'a'*32,'name':'Links','type':'urls',
+            'url':'https://team.example/blog/a\nhttps://team.example/blog/b\nhttps://team.example/blog/c','scope':'https://team.example/blog'})
+        keys=[p['key'] for p in preview['posts']]
+        def broken(url,scope):raise OSError('Temporary fetch failure')
+        with patch.object(library,'fetch',side_effect=broken):result=self.save(preview,selected=keys[:2])
+        self.assertEqual(result['counts']['failed'],2)
+        calls=[]
+        def recovered(url,scope):
+            calls.append(url);return b'<title>Recovered</title>',url,'text/html'
+        with patch.object(library,'fetch',side_effect=recovered):
+            result=self.save(result,'c'*32,retry=True,selected=keys[:1])
+        self.assertEqual(calls,['https://team.example/blog/a'])
+        self.assertEqual(result['counts']['imported'],1)
+        self.assertEqual(result['counts']['failed'],1)
+        self.assertEqual(result['remaining'],1)

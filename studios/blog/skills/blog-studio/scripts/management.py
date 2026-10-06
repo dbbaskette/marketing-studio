@@ -460,7 +460,11 @@ def library_preview_state(root, ident):
             'expected_bytes': sum(v.get('expected_bytes', 0) for v in manifest['candidates']),
             'network_bytes': 'unknown until fetched' if config['type'] not in ('folder', 'export') else None,
             'excluded': manifest['excluded'][:20], 'discovery_limited': manifest['discovery_limited'],
-            'sample': [{k:v for k,v in entry.items() if k in ('title', 'url', 'author', 'identity')} for entry in manifest['candidates'][:20]],
+            'posts': [{'key': sha(entry['identity'].encode())[:32],
+                       'title': entry.get('title') or entry.get('label') or entry.get('url') or Path(entry.get('file', '')).name or 'Untitled post',
+                       'url': entry.get('url'), 'author': entry.get('author'),
+                       'status': results.get(entry['identity'], {}).get('status', 'pending')} for entry in manifest['candidates']],
+            'selected': manifest.get('desk_selected', []),
             'failures': [v['reason'] for v in results.values() if v['status'] == 'failed'][:20]}
 
 
@@ -516,15 +520,28 @@ def library_preview(root, data):
 
 
 def library_import(root, data):
-    if set(data) != {'operation', 'preview', 'expected', 'confirm', 'retry'} or data['confirm'] is not True or not isinstance(data['retry'], bool):
+    if set(data) != {'operation', 'preview', 'expected', 'confirm', 'retry', 'selected'} or data['confirm'] is not True or not isinstance(data['retry'], bool):
         raise ValueError('Review the preview, then explicitly choose Import or Retry failed posts.')
     ledger, fingerprint, saved = import_operation(root, data)
     if saved and saved.get('result'):return saved['result']
     current = library_preview_state(root, data['preview'])
     if current['expected'] != data['expected']:
         raise ValueError('This preview changed. Reload the saved preview before continuing; retained posts are safe.')
+    chosen = data['selected']
+    known = {post['key']: post['status'] for post in current['posts']}
+    if (not isinstance(chosen, list) or not chosen or len(chosen) > blog_library.MAX_POSTS
+            or any(not isinstance(key, str) or key not in known for key in chosen) or len(set(chosen)) != len(chosen)):
+        raise ValueError('Check the posts you want to import from this preview.')
+    eligible = 'failed' if data['retry'] else 'pending'
+    if not any(known[key] == eligible for key in chosen):
+        raise ValueError('Select failed posts to retry.' if data['retry'] else 'Select posts that have not been imported yet.')
+    path = studio.inside(root, '.library', data['preview'] + '.json')
+    manifest = studio.read_json(path)
+    manifest['desk_selected'] = chosen
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
-    result = blog_library.import_batch(root, data['preview'], limit=25, retry=data['retry'], reader=blog_library.fetch)
+    studio.write_json(path, manifest)
+    identities = [entry['identity'] for entry in manifest['candidates'] if sha(entry['identity'].encode())[:32] in chosen]
+    result = blog_library.import_batch(root, data['preview'], limit=25, retry=data['retry'], reader=blog_library.fetch, selected=identities)
     state = library_preview_state(root, data['preview'])
     sync = result.get('hub_sync', {'status': 'local-only'})
     state['sharing'] = sync.get('status', 'local-saved-not-shared')

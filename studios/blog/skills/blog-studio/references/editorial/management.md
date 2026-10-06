@@ -51,3 +51,8 @@ explicit 25-post import batches; saved checkpoints survive desk restarts, retrie
 retain identity, and results distinguish extraction failures and Hub sharing.
 Use Refresh an existing collection to keep the same historical identities.
 Larger local folders still use the focused library commands in chat.
+
+Runtime 1.14.1 lists all preview candidates with checkboxes, labels and URLs.
+Nothing is selected automatically. Only checked posts are fetched; remaining
+checks persist across batches and restarts after the first import. Retry acts
+only on checked failed posts. Labels are source data, not proof a link is a blog.

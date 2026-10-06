@@ -170,11 +170,11 @@ async function articleDisclosure(){
 }
 
 async function historicalImport(){
-  const preview={preview:'a'.repeat(32),expected:'initial',collection:'Past posts',type:'folder',candidates:26,completed:0,remaining:26,counts:{},excluded:[],sample:[{title:'A retained <post>'}],failures:[]};
+  const preview={preview:'a'.repeat(32),expected:'initial',collection:'Past posts',type:'folder',candidates:26,completed:0,remaining:26,counts:{},excluded:[],posts:Array.from({length:26},(_,i)=>({key:String(i),title:i===0?'A retained <post>':'Post '+i,status:'pending'})),selected:[],failures:[]};
   const writes=[];
   const f=fixture((url,options)=>{
     if(url==='/api/library-preview'&&options.method==='POST'){writes.push([url,JSON.parse(options.body)]);return preview;}
-    if(url==='/api/library-import'){writes.push([url,JSON.parse(options.body)]);return {...preview,expected:'next',completed:25,remaining:1,counts:{imported:25},sharing_message:'Saved locally.'};}
+    if(url==='/api/library-import'){writes.push([url,JSON.parse(options.body)]);return {...preview,expected:'next',completed:25,remaining:1,posts:preview.posts.map((p,i)=>({...p,status:i<25?'imported':'pending'})),selected:preview.posts.map(p=>p.key),counts:{imported:25},sharing_message:'Saved locally.'};}
     return empty();
   });
   for(const type of ['folder','archive','feed','export','sitemap','urls','collection']){
@@ -192,11 +192,20 @@ async function historicalImport(){
   assert.equal(Buffer.from(writes[0][1].files[0].content,'base64').toString(),'text.');
   assert.equal(f.get('import-form').hidden,true);
   assert.equal(f.get('import-new').hidden,false);
-  assert.equal(f.get('import-save').textContent,'Import first 25 posts');
+  assert.equal(f.get('import-save').textContent,'Import selected 0 posts');
+  assert.equal(f.get('import-save').disabled,true);
+  assert.equal(f.run('importChecks.size'),26);
+  f.run("importChecks.get('21').checked=true;importSelectionControls()");
+  assert.equal(f.get('import-save').textContent,'Import selected 1 posts');
+  f.run('for(const check of importChecks.values())check.checked=true;importSelectionControls()');
+  assert.equal(f.get('import-save').textContent,'Import selected 25 posts');
   assert.ok(descendants(f.get('import-preview')).some(e=>e.textContent==='A retained <post>'));
   await f.run('saveImport()');
   assert.equal(writes.length,2);assert.equal(writes[1][1].confirm,true);assert.equal(writes[1][1].expected,'initial');
-  assert.equal(f.get('import-save').textContent,'Import next 1 posts');
+  assert.deepEqual(writes[1][1].selected,preview.posts.map(p=>p.key));
+  assert.equal(f.get('import-save').textContent,'Import selected 1 posts');
+  assert.equal(f.run("importChecks.get('0').disabled"),true);
+  assert.equal(f.run("importChecks.get('25').checked"),true);
   f.get('import-folder').files=[];await f.run('previewImport()');
   assert.equal(writes.length,2);assert.equal(f.get('import-save').hidden,true);
   f.run('access.actions.edit=false');await f.run('saveImport()');assert.equal(writes.length,2);
