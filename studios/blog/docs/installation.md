@@ -170,3 +170,11 @@ The update also handles review targets after inline charts, Google’s native an
 and inherited-style representations, actionable authorization failures, and Hub
 filesystem failures after a successful local save. A previous formatting baseline
 may need a fresh inspected pull; the updater does not rewrite review receipts.
+
+## Included research updates
+
+The Blog Studio research workflow comes with installer 1.15.0 and later.
+Download the latest package and run the installer again to update Blog Studio
+and its bundled research workflows together. Open a new chat afterward.
+Saved blogs, sources and research reports stay in your writing workspace.
+Separately installed standalone research skills are not owned by this installer.

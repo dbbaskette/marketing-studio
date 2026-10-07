@@ -51,13 +51,21 @@ class InstallationTests(unittest.TestCase):
     def test_google_runtime_requires_its_managed_helper(self):
         manifest_path = self.source / 'install-manifest.json'
         manifest = json.loads(manifest_path.read_text())
-        self.assertEqual(manifest['version'], '1.14.4')
+        self.assertEqual(manifest['version'], '1.15.0')
         name = 'scripts/google_workflow.py'
         (self.source / name).unlink()
         del manifest['files'][name]
         manifest_path.write_text(json.dumps(manifest))
         with self.assertRaisesRegex(installer.InstallError, 'Required runtime files'):
             self.install()
+        self.assertFalse((self.root / 'installation.json').exists())
+
+    def test_research_package_cannot_omit_its_managed_helper(self):
+        manifest_path = self.source / 'install-manifest.json'
+        manifest = json.loads(manifest_path.read_text());name = 'scripts/deep_research.py'
+        (self.source / name).unlink();del manifest['files'][name]
+        manifest_path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(installer.InstallError, 'Required runtime files'):self.install()
         self.assertFalse((self.root / 'installation.json').exists())
 
     def test_optional_google_setup_offline_and_dry_run_do_not_start_login(self):
@@ -157,6 +165,32 @@ class InstallationTests(unittest.TestCase):
         path = self.source / 'SKILL.md'
         path.write_text(path.read_text() + '\nA tested guidance metadata update.\n')
         rehash(self.source)
+
+    def test_reinstall_updates_bundled_research_for_both_harnesses_without_touching_work(self):
+        first = self.install();old = self.targets['codex'].resolve()
+        blog = self.home / 'blogs/.blog-studio/articles/example/DRAFT.md'
+        source = self.home / 'blogs/.blog-studio/sources/example/content.md'
+        for path in (blog, source):path.parent.mkdir(parents=True, exist_ok=True);path.write_text('User-owned content.')
+        standalone = self.home / '.codex/skills/research/SKILL.md'
+        standalone.parent.mkdir(parents=True);standalone.write_text('Independent research skill.')
+        names = ['references/modules/blog-deep-research.md'] + [
+            'references/upstream/deep-research/' + skill + '/SOURCE.md'
+            for skill in ('research', 'research-add-items', 'research-add-fields', 'research-deep', 'research-report')]
+        for name in names:
+            path = self.source / name;path.write_text(path.read_text() + '\nUpdated fixture revision.\n')
+        lock_path = self.source / 'deep-research.lock.json';lock = json.loads(lock_path.read_text())
+        lock['commit'] = 'c' * 40
+        for item in lock['files']:item['sha256'] = hashlib.sha256((self.source / item['path']).read_bytes()).hexdigest()
+        lock_path.write_text(json.dumps(lock));rehash(self.source)
+        second = self.install();self.assertNotEqual(first['version'], second['version'])
+        for target in self.targets.values():
+            for name in names:self.assertIn('Updated fixture revision.', (target / name).read_text())
+            self.assertEqual(json.loads((target / 'deep-research.lock.json').read_text())['commit'], 'c' * 40)
+        for path in (blog, source):self.assertEqual(path.read_text(), 'User-owned content.')
+        self.assertEqual(standalone.read_text(), 'Independent research skill.')
+        self.assertNotIn('Updated fixture revision.', (old / names[0]).read_text())
+        self.assertEqual(self.install()['status'], 'already-installed')
+        self.assertEqual(installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified')
 
     def test_runtime_update_and_rollback_keep_old_versions(self):
         first = self.install()

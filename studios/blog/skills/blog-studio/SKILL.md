@@ -28,6 +28,7 @@ Load the module and required references; reuse unchanged guidance.
 | Edit/feedback | [editing](references/modules/copy-editing.md) |
 | Voice rules | [voice check](references/modules/blog-voice-check.md) |
 | Prose humanization | [humanize](references/modules/blog-humanize.md) |
+| Topic research | [deep research](references/modules/blog-deep-research.md) |
 | Claim support | [fact check](references/modules/blog-fact-check.md) |
 | Retrieval readiness | [GEO](references/modules/blog-geo-review.md) |
 | Other channels | [repurpose](references/modules/blog-repurpose.md) |

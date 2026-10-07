@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "repository": "https://github.com/Weizhena/Deep-Research-skills",
+  "commit": "6ce38f60e3f8b22502c29873f96503a4e0c5addb",
+  "license": "MIT",
+  "license_path": "references/upstream/deep-research/LICENSE",
+  "entrypoint": "references/modules/blog-deep-research.md",
+  "files": [
+    {
+      "upstream_path": "skills/research-codex-en/research/SKILL.md",
+      "path": "references/upstream/deep-research/research/SOURCE.md",
+      "sha256": "575073c5483454245d6c29ef8f12c77a0831b5d9eec0e98631129db1a6425671"
+    },
+    {
+      "upstream_path": "skills/research-codex-en/research-add-items/SKILL.md",
+      "path": "references/upstream/deep-research/research-add-items/SOURCE.md",
+      "sha256": "52195e187e55941525e6006709dacb0b409448717958af86e73cbf6682b9e616"
+    },
+    {
+      "upstream_path": "skills/research-codex-en/research-add-fields/SKILL.md",
+      "path": "references/upstream/deep-research/research-add-fields/SOURCE.md",
+      "sha256": "93757fb5ea7462de38206c0f2c18cb7726fe773137f6b7959d6587ae2f2bfcf9"
+    },
+    {
+      "upstream_path": "skills/research-codex-en/research-deep/SKILL.md",
+      "path": "references/upstream/deep-research/research-deep/SOURCE.md",
+      "sha256": "8fcc496fb1af291d30a9aa70e005f33cfbe08c8fff1942fb50ff7c9979d532cb"
+    },
+    {
+      "upstream_path": "skills/research-codex-en/research-report/SKILL.md",
+      "path": "references/upstream/deep-research/research-report/SOURCE.md",
+      "sha256": "3f338b814cda64564170b821eb9d9f597126639d8330b0d9b43dff9fbcbb945b"
+    },
+    {
+      "upstream_path": "LICENSE",
+      "path": "references/upstream/deep-research/LICENSE",
+      "sha256": "1883a89d5fe9b87f5137eb7f2755df95a95c6c75aaf8eb1d9eec2cb794471c72"
+    },
+    {
+      "upstream_path": "skills/research-codex-en/research/validate_json.py",
+      "path": "references/upstream/deep-research/research/validate_json.py",
+      "sha256": "f69121033cad586e4a4f5e12a9e37ae98dd6d0cbfda5293c180f78e3bda2369d"
+    }
+  ],
+  "adaptation": "Five original English Codex skills retained unchanged as provenance. The Blog Studio wrapper uses host browsing, JSON plans and existing source/review storage. Agent configs, models, installers, generated Python reports and YAML execution are omitted."
+}

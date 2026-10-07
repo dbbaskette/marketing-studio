@@ -37,6 +37,21 @@ def validate(root=ROOT):
         if not path.is_file(): errors.append(f'Missing source file: {item["path"]}')
         elif hashlib.sha256(path.read_bytes()).hexdigest() != item['sha256']:
             errors.append(f'Source hash mismatch: {item["path"]}')
+    research_path = root / 'deep-research.lock.json'
+    research_files = []
+    if research_path.is_file():
+        try:
+            research = json.loads(research_path.read_text())
+            research_files = research['files']
+            if not re.fullmatch('[0-9a-f]{40}', research['commit']):errors.append('Unpinned deep research source.')
+            if not (root / research['license_path']).is_file():errors.append('Missing deep research license.')
+            if research['entrypoint'] not in (root / 'SKILL.md').read_text():errors.append('Unreachable deep research module.')
+            for item in research_files:
+                path = root / item['path']
+                if not path.resolve().is_relative_to(root) or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != item['sha256']:
+                    errors.append('Deep research source hash mismatch: ' + item['path'])
+                recorded.add(item['path'])
+        except (OSError, ValueError, KeyError, TypeError) as exc:errors.append('Invalid deep research provenance: ' + str(exc))
     actual = {p.relative_to(root).as_posix() for folder in ('references/upstream', 'references/blogforge')
               for p in (root / folder).rglob('*') if p.is_file()}
     if actual != recorded:
@@ -64,7 +79,7 @@ def validate(root=ROOT):
             if url.scheme or url.netloc or not url.path:continue
             target = (p.parent / unquote(url.path)).resolve()
             if not target.is_relative_to(root) or not target.is_file():errors.append(f'Broken link in {relative}: {link}')
-    for script in ('studio.py', 'text_checks.py', 'linkedin_import.py', 'hub.py', 'hub_store.py', 'hub_workspace.py', 'google_workflow.py', 'experience.py', 'hub_browse.py', 'google_drive.py', 'google_roundtrip.py', 'editorial.py', 'blog_library.py', 'management.py'):
+    for script in ('studio.py', 'text_checks.py', 'linkedin_import.py', 'hub.py', 'hub_store.py', 'hub_workspace.py', 'google_workflow.py', 'experience.py', 'hub_browse.py', 'google_drive.py', 'google_roundtrip.py', 'editorial.py', 'blog_library.py', 'management.py', *(['deep_research.py'] if research_path.is_file() else [])):
         p = root / 'scripts' / script
         if not p.is_file():errors.append(f'Missing helper {script}')
         else:
