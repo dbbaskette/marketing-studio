@@ -47,7 +47,7 @@ def save(directory, record, value):
             lines += [literal(result['summary']), '', 'Limits: ' + literal(result['limits']), '']
             for evidence in result['evidence']:
                 lines += ['Source: ' + literal(evidence['name']) + ' (' + evidence['source_id'] + ', revision ' + str(evidence['revision']) + ')',
-                          'Origin: ' + evidence['origin'], 'Location: ' + literal(evidence['locator']), '', '> ' + literal(evidence['quote']).replace('\n', '\n> '), '']
+                          'Origin: ' + literal(evidence['origin']), 'Location: ' + literal(evidence['locator']), '', '> ' + literal(evidence['quote']).replace('\n', '\n> '), '']
     studio.atomic(report, ('\n'.join(lines) + '\n').encode())
     record['research'] = {'run': value['run'], 'path': 'derived/research.json', 'report': 'derived/research-report.md',
                           'sha256': studio.digest(path.read_bytes()), 'updated_at': studio.now()}

@@ -42,8 +42,8 @@ class DeepResearchTests(unittest.TestCase):
                  '--file', self.file('plan.json', {'purpose': purpose, 'scope': scope, 'items': items}))
         return research.status(self.root, ident or self.ident)['run']
 
-    def source(self, role='reference', text='Release 2.0 adds predicate pruning to column scans.'):
-        src = self.cli(self.root, 'source', 'add', '--name', 'Synthetic release notes', '--origin', 'https://example.org/release-2.0',
+    def source(self, role='reference', text='Release 2.0 adds predicate pruning to column scans.', origin='https://example.org/release-2.0'):
+        src = self.cli(self.root, 'source', 'add', '--name', 'Synthetic release notes', '--origin', origin,
                        '--text-file', self.file('source.md', text), '--purpose', role)
         self.cli(self.root, 'article', 'attach', '--id', self.ident, '--source', src['id'], '--purpose', role)
         return src, text
@@ -109,7 +109,8 @@ class DeepResearchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'limited to supplied'):
             research.plan(self.root, self.ident, {'purpose': 'planning', 'scope': 'public-web', 'items': []})
         self.cli(self.root, 'article', 'research-policy', '--id', self.ident, '--policy', 'web-allowed')
-        run = self.plan();src, text = self.source(text='Evidence ![tracking](https://example.org/image) <script>bad</script>')
+        run = self.plan();src, text = self.source(text='Evidence ![tracking](https://example.org/image) <script>bad</script>',
+                                                origin='Notes ![tracking](https://example.org/image) <script>bad</script>')
         self.result(run, [self.cite(src, text)])
         report = Path(research.status(self.root, self.ident)['report']).read_text()
         self.assertNotIn('![tracking]', report);self.assertNotIn('<script>', report)
