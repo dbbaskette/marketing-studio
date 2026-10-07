@@ -409,6 +409,8 @@ def article_command(root, args):
         if not args.title.strip() or len(args.title.strip()) > 500:
             raise ValueError('Use a blog title between 1 and 500 characters.')
         record['title'] = args.title.strip()
+    elif args.action == 'research-policy':
+        record['research_policy'] = args.policy
     elif args.action == 'author':
         record['author'] = checked_author(args.name)
     elif args.action == 'attach':
@@ -513,6 +515,8 @@ def parser():
     from blog_library import add_parser as library_parser
     library_parser(groups)
     manage = groups.add_parser("manage");manage.add_argument("--port", type=int, default=0);manage.add_argument("--open", action="store_true");manage.add_argument("--harness", choices=("codex","claude"))
+    from deep_research import add_parser as research_parser
+    research_parser(groups)
     from editorial import add_parser as editorial_parser
     editorial_parser(groups)
     from experience import add_parser as experience_parser
@@ -550,6 +554,8 @@ def parser():
     create.add_argument('--stop', choices=('draft', 'outline', 'review', 'brief'))
     show = articles.add_parser('show');show.add_argument('--id', required=True)
     rename = articles.add_parser('rename');rename.add_argument('--id', required=True);rename.add_argument('--title', required=True)
+    policy = articles.add_parser('research-policy');policy.add_argument('--id', required=True)
+    policy.add_argument('--policy', choices=('supplied-only', 'web-allowed'), required=True)
     author = articles.add_parser('author');author.add_argument('--id', required=True);author.add_argument('--name', required=True)
     for operation in ('remember', 'forget'):
         memory = articles.add_parser(operation); memory.add_argument('--id', required=True)
@@ -611,6 +617,9 @@ def main():
         elif args.group == 'editorial' and args.action in ('board', 'inbox', 'assets'):
             from editorial import command
             result = command(root, args)
+        elif args.group == 'research' and args.action == 'status':
+            from deep_research import command
+            result = command(root, args)
         elif args.group == 'init':
             result = initialize(root)
         else:
@@ -629,6 +638,9 @@ def main():
                 elif args.group == 'library':
                     from blog_library import command
                     result = command(root, args)
+                elif args.group == 'research':
+                    from deep_research import command
+                    result = command(root, args)
                 elif args.group == 'editorial':
                     from editorial import command
                     result = command(root, args)
@@ -638,7 +650,7 @@ def main():
                     from google_workflow import command
                     result = command(root, args)
                 else: result = article_command(root, args)
-                mutation_group = 'article' if args.group == 'editorial' else 'source' if args.group == 'library' and args.action == 'curate' else args.group
+                mutation_group = 'article' if args.group in ('editorial', 'research') else 'source' if args.group == 'library' and args.action == 'curate' else args.group
                 if args.group == 'google':
                     mutation_group = 'source' if args.action == 'source' else 'article' if args.action not in ('compare', 'capabilities', 'status') else None
                 if mutation_group in ('profile', 'source', 'article') and args.action != 'show' and not (args.action == 'restore' and not args.apply):

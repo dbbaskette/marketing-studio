@@ -35,3 +35,12 @@ permissions; do not work around host restrictions.
 Apply [data boundaries](privacy.md) when borrowing upstream techniques.
 Original service examples are archival instructions, not installed integrations
 or authorization to send private content elsewhere.
+
+## Bundled deep research
+
+[deep-research.lock.json](../deep-research.lock.json) pins Weizhena's MIT-licensed
+Deep Research skills. The five original workflows are immutable provenance,
+installed with the [Blog Studio adaptation](modules/blog-deep-research.md). JSON
+plans/results replace YAML and generated Python reports, so no PyYAML, new model
+provider, global agent configuration or additional executable installer is required.
+Load only this conditional module for topic research or factual evidence gaps.

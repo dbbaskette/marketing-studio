@@ -7,7 +7,7 @@ import zipfile
 
 repo = Path(__file__).resolve().parents[1]
 bootstrap = repo / 'bootstrap/blog-studio'
-for name in ('studio.py', 'performance.py', 'local_cache.py', 'local_reads.py', 'text_checks.py', 'linkedin_import.py', 'hub.py', 'hub_store.py', 'hub_workspace.py', 'google_workflow.py', 'experience.py', 'author_workflow.py', 'writing_defaults.py', 'hub_browse.py', 'google_drive.py', 'google_roundtrip.py', 'google_suggestions.py', 'google_review_comments.py', 'editorial.py', 'blog_library.py', 'management.py', 'source_curator.py'):
+for name in ('studio.py', 'performance.py', 'local_cache.py', 'local_reads.py', 'text_checks.py', 'linkedin_import.py', 'hub.py', 'hub_store.py', 'hub_workspace.py', 'google_workflow.py', 'experience.py', 'author_workflow.py', 'writing_defaults.py', 'hub_browse.py', 'google_drive.py', 'google_roundtrip.py', 'google_suggestions.py', 'google_review_comments.py', 'editorial.py', 'blog_library.py', 'management.py', 'source_curator.py', 'deep_research.py'):
     (bootstrap / 'scripts' / name).write_bytes((repo / 'skills/blog-studio/scripts' / name).read_bytes())
 for name in ('gcloud.md', 'checkpoints.md', 'roundtrip.md', 'status.md', 'suggestions.md', 'start.md'):
     destination = bootstrap / 'references/google' / name
@@ -23,11 +23,40 @@ for path in (repo / 'skills/blog-studio/references/editorial').glob('*.md'):
 for path in (repo / 'skills/blog-studio/assets/management').glob('*'):
     destination = bootstrap / 'assets/management' / path.name
     destination.parent.mkdir(parents=True, exist_ok=True);destination.write_bytes(path.read_bytes())
+# The adapted research module and immutable upstream workflows travel in the installer.
+for name in ('modules/blog-deep-research.md', 'modules/blog-fact-check.md', 'privacy.md', 'workspace/sources.md', 'upstream/deep-research'):
+    source = repo / 'skills/blog-studio/references' / name
+    destination = bootstrap / 'references' / name
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if source.is_dir():
+        import shutil
+        shutil.copytree(source, destination, dirs_exist_ok=True, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+    else:destination.write_bytes(source.read_bytes())
+# Include local dependencies of the operational module without executing source code.
+import re
+from urllib.parse import unquote, urlsplit
+reference_root = repo / 'skills/blog-studio'
+queue = [reference_root / 'references/modules/blog-deep-research.md']
+visited = set()
+while queue:
+    source = queue.pop()
+    if source in visited or not source.is_file():continue
+    visited.add(source)
+    destination = bootstrap / source.relative_to(reference_root)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(source.read_bytes())
+    if source.suffix != '.md' or 'upstream' in source.parts:continue
+    for link in re.findall(r'\[[^\]]*\]\(([^)]+)\)', source.read_text()):
+        url = urlsplit(link)
+        if url.scheme or url.netloc or not url.path:continue
+        target = (source.parent / unquote(url.path)).resolve()
+        if target.is_relative_to(reference_root):queue.append(target)
+(bootstrap / 'deep-research.lock.json').write_bytes((repo / 'skills/blog-studio/deep-research.lock.json').read_bytes())
 files = {p.relative_to(bootstrap).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
          for p in sorted(bootstrap.rglob('*')) if p.is_file() and
          p.name not in ('install-manifest.json', 'config.json') and
          '__pycache__' not in p.parts and p.suffix != '.pyc'}
-manifest = {'schema': 1, 'version': '1.14.4', 'files': files}
+manifest = {'schema': 1, 'version': '1.15.0', 'files': files}
 (bootstrap / 'install-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
 for path in bootstrap.rglob('*.py'):
     compile(path.read_text(), str(path), 'exec')

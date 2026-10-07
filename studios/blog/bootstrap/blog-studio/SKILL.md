@@ -53,6 +53,12 @@ ordinary resume/proofreading retains existing pins. Configure the current
 harness once for automatic import-time source analysis; this route also handles
 explicit analysis of existing references.
 
+For “Research this topic,” “Show research,” or “Fact-check” / “Check the facts,”
+load [deep research](references/modules/blog-deep-research.md) (runtime 1.15+).
+Offer it once during a new blog's source choice; factual checks research evidence
+gaps within the permitted scope. Supplied-only limits and existing writing pins
+remain in force. Proofreading does not start research.
+
 **New task:** run
 `python3 <installed-skill>/scripts/sync_guidance.py start --workspace <workspace>`.
 The small JSON result identifies the pinned `guidance`, `runtime`, and task.

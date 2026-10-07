@@ -53,3 +53,9 @@ For “Show our pipeline,” “What needs my attention?”, “Open editorial d
 “Package this for launch,” “Show evidence,” “This needs a diagram,” or old-blog
 import/find/refresh, load the [editorial router](editorial/workflow.md) and only its
 requested operation. These routes preserve writing pins and never approve release.
+
+**“Research this topic”** loads [deep research](modules/blog-deep-research.md) for
+the current blog. **“Fact-check”** or **“Check the facts”** inspects existing
+evidence, researches unresolved claims within the permitted scope, then saves
+the factual-support review. **“Show research”** shows the saved brief and gaps.
+Proofreading remains separate.

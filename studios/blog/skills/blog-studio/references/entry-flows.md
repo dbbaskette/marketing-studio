@@ -23,7 +23,9 @@ background, and authored samples. Clarify outside research when scope needs it.
 
 Once a new blog topic is known, use [reference memory](workspace/reference-memory.md)
 for a bounded search of reusable sources and historical posts, unless the user
-limits the source set. This does not change the requested route or stop point.
+limits the source set. This does not change the requested route or stop point. Offer
+[deep research](modules/blog-deep-research.md) alongside supplied sources when
+evidence would help; a clear research request skips that choice.
 
 For software-product starts, infer the blog type separately from the writing route.
 If unresolved, offer the [blog-type selector](style/forms.md#intake-choice) once;

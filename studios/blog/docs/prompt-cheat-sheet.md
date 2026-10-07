@@ -55,7 +55,10 @@ approve first, say **“Push as suggestions.”**
 | Write the draft. | Draft from the current brief and material |
 | Proofread. | Correct spelling, grammar, and punctuation |
 | Tighten it up. | Improve concision and remove repetition |
-| Check the facts. | Check claims against available evidence |
+| Research this topic. | Gather cited background before outlining or drafting |
+| Fact-check. | Research evidence gaps and check the current blog’s claims |
+| Show research. | See the saved research brief and unanswered questions |
+| Use only my sources. | Keep research and checks within the supplied material |
 | Check our style. | Review against selected team and house guidance |
 | Suggest some titles. | Explore headline options |
 | Apply those edits. | Make the changes just discussed |

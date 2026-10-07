@@ -39,6 +39,26 @@ Blog Studio asks for any missing details. You can ask for an outline, a first
 draft, or feedback only. **“Help me set up my voice”** lets it learn from your
 writing and preferences.
 
+## Research before writing or checking facts
+
+Say **“Research this topic”** to gather useful background before outlining or
+drafting. Blog Studio also offers research when you choose your sources.
+
+Say **“Fact-check”** to check the current blog: it uses your saved references,
+researches gaps, and shows supporting sources, contradictions and unanswered
+questions. **“Show research”** opens the saved research brief. Findings and
+references stay with your blog and can help later articles.
+
+A readable research report is written automatically; no separate report command
+is needed.
+
+The workflow adapts [Deep Research skills](https://github.com/Weizhena/Deep-Research-skills)
+and is included in installer **1.15.0**. Downloading and reinstalling a newer
+package updates the bundled research workflows together with Blog Studio. It uses the tools already available in
+Codex or Claude Code. Public searches use generic questions; private drafts stay
+in your workspace and selected private Hub. You can say **“Use only my sources.”**
+Proofreading stays focused on wording.
+
 ## Work with your team in Google Docs
 
 If you start from a Google Doc, Blog Studio saves the original and a formatted

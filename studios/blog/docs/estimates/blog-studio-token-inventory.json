@@ -4,9 +4,9 @@
   "excluded": "host context, conversation, author data, outputs, scripts, licenses, metadata, locks, preview",
   "files": {
     "SKILL.md": {
-      "characters": 3847,
-      "estimated_tokens": 962,
-      "sha256": "d10071c9c52580df89f479f9cab2545cc3f01f1ecfccc676e2ffe2b537ea42fc"
+      "characters": 3926,
+      "estimated_tokens": 982,
+      "sha256": "3d877966c4f4115b5465de94c5e4dc108c754e21e6bb16ed963b83f82b08bb4e"
     },
     "references/blogforge/generate/prompts/document.j2": {
       "characters": 2237,
@@ -89,9 +89,9 @@
       "sha256": "61d473b4e99547b5b90f2cad57d2ed314a402d07e964e209668b492b213de338"
     },
     "references/entry-flows.md": {
-      "characters": 2225,
-      "estimated_tokens": 557,
-      "sha256": "74705e1bdaa6e1f226454ac15d57d3f17a57c7d0081f4ffb2594776aeb408380"
+      "characters": 2375,
+      "estimated_tokens": 594,
+      "sha256": "9219f128ad425db35643b6dbcea52df0995767da40917d8a5af202a35c35cd27"
     },
     "references/export.md": {
       "characters": 1105,
@@ -193,10 +193,15 @@
       "estimated_tokens": 415,
       "sha256": "a7fc75be17a70d3c06dea94dceada2e3858cdf8dac13efc3038eb39e267ea430"
     },
+    "references/modules/blog-deep-research.md": {
+      "characters": 6492,
+      "estimated_tokens": 1623,
+      "sha256": "1091c1b403485c1554e4468cafd76ad8c9e38db997fbe556abd7b92d54689c75"
+    },
     "references/modules/blog-fact-check.md": {
-      "characters": 2015,
-      "estimated_tokens": 504,
-      "sha256": "e146ea9d21410d5ba9886681277f3fddcdf4cb64fbf2c7ee39ebe2753fee0f1b"
+      "characters": 2457,
+      "estimated_tokens": 615,
+      "sha256": "bba3863ab166037a91ed3523ea73d21366b36f07c5916f29ff3efde30fcf8461"
     },
     "references/modules/blog-geo-review.md": {
       "characters": 1596,
@@ -284,9 +289,9 @@
       "sha256": "f1f7bbe9261648a433bbd0ae10d8b8177f606984321ba6c66aaaf6769730f1be"
     },
     "references/package-notes.md": {
-      "characters": 2239,
-      "estimated_tokens": 560,
-      "sha256": "96c8c1e623ca24f884c24afe2cafdcecd4f5d1dd54163bd0195423dfb8263c37"
+      "characters": 2751,
+      "estimated_tokens": 688,
+      "sha256": "e5e9b227ef6d92f80efbf94cc36cdd83d49ba3972dad2b234b86ef33f3d102f2"
     },
     "references/privacy.md": {
       "characters": 4170,
@@ -314,9 +319,9 @@
       "sha256": "ff220715a53d4b42937990a5d40a484c0a3eee145109e7154b96d1555ba30100"
     },
     "references/short-commands.md": {
-      "characters": 4293,
-      "estimated_tokens": 1074,
-      "sha256": "16059dc04de39d19dabb86923b71e9206792b6dc56d82131c528473db492b00b"
+      "characters": 4644,
+      "estimated_tokens": 1161,
+      "sha256": "fab2f64df3a90abc052cf38bd49793289cc98f9be627a7ed2cbfb43d6b40f201"
     },
     "references/style/examples.md": {
       "characters": 1936,
@@ -538,6 +543,31 @@
       "estimated_tokens": 717,
       "sha256": "e66aee9580652279badef206cb4bccd6fe02fe8e70a771d117f1c32503069201"
     },
+    "references/upstream/deep-research/research/SOURCE.md": {
+      "characters": 4263,
+      "estimated_tokens": 1066,
+      "sha256": "575073c5483454245d6c29ef8f12c77a0831b5d9eec0e98631129db1a6425671"
+    },
+    "references/upstream/deep-research/research-add-fields/SOURCE.md": {
+      "characters": 858,
+      "estimated_tokens": 215,
+      "sha256": "93757fb5ea7462de38206c0f2c18cb7726fe773137f6b7959d6587ae2f2bfcf9"
+    },
+    "references/upstream/deep-research/research-add-items/SOURCE.md": {
+      "characters": 721,
+      "estimated_tokens": 181,
+      "sha256": "52195e187e55941525e6006709dacb0b409448717958af86e73cbf6682b9e616"
+    },
+    "references/upstream/deep-research/research-deep/SOURCE.md": {
+      "characters": 3318,
+      "estimated_tokens": 830,
+      "sha256": "8fcc496fb1af291d30a9aa70e005f33cfbe08c8fff1942fb50ff7c9979d532cb"
+    },
+    "references/upstream/deep-research/research-report/SOURCE.md": {
+      "characters": 3776,
+      "estimated_tokens": 944,
+      "sha256": "3f338b814cda64564170b821eb9d9f597126639d8330b0d9b43dff9fbcbb945b"
+    },
     "references/upstream/marketingskills/skills/content-strategy/SOURCE.md": {
       "characters": 18533,
       "estimated_tokens": 4634,
@@ -669,7 +699,7 @@
       "sha256": "36c39ead07081df6544bf0eb981b19bb4046c17ce95805acc923d3ac7c52d40e"
     }
   },
-  "library_tokens": 203984,
+  "library_tokens": 209226,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -684,7 +714,7 @@
         "references/modules/blog-argument-outline.md"
       ],
       "scenario": "New local outline-only article from readable supplied notes and an explicit tone; no voice profile or hub.",
-      "estimated_tokens": 4357
+      "estimated_tokens": 4414
     },
     "first_draft_with_sources": {
       "files": [
@@ -700,7 +730,7 @@
         "references/modules/blog-write.md"
       ],
       "scenario": "New local draft from supplied notes and explicit tone; internal outline, no specialized template or extra composition reference.",
-      "estimated_tokens": 5973
+      "estimated_tokens": 6030
     },
     "quick_edit": {
       "files": [
@@ -716,7 +746,7 @@
         "references/modules/blog-voice-check.md"
       ],
       "scenario": "Saved local article; controlled polish, selected voice-rule check and saved review. No new source/profile intake.",
-      "estimated_tokens": 5379
+      "estimated_tokens": 5436
     },
     "voice_setup": {
       "files": [
@@ -731,7 +761,7 @@
         "references/workspace/profiles.md"
       ],
       "scenario": "New standalone profile from selected readable authored samples; no article creation.",
-      "estimated_tokens": 4454
+      "estimated_tokens": 4511
     },
     "comprehensive_review": {
       "files": [
@@ -750,7 +780,7 @@
         "references/review/evidence.md"
       ],
       "scenario": "Saved article with selected evidence/voice; five requested feedback checks and stored coverage, without rewriting or an optional deep humanization rubric.",
-      "estimated_tokens": 5966
+      "estimated_tokens": 6134
     },
     "quick_polish": {
       "files": [
@@ -762,13 +792,13 @@
         "references/modules/copy-editing.md"
       ],
       "scenario": "Saved local draft; light clarity and voice polish, no separately requested check or recorded review.",
-      "estimated_tokens": 4163
+      "estimated_tokens": 4220
     }
   },
   "bootstrap": {
     "path": "bootstrap/blog-studio/SKILL.md",
-    "estimated_tokens": 1518,
-    "sha256": "6db48de7b4b228621ab6b3a26810a0b35d6bb098c064e9ecd21f8a60bb23f9a6",
+    "estimated_tokens": 1613,
+    "sha256": "c7da90036db06c90c23d4c24106f459d35359fd8c357543828107963a92e4a18",
     "note": "Added to repository-guidance routes; excluded from the full offline corpus."
   },
   "team_hub_routes": {
@@ -806,7 +836,7 @@
       "SKILL.md",
       "references/entry-flows.md"
     ],
-    "estimated_tokens": 1519,
+    "estimated_tokens": 1576,
     "target_tokens": [
       800,
       1200
@@ -908,7 +938,7 @@
       "files": [
         "references/short-commands.md"
       ],
-      "estimated_tokens": 1074,
+      "estimated_tokens": 1161,
       "note": "Conditional runtime 1.7 author operation; ordinary entry and author data are additional."
     },
     "reference_memory": {
@@ -943,6 +973,16 @@
         "references/modules/copywriting.md"
       ],
       "estimated_tokens": 847
+    },
+    "deep_research": {
+      "files": [
+        "references/modules/blog-deep-research.md",
+        "references/privacy.md",
+        "references/workspace/sources.md",
+        "references/review/evidence.md"
+      ],
+      "estimated_tokens": 3595,
+      "note": "Conditional research only; immutable upstream sources stay unloaded during ordinary use."
     }
   },
   "google_operations": {

@@ -7,6 +7,12 @@ import studio
 from hub_store import HubError, encoded, sha
 
 ROUTES = {
+    'research this topic': (['deep-research'], ['references/modules/blog-deep-research.md']),
+    'deep research': (['deep-research'], ['references/modules/blog-deep-research.md']),
+    'use only my sources': (['research-policy-supplied-only'], ['references/modules/blog-deep-research.md']),
+    'show research': (['research-status'], ['references/modules/blog-deep-research.md']),
+    **{text: (['research-evidence', 'factual-support'], ['references/modules/blog-fact-check.md'])
+       for text in ('fact-check', 'fact check', 'check the facts')},
     'show evidence': (['editorial-evidence'], ['references/editorial/evidence.md']),
     'can we back this up': (['editorial-evidence'], ['references/editorial/evidence.md']),
     'package this for launch': (['editorial-package'], ['references/editorial/package.md']),

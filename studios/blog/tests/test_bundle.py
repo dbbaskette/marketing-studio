@@ -52,6 +52,10 @@ class BundleTests(unittest.TestCase):
             fresh = base / 'not-created'
             self.assertEqual(json.loads(run(sys.executable,str(runtime/'studio.py'),'--root',str(fresh),'home'))['workspace_status'],'new')
             self.assertFalse(fresh.exists())
+            self.assertTrue((runtime/'deep_research.py').is_file())
+            self.assertTrue((runtime.parent/'references/modules/blog-deep-research.md').is_file())
+            self.assertTrue((runtime.parent/'references/upstream/deep-research/LICENSE').is_file())
+            self.assertIn('plan',run(sys.executable,str(runtime/'studio.py'),'--root',str(fresh),'research','--help'))
             self.assertEqual(runtime, (home / '.claude/skills/blog-studio/scripts').resolve())
             remote = base / 'fixture repository'
             remote.mkdir()
