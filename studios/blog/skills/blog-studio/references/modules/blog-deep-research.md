@@ -24,6 +24,22 @@ force. Do not fetch more sources when the author limits the source set. Record
 “Use only my sources” with `article research-policy --id <id> --policy supplied-only`;
 change it to `web-allowed` only when the author explicitly permits outside research.
 
+When research scope is unresolved, offer these two choices once:
+
+| Choice | What happens |
+| --- | --- |
+| **Uploaded sources only** | Read the selected uploaded/supplied documents and retained references. Make no new external searches, fetches or uploads; report gaps. |
+| **Uploaded sources plus external research** | Read those documents first, then look up public evidence for gaps and contrary findings. Cite both. |
+
+Save the first choice as `supplied-only`, the second as `web-allowed`, using
+`article research-policy`. Reuse it for research and fact-checking this blog.
+Explicit wording such as “Research uploaded sources only” or “Research uploaded
+sources plus external research” selects the mode directly; do not ask again.
+For an unspecified request, ask the two-option question before external lookup;
+reading local selected documents can proceed while awaiting the answer.
+“Use only my sources” and “Use uploaded sources plus external research” can
+change a saved choice. Do not broaden scope merely because evidence is missing.
+
 Keep the claim quote and its manuscript character offset local. Form separate,
 generic public queries from established public product names/concepts/versions.
 Apply [privacy](../privacy.md) before each external query; never copy a private
@@ -31,6 +47,29 @@ claim, title, customer name, internal URL or draft into search. A null public
 query means local/supplied evidence only. The helper rejects obvious URLs/paths
 but cannot classify confidentiality; the harness must review the actual query.
 If a safe question cannot be formed, record the gap rather than disclose it.
+
+## Start with uploaded and linked documents
+
+Use the article's supplied reference documents as research inputs before public
+lookup: uploaded Word/PDF/text files, pasted notes, Google Doc snapshots and
+linked pages. Read their selected exact revisions and relevant surrounding
+passages. Documents may establish facts, raise research questions, or contradict
+public sources. Keep both accounts and their version/date/context visible;
+do not automatically prefer a web result over the author's evidence.
+
+Normalize uploads through [source intake](blog-source-intake.md) and
+[source storage](../workspace/sources.md), preserving the original file and
+readable extraction. Attach them as `reference` when supplied for research.
+Manuscripts and voice samples need that role explicitly; they are not evidence
+merely because they were uploaded. Use only the selected article's documents
+and deliberately reused memory, not every file in the workspace.
+
+Cite a supplied document's filename/title, pinned source revision, exact passage
+and page/heading in the report, alongside any public citations. Private document
+text stays local/in the selected Hub; never send it to search or an external
+upload service. Unreadable scans or missing extraction remain pending/unavailable
+and are named as coverage gaps. Supplied-only research still writes its report
+when useful; it can finish with unresolved questions without public browsing.
 
 ## Research in the existing harness
 

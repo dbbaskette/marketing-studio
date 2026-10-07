@@ -44,6 +44,15 @@ writing and preferences.
 Say **“Research this topic”** to gather useful background before outlining or
 drafting. Blog Studio also offers research when you choose your sources.
 
+Uploaded source documents are included in research. Blog Studio reads them
+first, retains their originals, and cites their relevant passages in the report.
+
+Choose **Uploaded sources only** or **Uploaded sources plus external research**.
+Blog Studio asks once and remembers the choice for this blog. You can also say
+**“Research uploaded sources only”** or **“Research uploaded sources plus external
+research”** to start directly. The first option stays within your supplied
+material; the second adds public evidence where it helps.
+
 Say **“Fact-check”** to check the current blog: it uses your saved references,
 researches gaps, and shows supporting sources, contradictions and unanswered
 questions. **“Show research”** opens the saved research brief. Findings and

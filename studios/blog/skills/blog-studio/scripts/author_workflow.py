@@ -10,6 +10,9 @@ ROUTES = {
     'research this topic': (['deep-research'], ['references/modules/blog-deep-research.md']),
     'deep research': (['deep-research'], ['references/modules/blog-deep-research.md']),
     'use only my sources': (['research-policy-supplied-only'], ['references/modules/blog-deep-research.md']),
+    'use uploaded sources plus external research': (['research-policy-web-allowed'], ['references/modules/blog-deep-research.md']),
+    'research uploaded sources only': (['research-policy-supplied-only', 'deep-research'], ['references/modules/blog-deep-research.md']),
+    'research uploaded sources plus external research': (['research-policy-web-allowed', 'deep-research'], ['references/modules/blog-deep-research.md']),
     'show research': (['research-status'], ['references/modules/blog-deep-research.md']),
     **{text: (['research-evidence', 'factual-support'], ['references/modules/blog-fact-check.md'])
        for text in ('fact-check', 'fact check', 'check the facts')},
@@ -119,10 +122,21 @@ def route(root, text, article_id=None, destination=None):
     selected, question = resolve(root, article_id, query)
     if question: return question
     directory, record = selected
+    research_options = {}
+    if any(a in actions for a in ('deep-research', 'research-evidence', 'research-policy-supplied-only', 'research-policy-web-allowed')):
+        policy = ('supplied-only' if 'research-policy-supplied-only' in actions else
+                  'web-allowed' if 'research-policy-web-allowed' in actions else record.get('research_policy', 'unspecified'))
+        research_options = {'research_policy': policy,
+                            'research_scope': {'supplied-only': 'supplied-only', 'web-allowed': 'public-web'}.get(policy),
+                            'research_scope_choices': [] if policy != 'unspecified' else [
+                                {'label': 'Uploaded sources only', 'policy': 'supplied-only'},
+                                {'label': 'Uploaded sources plus external research', 'policy': 'web-allowed'}],
+                            'research_scope_question': 'Use uploaded sources only, or uploaded sources plus external research?' if policy == 'unspecified' else None}
     kind = 'draft' if (directory / 'DRAFT.md').exists() else 'outline'
     base = record.get('google', {}).get('baselines', {}).get(kind)
     return {'status': 'routed', 'id': record['id'], 'title': record['title'], 'kind': kind,
             'actions': actions, 'references': references, 'edit_numbers':edit_numbers,
+            **research_options,
             **({'review_mode': review_mode} if 'google-suggest' in actions else {}),
             'linked_document': base['document']['url'] if base else None,
             'review_folder': record.get('writing_preferences', {}).get('review_folder'),

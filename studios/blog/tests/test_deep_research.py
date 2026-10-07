@@ -25,7 +25,7 @@ class DeepResearchTests(unittest.TestCase):
         result = subprocess.run([sys.executable, str(SCRIPTS / 'studio.py'), '--root', str(root), *words], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr);return json.loads(result.stdout)
 
-    def article(self, root, policy='unspecified', mode='first-draft'):
+    def article(self, root, policy='web-allowed', mode='first-draft'):
         return self.cli(root, 'article', 'create', '--title', 'Synthetic blog', '--mode', mode, '--research', policy)['id']
 
     def file(self, name, value):
@@ -91,6 +91,19 @@ class DeepResearchTests(unittest.TestCase):
                 'items': [{'id': 'bad', 'question': 'Verify.', 'public_query': 'https://internal.example/private', 'claim': None}]})
         self.assertEqual(research.status(self.root, self.ident)['pending'], ['availability'])
 
+    def test_uploaded_source_document_supplied_only_research_retains_and_cites_original(self):
+        self.cli(self.root, 'article', 'research-policy', '--id', self.ident, '--policy', 'supplied-only')
+        text = 'Internal test document: ExampleDB 2.0 supports predicate pruning.'
+        uploaded = self.file('Uploaded product notes.md', text)
+        src = self.cli(self.root, 'source', 'add', '--name', 'Uploaded product notes', '--file', uploaded, '--purpose', 'reference')
+        self.cli(self.root, 'article', 'attach', '--id', self.ident, '--source', src['id'], '--purpose', 'reference')
+        run = self.plan(scope='supplied-only');self.result(run, [self.cite(src, text)])
+        value = research.status(self.root, self.ident);self.assertEqual(value['status'], 'complete')
+        report = Path(value['report']).read_text();self.assertIn('Uploaded product notes', report);self.assertIn(text, report)
+        self.assertEqual((self.root / 'sources' / src['id'] / src['original_path']).read_text(), text)
+        plan = studio.read_json(Path(value['file']));self.assertIsNone(plan['items'][0]['public_query'])
+        self.assertEqual(plan['scope'], 'supplied-only');self.assertEqual((self.directory / 'DRAFT.md').read_text(), self.draft)
+
     def test_source_scope_can_be_changed_explicitly_and_reports_escape_embeds(self):
         self.cli(self.root, 'article', 'research-policy', '--id', self.ident, '--policy', 'supplied-only')
         with self.assertRaisesRegex(ValueError, 'limited to supplied'):
@@ -101,6 +114,36 @@ class DeepResearchTests(unittest.TestCase):
         report = Path(research.status(self.root, self.ident)['report']).read_text()
         self.assertNotIn('![tracking]', report);self.assertNotIn('<script>', report)
         self.assertEqual(studio.read_json(self.directory / 'derived/research.json')['results']['availability']['evidence'][0]['quote'], text)
+
+    def test_uploaded_plus_external_research_cites_both_sources_and_retains_choice(self):
+        text = 'Uploaded notes describe predicate pruning in ExampleDB 2.0.'
+        src = self.cli(self.root, 'source', 'add', '--name', 'Uploaded specification',
+                       '--file', self.file('specification.md', text), '--purpose', 'reference')
+        self.cli(self.root, 'article', 'attach', '--id', self.ident, '--source', src['id'], '--purpose', 'reference')
+        public, public_text = self.source()
+        run = self.plan();self.result(run, [self.cite(src, text), self.cite(public, public_text)])
+        value = research.status(self.root, self.ident);report = Path(value['report']).read_text()
+        self.assertEqual(value['scope_label'], 'Uploaded sources plus external research')
+        self.assertIn('Uploaded specification', report);self.assertIn('https://example.org/release-2.0', report)
+        self.assertEqual(len(studio.read_json(Path(value['file']))['results']['availability']['evidence']), 2)
+        self.assertEqual(author_workflow.route(self.root, 'Fact-check')['research_scope'], 'public-web')
+        self.assertEqual((self.directory / 'DRAFT.md').read_text(), self.draft)
+
+    def test_scope_choice_is_required_for_external_lookup_and_narrowing_stales_existing_run(self):
+        undecided = self.article(self.root, policy='unspecified')
+        route = author_workflow.route(self.root, 'Research this topic', article_id=undecided)
+        self.assertEqual([c['label'] for c in route['research_scope_choices']],
+                         ['Uploaded sources only', 'Uploaded sources plus external research'])
+        with self.assertRaisesRegex(ValueError, 'before public lookup'):
+            research.plan(self.root, undecided, {'purpose': 'planning', 'scope': 'public-web', 'items': []})
+        self.cli(self.root, 'article', 'research-policy', '--id', undecided, '--policy', 'supplied-only')
+        route = author_workflow.route(self.root, 'Fact-check', article_id=undecided)
+        self.assertEqual(route['research_scope'], 'supplied-only');self.assertEqual(route['research_scope_choices'], [])
+        run = self.plan();self.result(run, status='insufficient')
+        self.cli(self.root, 'article', 'research-policy', '--id', self.ident, '--policy', 'supplied-only')
+        self.assertEqual(research.status(self.root, self.ident)['status'], 'stale')
+        with self.assertRaisesRegex(ValueError, 'now limited to supplied'):self.result(run, status='insufficient')
+        self.assertNotEqual(self.plan(scope='supplied-only'), run)
 
     def test_changed_manuscript_and_changed_source_stale_results(self):
         run = self.plan();src, text = self.source();self.result(run, [self.cite(src, text)])
@@ -116,6 +159,12 @@ class DeepResearchTests(unittest.TestCase):
         self.assertEqual(author_workflow.route(self.root, 'Fact-check')['actions'], ['research-evidence', 'factual-support'])
         self.assertEqual(author_workflow.route(self.root, 'Show research')['actions'], ['research-status'])
         self.assertEqual(author_workflow.route(self.root, 'Proofread')['actions'], ['proofread'])
+        local = author_workflow.route(self.root, 'Research uploaded sources only')
+        self.assertEqual(local['actions'], ['research-policy-supplied-only', 'deep-research'])
+        self.assertEqual(local['research_scope'], 'supplied-only')
+        external = author_workflow.route(self.root, 'Research uploaded sources plus external research')
+        self.assertEqual(external['actions'], ['research-policy-web-allowed', 'deep-research'])
+        self.assertEqual(external['research_scope'], 'public-web')
 
     def test_synthetic_hub_offline_queue_cross_clone_resumes_report_and_sources(self):
         run = self.plan();src, text = self.source();self.result(run, [self.cite(src, text)])

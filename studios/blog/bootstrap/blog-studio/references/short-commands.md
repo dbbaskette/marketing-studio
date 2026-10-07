@@ -58,4 +58,8 @@ requested operation. These routes preserve writing pins and never approve releas
 the current blog. **“Fact-check”** or **“Check the facts”** inspects existing
 evidence, researches unresolved claims within the permitted scope, then saves
 the factual-support review. **“Show research”** shows the saved brief and gaps.
+Research offers **Uploaded sources only** or **Uploaded sources plus external
+research** once when scope is undecided. “Research uploaded sources only” and
+“Research uploaded sources plus external research” select a mode directly;
+record it with `article research-policy` and reuse it for the current blog.
 Proofreading remains separate.

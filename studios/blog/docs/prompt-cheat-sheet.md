@@ -55,7 +55,9 @@ approve first, say **“Push as suggestions.”**
 | Write the draft. | Draft from the current brief and material |
 | Proofread. | Correct spelling, grammar, and punctuation |
 | Tighten it up. | Improve concision and remove repetition |
-| Research this topic. | Gather cited background before outlining or drafting |
+| Research this topic. | Use uploaded references and gather cited background; write the report automatically |
+| Research uploaded sources only. | Research your supplied material without external lookup |
+| Research uploaded sources plus external research. | Start with uploads and add public evidence |
 | Fact-check. | Research evidence gaps and check the current blog’s claims |
 | Show research. | See the saved research brief and unanswered questions |
 | Use only my sources. | Keep research and checks within the supplied material |

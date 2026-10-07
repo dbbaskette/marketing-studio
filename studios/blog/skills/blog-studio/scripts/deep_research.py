@@ -6,6 +6,7 @@ from pathlib import Path
 import studio
 
 VERDICTS = ('supported', 'contradicted', 'insufficient', 'unavailable')
+SCOPE_LABELS = {'supplied-only': 'Uploaded sources only', 'public-web': 'Uploaded sources plus external research'}
 
 
 def nonempty(value, label, limit=4000):
@@ -35,7 +36,7 @@ def save(directory, record, value):
     studio.write_json(path, value)
     pending = [i['id'] for i in value['items'] if i['id'] not in value['results']]
     unresolved = [i for i, r in value['results'].items() if r['status'] in ('insufficient', 'unavailable')]
-    lines = ['# Research brief', '', f"Completed: {len(value['results'])}/{len(value['items'])}.",
+    lines = ['# Research brief', '', 'Scope: ' + SCOPE_LABELS[value['scope']] + '.', '', f"Completed: {len(value['results'])}/{len(value['items'])}.",
              'Pending: ' + (', '.join(pending) or 'none') + '.',
              'Unresolved: ' + (', '.join(unresolved) or 'none') + '.', '',
              'Research gathers evidence; the factual-support review evaluates the blog.', '']
@@ -62,6 +63,8 @@ def plan(root, ident, supplied):
         raise ValueError('Choose planning/fact-check and supplied-only/public-web.')
     if supplied['scope'] == 'public-web' and record.get('research_policy') == 'supplied-only':
         raise ValueError('This article is limited to supplied sources. Keep that scope or obtain an explicit policy change.')
+    if supplied['scope'] == 'public-web' and record.get('research_policy') != 'web-allowed':
+        raise ValueError('Choose uploaded sources only or uploaded sources plus external research before public lookup; save web-allowed for the latter.')
     items = supplied['items']
     if not isinstance(items, list) or not 1 <= len(items) <= 30:
         raise ValueError('Plan 1–30 focused research questions.')
@@ -123,6 +126,8 @@ def evidence(root, record, citation):
 def record_result(root, ident, run, item_id, supplied):
     directory, record = studio.item(root, 'articles', ident)
     path, _ = locations(directory);value = studio.read_json(path)
+    if value['scope'] == 'public-web' and record.get('research_policy') == 'supplied-only':
+        raise ValueError('This article is now limited to supplied sources. Refresh the plan with that scope.')
     if value['run'] != run or basis(directory) != value['inputs']:
         raise ValueError('Research plan changed or manuscript is stale. Refresh the plan before recording results.')
     if item_id not in {i['id'] for i in value['items']}:
@@ -144,6 +149,7 @@ def status(root, ident):
     if not path.exists():return {'id': ident, 'status': 'not-started'}
     value = studio.read_json(path)
     stale = basis(directory) != value['inputs'] or studio.digest(path.read_bytes()) != record.get('research', {}).get('sha256')
+    stale |= value['scope'] == 'public-web' and record.get('research_policy') == 'supplied-only'
     for result in value['results'].values():
         for selected in result['evidence']:
             try:
@@ -166,7 +172,7 @@ def status(root, ident):
     pending = [i['id'] for i in value['items'] if i['id'] not in value['results']]
     unresolved = [i for i, r in value['results'].items() if r['status'] in ('insufficient', 'unavailable')]
     return {'id': ident, 'run': value['run'], 'status': 'stale' if stale else 'in-progress' if pending else 'complete',
-            'purpose': value['purpose'], 'scope': value['scope'], 'pending': pending, 'unresolved': unresolved,
+            'purpose': value['purpose'], 'scope': value['scope'], 'scope_label': SCOPE_LABELS[value['scope']], 'pending': pending, 'unresolved': unresolved,
             'completed': len(value['results']), 'report': str(report), 'file': str(path),
             'assessment': 'Research coverage only; does not mark the factual-support review current.'}
 

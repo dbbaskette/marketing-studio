@@ -89,9 +89,9 @@
       "sha256": "61d473b4e99547b5b90f2cad57d2ed314a402d07e964e209668b492b213de338"
     },
     "references/entry-flows.md": {
-      "characters": 2375,
-      "estimated_tokens": 594,
-      "sha256": "9219f128ad425db35643b6dbcea52df0995767da40917d8a5af202a35c35cd27"
+      "characters": 2611,
+      "estimated_tokens": 653,
+      "sha256": "c8328a76633bff2d858cb28d0c83a5e7ef23a68b6ea72b77c3998bed31e9f528"
     },
     "references/export.md": {
       "characters": 1105,
@@ -194,9 +194,9 @@
       "sha256": "a7fc75be17a70d3c06dea94dceada2e3858cdf8dac13efc3038eb39e267ea430"
     },
     "references/modules/blog-deep-research.md": {
-      "characters": 6492,
-      "estimated_tokens": 1623,
-      "sha256": "1091c1b403485c1554e4468cafd76ad8c9e38db997fbe556abd7b92d54689c75"
+      "characters": 8962,
+      "estimated_tokens": 2241,
+      "sha256": "51cdf407036914f4fcc4d4530a7006496821b6a24f9029b67bee829a2161256f"
     },
     "references/modules/blog-fact-check.md": {
       "characters": 2457,
@@ -319,9 +319,9 @@
       "sha256": "ff220715a53d4b42937990a5d40a484c0a3eee145109e7154b96d1555ba30100"
     },
     "references/short-commands.md": {
-      "characters": 4644,
-      "estimated_tokens": 1161,
-      "sha256": "fab2f64df3a90abc052cf38bd49793289cc98f9be627a7ed2cbfb43d6b40f201"
+      "characters": 4951,
+      "estimated_tokens": 1238,
+      "sha256": "ac1a736a71e83bdf1845fd47129376dda51420cad0e15fe067cbebc642bc84be"
     },
     "references/style/examples.md": {
       "characters": 1936,
@@ -699,7 +699,7 @@
       "sha256": "36c39ead07081df6544bf0eb981b19bb4046c17ce95805acc923d3ac7c52d40e"
     }
   },
-  "library_tokens": 209226,
+  "library_tokens": 209980,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -714,7 +714,7 @@
         "references/modules/blog-argument-outline.md"
       ],
       "scenario": "New local outline-only article from readable supplied notes and an explicit tone; no voice profile or hub.",
-      "estimated_tokens": 4414
+      "estimated_tokens": 4473
     },
     "first_draft_with_sources": {
       "files": [
@@ -730,7 +730,7 @@
         "references/modules/blog-write.md"
       ],
       "scenario": "New local draft from supplied notes and explicit tone; internal outline, no specialized template or extra composition reference.",
-      "estimated_tokens": 6030
+      "estimated_tokens": 6089
     },
     "quick_edit": {
       "files": [
@@ -746,7 +746,7 @@
         "references/modules/blog-voice-check.md"
       ],
       "scenario": "Saved local article; controlled polish, selected voice-rule check and saved review. No new source/profile intake.",
-      "estimated_tokens": 5436
+      "estimated_tokens": 5495
     },
     "voice_setup": {
       "files": [
@@ -761,7 +761,7 @@
         "references/workspace/profiles.md"
       ],
       "scenario": "New standalone profile from selected readable authored samples; no article creation.",
-      "estimated_tokens": 4511
+      "estimated_tokens": 4570
     },
     "comprehensive_review": {
       "files": [
@@ -780,7 +780,7 @@
         "references/review/evidence.md"
       ],
       "scenario": "Saved article with selected evidence/voice; five requested feedback checks and stored coverage, without rewriting or an optional deep humanization rubric.",
-      "estimated_tokens": 6134
+      "estimated_tokens": 6193
     },
     "quick_polish": {
       "files": [
@@ -792,7 +792,7 @@
         "references/modules/copy-editing.md"
       ],
       "scenario": "Saved local draft; light clarity and voice polish, no separately requested check or recorded review.",
-      "estimated_tokens": 4220
+      "estimated_tokens": 4279
     }
   },
   "bootstrap": {
@@ -836,7 +836,7 @@
       "SKILL.md",
       "references/entry-flows.md"
     ],
-    "estimated_tokens": 1576,
+    "estimated_tokens": 1635,
     "target_tokens": [
       800,
       1200
@@ -938,7 +938,7 @@
       "files": [
         "references/short-commands.md"
       ],
-      "estimated_tokens": 1161,
+      "estimated_tokens": 1238,
       "note": "Conditional runtime 1.7 author operation; ordinary entry and author data are additional."
     },
     "reference_memory": {
@@ -981,7 +981,7 @@
         "references/workspace/sources.md",
         "references/review/evidence.md"
       ],
-      "estimated_tokens": 3595,
+      "estimated_tokens": 4213,
       "note": "Conditional research only; immutable upstream sources stay unloaded during ordinary use."
     }
   },
