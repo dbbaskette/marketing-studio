@@ -98,16 +98,8 @@ Disposable-home and local-Git tests cover both target layouts, task pins, update
 
 See [troubleshooting](troubleshooting.md), [package notes](../PACKAGE.md), and the [Google Docs workflows](google-docs.md).
 
-## Repeat the isolated Mac checks
-
-From the source checkout, maintainers can run `bash scripts/ci/tart-macos.sh` with the existing
-`macos-test-suite` runner. Set `MACOS_TEST_SUITE` to its checkout and `TART_BASE`
-to a stopped prepared base if different from the defaults. The guest needs
-Python 3.11+, Git and Node (Node tests the optional prompt generator). The wrapper
-clones the base, mounts source read-only, runs in a guest copy, and retains results
-and the stopped clone. It never mounts host credentials or starts model calls.
-The guest result proves the listed automated checks only; live sign-in, trust
-consent and conversational checks retain their own evidence.
+Maintainer verification commands are in [development](development.md).
+CI infrastructure is separate from Blog Studio installation and use.
 
 ## Optional Google Docs
 

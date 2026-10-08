@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The hosted workflow's checks, with an explicit matrix interpreter.
+# Project verification commands, with an explicit supported interpreter.
 set -euo pipefail
 python_bin=${1:?Pass the Python interpreter}
 results=${2:?Pass a new results directory}

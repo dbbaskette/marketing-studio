@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Disposable Tart guest only. No sign-in, host credentials, or model calls.
+# Project checks in an isolated Mac environment. No sign-in or model calls.
 set -euo pipefail
 source_dir='/Volumes/My Shared Files/source'
 results_dir='/Volumes/My Shared Files/results'
-[[ -d "$source_dir" && -d "$results_dir" ]] || { echo 'Run through the Tart test runner.' >&2; exit 1; }
+[[ -d "$source_dir" && -d "$results_dir" ]] || { echo 'Provide isolated source and results mounts.' >&2; exit 1; }
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 python_bin=''
 for candidate in python3 python3.14 python3.13 python3.12 python3.11; do

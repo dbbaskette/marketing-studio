@@ -35,17 +35,16 @@ python3 scripts/package_installer.py
 
 When guidance changes, run `scripts/measure_guidance.py` without `--check` first.
 Build packages after the final source and bundled documentation edits. CI checks
-Linux/macOS on Python 3.11 and 3.13. Run `bash scripts/ci/tart-matrix.sh HEAD`
-for the same four check cells locally; see [local CI](local-ci.md) for setup,
-logs and the remaining automatic-trigger and architecture limitations.
-See `scripts/ci/` for isolated Tart validation;
-Tart is a developer tool, not an author prerequisite.
+Linux/macOS on Python 3.11 and 3.13. Use `scripts/ci/check.sh` for the common
+checks and the externally managed CI runners for isolated verification. See
+[verification boundary](local-ci.md): the project defines its checks; the shared
+infrastructure owns VM and runner lifecycle.
 
 [Desk usability validation](desk-usability-validation.md) covers memory/access
 handling, responsive layouts and article/finding continuation.
 
 [Desk concurrency validation](desk-concurrency-validation.md) records the
-Tart-tested request-ordering and source-conflict fixes.
+verified request-ordering and source-conflict fixes.
 
 [Remaining acceptance](remaining-acceptance.md) maps every open issue to delivered
 implementation and its live-only remainder. [Google capabilities](google-capabilities.md)
