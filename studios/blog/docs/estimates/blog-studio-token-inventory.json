@@ -4,9 +4,9 @@
   "excluded": "host context, conversation, author data, outputs, scripts, licenses, metadata, locks, preview",
   "files": {
     "SKILL.md": {
-      "characters": 3926,
-      "estimated_tokens": 982,
-      "sha256": "3d877966c4f4115b5465de94c5e4dc108c754e21e6bb16ed963b83f82b08bb4e"
+      "characters": 4005,
+      "estimated_tokens": 1002,
+      "sha256": "17bd74e036a56e3e2893b26d2245e0cb4b6486dd7c3e9e3aa85514112461aab2"
     },
     "references/blogforge/generate/prompts/document.j2": {
       "characters": 2237,
@@ -42,6 +42,11 @@
       "characters": 3393,
       "estimated_tokens": 849,
       "sha256": "0d3814cfa31a8836931a4ccf8bf35db4c72cc4dce80a31f5cf4a73c9397cc7b8"
+    },
+    "references/brand-handoff.md": {
+      "characters": 1372,
+      "estimated_tokens": 343,
+      "sha256": "47cd7c54870cf384e10fb3a69dfb7a1a2e259ecf0822a9ddf2993de79c1f1484"
     },
     "references/composition.md": {
       "characters": 1255,
@@ -699,7 +704,7 @@
       "sha256": "36c39ead07081df6544bf0eb981b19bb4046c17ce95805acc923d3ac7c52d40e"
     }
   },
-  "library_tokens": 209980,
+  "library_tokens": 210343,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -714,7 +719,7 @@
         "references/modules/blog-argument-outline.md"
       ],
       "scenario": "New local outline-only article from readable supplied notes and an explicit tone; no voice profile or hub.",
-      "estimated_tokens": 4473
+      "estimated_tokens": 4493
     },
     "first_draft_with_sources": {
       "files": [
@@ -730,7 +735,7 @@
         "references/modules/blog-write.md"
       ],
       "scenario": "New local draft from supplied notes and explicit tone; internal outline, no specialized template or extra composition reference.",
-      "estimated_tokens": 6089
+      "estimated_tokens": 6109
     },
     "quick_edit": {
       "files": [
@@ -746,7 +751,7 @@
         "references/modules/blog-voice-check.md"
       ],
       "scenario": "Saved local article; controlled polish, selected voice-rule check and saved review. No new source/profile intake.",
-      "estimated_tokens": 5495
+      "estimated_tokens": 5515
     },
     "voice_setup": {
       "files": [
@@ -761,7 +766,7 @@
         "references/workspace/profiles.md"
       ],
       "scenario": "New standalone profile from selected readable authored samples; no article creation.",
-      "estimated_tokens": 4570
+      "estimated_tokens": 4590
     },
     "comprehensive_review": {
       "files": [
@@ -780,7 +785,7 @@
         "references/review/evidence.md"
       ],
       "scenario": "Saved article with selected evidence/voice; five requested feedback checks and stored coverage, without rewriting or an optional deep humanization rubric.",
-      "estimated_tokens": 6193
+      "estimated_tokens": 6213
     },
     "quick_polish": {
       "files": [
@@ -792,7 +797,7 @@
         "references/modules/copy-editing.md"
       ],
       "scenario": "Saved local draft; light clarity and voice polish, no separately requested check or recorded review.",
-      "estimated_tokens": 4279
+      "estimated_tokens": 4299
     }
   },
   "bootstrap": {
@@ -836,7 +841,7 @@
       "SKILL.md",
       "references/entry-flows.md"
     ],
-    "estimated_tokens": 1635,
+    "estimated_tokens": 1655,
     "target_tokens": [
       800,
       1200

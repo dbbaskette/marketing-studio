@@ -44,7 +44,8 @@ Read conditionally: [intake](references/intake.md) for incoming files/links;
 [headlines](references/headline-lab.md) for title variants;
 [review](references/review.md) for multiple requested checks;
 [export](references/export.md) for a requested file format;
-[Google Docs](references/google/workflow.md) for Google links or operations.
+[Google Docs](references/google/workflow.md) for Google links or operations;
+[brand handoff](references/brand-handoff.md) for an explicitly selected brand.
 
 Read [workspace](references/workspace.md) when discovering/resuming/saving
 work. Reuse checkpoints and exact source/voice/guidance pins; retain originals
