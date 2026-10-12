@@ -682,6 +682,14 @@ class HubEditorialTests(Fixture):
         self.assertEqual(management.dispatch(self.root, 'upload', data), saved)  # A replay returns the same saved result.
         self.assertEqual(len(list((self.root / 'sources').iterdir())), 1)
 
+    def test_held_save_receipt_explains_itself_and_offers_no_blind_retry(self):
+        value = {'id': 'a' * 64, 'label': 'Blog', 'local_saved': True, 'checked_at': 'now', 'hub': 'hub',
+                 'sharing': 'newer-hub-revision'}
+        shown = management.public_receipt(value)
+        self.assertFalse(shown['retry']);self.assertIn('newer version', shown['message'])
+        shown = management.public_receipt({**value, 'sharing': 'review-closed'})
+        self.assertTrue(shown['retry']);self.assertIn('new review', shown['message'])
+
     def test_sync_renders_the_board_despite_a_malformed_shared_record(self):
         # The generated Hub board is rebuilt on every sync; one bad record must not stop all sharing.
         self.hub.save('article', 'Odd editorial', 'body', sync=False, data={'studio': {'editorial': 'not-an-object'}})

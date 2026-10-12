@@ -518,7 +518,7 @@ def article_command(root, args):
             record['guidance'] = selected
     elif args.action == 'note':
         target = inside(directory, 'INTERVIEW.md' if args.kind == 'interview' else 'DECISIONS.md')
-        old = target.read_text() if target.exists() else ''
+        old = target.read_text(encoding='utf-8') if target.exists() else ''
         atomic(target, (old + '\n\n' + args.text.strip()).strip().encode() + b'\n')
     elif args.action == 'voice':
         if args.profile:

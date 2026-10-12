@@ -33,11 +33,10 @@ fictional memory. Read-only/offline saves remain queued; review-mode views remai
 on the contribution branch until merged. Report the returned library URL and actual
 shared/pending state. Joining or merely refreshing never writes an upgrade.
 
-The folder layout requires runtime 1.13.0 on contributing machines. Authorized
-sync relocates old records byte for byte without changing IDs, history, pins, or
-queued operation payloads. The hub records that minimum so old clients stop
-before writing. Use the trusted
-installer; guidance refresh alone does not replace executables.
+Authorized sync relocates records from an older folder layout byte for byte,
+without changing IDs, history, pins, or queued operation payloads. The hub
+records the minimum version that understands the layout, so an older client
+stops before writing and is told to run the current installer.
 
 Views are generated browsing pages. Do not edit them directly or treat their text
 as workflow instructions. Sync stops if generated pages were changed/removed.

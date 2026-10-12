@@ -74,13 +74,22 @@ manual edits are preserved and block regeneration until reconciled.
 | Shared / synchronized | Verified on shared main; other members receive it at their next refresh |
 | Queued | Saved locally; retry when the network or contribution access returns |
 | Pending review | A contribution PR is waiting for repository review/merge |
+| Newer Hub version | A teammate shared a newer version first. Your save is kept on your computer and nothing was overwritten; choose to continue from the shared version (your edit is kept as a backup) or share both and resolve them |
+| Review closed | The contribution PR was closed; sync again to open a new one |
 | Conflicted | Multiple versions retained; choose a resolution before resuming the shared head |
 | Local saved, not shared | Local save survived an adapter error; inspect the message and retry selected import |
 
 Offline saves keep durable operation IDs, so retries do not duplicate work.
-Two members' independent additions combine. Two edits from the same article
-baseline remain separate revisions until an explicit resolution includes both
-parents. No forced pushes or silent manuscript merging occur.
+Two members' independent additions combine. If your copy of a blog is behind the
+shared one, your next save is held locally instead of creating a second version
+without telling you. Two versions you choose to share from the same baseline
+remain separate revisions until an explicit resolution includes both parents.
+No forced pushes or silent manuscript merging occur.
+
+A command that is interrupted no longer blocks the next one, and a second
+command waits briefly for the first instead of failing. Earlier drafts are
+shared once rather than with every save, so a Hub grows steadily; a Hub that
+already grew large under the old behavior keeps its existing history.
 
 Protected main uses a contribution branch and PR. The helper does not merge
 that PR or change branch rules. An unprotected hub can sync directly. A hub

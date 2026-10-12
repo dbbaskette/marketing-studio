@@ -120,6 +120,8 @@ SHARING_MESSAGES = {
     'synchronized': 'Shared with the Team Hub.',
     'pending-review': 'Saved; waiting for contribution review.',
     'conflicting': 'Saved; competing Hub revisions need resolution in chat.',
+    'newer-hub-revision': 'Saved here; the Team Hub has a newer version. Continue this one in chat to bring them together.',
+    'review-closed': 'Saved; its contribution review was closed. Retry sync to open a new review.',
     'local-only': 'Saved in this workspace; no Team Hub selected.',
 }
 
@@ -158,7 +160,8 @@ def local_checkpoint(root, adapter, group, ident):
 def public_receipt(value):
     status = value['sharing']
     message = SHARING_MESSAGES.get(status, 'Saved locally; Hub sync needs attention.')
-    retry = bool(value['hub'] and status not in ('shared', 'synchronized', 'conflicting', 'local-only'))
+    # A held save needs the author's choice in chat; retrying the same push cannot succeed.
+    retry = bool(value['hub'] and status not in ('shared', 'synchronized', 'conflicting', 'local-only', 'newer-hub-revision'))
     return {k: value[k] for k in ('id', 'label', 'local_saved', 'sharing', 'checked_at')} | {'message': message, 'retry': retry}
 
 
