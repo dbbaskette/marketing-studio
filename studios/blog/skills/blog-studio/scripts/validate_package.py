@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Check self-contained routing, provenance, and authored local links."""
+
 import hashlib
 import json
 from pathlib import Path
@@ -8,9 +9,21 @@ import sys
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
-NEW = {'blog-source-intake', 'blog-voice-profile', 'blog-author-interview', 'blog-argument-outline',
-       'blog-voice-check', 'blog-humanize', 'blog-fact-check', 'blog-geo-review', 'blog-repurpose'}
-GOOGLE = {'blog-google-' + name for name in ('source', 'handoff', 'return', 'review', 'template', 'export')}
+NEW = {
+    'blog-source-intake',
+    'blog-voice-profile',
+    'blog-author-interview',
+    'blog-argument-outline',
+    'blog-voice-check',
+    'blog-humanize',
+    'blog-fact-check',
+    'blog-geo-review',
+    'blog-repurpose',
+}
+GOOGLE = {
+    'blog-google-' + name
+    for name in ('source', 'handoff', 'return', 'review', 'template', 'export')
+}
 OLD = {'blog', 'blog-write', 'content-strategy', 'copywriting', 'copy-editing'}
 
 
@@ -24,7 +37,9 @@ def validate(root=ROOT):
         return [f'Cannot read provenance: {exc}']
     if {m.get('id') for m in source.get('modules', [])} != OLD or len(source['modules']) != 5:
         errors.append('Expected the five original source modules.')
-    if {m.get('id') for m in source.get('capabilities', [])} != NEW or len(source['capabilities']) != 9:
+    if {m.get('id') for m in source.get('capabilities', [])} != NEW or len(
+        source['capabilities']
+    ) != 9:
         errors.append('Expected nine BlogForge-derived capabilities.')
     if sorted(p.relative_to(root).as_posix() for p in root.rglob('SKILL.md')) != ['SKILL.md']:
         errors.append('Expected exactly one discoverable skill entry point.')
@@ -32,9 +47,11 @@ def validate(root=ROOT):
     for item in source.get('files', []) + blogforge.get('files', []):
         path = root / item['path']
         if not path.resolve().is_relative_to(root):
-            errors.append(f'Path outside package: {item["path"]}');continue
+            errors.append(f'Path outside package: {item["path"]}')
+            continue
         recorded.add(item['path'])
-        if not path.is_file(): errors.append(f'Missing source file: {item["path"]}')
+        if not path.is_file():
+            errors.append(f'Missing source file: {item["path"]}')
         elif hashlib.sha256(path.read_bytes()).hexdigest() != item['sha256']:
             errors.append(f'Source hash mismatch: {item["path"]}')
     research_path = root / 'deep-research.lock.json'
@@ -43,51 +60,77 @@ def validate(root=ROOT):
         try:
             research = json.loads(research_path.read_text())
             research_files = research['files']
-            if not re.fullmatch('[0-9a-f]{40}', research['commit']):errors.append('Unpinned deep research source.')
-            if not (root / research['license_path']).is_file():errors.append('Missing deep research license.')
-            if research['entrypoint'] not in (root / 'SKILL.md').read_text():errors.append('Unreachable deep research module.')
+            if not re.fullmatch('[0-9a-f]{40}', research['commit']):
+                errors.append('Unpinned deep research source.')
+            if not (root / research['license_path']).is_file():
+                errors.append('Missing deep research license.')
+            if research['entrypoint'] not in (root / 'SKILL.md').read_text():
+                errors.append('Unreachable deep research module.')
             for item in research_files:
                 path = root / item['path']
-                if not path.resolve().is_relative_to(root) or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != item['sha256']:
+                if (
+                    not path.resolve().is_relative_to(root)
+                    or not path.is_file()
+                    or hashlib.sha256(path.read_bytes()).hexdigest() != item['sha256']
+                ):
                     errors.append('Deep research source hash mismatch: ' + item['path'])
                 recorded.add(item['path'])
-        except (OSError, ValueError, KeyError, TypeError) as exc:errors.append('Invalid deep research provenance: ' + str(exc))
-    actual = {p.relative_to(root).as_posix() for folder in ('references/upstream', 'references/blogforge')
-              for p in (root / folder).rglob('*') if p.is_file()}
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            errors.append('Invalid deep research provenance: ' + str(exc))
+    actual = {
+        p.relative_to(root).as_posix()
+        for folder in ('references/upstream', 'references/blogforge')
+        for p in (root / folder).rglob('*')
+        if p.is_file()
+    }
     if actual != recorded:
         errors.append('Bundled source inventory differs from provenance.')
     for repo in source['sources']:
-        if not re.fullmatch('[0-9a-f]{40}', repo['commit']):errors.append('Unpinned upstream repository.')
-        if not (root / repo['license_path']).is_file():errors.append('Missing upstream license.')
-    if not re.fullmatch('[0-9a-f]{40}', blogforge['commit']):errors.append('Unpinned BlogForge provenance.')
+        if not re.fullmatch('[0-9a-f]{40}', repo['commit']):
+            errors.append('Unpinned upstream repository.')
+        if not (root / repo['license_path']).is_file():
+            errors.append('Missing upstream license.')
+    if not re.fullmatch('[0-9a-f]{40}', blogforge['commit']):
+        errors.append('Unpinned BlogForge provenance.')
     entry = (root / 'SKILL.md').read_text()
     for module in source['modules'] + source['capabilities']:
-        if not (root / module['entrypoint']).is_file():errors.append(f'Missing module {module["id"]}')
-        if module['entrypoint'] not in entry:errors.append(f'Unreachable module {module["id"]}')
+        if not (root / module['entrypoint']).is_file():
+            errors.append(f'Missing module {module["id"]}')
+        if module['entrypoint'] not in entry:
+            errors.append(f'Unreachable module {module["id"]}')
     router = root / 'references/google/workflow.md'
     if not router.is_file() or 'references/google/workflow.md' not in entry:
         errors.append('Missing conditional Google router.')
     else:
         for module in GOOGLE:
-            if not (root / 'references/modules' / (module + '.md')).is_file() or module not in router.read_text():
+            if (
+                not (root / 'references/modules' / (module + '.md')).is_file()
+                or module not in router.read_text()
+            ):
                 errors.append(f'Unreachable Google module {module}')
     for p in [root / 'SKILL.md', *sorted((root / 'references').rglob('*.md'))]:
         relative = p.relative_to(root).as_posix()
-        if relative.startswith(('references/upstream/', 'references/blogforge/')):continue
+        if relative.startswith(('references/upstream/', 'references/blogforge/')):
+            continue
         for link in re.findall(r'\[[^\]]*\]\(([^)]+)\)', p.read_text()):
             url = urlsplit(link)
-            if url.scheme or url.netloc or not url.path:continue
+            if url.scheme or url.netloc or not url.path:
+                continue
             target = (p.parent / unquote(url.path)).resolve()
-            if not target.is_relative_to(root) or not target.is_file():errors.append(f'Broken link in {relative}: {link}')
+            if not target.is_relative_to(root) or not target.is_file():
+                errors.append(f'Broken link in {relative}: {link}')
     version = root / 'VERSION'
     if not version.is_file() or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+\n?', version.read_text()):
         errors.append('VERSION must hold one release number such as 2.0.0.')
     scripts = sorted((root / 'scripts').glob('*.py'))
     for required in ('studio.py', 'hub.py', 'experience.py'):
-        if not (root / 'scripts' / required).is_file():errors.append(f'Missing helper {required}')
+        if not (root / 'scripts' / required).is_file():
+            errors.append(f'Missing helper {required}')
     for p in scripts:
-        try:compile(p.read_text(), str(p), 'exec')
-        except SyntaxError as exc:errors.append(str(exc))
+        try:
+            compile(p.read_text(), str(p), 'exec')
+        except SyntaxError as exc:
+            errors.append(str(exc))
     return errors
 
 
@@ -96,4 +139,6 @@ if __name__ == '__main__':
     if failures:
         print('\n'.join(f'ERROR: {e}' for e in failures), file=sys.stderr)
         sys.exit(1)
-    print('Blog Studio valid: 20 modules, source hashes, licenses, authored links, and helpers checked.')
+    print(
+        'Blog Studio valid: 20 modules, source hashes, licenses, authored links, and helpers checked.'
+    )

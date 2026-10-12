@@ -1,0 +1,25 @@
+# Development and CI tooling only. Blog Studio runs on the Python standard
+# library; nothing in this file is installed with the skill or read at run time.
+# The ruff version is pinned in requirements-dev.txt.
+
+[tool.ruff]
+target-version = "py311"
+# The helpers that were already written by hand keep about nine lines in ten
+# within 100 columns, and 100 still fits two files side by side in a review.
+# Sentences for authors are long string literals; the formatter leaves those
+# alone, so line length is not a lint rule (no E501).
+line-length = 100
+# Kept byte-for-byte: vendored upstream material and the original toolkit.
+extend-exclude = [
+    "skills/blog-studio/references/upstream",
+    "skills/blog-writing-toolkit",
+]
+
+[tool.ruff.format]
+# The code used single quotes for all but 44 of 25,000 string literals.
+quote-style = "single"
+
+[tool.ruff.lint]
+# F: unused or undefined names. E9: syntax errors. B: likely bugs.
+# E701, E702: one statement per line.
+select = ["F", "E9", "B", "E701", "E702"]
