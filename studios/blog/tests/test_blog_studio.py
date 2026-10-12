@@ -2,7 +2,9 @@
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
@@ -187,10 +189,56 @@ class StudioTests(unittest.TestCase):
         outside=self.base/'outside';outside.mkdir()
         (self.root/'profiles'/'escape').symlink_to(outside,target_is_directory=True)
         self.cli('profile','create','--name','Escape','--id','escape',ok=False)
+        # A lock file left by an older runtime, or by a command that was killed,
+        # carries no meaning any more and blocks nothing.
         (self.root/'.studio.lock').write_text('another process')
-        self.assertIn('busy',self.cli('list','articles',ok=False))
-        (self.root/'.studio.lock').unlink()
         self.assertEqual(self.cli('list','articles'),[])
+        self.article()
+
+    def hold_workspace_lock(self, seconds):
+        """Another process that really holds the workspace lock for a while."""
+        script = ('import sys, time\n'
+                  'sys.path.insert(0, sys.argv[1])\n'
+                  'from pathlib import Path\n'
+                  'import studio\n'
+                  'with studio.locked(Path(sys.argv[2])):\n'
+                  '    print("held", flush=True)\n'
+                  '    time.sleep(float(sys.argv[3]))\n')
+        holder = subprocess.Popen([sys.executable, '-c', script, str(PACKAGE/'scripts'), str(self.root), str(seconds)],
+                                  stdout=subprocess.PIPE, text=True)
+        self.addCleanup(holder.stdout.close)
+        self.addCleanup(holder.wait)
+        self.addCleanup(holder.kill)
+        self.assertEqual(holder.stdout.readline().strip(), 'held')
+        return holder
+
+    def run_with_lock_wait(self, seconds, *args):
+        env = dict(os.environ, BLOG_STUDIO_LOCK_WAIT=str(seconds))
+        return subprocess.run([sys.executable, str(PACKAGE/'scripts/studio.py'), '--root', str(self.root), *args],
+                              capture_output=True, text=True, env=env)
+
+    def test_killed_command_releases_the_workspace_lock(self):
+        holder = self.hold_workspace_lock(60)
+        # While another command really holds the lock, a change waits its bounded
+        # time and then says so; nothing tells the author to delete a lock file.
+        busy = self.run_with_lock_wait(0.3, 'article', 'create', '--title', 'Blocked', '--mode', 'first-draft')
+        self.assertNotEqual(busy.returncode, 0)
+        self.assertIn('busy', busy.stderr)
+        self.assertIn('do not delete', busy.stderr)
+        # A pure read is not held up by a writer.
+        self.assertEqual(self.cli('list', 'articles'), [])
+        holder.send_signal(signal.SIGTERM)
+        holder.wait()
+        # The killed holder could not clean up, yet the next command runs at once.
+        self.assertTrue((self.root/'.studio.lock').exists())
+        created = self.run_with_lock_wait(0, 'article', 'create', '--title', 'After a crash', '--mode', 'first-draft')
+        self.assertEqual(created.returncode, 0, created.stderr)
+
+    def test_second_command_waits_briefly_instead_of_failing(self):
+        self.hold_workspace_lock(0.8)
+        waited = self.run_with_lock_wait(20, 'article', 'create', '--title', 'Patient', '--mode', 'first-draft')
+        self.assertEqual(waited.returncode, 0, waited.stderr)
+        self.assertEqual(len(self.cli('list', 'articles')), 1)
 
     def test_mechanical_rules_respect_code_urls_quotes_and_word_boundaries(self):
         text='We delve into it — briefly.\n\n`delve --`\n\n> "delve —"\n\nhttps://example.com/delve\n\n```text\ndelve --\n```\nA delver works here.'
@@ -205,21 +253,38 @@ class StudioTests(unittest.TestCase):
         self.assertFalse(text_checks.preserve(before,before)['needs_review'])
         self.assertTrue(text_checks.preserve('20 hours, then 20 hours.','20 hours.')['needs_review'])
 
-    def test_guidance_pin_is_saved_and_replaced_only_deliberately(self):
+    def test_new_article_records_installed_guidance_and_keeps_it_until_adopted(self):
+        version=(PACKAGE/'VERSION').read_text().strip();pin={'revision':version,'source':'installed'}
+        aid=self.article();self.assertEqual(self.cli('article','show','--id',aid)['guidance'],pin)
+        self.save(aid,'draft','Existing draft.');self.review(aid,'proofread')
+        # Re-recording the same version changes nothing; no task or cached variants remain.
+        same=self.cli('article','guidance','--id',aid)
+        self.assertEqual(same['guidance'],pin);self.assertNotIn('guidance_history',same)
+        self.assertEqual(same['reviews']['proofread']['status'],'current')
+        self.cli('article','guidance','--id',aid,'--task','a'*32,ok=False)
+        self.cli('article','guidance','--id',aid,'--cached',ok=False)
+        self.assertFalse((self.root/'task-context').exists())
+
+    def test_article_pinned_by_an_earlier_release_still_loads_and_adopts_only_on_request(self):
         aid=self.article();self.save(aid,'draft','Existing draft.')
-        first='a'*32;second='b'*32
-        for task,revision in ((first,'a'*40),(second,'b'*40)):
-            path=self.root/'task-context'/'tasks'/task/'pin.json'
-            path.parent.mkdir(parents=True)
-            path.write_text(json.dumps({'task':task,'revision':revision}))
-        self.cli('article','guidance','--id',aid,'--task',first)
+        path=self.root/'articles'/aid/'session.json';record=json.loads(path.read_text())
+        # What 1.x stored: a guidance commit, its task, and a helper path that no longer exists.
+        legacy={'task':'a'*32,'revision':'a'*40,'runtime':str(self.base/'removed/versions/1.15.0-abc/scripts'),'freshness':'pinned'}
+        record['guidance']=legacy;path.write_text(json.dumps(record))
         self.review(aid,'proofread')
-        self.cli('article','guidance','--id',aid,'--task',second,ok=False)
-        result=self.cli('article','guidance','--id',aid,'--task',second,'--adopt','--cached')
-        self.assertEqual(result['guidance']['freshness'],'cached')
-        self.assertEqual(result['guidance_history'][0]['task'],first)
+        self.assertEqual(self.cli('article','show','--id',aid)['guidance'],legacy)
+        self.assertEqual(self.cli('context','--id',aid)['guidance']['revision'],'a'*40)
+        self.assertEqual(self.cli('resume','--id',aid)['context']['pins']['guidance']['revision'],'a'*40)
+        self.assertEqual(self.cli('status','--id',aid,'--details')['details']['guidance']['revision'],'a'*40)
+        self.assertEqual(self.cli('home')['items'][0]['id'],aid)
+        self.save(aid,'draft','Edited draft.');self.review(aid,'proofread')
+        self.assertIn('--adopt',self.cli('article','guidance','--id',aid,ok=False))
+        self.assertEqual(self.cli('article','show','--id',aid)['reviews']['proofread']['status'],'current')
+        result=self.cli('article','guidance','--id',aid,'--adopt')
+        self.assertEqual(result['guidance'],{'revision':(PACKAGE/'VERSION').read_text().strip(),'source':'installed'})
+        self.assertEqual(result['guidance_history'],[legacy])
         self.assertEqual(result['reviews']['proofread']['status'],'stale')
-        self.assertEqual((self.root/'articles'/aid/'DRAFT.md').read_text(),'Existing draft.')
+        self.assertEqual((self.root/'articles'/aid/'DRAFT.md').read_text(),'Edited draft.')
 
     def test_package_integrity(self):
         self.assertEqual(validator.validate(),[])

@@ -1,6 +1,6 @@
 # Compact context and exact-input reuse
 
-Use the [workspace](../workspace.md) command prefix. Runtime 1.8 or later:
+Use the [workspace](../workspace.md) command prefix:
 
 ```text
 ... resume --id <id>

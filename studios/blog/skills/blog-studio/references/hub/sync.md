@@ -13,13 +13,15 @@ python3 <runtime>/hub.py --workspace <workspace> history --item <item-id>
 | queued-read-only | Work retained; contribution rights need the repository administrator |
 | queued-contention | Bounded push retries exhausted; retry later with the same queued operations |
 | pending-review | Contribution branch/PR exists; teammates receive it after merge to main |
+| newer-hub-revision | The Hub has a newer version than the one this save was based on, so nothing was pushed and the save is kept locally (`held`). Show `next_step` and let the author choose: continue from the shared version (`checkout-workspace --article <item> --set-aside-local`, which keeps the local edit as a backup) or publish both for an explicit resolution (`import-workspace --article <local-id> --fork`) |
+| review-closed | The contribution PR was closed; the work is requeued on a new branch. Sync again to open a new review |
 | local-saved-not-shared | Local studio save succeeded but hub serialization/sync failed; inspect the error and retry explicit selected import |
 
 A save revision ID identifies a memory operation; `hub_commit` identifies the
 verified Git snapshot. Stable operation IDs deduplicate retries, including an
 uncertain push result. Never create another operation just because delivery was
-uncertain. Runtime 1.13.0 may relocate immutable records from legacy `memory/items/` to
-hidden `.blog-studio/items/` during authorized sync. Every byte and identity must
+uncertain. Authorized sync may relocate immutable records from legacy `memory/items/` to
+hidden `.blog-studio/items/`. Every byte and identity must
 match; this is not removal of saved work. Queued old-layout operations retain
 their payload hashes and IDs while being delivered to the new path.
 

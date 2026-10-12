@@ -5,6 +5,7 @@ from unittest.mock import patch
 from test_editorial_tools import Fixture
 import blog_library as library
 import management
+import studio
 
 
 class ManagementImportTests(Fixture):
@@ -140,3 +141,118 @@ class ManagementImportTests(Fixture):
         self.assertEqual(result['counts']['imported'],1)
         self.assertEqual(result['counts']['failed'],1)
         self.assertEqual(result['remaining'],1)
+
+    # --- Collections become real on the first confirmed import ---
+
+    def archive(self, name, operation, url='https://team.example/blog'):
+        return {'operation': operation, 'name': name, 'type': 'archive', 'url': url, 'scope': 'https://team.example/blog'}
+
+    def test_failed_or_abandoned_preview_leaves_no_collection_and_the_name_stays_free(self):
+        def unreachable(url, scope):raise ValueError(library.UNREACHABLE)
+        with patch.object(library, 'fetch', side_effect=unreachable):
+            with self.assertRaisesRegex(ValueError, 'could not be reached'):
+                management.dispatch(self.root, 'library-preview', self.archive('Engineering blog', 'a' * 32, 'https://team.example/blog/typo'))
+        self.assertEqual(library.collections(self.root), {})
+        self.assertEqual(management.collection_rows(self.root)['items'], [])
+        # The corrected request reuses the name: nothing was registered by the failed one.
+        page = b'<a href="/blog/first">First post</a>'
+        with patch.object(library, 'fetch', side_effect=lambda url, scope:(page if url.endswith('/blog') else b'<h1>First</h1><p>Text.</p>', url, 'text/html')):
+            preview = management.dispatch(self.root, 'library-preview', self.archive('Engineering blog', 'b' * 32))
+            self.assertFalse(preview['saved_collection']);self.assertEqual(preview['collection'], 'Engineering blog')
+            # Discovery alone still registers and shares nothing; an abandoned preview is not a collection.
+            self.assertEqual(library.collections(self.root), {})
+            again = management.dispatch(self.root, 'library-preview', self.archive('Engineering blog', 'c' * 32))
+            self.assertEqual(again['candidates'], 1)
+            # The first confirmed import is what saves the collection.
+            result = self.save(again, 'd' * 32)
+        self.assertEqual(result['counts']['imported'], 1);self.assertTrue(result['saved_collection'])
+        saved = library.collections(self.root)
+        self.assertEqual([c['name'] for c in saved.values()], ['Engineering blog'])
+        self.assertEqual(library.imported_count(self.root, next(iter(saved))), 1)
+        # A name whose collection holds saved posts is taken; the abandoned preview cannot claim it later.
+        with self.assertRaisesRegex(ValueError, 'already has that name'):
+            management.dispatch(self.root, 'library-preview', self.archive('engineering BLOG', 'e' * 32))
+        with patch.object(library, 'fetch', side_effect=lambda url, scope:(b'<h1>First</h1>', url, 'text/html')):
+            with self.assertRaisesRegex(ValueError, 'already named'):self.save(preview, 'f' * 32)
+        self.assertEqual(len(library.collections(self.root)), 1)
+
+    def test_empty_collection_name_is_reused_in_place(self):
+        export = self.base / 'ghost.json';export.write_text('[]')
+        library.setup(self.root, {'key': 'ghost', 'name': 'Old posts', 'type': 'export', 'path': str(export)})
+        self.assertEqual(library.imported_count(self.root, 'ghost'), 0)
+        preview = management.dispatch(self.root, 'library-preview', dict(self.payload(2), name='Old posts'))
+        self.assertFalse(preview['saved_collection'])
+        self.assertEqual(library.collections(self.root)['ghost']['local_path'], str(export.resolve()))  # Untouched until an import.
+        result = self.save(preview)
+        self.assertEqual(result['counts']['imported'], 2)
+        saved = library.collections(self.root)
+        self.assertEqual(list(saved), ['ghost']);self.assertNotEqual(saved['ghost']['local_path'], str(export.resolve()))
+        self.assertEqual(library.imported_count(self.root, 'ghost'), 2)
+
+    # --- Refreshing a desk-chosen folder, and never duplicating a post ---
+
+    def files(self, **texts):
+        return [{'path': path, 'content': base64.b64encode(text.encode()).decode()} for path, text in texts.items()]
+
+    def test_refresh_takes_a_new_selection_under_the_same_collection(self):
+        first = self.files(**{'Posts/one.md': '# First\n\nRetained text one.', 'Posts/two.md': '# Second\n\nRetained text two.'})
+        preview = management.dispatch(self.root, 'library-preview', {'operation': 'a' * 32, 'name': 'Past blogs', 'type': 'folder', 'files': first})
+        self.assertEqual(self.save(preview)['counts']['imported'], 2)
+        key = next(iter(library.collections(self.root)))
+        row = management.collection_rows(self.root)['items'][0]
+        self.assertTrue(row['refresh_files']);self.assertNotIn('local_path', row)
+        staged = self.root / '.library' / 'desk-inputs'
+        self.assertEqual([p.name for p in staged.iterdir()], ['a' * 32])
+        # The same folder chosen again with one new and one edited post.
+        newer = self.files(**{'Posts/one.md': '# First\n\nRetained text one.', 'Posts/two.md': '# Second\n\nEdited text two.',
+                              'Posts/three.md': '# Third\n\nA new post.'})
+        refreshed = management.dispatch(self.root, 'library-preview', {'operation': 'c' * 32, 'collection': key, 'files': newer})
+        self.assertEqual(refreshed['candidates'], 3);self.assertTrue(refreshed['saved_collection'])
+        result = self.save(refreshed, 'd' * 32)
+        self.assertEqual((result['counts']['imported'], result['counts']['updated'], result['counts']['unchanged']), (1, 1, 1))
+        self.assertEqual(library.catalog(self.root)['total'], 3)
+        self.assertEqual([p.name for p in staged.iterdir()], ['c' * 32])  # The superseded copy is gone.
+        self.assertEqual(list(library.collections(self.root)), [key])
+        # Without a new selection, refresh re-checks the files chosen last.
+        again = management.dispatch(self.root, 'library-preview', {'operation': 'e' * 32, 'collection': key})
+        self.assertEqual(self.save(again, 'f' * 32)['counts']['unchanged'], 3)
+        # A wrong kind of selection, or a collection that reads a real folder, is refused before anything is staged.
+        with self.assertRaisesRegex(ValueError, 'folder for a folder collection'):
+            management.dispatch(self.root, 'library-preview', {'operation': '1' * 32, 'collection': key, 'export': base64.b64encode(b'[]').decode()})
+        folder = self.base / 'real-folder';folder.mkdir();(folder / 'post.md').write_text('A post read in place.')
+        library.setup(self.root, {'key': 'in-place', 'name': 'In place', 'type': 'folder', 'path': str(folder)})
+        self.assertFalse(next(r for r in management.collection_rows(self.root)['items'] if r['key'] == 'in-place')['refresh_files'])
+        with self.assertRaisesRegex(ValueError, 'reads a folder on this computer directly'):
+            management.dispatch(self.root, 'library-preview', {'operation': '2' * 32, 'collection': 'in-place', 'files': first})
+        self.assertEqual(library.collections(self.root)['in-place']['local_path'], str(folder.resolve()))
+        self.assertEqual([p.name for p in staged.iterdir()], ['c' * 32])
+
+    def test_the_same_file_under_another_folder_or_collection_is_one_post(self):
+        first = self.files(**{'Posts/one.md': '# First\n\nRetained text one.', 'Posts/two.md': '# Second\n\nRetained text two.'})
+        preview = management.dispatch(self.root, 'library-preview', {'operation': 'a' * 32, 'name': 'Past blogs', 'type': 'folder', 'files': first})
+        self.save(preview)
+        before = {row['id'] for row in library.catalog(self.root)['items']}
+        # The same two files under a renamed top folder and a new collection name, plus one new post.
+        moved = self.files(**{'Archive/one.md': '# First\n\nRetained text one.', 'Archive/nested/two.md': '# Second\n\nRetained text two.',
+                              'Archive/three.md': '# Third\n\nA new post.'})
+        other = management.dispatch(self.root, 'library-preview', {'operation': 'c' * 32, 'name': 'Past blogs again', 'type': 'folder', 'files': moved})
+        result = self.save(other, 'd' * 32)
+        self.assertEqual((result['counts']['imported'], result['counts']['updated'], result['counts']['failed']), (1, 2, 0))
+        rows = library.catalog(self.root)['items']
+        self.assertEqual(len(rows), 3);self.assertTrue(before <= {row['id'] for row in rows})
+        self.assertEqual(sorted(row['title'] for row in rows), ['one', 'three', 'two'])
+        shared = [row for row in rows if row['id'] in before]
+        self.assertTrue(all(len(row['library']['collections']) == 2 for row in shared))  # One post, two collections.
+        for row in shared:
+            directory, record = studio.item(self.root, 'sources', row['id'])
+            self.assertEqual(record['revision'], 2);self.assertTrue((directory / 'revisions' / '1' / 'record.json').is_file())
+        # Importing either collection again changes nothing.
+        key = next(k for k, c in library.collections(self.root).items() if c['name'] == 'Past blogs')
+        again = management.dispatch(self.root, 'library-preview', {'operation': 'e' * 32, 'collection': key})
+        self.assertEqual(self.save(again, 'f' * 32)['counts']['unchanged'], 2)
+        self.assertEqual(library.catalog(self.root)['total'], 3)
+        # Explicit identities are never merged by content: two export posts with the same text stay two posts.
+        export = [{'external_id': 'x-1', 'title': 'Twin A', 'text': 'Identical text.'}, {'external_id': 'x-2', 'title': 'Twin B', 'text': 'Identical text.'}]
+        twins = management.dispatch(self.root, 'library-preview', {'operation': '1' * 32, 'name': 'Twins', 'type': 'export',
+                                                                    'export': base64.b64encode(json.dumps(export).encode()).decode()})
+        self.assertEqual(self.save(twins, '2' * 32)['counts']['imported'], 2)

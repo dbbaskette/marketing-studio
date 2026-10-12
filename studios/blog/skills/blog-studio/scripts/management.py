@@ -1,23 +1,36 @@
 """A private local editorial desk. Standard library, loopback only, no hosted service."""
 import argparse
 import base64
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from contextlib import contextmanager
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import json
 from pathlib import Path
+import re
 import secrets
+import shutil
+import sys
 import tempfile
+import threading
+import traceback
 from types import SimpleNamespace
 from urllib.parse import urlsplit, parse_qs
-import uuid
 import webbrowser
 
 import studio
 import editorial
 import blog_library
+import source_curator
 from hub_store import HubError, TransportError, AuthenticationError, encoded, sha
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets' / 'management'
+STATIC = {'/': ('index.html', 'text/html; charset=utf-8'),
+          '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
+          '/style.css': ('style.css', 'text/css; charset=utf-8')}
 MAX_BODY = 15 * 1024 * 1024
+HEADER_TIMEOUT = 3  # Seconds a new connection has to send its request line and headers.
+BODY_TIMEOUT = 15   # Seconds for each read or write once a request is recognized.
+API_WAIT = 30       # Seconds a request waits for another desk operation before reporting "busy".
+UNCHANGED = {'status': 'unchanged', 'next_step': 'No changes to save.', 'receipts': []}
 
 
 def checked_access(adapter):
@@ -63,7 +76,20 @@ def capabilities(root):
             message = 'Hub identity or privacy could not be verified. Inspect the Hub in chat before refreshing or editing.'
     return {'status': status, 'message': message, 'checked_at': studio.now(),
             'actions': {'edit': edit, 'memory': memory, 'refresh': refresh},
-            'google': 'not-checked', 'google_message': 'Google access is checked separately in chat.'}
+            'google': 'not-checked', 'google_message': 'Google access is checked separately in chat.',
+            'analysis': source_curator.disclosure(root), **identity(root, adapter)}
+
+
+def identity(root, adapter):
+    """Which workspace and Hub this desk reads and writes, so two desks cannot be confused."""
+    try:
+        shown = '~/' + root.relative_to(Path.home()).as_posix()
+    except (ValueError, RuntimeError):
+        shown = str(root)
+    hub = None
+    if adapter:
+        hub = {'repository': adapter.hub.config.get('repository'), 'url': adapter.hub.config.get('url')}
+    return {'workspace': shown, 'hub': hub}
 
 
 def authorize_write(root):
@@ -79,8 +105,13 @@ def share(root, group, record):
     from hub_workspace import active
     adapter = active(root)
     if adapter:
-        try:record['hub_sync'] = adapter.publish_mutation(group, record)
-        except (HubError, OSError):record['hub_sync'] = {'status': 'local-saved-not-shared', 'next_step': 'Local work is saved. Retry Hub sync.'}
+        try:
+            record['hub_sync'] = adapter.publish_mutation(group, record)
+        except Exception as exc:
+            # The local save already happened. Whatever stopped sharing, report it truthfully
+            # as "saved locally" instead of failing the request and leaving the result unclear.
+            if not isinstance(exc, (HubError, OSError)):note_unexpected(exc)
+            record['hub_sync'] = {'status': 'local-saved-not-shared', 'next_step': 'Local work is saved. Retry Hub sync.'}
     return record
 
 
@@ -89,6 +120,8 @@ SHARING_MESSAGES = {
     'synchronized': 'Shared with the Team Hub.',
     'pending-review': 'Saved; waiting for contribution review.',
     'conflicting': 'Saved; competing Hub revisions need resolution in chat.',
+    'newer-hub-revision': 'Saved here; the Team Hub has a newer version. Continue this one in chat to bring them together.',
+    'review-closed': 'Saved; its contribution review was closed. Retry sync to open a new review.',
     'local-only': 'Saved in this workspace; no Team Hub selected.',
 }
 
@@ -127,7 +160,8 @@ def local_checkpoint(root, adapter, group, ident):
 def public_receipt(value):
     status = value['sharing']
     message = SHARING_MESSAGES.get(status, 'Saved locally; Hub sync needs attention.')
-    retry = bool(value['hub'] and status not in ('shared', 'synchronized', 'conflicting', 'local-only'))
+    # A held save needs the author's choice in chat; retrying the same push cannot succeed.
+    retry = bool(value['hub'] and status not in ('shared', 'synchronized', 'conflicting', 'local-only', 'newer-hub-revision'))
     return {k: value[k] for k in ('id', 'label', 'local_saved', 'sharing', 'checked_at')} | {'message': message, 'retry': retry}
 
 
@@ -149,7 +183,7 @@ def receipts(root):
 
 
 def retry_receipt(root, adapter, data):
-    if set(data) != {'id'} or not __import__('re').fullmatch(r'[a-f0-9]{64}', data.get('id', '')):
+    if set(data) != {'id'} or not re.fullmatch(r'[a-f0-9]{64}', data.get('id', '')):
         raise ValueError('Choose a saved operation to retry.')
     path = studio.inside(root, '.desk-receipts', data['id'] + '.json')
     value = studio.read_json(path)
@@ -172,9 +206,10 @@ def retry_receipt(root, adapter, data):
 
 
 def upload(root, data):
-    if set(data) - {'operation', 'filename', 'content', 'title', 'purpose', 'as_blog', 'author'}:raise ValueError('Unknown upload field.')
+    if set(data) - {'operation', 'filename', 'content', 'title', 'purpose', 'as_blog', 'author', 'analyze'}:raise ValueError('Unknown upload field.')
+    if not isinstance(data.get('analyze', True), bool):raise ValueError('Choose whether to summarize and tag this upload.')
     operation = data.get('operation', '')
-    if not __import__('re').fullmatch(r'[a-f0-9]{32}', operation):raise ValueError('An upload operation ID is required.')
+    if not re.fullmatch(r'[a-f0-9]{32}', operation):raise ValueError('An upload operation ID is required.')
     staging = studio.inside(root, '.uploads');staging.mkdir(mode=0o700, exist_ok=True);staging.chmod(0o700)
     ledger = studio.inside(staging, operation + '.json')
     fingerprint = sha(encoded(data))
@@ -199,7 +234,8 @@ def upload(root, data):
     if data.get('as_blog') and not (text and text.strip()):raise ValueError('This file needs text extraction before it can become an editable blog. Upload it as a pending reference first.')
     if data.get('author'):studio.checked_author(data['author'])
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
-    with tempfile.TemporaryDirectory(dir=staging) as temp:
+    # An unchecked "Summarize and tag" keeps this file's text away from the analysis CLI.
+    with tempfile.TemporaryDirectory(dir=staging) as temp, source_curator.skipping(data.get('analyze') is False):
         path = Path(temp) / filename;path.write_bytes(content)
         source = studio.source_command(root, SimpleNamespace(action='add', name=title, file=str(path), content=text, text_file=None,
             origin=filename, purpose=[purpose], author=data.get('author') or None, note='Uploaded through the local editorial desk.', status=status))
@@ -422,14 +458,15 @@ def memory_detail(root, ident, revision=None):
         reason = 'Decisions are read-only here. Inspect the decision and discuss a follow-up in chat.'
     elif heads != [record['revision']]:
         reason = 'This memory has changed or has competing revisions. Compare them in chat before editing.'
+    body = Path(saved['paths']['BODY.md']).read_text()
     return {'record': {k: record[k] for k in ('item', 'revision', 'kind', 'title', 'scope')},
             'focused_workflow': focused, 'editable': not bool(reason), 'read_only_reason': reason,
-            'continuation': command, 'body': Path(saved['paths']['BODY.md']).read_text()[:16000]}
+            'continuation': command, 'body': body[:16000], 'truncated': len(body) > 16000}
 
 
 def import_operation(root, data):
     operation = data.get('operation', '')
-    if not isinstance(operation, str) or not __import__('re').fullmatch(r'[a-f0-9]{32}', operation):
+    if not isinstance(operation, str) or not re.fullmatch(r'[a-f0-9]{32}', operation):
         raise ValueError('An import operation ID is required.')
     ledger = studio.inside(root, '.desk-imports', operation + '.json')
     fingerprint = sha(encoded(data))
@@ -439,16 +476,26 @@ def import_operation(root, data):
     return ledger, fingerprint, saved
 
 
+IMPORT_SUFFIXES = ('.md', '.txt', '.html', '.htm', '.docx', '.pdf')
+
+
 def library_preview_state(root, ident):
-    if not isinstance(ident, str) or not __import__('re').fullmatch(r'[a-f0-9]{32}', ident):
+    if not isinstance(ident, str) or not re.fullmatch(r'[a-f0-9]{32}', ident):
         raise ValueError('Choose a saved import preview.')
     path = studio.inside(root, '.library', ident + '.json')
+    if not path.is_file():
+        raise ValueError('This saved preview is no longer available. Preview the source again.')
     manifest = studio.read_json(path)
-    config = blog_library.collections(root)[manifest['collection']]
+    # A new collection stays a draft inside its preview until the first import saves it.
+    draft = manifest.get('pending_collection')
+    config = draft or blog_library.collections(root).get(manifest['collection'])
+    if not config:
+        raise ValueError('This preview belongs to a collection that is no longer available. Preview it again.')
     results = manifest['results']
     counts = {key: sum(v['status'] == key for v in results.values()) for key in ('imported', 'updated', 'unchanged', 'failed')}
     counts['pending_extraction'] = sum(v.get('extraction') == 'pending' for v in results.values())
     return {'preview': ident, 'collection': config['name'], 'type': config['type'], 'scope': config.get('scope'),
+            'saved_collection': not draft,
             'coverage_note': {'archive': 'Links from this page only. Other archive pages have not been followed.',
                               'feed': 'Posts listed in this feed only. Older posts may be missing.',
                               'sitemap': 'URLs in this sitemap only. Nested sitemap indexes are not expanded.',
@@ -468,59 +515,150 @@ def library_preview_state(root, ident):
             'failures': [v['reason'] for v in results.values() if v['status'] == 'failed'][:20]}
 
 
+def stage_selection(root, operation, kind, data):
+    """Copy the files chosen in the browser into this operation's private staging folder."""
+    files = data.get('files') if kind == 'folder' else [{'path': 'export.json', 'content': data.get('export')}]
+    if not isinstance(files, list) or not 1 <= len(files) <= blog_library.MAX_POSTS:
+        raise ValueError('Select 1–500 supported files.')
+    allowed = ('.json',) if kind == 'export' else IMPORT_SUFFIXES
+    decoded, paths, size = [], set(), 0
+    for file in files:
+        if not isinstance(file, dict) or set(file) != {'path', 'content'}:
+            raise ValueError('Choose files with a relative path and content.')
+        name = file['path']
+        if (not isinstance(name, str) or len(name) > 500 or '\\' in name or '\x00' in name
+                or name.startswith('/') or any(p.startswith('.') or not p for p in name.split('/'))
+                or len(name.split('/')) > 12 or name in paths):
+            raise ValueError('Selected files need unique relative paths without hidden or parent folders.')
+        if Path(name).suffix.lower() not in allowed:
+            raise ValueError('Choose Markdown, text, HTML, DOCX or PDF files; exports must be JSON.')
+        content = base64.b64decode(file['content'], validate=True)
+        size += len(content)
+        if not content or size > blog_library.MAX_BINARY:
+            raise ValueError('Select nonempty files totaling at most 10 MiB. Use a smaller folder or import a larger local folder in chat.')
+        paths.add(name);decoded.append((name, content))
+    base = studio.inside(root, '.library', 'desk-inputs', operation)
+    if base.is_dir() and not base.is_symlink():
+        shutil.rmtree(base)  # A repeated request restages the same selection.
+    for name, content in decoded:
+        studio.atomic(studio.inside(base, *name.split('/')), content)
+    return base if kind == 'folder' else base / 'export.json'
+
+
+def desk_staged(root, path):
+    """True for a copy this desk staged itself; only such a copy may be replaced by a new selection."""
+    if not path:
+        return False
+    staging = studio.inside(root, '.library', 'desk-inputs').resolve()
+    resolved = Path(path).resolve()
+    return resolved != staging and resolved.is_relative_to(staging)
+
+
+def discard_staged(root, path, keep):
+    """Remove a superseded staged copy. Never touches anything outside the desk's staging folder."""
+    if not desk_staged(root, path):
+        return
+    staging = studio.inside(root, '.library', 'desk-inputs').resolve()
+    top = staging / Path(path).resolve().relative_to(staging).parts[0]
+    if top != keep.resolve() and top.is_dir() and not top.is_symlink():
+        shutil.rmtree(top)
+
+
+def name_owner(root, name):
+    """(key, free) for a collection name.
+
+    A name is free when no collection uses it, or when the collection that uses it was set
+    up in this workspace and has no saved posts; that empty collection's key is then reused
+    instead of adding a duplicate. A teammate's shared collection keeps its name even while
+    it looks empty here: this workspace may simply not have refreshed their posts yet.
+    """
+    wanted = str(name).strip().casefold()
+    matches = [c for c in blog_library.collections(root).values() if str(c['name']).strip().casefold() == wanted]
+    if not matches:
+        return None, True
+    mine = blog_library.local_config(root)['collections']
+    empty_here = all(c['key'] in mine and not blog_library.imported_count(root, c['key']) for c in matches)
+    return matches[0]['key'], empty_here
+
+
+def refresh_selection(root, operation, collection, data):
+    """Give a folder/export collection chosen in the desk a new selection under the same collection."""
+    config = blog_library.collections(root)[collection]
+    kind = config['type']
+    if kind not in ('folder', 'export') or ('files' in data) != (kind == 'folder'):
+        raise ValueError('Choose a folder for a folder collection, or a JSON file for an export collection.')
+    previous = config.get('local_path')
+    if previous and not desk_staged(root, previous):
+        raise ValueError('This collection reads a folder on this computer directly. Refresh it without choosing files.')
+    staged = stage_selection(root, operation, kind, data)
+    blog_library.locate(root, collection, str(staged))
+    return previous
+
+
+def collection_rows(root):
+    rows = []
+    for config in blog_library.collections(root).values():
+        local = config.get('local_path')
+        row = {k: v for k, v in config.items() if k != 'local_path'}
+        # A desk-staged or not-yet-located folder/export can be refreshed with a new selection.
+        row['refresh_files'] = config['type'] in ('folder', 'export') and (not local or desk_staged(root, local))
+        rows.append(row)
+    return {'items': rows}
+
+
 def library_preview(root, data):
-    """Explicit source selection; stage only browser-selected files, then reuse CLI discovery."""
+    """Explicit source selection; stage only browser-selected files, then reuse CLI discovery.
+
+    A new collection is validated and discovered first. It is saved and shared only when
+    its first posts are imported, so a failed or abandoned preview leaves no collection.
+    """
     if set(data) - {'operation', 'collection', 'name', 'type', 'files', 'export', 'url', 'scope', 'discovery_scope'}:
         raise ValueError('Unknown import preview field.')
     ledger, fingerprint, saved = import_operation(root, data)
     if saved and saved.get('preview'):return library_preview_state(root, saved['preview'])
-    collection = data.get('collection')
-    if collection:
-        if set(data) != {'operation', 'collection'}:raise ValueError('Choose an existing collection or a new source.')
-        if collection not in blog_library.collections(root):raise ValueError('Choose a configured collection.')
-    else:
-        kind = data.get('type')
-        if kind not in ('folder', 'export', 'archive', 'feed', 'sitemap', 'urls'):
-            raise ValueError('Choose a folder, website, feed, sitemap, links, or JSON export.')
-        collection = 'desk-' + data['operation']
-        config = {'key': collection, 'name': data.get('name'), 'type': kind}
-        if not saved and any(str(c['name']).strip().casefold() == str(config['name']).strip().casefold() for c in blog_library.collections(root).values()):
-            raise ValueError('A collection already has that name. Choose Refresh an existing collection or use a different name.')
-        if kind in ('folder', 'export'):
-            files = data.get('files') if kind == 'folder' else [{'path':'export.json', 'content':data.get('export')}]
-            if not isinstance(files, list) or not 1 <= len(files) <= blog_library.MAX_POSTS:
-                raise ValueError('Select 1–500 supported files.')
-            decoded, paths, size = [], set(), 0
-            for file in files:
-                if not isinstance(file, dict) or set(file) != {'path', 'content'}:raise ValueError('Choose files with a relative path and content.')
-                name = file['path']
-                if (not isinstance(name, str) or len(name) > 500 or '\\' in name or '\x00' in name
-                        or name.startswith('/') or any(p.startswith('.') or not p for p in name.split('/'))
-                        or len(name.split('/')) > 12 or name in paths):
-                    raise ValueError('Selected files need unique relative paths without hidden or parent folders.')
-                if Path(name).suffix.lower() not in (('.json',) if kind == 'export' else ('.md', '.txt', '.html', '.htm', '.docx', '.pdf')):
-                    raise ValueError('Choose Markdown, text, HTML, DOCX or PDF files; exports must be JSON.')
-                content = base64.b64decode(file['content'], validate=True)
-                size += len(content)
-                if not content or size > blog_library.MAX_BINARY:raise ValueError('Select nonempty files totaling at most 10 MiB. Use a smaller folder or import a larger local folder in chat.')
-                paths.add(name);decoded.append((name, content))
-            base = studio.inside(root, '.library', 'desk-inputs', data['operation'])
-            for name, content in decoded:studio.atomic(studio.inside(base, *name.split('/')), content)
-            config['path'] = str(base if kind == 'folder' else base / 'export.json')
+    operation = data['operation']
+    staging = studio.inside(root, '.library', 'desk-inputs', operation)
+    collection, draft, superseded = data.get('collection'), None, None
+    try:
+        if collection:
+            if set(data) - {'operation', 'collection', 'files', 'export'}:raise ValueError('Choose an existing collection or a new source.')
+            if collection not in blog_library.collections(root):raise ValueError('Choose a configured collection.')
+            if 'files' in data or 'export' in data:
+                superseded = refresh_selection(root, operation, collection, data)
         else:
-            config.update(url=data.get('url'), scope=data.get('scope'), discovery_scope=data.get('discovery_scope'))
-            if kind == 'urls':
-                config['urls'] = [u.strip() for u in str(data.get('url') or '').splitlines() if u.strip()]
+            kind = data.get('type')
+            if kind not in ('folder', 'export', 'archive', 'feed', 'sitemap', 'urls'):
+                raise ValueError('Choose a folder, website, feed, sitemap, links, or JSON export.')
+            owner, free = name_owner(root, data.get('name'))
+            if not free:
+                raise ValueError('A collection already has that name. Choose Refresh an existing collection or use a different name.')
+            collection = owner or 'desk-' + operation
+            config = {'key': collection, 'name': data.get('name'), 'type': kind}
+            if kind in ('folder', 'export'):
+                config['path'] = str(stage_selection(root, operation, kind, data))
+            else:
+                config.update(url=data.get('url'), scope=data.get('scope'), discovery_scope=data.get('discovery_scope'))
+                if kind == 'urls':
+                    config['urls'] = [u.strip() for u in str(data.get('url') or '').splitlines() if u.strip()]
+            draft = blog_library.normalize(root, config)
         studio.write_json(ledger, {'fingerprint': fingerprint, 'collection': collection})
-        if collection not in blog_library.collections(root):blog_library.setup(root, config)
-    result = blog_library.preview(root, collection, reader=blog_library.fetch)
+        result = blog_library.preview(root, collection, reader=blog_library.fetch, config=draft)
+    except Exception:
+        # No collection was saved. Drop this operation's staged copy unless a saved collection now reads it.
+        if not data.get('collection') and staging.is_dir() and not staging.is_symlink():
+            shutil.rmtree(staging, ignore_errors=True)
+        raise
     studio.write_json(ledger, {'fingerprint': fingerprint, 'collection': collection, 'preview': result['preview']})
     studio.write_json(studio.inside(root, '.desk-imports', 'current.json'), {'preview': result['preview']})
+    if superseded:
+        discard_staged(root, superseded, keep=staging)
     return library_preview_state(root, result['preview'])
 
 
 def library_import(root, data):
-    if set(data) != {'operation', 'preview', 'expected', 'confirm', 'retry', 'selected'} or data['confirm'] is not True or not isinstance(data['retry'], bool):
+    required = {'operation', 'preview', 'expected', 'confirm', 'retry', 'selected'}
+    if (set(data) - {'analyze'} != required or data['confirm'] is not True or not isinstance(data['retry'], bool)
+            or not isinstance(data.get('analyze', True), bool)):
         raise ValueError('Review the preview, then explicitly choose Import or Retry failed posts.')
     ledger, fingerprint, saved = import_operation(root, data)
     if saved and saved.get('result'):return saved['result']
@@ -541,13 +679,23 @@ def library_import(root, data):
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
     studio.write_json(path, manifest)
     identities = [entry['identity'] for entry in manifest['candidates'] if sha(entry['identity'].encode())[:32] in chosen]
-    result = blog_library.import_batch(root, data['preview'], limit=25, retry=data['retry'], reader=blog_library.fetch, selected=identities)
+    # analyze=False is the author's unchecked "Summarize and tag" for this batch.
+    result = blog_library.import_batch(root, data['preview'], limit=25, retry=data['retry'], reader=blog_library.fetch,
+                                       selected=identities, analyze=data.get('analyze', True))
     state = library_preview_state(root, data['preview'])
     sync = result.get('hub_sync', {'status': 'local-only'})
     state['sharing'] = sync.get('status', 'local-saved-not-shared')
     state['sharing_message'] = SHARING_MESSAGES.get(state['sharing'], 'Saved locally; Hub sync needs attention. Retry Hub sync in chat.')
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'saved', 'result': state})
     return state
+
+
+def curation_changes(record, values):
+    """The posted curation fields whose value differs from the inspected reference."""
+    library = record.get('library') or {}
+    current = {'curation': library.get('curation', 'active'), 'topics': library.get('topics', []),
+               'products': library.get('products', []), 'note': record.get('note') or ''}
+    return {key: value for key, value in values.items() if key not in current or value != current[key]}
 
 
 def dispatch(root, route, data):
@@ -569,7 +717,12 @@ def dispatch(root, route, data):
         if route == 'schedule':
             if not data.get('expected'):raise ValueError('Reload this blog before changing its editorial decision.')
             ident = data.get('id');values = {k: v for k, v in data.items() if k != 'id'}
-            result = share(root, 'article', editorial.schedule(root, ident, values))
+            directory, _ = studio.item(root, 'articles', ident)
+            before = (directory / 'session.json').read_bytes()
+            record = editorial.schedule(root, ident, values, desk=True)
+            if (directory / 'session.json').read_bytes() == before:
+                return dict(UNCHANGED, id=ident)
+            result = share(root, 'article', record)
             return {**result, 'receipts': [receipt(root, 'Editorial decision', result, 'article')]}
         if route == 'resume':
             if set(data) != {'item'} or not adapter:raise ValueError('Choose a shared blog.')
@@ -581,7 +734,7 @@ def dispatch(root, route, data):
             allowed = {'id','location','expected'} if route=='analyze' else {'id', 'location', 'expected', 'confirmed', 'curation', 'topics', 'products', 'note'}
             if set(data) - allowed:
                 raise ValueError('Unknown curation field.')
-            if not isinstance(data.get('expected'), str) or not __import__('re').fullmatch(r'[a-f0-9]{64}', data['expected']):
+            if not isinstance(data.get('expected'), str) or not re.fullmatch(r'[a-f0-9]{64}', data['expected']):
                 raise CurationConflict('Reload this reference before saving curation.')
             if adapter:
                 adapter = authorize_write(root)  # Resolve current selection under the workspace lock.
@@ -591,6 +744,10 @@ def dispatch(root, route, data):
             if current['expected'] != data['expected']:
                 raise CurationConflict('This reference changed. Reload and compare before explicitly resubmitting your proposed curation.')
             values = {k: v for k, v in data.items() if k not in ('id', 'confirmed', 'location', 'expected')}
+            if route == 'curate':
+                values = curation_changes(current['record'], values)
+                if not values:
+                    return dict(UNCHANGED, id=current['id'])  # Before any checkout, revision or share.
             if values.get('curation') == 'retired' and data.get('confirmed') is not True:raise ValueError('Confirm retirement; earlier snapshots remain in Git history.')
             ident = current['id']
             if current['location'] == 'hub':
@@ -603,15 +760,14 @@ def dispatch(root, route, data):
                         if sha(encoded(payload)) != saved['fingerprint']:
                             raise CurationConflict('This reference has unshared local edits. Compare them in chat before changing the shared reference.')
                 ident = adapter._checkout(ident)
-            if route=='analyze':return __import__('source_curator').retry(root,[ident])
+            if route=='analyze':return source_curator.retry(root, [ident])
             result = share(root, 'source', blog_library.curate(root, ident, values))
             return {**result, 'receipts': [receipt(root, 'Reference curation', result, 'source')]}
         if route == 'memory':
             if not adapter:raise ValueError('Select a Team Hub to save shared memory.')
             if set(data) - {'kind', 'title', 'body', 'item', 'revision', 'scope', 'scope_key', 'operation'}:raise ValueError('Unknown memory field.')
-            if data.get('kind') not in ('note', 'context', 'rule'):raise ValueError('Choose note, context, or rule.')
-            if not isinstance(data.get('body'), str) or not 1 <= len(data['body']) <= 16000:raise ValueError('Provide a memory under 16000 characters.')
-            if not isinstance(data.get('title'), str) or not 1 <= len(data['title']) <= 200:raise ValueError('Provide a short memory title.')
+            values = {'kind': data.get('kind'), 'title': data.get('title'), 'body': data.get('body'),
+                      'scope': data.get('scope', 'team'), 'scope_key': data.get('scope_key', '')}
             if data.get('item'):
                 graph = adapter.hub.graph();heads = graph['heads'].get(data['item'])
                 if heads != [data.get('revision')]:raise ValueError('This memory changed. Reload before editing.')
@@ -620,88 +776,279 @@ def dispatch(root, route, data):
                     raise ValueError('This memory kind is read-only here. Inspect it in chat; it cannot be converted into a note.')
                 if previous['data'].get('collection') or previous['data'].get('lesson'):
                     raise ValueError('Use the focused collection or lesson workflow to change this record.')
-            scope = data.get('scope', 'team')
-            if scope not in ('team', 'project', 'author', 'article'):raise ValueError('Choose a memory scope.')
-            result = adapter.hub.save(data['kind'], data['title'], data['body'], item=data.get('item'),
+                saved = adapter.hub.read(data['item'], data['revision'])
+                current = {'kind': previous['kind'], 'title': previous['title'], 'body': Path(saved['paths']['BODY.md']).read_text(),
+                           'scope': previous['scope']['level'], 'scope_key': previous['scope']['key']}
+                values = {**current, **{key: data[key] for key in current if key in data}}
+                if values == current:
+                    return dict(UNCHANGED, item=data['item'], revision=data['revision'])
+            if values['kind'] not in ('note', 'context', 'rule'):raise ValueError('Choose note, context, or rule.')
+            # A body the form did not send is the saved one, which may be longer than the form shows.
+            if not isinstance(values['body'], str) or not values['body'] or ('body' in data and len(values['body']) > 16000):
+                raise ValueError('Provide a memory under 16000 characters.')
+            if not isinstance(values['title'], str) or not 1 <= len(values['title']) <= 200:raise ValueError('Provide a short memory title.')
+            if values['scope'] not in ('team', 'project', 'author', 'article'):raise ValueError('Choose a memory scope.')
+            result = adapter.hub.save(values['kind'], values['title'], values['body'], item=data.get('item'),
                 parents=[data['revision']] if data.get('item') else None, operation=data.get('operation'),
-                scope={'level': scope, 'key': data.get('scope_key', '')}, sync=True)
+                scope={'level': values['scope'], 'key': values['scope_key']}, sync=True)
             return {**result, 'receipts': [receipt(root, 'Shared memory', result)]}
     raise ValueError('Unknown management action.')
 
 
-def server(root, port=0):
+class Busy(Exception):
+    """Another desk request still holds the workspace."""
+
+
+PROTOCOL_ERRORS = {
+    405: 'The editorial desk answers GET and POST requests only.',
+    408: 'The request took too long to arrive.',
+    414: 'The request address is too long.',
+    431: 'The request headers are too large.',
+    501: 'The editorial desk answers GET and POST requests only.',
+}
+
+
+def note_unexpected(exc):
+    """One stderr line with the exception type and code location; never its message or any content."""
+    frames = traceback.extract_tb(exc.__traceback__)
+    where = (Path(frames[-1].filename).name + ':' + str(frames[-1].lineno)) if frames else 'unknown location'
+    print('Blog Studio desk: unexpected ' + type(exc).__name__ + ' at ' + where, file=sys.stderr, flush=True)
+
+
+def failure(exc, writing=False):
+    """(HTTP status, JSON body) for any exception. Authored messages pass through; internals never do."""
+    if isinstance(exc, CurationConflict):
+        # A refused save is a conflict; a read of a reference that went away is an ordinary 400, as before.
+        return (409 if writing else 400), {'error': str(exc)[:500], 'code': 'source-conflict'}
+    if isinstance(exc, Busy):
+        return 503, {'error': 'Another desk operation is still running. This request changed nothing; try again when it finishes.', 'code': 'busy'}
+    if isinstance(exc, json.JSONDecodeError):
+        return 400, {'error': 'A saved Blog Studio file is damaged and could not be read. Ask Blog Studio in chat to inspect this workspace.'}
+    if isinstance(exc, UnicodeError):
+        return 400, {'error': 'This text is not UTF-8. Save the file as UTF-8 text, then retry.'}
+    if isinstance(exc, (KeyError, TypeError)):
+        return 400, {'error': 'This request was missing expected information. Reload the desk and try again, or continue in chat.'}
+    if isinstance(exc, (ValueError, HubError)):
+        return 400, {'error': str(exc)[:500]}
+    if isinstance(exc, OSError):
+        after = 'Inspect retained work before retrying.' if writing else 'Saved work is preserved.'
+        return 503, {'error': 'Workspace access failed. ' + after}
+    return 500, {'error': 'The desk helper hit an unexpected problem. Reload the desk; saved work is kept, and you can continue in chat.',
+                 'code': 'unexpected'}
+
+
+def whole(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError('Use whole numbers for limit and offset.') from None
+
+
+def view(root, name, query):
+    """Read-only desk views by name. Returns None for an unknown view."""
+    arg = lambda key, default=None: query.get(key, [default])[0]
+    limit, offset = whole(arg('limit', 20)), whole(arg('offset', 0))
+    if name == 'board':
+        return editorial.board(root, arg('query', ''), arg('stage'), arg('owner'), limit, offset)
+    if name == 'inbox':
+        return editorial.inbox(root, arg('id'), limit, offset, query=arg('query', ''))
+    if name == 'library':
+        return blog_library.catalog(root, arg('query', ''), arg('collection'), arg('author'), arg('topic'), arg('product'),
+                                    arg('since'), arg('until'), limit, offset, arg('retired') == 'true')
+    if name == 'memory':
+        return memories(root, limit, offset, arg('query', ''))
+    if name == 'receipts':
+        return receipts(root)
+    if name == 'capabilities':
+        return capabilities(root)
+    if name == 'collections':
+        return collection_rows(root)
+    if name == 'library-preview':
+        current = studio.inside(root, '.desk-imports', 'current.json')
+        ident = arg('preview') or (studio.read_json(current)['preview'] if current.exists() else None)
+        return library_preview_state(root, ident) if ident else {'available': False}
+    if name == 'source':
+        return source_detail(root, arg('id'), arg('location', 'local'))
+    if name == 'article':
+        return detail(root, arg('id'), arg('location', 'local'), arg('revision'))
+    if name == 'finding':
+        return finding_detail(root, arg('id'), arg('key'), arg('location', 'local'))
+    if name == 'memory-detail':
+        return memory_detail(root, arg('id'), arg('revision'))
+    return None
+
+
+def server(root, port=0, bind=True):
+    """The local desk server and its session URL.
+
+    Connections are handled on daemon threads, so a silent or slow connection never holds
+    up another one. Workspace access stays serialized: one process-level lock covers every
+    API handler. bind=False builds the same server without opening a port (for checks that
+    drive the handler directly).
+    """
     token = secrets.token_urlsafe(32)
+    api_lock = threading.Lock()
+
+    @contextmanager
+    def serialized():
+        if not api_lock.acquire(timeout=API_WAIT):
+            raise Busy()
+        try:
+            yield
+        finally:
+            api_lock.release()
+
     class Handler(BaseHTTPRequestHandler):
+        timeout = HEADER_TIMEOUT  # Applied to each new connection until its headers are read.
+        server_version = 'BlogStudio'
+        sys_version = ''
+        responded = False
+
+        def version_string(self):
+            return 'Blog Studio desk'  # No Python or http.server version.
+
         def log_message(self, *args):pass  # Do not log content, document links, or session tokens.
-        def reply(self, status, value, media='application/json'):
+
+        def reply(self, status, value, media='application/json', allow=None):
             body = encoded(value) if media == 'application/json' else value
-            self.send_response(status);self.send_header('Content-Type', media);self.send_header('Content-Length', str(len(body)))
-            self.send_header('Cache-Control', 'no-store');self.send_header('X-Content-Type-Options', 'nosniff')
+            self.responded = True
+            self.send_response(status)
+            self.send_header('Content-Type', media)
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
             self.send_header('Referrer-Policy', 'no-referrer')
+            self.send_header('Cross-Origin-Resource-Policy', 'same-origin')
             self.send_header('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
-            self.end_headers();self.wfile.write(body)
+            if allow:
+                self.send_header('Allow', allow)
+            self.end_headers()
+            if self.command != 'HEAD':
+                self.wfile.write(body)
+
+        def fail(self, exc, writing=False):
+            """Every failure ends in one JSON reply; the connection is never simply dropped."""
+            status, body = failure(exc, writing)
+            if status == 500:
+                note_unexpected(exc)
+            if self.responded:
+                return  # A reply was already started; a second one would corrupt it.
+            try:
+                self.reply(status, body)
+            except OSError:
+                pass  # The browser went away.
+
+        def send_error(self, code, message=None, explain=None):
+            """Malformed or unsupported requests get the same JSON reply and headers as the rest."""
+            self.close_connection = True
+            try:
+                self.reply(code, {'error': PROTOCOL_ERRORS.get(code, 'This request could not be handled.')})
+            except OSError:
+                pass
+
         def check(self, api=False):
             expected = '127.0.0.1:' + str(self.server.server_port)
             if self.headers.get('Host') != expected:raise ValueError('Invalid local host.')
             origin = self.headers.get('Origin')
             if origin and origin != 'http://' + expected:raise ValueError('Cross-origin access is unavailable.')
+            site = (self.headers.get('Sec-Fetch-Site') or '').lower()
+            if site and site not in ('same-origin', 'none') and not self.opening_page():
+                raise ValueError('Cross-site access is unavailable.')
             if api and not secrets.compare_digest(self.headers.get('X-Blog-Studio-Token', ''), token):raise ValueError('Open the current editorial desk link to reconnect.')
+
+        def opening_page(self):
+            """A person following the desk link from another page: a top-level visit to the page shell.
+
+            The shell holds no workspace data and cannot be framed, so this one cross-site
+            request stays allowed; scripts, styles and every API call from another site do not.
+            """
+            return (self.command == 'GET' and urlsplit(self.path).path == '/'
+                    and self.headers.get('Sec-Fetch-Mode') == 'navigate' and self.headers.get('Sec-Fetch-Dest') == 'document')
+
         def do_GET(self):
             try:
                 self.check(self.path.startswith('/api/'))
-                parsed = urlsplit(self.path);query = parse_qs(parsed.query)
-                arg = lambda key, default=None:query.get(key, [default])[0]
-                limit, offset = int(arg('limit', 20)), int(arg('offset', 0))
-                if parsed.path == '/api/board':result = editorial.board(root, arg('query', ''), arg('stage'), arg('owner'), limit, offset)
-                elif parsed.path == '/api/inbox':result = editorial.inbox(root, arg('id'), limit, offset, query=arg('query',''))
-                elif parsed.path == '/api/library':result = blog_library.catalog(root, arg('query', ''), arg('collection'), arg('author'), arg('topic'), arg('product'), arg('since'), arg('until'), limit, offset, arg('retired') == 'true')
-                elif parsed.path == '/api/memory':result = memories(root, limit, offset, arg('query', ''))
-                elif parsed.path == '/api/receipts':result = receipts(root)
-                elif parsed.path == '/api/capabilities':result = capabilities(root)
-                elif parsed.path == '/api/collections':result = {'items': [{k: v for k, v in c.items() if k != 'local_path'} for c in blog_library.collections(root).values()]}
-                elif parsed.path == '/api/library-preview':
-                    current = studio.inside(root, '.desk-imports', 'current.json')
-                    ident = arg('preview') or (studio.read_json(current)['preview'] if current.exists() else None)
-                    result = library_preview_state(root, ident) if ident else {'available': False}
-                elif parsed.path == '/api/source':result = source_detail(root, arg('id'), arg('location', 'local'))
-                elif parsed.path == '/api/article':result = detail(root, arg('id'), arg('location', 'local'), arg('revision'))
-                elif parsed.path == '/api/finding':result = finding_detail(root, arg('id'), arg('key'), arg('location', 'local'))
-                elif parsed.path == '/api/memory-detail':result = memory_detail(root, arg('id'), arg('revision'))
-                elif parsed.path in ('/', '/app.js', '/style.css'):
-                    file = ASSETS / {'/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css'}[parsed.path]
-                    return self.reply(200, file.read_bytes(), {'/': 'text/html; charset=utf-8', '/app.js': 'text/javascript; charset=utf-8', '/style.css': 'text/css; charset=utf-8'}[parsed.path])
-                else:return self.reply(404, {'error': 'Unknown view.'})
+                self.connection.settimeout(BODY_TIMEOUT)
+                parsed = urlsplit(self.path)
+                if parsed.path in STATIC:
+                    name, media = STATIC[parsed.path]
+                    return self.reply(200, (ASSETS / name).read_bytes(), media)
+                result = None
+                if parsed.path.startswith('/api/'):
+                    with serialized():
+                        result = view(root, parsed.path[5:], parse_qs(parsed.query))
+                if result is None:
+                    return self.reply(404, {'error': 'Unknown view.'})
                 self.reply(200, result)
-            except (ValueError, TypeError, KeyError, HubError) as exc:self.reply(400, {'error': str(exc)[:500]})
-            except OSError:self.reply(503, {'error': 'Workspace access failed. Saved work is preserved.'})
+            except Exception as exc:
+                self.fail(exc)
+
         def do_POST(self):
             try:
                 self.check(True)
                 if self.headers.get('Transfer-Encoding') or self.headers.get('Content-Type') != 'application/json':raise ValueError('Use a bounded JSON request.')
-                size = int(self.headers.get('Content-Length', '0'))
+                try:
+                    size = int(self.headers.get('Content-Length', '0'))
+                except ValueError:
+                    raise ValueError('Use a bounded JSON request.') from None
                 if not 0 < size <= MAX_BODY:raise ValueError('Request exceeds the management limit.')
                 if not self.path.startswith('/api/'):raise ValueError('Unknown management action.')
-                self.connection.settimeout(15)
-                content = self.rfile.read(size)
+                self.connection.settimeout(BODY_TIMEOUT)
+                try:
+                    content = self.rfile.read(size)
+                except OSError:
+                    raise ValueError('Incomplete request.') from None
                 if len(content) != size:raise ValueError('Incomplete request.')
-                data = json.loads(content)
+                try:
+                    data = json.loads(content)
+                except ValueError:
+                    raise ValueError('Supply a JSON object.') from None
                 if not isinstance(data, dict):raise ValueError('Supply a JSON object.')
-                self.reply(200, dispatch(root, self.path[5:], data))
-            except CurationConflict as exc:self.reply(409, {'error': str(exc)[:500], 'code': 'source-conflict'})
-            except (ValueError, TypeError, KeyError, HubError) as exc:self.reply(400, {'error': str(exc)[:500]})
-            except OSError:self.reply(503, {'error': 'Workspace access failed. Inspect retained work before retrying.'})
-    class LocalServer(HTTPServer):
-        def get_request(self):
-            connection, address = super().get_request();connection.settimeout(15);return connection, address
-    httpd = LocalServer(('127.0.0.1', port), Handler)
+                with serialized():
+                    result = dispatch(root, self.path[5:], data)
+                self.reply(200, result)
+            except Exception as exc:
+                self.fail(exc, writing=True)
+
+        def unsupported(self):
+            self.reply(405, {'error': PROTOCOL_ERRORS[405]}, allow='GET, POST')
+
+        do_HEAD = do_PUT = do_PATCH = do_DELETE = do_OPTIONS = do_TRACE = do_CONNECT = unsupported
+
+    class LocalServer(ThreadingHTTPServer):
+        daemon_threads = True  # A stuck connection never keeps the helper alive.
+        request_queue_size = 32
+
+        def handle_error(self, request, client_address):
+            note_unexpected(sys.exc_info()[1])  # Never a traceback with content.
+
+    httpd = LocalServer(('127.0.0.1', port), Handler, bind_and_activate=bind)
+    if not bind:
+        httpd.server_port = port
     return httpd, 'http://127.0.0.1:' + str(httpd.server_port) + '/#' + token
 
 
+def launch_note(root, harness):
+    """What this launch did about reference analysis, for the launch output and the author."""
+    analysis = source_curator.disclosure(root)
+    if harness:
+        note = 'Saved ' + analysis['label'] + ' as this workspace’s analysis CLI because --harness was passed. ' + analysis['message']
+    elif analysis['harness']:
+        note = 'No --harness was passed, so the analysis CLI saved earlier for this workspace was left as it is. ' + analysis['message']
+    else:
+        note = ('No --harness was passed and none is saved, so opening the desk did not turn on reference analysis. '
+                'Pass --harness codex or --harness claude only when the author wants summaries and tags from that CLI.')
+    return {'harness': analysis['harness'], 'saved_by_this_launch': bool(harness), 'note': note}
+
+
 def main(root, port=0, open_browser=False, harness=None):
-    if harness:__import__('source_curator').configure(root,harness)
     studio.initialize(root)
+    # Only an explicit --harness changes the saved analysis choice; opening the desk alone never does.
+    if harness:source_curator.configure(root, harness)
+    analysis = launch_note(root, harness)
     httpd, url = server(root, port)
-    print(json.dumps({'url': url, 'access': 'local session only', 'stop': 'Press Ctrl+C to close the desk.'}), flush=True)
+    print(json.dumps({'url': url, 'access': 'local session only', 'stop': 'Press Ctrl+C to close the desk.',
+                      'analysis': analysis}), flush=True)
     if open_browser:webbrowser.open(url)
     try:httpd.serve_forever()
     except KeyboardInterrupt:pass
@@ -710,7 +1057,11 @@ def main(root, port=0, open_browser=False, harness=None):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__);parser.add_argument('--root', required=True);parser.add_argument('--port', type=int, default=0);parser.add_argument('--open', action='store_true')
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--root', required=True)
+    parser.add_argument('--port', type=int, default=0)
+    parser.add_argument('--open', action='store_true')
+    parser.add_argument('--harness', choices=('codex', 'claude'), help='Save this CLI for reference analysis (explicit opt-in).')
     args = parser.parse_args();root = Path(args.root).expanduser()
     if not root.is_absolute():parser.error('Use an absolute workspace path.')
-    raise SystemExit(main(root.resolve(), args.port, args.open))
+    raise SystemExit(main(root.resolve(), args.port, args.open, args.harness))

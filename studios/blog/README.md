@@ -10,18 +10,20 @@ an idea one question at a time. You stay in the same chat.
 
 ## Get started
 
-1. **[Download the installer](dist/blog-studio-installer.zip).** On GitHub, choose
-   **Download raw file**. You need access to this private repository; your team
-   administrator can also give you the installer.
+1. **Download `blog-studio-installer.zip`** from the
+   [latest release](https://github.com/dbbaskette/blog-studio/releases/latest).
+   You need access to this private repository; your team administrator can also
+   give you the ZIP.
 2. **Expand the ZIP** and open **Install Blog Studio.command** in its `installer`
    folder. Choose Codex, Claude Code, or both, and follow the setup instructions.
 3. **Open a new chat** in your chosen tool and say:
    **“Use Blog Studio. Help me start a blog.”**
 
 Already installed? Download the latest installer and run it again, then open a
-new chat. **Version 1.14.0** uses a normal local Git checkout for each Hub and keeps drafts, originals, review edits, selected sources, and
-history together inside each blog folder. Reusable team knowledge has its own
-readable memory library. Existing hubs upgrade during an authorized save or sync.
+new chat. An update brings new writing guidance and helpers together; your
+drafts, voices, and Hubs stay where they are. If a new blog says the guidance
+needs a newer Blog Studio runtime, this update is what it is asking for.
+[What changed](CHANGELOG.md)
 
 [Setup help, company laptop instructions, and updates →](docs/installation.md)
 
@@ -61,9 +63,8 @@ references stay with your blog and can help later articles.
 A readable research report is written automatically; no separate report command
 is needed.
 
-The workflow adapts [Deep Research skills](https://github.com/Weizhena/Deep-Research-skills)
-and is included in installer **1.15.0**. Downloading and reinstalling a newer
-package updates the bundled research workflows together with Blog Studio. It uses the tools already available in
+The workflow adapts [Deep Research skills](https://github.com/Weizhena/Deep-Research-skills).
+It uses the tools already available in
 Codex or Claude Code. Public searches use generic questions; private drafts stay
 in your workspace and selected private Hub. You can say **“Use only my sources.”**
 Proofreading stays focused on wording.
@@ -157,6 +158,13 @@ references and earlier posts; it loads only useful passages. Source dates and
 revisions stay attached so old product claims can be checked. You can say
 **“Use our saved references about [topic].”**
 
+Readable imports can be summarized and tagged for later reuse (topics, products,
+and cautions). That analysis sends the document text through your signed-in
+Codex or Claude CLI to its provider; the upload and import dialogs show the
+choice, and you can turn it off per upload. **Review details** lets you correct
+the results; **Analyze reference** retries unfinished analysis. Originals are
+retained. PDFs without extracted text remain marked **Needs extraction**.
+
 Imports are previewed before a bulk save. Earlier posts remain references until
 you explicitly choose to start an editable blog. Packages and visuals stay tied
 to their draft; changes flag them for review. Preparing them does not publish.
@@ -183,12 +191,12 @@ refresh; decisions and specialized memories explain how to continue in chat.
 
 **Idea → sources and voice → outline or draft → review → shared editing**
 
-You can start at any step. Blog Studio opens only the instructions needed for your
-request—a design called *progressive disclosure*. You do not need to manage the
-individual skills yourself.
+You can start at any step. Blog Studio loads only the instructions your request
+needs, so short requests stay quick. You do not need to manage the individual
+skills yourself.
 
-Writing guidance updates automatically for new blogs. Existing blogs keep their
-saved guidance for consistency. New features sometimes need an installer update.
+Writing guidance and helpers update together when you run a newer installer.
+Each blog records the version it was started with.
 
 [How it works and token estimates →](docs/progressive-disclosure-roadmap.md)
 
@@ -206,9 +214,3 @@ under your account settings.
 **For developers and team administrators:** [Developer guide](docs/development.md) ·
 [Roadmap](https://github.com/dbbaskette/blog-studio/issues/3) ·
 [Performance evidence](docs/performance.md) · [Hub acceptance walkthrough](docs/hub-acceptance.md) · [Package details](PACKAGE.md)
-
-Readable imports are analyzed automatically: Blog Studio adds a summary, topics,
-product tags and cautions for later reuse. **Review details** lets you correct
-those results; **Analyze reference** retries unfinished analysis. Your originals
-are retained. Analysis uses your selected signed-in Codex or Claude CLI. PDFs
-without extracted text remain marked **Needs extraction**.

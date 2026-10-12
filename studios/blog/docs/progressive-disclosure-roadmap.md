@@ -6,7 +6,13 @@ Keep the existing browser prompt generator as an optional introduction for newco
 
 The current package implements the six routes, twenty capability modules, and continuity helpers. The helper, refresh, and installer deterministic suite and package portability checks verify local behavior. Those results establish helper behavior and packaging; conversational quality and route selection still need a representative harness pilot.
 
-## Repository updates are implemented
+> **Since 2.0:** Blog Studio is installed as one complete skill. The bootstrap and
+> the per-task guidance fetch described below are retired, so every "add the
+> bootstrap" figure on this page is historical. Route estimates for the skill
+> itself still apply; the current per-file inventory is in
+> `estimates/blog-studio-token-inventory.json`.
+
+## Repository updates (historical: 1.x)
 
 The installed bootstrap quietly fetches approved `main` for a new writing task, returns a compact status/path record, and progressively reads the pinned repository guidance. Existing articles resume their saved pin and runtime. Core executable updates are explicit managed installs with backup, repair, and rollback. See [installation](installation.md) and the [implementation record](superpowers/plans/2026-10-01-blog-studio-installation.md).
 

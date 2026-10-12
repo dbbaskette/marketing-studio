@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""Local Google Docs transfer checkpoints. Never contacts Google or handles credentials.
+"""Local Google Docs transfer checkpoints.
 
-The harness supplies bounded, accepted-text observations after provider readback.
-These checks verify consistency, not that a provider call actually happened.
+Checkpoint commands (start, prepare, confirm, compare, accept, source, receipt)
+work from files only: they never contact Google or handle credentials. The one
+exception is `status --online`, which makes read-only calls through the gcloud
+transport to compare the linked Doc with its saved baseline.
+
+Observations describe accepted text after provider readback. These checks verify
+consistency, not that a provider call actually happened.
 """
 import argparse
+import difflib
 import json
 import os
 import shutil
@@ -15,6 +21,11 @@ from urllib.parse import urlsplit
 import uuid
 
 import studio
+
+# Raw Docs JSON (which can hold collaborators' comment threads) stays in this dot folder, which Hub sync skips.
+LOCAL_NATIVE = '.google-native'
+SHARED_SNAPSHOT = ('document.md', 'document.docx', 'snapshot.json')
+LOCAL_MARK, SPLIT_MARK, REMOTE_MARK = '<<<<<<< local', '=======', '>>>>>>> google'
 
 CAPABILITIES = ('read', 'tabs', 'create', 'edit', 'copy', 'revision_guard',
                 'accepted_text', 'comments_read', 'comments_write', 'inline_anchors', 'suggestions_read', 'suggestions_write',
@@ -41,7 +52,9 @@ def hash_value(value):
 
 def observation(value, body):
     required = ('schema', 'document_id', 'url', 'tab_ids', 'observed_at', 'content_sha256', 'suggestions')
-    object_fields(value, (*required, 'revision_id', 'folder_id', 'structure_verified', 'format_sha256', 'review_state'), required)
+    optional = ('revision_id', 'folder_id', 'structure_verified', 'format_sha256', 'review_state',
+                'format_version', 'legacy_format_sha256', 'projection')
+    object_fields(value, (*required, *optional), required)
     if value['schema'] != 1:
         raise ValueError('Unsupported Google observation schema.')
     document_id = token(value['document_id'])
@@ -71,8 +84,14 @@ def observation(value, body):
             token(result[name])
     if 'structure_verified' in result and not isinstance(result['structure_verified'], bool):
         raise ValueError('Structure verification must be true or false.')
-    if result.get('format_sha256') is not None:
-        hash_value(result['format_sha256'])
+    for name in ('format_sha256', 'legacy_format_sha256'):
+        if result.get(name) is not None:
+            hash_value(result[name])
+    if 'format_version' in result and result['format_version'] not in (1, 2):
+        raise ValueError('Unsupported formatting fingerprint version; update the managed runtime.')
+    projection = result.get('projection')
+    if 'projection' in result and (not isinstance(projection, str) or not re.fullmatch(r'[a-z0-9/-]{1,40}', projection)):
+        raise ValueError('Invalid Markdown projection label.')
     if 'review_state' in result:
         review_state(result['review_state'])
     return result
@@ -86,9 +105,20 @@ def review_state(value):
     return value
 
 
+def capture_paths(args):
+    """--snapshot alone names a capture folder; its observation and Markdown are used unless given."""
+    folder = getattr(args, 'snapshot', None)
+    observation_path = args.observation or (str(Path(folder) / 'observation.json') if folder else None)
+    file_path = args.file or (str(Path(folder) / 'document.md') if folder else None)
+    if not observation_path or not file_path:
+        raise ValueError('Pass --snapshot <capture folder>, or both --observation and --file.')
+    return observation_path, file_path
+
+
 def observed(args):
-    body = studio.read_text(args.file)
-    return observation(studio.read_json(Path(args.observation)), body), body
+    observation_path, file_path = capture_paths(args)
+    body = studio.read_text(file_path)
+    return observation(studio.read_json(Path(observation_path)), body), body
 
 
 def state(record):
@@ -113,7 +143,22 @@ def local_body(directory, kind):
     return body
 
 
-def compare(directory, record, kind, obs, body):
+def format_pair(base_document, obs):
+    """(baseline fingerprint, observed fingerprint computed the same way), or None where unavailable.
+
+    Baselines saved by older runtimes use fingerprint version 1; captures carry
+    that legacy value too, so an upgrade never makes an unchanged Doc look changed.
+    """
+    saved = base_document.get('format_sha256')
+    if not saved:
+        return None, None
+    version = base_document.get('format_version', 1)
+    if obs.get('format_version', 1) == version:
+        return saved, obs.get('format_sha256')
+    return saved, obs.get('legacy_format_sha256') if version == 1 else None
+
+
+def compare(directory, record, kind, obs, body, root=None):
     google = state(record)
     base = google['baselines'].get(kind)
     if not base:
@@ -122,18 +167,153 @@ def compare(directory, record, kind, obs, body):
     local = local_body(directory, kind)
     local_hash = studio.digest(local.encode())
     remote_hash = studio.digest(body.encode())
+    saved_format, observed_format = format_pair(base['document'], obs)
+    # Equal fingerprints mean the Doc itself is unchanged, however its Markdown happens to be rendered.
+    same_document = bool(saved_format and observed_format and saved_format == observed_format)
     local_changed = local_hash != base['local_sha256']
-    remote_changed = remote_hash != base['document']['content_sha256']
+    remote_changed = remote_hash != base['document']['content_sha256'] and not same_document
     status = ('converged' if local_hash == remote_hash and (local_changed or remote_changed) else
               'conflict' if local_changed and remote_changed else
               'local-only' if local_changed else 'remote-only' if remote_changed else 'unchanged')
     inputs = {'baseline': base, 'local_sha256': local_hash, 'document': obs, 'kind': kind}
-    return {'status': status, 'comparison': studio.digest(json.dumps(inputs, sort_keys=True).encode()),
+    comparison = studio.digest(json.dumps(inputs, sort_keys=True).encode())
+    result = {'status': status, 'comparison': comparison,
             'local_sha256': local_hash, 'remote_sha256': remote_hash,
-            'format_changed': (obs['format_sha256'] != base['document'].get('format_sha256')) if obs.get('format_sha256') else None,
+            'format_changed': (not same_document) if obs.get('format_sha256') else None,
             'baseline_file': str(snapshot_path(directory, base['transfer'], 'document')),
             'local_file': str(studio.inside(directory, kind.upper() + '.md')),
             'guard': {'requiredRevisionId': obs['revision_id']} if obs.get('revision_id') else None}
+    if status == 'conflict':
+        result['merge'] = merge_preview(root, directory, base, local, body, comparison)
+    return result
+
+
+def baseline_text(directory, base):
+    """The Google text both sides started from, if this computer still has an intact copy."""
+    path = snapshot_path(directory, base['transfer'], 'document')
+    if path.is_symlink() or not path.is_file():
+        return None
+    data = path.read_bytes()
+    if studio.digest(data) != base['document']['content_sha256']:
+        return None
+    return data.decode('utf-8')
+
+
+def merge_chunks(base, ours, theirs):
+    """Three-way merge of line lists.
+
+    Returns ('same', lines), ('ours', lines), ('theirs', lines) or
+    ('conflict', our lines, their lines). A passage only one side changed is
+    taken from that side; a passage both changed differently is a conflict.
+    """
+    def blocks(other):
+        return difflib.SequenceMatcher(None, base, other, autojunk=False).get_matching_blocks()
+    ours_blocks, theirs_blocks = blocks(ours), blocks(theirs)
+    regions = []
+    i = j = 0
+    while i < len(ours_blocks) and j < len(theirs_blocks):
+        base_a, start_a, size_a = ours_blocks[i]
+        base_b, start_b, size_b = theirs_blocks[j]
+        low, high = max(base_a, base_b), min(base_a + size_a, base_b + size_b)
+        if low < high:
+            regions.append((low, high, start_a + low - base_a, start_b + low - base_b))
+        if base_a + size_a < base_b + size_b:
+            i += 1
+        else:
+            j += 1
+    regions.append((len(base), len(base), len(ours), len(theirs)))
+    chunks = []
+    at_base = at_ours = at_theirs = 0
+    for low, high, in_ours, in_theirs in regions:
+        original, mine, yours = base[at_base:low], ours[at_ours:in_ours], theirs[at_theirs:in_theirs]
+        if original or mine or yours:
+            if mine == yours:
+                chunks.append(('same', mine))
+            elif mine == original:
+                chunks.append(('theirs', yours))
+            elif yours == original:
+                chunks.append(('ours', mine))
+            else:
+                chunks.append(('conflict', mine, yours))
+        if high > low:
+            chunks.append(('same', base[low:high]))
+        at_base, at_ours, at_theirs = high, in_ours + high - low, in_theirs + high - low
+    return chunks
+
+
+def merged_text(chunks):
+    """(text, number of conflicts). Conflicting passages are marked for the author to choose."""
+    lines = []
+    conflicts = 0
+    for chunk in chunks:
+        if chunk[0] == 'conflict':
+            conflicts += 1
+            lines += [LOCAL_MARK, *chunk[1], SPLIT_MARK, *chunk[2], REMOTE_MARK]
+        else:
+            lines += chunk[1]
+    return '\n'.join(lines), conflicts
+
+
+def text_chunks(base_text, local, remote):
+    return merge_chunks(base_text.split('\n'), local.split('\n'), remote.split('\n'))
+
+
+def dropped_remote_lines(chunks, resolution):
+    """Lines that only Google changed and that a proposed resolution no longer contains."""
+    kept = {line.strip() for line in resolution.split('\n')}
+    return [line for chunk in chunks if chunk[0] == 'theirs'
+            for line in chunk[1] if line.strip() and line.strip() not in kept]
+
+
+def merge_preview(root, directory, base, local, body, comparison):
+    """Describe how a both-changed return would merge, and stage the result for inspection."""
+    base_text = baseline_text(directory, base)
+    if base_text is None:
+        return {'status': 'unavailable',
+                'reason': 'The saved baseline text is not on this computer, so both versions need a manual resolution.'}
+    text, conflicts = merged_text(text_chunks(base_text, local, body))
+    preview = {'status': 'conflicts' if conflicts else 'clean', 'conflicts': conflicts,
+               'next_step': ('Show the marked passages, record the chosen wording in this file without the markers, '
+                             'then accept with --resolution-file.') if conflicts else
+                            'The edits do not overlap. Accept without a resolution file to keep both.'}
+    if root is not None:
+        from google_drive import staging_root
+        path = staging_root(root, create=True) / ('merge-' + comparison[:16] + '.md')
+        studio.atomic(path, text.encode())
+        path.chmod(0o600)
+        preview['file'] = str(path)
+    return preview
+
+
+def choose_accepted(args, directory, base, check, local, body):
+    """Text to keep locally after a return. Local edits are never replaced without an explicit choice."""
+    base_text = baseline_text(directory, base)
+    chunks = text_chunks(base_text, local, body) if base_text is not None else None
+    if args.resolution_file:
+        accepted = studio.read_text(args.resolution_file)
+        if not accepted.strip():
+            raise ValueError('Cannot accept empty text.')
+        if any(line in (LOCAL_MARK, REMOTE_MARK) for line in accepted.split('\n')):
+            raise ValueError('The resolution still contains conflict markers. Choose the wording for each marked passage first.')
+        missing = dropped_remote_lines(chunks, accepted) if chunks is not None and not args.discard_remote else []
+        if missing:
+            raise ValueError('The resolution drops text that only Google changed (' + str(len(missing))
+                             + ' line(s), starting “' + missing[0].strip()[:80] + '”). Keep that text, or pass '
+                             '--discard-remote when the author chose to drop it.')
+        return accepted, 'resolution'
+    if check['status'] in ('unchanged', 'local-only'):
+        return local, None
+    if check['status'] in ('remote-only', 'converged'):
+        return body, None
+    if chunks is None:
+        raise ValueError('Both versions changed and the saved baseline text is unavailable here; local edits would be '
+                         'overwritten. Resolve explicitly and provide the chosen text.')
+    text, conflicts = merged_text(chunks)
+    if conflicts:
+        raise ValueError('Both versions changed the same passage (' + str(conflicts) + ' place(s)); local edits would be '
+                         'overwritten. Open the merge file from google compare, choose the wording for each marked '
+                         'passage, and pass it as --resolution-file.')
+    return text, 'clean-merge'
 
 
 def snapshot_path(directory, transfer, name):
@@ -149,70 +329,98 @@ def snapshot(directory, transfer, name, body):
 
 
 def formatted_snapshot(path, obs, body):
-    """Only attach inspected helper-generated artifacts for this exact transfer."""
+    """Validate a helper-made capture against this exact observation. Returns its files by name."""
     from google_drive import validate_docx, GoogleError
-    from google_roundtrip import semantic, tabs
-    from google_drive import encoded as compact
+    from google_roundtrip import FORMAT_VERSION, PROJECTION, fingerprint, suggestion_ids, tabs
+    from google_suggestions import accepted_markdown, summary
     directory = Path(path)
-    names = ('document.md', 'document.docx', 'native.json', 'snapshot.json')
     files = {}
-    for name in names:
+
+    def load(name, limit=1024 * 1024):
         source = directory / name
         if source.is_symlink() or not source.is_file():
             raise ValueError('Snapshot files must be regular contained files.')
-        limit = 10 * 1024 * 1024 if name.endswith('.docx') else 1024 * 1024
         if source.stat().st_size > limit:
             raise ValueError('Snapshot exceeds the portable Hub artifact limit.')
         files[name] = source.read_bytes()
+
+    for name in ('document.md', 'native.json', 'snapshot.json'):
+        load(name)
+    load('document.docx', 10 * 1024 * 1024)
     meta = json.loads(files['snapshot.json'])
-    if meta.get('schema') == 2:
-        source=directory/'accepted.json'
-        if source.is_symlink() or not source.is_file() or source.stat().st_size > 1024*1024:
-            raise ValueError('Accepted native snapshot must be a bounded regular file.')
-        files['accepted.json']=source.read_bytes()
-    object_fields(meta, ('schema', 'document_id', 'tab_ids', 'revision_id', 'drive_version',
-                       'observed_at', 'content_sha256', 'format_sha256', 'files', 'review_state'),
-                       ('schema', 'document_id', 'tab_ids', 'revision_id', 'content_sha256', 'format_sha256', 'files'))
-    if meta['schema'] not in (1,2) or any(meta[k] != obs.get(k) for k in ('document_id', 'tab_ids', 'revision_id', 'content_sha256', 'format_sha256')):
+    if not isinstance(meta, dict) or meta.get('schema') != 3:
+        raise ValueError('This capture was made by a different runtime version. Capture the Doc again.')
+    identity = ('document_id', 'tab_ids', 'revision_id', 'content_sha256', 'format_sha256', 'format_version',
+                'legacy_format_sha256', 'projection')
+    object_fields(meta, ('schema', *identity, 'drive_version', 'observed_at', 'files', 'review_state',
+                         'review_threads', 'structure'), ('schema', *identity, 'files'))
+    if 'accepted.json' in meta['files']:
+        load('accepted.json')
+    if meta['format_version'] != FORMAT_VERSION or any(meta[k] != obs.get(k) for k in identity):
         raise ValueError('Snapshot and observed document revision disagree.')
     if files['document.md'] != body.encode():
         raise ValueError('Snapshot Markdown and accepted text disagree.')
     if meta['files'] != {name: studio.digest(data) for name, data in files.items() if name != 'snapshot.json'}:
         raise ValueError('Snapshot file fingerprints disagree.')
+    native = json.loads(files['native.json'])
+    accepted = json.loads(files['accepted.json']) if 'accepted.json' in files else native
     try:
         validate_docx(files['document.docx'])
+        for view in (native, accepted):
+            if (not view.get('tabs') or view.get('documentId') != obs['document_id']
+                    or view.get('revisionId') != obs.get('revision_id')
+                    or [t['tabProperties']['tabId'] for t in tabs(view)] != obs['tab_ids']):
+                raise ValueError('Native snapshot identity or scope disagrees.')
+        if fingerprint(accepted) != obs['format_sha256']:
+            raise ValueError('Native snapshot formatting fingerprint disagrees.')
+        if meta['projection'] == PROJECTION and accepted_markdown(accepted) != files['document.md']:
+            raise ValueError('Snapshot Markdown is not the accepted text of this native snapshot.')
     except GoogleError as exc:
         raise ValueError(str(exc)) from None
-    native = json.loads(files['native.json'])
-    if meta['schema'] == 2:
-        from google_suggestions import accepted_markdown, summary
-        accepted=json.loads(files['accepted.json'])
-        if (review_state(meta.get('review_state')) != obs.get('review_state')
-                or meta['review_state'] != summary(native)
-                or native.get('suggestionsViewMode') != 'SUGGESTIONS_INLINE'
-                or native.get('commentsViewMode') != 'COMMENTS_VIEW_MODE_INCLUDED'
-                or native.get('documentId') != obs['document_id']
-                or native.get('revisionId') != obs.get('revision_id')
-                or [t['tabProperties']['tabId'] for t in tabs(native)] != obs['tab_ids']
-                or accepted_markdown(accepted) != files['document.md']):
+    review = meta.get('review_state')
+    if review is not None or obs.get('review_state') is not None:
+        threads = meta.get('review_threads')
+        if threads == 'threads':
+            expected = summary(native)
+            listed = native.get('commentsViewMode') == 'COMMENTS_VIEW_MODE_INCLUDED'
+        else:
+            expected = {'pending': len(suggestion_ids(native)), 'accepted': 0, 'rejected': 0, 'unresolved_comments': 0}
+            listed = threads == 'markers'
+        if not listed or review_state(review) != obs.get('review_state') or review != expected:
             raise ValueError('Review snapshot and accepted projection disagree.')
-        native=accepted
-    if not native.get('tabs'):
-        raise ValueError('Native snapshot must contain selected tabs.')
-    if (native.get('documentId') != obs['document_id'] or native.get('revisionId') != obs.get('revision_id')
-            or [t['tabProperties']['tabId'] for t in tabs(native)] != obs['tab_ids']
-            or studio.digest(compact(semantic(native))) != obs.get('format_sha256')):
-        raise ValueError('Native snapshot identity, scope or formatting fingerprint disagrees.')
     return files
 
 
 def save_formatted_snapshot(directory, transfer, files):
-    names = {}
+    """Keep text, DOCX and the hash summary with the blog's shared history; keep raw Docs JSON on this computer.
+
+    Returns (shared names, local names), each mapping a snapshot file to its path in the blog folder.
+    """
+    shared, local = {}, {}
     for name, data in files.items():
-        relative = 'history/google-' + transfer + '-' + name
-        studio.atomic(studio.inside(directory, relative), data)
-        names[name] = relative
-    return names
+        if name in SHARED_SNAPSHOT:
+            relative = 'history/google-' + transfer + '-' + name
+            shared[name] = relative
+            studio.atomic(studio.inside(directory, relative), data)
+        else:
+            relative = LOCAL_NATIVE + '/' + transfer + '-' + name
+            local[name] = relative
+            target = studio.inside(directory, relative)
+            target.parent.mkdir(mode=0o700, exist_ok=True)
+            studio.atomic(target, data)
+            target.chmod(0o600)
+    return shared, local
+
+
+def prune_local_native(directory, google):
+    """Raw Docs JSON is kept only for the current baselines; older copies are removed."""
+    folder = studio.inside(directory, LOCAL_NATIVE)
+    if folder.is_symlink() or not folder.is_dir():
+        return
+    current = {baseline['transfer'] for baseline in google['baselines'].values()}
+    for entry in folder.iterdir():
+        if entry.name[:32] not in current and entry.is_file() and not entry.is_symlink():
+            entry.unlink()
 
 
 def capabilities(args, root):
@@ -309,9 +517,13 @@ STATUS_LABELS = {'in-sync': 'In sync', 'google-changes': 'Google has changes',
 
 
 def sync_status(root, directory, record, kind='draft', online=False, account=None):
-    """Cached observations are historical only; only a live check can say in sync."""
-    from google_drive import Client, GoogleError, encoded as compact
-    from google_roundtrip import semantic, tabs
+    """Cached observations are historical only; only a live check can say in sync.
+
+    The online check is read-only and needs neither stored native snapshots nor
+    comment readback, so another Hub member can run it right after checkout.
+    """
+    from google_drive import Client, GoogleError, account_for, encoded as compact
+    from google_roundtrip import fingerprint, inline_read, read_views, tabs
     base = record.get('google', {}).get('baselines', {}).get(kind)
     cache_path = studio.inside(directory, '.google-status-' + kind + '.json')
     cache = studio.read_json(cache_path) if cache_path.exists() else {}
@@ -342,24 +554,21 @@ def sync_status(root, directory, record, kind='draft', online=False, account=Non
             if not target.get('format_sha256'):
                 raise GoogleError('Capture and accept a formatted return once to establish a comparable baseline.')
             before = local_body(directory, kind)
-            client=Client(account)
-            from google_suggestions import document, review_read, summary
-            from google_roundtrip import suggestions
-            remote=document(client,target['document_id'],inline=True)
-            if suggestions(remote):
-                review=review_read(client,target['document_id'])
-                accepted=document(client,target['document_id'])
-                again=document(client,target['document_id'],inline=True)
-                if len({d['revisionId'] for d in (remote,review,accepted,again)}) != 1:
+            client = Client(account_for(root, account))
+            from google_suggestions import review_counts
+            inline, remote = read_views(client, target['document_id'])
+            if remote is not inline:
+                # Suggestions are pending: compare accepted text only, and count what is waiting.
+                _, result['review_state'], _ = review_counts(client, target['document_id'], inline)
+                if inline_read(client, target['document_id'])['revisionId'] != inline['revisionId']:
                     raise GoogleError('Google changed during the check. Check again.')
-                result['review_state']=summary(review)
-                remote=accepted
             if [tab['tabProperties']['tabId'] for tab in tabs(remote)] != target['tab_ids']:
                 raise GoogleError('Google tab scope changed; reconcile the linked document before continuing.')
             if before != local_body(directory, kind):
                 raise GoogleError('Local content changed during the check. Check again.')
             local_changed = studio.digest(before.encode()) != base['local_sha256']
-            remote_changed = studio.digest(compact(semantic(remote))) != target['format_sha256']
+            # A baseline saved by an older runtime is compared the way it was computed.
+            remote_changed = fingerprint(remote, target.get('format_version', 1)) != target['format_sha256']
             result['status'] = ('both-changed' if local_changed and remote_changed else
                                 'local-changes' if local_changed else 'google-changes' if remote_changed else 'in-sync')
             if result['status']=='in-sync' and result.get('review_state',{}).get('pending'):
@@ -387,6 +596,7 @@ def start(root, args):
 
     Called under studio's workspace lock. No provider calls or Google writes.
     """
+    from google_drive import discard
     obs, body = observed(args)
     if not obs.get('structure_verified') or not obs.get('revision_id') or not obs.get('format_sha256'):
         raise ValueError('Inspect a fresh formatted Google capture before starting this blog.')
@@ -425,7 +635,7 @@ def start(root, args):
         studio.save_artifact(stage, 'draft', body, record, label='Google manuscript intake')
         snapshot(stage, transfer, 'local', body)
         snapshot(stage, transfer, 'document', body)
-        formatted = save_formatted_snapshot(stage, transfer, files)
+        formatted, local_files = save_formatted_snapshot(stage, transfer, files)
         google = state(record)
         google['transfers'][transfer] = {'status': 'confirmed', 'kind': 'draft',
             'direction': 'from-google', 'document': obs, 'local_sha256': obs['content_sha256'],
@@ -441,9 +651,10 @@ def start(root, args):
         if stage.exists():
             shutil.rmtree(stage)
     studio.write_json(studio.inside(root, '.active-article.json'), {'id': value})
+    discard(root, args.snapshot)  # Only removes a capture that sits in this workspace's staging folder.
     return {'id': value, 'title': record['title'], 'status': 'started-from-google',
             'linked_document': obs['url'], 'transfer': transfer, 'formatted_snapshot': formatted,
-            'next_step': record['next_step']}
+            'local_snapshot': local_files, 'next_step': record['next_step']}
 
 
 def command(root, args):
@@ -473,8 +684,9 @@ def command(root, args):
         body = local_body(directory, kind)
         base = google['baselines'].get(kind)
         target = None
+        supplied = args.observation or args.file or args.snapshot
         if base and not args.new_document:
-            if not args.observation or not args.file:
+            if not args.snapshot and not (args.observation and args.file):
                 raise ValueError('Read the linked Google Doc before preparing another handoff.')
             target, remote_body = observed(args)
             check = compare(directory, record, kind, target, remote_body)
@@ -482,7 +694,7 @@ def command(root, args):
                 raise ValueError('Google content changed. Return or resolve those edits before writing.')
             if not check['guard']:
                 raise ValueError('Existing-document writes need a revision guard; create a new copy instead.')
-        elif args.observation or args.file:
+        elif supplied:
             raise ValueError('A new-document handoff has no existing target observation.')
         transfer = uuid.uuid4().hex
         snapshot(directory, transfer, 'local', body)
@@ -495,10 +707,16 @@ def command(root, args):
     obs, body = observed(args)
     snapshot_files = None
     if args.action in ('confirm', 'accept'):
+        formatted_baseline = (google['baselines'].get(kind) or {}).get('document', {}).get('format_sha256')
         if getattr(args, 'snapshot', None):
             snapshot_files = formatted_snapshot(args.snapshot, obs, body)
         elif obs.get('format_sha256'):
             raise ValueError('A formatting observation needs its --snapshot artifacts.')
+        elif formatted_baseline:
+            # A hand-built observation would silently drop the formatting baseline that live status,
+            # suggestions and comments depend on.
+            raise ValueError('This blog has a formatted Google baseline. Capture the Doc with google_roundtrip.py '
+                             'capture and pass that capture as --snapshot; nothing was saved.')
     if args.action == 'confirm':
         transfer = args.transfer
         saved = google['transfers'].get(transfer)
@@ -514,21 +732,19 @@ def command(root, args):
             same_target(saved['target'], obs)
             if saved['target'].get('folder_id') != obs.get('folder_id'):
                 raise ValueError('Readback changed the target folder.')
-        if not obs.get('structure_verified') or saved['local_sha256'] != obs['content_sha256']:
+        if not obs.get('structure_verified') or not same_text(directory, transfer, saved, obs, body):
             raise ValueError('Readback must match the selected copy and verify its structure and links.')
         snapshot(directory, transfer, 'document', body)
         saved.update(status='confirmed', document=obs, confirmed_at=studio.now(), direction='to-google')
         google['baselines'][kind] = {'transfer': transfer, 'local_sha256': saved['local_sha256'], 'document': obs}
         result = {'id': record['id'], 'transfer': transfer, 'status': 'confirmed'}
     else:
-        check = compare(directory, record, kind, obs, body)
+        check = compare(directory, record, kind, obs, body, root)
         if args.action == 'compare':return {'id': record['id'], **check}
         if check['comparison'] != args.expected_comparison:
             raise ValueError('The comparison changed. Re-read both versions and compare again.')
-        if check['status'] in ('conflict', 'local-only') and not args.resolution_file:
-            raise ValueError('Local edits would be overwritten. Resolve explicitly and provide the chosen text.')
-        accepted = studio.read_text(args.resolution_file) if args.resolution_file else body
-        if not accepted.strip():raise ValueError('Cannot accept empty text.')
+        previous = google['baselines'][kind]
+        accepted, how = choose_accepted(args, directory, previous, check, local_body(directory, kind), body)
         if kind == 'draft' and record['stop_point'] in ('outline', 'brief'):
             raise ValueError('This task stops before drafting. Keep its existing stop point.')
         if kind == 'draft' and record['mode'] == 'existing' and not (directory / 'ORIGINAL.md').is_file():
@@ -536,28 +752,71 @@ def command(root, args):
         transfer = uuid.uuid4().hex
         snapshot(directory, transfer, 'local', accepted)
         snapshot(directory, transfer, 'document', body)
-        previous = google['baselines'][kind]
         if studio.digest(accepted.encode()) != check['local_sha256']:
             studio.save_artifact(directory, kind, accepted, record)
         google['transfers'][transfer] = {'status': 'confirmed', 'kind': kind, 'direction': 'from-google',
             'local_sha256': studio.digest(accepted.encode()), 'document': obs, 'confirmed_at': studio.now(),
-            'resolved': bool(args.resolution_file), 'previous_transfer': previous['transfer']}
-        # Remote text is the common baseline. A local merge remains visibly unsent.
-        google['baselines'][kind] = {'transfer': transfer, 'local_sha256': obs['content_sha256'], 'document': obs}
-        result = {'id': record['id'], 'transfer': transfer, 'status': 'accepted', 'reviews': studio.freshness(root, directory, record)}
+            'resolved': bool(args.resolution_file), 'merged': how == 'clean-merge',
+            'previous_transfer': previous['transfer']}
+        # Remote text is the common baseline. A local merge, or local edits kept as they were, stay visibly unsent.
+        kept_local = how is None and check['status'] in ('unchanged', 'local-only')
+        synced_local = previous['local_sha256'] if kept_local else obs['content_sha256']
+        google['baselines'][kind] = {'transfer': transfer, 'local_sha256': synced_local, 'document': obs}
+        result = {'id': record['id'], 'transfer': transfer, 'status': 'accepted', 'outcome': check['status'],
+                  'merge': how, 'reviews': studio.freshness(root, directory, record)}
+        if how == 'clean-merge' or (kept_local and check['status'] == 'local-only'):
+            result['next_step'] = 'Local edits that Google does not have yet were kept. Send them when the author asks.'
     if snapshot_files:
-        google['transfers'][transfer]['formatted_snapshot'] = save_formatted_snapshot(directory, transfer, snapshot_files)
-        result['formatted_snapshot'] = google['transfers'][transfer]['formatted_snapshot']
+        shared_files, local_files = save_formatted_snapshot(directory, transfer, snapshot_files)
+        google['transfers'][transfer]['formatted_snapshot'] = shared_files
+        result['formatted_snapshot'] = shared_files
+        result['local_snapshot'] = local_files
+        prune_local_native(directory, google)
     studio.persist(directory, 'articles', record)
+    finish_staging(root, args, result)
     return result
+
+
+def canonical_text(text):
+    """Paragraph text without incidental whitespace: trailing spaces, runs of blank lines, a final newline."""
+    lines = []
+    for line in (raw.rstrip() for raw in text.replace('\r\n', '\n').split('\n')):
+        if line or (lines and lines[-1]):
+            lines.append(line)
+    while lines and not lines[-1]:
+        lines.pop()
+    return '\n'.join(lines)
+
+
+def same_text(directory, transfer, saved, obs, body):
+    """Readback equals the frozen copy: byte for byte, or differing only in incidental whitespace."""
+    if saved['local_sha256'] == obs['content_sha256']:
+        return True
+    frozen = snapshot_path(directory, transfer, 'local')
+    if frozen.is_symlink() or not frozen.is_file():
+        return False
+    data = frozen.read_bytes()
+    return studio.digest(data) == saved['local_sha256'] and canonical_text(data.decode('utf-8')) == canonical_text(body)
+
+
+def finish_staging(root, args, result):
+    """Staged inputs that reached their checkpoint are removed; anything outside staging is left alone."""
+    from google_drive import discard, staging_root
+    if result.get('status') not in ('accepted', 'confirmed'):
+        return
+    discard(root, getattr(args, 'snapshot', None))
+    expected = getattr(args, 'expected_comparison', None)
+    if expected:
+        discard(root, staging_root(root) / ('merge-' + expected[:16] + '.md'))
 
 
 def add_parser(groups):
     commands = groups.add_parser('google', help='Local Google Docs checkpoints; provider calls stay in the harness').add_subparsers(dest='action', required=True)
     intake = commands.add_parser('start', help='Start a blog from an inspected existing Google Doc')
     intake.add_argument('--title', required=True)
-    intake.add_argument('--observation', required=True);intake.add_argument('--file', required=True)
-    intake.add_argument('--snapshot', required=True)
+    intake.add_argument('--snapshot', required=True, help='Capture folder from google_roundtrip.py capture')
+    intake.add_argument('--observation', help='Defaults to observation.json in the capture folder')
+    intake.add_argument('--file', help='Defaults to document.md in the capture folder')
     cap = commands.add_parser('capabilities');cap.add_argument('--file', required=True)
     source = commands.add_parser('source');source.add_argument('--name', required=True)
     source.add_argument('--purpose', action='append', choices=studio.PURPOSES, required=True)
@@ -570,11 +829,15 @@ def add_parser(groups):
         p = commands.add_parser(name);p.add_argument('--id', required=True)
         if name == 'receipt':p.add_argument('--file', required=True);continue
         p.add_argument('--kind', choices=('draft', 'outline'), default='draft')
-        p.add_argument('--observation', required=name != 'prepare')
-        p.add_argument('--file', required=name != 'prepare', help='Selected accepted text in the same Markdown projection used for handoff')
+        p.add_argument('--snapshot', help='Capture folder from google_roundtrip.py capture; supplies the observation '
+                       'and Markdown, and its formatted snapshot is saved by confirm and accept')
+        p.add_argument('--observation', help='Defaults to observation.json in the capture folder')
+        p.add_argument('--file', help='Accepted text in the same Markdown projection used for handoff; defaults to '
+                       'document.md in the capture folder')
         if name == 'prepare':p.add_argument('--new-document', action='store_true')
-        if name in ('confirm', 'accept'):p.add_argument('--snapshot', help='Inspected formatted snapshot directory from google_roundtrip.py capture')
         if name == 'confirm':p.add_argument('--transfer', required=True)
         if name == 'accept':
             p.add_argument('--expected-comparison', required=True)
             p.add_argument('--resolution-file', help='Only the author-approved merge or replacement after showing the conflict')
+            p.add_argument('--discard-remote', action='store_true',
+                           help='With --resolution-file: the author chose to drop text that only Google changed')

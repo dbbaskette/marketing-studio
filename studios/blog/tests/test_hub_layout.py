@@ -113,7 +113,9 @@ class LayoutTests(unittest.TestCase):
         synced = self.hb.sync();self.assertEqual(synced['queued'], 0)
         self.assertEqual(Path(self.hb.read(saved['item'])['paths']['BODY.md']).read_text(), 'Queued revision')
         self.assertEqual(len(self.hb.graph()['revisions']), 2)
-        self.assertEqual(next(i for i in self.hb._intents() if i['operation'] == queued['operation'])['payload_hash'], original_hash)
+        # Once delivered, the save leaves the queue; its receipt keeps the payload hash.
+        self.assertEqual(self.hb._intents(), [])
+        self.assertEqual(self.hb._published(queued['operation'])['payload_hash'], original_hash)
         retry = self.hb.save('article', 'Columnar filters', 'Queued revision', item=saved['item'], operation=queued['operation'])
         self.assertEqual(retry['revision'], queued['revision'])
 

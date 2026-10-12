@@ -1,7 +1,7 @@
 # Editorial tools
 
-Keep authoring in the harness. Use the current installed runtime 1.12+ for these
-operations; retain existing article writing/voice/guidance pins. Load only the
+Keep authoring in the harness. These operations leave an article's voice and
+recorded guidance version unchanged. Load only the
 requested operation:
 
 | Request | Read |

@@ -10,34 +10,54 @@ from hub_store import HubError, encoded, sha
 STAGES = ('idea', 'draft', 'review', 'ready', 'published')
 
 
+DOC_URL = re.compile(r'https://docs\.google\.com/document/d/[A-Za-z0-9_-]+/(?:edit)?')
+UNREADABLE = (ValueError, OSError, KeyError, TypeError, AttributeError)
+
+
+def mapping(value):
+    """Saved and shared metadata can have any JSON shape; a non-object counts as absent."""
+    return value if isinstance(value, dict) else {}
+
+
+def text_or(value, default=None):
+    return value if isinstance(value, str) and value else default
+
+
 def doc_link(record):
-    documents = record.get('google', {}).get('documents', {})
-    for kind in ('draft', 'outline'):
-        entry = documents.get(kind, {})
-        url = entry.get('url', '')
-        if re.fullmatch(r'https://docs\.google\.com/document/d/[A-Za-z0-9_-]+/(?:edit)?', url):
-            return {'url': url, 'observed_at': entry.get('observed_at'), 'observation': 'saved link; not a live Google status'}
+    google = mapping(mapping(record).get('google'))
+    documents = mapping(google.get('documents'))
+    candidates = [mapping(documents.get(kind)) for kind in ('draft', 'outline')]
     # Older records store the same verified link on the transfer baseline.
-    for entry in record.get('google', {}).get('baselines', {}).values():
-        document = entry.get('document', {})
-        url = document.get('url', '')
-        if re.fullmatch(r'https://docs\.google\.com/document/d/[A-Za-z0-9_-]+/(?:edit)?', url):
-            return {'url': url, 'observed_at': document.get('observed_at'), 'observation': 'saved link; not a live Google status'}
+    candidates += [mapping(mapping(entry).get('document')) for entry in mapping(google.get('baselines')).values()]
+    for entry in candidates:
+        url = entry.get('url')
+        if isinstance(url, str) and DOC_URL.fullmatch(url):
+            return {'url': url, 'observed_at': entry.get('observed_at'), 'observation': 'saved link; not a live Google status'}
     return None
 
 
 def row(record, ident, location, revision=None, conflict=False):
-    details = record.get('editorial', {})
-    stage = details.get('stage') or ('idea' if record.get('stage') in ('intake', 'brief', 'outline') else 'draft')
-    decision_stale = bool(stage in ('ready', 'published') and details.get('draft') != record.get('artifact_hashes', {}).get('draft'))
-    if decision_stale:stage = 'review'
-    due = details.get('due')
-    return {'id': ident, 'title': record.get('title', 'Untitled'), 'author': record.get('author') or 'Unassigned',
-            'owner': details.get('owner') or 'Unassigned', 'stage': stage, 'due': due,
+    """One board row. Never raises for a malformed record: unknown shapes fall back to defaults."""
+    record = mapping(record)
+    details = mapping(record.get('editorial'))
+    recorded = details.get('stage') if details.get('stage') in STAGES else None
+    stage = recorded or ('idea' if record.get('stage') in ('intake', 'brief', 'outline') else 'draft')
+    saved_draft = mapping(record.get('artifact_hashes')).get('draft')
+    decision_stale = bool(stage in ('ready', 'published') and details.get('draft') != saved_draft)
+    if decision_stale:
+        stage = 'review'
+    due = text_or(details.get('due'))
+    return {'id': ident, 'title': text_or(record.get('title'), 'Untitled'),
+            'author': text_or(record.get('author'), 'Unassigned'),
+            'owner': text_or(details.get('owner'), 'Unassigned'), 'stage': stage, 'due': due,
             'overdue': bool(due and due < date.today().isoformat() and stage != 'published'),
-            'updated_at': record.get('updated_at'), 'next_step': record.get('next_step'),
+            'updated_at': text_or(record.get('updated_at')), 'next_step': record.get('next_step'),
             'google': doc_link(record), 'location': location, 'revision': revision, 'conflict': conflict,
             'publication_url': details.get('publication_url'), 'decision_stale': decision_stale}
+
+
+def unreadable(ident, location):
+    return {'id': str(ident)[:200], 'location': location, 'status': 'unreadable'}
 
 
 def board(root, query='', stage=None, owner=None, limit=20, offset=0):
@@ -54,29 +74,34 @@ def board(root, query='', stage=None, owner=None, limit=20, offset=0):
             try:
                 _, record = studio.item(root, 'articles', directory.name)
                 binding = adapter.state['items'].get('articles/' + record['id'], {}) if adapter else {}
-                record = dict(record, artifact_hashes={**record.get('artifact_hashes', {}),
+                record = dict(record, artifact_hashes={**mapping(record.get('artifact_hashes')),
                               'draft': studio.artifact_fingerprint(directory, 'DRAFT.md')})
                 rows.append(row(record, record['id'], 'local', binding.get('revision')))
-            except (ValueError, OSError, KeyError, TypeError):
-                errors.append({'id': directory.name, 'status': 'unreadable'})
+            except UNREADABLE:
+                errors.append(unreadable(directory.name, 'local'))
     if adapter:
         graph = adapter.hub.graph()
         for item_id, heads in graph['heads'].items():
-            saved = graph['revisions'][heads[-1]]
-            if saved['kind'] != 'article' or saved['status'] == 'tombstone': continue
-            if item_id in mapped:
-                for entry in rows:
-                    binding = adapter.state['items'].get('articles/' + entry['id'], {})
-                    if binding.get('item') == item_id:
-                        entry['conflict'] = len(heads) > 1
-                        entry['shared_newer'] = binding.get('revision') not in heads
-                continue
-            data = dict(saved['data'].get('studio', {}), title=saved['title'])
-            rows.append(row(data, item_id, 'hub', saved['revision'], len(heads) > 1))
+            # One malformed shared record is reported; it must not hide every other blog.
+            try:
+                saved = graph['revisions'][heads[-1]]
+                if saved['kind'] != 'article' or saved['status'] == 'tombstone': continue
+                if item_id in mapped:
+                    for entry in rows:
+                        binding = adapter.state['items'].get('articles/' + entry['id'], {})
+                        if binding.get('item') == item_id:
+                            entry['conflict'] = len(heads) > 1
+                            entry['shared_newer'] = binding.get('revision') not in heads
+                    continue
+                data = dict(mapping(mapping(saved.get('data')).get('studio')), title=saved['title'])
+                rows.append(row(data, item_id, 'hub', saved['revision'], len(heads) > 1))
+            except UNREADABLE:
+                errors.append(unreadable(item_id, 'hub'))
     rows = [r for r in rows if (not stage or r['stage'] == stage) and (not owner or r['owner'] == owner)
             and all(w in ' '.join(str(r.get(k) or '') for k in ('title', 'author', 'owner')).casefold() for w in query.casefold().split())]
     rows.sort(key=lambda r: (r['updated_at'] or '', r['id']), reverse=True)
-    return {**page(rows, limit, offset), 'problems': errors[:10], 'sharing': 'selected-team-hub' if adapter else 'local',
+    return {**page(rows, limit, offset), 'problems': errors[:10], 'problem_count': len(errors),
+            'sharing': 'selected-team-hub' if adapter else 'local',
             'observation': 'saved local and cached Hub metadata; refresh the Hub to check remote changes',
             'access': 'Everyone with Hub write access has the same editing controls.'}
 
@@ -102,63 +127,102 @@ def derived_status(root, directory, record):
             for name, value in record.get('editorial_assets', {}).items()}
 
 
-def inbox(root, article_id=None, limit=20, offset=0, online=False, account=None, client=None, query='', shared_id=None):
+CLOSED_FINDING = ('resolved', 'dismissed', 'applied')
+
+
+def article_attention(root, ident):
+    """Saved attention rows and review coverage for one local blog."""
+    rows, coverage = [], []
+    directory, record = studio.item(root, 'articles', ident)
+    title = record['title']
+    for check, review in studio.freshness(root, directory, record).items():
+        coverage.append({'id': ident, 'check': check, 'status': review['status'], 'checked_at': review.get('checked_at')})
+        if review['status'] in ('stale', 'unavailable'):
+            rows.append({'id': ident, 'title': title, 'kind': check, 'status': review['status'],
+                         'action': 'Rerun this check against the current draft and selected sources.'})
+        for number, finding in enumerate(review.get('result', {}).get('findings', [])[:100], 1):
+            if isinstance(finding, dict) and finding.get('status') not in CLOSED_FINDING:
+                shown = {k: str(finding[k])[:2000] for k in ('message', 'detail', 'original', 'replacement', 'severity') if k in finding}
+                rows.append({'id': ident, 'title': title, 'kind': check, 'status': review['status'], 'number': number,
+                             'finding': shown, 'action': 'Inspect the finding; applying an edit requires an explicit choice.'})
+    for name, asset in derived_status(root, directory, record).items():
+        if asset['status'] == 'stale':
+            rows.append({'id': ident, 'title': title, 'kind': name, 'status': 'stale',
+                         'action': 'Regenerate this companion from the current inputs.'})
+    from author_workflow import hub_state
+    sharing = hub_state(root, record)
+    if sharing['status'] not in ('shared', 'synchronized', 'local-only'):
+        rows.append({'id': ident, 'title': title, 'kind': 'Hub save', 'status': sharing['status'],
+                     'action': 'Save and sync; inspect queued work or conflicts before continuing.'})
+    evidence_path = directory / 'derived' / 'evidence.json'
+    if evidence_path.is_file():
+        for claim in studio.read_json(evidence_path).get('content', {}).get('claims', []):
+            if claim['status'] in ('contradicted', 'insufficient'):
+                rows.append({'id': ident, 'title': title, 'kind': 'claim evidence', 'status': claim['status'], 'blocking': True,
+                             'finding': {'message': claim['claim']}, 'claim_start': claim['start'],
+                             'action': 'Inspect its exact cited passages before reusing the claim.'})
+    if record.get('pending_question'):
+        rows.append({'id': ident, 'title': title, 'kind': 'question', 'status': 'waiting', 'action': record['pending_question']})
+    if record.get('google'):
+        rows.append({'id': ident, 'title': title, 'kind': 'Google review', 'status': 'not-checked-live',
+                     'action': 'Open the linked Doc or explicitly refresh Google review data.', 'google': doc_link(record)})
+    return rows, coverage
+
+
+def shared_attention(item_id, heads, record):
+    """Attention rows for one shared-only blog, from its saved review snapshot."""
     rows = []
-    coverage = []
+    title = text_or(record.get('title'), 'Untitled')
+    if len(heads) > 1:
+        rows.append({'id': item_id, 'title': title, 'kind': 'Hub conflict', 'status': 'conflict', 'location': 'hub',
+                     'blocking': True, 'action': 'Resolve competing revisions before resuming.'})
+    reviews = mapping(mapping(mapping(record.get('data')).get('studio')).get('reviews'))
+    for check, review in reviews.items():
+        review = mapping(review)
+        findings = mapping(review.get('result')).get('findings', [])
+        unresolved = any(isinstance(finding, dict) and finding.get('status') not in CLOSED_FINDING
+                         for finding in (findings if isinstance(findings, list) else []))
+        if review.get('status') in ('stale', 'unavailable') or unresolved:
+            rows.append({'id': item_id, 'title': title, 'kind': str(check), 'status': str(review.get('status') or 'not-run'),
+                         'location': 'hub', 'action': 'Resume this blog to inspect its saved review findings.'})
+    return rows
+
+
+def inbox(root, article_id=None, limit=20, offset=0, online=False, account=None, client=None, query='', shared_id=None):
+    rows, coverage, problems = [], [], []
     if online and not article_id:raise ValueError('Choose a current blog before reading live Google feedback.')
     articles = [article_id] if article_id else [p.name for p in studio.inside(root, 'articles').iterdir() if p.is_dir()] if (root / 'articles').exists() else []
     if shared_id:articles = []
     for ident in articles:
-        directory, record = studio.item(root, 'articles', ident)
-        for check, review in studio.freshness(root, directory, record).items():
-            coverage.append({'id': ident, 'check': check, 'status': review['status'], 'checked_at': review.get('checked_at')})
-            if review['status'] in ('stale', 'unavailable'):
-                rows.append({'id': ident, 'title': record['title'], 'kind': check, 'status': review['status'],
-                             'action': 'Rerun this check against the current draft and selected sources.'})
-            for number, finding in enumerate(review.get('result', {}).get('findings', [])[:100], 1):
-                if isinstance(finding, dict) and finding.get('status') not in ('resolved', 'dismissed', 'applied'):
-                    rows.append({'id': ident, 'title': record['title'], 'kind': check, 'status': review['status'], 'number': number,
-                                 'finding': {k: str(finding[k])[:2000] for k in ('message', 'detail', 'original', 'replacement', 'severity') if k in finding},
-                                 'action': 'Inspect the finding; applying an edit requires an explicit choice.'})
-        for name, asset in derived_status(root, directory, record).items():
-            if asset['status'] == 'stale':
-                rows.append({'id': ident, 'title': record['title'], 'kind': name, 'status': 'stale', 'action': 'Regenerate this companion from the current inputs.'})
-        from author_workflow import hub_state
-        sharing = hub_state(root, record)
-        if sharing['status'] not in ('shared', 'synchronized', 'local-only'):
-            rows.append({'id': ident, 'title': record['title'], 'kind': 'Hub save', 'status': sharing['status'], 'action': 'Save and sync; inspect queued work or conflicts before continuing.'})
-        evidence_path = directory / 'derived' / 'evidence.json'
-        if evidence_path.is_file():
-            for claim in studio.read_json(evidence_path).get('content', {}).get('claims', []):
-                if claim['status'] in ('contradicted', 'insufficient'):
-                    rows.append({'id': ident, 'title': record['title'], 'kind': 'claim evidence', 'status': claim['status'], 'blocking': True, 'finding': {'message': claim['claim']}, 'claim_start':claim['start'], 'action': 'Inspect its exact cited passages before reusing the claim.'})
-        if record.get('pending_question'):
-            rows.append({'id': ident, 'title': record['title'], 'kind': 'question', 'status': 'waiting', 'action': record['pending_question']})
-        if record.get('google'):
-            rows.append({'id': ident, 'title': record['title'], 'kind': 'Google review', 'status': 'not-checked-live',
-                         'action': 'Open the linked Doc or explicitly refresh Google review data.', 'google': doc_link(record)})
+        try:
+            found, covered = article_attention(root, ident)
+        except UNREADABLE:
+            # An explicitly requested blog reports its own error; a listing skips and reports it.
+            if article_id: raise
+            problems.append(unreadable(ident, 'local'))
+            continue
+        rows.extend(found);coverage.extend(covered)
     from hub_workspace import active
     adapter = active(root)
     if adapter and not article_id:
         local_items = {v['item'] for k, v in adapter.state['items'].items() if k.startswith('articles/')}
         graph = adapter.hub.graph()
         for item_id, heads in graph['heads'].items():
-            record = graph['revisions'][heads[-1]]
-            if record['kind'] != 'article' or record['status'] == 'tombstone' or (not shared_id and item_id in local_items) or (shared_id and item_id != shared_id):continue
-            if len(heads) > 1:rows.append({'id': item_id, 'title': record['title'], 'kind': 'Hub conflict', 'status': 'conflict', 'location':'hub', 'blocking': True, 'action': 'Resolve competing revisions before resuming.'})
-            for check, review in record['data'].get('studio', {}).get('reviews', {}).items():
-                unresolved = any(isinstance(finding, dict) and finding.get('status') not in ('resolved', 'dismissed', 'applied')
-                                 for finding in review.get('result', {}).get('findings', []))
-                if review.get('status') in ('stale', 'unavailable') or unresolved:
-                    rows.append({'id': item_id, 'title': record['title'], 'kind': check, 'status': review['status'], 'location': 'hub', 'action': 'Resume this blog to inspect its saved review findings.'})
+            try:
+                record = graph['revisions'][heads[-1]]
+                if record['kind'] != 'article' or record['status'] == 'tombstone': continue
+                if (not shared_id and item_id in local_items) or (shared_id and item_id != shared_id): continue
+                rows.extend(shared_attention(item_id, heads, record))
+            except UNREADABLE:
+                problems.append(unreadable(item_id, 'hub'))
     if online:
         _, record = studio.item(root, 'articles', article_id)
         rows = [r for r in rows if r['kind'] != 'Google review']
         link = doc_link(record)
         if link:
-            from google_drive import Client, GoogleError
+            from google_drive import Client, GoogleError, account_for
             import google_suggestions as gs
-            selected_client = client or Client(account)
+            selected_client = client or Client(account_for(root, account))
             document_id = link['url'].split('/d/', 1)[1].split('/', 1)[0]
             try:
                 document = gs.review_read(selected_client, document_id)
@@ -181,34 +245,59 @@ def inbox(root, article_id=None, limit=20, offset=0, online=False, account=None,
             ('id','key','title','kind','status','action','finding')).casefold() for word in query.casefold().split())]
     rows.sort(key=lambda r: (not r['blocking'], r['title'], r['kind']))
     return {**page(rows, limit, offset), 'coverage': coverage[:100], 'coverage_truncated': len(coverage) > 100,
+            'problems': problems[:10], 'problem_count': len(problems),
             'google_observation': 'Read requested against the selected Doc at ' + studio.now() if online else 'No live Google request was made.'}
 
 
 
-def schedule(root, ident, data):
+def schedule(root, ident, data, desk=False):
+    """Record owner, due date, publication URL and explicit stage decisions.
+
+    A decision file written in chat for one requested change keeps its explicit meaning.
+    With desk=True the request comes from a form, where a field being present is not a
+    decision: a stage equal to the recorded one is ignored, and ready or published is
+    recorded only together with confirm_stage. An empty stage clears the explicit stage,
+    so the board follows writing progress again. Nothing is written when nothing changes.
+    """
     directory, record = studio.item(root, 'articles', ident)
-    if set(data) - {'stage', 'owner', 'due', 'publication_url', 'expected'}: raise ValueError('Unknown editorial field.')
+    if set(data) - {'stage', 'owner', 'due', 'publication_url', 'expected', 'confirm_stage'}: raise ValueError('Unknown editorial field.')
     if data.get('expected') and studio.digest((directory / 'session.json').read_bytes()) != data['expected']:
         raise ValueError('This blog changed. Reload before saving your decision.')
-    details = dict(record.get('editorial', {}))
-    if 'stage' in data:
-        if data['stage'] not in STAGES: raise ValueError('Choose an editorial stage.')
-        details['stage'] = data['stage']
+    previous = mapping(record.get('editorial'))
+    details = dict(previous)
+    decide = 'stage' in data
+    stage = (data['stage'] or None) if decide else None
+    if decide:
+        if stage is not None and stage not in STAGES: raise ValueError('Choose an editorial stage.')
+        if desk and data.get('confirm_stage') is not True:
+            if stage == details.get('stage'):
+                decide = False
+            elif stage in ('ready', 'published'):
+                raise ValueError('Confirm that the current saved draft is ' + stage + ' before recording that decision.')
+    if decide and stage is None:
+        details.pop('stage', None);details.pop('draft', None)
+    elif decide:
+        details['stage'] = stage
+    # An empty value for a field that was never set is not a change.
     if 'owner' in data:
         if not isinstance(data['owner'], str) or len(data['owner']) > 200: raise ValueError('Owner is limited to 200 characters.')
-        details['owner'] = data['owner'].strip()
+        if data['owner'].strip() != (details.get('owner') or ''):details['owner'] = data['owner'].strip()
     if 'due' in data:
         if data['due']: date.fromisoformat(data['due'])
-        details['due'] = data['due'] or None
+        if (data['due'] or None) != details.get('due'):details['due'] = data['due'] or None
     if 'publication_url' in data:
         url = data['publication_url'] or ''
         if url and (not re.fullmatch(r'https://[^\s<>]+', url) or len(url) > 2000): raise ValueError('Use a public HTTPS publication URL.')
-        details['publication_url'] = url
+        if url != (details.get('publication_url') or ''):details['publication_url'] = url
     if details.get('stage') == 'published' and not details.get('publication_url'):
         raise ValueError('Published needs the actual publication URL. This operation does not publish a blog.')
-    details['decided_at'] = studio.now()
-    if 'stage' in data:details['draft'] = studio.artifact_fingerprint(directory, 'DRAFT.md')
+    if decide:
+        # Only an actual decision is timestamped and bound to the draft it was made for.
+        details['decided_at'] = studio.now()
+        if stage is not None:details['draft'] = studio.artifact_fingerprint(directory, 'DRAFT.md')
     if details.get('stage') in ('ready', 'published') and not details.get('draft'):raise ValueError('Save a draft before recording readiness or publication.')
+    if details == previous:
+        return record
     record['editorial'] = details
     studio.persist(directory, 'articles', record)
     return record

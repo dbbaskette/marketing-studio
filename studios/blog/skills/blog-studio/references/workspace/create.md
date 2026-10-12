@@ -18,11 +18,9 @@ Save audience, takeaway, required points, format/length, selected material and
 research limits in the brief via [articles](articles.md). Attach selected
 [sources](sources.md). Standalone voice setup creates no article.
 
-For a bootstrap task, bind its actual task immediately:
-`... article guidance --id <id> --task <sync-task>`.
-Add `--cached` only for an explicitly chosen stale fallback. Retain returned
-runtime and exact source/voice/guidance pins; a new task's latest guidance must
-not replace an existing article's pin.
+The new article records the installed guidance version itself; there is nothing
+to bind. Keep the exact source and voice pins it returns. Starting another
+article never changes an existing article's [guidance record](pins.md).
 
 For software-product work, keep the inferred article form and any explicit house-style
 exceptions in that brief. Reuse selected team terminology and author voice; do not

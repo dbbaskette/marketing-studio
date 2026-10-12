@@ -88,7 +88,7 @@ Quit the CLI normally. Open it again using the commands in step 1, in the **same
 
 Use the saved article ID if there are several matches.
 
-**What to expect:** It finds the existing article, retains its original material and revisions, and resumes without repeating the intake. An ongoing article should keep its saved voice and guidance versions. New writing tasks check for newer guidance automatically; executable updates still require the installer.
+**What to expect:** It finds the existing article, retains its original material and revisions, and resumes without repeating the intake. An ongoing article keeps its saved voice. Writing guidance and helpers update together when you run a newer installer.
 
 ## Try the other starting paths
 
@@ -154,10 +154,6 @@ Doc during submission, Blog Studio stops and refreshes the review. Ordinary
 **“Push to Google Docs”** applies updates directly; **“Push as suggestions”** leaves
 proposals for the team to accept or reject.
 
-This feature needs the **1.10 installer update** once. Download the current trusted
-bundle, run Install for the same writing tools, and start a new session. The
-writing-instruction refresh does not install new executable helpers.
-
 ## If something fails
 
 If the skill is missing, first start a new CLI session. If Blog Studio is available,
@@ -180,8 +176,8 @@ Avoid including credentials or private source content.
 
 Say **“Show status”** in chat, or **“Continue [title]”** to select a blog. The
 [status card](status-card.md) shows stage, Google and Hub links, save status,
-and the next useful action. Runtime 1.7.0 adds this card, defaults, change summaries,
-and guarded undo; use the updated installer and start a new session.
+and the next useful action. You can also ask about your saved defaults, what
+changed since the last checkpoint, or to undo an edit.
 
 ## Everyday requests
 
@@ -201,10 +197,8 @@ In the CLI conversation, try these plain-language requests:
 6. “Stop using that team rule in this article.” Expect only this article's
    selection to change; other users retain their selections.
 
-Use the latest trusted installer for executable updates, then start a new session.
-Writing guidance updates automatically for new tasks; saved articles retain their
-selected guidance. For a shared preference, explicitly say “for our team” and
-select a Team Hub.
+To update Blog Studio, run the latest installer and start a new session. For a
+shared preference, explicitly say “for our team” and select a Team Hub.
 
 ## Browse shared blogs in GitHub
 
@@ -223,27 +217,17 @@ check the linked Doc for a current comparison.
 
 ## Faster repeat work
 
-Runtime 1.8 resumes with a compact status and opens the relevant passages as needed.
+Resuming shows a compact status and opens the relevant passages as needed.
 Identical mechanical checks can be reused; this never substitutes for reading and
 editorial judgment. You can say **“Show the sources for this section”** or
 **“Clear local caches.”** Clearing these caches keeps your drafts and history.
-Reopen the trusted installer once to get the new helpers.
 
 ## When Google suggestions are unavailable
 
-Keep using **“Push as suggestions.”** If your connector lacks the needed option,
-Blog Studio can use its already configured gcloud connection. If native suggestions
-are still unavailable, it posts readable review comments and tells you which mode
-was used. Ordinary document comments appear in **All Comments**, with the section,
-current wording, proposed wording and reason; they do not have Accept/Reject buttons.
-Minor fixes in one paragraph can share a comment while keeping individual numbers.
-
-Say **“Show review edits”**, then **“Apply edits 2 and 4”** to choose changes.
-Blog Studio checks current wording, applies only your selection, verifies formatting,
-and resolves completed comments. A resolved comment alone never means approval.
-Afterward, say **“Pull from Google Docs.”** Runtime **1.10** provides this workflow;
-run the current installer once and start a new session. A hosted connector's
-missing option does not require changing the document's settings.
+Keep using **“Push as suggestions.”** Blog Studio falls back to readable review
+comments and tells you which mode it used; say **“Show review edits”**, then
+**“Apply edits 2 and 4”** to choose changes.
+[How the fallback works →](google-docs.md#when-google-suggestions-are-unavailable)
 
 ## Start with an existing Google Doc
 
@@ -251,7 +235,6 @@ Say **“Start from this Google Doc: [link].”** Blog Studio saves the original
 working draft and a formatted snapshot, then links that same Google Doc. You can
 then say **“Proofread”**, **“Push as suggestions”**, or **“Pull from Google Docs.”**
 Suggestions go to the original document. Importing alone makes no Google edits.
-Use the runtime **1.11** installer update for this combined intake workflow.
 
 ## See your team’s writing
 

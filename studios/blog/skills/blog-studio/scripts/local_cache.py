@@ -30,6 +30,9 @@ def maintain(root, clear=False):
         for name in ('library.sqlite3', 'library.sqlite3-journal'):
             path = folder(root) / name
             if path.is_file() and not path.is_symlink():path.unlink()
+        # Staged Google captures, plans and receipts are disposable copies; checkpoints keep what matters.
+        from google_drive import purge_staging
+        purge_staging(root)
     rows = sorted(entries(root), key=lambda p:p.stat().st_mtime, reverse=True)
     total = count = 0
     for path in rows:

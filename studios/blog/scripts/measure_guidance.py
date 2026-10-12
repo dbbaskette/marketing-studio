@@ -32,14 +32,14 @@ def refreshed(inventory):
     privacy = result['conditional_privacy_reference']
     privacy['estimated_tokens'] = sum(result['files'][p]['estimated_tokens']
                                       for p in dict.fromkeys(privacy['files']))
-    bootstrap = measure(REPO / result['bootstrap']['path'])
-    result['bootstrap'].update({key: bootstrap[key] for key in ('estimated_tokens', 'sha256')})
+    # The installed skill has one entry file; the separate bootstrap entry is gone.
+    result.pop('bootstrap', None)
     entry_files = ['SKILL.md', 'references/entry-flows.md']
     result['entry_guidance'] = {
         'files': entry_files,
         'estimated_tokens': sum(result['files'][p]['estimated_tokens'] for p in entry_files),
         'target_tokens': [800, 1200],
-        'note': 'Parent plus entry flow; bootstrap measured separately. Conditional reads are additional.'}
+        'note': 'Entry file plus entry flow. Conditional reads are additional.'}
     return result
 
 
@@ -58,7 +58,6 @@ def main():
     print(json.dumps({'library_tokens': result['library_tokens'],
                       'library_files': len(result['files']),
                       'entry_tokens': result['entry_guidance']['estimated_tokens'],
-                      'bootstrap_tokens': result['bootstrap']['estimated_tokens'],
                       'workspace_tokens': {key: value['estimated_tokens']
                                            for key, value in result.get('workspace_operations', {}).items()},
                       'craft_tokens': {key: value['estimated_tokens']

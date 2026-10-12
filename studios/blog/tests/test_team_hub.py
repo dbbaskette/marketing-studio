@@ -1,6 +1,9 @@
 import json
+import os
 from pathlib import Path
+import shutil
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -278,8 +281,219 @@ class TeamHubTests(unittest.TestCase):
     def test_offline_status_cache_and_busy_lock_are_honest(self):
         self.provider.unavailable = True
         self.assertFalse(self.ha.refresh()['fresh'])
+        # A lock file left by an older runtime or a killed command blocks nothing.
         (self.ha.root / '.hub.lock').write_text('Busy')
-        with self.assertRaisesRegex(store.HubError, 'running'):self.ha.sync()
+        self.assertEqual(self.ha.sync()['status'], 'queued-unavailable')
         self.assertFalse(self.ha.status()['fresh'])
+
+    def test_held_lock_makes_writers_wait_briefly_and_never_blocks_reads(self):
+        saved = self.ha.save('note', 'Readable while busy', 'Body')
+        holder = store.acquire_lock(self.ha.root / '.hub.lock', wait=0)
+        self.assertIsNotNone(holder)
+        try:
+            started = time.monotonic()
+            with patch.dict(os.environ, {'BLOG_STUDIO_LOCK_WAIT': '0.3'}):
+                with self.assertRaisesRegex(store.HubError, 'still running'):
+                    self.ha.sync()
+            self.assertGreaterEqual(time.monotonic() - started, 0.25)
+            # Pure reads take no exclusive lock.
+            self.assertEqual(self.ha.find('Readable')['total'], 1)
+            self.assertEqual(self.ha.read(saved['item'])['record']['title'], 'Readable while busy')
+            self.assertEqual(self.ha.status()['queued'], 0)
+        finally:
+            store.release_lock(holder)
+        self.assertEqual(self.ha.sync()['status'], 'synchronized')
+
+    def test_reads_tolerate_a_save_delivered_while_they_run(self):
+        self.ha.save('note', 'In flight', 'Body', offline=True)
+        listed = self.ha._intents()          # what a lock-free read saw in the queue
+        remote = self.ha.files(include_local=False)
+        self.assertEqual(self.ha.sync()['status'], 'shared')   # meanwhile it is delivered and retired
+        # The read finishes on the tree it started with instead of failing.
+        self.assertEqual(self.ha._with_local(remote, listed), remote)
+        self.assertEqual(self.ha.find('In flight')['total'], 1)
+        # A queue entry that is damaged, rather than delivered, is still reported.
+        queued = self.ha.save('note', 'Damaged', 'Body', offline=True)
+        (self.ha.root / 'outbox' / queued['operation'] / 'intent.json').unlink()
+        with self.assertRaisesRegex(store.HubError, 'missing or invalid'):
+            self.ha.status()
+
+    def test_local_git_failures_are_not_mistaken_for_being_offline(self):
+        # Only fetch, push and ls-remote describe the network.
+        with self.assertRaises(store.TransportError):
+            store.git(self.ha.repository, 'fetch', '--quiet', str(self.base / 'no-such-remote.git'), 'refs/heads/main')
+        with self.assertRaises(store.HubError) as local:
+            store.git(self.ha.repository, 'rev-parse', '--verify', 'refs/heads/no-such-branch')
+        self.assertNotIsInstance(local.exception, store.TransportError)
+        self.assertIn('git rev-parse', str(local.exception))
+        self.assertIn('not a network problem', str(local.exception))
+        # The cause is reported without credentials or tokens.
+        cause = store.scrubbed(b"remote: denied\nfatal: Authentication failed for "
+                               b"'https://someone:ghp_SECRETTOKEN123@github.com/fixture/team-hub.git/'\n")
+        self.assertIn('Authentication failed', cause)
+        self.assertNotIn('SECRETTOKEN', cause)
+        self.assertNotIn('someone', cause)
+        # A save that cannot write Git objects is a local problem with a cause,
+        # not a queued "unavailable" hub.
+        real = store.git
+        def broken_disk(repository, *args, **kwargs):
+            if args[0] == 'hash-object':
+                return real(repository, 'hash-object', '-w', '--no-such-option', **kwargs)
+            return real(repository, *args, **kwargs)
+        with patch.object(store, 'git', side_effect=broken_disk):
+            with self.assertRaises(store.HubError) as failure:
+                self.ha.save('note', 'Local trouble', 'Retained content')
+        self.assertNotIsInstance(failure.exception, store.TransportError)
+        self.assertIn('git hash-object', str(failure.exception))
+        status = self.ha.status()
+        self.assertEqual(status['queued'], 1)
+        self.assertIsNone(status['error'])
+        self.assertEqual(self.ha.sync()['status'], 'shared')
+
+    def test_closed_review_requeues_work_on_a_new_branch(self):
+        self.provider.review = True
+        saved = self.ha.save('note', 'Needs review', 'Contribution')
+        self.assertEqual(saved['status'], 'pending-review')
+        first_branch = self.ha._state()['review_branch']
+        self.provider.close_review('fixture/team-hub', first_branch)
+        closed = self.ha.sync()
+        self.assertEqual(closed['status'], 'review-closed')
+        self.assertEqual(closed['closed_branch'], first_branch)
+        self.assertIn('queued again', closed['next_step'])
+        self.assertEqual((closed['queued'], closed['pending_review']), (1, 0))
+        self.assertIsNone(self.ha._state()['review_branch'])
+        # The next sync opens a new review on a fresh branch; the old one stays closed.
+        again = self.ha.save('note', 'More work', 'Second contribution')
+        self.assertEqual(again['status'], 'pending-review')
+        second_branch = self.ha._state()['review_branch']
+        self.assertNotEqual(second_branch, first_branch)
+        self.assertEqual(again['pending_review'], 2)
+        self.assertEqual(len(self.provider.prs), 2)
+        self.provider.merge_review('fixture/team-hub', second_branch)
+        self.assertEqual(self.ha.sync()['pending_review'], 0)
+        self.hb.refresh()
+        self.assertEqual(self.hb.find()['total'], 2)
+
+    def test_interrupted_commit_cannot_block_sync_or_touch_the_checkout(self):
+        # Earlier runtimes kept the temporary index in the checkout root; one left
+        # by a killed commit used to look like an unsaved local edit forever.
+        legacy = self.ha.checkout / ('.index-' + 'd' * 32)
+        legacy.write_bytes(b'stale index')
+        legacy.with_name(legacy.name + '.lock').write_bytes(b'')
+        # A stale index of the current kind is swept from inside the Git folder.
+        stale = self.ha.repository / (store.INDEX_PREFIX + 'e' * 32)
+        stale.write_bytes(b'stale index')
+        old = time.time() - store.STALE_INDEX_SECONDS - 60
+        os.utime(stale, (old, old))
+        used = []
+        real = store.git
+        def observe(repository, *args, **kwargs):
+            index = (kwargs.get('extra_env') or {}).get('GIT_INDEX_FILE')
+            if index:
+                used.append(Path(index))
+            return real(repository, *args, **kwargs)
+        with patch.object(store, 'git', side_effect=observe):
+            saved = self.ha.save('note', 'After a crash', 'Shared anyway')
+        self.assertEqual(saved['status'], 'shared')
+        self.assertTrue(used)
+        self.assertTrue(all(path.parent == self.ha.repository for path in used))
+        self.assertFalse(legacy.exists())
+        self.assertFalse(stale.exists())
+        self.assertEqual([p.name for p in self.ha.checkout.iterdir() if p.name.startswith('.index-')], [])
+        self.assertEqual(store.git(self.ha.repository, 'status', '--porcelain').strip(), b'')
+
+    def test_unread_snapshot_copies_are_not_written_and_old_ones_are_removed(self):
+        # What an earlier runtime left behind: a read-only copy of a commit.
+        old_copy = self.ha.root / 'snapshots' / ('a' * 40) / 'README.md'
+        old_copy.parent.mkdir(parents=True)
+        old_copy.write_text('Old private copy')
+        old_copy.chmod(0o400)
+        self.ha.save('note', 'First', 'One')
+        self.ha.save('note', 'Second', 'Two')
+        self.assertFalse((self.ha.root / 'snapshots').exists())
+        # The author's checkout still shows the shared files.
+        self.assertTrue((self.ha.checkout / 'README.md').is_file())
+        # A link in that place is left alone, and nothing it points to is removed.
+        outside = self.base / 'elsewhere'
+        outside.mkdir()
+        (outside / 'keep.txt').write_text('Not ours')
+        (self.hb.root / 'snapshots').symlink_to(outside, target_is_directory=True)
+        self.hb.refresh()
+        self.assertEqual((outside / 'keep.txt').read_text(), 'Not ours')
+
+    def test_delivered_saves_leave_the_queue_with_one_receipt(self):
+        operation = 'f' * 32
+        queued = self.ha.save('note', 'Queued first', 'Durable body', operation=operation, offline=True)
+        entry = self.ha.root / 'outbox' / operation
+        kept = self.base / 'earlier-runtime-entry'
+        shutil.copytree(entry, kept)
+        self.assertEqual(self.ha.sync()['status'], 'shared')
+        delivered_at = self.ha._state()['revision']
+        # The payload copy is gone; a small receipt records the first commit once.
+        self.assertFalse(entry.exists())
+        self.assertEqual(self.ha._intents(), [])
+        receipt = self.ha._published(operation)
+        self.assertEqual(receipt['published_commit'], delivered_at)
+        self.assertEqual(receipt['item'], queued['item'])
+        self.ha.save('note', 'Later', 'Another commit')
+        self.ha.refresh()
+        self.assertNotEqual(self.ha._state()['revision'], delivered_at)
+        self.assertEqual(self.ha._published(operation), receipt)
+        # An idempotent retry is answered from the shared record itself.
+        again = self.ha.save('note', 'Queued first', 'Durable body', operation=operation)
+        self.assertEqual(again['revision'], queued['revision'])
+        self.assertEqual(len(self.ha.graph()['revisions']), 2)
+        with self.assertRaisesRegex(store.HubError, 'different content'):
+            self.ha.save('note', 'Queued first', 'Changed body', operation=operation)
+        # An entry an earlier runtime left marked "published" is compacted too.
+        shutil.copytree(kept, entry)
+        intent = json.loads((entry / 'intent.json').read_text())
+        intent.update(state='published', published_commit='c' * 40)
+        (entry / 'intent.json').write_text(json.dumps(intent))
+        self.ha.refresh()
+        self.assertFalse(entry.exists())
+        self.assertEqual(self.ha._published(operation), receipt)
+        self.assertEqual(self.ha.status()['queued'], 0)
+
+    def test_guarded_save_waits_instead_of_creating_a_competing_head(self):
+        original = self.ha.save('article', 'Shared blog', 'Original')
+        self.hb.refresh()
+        self.ha.save('article', 'Shared blog', 'Author A moved on', item=original['item'])
+        # B is one revision behind and offline; its save is guarded.
+        stale = self.hb.save('article', 'Shared blog', 'Author B', item=original['item'],
+                             offline=True, hold_if_stale=True)
+        follow_up = self.hb.save('note', 'Depends on it', 'Pins the stale save', offline=True,
+                                 dependencies=[{'item': stale['item'], 'revision': stale['revision'], 'kind': 'article'}])
+        unrelated = self.hb.save('note', 'Unrelated', 'Still shared', offline=True)
+        result = self.hb.sync()
+        self.assertEqual(result['status'], 'newer-hub-revision')
+        self.assertEqual(result['sync_status'], 'shared')
+        self.assertIn('--fork', result['next_step'])
+        self.assertEqual({entry['operation']: entry['reason'] for entry in result['held_now']},
+                         {stale['operation']: 'parent-superseded', follow_up['operation']: 'depends-on-held-save'})
+        self.assertEqual((result['held'], result['queued'], result['conflicts']), (2, 0, 0))
+        # Nothing competing reached the hub, and unrelated queued work did.
+        self.ha.refresh()
+        self.assertEqual(len(self.ha.graph()['heads'][original['item']]), 1)
+        self.assertEqual(self.ha.find('Still shared')['total'], 1)
+        self.assertEqual(self.ha.find('Pins the stale save')['total'], 0)
+        self.assertEqual(self.hb.intent_state(stale['operation']), 'newer-hub-revision')
+        self.assertIsNotNone(self.hb._published(unrelated['operation']))
+        # The held save is out of this clone's current view, yet readable by name
+        # so it can be compared with the shared version.
+        self.assertEqual(len(self.hb.graph()['heads'][original['item']]), 1)
+        kept = self.hb.read(original['item'], stale['revision'])
+        self.assertEqual(Path(kept['paths']['BODY.md']).read_text(), 'Author B')
+        self.assertEqual(kept['visibility'], 'newer-hub-revision')
+        self.assertEqual(Path(self.hb.read(original['item'])['paths']['BODY.md']).read_text(), 'Author A moved on')
+        # Later syncs leave the held saves alone and report them.
+        later = self.hb.sync()
+        self.assertEqual((later['status'], later['held']), ('synchronized', 2))
+        # The explicit choice: share it as a competing version.
+        chain = self.hb.unshared_chain(follow_up['revision'], dependencies=True)
+        self.assertEqual({intent['operation'] for intent in chain}, {stale['operation'], follow_up['operation']})
+        self.hb.release({intent['operation'] for intent in chain})
+        forked = self.hb.sync()
+        self.assertEqual((forked['status'], forked['held'], forked['conflicts']), ('shared', 0, 1))
 
 if __name__ == '__main__':unittest.main()

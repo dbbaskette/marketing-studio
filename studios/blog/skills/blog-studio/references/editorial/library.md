@@ -14,15 +14,20 @@ for retention; inaccessible material remains unread. No background crawler.
    --collection <key> --path <path>`. Export is a JSON list with external_id or
    canonical url, title, text, and optionally author, published/updated dates,
    topics/products. Unknown author/date stays unknown. Stable external IDs
-   preserve identity when a URL changes.
+   preserve identity when a URL changes. `library setup` saves and shares the
+   collection at once, so run it after the author confirmed the source; the
+   desk saves a new collection only with its first imported posts.
 2. `library preview --collection <key>` discovers bounded candidates and reports
    duplicates, exclusions, byte estimates/unknowns and limits. Review scope before
    initial bulk import. Archive links are candidates, not proof every linked page
    is a post. Nested sitemap indexes require separately scoped post sitemaps.
 3. On explicit import, `library import --preview <id> --limit 25`. Continue the same
    checkpoint in batches; `--retry` retries failed items. Max 500 previewed posts,
-   25 per batch, 25 MiB per preview, 2 MiB network fetch, existing Hub limits.
-   Refresh means preview again, then bounded import. Nothing missing is deleted.
+   25 per batch, 25 MiB per preview, 2 MiB and 45 seconds per network address,
+   existing Hub limits. Refresh means preview again, then bounded import. Nothing
+   missing is deleted. A local file whose bytes match a saved post (the same
+   file under another folder name or collection) updates that post's collections
+   instead of adding a copy; export and URL identities are never merged by text.
    Local Markdown/HTML/text/DOCX extracts text; PDFs remain pending host extraction.
 4. `library find --query <topic> [--collection/--author/--topic/--product/--since/
    --until] --limit 10` searches a rebuildable local catalog. Use normalized ISO
@@ -31,13 +36,20 @@ for retention; inaccessible material remains unread. No background crawler.
    establish remote freshness. Shared-only references can be checked out through
    the existing Hub workspace helper. `article attach` explicitly pins a chosen
    source revision; preserve the reference role. Reverify changeable product facts.
-5. Import analyzes readable posts automatically with the selected writing CLI.
+5. Import analyzes readable posts automatically with the selected writing CLI:
+   up to 24,000 characters of each post are sent through that signed-in CLI to
+   its model provider. Say so before a first import; with no CLI selected nothing
+   is sent. In the desk, unchecking “Summarize and tag with …” imports that batch
+   without analysis; `library analyze --id <source>` runs it later on request.
    See [reference memory](../workspace/reference-memory.md) for configuration,
    hash-bound summaries/tags, retry behavior and limits. Review details is an
    optional correction step. Curate with `library curate --id <source> --file <json>` (curation active/pending/
-   retired, topics/products, note). Retirement removes active retrieval; earlier
-   Git snapshots remain. To edit an old post, separately create a manuscript and
-   preserve its original. Do not train an author voice automatically.
+   retired, topics/products, note). Include only the values being corrected: a
+   value equal to the saved one changes nothing, and only a changed tag or note
+   is protected from later automatic analysis. Retirement removes active
+   retrieval; earlier Git snapshots remain. To edit an old post, separately
+   create a manuscript and preserve its original. Do not train an author voice
+   automatically.
 6. On requested analysis, page the catalog and inspect selected passages in small
    batches. Persist compact candidates with `library lesson --file <json>`:
    title, type (observed-pattern/recommendation), text, references

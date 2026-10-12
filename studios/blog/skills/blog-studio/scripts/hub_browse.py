@@ -504,7 +504,8 @@ def editorial_pages(graph):
         if saved['status'] == 'tombstone':continue
         data = studio_data(saved)
         if saved['kind'] == 'article':
-            details = data.get('editorial', {})
+            # A shared record is data from another client; a malformed one must not stop every sync.
+            details = data.get('editorial') if isinstance(data.get('editorial'), dict) else {}
             from editorial import row
             status = 'conflict' if len(heads) > 1 else row(data, saved['item'], 'hub')['stage']
             from editorial import doc_link

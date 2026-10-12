@@ -5,9 +5,13 @@
 Follow [adapter](../google/adapter.md), [privacy](../privacy.md) and the installed
 Google Drive Comments skill. Load ordinary editorial checks only as requested.
 
-For proofreading replacements posted as native suggested edits, load
+For proofreading findings sent as suggested edits or as review comments (“Push
+as suggestions,” “Push feedback as comments”), load
 [suggestions](../google/suggestions.md), including its automatic fresh pull and
-revision guard. Do not turn an ordinary proofread into external comments.
+revision guard; its helper posts, numbers and verifies those comments. This
+module covers other comment work: replying to or resolving existing threads, and
+one-off comments through a connector. Do not turn an ordinary proofread into
+external comments.
 
 Read the current selected tabs and existing threads. Draft all requested comment
 actions using current evidence before sending. A new comment quotes exact text

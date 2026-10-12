@@ -8,6 +8,19 @@ untouched. It checks readable folders and history, a second clone's resume/edit,
 offline saves and retry, status, migration with queued work, and protection for
 unsaved checkout edits.
 
+Run the offline walkthrough first. It drives the same `studio.py` and `hub.py`
+commands against a disposable local Git remote with a fake provider, so it needs
+no network, account or authorization:
+
+```sh
+python3 scripts/acceptance/hub-journey.py --local-fixture \
+  --run-directory /absolute/new/test-run-directory
+```
+
+It also covers a clone that is one save behind (the save is held as
+`newer-hub-revision`, then set aside or published as a competing version) and
+an oversized source refused at intake.
+
 With explicit authorization to create the named test repository, run:
 
 ```sh
