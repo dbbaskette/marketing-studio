@@ -16,8 +16,8 @@ GitHub account; it does not invite members or change repository permissions.
 > Join our Team Hub at https://github.com/my-org/marketing-writing and use it for this project.
 
 Members need existing access to that private repo. Join reports whether writing
-is available. All members also need access to the separate private Blog Studio
-repository for maintained skill guidance.
+is available. Each member installs Blog Studio from the current installer; the
+Hub holds writing, not the skill.
 
 > Find our draft about customer onboarding and help me finish its outline.
 
@@ -37,7 +37,8 @@ until deliberately refreshed.
 Once a writing workspace selects a hub, normal Blog Studio saves synchronize
 that changed item and its dependencies. An article includes its original,
 outline/draft history, interview and decisions, derived copy, source roles,
-voice revision, guidance commit, selected context, and review state. Original
+voice revision, the Blog Studio version it was started with, selected context,
+and review state. Original
 uploads retain their bytes; automatic sharing excludes machine-specific paths,
 runtime caches, and incidental configuration files.
 
@@ -59,11 +60,11 @@ history until you choose a resolution.
 Article-specific drafts and reviews stay with their blog. Synchronization data
 lives in `.blog-studio/items/`; it is not the folder authors need to browse.
 
-Runtime **1.13.0** reads existing hubs and upgrades them on an authorized save or
-sync. The upgrade preserves every original record, attachment, revision ID, and
-pin byte for byte, and retains earlier Git commits. Other contributors need the
-1.13.0 installer before writing to the upgraded hub. Joining or refreshing alone
-does not migrate the repository. Generated files remain managed by Blog Studio;
+A Hub created with an older layout is upgraded on an authorized save or sync.
+The upgrade preserves every original record, attachment, revision ID, and pin
+byte for byte, and retains earlier Git commits. Contributors need a current
+installer before writing to an upgraded Hub. Joining or refreshing alone does
+not migrate the repository. Generated files remain managed by Blog Studio;
 manual edits are preserved and block regeneration until reconciled.
 
 ## Saves and connection problems
@@ -87,10 +88,10 @@ created with review mode always uses a PR.
 
 ## Setup and helper examples
 
-Update to the trusted **1.13.0 installer runtime** to use Team Hub. Run the new
-bundle through the existing setup/update flow. Git and authenticated GitHub CLI
-are required for the current provider. Credentials remain in provider storage.
-Use the interpreter in the managed runtime configuration when necessary.
+Team Hub needs Git and an authenticated GitHub CLI. Credentials remain in
+provider storage. The chat skill runs these helpers for you; `<runtime>` is the
+`scripts/` folder of the installed skill, and the installed `config.json` names
+the interpreter to use.
 
 ```text
 python3 <runtime>/hub.py --workspace <absolute-workspace> create --repo my-org/marketing-writing --name "Marketing Writing"
@@ -103,10 +104,12 @@ python3 <runtime>/hub.py --workspace <absolute-workspace> sync
 python3 <runtime>/hub.py --workspace <absolute-workspace> leave
 ```
 
-Default registry/clones live under `~/.local/share/blog-studio/hubs/`; the writing
-workspace remains separate. `--registry` chooses another absolute registry,
-`--destination` chooses a new clone container, and `list` shows joined hubs.
-Leaving a project retains its clone, queue, and all shared history.
+Each Hub is checked out at `~/blogs/<repository-name>/` (see
+[Where your Hub lives](#where-your-hub-lives)); a small registry of joined Hubs
+lives under `~/.local/share/blog-studio/hubs/`. `--registry` chooses another
+absolute registry, `--destination` chooses another checkout location, and `list`
+shows joined Hubs. Leaving a project retains its checkout, queue, and all shared
+history.
 
 ## Progressive disclosure and Google Docs
 
@@ -116,23 +119,20 @@ needed. Search returns a short catalog; reads return selected artifact paths.
 Downloading a repository does not load all its content into model context.
 See measured estimates in the [roadmap](progressive-disclosure-roadmap.md).
 
-Google Doc identities and transfer baselines can be retained as portable data.
-Native source intake and draft handoff/return remain the
-[next Google Docs phase](google-docs-roadmap.md); Team Hub does not perform those
-provider operations yet.
+Google Doc identities and transfer baselines are retained as portable data, so
+a teammate can continue a linked blog. Reading or writing the Doc itself is a
+separate [Google Docs](google-docs.md) operation that uses each member's own
+Google access; Hub sync never contacts Google.
 
 ## Verification boundary
-
-**Verification:** the full suite contains 87 tests, covering the existing local
-workflow, guidance refresh/pins, installer/rollback, extracted bundle, and Team
-Hub. Package integrity, both skill entries, and launcher syntax are checked too.
 
 Automated tests use disposable member homes and local repositories with a fake
 GitHub provider. They cover lifecycle recovery, offline queues, races, response
 loss, protected-branch outcomes, conflicts, scopes, and cross-machine handoffs.
-A real GitHub team pilot, clean-Mac setup, and live Codex/Claude discovery remain
-separate verification steps. No live Team Hub was created during implementation.
-See the [schema](team-hub-schema.md) and [design record](team-hub-design.md).
+A real multi-member GitHub pilot remains a separate verification step
+([#10](https://github.com/dbbaskette/blog-studio/issues/10)).
+See the [schema](team-hub-schema.md), [design record](team-hub-design.md), and
+[acceptance walkthrough](hub-acceptance.md).
 
 ## Readable GitHub library
 
@@ -149,8 +149,7 @@ voice’s name, then Unassigned; the uploader/last editor is not presumed to be 
 A title or author rename can change its folder URL, so use canonical revision links
 when a permanent reference is needed.
 
-This is part of candidate runtime **1.3.0**. Upgrade contributing clients through
-the trusted installer before migrating a hub. New hubs include an empty library;
+New hubs include an empty library;
 existing hubs upgrade with their next successful save or explicit sync. Joining or
 refreshing alone makes no remote changes. In review mode, generated files appear
 on the contribution branch first. Read-only/offline clients retain queued work.
