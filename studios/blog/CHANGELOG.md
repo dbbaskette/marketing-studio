@@ -33,6 +33,33 @@ blog, is retired.
   the tools chosen at installation.
 - **Rollback works for every installed version**, including each 1.x release.
 
+- **Team Hub stays usable as it grows.** Earlier drafts are shared once
+  instead of with every save, so a blog no longer hits the Hub size limit after
+  a few dozen saves. Local snapshot copies that nothing read are gone, and
+  delivered saves leave the local queue.
+- **An interrupted command no longer blocks the next one.** A second command
+  waits briefly for the first instead of failing with "Workspace is busy".
+- **No silent second version.** If a teammate shared a newer version of a blog,
+  your save is kept on your computer and reported as held; you choose to
+  continue from the shared version or share both and resolve them.
+- **Clearer Hub failures.** A closed contribution review is retried on a new
+  one; local Git problems are reported as such instead of as "offline"; an
+  oversized source is refused at intake with the file and limit named.
+- **The editorial desk only changes what you changed.** Saving an owner or due
+  date no longer renews a stale "ready" decision, and saving a note no longer
+  freezes a reference's tags. Marking a blog ready or published asks you to
+  confirm.
+- **The desk stays up.** A bad Word file, a damaged search index or one
+  unreadable blog produces a message instead of a dropped connection, and a
+  slow request no longer freezes every tab.
+- **Importing earlier posts is cleaner.** A failed preview leaves no empty
+  collection behind, refreshing a folder picks up new files, and re-importing
+  does not duplicate posts.
+- **You choose whether a reference is summarized.** Upload and import dialogs
+  say that summaries send the document text through your signed-in writing
+  CLI, and each has a checkbox to skip it. Opening the desk no longer turns
+  summaries on by itself.
+
 **Upgrading from 1.x:** run the 2.0 installer; it upgrades in place. Until
 then a 1.x installation answers a new blog with “This guidance needs a newer
 local Blog Studio runtime. Run the installer update.” Existing 1.x blogs can
