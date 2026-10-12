@@ -49,7 +49,14 @@ bash -n 'installer/Install Blog Studio.command'
 "$python_bin" scripts/build.py --check > "$results/build.json"
 node scripts/ci/check-newcomer.cjs > "$results/newcomer-prompts.json"
 "$python_bin" scripts/measure_guidance.py --check > "$results/guidance.json"
-if ! "$python_bin" -m unittest discover -s tests -v > "$results/tests.log" 2>&1; then
+# One process by default, which is what the workflows use. BLOG_STUDIO_TEST_JOBS=N runs the same
+# test files N at a time, each in its own process, for a faster local run.
+if [[ "${BLOG_STUDIO_TEST_JOBS:-1}" == 1 ]]; then
+  run_tests=("$python_bin" -m unittest discover -s tests -v)
+else
+  run_tests=("$python_bin" scripts/ci/run_tests.py --jobs "$BLOG_STUDIO_TEST_JOBS")
+fi
+if ! "${run_tests[@]}" > "$results/tests.log" 2>&1; then
   tail -n 80 "$results/tests.log" >&2
   exit 1
 fi

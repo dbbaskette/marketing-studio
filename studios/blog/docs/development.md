@@ -59,6 +59,18 @@ Tests use disposable homes and local Git repositories; they never touch your
 real skill folders or accounts, and the Team Hub tests ignore your own Git
 configuration.
 
+The suite takes about five minutes in one process, which is how the workflows
+run it. For a faster local run, set `BLOG_STUDIO_TEST_JOBS` to run the same
+test files several at a time, each in its own process (about 105 seconds with 8
+on an Apple-silicon Mac):
+
+```sh
+BLOG_STUDIO_TEST_JOBS=8 bash scripts/ci/check.sh "$(command -v python3)" /tmp/blog-studio-checks
+```
+
+The workflows keep the single process because a few tests assert sub-second
+timings that a busy shared machine could miss.
+
 The gate for a pull request is the Tart workflow, shown as
 `Verify Blog Studio / verify (…)`. The hosted workflow, `Hosted checks`, runs
 the same script and is currently disabled in the repository settings. See

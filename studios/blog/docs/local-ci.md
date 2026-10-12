@@ -17,6 +17,10 @@ a reproducible build, the prompt-generator check, the guidance budgets) and the
 test suite last, printing the end of the test log if a test fails. It needs
 Python 3.11+, Git and Node, and no accounts.
 
+The tests run in one process. `BLOG_STUDIO_TEST_JOBS=N` runs the same test
+files N at a time for a faster local run; the workflows do not set it. See
+[developing](development.md#verify).
+
 ### Lint and format
 
 Ruff lints and formats the Python in `skills/blog-studio/scripts/`,
