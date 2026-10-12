@@ -13,6 +13,7 @@ from hub import Registry
 from hub_store import HubError, encoded, sha
 from hub_workspace import Workspace
 import hub_workspace as adapter_module
+import hub_store as store_module
 import studio
 
 class HubWorkspaceTests(unittest.TestCase):
@@ -168,7 +169,13 @@ class HubWorkspaceTests(unittest.TestCase):
         aid=self.article();self.save(self.a,aid,'draft','Initial draft.')
         ref=self.export(aid);bid=self.checkout(ref)
         self.save(self.a,aid,'draft','A changes.');self.export(aid)
-        self.save(self.b,bid,'draft','B changes.');self.wb.publish_selected({'articles':[bid]})
+        self.save(self.b,bid,'draft','B changes.')
+        # Without the explicit choice the stale save waits; nothing competing is pushed.
+        waiting=self.wb.publish_selected({'articles':[bid]})
+        self.assertEqual(waiting['status'],'newer-hub-revision')
+        self.assertEqual(self.hb.status()['conflicts'],0)
+        forked=self.wb.publish_selected({'articles':[bid]},fork=True)
+        self.assertEqual(forked['status'],'shared')
         self.assertEqual(self.hb.status()['conflicts'],1)
         self.assertEqual(len(self.hb.graph()['heads'][ref['item']]),2)
 
@@ -274,8 +281,9 @@ class HubWorkspaceTests(unittest.TestCase):
         aid=self.article(mode='existing');self.save(self.a,aid,'original','Original.')
         self.save(self.a,aid,'draft','Initial.');ref=self.export(aid);bid=self.checkout(ref)
         self.save(self.a,aid,'draft','A edit.');a=self.export(aid)
-        self.save(self.b,bid,'draft','B edit.');self.wb.publish_selected({'articles':[bid]})
+        self.save(self.b,bid,'draft','B edit.');self.wb.publish_selected({'articles':[bid]},fork=True)
         self.ha.refresh();graph=self.ha.graph();heads=graph['heads'][ref['item']]
+        self.assertEqual(len(heads),2)
         chosen=self.ha.read(ref['item'],a['revision']);record=chosen['record']
         artifacts={name[10:]:(Path(path).read_bytes(),record['files'][name]['media']) for name,path in chosen['paths'].items() if name.startswith('artifacts/')}
         artifacts['DRAFT.md']=(b'Merged author choice.','text')
@@ -295,5 +303,324 @@ class HubWorkspaceTests(unittest.TestCase):
         self.command(self.a,'article','review','--id',aid,'--check','factual-support','--status','current','--file',self.file('{"findings":[]}', '.json'))
         ref=self.export(aid);bid=self.checkout(ref)
         self.assertEqual(self.command(self.b,'article','show','--id',bid)['reviews']['factual-support']['status'],'unavailable')
+
+    # ---- history is shared once; growth is linear -------------------------------
+
+    def article_revisions(self, hub, item):
+        graph = hub.graph(include_local=False)
+        return sorted((r for r in graph['revisions'].values() if r['item'] == item), key=lambda r: r['created_at'])
+
+    def history_files(self, record):
+        return sorted(name for name in record['files'] if name.startswith('artifacts/history/'))
+
+    def test_history_is_shared_once_and_hub_growth_is_linear(self):
+        draft = ('A paragraph of synthetic manuscript text for growth checks. ' * 12 + '\n\n') * 6
+        aid = self.article()
+        sizes = []
+        for number in range(1, 9):
+            self.save(self.a, aid, 'draft', draft + 'Saved version ' + str(number) + '.\n')
+            ref = self.export(aid)
+            files = self.ha.files(include_local=False)
+            sizes.append((len(files), sum(len(body) for body in files.values())))
+        # Each revision carries only the history created since its parent.
+        revisions = self.article_revisions(self.ha, ref['item'])
+        self.assertEqual([len(self.history_files(r)) for r in revisions], [0, 1, 1, 1, 1, 1, 1, 1])
+        shared_history = [name for r in revisions for name in self.history_files(r)]
+        self.assertEqual(len(shared_history), len(set(shared_history)))
+        # Paths grow by the same amount per save, and bytes by about one save's worth.
+        path_steps = [later[0] - earlier[0] for earlier, later in zip(sizes, sizes[1:])]
+        byte_steps = [later[1] - earlier[1] for earlier, later in zip(sizes, sizes[1:])]
+        self.assertEqual(len(set(path_steps[1:])), 1, path_steps)
+        self.assertLess(byte_steps[-1] - byte_steps[1], len(draft), byte_steps)
+        # Another clone still gets every earlier draft, under the same names.
+        bid = self.checkout(ref)
+        local = {p.name: p.read_text() for p in (self.a / 'articles' / aid / 'history').iterdir()}
+        resumed = {p.name: p.read_text() for p in (self.b / 'articles' / bid / 'history').iterdir()}
+        self.assertEqual(len(local), 7)
+        self.assertEqual(resumed, local)
+        # Publishing the unchanged resumed copy adds nothing.
+        before = len(self.hb.graph()['revisions'])
+        self.assertEqual(self.wb.publish_selected({'articles': [bid]})['status'], 'synchronized')
+        self.assertEqual(len(self.hb.graph()['revisions']), before)
+        # "Undo" on the second clone can reach the very first draft.
+        first = sorted(resumed)[0]
+        preview = self.command(self.b, 'article', 'restore', '--id', bid, '--revision', first)
+        self.assertEqual(preview['status'], 'preview')
+        self.command(self.b, 'article', 'restore', '--id', bid, '--revision', first,
+                     '--expected', preview['expected'], '--apply')
+        self.assertEqual((self.b / 'articles' / bid / 'DRAFT.md').read_text(), draft + 'Saved version 1.\n')
+        # The restore is one more save: one new history file travels, not the folder.
+        back = self.wb.publish_selected({'articles': [bid]})
+        self.assertEqual(back['status'], 'shared')
+        newest = self.article_revisions(self.hb, ref['item'])[-1]
+        self.assertEqual(len(self.history_files(newest)), 1)
+        # The first author resumes that revision and keeps the whole trail.
+        self.wa.checkout_selected({'articles': [ref['item']]})
+        self.assertEqual(len(list((self.a / 'articles' / aid / 'history').iterdir())), 8)
+
+    def test_hub_written_by_an_earlier_runtime_still_resumes_and_then_grows_linearly(self):
+        aid = self.article()
+        # An earlier runtime repeated the whole history folder in every revision.
+        with patch.object(adapter_module, 'inherited_history', lambda name: False):
+            for number in range(1, 5):
+                self.save(self.a, aid, 'draft', 'Earlier runtime draft ' + str(number) + '.')
+                ref = self.export(aid)
+        revisions = self.article_revisions(self.ha, ref['item'])
+        self.assertEqual([len(self.history_files(r)) for r in revisions], [0, 1, 2, 3])
+        bid = self.checkout(ref)
+        history = self.b / 'articles' / bid / 'history'
+        self.assertEqual(sorted(p.read_text() for p in history.iterdir()),
+                         ['Earlier runtime draft 1.', 'Earlier runtime draft 2.', 'Earlier runtime draft 3.'])
+        # New saves on top stop repeating what those revisions already hold.
+        self.save(self.b, bid, 'draft', 'Current runtime draft 5.')
+        self.assertEqual(self.wb.publish_selected({'articles': [bid]})['status'], 'shared')
+        newest = self.article_revisions(self.hb, ref['item'])[-1]
+        self.assertEqual(len(self.history_files(newest)), 1)
+        self.wa.checkout_selected({'articles': [ref['item']]})
+        self.assertEqual(len(list((self.a / 'articles' / aid / 'history').iterdir())), 4)
+
+    # ---- no silent forks ---------------------------------------------------------
+
+    def mutate(self, root, workspace, *words):
+        """A studio mutation followed by the same publish step studio.main runs."""
+        args = studio.parser().parse_args(['--root', str(root), *words])
+        with studio.locked(root):
+            record = studio.article_command(root, args)
+            return workspace.publish_mutation('article', record)
+
+    def stale_second_clone(self):
+        aid = self.article()
+        self.save(self.a, aid, 'draft', 'Version one.')
+        ref = self.export(aid)
+        bid = self.checkout(ref)
+        self.save(self.a, aid, 'draft', 'Version two by the first author.')
+        self.export(aid)
+        return aid, bid, ref
+
+    def test_stale_clone_keeps_its_save_local_instead_of_forking(self):
+        aid, bid, ref = self.stale_second_clone()
+        # The second clone is one revision behind and changes only a next-step note.
+        outcome = self.mutate(self.b, self.wb, 'article', 'progress', '--id', bid, '--stage', 'draft',
+                              '--next-step', 'A small note from the stale clone')
+        self.assertEqual(outcome['status'], 'newer-hub-revision')
+        self.assertEqual(outcome['sync_status'], 'synchronized')
+        self.assertIn('--fork', outcome['next_step'])
+        self.assertIn('--set-aside-local', outcome['next_step'])
+        self.assertEqual(outcome['newer_revision'][0]['local_id'], bid)
+        # Nothing competing reached the hub and neither clone sees a conflict.
+        self.ha.refresh()
+        self.assertEqual(len(self.ha.graph()['heads'][ref['item']]), 1)
+        self.assertEqual((self.ha.status()['conflicts'], self.hb.status()['conflicts']), (0, 0))
+        self.assertEqual(self.hb.status()['held'], 1)
+        # More local changes do not pile further saves onto the waiting one.
+        again = self.mutate(self.b, self.wb, 'article', 'progress', '--id', bid, '--stage', 'draft',
+                            '--next-step', 'Another note')
+        self.assertEqual(again['status'], 'newer-hub-revision')
+        self.assertEqual(self.hb.status()['held'], 1)
+        # The first author keeps saving normally.
+        self.save(self.a, aid, 'draft', 'Version three by the first author.')
+        self.assertEqual(self.export(aid)['kind'], 'article')
+        self.assertEqual(self.ha.status()['conflicts'], 0)
+        # Resuming the shared version never silently discards the unshared work.
+        with self.assertRaisesRegex(HubError, 'unshared local edits'):
+            self.wb.checkout_selected({'articles': [ref['item']]})
+        self.assertEqual(self.command(self.b, 'article', 'show', '--id', bid)['next_step'], 'Another note')
+        # The explicit choice to continue from the shared version keeps a backup.
+        held_revision = self.wb.state['items']['articles/' + bid]['revision']
+        self.wb.checkout_selected({'articles': [ref['item']]}, set_aside=True)
+        self.assertEqual((self.b / 'articles' / bid / 'DRAFT.md').read_text(), 'Version three by the first author.')
+        backup = self.b / '.hub-history' / bid / held_revision
+        self.assertEqual(json.loads((backup / 'session.json').read_text())['next_step'], 'Another note')
+        self.assertEqual(self.hb.status()['held'], 0)
+        self.assertTrue((self.hb.root / 'withdrawn' / held_revision / 'intent.json').is_file())
+        # From there the second clone shares normally again.
+        self.save(self.b, bid, 'draft', 'Version four by the second author.')
+        self.assertEqual(self.wb.publish_selected({'articles': [bid]})['status'], 'shared')
+        self.assertEqual(self.hb.status()['conflicts'], 0)
+
+    def test_offline_save_from_a_stale_clone_waits_and_can_be_forked_explicitly(self):
+        aid, bid, ref = self.stale_second_clone()
+        self.save(self.b, bid, 'draft', 'Offline edit by the second author.')
+        queued = self.wb.publish_selected({'articles': [bid]}, offline=True)
+        self.assertEqual(queued['status'], 'queued-offline')
+        # Back online, the queued save is found to be stale and is not pushed.
+        waiting = self.hb.sync()
+        self.assertEqual(waiting['status'], 'newer-hub-revision')
+        self.ha.refresh()
+        self.assertEqual(len(self.ha.graph()['heads'][ref['item']]), 1)
+        # The explicit option shares it as a competing version for a real merge.
+        forked = self.wb.publish_selected({'articles': [bid]}, fork=True)
+        self.assertEqual(forked['status'], 'shared')
+        self.assertEqual((forked['held'], forked['conflicts']), (0, 1))
+        self.ha.refresh()
+        self.assertEqual(len(self.ha.graph()['heads'][ref['item']]), 2)
+
+    def test_blog_pinning_a_stale_source_waits_with_it(self):
+        source = self.command(self.a, 'source', 'add', '--name', 'Figures', '--file', self.file('First figures.'),
+                              '--purpose', 'reference')['id']
+        self.assertEqual(self.wa.publish_selected({'sources': [source]})['status'], 'shared')
+        item = self.wa.state['items']['sources/' + source]['item']
+        copy = self.wb.checkout_selected({'sources': [item]})['items'][0]['local_id']
+        # The first author revises the shared source; the second edits an old copy.
+        self.command(self.a, 'source', 'update', '--id', source, '--text-file', self.file('Corrected figures.'))
+        self.assertEqual(self.wa.publish_selected({'sources': [source]})['status'], 'shared')
+        self.command(self.b, 'source', 'update', '--id', copy, '--text-file', self.file('Second author figures.'))
+        blog = self.article(self.b)
+        self.command(self.b, 'article', 'attach', '--id', blog, '--source', copy)
+        self.save(self.b, blog, 'draft', 'A draft citing the figures.')
+        waiting = self.wb.publish_selected({'articles': [blog]})
+        self.assertEqual(waiting['status'], 'newer-hub-revision')
+        self.assertEqual(self.hb.status()['held'], 2)        # the source and the blog that pins it
+        self.ha.refresh()
+        self.assertEqual(len(self.ha.graph()['heads'][item]), 1)
+        self.assertEqual(self.ha.find(kind='article')['total'], 0)
+        # Further saves are refused with the source named, not with a validation error.
+        self.save(self.b, blog, 'draft', 'A second draft citing the figures.')
+        again = self.wb.publish_selected({'articles': [blog]})
+        self.assertEqual(again['status'], 'newer-hub-revision')
+        self.assertIn(copy, again['next_step'])
+        self.assertIn('--source', again['next_step'])
+        self.assertEqual(self.hb.status()['held'], 2)
+        # The explicit choice shares both, as competing source versions.
+        forked = self.wb.publish_selected({'articles': [blog]}, fork=True)
+        self.assertEqual((forked['status'], forked['held']), ('shared', 0))
+        self.ha.refresh()
+        self.assertEqual(len(self.ha.graph()['heads'][item]), 2)
+        self.assertEqual(self.ha.find(kind='article')['total'], 1)
+
+    # ---- multi-hop history -------------------------------------------------------
+
+    def third_clone(self):
+        registry = Registry(self.base / 'c-hubs', self.ra.provider)
+        registry.join('fixture/writing')
+        root = self.base / 'author-c'
+        studio.initialize(root)
+        return root, Workspace(root, registry.hub(self.id))
+
+    def source_texts(self, root, local_id):
+        folder = root / 'sources' / local_id
+        return sorted(path.read_text() for path in folder.rglob('content.md'))
+
+    def test_source_history_survives_two_handoffs(self):
+        source = self.command(self.a, 'source', 'add', '--name', 'Spec', '--file', self.file('First author, revision one.'),
+                              '--purpose', 'reference')['id']
+        self.command(self.a, 'source', 'update', '--id', source, '--text-file', self.file('First author, revision two.'))
+        self.assertEqual(self.wa.publish_selected({'sources': [source]})['status'], 'shared')
+        item = self.wa.state['items']['sources/' + source]['item']
+        second = self.wb.checkout_selected({'sources': [item]})['items'][0]['local_id']
+        self.command(self.b, 'source', 'update', '--id', second, '--text-file', self.file('Second author, revision three.'))
+        self.assertEqual(self.wb.publish_selected({'sources': [second]})['status'], 'shared')
+        root, third_workspace = self.third_clone()
+        third = third_workspace.checkout_selected({'sources': [item]})['items'][0]['local_id']
+        everything = ['First author, revision one.', 'First author, revision two.', 'Second author, revision three.']
+        self.assertEqual(self.source_texts(root, third), everything)
+        # A third handoff keeps them all as well.
+        self.command(root, 'source', 'update', '--id', third, '--text-file', self.file('Third author, revision four.'))
+        self.assertEqual(third_workspace.publish_selected({'sources': [third]})['status'], 'shared')
+        fourth = self.wa.checkout_selected({'sources': [item]})['items'][0]['local_id']
+        self.assertEqual(self.source_texts(self.a, fourth), everything + ['Third author, revision four.'])
+
+    def test_projected_files_never_overwrite_each_other(self):
+        target = self.b / 'existing.md'
+        target.write_text('Already projected')
+        with self.assertRaisesRegex(HubError, 'same local file'):
+            self.wb._place(target, b'Second file for the same path')
+        self.assertEqual(target.read_text(), 'Already projected')
+
+    # ---- size limits -------------------------------------------------------------
+
+    def test_oversized_source_text_is_refused_at_intake_when_the_workspace_is_shared(self):
+        self.ra.select(self.id, self.a)
+        with patch.object(adapter_module, 'active', return_value=self.wa):
+            with patch.object(store_module, 'MAX_TEXT', 4096):
+                with self.assertRaises(ValueError) as refused:
+                    self.command(self.a, 'source', 'add', '--name', 'Huge report', '--file', self.file('word ' * 2000),
+                                 '--purpose', 'reference')
+                message = str(refused.exception)
+                self.assertIn('Huge report', message)
+                self.assertIn('content.md', message)
+                self.assertIn('limited to 4,096 bytes', message)
+                self.assertEqual(list((self.a / 'sources').iterdir()), [])
+                small = self.command(self.a, 'source', 'add', '--name', 'Small', '--file', self.file('Fits.'),
+                                     '--purpose', 'reference')['id']
+                with self.assertRaisesRegex(ValueError, 'Nothing was changed'):
+                    self.command(self.a, 'source', 'update', '--id', small, '--text-file', self.file('word ' * 2000))
+        self.assertEqual((self.a / 'sources' / small / 'content.md').read_text(), 'Fits.')
+
+    def test_existing_oversized_source_fails_clearly_and_recovers(self):
+        # Saved before a hub was selected, so intake accepted it.
+        source = self.command(self.a, 'source', 'add', '--name', 'Long transcript', '--file', self.file('word ' * 2000),
+                              '--purpose', 'reference')['id']
+        aid = self.article()
+        self.command(self.a, 'article', 'attach', '--id', aid, '--source', source)
+        self.save(self.a, aid, 'draft', 'A draft that cites the transcript.')
+        with patch.object(store_module, 'MAX_TEXT', 4096):
+            for attempt in range(2):
+                with self.assertRaises(HubError) as failure:
+                    self.wa.publish_selected({'articles': [aid]})
+                message = str(failure.exception)
+                self.assertIn('Long transcript', message)
+                self.assertIn(source, message)
+                self.assertIn('content.md', message)
+                self.assertIn('limited to 4,096 bytes', message)
+                self.assertIn('source update', message)
+            self.assertEqual(self.ha.status()['queued'], 0)
+            # Following the named remedy makes the blog shareable again. The earlier,
+            # larger text remains in this computer's history and is reported, not shared.
+            self.command(self.a, 'source', 'update', '--id', source, '--text-file', self.file('A short excerpt.'))
+            # The blog still pins the long revision; the message says how to move on.
+            with self.assertRaisesRegex(HubError, 'revision 1, which this blog pins.*article attach --id ' + aid):
+                self.wa.publish_selected({'articles': [aid]})
+            self.command(self.a, 'article', 'attach', '--id', aid, '--source', source)
+            shared = self.wa.publish_selected({'articles': [aid]})
+            self.assertEqual(shared['status'], 'shared')
+            reasons = ' '.join(shared['kept_on_this_computer'][0]['kept_on_this_computer'])
+            self.assertIn('revisions/1/content.md', reasons)
+            self.assertIn('original.md', reasons)
+            self.assertEqual((self.a / 'sources' / source / 'revisions/1/content.md').read_text(), 'word ' * 2000)
+            item = self.wa.state['items']['sources/' + source]['item']
+            record = self.ha.read(item)['record']
+            self.assertEqual(sorted(record['files']), ['BODY.md', 'artifacts/content.md', 'artifacts/revisions/1/record.json'])
+            self.assertEqual({entry['file'] for entry in record['data']['studio']['files_kept_local']},
+                             {'original.md', 'revisions/1/content.md'})
+
+    def test_oversized_original_stays_local_while_its_text_is_shared(self):
+        path = self.base / 'scan.pdf'
+        path.write_bytes(b'%PDF' + b'\x00\xff' * 4000)
+        with patch.object(store_module, 'MAX_BINARY', 4096):
+            added = self.command(self.a, 'source', 'add', '--name', 'Scanned report', '--file', str(path),
+                                 '--text-file', self.file('Extracted findings.'), '--purpose', 'reference')
+            self.assertIn('original file scan.pdf', added['sharing_limits'][0])
+            result = self.wa.publish_selected({'sources': [added['id']]})
+            self.assertEqual(result['status'], 'shared')
+            self.assertIn('original.pdf', result['kept_on_this_computer'][0]['kept_on_this_computer'][0])
+            item = self.wa.state['items']['sources/' + added['id']]['item']
+            shared = self.ha.read(item)['record']
+            self.assertEqual(sorted(shared['files']), ['BODY.md', 'artifacts/content.md'])
+            self.assertIsNone(shared['data']['studio']['original_path'])
+            self.assertEqual(shared['data']['studio']['files_kept_local'][0]['file'], 'original.pdf')
+            # Unchanged, it is not published again.
+            before = len(self.ha.graph()['revisions'])
+            self.assertEqual(self.wa.publish_selected({'sources': [added['id']]})['status'], 'synchronized')
+            self.assertEqual(len(self.ha.graph()['revisions']), before)
+        second = self.wb.checkout_selected({'sources': [item]})['items'][0]['local_id']
+        self.assertEqual((self.b / 'sources' / second / 'content.md').read_text(), 'Extracted findings.')
+        self.assertTrue((self.a / 'sources' / added['id'] / 'original.pdf').is_file())
+
+    # ---- binding map is read under the lock --------------------------------------
+
+    def test_binding_saved_by_another_command_is_not_overwritten(self):
+        aid = self.article()
+        self.save(self.a, aid, 'draft', 'First.')
+        early = Workspace(self.a, self.ha)   # built before another command publishes
+        ref = self.export(aid)
+        self.save(self.a, aid, 'draft', 'Second.')
+        latest = self.export(aid)
+        # The early adapter must build on the newest binding, not the one it loaded.
+        self.save(self.a, aid, 'draft', 'Third.')
+        self.assertEqual(early.publish_selected({'articles': [aid]})['status'], 'shared')
+        heads = self.ha.graph()['heads'][ref['item']]
+        self.assertEqual(len(heads), 1)
+        self.assertEqual(self.ha.graph()['revisions'][heads[0]]['parents'], [latest['revision']])
 
 if __name__=='__main__':unittest.main()

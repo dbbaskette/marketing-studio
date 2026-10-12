@@ -74,6 +74,23 @@ class CheckoutTests(unittest.TestCase):
         with self.assertRaisesRegex(HubError, 'local edits'):self.hub.sync()
         self.assertEqual(path.read_text(), 'Private note')
 
+    def test_dirty_checkout_error_names_the_files(self):
+        (self.hub.checkout / 'README.md').write_text('Local edits')
+        (self.hub.checkout / 'my notes.txt').write_text('Private note')
+        with self.assertRaises(HubError) as failure:
+            self.hub.refresh()
+        message = str(failure.exception)
+        self.assertIn('README.md', message)
+        self.assertIn('my notes.txt', message)
+        self.assertIn('no files were overwritten', message)
+        for number in range(12):
+            (self.hub.checkout / ('extra-' + str(number) + '.txt')).write_text('More')
+        with self.assertRaises(HubError) as failure:
+            self.hub.sync()
+        message = str(failure.exception)
+        self.assertEqual(message.count('extra-'), 9)   # ten paths are listed, then a count
+        self.assertIn('and 4 more', message)
+
     def test_legacy_migration_preserves_queued_work_and_old_copy_offline(self):
         old = self.legacy()
         queued = self.hub.save('note', 'Offline note', 'Keep me', offline=True)

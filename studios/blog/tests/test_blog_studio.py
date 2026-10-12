@@ -2,7 +2,9 @@
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
@@ -187,10 +189,56 @@ class StudioTests(unittest.TestCase):
         outside=self.base/'outside';outside.mkdir()
         (self.root/'profiles'/'escape').symlink_to(outside,target_is_directory=True)
         self.cli('profile','create','--name','Escape','--id','escape',ok=False)
+        # A lock file left by an older runtime, or by a command that was killed,
+        # carries no meaning any more and blocks nothing.
         (self.root/'.studio.lock').write_text('another process')
-        self.assertIn('busy',self.cli('list','articles',ok=False))
-        (self.root/'.studio.lock').unlink()
         self.assertEqual(self.cli('list','articles'),[])
+        self.article()
+
+    def hold_workspace_lock(self, seconds):
+        """Another process that really holds the workspace lock for a while."""
+        script = ('import sys, time\n'
+                  'sys.path.insert(0, sys.argv[1])\n'
+                  'from pathlib import Path\n'
+                  'import studio\n'
+                  'with studio.locked(Path(sys.argv[2])):\n'
+                  '    print("held", flush=True)\n'
+                  '    time.sleep(float(sys.argv[3]))\n')
+        holder = subprocess.Popen([sys.executable, '-c', script, str(PACKAGE/'scripts'), str(self.root), str(seconds)],
+                                  stdout=subprocess.PIPE, text=True)
+        self.addCleanup(holder.stdout.close)
+        self.addCleanup(holder.wait)
+        self.addCleanup(holder.kill)
+        self.assertEqual(holder.stdout.readline().strip(), 'held')
+        return holder
+
+    def run_with_lock_wait(self, seconds, *args):
+        env = dict(os.environ, BLOG_STUDIO_LOCK_WAIT=str(seconds))
+        return subprocess.run([sys.executable, str(PACKAGE/'scripts/studio.py'), '--root', str(self.root), *args],
+                              capture_output=True, text=True, env=env)
+
+    def test_killed_command_releases_the_workspace_lock(self):
+        holder = self.hold_workspace_lock(60)
+        # While another command really holds the lock, a change waits its bounded
+        # time and then says so; nothing tells the author to delete a lock file.
+        busy = self.run_with_lock_wait(0.3, 'article', 'create', '--title', 'Blocked', '--mode', 'first-draft')
+        self.assertNotEqual(busy.returncode, 0)
+        self.assertIn('busy', busy.stderr)
+        self.assertIn('do not delete', busy.stderr)
+        # A pure read is not held up by a writer.
+        self.assertEqual(self.cli('list', 'articles'), [])
+        holder.send_signal(signal.SIGTERM)
+        holder.wait()
+        # The killed holder could not clean up, yet the next command runs at once.
+        self.assertTrue((self.root/'.studio.lock').exists())
+        created = self.run_with_lock_wait(0, 'article', 'create', '--title', 'After a crash', '--mode', 'first-draft')
+        self.assertEqual(created.returncode, 0, created.stderr)
+
+    def test_second_command_waits_briefly_instead_of_failing(self):
+        self.hold_workspace_lock(0.8)
+        waited = self.run_with_lock_wait(20, 'article', 'create', '--title', 'Patient', '--mode', 'first-draft')
+        self.assertEqual(waited.returncode, 0, waited.stderr)
+        self.assertEqual(len(self.cli('list', 'articles')), 1)
 
     def test_mechanical_rules_respect_code_urls_quotes_and_word_boundaries(self):
         text='We delve into it — briefly.\n\n`delve --`\n\n> "delve —"\n\nhttps://example.com/delve\n\n```text\ndelve --\n```\nA delver works here.'

@@ -11,7 +11,7 @@ class FakeProvider:
     def __init__(self, root):
         self.root = Path(root);self.root.mkdir(parents=True, exist_ok=True)
         self.repos = {};self.created = 0;self.review = False;self.unavailable = False
-        self.timeout_after_create = False;self.prs = {}
+        self.timeout_after_create = False;self.prs = {};self.closed = set()
     def lookup(self, repository):
         if self.unavailable:raise store.TransportError('Fixture offline; saved work is retained.')
         value = self.repos.get(repository)
@@ -32,8 +32,13 @@ class FakeProvider:
     def review_required(self, repository):return self.review
     def ensure_pr(self, repository, branch, title):
         key = (repository, branch)
-        self.prs.setdefault(key, 'https://github.com/' + repository + '/pull/1')
+        if key in self.closed:
+            raise store.ReviewClosed('The hub contribution PR was closed. Its saved operations are retained; inspect it before retrying.')
+        self.prs.setdefault(key, 'https://github.com/' + repository + '/pull/' + str(len(self.prs) + 1))
         return self.prs[key]
+    def close_review(self, repository, branch):
+        """A reviewer closes the contribution pull request without merging it."""
+        self.closed.add((repository, branch))
     def merge_review(self, repository, branch):
         remote = self.transport({'repository': repository})
         commit = store.git(remote, 'rev-parse', 'refs/heads/' + branch).decode().strip()
