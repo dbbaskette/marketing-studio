@@ -1,4 +1,6 @@
 """Revision-bound source analysis through one explicitly selected signed-in CLI."""
+from contextlib import contextmanager
+from contextvars import ContextVar
 import json
 import os
 from pathlib import Path
@@ -18,6 +20,35 @@ SCHEMA = {'type':'object','additionalProperties':False,'properties': {
 DISABLED = ('shell_tool','apps','plugins','remote_plugin','hooks','multi_agent','browser_use',
             'browser_use_external','in_app_browser','computer_use','image_generation',
             'view_image','code_mode_host','skill_search','memories','goals')
+
+
+MAX_CHARACTERS = 24000  # Text sent to the analysis CLI per document.
+LABELS = {'codex': 'Codex', 'claude': 'Claude'}
+SKIPPED = 'Analysis was skipped for this file. Choose “Analyze reference” to summarize and tag it later.'
+_skip = ContextVar('blog_studio_skip_analysis', default=False)
+
+
+@contextmanager
+def skipping(active=True):
+    """Save sources inside this block without sending their text to the analysis CLI."""
+    token = _skip.set(bool(active))
+    try:
+        yield
+    finally:
+        _skip.reset(token)
+
+
+def disclosure(root):
+    """What the desk tells the author about analysis, in plain words."""
+    engine = harness(root)
+    if not engine:
+        return {'harness': None, 'label': None, 'max_characters': MAX_CHARACTERS,
+                'message': 'Reference analysis is off. No analysis CLI is configured, so document text is not sent to a model.'}
+    label = LABELS[engine]
+    return {'harness': engine, 'label': label, 'max_characters': MAX_CHARACTERS,
+            'message': 'Reference analysis uses your signed-in ' + label + ' CLI. Text from readable uploads and imports (up to '
+                       + format(MAX_CHARACTERS, ',') + ' characters per file) is sent through it to its model provider, '
+                       'unless you uncheck “Summarize and tag with ' + label + '”.'}
 
 
 def configure(root, harness):
@@ -129,9 +160,10 @@ def enrich(root, record, text, runner=None, defer=False):
     if not text or not text.strip() or record.get('status')!='ready':
         state.update(status='needs-extraction',message='Extract readable text before analysis.')
     elif not engine:state['message']='Select your writing CLI once, then retry analysis.'
+    elif _skip.get():state.update(message=SKIPPED,skipped=True)
     elif defer:state['message']='Waiting for this import batch to finish analysis.'
     else:
-        sample=text[:24000]
+        sample=text[:MAX_CHARACTERS]
         payload={'id':record['id'],'title':record['name'],'historical':record.get('library',{}).get('historical',False),
                  'published':record.get('library',{}).get('published'),'text':sample,'excerpt_only':len(text)>len(sample)}
         try:
@@ -164,7 +196,7 @@ def retry(root, ids, sync=True):
         for directory,record,text in batch:
             if text and text.strip() and record['status']=='ready' and not (record.get('analysis',{}).get('status')=='ready' and record['analysis'].get('sha256')==studio.digest(text.encode())):
                 pending.append({'id':record['id'],'title':record['name'],'historical':record.get('library',{}).get('historical',False),
-                    'published':record.get('library',{}).get('published'),'text':text[:24000],'excerpt_only':len(text)>24000})
+                    'published':record.get('library',{}).get('published'),'text':text[:MAX_CHARACTERS],'excerpt_only':len(text)>MAX_CHARACTERS})
         found={};failure=None
         if pending and engine:
             try:found=analyze(engine,pending)

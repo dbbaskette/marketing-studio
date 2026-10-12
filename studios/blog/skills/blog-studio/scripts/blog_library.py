@@ -18,6 +18,7 @@ from urllib.parse import urlsplit, urljoin, urlunsplit
 import uuid
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 
 import studio
 from experience import page
@@ -28,6 +29,10 @@ MAX_BATCH = 25
 MAX_DISCOVERY = 1000
 MAX_FETCH = 2 * 1024 * 1024
 MAX_IMPORT_BYTES = 25 * 1024 * 1024
+FETCH_DEADLINE = 45  # Seconds for one address, redirects included.
+UNREACHABLE = 'This address could not be reached. Check the URL and your connection; nothing was imported from it.'
+TOO_SLOW = 'This address took too long to respond; nothing was imported from it.'
+UNREADABLE_DOCX = 'This DOCX file could not be read. Open it in a word processor, save it again as .docx, then retry.'
 
 
 def canonical(url):
@@ -55,28 +60,67 @@ class PinnedHTTPS(http.client.HTTPSConnection):
             sock.close();raise
 
 
-def fetch(url, scope, redirects=3):
-    """Reject private addresses and pin the actual socket, including every redirect."""
+def time_left(deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise ValueError(TOO_SLOW)
+    return min(15, remaining)
+
+
+def read_within(response, raw, deadline):
+    """Read at most MAX_FETCH bytes; every wait is bounded by the time left for this address."""
+    chunks, size = [], 0
+    while True:
+        limit = time_left(deadline)
+        try:
+            raw.settimeout(limit)
+        except (OSError, AttributeError):
+            pass  # The response already owns the connection; its last timeout still applies.
+        chunk = response.read1(65536)
+        if not chunk:
+            return b''.join(chunks)
+        size += len(chunk)
+        if size > MAX_FETCH:
+            raise ValueError('Source exceeds the bounded fetch limit.')
+        chunks.append(chunk)
+
+
+def fetch(url, scope, redirects=3, deadline=None):
+    """Reject private addresses and pin the actual socket, including every redirect.
+
+    One deadline covers the whole exchange, so a slow or stalled server cannot hold the
+    workspace longer than FETCH_DEADLINE seconds. Network failures become plain messages.
+    """
+    deadline = deadline or time.monotonic() + FETCH_DEADLINE
     if not in_scope(url, scope): raise ValueError('URL is outside the approved collection scope.')
     parsed = urlsplit(canonical(url))
-    addresses = list(dict.fromkeys(v[4][0] for v in socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM)))
+    try:
+        found = socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise ValueError(UNREACHABLE) from exc
+    addresses = list(dict.fromkeys(v[4][0] for v in found))
     if not addresses or any(not ipaddress.ip_address(a).is_global for a in addresses):
         raise ValueError('Collection URLs must resolve only to public addresses.')
     connection = PinnedHTTPS(parsed.hostname, addresses[0])
     try:
+        connection.timeout = time_left(deadline)
         connection.request('GET', urlunsplit(('', '', parsed.path or '/', parsed.query, '')), headers={'User-Agent': 'BlogStudio/1.12 (explicit team collection import)', 'Accept': 'text/html,application/xml,text/plain'})
+        raw = connection.sock
         response = connection.getresponse()
         if response.status in (301, 302, 303, 307, 308):
             if redirects <= 0: raise ValueError('Too many collection redirects.')
             destination = canonical(urljoin(url, response.getheader('Location', '')))
             connection.close()
-            return fetch(destination, scope, redirects - 1)
+            return fetch(destination, scope, redirects - 1, deadline)
         if response.status != 200: raise ValueError('Source returned HTTP ' + str(response.status) + '; historical snapshots were retained.')
         length = response.getheader('Content-Length')
         if length and int(length) > MAX_FETCH: raise ValueError('Source exceeds the bounded fetch limit.')
-        content = response.read(MAX_FETCH + 1)
-        if len(content) > MAX_FETCH: raise ValueError('Source exceeds the bounded fetch limit.')
+        content = read_within(response, raw, deadline)
         return content, canonical(url), response.getheader('Content-Type', '')
+    except TimeoutError as exc:
+        raise ValueError(TOO_SLOW) from exc
+    except (OSError, http.client.HTTPException) as exc:
+        raise ValueError(UNREACHABLE) from exc
     finally:connection.close()
 
 
@@ -105,7 +149,8 @@ def collections(root):
     return result
 
 
-def setup(root, data):
+def normalize(root, data):
+    """Validate a collection description. Saves nothing and shares nothing."""
     name = data.get('name', '')
     if not isinstance(name, str) or not 1 <= len(name.strip()) <= 200: raise ValueError('Give this collection a short name.')
     key = studio.identifier(data.get('key') or studio.new_id(name))
@@ -123,12 +168,40 @@ def setup(root, data):
         config['urls'] = [canonical(u) for u in data.get('urls', [])[:MAX_POSTS]]
         if not config['urls'] or any(not in_scope(u, scope) for u in config['urls']): raise ValueError('Choose a bounded list of URLs within the collection scope.')
     if kind in ('folder', 'export'):
-        path = Path(data.get('path', '')).expanduser()
-        if not path.is_absolute() or not path.exists() or path.is_symlink(): raise ValueError('Choose an existing local folder or export file.')
-        if (kind == 'folder' and not path.is_dir()) or (kind == 'export' and not path.is_file()):raise ValueError('Choose a folder for folder imports or a JSON file for exports.')
-        config['local_path'] = str(path.resolve())
+        config['local_path'] = local_source(kind, data.get('path', ''))
+    return config
+
+
+def local_source(kind, value):
+    path = Path(value).expanduser()
+    if not path.is_absolute() or not path.exists() or path.is_symlink(): raise ValueError('Choose an existing local folder or export file.')
+    if (kind == 'folder' and not path.is_dir()) or (kind == 'export' and not path.is_file()):raise ValueError('Choose a folder for folder imports or a JSON file for exports.')
+    return str(path.resolve())
+
+
+def imported_count(root, key):
+    """Saved posts that belong to a collection, locally or in the selected Hub."""
+    return sum(1 for row in source_rows(root) if key in (row['record'].get('library') or {}).get('collections', []))
+
+
+def register(root, config, replace=False):
+    """Save a validated collection and queue it for the selected Hub.
+
+    replace=True reconfigures a collection that has no saved posts, keeping its key and
+    shared record. A collection with saved posts is never replaced.
+    """
     state = local_config(root)
-    if key in state['collections']: raise ValueError('This collection already exists. Refresh it instead of creating a duplicate.')
+    key = config['key']
+    if not replace:
+        if key in state['collections']: raise ValueError('This collection already exists. Refresh it instead of creating a duplicate.')
+    else:
+        saved = collections(root)
+        known = saved.get(key)
+        if known and imported_count(root, key): raise ValueError('This collection now has saved posts. Preview again under a different name.')
+        if known and known.get('hub_item'): config = {**config, 'hub_item': known['hub_item']}
+        wanted = config['name'].casefold()
+        if any(other['key'] != key and str(other['name']).strip().casefold() == wanted for other in saved.values()):
+            raise ValueError('Another collection is already named “' + config['name'] + '”. Preview again with a different name, or refresh that collection.')
     state['collections'][key] = config
     studio.write_json(folder(root) / 'collections.json', state)
     publish_config(root, config)
@@ -138,6 +211,21 @@ def setup(root, data):
         try:adapter.hub.sync()
         except (HubError, OSError):config['sharing'] = 'queued; retry Hub sync'
     return {k: v for k, v in config.items() if k != 'local_path'}
+
+
+def setup(root, data):
+    """Explicit registration, as requested in chat. The desk registers on the first import."""
+    return register(root, normalize(root, data))
+
+
+def locate(root, key, path):
+    """Point a folder/export collection at this member's local copy. Machine paths are never shared."""
+    config = collections(root).get(key)
+    if not config or config['type'] not in ('folder', 'export'):raise ValueError('Choose a local file collection.')
+    state = local_config(root)
+    state['collections'][key] = dict(config, local_path=local_source(config['type'], path))
+    studio.write_json(folder(root) / 'collections.json', state)
+    return {'status': 'local-source-selected', 'collection': config['name']}
 
 
 def publish_config(root, config, coverage=None):
@@ -226,8 +314,14 @@ def parse_discovery(content, kind, url, scope):
     return accepted[:MAX_POSTS], excluded, len(candidates) >= MAX_POSTS
 
 
-def preview(root, key, reader=fetch):
-    config = collections(root).get(studio.identifier(key))
+def preview(root, key, reader=fetch, config=None):
+    """Discover bounded candidates for a collection.
+
+    A supplied config is a validated draft: discovery runs first, and the draft travels
+    with the preview until the first confirmed import registers and shares it.
+    """
+    draft = config is not None
+    if not draft:config = collections(root).get(studio.identifier(key))
     if not config: raise ValueError('Choose a configured collection.')
     candidates, excluded, limited = [], [], False
     kind = config['type']
@@ -271,6 +365,7 @@ def preview(root, key, reader=fetch):
     ident = uuid.uuid4().hex
     manifest = {'schema': 1, 'id': ident, 'collection': key, 'created_at': studio.now(), 'candidates': list(unique.values()),
                 'excluded': excluded[:100], 'discovery_limited': limited, 'results': {}, 'processed_bytes': 0}
+    if draft:manifest['pending_collection'] = config
     studio.write_json(folder(root) / (ident + '.json'), manifest)
     return {'preview': ident, 'collection': config['name'], 'candidates': len(unique), 'duplicates': len(candidates) - len(unique),
             'expected_bytes': sum(v.get('expected_bytes', 0) for v in unique.values()), 'network_bytes': 'unknown until fetched' if kind not in ('folder', 'export') else None,
@@ -280,13 +375,17 @@ def preview(root, key, reader=fetch):
 
 def extract(root, content, suffix):
     if suffix == '.docx':
-        with zipfile.ZipFile(io.BytesIO(content)) as archive:
-            info = archive.getinfo('word/document.xml')
-            if info.file_size > MAX_FETCH or sum(v.file_size for v in archive.infolist()) > MAX_IMPORT_BYTES: raise ValueError('DOCX expands beyond the extraction limit.')
-            tree = ET.fromstring(archive.read(info))
-            namespace = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
-            text = '\n\n'.join(''.join(node.text or '' if node.tag == namespace + 't' else '\t' if node.tag == namespace + 'tab' else '\n' if node.tag == namespace + 'br' else '' for node in p.iter()) for p in tree.iter(namespace + 'p'))
-            return text, 'ready' if text.strip() else 'pending'
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                info = archive.getinfo('word/document.xml')
+                if info.file_size > MAX_FETCH or sum(v.file_size for v in archive.infolist()) > MAX_IMPORT_BYTES: raise ValueError('DOCX expands beyond the extraction limit.')
+                tree = ET.fromstring(archive.read(info))
+        except (zipfile.BadZipFile, zipfile.LargeZipFile, KeyError, ET.ParseError, EOFError, RuntimeError, NotImplementedError, zlib.error) as exc:
+            # Not a DOCX, a damaged or protected one, or malformed document.xml.
+            raise ValueError(UNREADABLE_DOCX) from exc
+        namespace = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+        text = '\n\n'.join(''.join(node.text or '' if node.tag == namespace + 't' else '\t' if node.tag == namespace + 'tab' else '\n' if node.tag == namespace + 'br' else '' for node in p.iter()) for p in tree.iter(namespace + 'p'))
+        return text, 'ready' if text.strip() else 'pending'
     if suffix not in ('.md', '.txt', '.html', '.htm'):return None, 'pending'
     from performance import extract as cached_extract
     result, _ = cached_extract(root, content, suffix)
@@ -322,10 +421,10 @@ def source_rows(root):
     return rows
 
 
-def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, delay=.25, selected=None):
+def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, delay=.25, selected=None, analyze=True):
+    """Import one bounded batch. analyze=False saves the posts without sending text to the analysis CLI."""
     if not __import__('re').fullmatch(r'[a-f0-9]{32}', preview_id) or not 1 <= limit <= MAX_BATCH: raise ValueError('Choose a valid preview and batch size 1–25.')
     path = folder(root) / (preview_id + '.json');manifest = studio.read_json(path)
-    config = collections(root)[manifest['collection']]
     def normalized_date(value):
         if not value:return None
         try:return datetime.fromisoformat(value.replace('Z', '+00:00')).date().isoformat()
@@ -342,6 +441,17 @@ def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, d
              and ((entry['identity'] not in manifest['results'] or manifest['results'][entry['identity']]['status'] == 'failed') if retry and chosen is None
                   else manifest['results'].get(entry['identity'], {}).get('status') == 'failed' if retry
                   else entry['identity'] not in manifest['results'])][:limit]
+    pending = manifest.get('pending_collection')
+    if pending and batch:
+        # The first confirmed import is what makes a previewed collection a saved, shared record.
+        register(root, pending, replace=True)
+        del manifest['pending_collection'];studio.write_json(path, manifest)
+        pending = None
+    config = pending or collections(root).get(manifest['collection'])
+    if not config: raise ValueError('This preview belongs to a collection that is no longer available. Preview it again.')
+    # Rows that carry a library identity can be matched again by the bytes of their original file.
+    by_hash = {r['record']['original_sha256']: r for r in existing.values()
+               if r['record'].get('original_sha256') and r['record']['library'].get('identity')}
     from hub_workspace import active
     adapter = active(root)
     for entry in batch:
@@ -376,6 +486,11 @@ def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, d
                 if not isinstance(metadata[key], list) or len(metadata[key]) > 30 or any(not isinstance(v, str) or len(v) > 100 for v in metadata[key]):raise ValueError('Use up to 30 short topic/product tags.')
             if metadata['author'] is not None:metadata['author'] = studio.checked_author(metadata['author'])
             old = existing.get(identity) or next((r for r in existing.values() if r['record'].get('library', {}).get('canonical_url') == origin and origin.startswith('https://')), None)
+            original_hash = sha(content)
+            if not old and entry.get('file') and content and original_hash in by_hash:
+                # The same file chosen again under another folder name or collection is one post, not a copy.
+                old = by_hash[original_hash]
+                title = old['record'].get('name') or title
             if old:metadata['identity'] = old['record']['library']['identity']
             if origin.startswith('https://'):metadata['canonical_url'] = origin
             if old and old['location'] == 'hub':
@@ -393,7 +508,6 @@ def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, d
             for field in ('topics', 'products'):
                 if field not in entry:metadata[field] = prior_metadata.get(field, [])
             metadata['collections'] = sorted(set(prior_metadata.get('collections', []) + metadata['collections']))
-            original_hash = sha(content)
             unchanged = record.get('original_sha256') == original_hash and prior_metadata == metadata
             if unchanged:
                 result = {'status': 'unchanged', 'id': record['id']}
@@ -411,18 +525,20 @@ def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, d
                 record.update(name=title, origin=origin, library=metadata, original_filename=Path(entry.get('file', identity)).name,
                     original_path=name, original_sha256=original_hash, content_sha256=sha(text.encode()) if text is not None else None,
                     author=entry.get('author'), status=status, retrieved_at=studio.now(), note=record.get('note','') if 'note' in record.get('curation_overrides',[]) else 'Historical team reference; reverify dated software claims.', revision=previous_revision + 1)
-                from source_curator import enrich
-                enrich(root, record, text, defer=True)
+                from source_curator import enrich, skipping
+                with skipping(not analyze):
+                    enrich(root, record, text, defer=True)
                 studio.persist(directory, 'sources', record)
                 result = {'status': 'updated' if previous_revision else 'imported', 'id': record['id'], 'extraction': status}
             result['analysis'] = record.get('analysis',{}).get('status','needs-analysis')
             existing[identity] = {'id': record['id'], 'location': 'local', 'record': record}
+            if record.get('original_sha256'):by_hash[record['original_sha256']] = existing[identity]
         except (OSError, ValueError, KeyError, TypeError, ET.ParseError, zipfile.BadZipFile, HubError) as exc:
             result = {'status': 'failed', 'reason': str(exc)[:400]}
         manifest['results'][identity] = result
         studio.write_json(path, manifest)
     completed=[manifest['results'][entry['identity']] for entry in batch if manifest['results'][entry['identity']]['status']!='failed']
-    if completed and __import__('source_curator').harness(root):
+    if completed and analyze and __import__('source_curator').harness(root):
         __import__('source_curator').retry(root,list(dict.fromkeys(value['id'] for value in completed)),sync=False)
     for value in completed:
         value['analysis']=studio.item(root,'sources',value['id'])[1].get('analysis',{}).get('status','needs-analysis')
@@ -435,22 +551,34 @@ def import_batch(root, preview_id, limit=MAX_BATCH, retry=False, reader=fetch, d
     coverage = {'preview': preview_id, 'discovered': len(manifest['candidates']), 'completed': len(manifest['results']),
                 'remaining': len(manifest['candidates']) - len(manifest['results']), 'discovery_limited': manifest['discovery_limited'],
                 'excluded': len(manifest['excluded']), 'bytes': manifest['processed_bytes'], 'counts': counts, 'last_refresh': studio.now()}
-    publish_config(root, config, coverage)
+    # A previewed collection with nothing imported yet is still only a draft: nothing to publish.
+    if not pending:publish_config(root, config, coverage)
     result = {**coverage, 'results': [{k: v for k, v in r.items()} for r in manifest['results'].values()][-limit:],
               'next_step': 'Retry failed items explicitly, continue this preview, or preview a refresh. Nothing missing was deleted.'}
-    if adapter:
+    if adapter and not pending:
         try:result['hub_sync'] = adapter.hub.sync()
         except (HubError, OSError):result['hub_sync'] = {'status': 'local-saved-not-shared', 'next_step': 'Retry Hub sync; do not repeat the import.'}
     return result
 
 
-def catalog(root, query='', collection=None, author=None, topic=None, product=None, since=None, until=None, limit=20, offset=0, include_retired=False, reusable_only=False):
-    if not 1 <= limit <= 50 or offset < 0:raise ValueError('Choose limit 1–50 and nonnegative offset.')
-    rows = source_rows(root)
-    signature = sha(encoded([{'metadata': {k: v for k, v in r['record'].items() if k in ('id', 'revision', 'name', 'library', 'content_sha256', 'updated_at', 'status', 'author', 'origin', 'purposes', 'retrieved_at', 'note', 'analysis')}, 'body_stat': [r['path'].stat().st_size, r['path'].stat().st_mtime_ns] if r['location'] == 'local' and r['path'].exists() else None} for r in rows]))
-    cache = studio.inside(root, '.derived-cache');cache.mkdir(mode=0o700, exist_ok=True)
-    database = studio.inside(cache, 'library.sqlite3')
-    if database.is_symlink():raise ValueError('Library index must not be a symlink.')
+def damaged_index(exc):
+    """True for an unreadable index file; false for a caller mistake or a busy database."""
+    if isinstance(exc, (sqlite3.ProgrammingError, sqlite3.IntegrityError, sqlite3.InterfaceError, sqlite3.DataError)):
+        return False
+    if isinstance(exc, sqlite3.OperationalError) and any(word in str(exc).lower() for word in ('locked', 'busy')):
+        raise ValueError('The reference index is busy with another Blog Studio operation. Try again in a moment.') from exc
+    return True
+
+
+def discard_index(database):
+    for path in (database, *(database.with_name(database.name + suffix) for suffix in ('-journal', '-wal', '-shm'))):
+        if path.is_file() and not path.is_symlink():
+            path.unlink()
+
+
+def search_index(database, rows, signature, filters):
+    """Query the rebuildable catalog, rebuilding it first when saved sources changed."""
+    query, collection, author, topic, product, since, until, limit, offset, include_retired, reusable_only = filters
     with closing(sqlite3.connect(database)) as db, db:
         database.chmod(0o600)
         db.execute('CREATE TABLE IF NOT EXISTS state (signature TEXT)')
@@ -485,33 +613,66 @@ def catalog(root, query='', collection=None, author=None, topic=None, product=No
         where = ' WHERE ' + ' AND '.join(clauses) if clauses else ''
         total = db.execute('SELECT count(*) FROM posts' + where, params).fetchone()[0]
         found = [json.loads(v[0]) for v in db.execute('SELECT data FROM posts' + where + ' ORDER BY title, id LIMIT ? OFFSET ?', params + [limit, offset])]
+    return total, found, not prior or prior[0] != signature
+
+
+def catalog(root, query='', collection=None, author=None, topic=None, product=None, since=None, until=None, limit=20, offset=0, include_retired=False, reusable_only=False):
+    if not 1 <= limit <= 50 or offset < 0:raise ValueError('Choose limit 1–50 and nonnegative offset.')
+    rows = source_rows(root)
+    signature = sha(encoded([{'metadata': {k: v for k, v in r['record'].items() if k in ('id', 'revision', 'name', 'library', 'content_sha256', 'updated_at', 'status', 'author', 'origin', 'purposes', 'retrieved_at', 'note', 'analysis')}, 'body_stat': [r['path'].stat().st_size, r['path'].stat().st_mtime_ns] if r['location'] == 'local' and r['path'].exists() else None} for r in rows]))
+    cache = studio.inside(root, '.derived-cache');cache.mkdir(mode=0o700, exist_ok=True)
+    database = studio.inside(cache, 'library.sqlite3')
+    if database.is_symlink():raise ValueError('Library index must not be a symlink.')
+    filters = (query, collection, author, topic, product, since, until, limit, offset, include_retired, reusable_only)
+    try:
+        total, found, rebuilt = search_index(database, rows, signature, filters)
+    except sqlite3.DatabaseError as exc:
+        if not damaged_index(exc): raise
+        # The index is derived data. Discard a damaged file and rebuild it once from saved sources.
+        discard_index(database)
+        try:
+            total, found, rebuilt = search_index(database, rows, signature, filters)
+        except sqlite3.DatabaseError as again:
+            raise ValueError('The reference index could not be rebuilt. Saved references are unchanged; ask Blog Studio in chat to clear the local cache.') from again
     names = {key: value['name'] for key, value in collections(root).items()}
     for entry in found:entry['collection_names'] = [names.get(key, key) for key in entry['library'].get('collections', [])]
     return {'items': found, 'total': total, 'truncated': total > offset + limit, 'offset': offset, 'index': 'rebuildable local catalog',
-            'cache_rebuilt': not prior or prior[0] != signature, 'source_count': len(rows), 'index_bytes': database.stat().st_size}
+            'cache_rebuilt': rebuilt, 'source_count': len(rows), 'index_bytes': database.stat().st_size}
 
 
 def curate(root, ident, data):
+    """Apply human corrections to a reference.
+
+    Only a value that actually changes is a correction: it gets a new revision and is
+    recorded as an override that later automatic analysis must not replace. Sending the
+    current value back, as a form does for untouched fields, changes nothing.
+    """
     directory, record = studio.item(root, 'sources', ident)
     if set(data) - {'curation', 'topics', 'products', 'note'}:raise ValueError('Unknown curation field.')
     metadata = dict(record.get('library', {}))
+    changed = []
     if 'curation' in data:
         if data['curation'] not in ('active', 'retired', 'pending'):raise ValueError('Choose active, retired, or pending.')
-        metadata['curation'] = data['curation']
+        if data['curation'] != metadata.get('curation', 'active'):
+            metadata['curation'] = data['curation'];changed.append('curation')
     for key in ('topics', 'products'):
         if key in data:
             if not isinstance(data[key], list) or len(data[key]) > 30 or any(not isinstance(v, str) or len(v) > 100 for v in data[key]):raise ValueError('Use up to 30 short tags.')
-            metadata[key] = data[key]
+            if data[key] != metadata.get(key, []):
+                metadata[key] = data[key];changed.append(key)
+    if 'note' in data:
+        if not isinstance(data['note'], str) or len(data['note']) > 4000:raise ValueError('Keep the source note under 4000 characters.')
+        if data['note'] != (record.get('note') or ''):changed.append('note')
+    if not changed:
+        return record
     history = studio.inside(directory, 'revisions', str(record['revision']));history.mkdir(parents=True, exist_ok=True)
     studio.write_json(history / 'record.json', record)
     if (directory / 'content.md').exists():studio.atomic(history / 'content.md', (directory / 'content.md').read_bytes())
     original = record.get('original_path')
     if original and studio.inside(directory, original).is_file():studio.atomic(studio.inside(history, original), studio.inside(directory, original).read_bytes())
-    record['curation_overrides'] = sorted(set(record.get('curation_overrides',[]) + list(data)))
+    record['curation_overrides'] = sorted(set(record.get('curation_overrides', []) + changed))
     record['library'] = metadata;record['revision'] += 1
-    if 'note' in data:
-        if not isinstance(data['note'], str) or len(data['note']) > 4000:raise ValueError('Keep the source note under 4000 characters.')
-        record['note'] = data['note']
+    if 'note' in changed:record['note'] = data['note']
     studio.persist(directory, 'sources', record)
     return record
 
@@ -593,14 +754,7 @@ def command(root, args):
     if args.action == 'curator':return __import__('source_curator').configure(root,args.harness)
     if args.action == 'analyze':return __import__('source_curator').retry(root,args.id)
     if args.action == 'read':return read_source(root, args.id, args.query, args.limit, args.max_chars)
-    if args.action == 'locate':
-        config = collections(root).get(args.collection)
-        if not config or config['type'] not in ('folder', 'export'):raise ValueError('Choose a local file collection.')
-        path = Path(args.path).expanduser()
-        if not path.is_absolute() or not path.exists() or path.is_symlink():raise ValueError('Choose an existing local folder/export path.')
-        state = local_config(root);state['collections'][args.collection] = dict(config, local_path=str(path.resolve()))
-        studio.write_json(folder(root) / 'collections.json', state)
-        return {'status': 'local-source-selected', 'collection': config['name']}
+    if args.action == 'locate':return locate(root, args.collection, args.path)
     if args.action == 'collections':return {'items': [{k: v for k, v in r.items() if k not in ('local_path', 'urls')} for r in collections(root).values()]}
     if args.action == 'find':return catalog(root, args.query, args.collection, args.author, args.topic, args.product, args.since, args.until, args.limit, args.offset, reusable_only=getattr(args, 'reusable_only', False))
     if args.action == 'preview':return preview(root, args.collection)
