@@ -365,7 +365,7 @@ class LibraryTests(Fixture):
                     management.dispatch(self.root, 'upload', {'operation': sha(content)[:32], 'filename': 'notes.docx',
                                                                'content': base64.b64encode(content).decode()})
         self.assertEqual(list((self.root / 'sources').iterdir()), [])
-        self.assertFalse((self.root / '.studio.lock').exists())
+        with patch.dict('os.environ', {'BLOG_STUDIO_LOCK_WAIT': '0.2'}), studio.locked(self.root):pass  # released
         good = io.BytesIO()
         with zipfile.ZipFile(good, 'w') as archive:
             archive.writestr('word/document.xml', '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
@@ -1007,7 +1007,7 @@ class ManagementTests(Fixture):
         status, _, body = self.exchange(server, token, '/api/curate', 'POST', data=dict(proposal, note='Old proposal'))
         self.assertEqual(status, 409);self.assertEqual(json.loads(body)['code'], 'source-conflict')
         self.assertEqual(studio.item(self.root, 'sources', source['id'])[1]['note'], 'First proposal')
-        self.assertFalse((self.root / '.studio.lock').exists())
+        with patch.dict('os.environ', {'BLOG_STUDIO_LOCK_WAIT': '0.2'}), studio.locked(self.root):pass  # released
         # A read of something that is gone stays an ordinary 400.
         self.assertEqual(self.exchange(server, token, '/api/source?id=missing')[0], 400)
         # The page's own same-origin POST, as a browser sends it.
