@@ -166,12 +166,14 @@ Blog Studio can work through your tool's own Google Drive connection. If you
 prefer the Google Cloud CLI, the installer folder includes a helper:
 
 ```sh
-sh installer/google-setup.sh --install-cli   # uses Homebrew you already have
-sh installer/google-setup.sh --login         # opens Google sign-in for Drive access
-sh installer/google-setup.sh --check         # read-only access check
+sh installer/google-setup.sh --install-cli                # uses Homebrew you already have
+sh installer/google-setup.sh --login you@example.com      # opens Google sign-in for that account
+sh installer/google-setup.sh --check you@example.com      # read-only access check
 ```
 
-Signing in changes the active `gcloud` account. It creates no Cloud project,
+Google asks for the access every `gcloud` sign-in requests plus full Google
+Drive access. Naming the account adds it without changing the account `gcloud`
+already uses; add `--activate` to switch. Sign-in creates no Cloud project,
 OAuth client or billing setup. See the
 [Google Docs guide](https://github.com/dbbaskette/blog-studio/blob/main/docs/google-docs.md).
 
