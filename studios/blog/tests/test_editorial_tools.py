@@ -682,6 +682,14 @@ class HubEditorialTests(Fixture):
         self.assertEqual(management.dispatch(self.root, 'upload', data), saved)  # A replay returns the same saved result.
         self.assertEqual(len(list((self.root / 'sources').iterdir())), 1)
 
+    def test_sync_renders_the_board_despite_a_malformed_shared_record(self):
+        # The generated Hub board is rebuilt on every sync; one bad record must not stop all sharing.
+        self.hub.save('article', 'Odd editorial', 'body', sync=False, data={'studio': {'editorial': 'not-an-object'}})
+        self.hub.sync()
+        board = self.hub.files()['editorial/README.md'].decode()
+        row = next(line for line in board.splitlines() if 'Odd editorial' in line)
+        self.assertIn('Unassigned', row)
+
     def test_memory_edit_sends_only_changes_and_keeps_the_rest_of_the_revision(self):
         long_body = 'A long saved memory sentence. ' * 700
         self.assertGreater(len(long_body), 16000)
