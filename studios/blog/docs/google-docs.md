@@ -1,8 +1,8 @@
 # Google Docs in Blog Studio
 
-Blog Studio can guide Google Docs work inside your existing harness. Its six
-Google capabilities load only when you supply a Google Doc or request a Google
-operation. Your normal writing workflow needs no Google account or extra CLI.
+Blog Studio can guide Google Docs work inside your existing harness. Its Google
+workflows load only when you supply a Google Doc or request a Google operation.
+Your normal writing workflow needs no Google account or extra CLI.
 
 | Ask Blog Studio | What happens |
 | --- | --- |
@@ -15,29 +15,46 @@ operation. Your normal writing workflow needs no Google account or extra CLI.
 | “Give me a PDF/Word copy.” | Exports the selected version and inspects the actual result. |
 | “Give Alex comment access.” | Resolves the exact recipient, access and notification intent, then verifies supported permission changes. |
 
-The Google checkpoint helper is included in runtime **1.2.0 and later**. Use the latest trusted installer for new setup. This is a managed
-runtime update; routine writing guidance still updates without reinstallation.
-Existing workspaces and Team Hubs retain their files and pins. Google snapshots
-use the existing portable history format. Codex and Claude installations receive
-the same runtime, but each harness's actual Google connection is discovered
-separately. Missing capabilities produce a clear local fallback.
+The Google helpers are part of the managed runtime; run the latest trusted
+installer once to get new helper behavior, since a guidance refresh cannot
+install code. Existing workspaces and Team Hubs retain their files and pins.
+Codex and Claude installations receive the same runtime, but each harness's
+actual Google connection is discovered separately. Missing capabilities produce
+a clear local fallback.
 
 ## Local Codex and Claude: gcloud setup
 
-Runtime **1.4.0** adds the same user-login approach used by `tanzu-brand`.
-You do not create a Cloud project, OAuth client or billing configuration. From
-the downloaded installer folder, run the regular shell scripts:
+Blog Studio uses the same user-login approach as `tanzu-brand`. You do not
+create a Cloud project, OAuth client or billing configuration. From the
+downloaded installer folder, run the regular shell scripts with the Google
+account you use for your team's Docs:
 
 ```sh
 sh installer/google-setup.sh --install-cli
-sh installer/google-setup.sh --login
-sh installer/google-setup.sh --check
+sh installer/google-setup.sh --login you@example.com
+sh installer/google-setup.sh --check you@example.com
 ```
 
-The login command is `gcloud auth login --enable-gdrive-access --force`. It opens
-Google consent for Drive access and may change your active gcloud account.
+The login runs `gcloud auth login you@example.com --enable-gdrive-access --force
+--no-activate`. Naming the account adds it without changing the account gcloud
+already uses for other work; add `--activate` only if you want to switch. Without
+an email, the script signs in only when gcloud has no account yet.
+
+**What you are granting.** Google's consent screen is for the Google Cloud CLI,
+not for a Blog Studio app. It asks for what every gcloud sign-in requests (access
+to your Google Cloud resources) plus full Google Drive access: seeing, editing,
+creating and deleting every Drive file your account can reach. Blog Studio's
+helpers use that access only to call the Drive and Docs APIs, read the files you
+name, and write to Docs linked to your blogs; they refuse to change any other
+Doc. If your organization prefers narrower access, use a connected Workspace
+connector instead of this route.
+
 The install step uses existing approved Homebrew; company-managed installations
 can supply gcloud instead. No credentials go into Blog Studio or the Team Hub.
+In chat, say **“Use you@example.com for Google Docs.”** Blog Studio then remembers
+which account that writing workspace uses (only the address, on your computer)
+and passes it automatically, without changing gcloud's active account.
+
 Optional `install.sh --google-docs gcloud` guides login after installation;
 `--google-docs gcloud-check` only checks access. JSON/noninteractive installs never
 start interactive sign-in. Default installation skips Google.
@@ -52,7 +69,10 @@ Sharing changes and native template copying require a capable connector.
 
 Uploads keep a local operation receipt for recovery, check the reviewed folder
 audience, and never retry an uncertain create automatically. Exports refuse to
-overwrite local files. Full usage: [gcloud adapter](../skills/blog-studio/references/google/gcloud.md).
+overwrite local files. Working files (captures, review plans, receipts) go to a
+private `.google-staging` folder inside your workspace, are removed when their
+step is saved, and can be cleared at any time with “Clear local caches.”
+Full usage: [gcloud adapter](../skills/blog-studio/references/google/gcloud.md).
 
 ## Set your team's review preferences
 
@@ -80,7 +100,9 @@ Normal writing and local exports remain available without Google setup.
    readback as the common baseline.
 3. Edit in Google Docs, then ask Blog Studio to bring the changes back. If only
    Google changed, the returned text becomes a new local revision. If both sides
-   changed, Blog Studio shows the differences and asks which result to keep.
+   changed different passages, the edits are merged and yours stay marked as not
+   yet sent. Only a passage that both sides changed is shown to you, and you
+   choose its wording.
 4. The original, previous drafts, selected voice/sources and guidance pins remain.
    Changed manuscript reviews become stale. A chosen merge that has not reached
    Google remains visibly unsent. A selected private Team Hub shares the baseline
@@ -95,6 +117,13 @@ resolving threads do not approve publication.
 Only selected content goes to Google. Internal source material, voices, rules,
 background and interviews are not added to a Doc by default. Credentials stay in
 the connected provider or gcloud's user credential store. The skill repository never becomes the team's data store.
+
+Your Team Hub receives the returned text, the formatted Word snapshot and
+fingerprints of the Doc. The raw Google Docs data behind a snapshot, which can
+include your reviewers' comment threads and pending suggestions, stays on the
+computer that pulled it and is never sent to the Hub. A teammate who opens the
+blog from the Hub can check status and pull right away; they do not need that
+raw data.
 
 The inspected Codex connector exposes Docs reads, revision-guarded writes,
 native copies, exports, comments and sharing. Disposable Codex checks verified
@@ -113,10 +142,11 @@ native template, overwrites conflicting text, or broadens access.
 
 ## Verification and remaining live work
 
-G0–G3 now have executable local checkpoint tests and six conditional skill
-workflows. These tests cover consistency and preservation with disposable data;
-they do not simulate evidence of real Google operations. The checkpoint helper does not call Google. Runtime 1.4.0 adds the separate
-`google_drive.py` transport; connected-provider and gcloud readback both require
+G0–G3 have executable local checkpoint tests and conditional skill workflows.
+These tests cover consistency and preservation with disposable data; they do not
+simulate evidence of real Google operations. The checkpoint commands do not call
+Google; only the live status check does, read-only, through the separate
+`google_drive.py` transport. Connected-provider and gcloud readback both require
 task-specific verification.
 
 The authenticated [G4 pilot (#15)](https://github.com/dbbaskette/blog-studio/issues/15)
@@ -136,7 +166,7 @@ See the [Google roadmap](google-docs-roadmap.md) for disclosure costs and the
 [checkpoint contract](../skills/blog-studio/references/google/checkpoints.md) for
 implementation details.
 
-## Formatted Google editing (runtime 1.5)
+## Formatted Google editing
 
 Google Docs remains the shared editing copy. On return, retain DOCX as the
 formatted stored copy, Markdown for readable Git diffs, and native structure for
@@ -148,18 +178,20 @@ Try: “Bring the Google edits back, including heading sizes and spacing. Save t
 formatted DOCX snapshot and readable Markdown to our Hub.” Then: “Send these
 wording changes back while preserving the team’s Google formatting.”
 
-This requires updating the managed installer to 1.5 once. Automatic guidance
-refresh cannot install runtime code. The automatic export bundle currently requires
-a single-tab Doc without pending suggestions; multi-tab or structural changes use
-the scoped native workflow. DOCX fidelity still needs inspection. No live document
-is modified by installing or upgrading.
+The automatic capture requires a single-tab Doc. Pending suggestions, yours or a
+teammate's, do not block it: the returned text is the accepted text only. Docs
+with tables, images or footnotes are captured through Google's own Markdown
+export, and only while no suggestion is pending; multi-tab or structural changes
+use the scoped native workflow. Renaming the Doc or a tab does not count as a
+change. DOCX fidelity still needs inspection. No live document is modified by
+installing or upgrading.
 
 [Validation evidence and live-test boundaries](google-roundtrip-validation.md).
 
-## Freshness and milestone names (runtime 1.6)
+## Freshness and milestone names
 
 On resume, check the linked Doc and show In sync, Google has changes, Local changes
-pending, Both changed, or Not checked. Include Last checked and Last confirmed
+pending, Both changed, Suggestions pending, or Not checked. Include Last checked and Last confirmed
 saved to Hub. Cached results never establish current freshness; offline/pending
 saves are not shown as saved to remote main. Use one stable Doc link and name
 meaningful milestones in Google’s version-history UI. Version naming is manual;
@@ -168,22 +200,25 @@ labels do not prove freshness. [Details](../skills/blog-studio/references/google
 Try: “Continue my blog. Check whether Google or our local copy has newer changes,
 and tell me when this article was last confirmed saved to the Hub.”
 
-Update the managed installer to 1.6 once for this status command. Older text-only
-Google baselines need an inspected formatted return before native freshness checks.
+Older text-only Google baselines need an inspected formatted return before native
+freshness checks.
 
 ## Find the working Doc from GitHub
 
-Runtime 1.6.1 displays **Open working Google Doc** and the last Google capture
-time on each linked blog’s generated GitHub page. Draft and outline links are
-labeled separately. The next Hub sync upgrades existing generated pages without
-changing canonical article history; manual edits to generated pages remain protected.
-After that upgrade, contributing clients need 1.6.1. Google permissions are unchanged.
-The timestamp describes the saved capture, not a live freshness check.
+Each linked blog’s generated GitHub page shows **Open working Google Doc** and the
+last Google capture time. Draft and outline links are labeled separately. Google
+permissions are unchanged. The timestamp describes the saved capture, not a live
+freshness check.
 
 ## Send proofreading for team review
 
-Say **“Proofread”**, then **“Push as suggestions.”** Blog Studio refreshes the
-linked Google Doc first, reconciles changes, and rechecks affected findings.
+Say **“Proofread”**, then **“Push as suggestions.”** For a blog linked to a Google
+Doc, proofreading records its corrections as proposals and leaves your local
+draft as it is; the draft changes when you pull what the team accepted, so a
+rejected proposal never has to be undone. Blog Studio refreshes the linked Google
+Doc first, reconciles changes, and rechecks affected findings. A teammate's own
+pending suggestion does not stop your review; only the paragraph it sits in is
+skipped until they settle it.
 When native suggestions are available, selected replacements become pending
 suggested edits with explanatory comments. Otherwise, the comment workflow below
 keeps them as review proposals. Broader feedback becomes comments. Native writes
@@ -197,8 +232,10 @@ a suggestion. Complex structures may require a scoped native conversion rather
 than the bounded paragraph renderer. If neither suggestions nor comments are
 available, Blog Studio retains the review locally.
 
-Requires the runtime 1.10 installer update. Guidance refresh alone cannot install
-the new helper. Live Google account validation is separate from fixture tests.
+If posting is interrupted, ask again: Blog Studio continues with the comments
+that are still missing instead of starting over, and it tells you plainly when
+nothing reached Google. Live Google account validation is separate from fixture
+tests.
 
 Developer evidence and remaining live checks: [suggestion validation](google-suggestions-validation.md).
 
@@ -212,11 +249,12 @@ current wording, proposed wording and reason; they do not have Accept/Reject but
 Minor fixes in one paragraph can share a comment while keeping individual numbers.
 
 Say **“Show review edits”**, then **“Apply edits 2 and 4”** to choose changes.
-Blog Studio checks current wording, applies only your selection, verifies formatting,
-and resolves completed comments. A resolved comment alone never means approval.
-Afterward, say **“Pull from Google Docs.”** Runtime **1.10** provides this workflow;
-run the current installer once and start a new session. A hosted connector's
-missing option does not require changing the document's settings.
+Edit numbers keep counting across reviews of the same blog, so a number always
+means one edit. Blog Studio checks current wording, applies only your selection,
+verifies formatting, and resolves completed comments. A resolved comment alone
+never means approval. Numbered edits can be applied from the computer that
+posted the review. Afterward, say **“Pull from Google Docs.”** A hosted
+connector's missing option does not require changing the document's settings.
 
 ## Start from a blog already in Google Docs
 
@@ -229,6 +267,5 @@ Importing does not edit Google or create a duplicate document. Repeating the
 request resumes the saved blog and preserves local edits. **“Use this as a
 source”** still adds reference material without changing the working Doc.
 
-Requires runtime **1.11** and an inspected capture. Automatic formatted intake
-currently supports single-tab Docs; unsupported content or ambiguous tabs need
-resolution before a linked baseline can be established.
+Automatic formatted intake supports single-tab Docs; unsupported content or
+ambiguous tabs need resolution before a linked baseline can be established.

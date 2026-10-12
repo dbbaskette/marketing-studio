@@ -109,12 +109,69 @@ class GoogleStartTests(unittest.TestCase):
 
     def test_google_change_after_import_requires_refresh_before_suggestion_plan(self):
         aid = self.start()['id']
-        self.client.doc['title'] = 'Changed in Google'
         findings = [dict(id='proof-1', kind='edit', tab_id='t.0', start_index=5,
             before='delay', after='wait', reason='Plainer wording.')]
+        # Renaming the Doc or its tab changes neither text nor formatting.
+        self.client.doc['title'] = 'Renamed in Google'
+        self.client.doc['tabs'][0]['tabProperties']['title'] = 'Renamed tab'
+        gs.plan(self.client, self.root, aid, 'draft', findings, self.base/'renamed-plan.json')
+        with patch('google_drive.Client', return_value=self.client):
+            directory, record = studio.item(self.root, 'articles', aid)
+            self.assertEqual(gw.sync_status(self.root, directory, record, online=True)['status'], 'in-sync')
+        blocks = self.client.doc['tabs'][0]['documentTab']['body']['content']
+        blocks[1]['paragraph']['paragraphStyle']['lineSpacing'] = 180
         with self.assertRaisesRegex(Exception, 'Pull the latest'):
             gs.plan(self.client, self.root, aid, 'draft', findings, self.base/'plan.json')
         self.assertEqual(self.client.writes, 0)
+
+    def run_google(self, *words):
+        with studio.locked(self.root):
+            return gw.command(self.root, studio.parser().parse_args(['--root', str(self.root), 'google', *words]))
+
+    def proofread_and_send(self, aid):
+        """Proofreading a linked Doc saves findings as the review; the draft itself is not rewritten."""
+        review = {'findings': [dict(id='proof-1', kind='edit', before='delay', after='wait', reason='Plainer.'),
+                               dict(id='proof-2', kind='edit', before='isn’t', after='is not', reason='Formal voice.')]}
+        saved_review = self.base/'proofread.json'; saved_review.write_text(json.dumps(review))
+        with studio.locked(self.root):
+            studio.article_command(self.root, studio.parser().parse_args(['--root', str(self.root), 'article', 'review',
+                '--id', aid, '--check', 'proofread', '--status', 'current', '--file', str(saved_review)]))
+        gs.plan(self.client, self.root, aid, 'draft', json.loads(saved_review.read_text()), self.base/'review-plan.json')
+        plan = json.loads((self.base/'review-plan.json').read_text())
+        self.assertEqual(gs.apply(self.client, self.root, plan)['status'], 'verified-pending')
+
+    def test_headline_flow_pulls_cleanly_when_a_suggestion_is_rejected(self):
+        aid = self.start()['id']; directory, _ = studio.item(self.root, 'articles', aid)
+        original = (directory/'DRAFT.md').read_text()
+        self.proofread_and_send(aid)
+        self.assertEqual((directory/'DRAFT.md').read_text(), original)
+        # The team accepts the first proposal and rejects the second.
+        fixtures.decide_suggestions(self.client, accept={'delay', 'wait'})
+        pull = self.base/'pull'; rt.capture(self.client, 'fixture-doc', None, pull)
+        check = self.run_google('compare', '--id', aid, '--snapshot', str(pull))
+        self.assertEqual(check['status'], 'remote-only'); self.assertNotIn('merge', check)
+        result = self.run_google('accept', '--id', aid, '--snapshot', str(pull), '--expected-comparison', check['comparison'])
+        self.assertEqual(result['status'], 'accepted'); self.assertIsNone(result['merge'])
+        text = (directory/'DRAFT.md').read_text()
+        self.assertIn('The wait is in handoffs.', text); self.assertIn('isn’t slow', text); self.assertNotIn('is not', text)
+        self.assertEqual(self.run_google('compare', '--id', aid, '--snapshot', str(pull))['status'], 'unchanged')
+
+    def test_rewritten_draft_still_merges_without_a_manual_conflict(self):
+        aid = self.start()['id']; directory, record = studio.item(self.root, 'articles', aid)
+        original = (directory/'DRAFT.md').read_text()
+        # An older habit: the proofread rewrote DRAFT.md with every proposed edit before sending.
+        rewritten = original.replace('delay', 'wait').replace('isn’t', 'is not')
+        studio.save_artifact(directory, 'draft', rewritten, record); studio.persist(directory, 'articles', record)
+        self.proofread_and_send(aid)
+        fixtures.decide_suggestions(self.client, accept={'delay', 'wait'})
+        pull = self.base/'pull'; rt.capture(self.client, 'fixture-doc', None, pull)
+        check = self.run_google('compare', '--id', aid, '--snapshot', str(pull))
+        self.assertEqual(check['status'], 'conflict'); self.assertEqual(check['merge']['status'], 'clean')
+        result = self.run_google('accept', '--id', aid, '--snapshot', str(pull), '--expected-comparison', check['comparison'])
+        self.assertEqual(result['merge'], 'clean-merge')
+        # The accepted edit matches; the rejected one stays local and visibly unsent.
+        self.assertEqual((directory/'DRAFT.md').read_text(), rewritten)
+        self.assertEqual(self.run_google('compare', '--id', aid, '--snapshot', str(pull))['status'], 'local-only')
 
     def test_pending_suggestions_import_only_accepted_manuscript(self):
         findings = [dict(id='pending-1', kind='edit', tab_id='t.0', start_index=5,
@@ -132,7 +189,23 @@ class GoogleStartTests(unittest.TestCase):
         self.assertIn('delay', (directory/'DRAFT.md').read_text())
         self.assertNotIn('wait', (directory/'DRAFT.md').read_text())
         self.assertEqual(record['google']['baselines']['draft']['document']['review_state']['pending'], len(self.client.threads))
-        self.assertIn('accepted.json', result['formatted_snapshot'])
+        self.assertEqual(set(result['formatted_snapshot']), {'document.md', 'document.docx', 'snapshot.json'})
+        self.assertTrue((directory/result['local_snapshot']['accepted.json']).is_file())
+
+    def test_start_takes_a_staged_capture_folder_alone_and_clears_it_afterwards(self):
+        import google_drive as gd
+        staged = gd.staging_path(self.root, 'capture')
+        rt.capture(self.client, 'fixture-doc', None, staged)
+        obs = json.loads((staged/'observation.json').read_text()); obs['structure_verified'] = True
+        (staged/'observation.json').write_text(json.dumps(obs))
+        self.words = ['--root', str(self.root), 'google', 'start', '--title', 'Staged import', '--snapshot', str(staged)]
+        result = self.start()
+        self.assertEqual(result['status'], 'started-from-google')
+        self.assertFalse(staged.exists())
+        directory, _ = studio.item(self.root, 'articles', result['id'])
+        self.assertTrue((directory/result['local_snapshot']['native.json']).is_file())
+        # A capture kept somewhere else is the author's to manage and is left alone.
+        self.assertTrue(self.capture.is_dir())
 
     def test_intake_routing_does_not_need_a_selected_article_and_preserves_url_case(self):
         url = 'https://docs.google.com/document/d/CaseSensitiveDoc/edit'

@@ -20,15 +20,27 @@ from Git; pass `--destination google|hub` only when already established.
   Subsequent proofreading suggestions use that same Doc.
 - **Proofread:** correct spelling, grammar, punctuation; keep facts, author voice,
   and structure. Use [exact-input diagnostics](workspace/performance.md) when
-  repeating mechanical checks. Read the current draft and save with `article save ... --label
-  proofread`. Do not expand to research or a developmental rewrite.
+  repeating mechanical checks. Do not expand to research or a developmental rewrite.
+  Where the corrections go depends on the route result's `linked_document`:
+  - **No linked Google Doc:** read the current draft and save the corrected text
+    with `article save ... --label proofread`.
+  - **Linked Google Doc:** the Doc is where the team's wording changes, so record
+    each correction as a finding (exact current wording, proposed wording,
+    reason) and save the list with `article review --check proofread --status
+    current --file <findings.json>`. Leave `DRAFT.md` as it is: it changes when
+    accepted text is pulled. The same file is the input for “Push as
+    suggestions.” Apply the corrections to `DRAFT.md` directly only when the
+    author asks for local or direct edits (for example before “Push to Google
+    Docs”).
 - **Push to Google Docs:** reuse the linked Doc. On first handoff, use the selected
   review-folder preference if present; obtain missing destination/access details.
   Read current Google state, handle conflicts, preserve formatting, and verify
   before checkpointing. The request authorizes the selected transfer, not sharing
   changes or sending background material.
-- **Pull from Google Docs:** return accepted text and formatted snapshots through
-  the existing return contract. Pull does not accept suggestions or push back.
+- **Pull from Google Docs:** capture the linked Doc, compare, and accept through
+  the [return contract](modules/blog-google-return.md). Edits to different
+  passages merge by themselves; only passages both sides changed need the
+  author. Pull does not accept suggestions or push back.
 - **Pull and proofread:** complete and verify return first, then proofread locally.
   If return is blocked/conflicted, resolve it before editing a potentially stale copy.
 - **Save and sync:** save completed selected work and its dependencies to the selected
@@ -38,7 +50,9 @@ from Git; pass `--destination google|hub` only when already established.
   use [focused context](workspace/performance.md) for needed passages.
 - **Show status:** show the [status card](workspace/status.md).
 - **What changed / Undo that edit:** use [comparison and recovery](workspace/changes.md).
-- **Clear local caches:** use `cache --clear`; writing and history remain.
+- **Clear local caches:** use `cache --clear`, and for a workspace that has used
+  Google Docs also `google_drive.py --root <workspace> staging --clear` (staged
+  captures, plans and receipts); writing and history remain.
 - **Show/change my defaults:** use [defaults](workspace/defaults.md).
 
 After a completed operation show a short result; open the full status card when
@@ -47,7 +61,7 @@ privacy, or verification instructions already supplied by the skill.
 
 **“Push feedback as comments”** (or **“Push as comments”**) uses the same fresh-Doc review flow with `google_suggestions.py plan --mode comments`. Carry the router’s `review_mode` into planning; omitted mode means `auto`. This explicit choice posts comments first and never attempts suggested text changes. Prefer anchored comments when supported; otherwise use numbered Drive comments. “Push changes to Google” uses the suggestion-first review route; “Push to Google Docs” retains its draft-transfer route.
 
-**“Push as suggestions”** loads [Google suggestions](google/suggestions.md). Refresh the linked Doc first, reconcile conflicts, then post selected findings as guarded native suggestions/comments. Runtime 1.10+ uses the existing gcloud adapter when a connector lacks `writeMode`, and falls back to numbered review comments when necessary. **“Show review edits”** lists them; **“Apply edits 2 and 4”** applies only that selection after a fresh check.
+**“Push as suggestions”** loads [Google suggestions](google/suggestions.md). Refresh the linked Doc first, reconcile conflicts, then post the saved proofreading findings as guarded native suggestions/comments. The review helper uses the configured gcloud account when a connector lacks `writeMode`, and falls back to numbered review comments when necessary. **“Show review edits”** lists every numbered edit posted for this blog; **“Apply edits 2 and 4”** applies only that selection after a fresh check. Edit numbers continue across review batches, so a number always means one edit.
 
 For “Show our pipeline,” “What needs my attention?”, “Open editorial desk,”
 “Package this for launch,” “Show evidence,” “This needs a diagram,” or old-blog
