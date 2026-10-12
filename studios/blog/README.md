@@ -21,7 +21,9 @@ an idea one question at a time. You stay in the same chat.
 
 Already installed? Download the latest installer and run it again, then open a
 new chat. An update brings new writing guidance and helpers together; your
-drafts, voices, and Hubs stay where they are. [What changed](CHANGELOG.md)
+drafts, voices, and Hubs stay where they are. If a new blog says the guidance
+needs a newer Blog Studio runtime, this update is what it is asking for.
+[What changed](CHANGELOG.md)
 
 [Setup help, company laptop instructions, and updates →](docs/installation.md)
 
