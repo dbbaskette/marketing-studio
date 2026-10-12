@@ -1,7 +1,6 @@
 """Editorial/library/local HTTP behavior using disposable workspaces and Git transports."""
 
 import base64
-from contextlib import contextmanager
 import http.client
 import io
 import json
@@ -14,10 +13,10 @@ import unittest
 import zipfile
 from unittest.mock import patch, Mock
 
-from hub_fixtures import FakeProvider, SCRIPTS
+from hub_fixtures import FakeProvider
 from hub import Registry
 from hub_workspace import Workspace
-from hub_store import HubError, encoded, sha, validate_files
+from hub_store import HubError, sha, validate_files
 import studio
 import editorial
 import blog_library as library

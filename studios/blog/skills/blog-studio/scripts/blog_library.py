@@ -1,6 +1,5 @@
 """Historical team reference collections: explicit preview, bounded import, local catalog."""
 
-import argparse
 from contextlib import closing
 from datetime import datetime
 import http.client
@@ -14,7 +13,6 @@ import socket
 import sqlite3
 import ssl
 import time
-from types import SimpleNamespace
 from urllib.parse import urlsplit, urljoin, urlunsplit
 import uuid
 import xml.etree.ElementTree as ET
@@ -22,7 +20,6 @@ import zipfile
 import zlib
 
 import studio
-from experience import page
 from hub_store import HubError, MAX_TEXT, MAX_BINARY, encoded, sha, record_path
 
 MAX_POSTS = 500

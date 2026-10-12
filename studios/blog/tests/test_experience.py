@@ -1,6 +1,5 @@
 """User-facing discovery and memory invariants; no live accounts or model calls."""
 
-import base64
 import json
 import shutil
 from pathlib import Path

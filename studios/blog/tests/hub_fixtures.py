@@ -6,7 +6,7 @@ import sys
 SCRIPTS = Path(__file__).resolve().parents[1] / 'skills/blog-studio/scripts'
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
-from hub import Registry
+from hub import Registry  # noqa: F401  (tests import Registry from here)
 import hub_store as store
 
 

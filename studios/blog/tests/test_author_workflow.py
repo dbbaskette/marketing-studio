@@ -1,6 +1,5 @@
 """Epic 27 observable workflow invariants; disposable files and local Git only."""
 
-import argparse
 from contextlib import redirect_stdout
 import io
 import json

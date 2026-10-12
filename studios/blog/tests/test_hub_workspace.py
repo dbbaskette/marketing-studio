@@ -11,7 +11,7 @@ from contextlib import redirect_stdout
 
 from hub_fixtures import FakeProvider
 from hub import Registry
-from hub_store import HubError, encoded, sha
+from hub_store import HubError
 from hub_workspace import Workspace
 import hub_workspace as adapter_module
 import hub_store as store_module

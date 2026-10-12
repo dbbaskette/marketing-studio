@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
-from test_google_roundtrip import Provider, document
+from test_google_roundtrip import Provider
 import google_drive as gd
 import google_roundtrip as rt
 import google_workflow as gw

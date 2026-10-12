@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from hub_fixtures import SCRIPTS, FakeProvider
+from hub_fixtures import FakeProvider
 import studio
 import performance as perf
 import local_cache

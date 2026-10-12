@@ -7,11 +7,9 @@ import os
 from pathlib import Path
 import re
 import shutil
-import sys
 import uuid
 
 from hub_store import (
-    VERSION,
     KINDS,
     HubError,
     TransportError,
