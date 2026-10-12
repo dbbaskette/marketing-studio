@@ -420,9 +420,11 @@ def retry(root, ids, sync=True):
     if adapter:
         sharing = {'status': 'queued'}
         if sync:
+            from hub_store import HubError
+
             try:
                 sharing = adapter.hub.sync()
-            except (__import__('hub_store').HubError, OSError):
+            except (HubError, OSError):
                 sharing = {
                     'status': 'local-saved-not-shared',
                     'next_step': 'Retry Hub sync; analysis is retained.',

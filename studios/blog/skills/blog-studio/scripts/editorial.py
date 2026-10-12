@@ -1,7 +1,9 @@
 """Focused editorial records. No model, Google reads, or automatic publication."""
 
 from datetime import date
+from pathlib import Path
 import re
+import uuid
 import studio
 from experience import page
 from hub_store import encoded, sha
@@ -159,11 +161,13 @@ def inputs(root, directory, record):
         )
         source = studio.read_json(pinned / 'record.json') if pinned != folder else current
         text = (pinned / 'content.md').read_bytes() if (pinned / 'content.md').is_file() else b''
+        from hub_workspace import portable_origin
+
         sources.append(
             {
                 'position': len(sources),
                 'sha256': studio.digest(text),
-                'origin': __import__('hub_workspace').portable_origin(source.get('origin', '')),
+                'origin': portable_origin(source.get('origin', '')),
                 'name': source['name'],
                 'status': source['status'],
             }
@@ -675,7 +679,7 @@ def save_asset(root, ident, name, payload):
             studio.inside(
                 directory,
                 'history',
-                'editorial-' + name + '-' + __import__('uuid').uuid4().hex + '.json',
+                'editorial-' + name + '-' + uuid.uuid4().hex + '.json',
             ),
             target.read_bytes(),
         )
@@ -730,7 +734,7 @@ def package(root, ident, data):
             studio.inside(
                 directory,
                 'history',
-                'derived-publication-copy-' + __import__('uuid').uuid4().hex + '.md',
+                'derived-publication-copy-' + uuid.uuid4().hex + '.md',
             ),
             copy_path.read_bytes(),
         )
@@ -801,7 +805,7 @@ def visual(root, ident, data):
             studio.inside(
                 directory,
                 'history',
-                'derived-visual-companion-' + __import__('uuid').uuid4().hex + '.md',
+                'derived-visual-companion-' + uuid.uuid4().hex + '.md',
             ),
             target.read_bytes(),
         )
@@ -846,7 +850,7 @@ def command(root, args):
     if args.action == 'assets':
         directory, record = studio.item(root, 'articles', args.id)
         return {'items': derived_status(root, directory, record)}
-    data = studio.read_json(__import__('pathlib').Path(args.file))
+    data = studio.read_json(Path(args.file))
     return {'schedule': schedule, 'evidence': evidence, 'package': package, 'visual': visual}[
         args.action
     ](root, args.id, data)

@@ -19,6 +19,7 @@ import webbrowser
 
 import studio
 import editorial
+from experience import page
 import blog_library
 import source_curator
 from hub_store import HubError, TransportError, AuthenticationError, encoded, sha
@@ -441,7 +442,7 @@ def memories(root, limit=20, offset=0, query=''):
             for term in query.casefold().split()
         )
     ]
-    return __import__('experience').page(rows, limit, offset)
+    return page(rows, limit, offset)
 
 
 class CurationConflict(ValueError):

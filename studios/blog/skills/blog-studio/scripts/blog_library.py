@@ -2,6 +2,7 @@
 
 from contextlib import closing
 from datetime import datetime
+from email.utils import parsedate_to_datetime
 import http.client
 from html.parser import HTMLParser
 import io
@@ -9,6 +10,7 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import sqlite3
 import ssl
@@ -20,7 +22,7 @@ import zipfile
 import zlib
 
 import studio
-from hub_store import HubError, MAX_TEXT, MAX_BINARY, encoded, sha, record_path
+from hub_store import HubError, MAX_TEXT, MAX_BINARY, encoded, sha, record_path, validate_files
 
 MAX_POSTS = 500
 MAX_BATCH = 25
@@ -628,11 +630,7 @@ def source_rows(root):
     seen = set()
     rows = []
     files = adapter.hub.files() if adapter else {}
-    graph = (
-        __import__('hub_store').validate_files(files, adapter.hub.config['repository'])
-        if adapter
-        else None
-    )
+    graph = validate_files(files, adapter.hub.config['repository']) if adapter else None
     if (root / 'sources').exists():
         for directory in sorted(studio.inside(root, 'sources').iterdir()):
             if not directory.is_dir():
@@ -689,7 +687,7 @@ def import_batch(
     analyze=True,
 ):
     """Import one bounded batch. analyze=False saves the posts without sending text to the analysis CLI."""
-    if not __import__('re').fullmatch(r'[a-f0-9]{32}', preview_id) or not 1 <= limit <= MAX_BATCH:
+    if not re.fullmatch(r'[a-f0-9]{32}', preview_id) or not 1 <= limit <= MAX_BATCH:
         raise ValueError('Choose a valid preview and batch size 1–25.')
     path = folder(root) / (preview_id + '.json')
     manifest = studio.read_json(path)
@@ -701,12 +699,7 @@ def import_batch(
             return datetime.fromisoformat(value.replace('Z', '+00:00')).date().isoformat()
         except (ValueError, AttributeError):
             try:
-                return (
-                    __import__('email.utils', fromlist=['parsedate_to_datetime'])
-                    .parsedate_to_datetime(value)
-                    .date()
-                    .isoformat()
-                )
+                return parsedate_to_datetime(value).date().isoformat()
             except (ValueError, TypeError, AttributeError):
                 return None
 
@@ -943,10 +936,13 @@ def import_batch(
         for entry in batch
         if manifest['results'][entry['identity']]['status'] != 'failed'
     ]
-    if completed and analyze and __import__('source_curator').harness(root):
-        __import__('source_curator').retry(
-            root, list(dict.fromkeys(value['id'] for value in completed)), sync=False
-        )
+    if completed and analyze:
+        import source_curator
+
+        if source_curator.harness(root):
+            source_curator.retry(
+                root, list(dict.fromkeys(value['id'] for value in completed)), sync=False
+            )
     for value in completed:
         value['analysis'] = (
             studio.item(root, 'sources', value['id'])[1]
@@ -1062,12 +1058,14 @@ def search_index(database, rows, signature, filters):
                     if source['path'].exists()
                     else ''
                 )
+                from hub_workspace import portable_origin
+
                 data = {
                     'id': source['id'],
                     'location': source['location'],
                     'title': record['name'],
                     'author': record.get('author'),
-                    'origin': __import__('hub_workspace').portable_origin(record.get('origin', '')),
+                    'origin': portable_origin(record.get('origin', '')),
                     'status': record['status'],
                     'revision': record['revision'],
                     'sha256': record.get('content_sha256'),
@@ -1421,12 +1419,14 @@ def read_source(root, ident, query='', limit=3, max_chars=4000):
             {'start': span['start'], 'end': span['start'] + len(excerpt), 'quote': excerpt}
         )
         remaining -= len(excerpt)
+    from hub_workspace import portable_origin
+
     return {
         'id': ident,
         'title': record['name'],
         'revision': record['revision'],
         'sha256': sha(content.encode()),
-        'origin': __import__('hub_workspace').portable_origin(record.get('origin', '')),
+        'origin': portable_origin(record.get('origin', '')),
         'passages': result,
         'truncated': len(matching) > len(result)
         or any(
@@ -1489,9 +1489,13 @@ def add_parser(groups):
 
 def command(root, args):
     if args.action == 'curator':
-        return __import__('source_curator').configure(root, args.harness)
+        import source_curator
+
+        return source_curator.configure(root, args.harness)
     if args.action == 'analyze':
-        return __import__('source_curator').retry(root, args.id)
+        import source_curator
+
+        return source_curator.retry(root, args.id)
     if args.action == 'read':
         return read_source(root, args.id, args.query, args.limit, args.max_chars)
     if args.action == 'locate':

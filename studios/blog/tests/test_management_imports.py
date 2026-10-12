@@ -93,7 +93,7 @@ class ManagementImportTests(Fixture):
         self.assertEqual(again['counts']['unchanged'], 2)
         self.assertEqual(library.catalog(self.root)['total'], 2)
         for row in rows:
-            directory, record = __import__('studio').item(self.root, 'sources', row['id'])
+            directory, record = studio.item(self.root, 'sources', row['id'])
             self.assertEqual(
                 (directory / record['original_path']).read_bytes(),
                 b'%PDF fixture' if record['status'] == 'pending' else b'# First\n\nRetained text.',
