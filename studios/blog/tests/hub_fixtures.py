@@ -1,5 +1,6 @@
 """Disposable GitHub boundary; all transport is local and no account is touched."""
 
+import os
 from pathlib import Path
 import sys
 
@@ -8,6 +9,20 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 from hub import Registry  # noqa: F401  (tests import Registry from here)
 import hub_store as store
+
+# Every Hub test imports this module, and every Git command the helpers run takes its
+# environment from hub_store.environment(), which drops inherited GIT_* variables. Adding
+# these two there keeps the developer's own Git settings (signing, URL rewrites, protocol
+# rules, templates) out of the disposable repositories the tests create.
+GIT_ISOLATION = {'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1'}
+_runtime_environment = store.environment
+
+
+def isolated_environment():
+    return {**_runtime_environment(), **GIT_ISOLATION}
+
+
+store.environment = isolated_environment
 
 
 class FakeProvider:
