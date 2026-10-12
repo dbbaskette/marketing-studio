@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Bounded discovery, inspectable context, and read-only readiness checks."""
-import base64
 import hashlib
 import json
 import os
@@ -11,8 +10,6 @@ import subprocess
 import sys
 
 import studio
-
-TRUSTED_SOURCE = 'https://github.com/dbbaskette/blog-studio.git'
 
 
 def page(rows, limit, offset):
@@ -131,83 +128,64 @@ def auth_status(harness):
             ('Run codex login in your terminal.' if harness == 'codex' else 'Open Claude Code and sign in there.')}
 
 
+def packaged(relative):
+    """Package content only: dotfiles such as .DS_Store, bytecode and setup's own files are local state."""
+    return (not any(part.startswith('.') or part == '__pycache__' for part in relative.parts)
+            and relative.suffix != '.pyc' and relative.name not in ('install-manifest.json', 'config.json'))
+
+
 def integrity(package):
+    """Verify this installed copy against the manifest written when it was built or installed."""
+    from hub_store import VERSION
     path = package / 'install-manifest.json'
     if not path.is_file():
-        return {'status': 'source-checkout', 'next_step': 'Use the trusted installer for a managed installation.'}
+        return {'status': 'unverified', 'version': VERSION,
+                'next_step': 'This copy has no manifest (a source checkout). Use the installer for a verified installation.'}
     try:
         manifest = studio.read_json(path)
         if (not isinstance(manifest, dict) or manifest.get('schema') != 1
-                or not isinstance(manifest.get('files'), dict)
-                or not isinstance(manifest.get('version'), str)):
+                or not isinstance(manifest.get('files'), dict) or manifest.get('version') != VERSION):
             raise ValueError('Invalid manifest')
         actual = {p.relative_to(package).as_posix() for p in package.rglob('*')
-                  if p.is_file() and p.name not in ('install-manifest.json', 'config.json')
-                  and '__pycache__' not in p.parts and p.suffix != '.pyc'}
-        required = {'SKILL.md', 'scripts/studio.py', 'scripts/experience.py', 'scripts/sync_guidance.py'}
+                  if p.is_file() and packaged(p.relative_to(package))}
+        required = {'SKILL.md', 'VERSION', 'scripts/studio.py', 'scripts/experience.py'}
         if set(manifest['files']) != actual or not required.issubset(actual):
-            raise ValueError('Incomplete runtime')
+            raise ValueError('Incomplete skill')
         for name, expected in manifest['files'].items():
             target = studio.inside(package, name)
             if target.is_symlink() or hashlib.sha256(target.read_bytes()).hexdigest() != expected:
-                raise ValueError('Modified runtime')
-        return {'status': 'verified', 'version': manifest['version']}
+                raise ValueError('Modified skill')
+        result = {'status': 'verified', 'version': VERSION}
     except (OSError, ValueError, KeyError, TypeError):
-        return {'status': 'repair-needed', 'next_step': 'Run repair from the trusted installer.'}
+        return {'status': 'repair-needed', 'version': VERSION, 'next_step': 'Run the installer again from an intact download.'}
+    config = package / 'config.json'
+    if config.is_file():
+        # Setup records the interpreter for helpers; an upgrade or removal of that Python breaks them.
+        try:
+            recorded = studio.read_json(config)['python']
+            if not Path(recorded).is_file():
+                result.update(status='repair-needed', interpreter='missing',
+                              next_step='The recorded Python is gone. Run the installer again to record a working one.')
+        except (OSError, ValueError, KeyError, TypeError):
+            result.update(status='repair-needed', next_step='Run the installer again from an intact download.')
+    return result
 
 
 def readiness(root, harness='both', online=False):
+    """Local, read-only setup facts. `online` is accepted for older prompts; nothing is fetched."""
     package = Path(__file__).resolve().parents[1]
+    runtime = integrity(package)
     result = {'checked_at': studio.now(), 'python': {'status': 'ready' if sys.version_info >= (3, 11) else 'unsupported',
               'version': sys.version.split()[0],
-              'next_step': 'Use the interpreter recorded in installed config.json; offline packages require Python 3.11+.'},
-              'git': {'status': 'available' if shutil.which('git') else 'missing'},
-              'runtime': integrity(package), 'workspace': home(root, limit=1)['workspace_status'],
-              'harnesses': {}, 'guidance': {'status': 'not-checked', 'next_step': 'Use --online to check approved main without changing an article pin.'},
+              'next_step': 'Run helpers with the interpreter in config.json beside SKILL.md when present; otherwise Python 3.11+.'},
+              'git': {'status': 'available' if shutil.which('git') else 'missing', 'needed_for': 'Team Hub only'},
+              'runtime': runtime, 'workspace': home(root, limit=1)['workspace_status'],
+              'harnesses': {},
+              'guidance': {'status': 'installed', 'version': runtime['version'],
+                           'next_step': 'Guidance is the installed skill. To update, run the installer from the latest release; saved articles keep the version they recorded.'},
               'google': {'status': 'not-checked', 'next_step': 'For Google work, use installed google_drive.py check for the gcloud route, or inspect connected tools. Verify the selected document separately; a Workspace skill is not a connection.'}}
     for name in ('codex', 'claude') if harness == 'both' else (harness,):
         result['harnesses'][name] = auth_status(name)
-    if online:
-        environment = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
-        environment['GIT_TERMINAL_PROMPT'] = '0'
-        try:
-            remote = subprocess.run(['git', 'ls-remote', TRUSTED_SOURCE, 'refs/heads/main'],
-                                    capture_output=True, text=True, env=environment, timeout=20)
-            revision = remote.stdout.split()[0] if remote.returncode == 0 and remote.stdout.split() else ''
-            if not re.fullmatch(r'[0-9a-f]{40,64}', revision):
-                raise ValueError('Unavailable main')
-            pins = studio.inside(root, 'task-context', 'tasks')
-            pinned = []
-            if pins.exists():
-                for path in pins.glob('*/pin.json'):
-                    value = studio.read_json(studio.inside(root, 'task-context', 'tasks', path.parent.name, 'pin.json'))
-                    if not isinstance(value, dict):
-                        raise ValueError('Invalid cached task')
-                    pinned.append(value.get('revision'))
-            result['guidance'] = {'status': 'accessible', 'approved_revision': revision,
-                                  'differs_from_saved_tasks': any(pin != revision for pin in pinned),
-                                  'next_step': 'New tasks fetch approved guidance. Saved articles retain their pins; executable updates use the installer.'}
-        except (OSError, ValueError, subprocess.TimeoutExpired):
-            result['guidance'] = {'status': 'unavailable', 'next_step': 'Check your network and private repository access. Existing saved pins may still resume.'}
-    result['runtime']['update_status'] = 'not-checked'
-    if online and result['guidance']['status'] == 'accessible' and shutil.which('gh'):
-        revision = result['guidance']['approved_revision']
-        metadata = probe(['gh', 'api', 'repos/dbbaskette/blog-studio/contents/bootstrap/blog-studio/install-manifest.json?ref=' + revision])
-        try:
-            if metadata is None or metadata.returncode:
-                raise ValueError('No metadata')
-            response = json.loads(metadata.stdout)
-            approved = json.loads(base64.b64decode(response['content']))['version']
-            installed = result['runtime'].get('version', '')
-            if not all(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', value) for value in (approved, installed)):
-                raise ValueError('No comparable installed release')
-            result['runtime']['approved_version'] = approved
-            current, latest = (tuple(map(int, value.split('.'))) for value in (installed, approved))
-            result['runtime']['update_status'] = 'available' if latest > current else 'current' if latest == current else 'newer-candidate'
-            if latest > current:
-                result['runtime']['next_step'] = 'Reopen the trusted installer to update executable helpers. Saved articles keep their pins.'
-        except (ValueError, KeyError, TypeError):
-            result['runtime']['update_status'] = 'unverified'
     return result
 
 

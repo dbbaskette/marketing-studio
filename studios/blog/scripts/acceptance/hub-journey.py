@@ -49,7 +49,7 @@ def main():
         homes = [base / name for name in ('author-a', 'author-b')]
         for home in homes:
             run('install isolated ' + home.name, [sys.executable, source / 'installer/install.py', 'install',
-                '--home', home, '--source', source / 'bootstrap/blog-studio', '--target', 'both', '--offline', '--yes', '--json'], home)
+                '--home', home, '--source', source / 'skills/blog-studio', '--target', 'both', '--yes', '--json'], home)
         def hub(index, *words):
             home = homes[index]
             return run('hub ' + ' '.join(str(w) for w in words[:2]),

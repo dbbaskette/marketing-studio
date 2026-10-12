@@ -1,6 +1,6 @@
 # Mechanical checks
 
-Run installed runtime helpers (offline: package `scripts/`):
+Run helpers from this skill's `scripts/` folder (`<runtime>`):
 
 ```text
 python3 <runtime>/text_checks.py lint --file <draft> --rules-file <rules>

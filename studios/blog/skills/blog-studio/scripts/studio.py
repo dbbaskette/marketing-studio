@@ -356,6 +356,12 @@ def checked_author(value):
     return value.strip()
 
 
+def installed_guidance():
+    """The guidance an article is written with is the installed skill version."""
+    from hub_store import VERSION
+    return {'revision': VERSION, 'source': 'installed'}
+
+
 def article_record(root, args, value):
     """Build new-article metadata without publishing a partially initialized article."""
     from writing_defaults import for_create
@@ -373,7 +379,7 @@ def article_record(root, args, value):
               'stop_point': args.stop or stops[args.mode], 'research_policy': args.research,
               'voice': voice, 'sources': [], 'reviews': {}, 'artifact_hashes': {},
               'next_step': 'Gather missing material and relevant context.', 'pending_question': None,
-              'created_at': now()}
+              'created_at': now(), 'guidance': installed_guidance()}
     record['writing_preferences'] = {key: getattr(args, key) for key in ('audience', 'blog_type', 'review_folder') if getattr(args, key, None) is not None}
     return record
 
@@ -452,21 +458,16 @@ def article_command(root, args):
             selected.append({'item': shared['item'], 'revision': shared['revision']})
         record['hub_context'] = {'hub': adapter.hub.id, 'revision': context['revision'], 'selected': selected}
     elif args.action == 'guidance':
-        if not re.fullmatch(r'[0-9a-f]{32}', args.task):
-            raise ValueError('Invalid guidance task ID.')
-        pin = read_json(inside(root, 'task-context', 'tasks', args.task, 'pin.json'))
-        if pin.get('task') != args.task or not re.fullmatch(r'[0-9a-f]{40,64}', pin.get('revision', '')):
-            raise ValueError('Invalid saved guidance pin.')
-        selected = {'task': args.task, 'revision': pin['revision'],
-                    'runtime': str(Path(__file__).resolve().parent),
-                    'freshness': 'cached' if args.cached else 'pinned'}
+        # Older pins (a commit plus task/runtime fields) stay readable; they move to history on adoption.
+        selected = installed_guidance()
         previous = record.get('guidance')
-        if previous and previous['task'] != args.task:
-            if previous['revision'] != pin['revision'] and not args.adopt:
-                raise ValueError('This article already has a guidance pin. Use --adopt only for an author-requested refresh.')
-            if previous['revision'] != pin['revision']:
-                record.setdefault('guidance_history', []).append(previous)
-        record['guidance'] = selected
+        if previous and previous.get('revision') != selected['revision']:
+            if not args.adopt:
+                raise ValueError('This article records guidance ' + str(previous.get('revision')) + '; installed is '
+                                 + selected['revision'] + '. Use --adopt only when the author asks to re-record it; reviews become stale.')
+            record.setdefault('guidance_history', []).append(previous)
+        if not previous or previous.get('revision') != selected['revision']:
+            record['guidance'] = selected
     elif args.action == 'note':
         target = inside(directory, 'INTERVIEW.md' if args.kind == 'interview' else 'DECISIONS.md')
         old = target.read_text() if target.exists() else ''
@@ -578,8 +579,8 @@ def parser():
     progress.add_argument('--next-step', required=True);progress.add_argument('--pending-question')
     progress.add_argument('--stop', choices=('draft', 'outline', 'review', 'brief'))
     context = articles.add_parser('context');context.add_argument('--id', required=True);context.add_argument('--file', required=True)
-    guidance = articles.add_parser('guidance');guidance.add_argument('--id', required=True);guidance.add_argument('--task', required=True)
-    guidance.add_argument('--adopt', action='store_true');guidance.add_argument('--cached', action='store_true')
+    guidance = articles.add_parser('guidance', help='Record the installed guidance version for an article');guidance.add_argument('--id', required=True)
+    guidance.add_argument('--adopt', action='store_true', help='Author-requested: replace a different recorded version; reviews become stale')
     note = articles.add_parser('note');note.add_argument('--id', required=True);note.add_argument('--kind', choices=('interview', 'decision'), required=True);note.add_argument('--text', required=True)
     voice = articles.add_parser('voice');voice.add_argument('--id', required=True);voice.add_argument('--profile');voice.add_argument('--revision', type=int)
     voice.add_argument('--voice', choices=('preserve', 'tone'), default='preserve');voice.add_argument('--tone')

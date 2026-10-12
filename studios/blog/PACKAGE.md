@@ -1,69 +1,96 @@
 # Blog Studio packages
 
-The recommended [guided installer ZIP](dist/blog-studio-installer.zip) installs a small stable [bootstrap](bootstrap/blog-studio/SKILL.md) plus versioned Python helpers. The [installation guide](docs/installation.md) covers both the Finder `.command` launcher and `sh installer/install.sh` for existing terminals, private GitHub access, target locations, update, repair, rollback, and removal.
+Blog Studio ships as one skill folder, [`skills/blog-studio/`](skills/blog-studio/SKILL.md):
+the entry file, its references and the Python helpers. What is installed is
+what is used; nothing is fetched while an author writes. Each release publishes
+three archives on the repository's
+[Releases page](https://github.com/dbbaskette/blog-studio/releases).
 
-The bootstrap quietly fetches approved `main` when a new writing task starts. It materializes `skills/blog-studio/SKILL.md`, its references, and provenance records from that exact revision into the author's task cache. Runtime scripts from the repository are excluded from the readable guidance snapshot and are never executed. The assistant reads relevant files progressively; downloads stay outside model context.
+| Archive | Contents | Use |
+| --- | --- | --- |
+| `blog-studio-installer.zip` | `installer/`, the whole `skills/blog-studio/` folder, and the installation and troubleshooting guides | Recommended. Run `sh installer/install.sh`; see the [installation guide](docs/installation.md). |
+| `blog-studio.zip` | The `blog-studio` skill folder alone | Manual install: copy the folder into a skill root yourself. No managed updates or rollback. |
+| `blog-writing-toolkit.zip` | The earlier five-module collection | Reference only; see the end of this page. |
 
-`skills/blog-studio/` remains the single maintained operational guidance source, including twenty capability modules and pinned upstream references. The compatibility manifest is [guidance/manifest.json](guidance/manifest.json). Bootstrap/runtime changes require a new managed bundle; guidance-only changes need no reinstall. The installer builder copies the continuity helpers, three Team Hub modules and local Google checkpoint helper from the full package and records file hashes in the bootstrap manifest.
+Each archive has a `.sha256` file beside it. Do not install the managed and the
+manual copy under the same name at once; a tool would discover both.
 
-Codex uses `~/.agents/skills/blog-studio`; Claude Code uses `~/.claude/skills/blog-studio` (or its configured root). Both link to one managed local runtime. User writing lives separately, by default in `.blog-studio` under the active writing project. Articles record guidance pins and runtime paths, originals, draft history, voice revisions, and review freshness. Adopting a new guidance revision makes affected reviews stale.
+## Version
 
-Runtime **1.4.0** includes `hub.py`, `hub_store.py`, `hub_workspace.py` `google_workflow.py`, `experience.py` `hub_browse.py` and `google_drive.py`. The Google checkpoint helper performs local consistency checks; the separate gcloud adapter performs authenticated Drive transfers and capability-dependent Docs API operations. Shared working content belongs in a separate private Team Hub repo; local projection maps, queues, and caches never enter either skill distribution. The new guidance manifest requires 1.4.0; old runtime versions remain available for installer rollback with compatible historical guidance. See [Team Hub](docs/team-hub.md).
+[`skills/blog-studio/VERSION`](skills/blog-studio/VERSION) is the only place the
+version is written. The build, the installer, the installed manifest, the Team
+Hub compatibility check (`hub_store.VERSION`) and the version recorded in each
+new blog all read it. A release is a change to that file plus a
+[CHANGELOG](CHANGELOG.md) entry.
 
-The separate [full offline ZIP](dist/blog-studio.zip) expands to a complete self-contained `blog-studio` skill. Copy that whole folder into a supported skill root for manual/offline use. It does not refresh automatically. Avoid installing the managed and manual parents with the same name at once.
+## What the installer does
 
-The optional [prompt generator](preview/blog-studio.html) forms starting requests for newcomers; direct chat uses the same writing workflow. It does not upload content, fetch URLs, or generate articles.
+The installer copies the skill folder into
+`~/.local/share/blog-studio/versions/<version>-<content hash>/`, writes
+`install-manifest.json` (version and a SHA-256 for every file) and `config.json`
+(the Python that runs the helpers), runs the helpers once in a throwaway
+workspace, then points `~/.local/share/blog-studio/current` at the new copy.
+`~/.agents/skills/blog-studio` and `~/.claude/skills/blog-studio` are links to
+`current`, so an update or rollback is one link switch and both tools always use
+the same copy.
+
+A release archive carries a prebuilt manifest and the installer verifies the
+folder against it before copying. A source checkout has no manifest, so the
+installer computes one. Either way the installed copy is verified against its
+own manifest by `check`, by `rollback`, and by the skill's `readiness` command.
+Because each installed version carries its own manifest, any intact version that
+was ever installed, including 1.x, stays valid for rollback; the installer keeps
+no list of known releases.
+
+The manifest proves that files are complete and unchanged since the build. It
+does not prove who built them. Authenticity comes from downloading the archive
+from this repository's Releases page.
+
+## Build and release
 
 ```sh
-python3 -m unittest discover -s tests -v
-python3 skills/blog-studio/scripts/validate_package.py
-python3 scripts/package_blog_studio.py
-python3 scripts/package_installer.py
+python3 scripts/build.py            # writes build/*.zip and build/*.zip.sha256
+python3 scripts/build.py --check    # builds twice in a temp folder and verifies the result
 ```
 
-Builds include ZIP checksums. Local hashes detect package changes; authenticity still depends on obtaining the bundle from the trusted private repository. Automated tests use disposable homes and local repositories, not production skill folders or Google documents. No global installation or dependency installation was performed by this implementation.
+`build/` is ignored by Git; archives are never committed. The build has one
+include list, sorts entries, and stamps a fixed time and mode, so the same tree
+produces the same bytes on the same Python build. It never writes into the
+source tree.
 
-See [progressive disclosure and token estimates](docs/progressive-disclosure-roadmap.md), [setup help](docs/troubleshooting.md), and [Google Docs workflows](docs/google-docs.md).
+Merging a change to `VERSION` into `main` runs
+[`release.yml`](.github/workflows/release.yml): if tag `v<VERSION>` does not
+exist yet, it runs the checks, builds, and creates the tag and its GitHub
+Release with the archives, checksums and that version's changelog section.
+See the [developer guide](docs/development.md).
+
+## Team Hub and writing data
+
+Author work lives in a workspace, by default `.blog-studio` under the writing
+project, and optionally in a separate private Team Hub repository. Neither is
+part of any package. Each blog records the Blog Studio version it was started
+with, and adopting a newer version for a blog marks its earlier reviews stale.
+
+## Upgrading 1.x installations
+
+Version 1.x installed a small bootstrap that fetched guidance from `main` at
+the start of each blog. [`guidance/manifest.json`](guidance/manifest.json)
+remains only for those installations: it declares a minimum runtime of 2.0.0,
+so a 1.x bootstrap reports that it needs the installer update. Running the
+current installer upgrades the managed installation in place.
 
 ---
 
-# Blog writing skill package
+# Blog writing toolkit (reference)
 
-The five entries in [the shortlist](blog-writing-skill-shortlist.md) are collected
-in [blog-writing-toolkit](skills/blog-writing-toolkit/SKILL.md). The portable
-archive is [dist/blog-writing-toolkit.zip](dist/blog-writing-toolkit.zip).
-
-The toolkit has one skill entry point, five focused module wrappers, and
-unchanged upstream source snapshots with supporting references, templates,
-evaluation fixtures, licenses, and commit/hash records. Read the entry point,
-then the relevant module, then only the supporting files needed for that task.
-
-A higher-level skill can call a module by reading
-`<toolkit-root>/references/modules/<module>.md` with the user's brief, voice,
-sources, and output requirements. The module IDs are `content-strategy`,
-`blog-write`, `copywriting`, `copy-editing`, and `blog` (lifecycle reference).
-
-For example, use `blog-write` for a researched article and `copy-editing` for a
-polish request. Planning and persuasive copy are separate optional stages.
-See [package notes](skills/blog-writing-toolkit/references/package-notes.md)
-for source path mappings, parent handoffs, and omitted runtime dependencies.
-
-## Use or install
-
-The package is stored locally in this project; it has not been installed
-into the global skills directory. A parent can read the local entry point or
-module paths immediately. For normal discovery, copy the complete
-`blog-writing-toolkit` folder into your chosen skill root, such as a project's
-`.agents/skills/` or `~/.codex/skills/`. The zip expands to that single folder.
-Install the whole folder so references and provenance remain together.
-
-## Validate and package
-
-Run `python3 skills/blog-writing-toolkit/scripts/validate_package.py` from this
-project. Source snapshots are pinned to the commits in
-[sources.lock.json](skills/blog-writing-toolkit/sources.lock.json); updating
-requires an intentional source refresh and archive rebuild.
-
-The archive contains only the toolkit, without the rest of either upstream
-repository. Their external runtimes were not installed or executed. The
-bundled upstream claims and examples need ordinary fact checking before use.
+[`skills/blog-writing-toolkit/`](skills/blog-writing-toolkit/SKILL.md) is the
+original collection of five source modules that Blog Studio grew from:
+`content-strategy`, `blog-write`, `copywriting`, `copy-editing` and `blog`. It
+has one entry point, five module wrappers and unchanged upstream snapshots with
+licenses and commit/hash records in
+[sources.lock.json](skills/blog-writing-toolkit/sources.lock.json). Blog Studio
+does not load it. It is kept for provenance and built as
+`blog-writing-toolkit.zip`; to use it, copy the whole folder into a skill root.
+`python3 skills/blog-writing-toolkit/scripts/validate_package.py` checks its
+hashes, licenses and links. The upstream claims and examples it contains need
+ordinary fact checking before use.

@@ -1,22 +1,29 @@
-# Restore or deliberately change guidance
+# Guidance version of an article
 
-Read only for shared import without a local task, missing guidance, or a
-requested refresh. Routine local resume uses [resume](resume.md).
+Read only when the author asks which guidance an article used, or asks to move
+an article to the installed version. Routine resume uses [resume](resume.md).
 
-For another member's article, use the [hub router](../hub/workflow.md) to check
-out the selected article and its pinned dependencies. If guidance has a saved
-commit but no local task, run installed
-`sync_guidance.py pin --workspace <root> --revision <saved-commit>`,
-then bind its returned task with
-`... article guidance --id <id> --task <task>`.
-This restores approved main history without `--adopt`; never substitute latest
-main for the saved revision. Missing/incompatible history is an explicit limit.
+Guidance is the installed skill. A new article records that version as
+`guidance.revision` automatically; nothing is downloaded or bound by hand. The
+record lets reviews be judged against the guidance that produced them, so
+installing an update does not change it.
 
-Only an author-requested guidance change uses
-`... article guidance --id <id> --task <new-task> --adopt`.
-Add `--cached` only for chosen stale fallback. Prior pins remain in guidance
-history; changed guidance stales checks. Guidance refresh does not silently
-upgrade executable helpers or select newer sources/voices/context.
+When the author asks to use the current guidance for an existing article:
 
-Full offline packages cannot fetch historical pins. Explain that limit and use
-their declared guidance only when the author chooses the fallback.
+```text
+... article guidance --id <id> --adopt
+```
+
+This records the installed version, keeps the earlier value in
+`guidance_history`, and makes completed reviews stale because they were judged
+under the earlier guidance. Offer to rerun the checks the author still needs.
+Without `--adopt` the command only fills in a missing record and refuses to
+replace a different one. Never adopt on your own initiative; an update alone
+does not select newer sources, voices or team context either.
+
+Articles started before version 2.0, or checked out from a Team Hub, can show a
+commit hash as the revision plus `task`, `runtime` or `freshness` fields. They
+are history: the article still loads, saves and syncs. Always run helpers from
+this skill's `scripts/`, never from a saved `runtime` path. The earlier
+instruction snapshot is not restored; work continues with the installed
+guidance, and `--adopt` records that when the author asks.

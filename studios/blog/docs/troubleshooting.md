@@ -1,35 +1,54 @@
 # Blog Studio setup help
 
-| What you see | Next step |
+Start with `sh installer/install.sh check` from the expanded installer folder.
+It changes nothing and names the next step. Add `--json` when you need details
+to share; the output contains paths and versions, never credentials.
+
+## Installing and updating
+
+| What you see | What to do |
 | --- | --- |
-| Company policy blocks `.command` launchers | If shell scripts are permitted, run `sh installer/install.sh` from the expanded bundle in an approved terminal. Keep the bundle together. If scripts are also blocked, request IT approval. |
-| macOS blocks the downloaded launcher | Follow your organization's normal process for approving trusted unsigned downloads. This release is a terminal launcher, not a signed native app. |
-| Python or Git is missing | Follow the vendor link in setup, then reopen it. Python must be 3.11 or later. The launcher also finds versioned Homebrew Python in common locations when a GUI session has a short PATH. |
-| GitHub sign-in succeeded but access fails | Confirm your account can open the private repository. Membership, organization approval, and credentials are separate checks. |
-| Repository check times out | Check connectivity and your Git credentials. Retry; existing article pins are preserved. |
-| Skill is missing in chat | Open a new local session and use the harness's skill picker/invocation. Run installer `check` to inspect links. File placement alone does not verify discovery. |
-| Duplicate Blog Studio entries | Back up legacy/manual copies outside the harness discovery roots before using the managed installer. |
-| Existing skill needs a backup | Review the folder, then explicitly choose `install --replace`; setup keeps a sibling backup. |
-| Runtime/configuration verification failed | Download an intact trusted bundle and run `repair`. The damaged version is retained. |
-| Guidance needs a newer runtime | Rerun setup from a newer trusted bundle. A writing task cannot execute a runtime update fetched from Git. |
-| Saved guidance changed | Restore an intact saved snapshot or deliberately start/adopt a new guidance task. Do not edit pinned files to bypass the check. |
-| Another installer or sync is running | Wait for that operation to finish. If a process crashed, verify it has stopped before removing only its stale `.install.lock` or `.sync.lock`. |
-| A discovery link was changed outside setup | Inspect and preserve that folder/link. Setup refuses to remove an unowned target. |
-| Rollback rejects a damaged old version | Use `repair` with an intact bundle instead. |
+| “Blog Studio setup requires Python 3.11 or later” | Install Python from [python.org](https://www.python.org/downloads/macos/) and run setup again. Setup looks in the usual Homebrew and python.org locations as well as your `PATH`. |
+| macOS will not open `Install Blog Studio.command` | The launcher is an unsigned download. Open Terminal in the `blog-studio-setup` folder and run `sh installer/install.sh`, which does the same thing. If your company also blocks shell scripts, ask IT to approve the installer. |
+| “The skill folder is missing” | Run setup from the complete expanded `blog-studio-setup` folder. `install.sh` is an entry point, not a standalone download. |
+| “The package inventory is incomplete or changed” or “does not match its recorded hash” | The download is damaged or was edited. Download the installer ZIP again and expand it into a new folder. |
+| “An existing skill folder needs a backup before replacement” | Another Blog Studio folder is already in a skill location. Run setup in a terminal and answer yes when it offers to move the folder, or add `--replace`. The folder goes to `~/.local/share/blog-studio/backups/`. |
+| “Setup needs an answer but has no interactive terminal” | Setup was started without a terminal, for example by an assistant. Run `sh installer/install.sh install --target both --yes` (or `codex` / `claude`). |
+| “Another installer is running” | A second setup is in progress; wait for it. A crashed setup cannot cause this, because the lock ends with the process. |
+| Setup was interrupted or the window was closed | Run setup again. It either left the previous version active or completes the switch now. |
+| `check` reports damaged files or an invalid configuration | Run `sh installer/install.sh repair` from an intact download. The damaged copy is kept for diagnosis. |
+| `check` says the helper Python is missing | The Python recorded at installation was removed or upgraded away. Run `sh installer/install.sh repair` to record a working one. |
+| “There is no previous managed version to restore” | Rollback needs an earlier installed version; a first installation has none. |
+| Rollback rejects the previous version | Its files were changed after installation. Stay on the current version, or run setup from the installer you want. |
+| “A discovery link was changed outside the installer” | Something replaced the link in your tool's skill folder. Setup will not delete what it did not create. Inspect that folder, move it away if you no longer need it, then run setup. |
 
-For a readable setup summary, run `sh installer/install.sh check`; add `--target codex` or `--target claude` to inspect one harness. The result distinguishes verified files from actual discovery and tells you the next step.
+## In your tool
 
-For structured diagnostics, run `sh installer/install.sh check --json` from the installer download. Add `--offline` to inspect only local state. Diagnostics deliberately omit Git stderr and credentials. If asking for help, provide the reported status; do not paste access tokens or a credential-bearing URL.
+| What you see | What to do |
+| --- | --- |
+| Blog Studio is not offered in chat | Open a new local session; tools read skills when a session starts. Then use the tool's skill picker, `$blog-studio` in Codex or `/blog-studio` in Claude Code. `check` shows whether the files are in place, not whether the tool has loaded them. |
+| Two Blog Studio entries | A manual copy sits beside the managed one. Run setup and let it move the extra folder to backups. |
+| “This guidance needs a newer local Blog Studio runtime. Run the installer update.” | You are on version 1.x, which is retired. Install the current version; see “Coming from version 1.x” in the [installation guide](installation.md). |
+| A helper fails with “No such file or directory” for Python | Run `sh installer/install.sh repair`. Until then Blog Studio can use any Python 3.11 or later. |
+| A blog shows an old guidance value, or reviews turned stale after “use the current guidance” | Each blog keeps the version it was started with. Adopting the installed version is your choice and marks earlier reviews stale, because they were judged under the earlier guidance. Rerun the checks you need. |
 
-Guidance cache lives under the selected author workspace's `task-context/`. Articles, profiles, drafts, and sources live alongside it. Uninstalling discovery links preserves those files. No real writing data needs to be deleted to fix an installation.
+Your blogs, voices and sources live in the workspace you chose, by default
+`.blog-studio` in your writing project. No setup problem requires deleting them.
 
-## Team Hub work
+## Team Hub
 
-- **Missing helper/incompatible instructions:** update with the trusted 1.2.0 installer; downloading guidance does not upgrade executable code.
-- **Private hub unavailable:** confirm access and GitHub CLI sign-in to your own account; team membership is administered outside the skill.
-- **Queued or pending review:** saved work is retained locally. Retry sync after access returns, or review the returned contribution PR. Pending work reaches teammates after merge to main.
-- **Competing article/rule revisions:** read each selected revision and make an explicit resolution; do not overwrite either history.
-- **Unshared local edits block resume:** save/share those selected edits first, or use a separate writing workspace. Clean imported copies can advance to the latest shared head.
-- **Imported guidance not restored:** restore the saved approved commit with `sync_guidance.py pin`, then bind its returned task. Missing historical guidance remains an explicit limitation.
-
-See [Team Hub](team-hub.md) for the short setup flow.
+- **Team Hub commands fail at once:** a Hub needs Git and a signed-in GitHub CLI.
+  Run `gh auth status`; sign in with `gh auth login` using the account that has
+  access to your team's Hub repository. Installing Blog Studio does not need
+  either tool.
+- **Private Hub unavailable:** confirm that your account can open the Hub
+  repository in a browser. Membership is managed by your team on GitHub.
+- **Queued or pending review:** your work is saved on this computer. Retry sync
+  when access returns, or review the contribution pull request. Teammates see
+  the change after it reaches the Hub's main branch.
+- **Competing blog or rule revisions:** read each version and choose; Blog
+  Studio does not overwrite either history.
+- **Unshared local edits block resume:** save and share those edits first, or
+  use a separate workspace.
+- **A teammate uses an older Blog Studio:** ask them to install the current
+  version before contributing, so their copy understands the Hub's layout.

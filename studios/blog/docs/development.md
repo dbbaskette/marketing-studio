@@ -2,16 +2,30 @@
 
 The main README is for authors. This page collects repository and maintenance details.
 
-## Source and installation
+## Layout
 
-- `skills/blog-studio/`: the complete skill and its progressive references.
-- `bootstrap/blog-studio/`: managed entry point plus verified executable runtime.
-- `installer/`: guided launcher, regular shell script, and Python installer.
-- `dist/`: installable packages and checksums.
-- `preview/blog-studio.html`: optional local prompt generator for beginners. It does not write articles or store content.
+- `skills/blog-studio/`: the complete skill: `SKILL.md`, references and the
+  Python helpers in `scripts/`. This folder is what gets installed, and
+  `VERSION` in it is the only place the version is written.
+- `installer/`: `install.py`, the `install.sh` entry point, the Finder launcher
+  and the optional Google setup helper.
+- `scripts/build.py`: builds the release archives into `build/` (ignored by Git).
+- `scripts/ci/check.sh`: the one list of project checks.
+- `guidance/manifest.json`: upgrade notice read by 1.x installations; see
+  [PACKAGE](../PACKAGE.md).
+- `preview/blog-studio.html`: optional local prompt generator for beginners. It
+  does not write articles or store content.
+- `skills/blog-writing-toolkit/`: the original module collection, kept for
+  provenance.
 
-Open this repository in your AI tool and ask it to use `skills/blog-studio/SKILL.md`.
-An offline installation copies the complete skill folder; see [PACKAGE](../PACKAGE.md).
+To try the skill from a checkout, open this repository in your AI tool and ask
+it to use `skills/blog-studio/SKILL.md`, or install the checkout into a
+disposable home:
+
+```sh
+sh installer/install.sh install --home /tmp/blog-studio-home --target both --yes
+```
+
 To use the optional prompt generator locally:
 
 ```sh
@@ -20,25 +34,52 @@ python3 -m http.server 8896 --bind 127.0.0.1 --directory preview
 
 Visit `http://127.0.0.1:8896/blog-studio.html`.
 
-## Verify and package
+## Verify
 
-Use Python 3.11 or later and Node for the optional prompt generator checks.
+Use Python 3.11 or later. Node is needed for the two browser-script checks.
 
 ```sh
-python3 -m unittest discover -s tests -v
-python3 skills/blog-studio/scripts/validate_package.py
-node scripts/ci/check-newcomer.cjs
-python3 scripts/measure_guidance.py --check
-python3 scripts/package_blog_studio.py
-python3 scripts/package_installer.py
+bash scripts/ci/check.sh "$(command -v python3)" /tmp/blog-studio-checks
 ```
 
-When guidance changes, run `scripts/measure_guidance.py` without `--check` first.
-Build packages after the final source and bundled documentation edits. CI checks
-Linux/macOS on Python 3.11 and 3.13. Use `scripts/ci/check.sh` for the common
-checks and the externally managed CI runners for isolated verification. See
-[verification boundary](local-ci.md): the project defines its checks; the shared
-infrastructure owns VM and runner lifecycle.
+That script is what CI and the release workflow run. It checks shell syntax,
+validates both skill folders, proves the build is reproducible
+(`scripts/build.py --check`), checks the prompt generator and the guidance
+inventory, then runs the test suite. Results and the test log are written to
+the directory you name. While working, run one test file directly:
+
+```sh
+python3 -m unittest discover -s tests -p 'test_installation.py'
+```
+
+When guidance text changes, refresh the inventory with
+`python3 scripts/measure_guidance.py` before running the checks. Tests use
+disposable homes and local Git repositories; they never touch your real skill
+folders or accounts. See [verification boundary](local-ci.md) for how the
+hosted and self-hosted workflows relate.
+
+## Build and release
+
+```sh
+python3 scripts/build.py            # build/*.zip and build/*.zip.sha256
+```
+
+To release:
+
+1. Change `skills/blog-studio/VERSION` and add a section headed `## <version>`
+   to [CHANGELOG](../CHANGELOG.md).
+2. Merge to `main`.
+3. `release.yml` sees that tag `v<version>` does not exist, runs the checks,
+   builds, and publishes the GitHub Release with the three archives, their
+   checksums and that changelog section.
+
+A push that does not change `VERSION` publishes nothing. Raise the major
+version when an installed copy can no longer read existing workspaces or Team
+Hubs without a migration; otherwise raise the minor or patch number. Team Hub
+layout compatibility is tracked separately by the `minimum_runtime` values in
+`hub_store.py` and `hub_browse.py`.
+
+## Validation records
 
 [Desk usability validation](desk-usability-validation.md) covers memory/access
 handling, responsive layouts and article/finding continuation.

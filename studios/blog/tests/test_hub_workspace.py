@@ -110,8 +110,8 @@ class HubWorkspaceTests(unittest.TestCase):
         self.save(self.a,aid,'original','Original manuscript.');self.save(self.a,aid,'draft','Edited manuscript.')
         self.command(self.a,'article','note','--id',aid,'--kind','interview','--text','An actual example.')
         self.command(self.a,'article','derive','--id',aid,'--name','newsletter','--file',self.file('Newsletter copy.'))
-        task='a'*32;pin=self.a/'task-context/tasks'/task/'pin.json';pin.parent.mkdir(parents=True);pin.write_text(json.dumps({'task':task,'revision':'a'*40}))
-        self.command(self.a,'article','guidance','--id',aid,'--task',task)
+        installed=self.command(self.a,'article','show','--id',aid)['guidance']
+        self.assertEqual(installed,{'revision':adapter_module.studio.installed_guidance()['revision'],'source':'installed'})
         for check in ('proofread','factual-support'):
             self.command(self.a,'article','review','--id',aid,'--check',check,'--status','current','--file',self.file('{"findings":[]}', '.json'))
         ref=self.export(aid);bid=self.checkout(ref)
@@ -119,18 +119,46 @@ class HubWorkspaceTests(unittest.TestCase):
         self.assertEqual(shown['stop_point'],'review')
         self.assertEqual(shown['reviews']['proofread']['status'],'current')
         self.assertEqual(shown['reviews']['factual-support']['status'],'current')
-        self.assertEqual(shown['guidance']['revision'],'a'*40);self.assertIsNone(shown['guidance']['task'])
+        self.assertEqual(shown['guidance'],{'revision':installed['revision'],'source':'shared'})
         folder=self.b/'articles'/bid
         self.assertEqual((folder/'ORIGINAL.md').read_text(),'Original manuscript.')
         self.assertEqual((folder/'derived/newsletter.md').read_text(),'Newsletter copy.')
         self.assertIn('actual example',(folder/'INTERVIEW.md').read_text())
         global_record=self.ha.read(ref['item'])['record'];text=json.dumps(global_record)
         self.assertNotIn(str(self.a),text);self.assertNotIn('runtime',text);self.assertNotIn(source,text)
+        self.assertEqual(global_record['data']['studio']['guidance'],{'repository':adapter_module.GUIDANCE_REPOSITORY,'revision':installed['revision']})
         before=len(self.hb.graph()['revisions']);self.wb.publish_selected({'articles':[bid]})
         self.assertEqual(len(self.hb.graph()['revisions']),before)
-        task2='b'*32;pin=self.b/'task-context/tasks'/task2/'pin.json';pin.parent.mkdir(parents=True);pin.write_text(json.dumps({'task':task2,'revision':'a'*40}))
-        self.command(self.b,'article','guidance','--id',bid,'--task',task2)
+        # Same installed version on the second machine: nothing to adopt and reviews stay current.
+        self.command(self.b,'article','guidance','--id',bid)
         self.assertEqual(self.command(self.b,'article','show','--id',bid)['reviews']['proofread']['status'],'current')
+
+    def test_article_pinned_by_an_earlier_release_publishes_checks_out_and_adopts_on_request(self):
+        aid=self.article(mode='existing')
+        self.save(self.a,aid,'original','Original manuscript.');self.save(self.a,aid,'draft','Edited manuscript.')
+        path=self.a/'articles'/aid/'session.json';record=json.loads(path.read_text())
+        # A 1.x pin: guidance commit, task ID and a helper path that no longer exists on this machine.
+        record['guidance']={'task':'a'*32,'revision':'a'*40,'runtime':str(self.base/'removed/versions/1.15.0-abc/scripts'),'freshness':'pinned'}
+        record['guidance_history']=[{'task':'c'*32,'revision':'c'*40,'runtime':str(self.base/'removed'),'freshness':'pinned'}]
+        path.write_text(json.dumps(record))
+        self.command(self.a,'article','review','--id',aid,'--check','proofread','--status','current','--file',self.file('{"findings":[]}', '.json'))
+        ref=self.export(aid);shared=self.ha.read(ref['item'])['record']['data']['studio']
+        self.assertEqual(shared['guidance'],{'repository':adapter_module.GUIDANCE_REPOSITORY,'revision':'a'*40,'freshness':'pinned'})
+        self.assertEqual(shared['guidance_history'],[{'repository':adapter_module.GUIDANCE_REPOSITORY,'revision':'c'*40}])
+        self.assertEqual(self.wa.publish_selected({'articles':[aid]})['status'],'synchronized')
+        bid=self.checkout(ref);shown=self.command(self.b,'article','show','--id',bid)
+        self.assertEqual(shown['guidance'],{'revision':'a'*40,'source':'shared','shared_freshness':'pinned'})
+        self.assertEqual(shown['guidance_history'],[{'revision':'c'*40,'source':'shared'}])
+        self.assertEqual(shown['reviews']['proofread']['status'],'current')
+        self.assertNotIn('removed',json.dumps(shown['guidance']))
+        before=len(self.hb.graph()['revisions']);self.wb.publish_selected({'articles':[bid]})
+        self.assertEqual(len(self.hb.graph()['revisions']),before)
+        with self.assertRaisesRegex(ValueError,'--adopt'):self.command(self.b,'article','guidance','--id',bid)
+        adopted=self.command(self.b,'article','guidance','--id',bid,'--adopt')
+        self.assertEqual(adopted['guidance']['source'],'installed')
+        self.assertEqual([g['revision'] for g in adopted['guidance_history']],['c'*40,'a'*40])
+        self.assertEqual(adopted['reviews']['proofread']['status'],'stale')
+        self.assertEqual((self.b/'articles'/bid/'DRAFT.md').read_text(),'Edited manuscript.')
 
     def test_article_memory_round_trip_and_retirement_keep_history(self):
         aid=self.article();self.save(self.a,aid,'draft','A preserved draft.')
