@@ -44,7 +44,17 @@ async function check(){
   await requestOrdering();
   await curationConflict();
   await historicalImport();
-  console.log(JSON.stringify({status:'passed',checks:'feedback; access and memory kinds; request ownership; curation conflicts; article/finding disclosures; historical import preview/batching and source controls'}));
+  await diffOnlyForms();
+  await privacyChoiceAndIdentity();
+  await unreadableBlogsAndBadges();
+  await busyAnalysis();
+  await refreshWithNewSelection();
+  pageDefinesEveryElement();
+  const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
+    'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
+    'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
+    'refresh with a new selection','element ids'];
+  console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
   const requests=[];
@@ -87,11 +97,11 @@ async function requestOrdering(){
   // Keep the last valid result and restore pagination offset after a current failure.
   const h=controlled();const initial=h.run('load()');h.requests[0].resolve(empty(40));await initial;
   const previous=h.get('results').children[0];h.run('offset=20');const failed=h.run('load()');
-  h.requests[1].reject(new Error('Current failure'));await assert.rejects(failed,/Current failure/);
+  h.requests[1].resolve({__http:503,error:'Current failure'});await assert.rejects(failed,/Current failure/);
   assert.equal(h.get('results').children[0],previous);assert.equal(h.run('offset'),0);
   assert.equal(h.get('next').disabled,false);assert.equal(h.get('loading').hidden,true);
-  h.run("view='memory'");const missing=h.run('load()');h.requests[2].reject(new Error('Unavailable view'));
-  await assert.rejects(missing,/Unavailable view/);assert.equal(h.get('results').children[0],previous);
+  h.run("view='memory'");const missing=h.run('load()');h.requests[2].reject(new Error('socket hang up'));
+  await assert.rejects(missing,/desk helper is not answering/);assert.equal(h.get('results').children[0],previous);
   assert.equal(h.get('next').disabled,true);
 }
 async function curationConflict(){
@@ -209,4 +219,193 @@ async function historicalImport(){
   f.get('import-folder').files=[];await f.run('previewImport()');
   assert.equal(writes.length,2);assert.equal(f.get('import-save').hidden,true);
   f.run('access.actions.edit=false');await f.run('saveImport()');assert.equal(writes.length,2);
+}
+
+const text=node=>descendants(node).map(e=>e.textContent).join(' | ');
+
+async function diffOnlyForms(){
+  // Editorial form: a stale "ready" blog. Changing only the owner must not carry the stage.
+  const writes=[];
+  const article=(editorial,view={})=>({title:'Ready blog',location:'local',expected:'guard',record:{editorial,stop_point:'draft'},assets:{},sources:[],history:[],
+    view:{stage:'review',decision_stale:true,stop_point:'draft',stop_reached:false,blocker:'Changed after the decision.',reviews:[],next_action:{label:'l',command:'c'},google:null,google_observation:'',preview:{kind:'draft',text:'t',truncated:false},...view}});
+  let saved=article({stage:'ready',owner:'Morgan'});
+  const f=fixture((url,options)=>{
+    if(url==='/api/schedule'){writes.push(JSON.parse(options.body));return {receipts:[]};}
+    if(url.startsWith('/api/article'))return saved;
+    if(url==='/api/memory'){writes.push(JSON.parse(options.body));return {receipts:[]};}
+    if(url.startsWith('/api/memory-detail'))return {record:{item:'memory',revision:'revision',kind:'note',title:'Saved title',scope:{level:'team',key:''}},body:'Saved body',editable:true,truncated:true};
+    return empty();
+  });
+  const open=async()=>{f.set('item',{id:'blog',location:'local'});await f.run('showBlog(item)');
+    const form=descendants(f.get('detail-content')).find(e=>e.tagName==='form');
+    const named=Object.fromEntries(descendants(form).filter(e=>e.name).map(e=>[e.name,e]));
+    const box=descendants(form).find(e=>e.type==='checkbox');
+    return {form,named,box,row:box.parent,submit:()=>form.listeners.submit({preventDefault(){}})};};
+  let ui=await open();
+  assert.equal(ui.named.stage.value,'ready');assert.equal(ui.row.hidden,false);assert.match(ui.row.children[1].textContent,/again for the current saved draft/);
+  ui.named.owner.value='Jordan';await ui.submit();
+  assert.deepEqual(writes.pop(),{id:'blog',expected:'guard',owner:'Jordan'});
+  // Renewing the stale decision takes the explicit checkbox.
+  ui=await open();ui.box.checked=true;await ui.submit();
+  assert.deepEqual(writes.pop(),{id:'blog',expected:'guard',stage:'ready',confirm_stage:true});
+  // Nothing changed: nothing is posted.
+  ui=await open();await ui.submit();assert.equal(writes.length,0);
+  assert.equal(f.get('detail-dialog').querySelector('.dialog-notice').textContent,'No changes to save.');
+  // No recorded stage: the select follows writing progress and an owner edit does not pin a stage.
+  saved=article({},{stage:'idea',decision_stale:false});ui=await open();
+  assert.equal(ui.named.stage.value,'');assert.equal(ui.row.hidden,true);
+  assert.match(ui.named.stage.children[0].textContent,/Follow writing progress \(now: idea\)/);
+  ui.named.owner.value='Morgan';await ui.submit();
+  assert.deepEqual(writes.pop(),{id:'blog',expected:'guard',owner:'Morgan'});
+  // Choosing ready without the confirmation is refused in the page; with it, the decision is explicit.
+  ui=await open();ui.named.stage.value='ready';ui.named.stage.listeners.change();assert.equal(ui.row.hidden,false);
+  await ui.submit();assert.equal(writes.length,0);
+  assert.match(f.get('detail-dialog').querySelector('.dialog-notice').textContent,/Check the box to record/);
+  ui.box.checked=true;await ui.submit();
+  assert.deepEqual(writes.pop(),{id:'blog',expected:'guard',stage:'ready',confirm_stage:true});
+  // An ordinary stage needs no confirmation.
+  ui=await open();ui.named.stage.value='review';ui.named.stage.listeners.change();assert.equal(ui.row.hidden,true);await ui.submit();
+  assert.deepEqual(writes.pop(),{id:'blog',expected:'guard',stage:'review'});
+
+  // Curation form: a note-only edit posts the note and nothing else.
+  const curations=[];
+  const c=fixture((url,options)=>{
+    if(url.startsWith('/api/source?'))return {id:'source',location:'local',expected:'token',record:{status:'ready',analysis:{status:'needs-analysis'},library:{curation:'active',topics:[],products:[]},note:'Saved note'},excerpt:'Reference text',limitation:'x'};
+    if(url==='/api/curate'){curations.push(JSON.parse(options.body));return {receipts:[]};}
+    return empty();
+  });
+  c.set('item',{id:'source',location:'local',title:'Reference'});await c.run('curate(item)');
+  let form=descendants(c.get('detail-content')).find(e=>e.tagName==='form');
+  let fields=Object.fromEntries(descendants(form).filter(e=>e.name).map(e=>[e.name,e]));
+  fields.curation.value='active';
+  await form.listeners.submit({preventDefault(){}});assert.equal(curations.length,0);
+  assert.equal(c.get('detail-dialog').querySelector('.dialog-notice').textContent,'No changes to save.');
+  fields.note.value='Reviewed by Morgan.';await form.listeners.submit({preventDefault(){}});
+  assert.deepEqual(curations.pop(),{id:'source',location:'local',expected:'token',note:'Reviewed by Morgan.'});
+  await c.run('curate(item)');
+  form=descendants(c.get('detail-content')).find(e=>e.tagName==='form');
+  fields=Object.fromEntries(descendants(form).filter(e=>e.name).map(e=>[e.name,e]));
+  fields.curation.value='retired';await form.listeners.submit({preventDefault(){}});
+  assert.deepEqual(curations.pop(),{id:'source',location:'local',expected:'token',curation:'retired',confirmed:true});
+
+  // Memory edit: only the changed field travels; an untouched (possibly truncated) body is never resent.
+  const submit=new Element('button');submit.type='submit';f.get('memory-form').append(submit);
+  f.run('access.actions.memory=true');f.set('item',{item:'memory',revision:'revision'});await f.run('editMemory(item)');
+  assert.equal(f.get('memory-truncated').hidden,false);
+  f.set('submit',submit);await f.run('saveMemory(submit)');assert.equal(writes.length,0);
+  f.get('memory-name').value='Better title';await f.run('saveMemory(submit)');
+  const memory=writes.pop();
+  assert.deepEqual({...memory,operation:undefined},{item:'memory',revision:'revision',title:'Better title',operation:undefined});
+  assert.equal(submit.disabled,false);
+  // A new memory still sends every field.
+  f.run('memoryEdit=null');f.get('memory-kind').value='note';f.get('memory-name').value='New';f.get('memory-body').value='Body';f.get('memory-scope').value='team';f.get('memory-key').value='';
+  await f.run('saveMemory(submit)');
+  assert.deepEqual({...writes.pop(),operation:undefined},{kind:'note',title:'New',body:'Body',scope:'team',scope_key:'',operation:undefined});
+}
+
+async function privacyChoiceAndIdentity(){
+  const uploads=[];let capability={status:'writable',message:'Hub access verified.',actions:{edit:true,memory:true,refresh:true},workspace:'~/writing/.blog-studio',hub:{repository:'team/hub'},
+    analysis:{harness:'codex',label:'Codex',message:'Reference analysis uses your signed-in Codex CLI. Text from readable uploads and imports (up to 24,000 characters per file) is sent through it to its model provider.'}};
+  const f=fixture((url,options)=>{
+    if(url==='/api/capabilities')return capability;
+    if(url==='/api/upload'){uploads.push(JSON.parse(options.body));return {receipts:[]};}
+    if(url==='/api/library-import'){uploads.push(JSON.parse(options.body));return {preview:'a'.repeat(32),expected:'next',collection:'Past posts',candidates:1,completed:1,remaining:0,counts:{imported:1},excluded:[],posts:[{key:'k',title:'Post',status:'imported'}],selected:['k'],failures:[]};}
+    return empty();
+  });
+  await f.run('loadCapabilities()');
+  assert.match(f.get('analysis-status').textContent,/24,000 characters/);assert.equal(f.get('analysis-status').hidden,false);
+  assert.equal(f.get('desk-identity').textContent,'Workspace: ~/writing/.blog-studio · Team Hub: team/hub');
+  for(const prefix of ['upload','import']){
+    assert.equal(f.get(prefix+'-analyze-field').hidden,false);
+    assert.equal(f.get(prefix+'-analyze-label').textContent,'Summarize and tag with Codex');
+    assert.match(f.get(prefix+'-analysis-note').textContent,/model provider/);
+  }
+  const submit=new Element('button');submit.textContent='Upload and save';f.set('submit',submit);
+  f.get('upload-file').files=[{name:'one.md',size:5,arrayBuffer:async()=>new TextEncoder().encode('text.').buffer}];
+  f.get('upload-analyze').checked=true;await f.run('saveUpload(submit)');
+  assert.equal(uploads.pop().analyze,true);assert.equal(submit.textContent,'Upload and save');assert.equal(submit.disabled,false);
+  f.get('upload-analyze').checked=false;await f.run('saveUpload(submit)');
+  assert.equal(uploads.pop().analyze,false);
+  // The same choice travels with an import batch.
+  f.run("importState={preview:'"+'a'.repeat(32)+"',expected:'initial',posts:[{key:'k',title:'Post',status:'pending'}]};importChecks=new Map([['k',{checked:true}]])");
+  f.get('import-analyze').checked=false;await f.run('saveImport()');
+  assert.equal(uploads.pop().analyze,false);
+  // Without a configured CLI there is no checkbox and no analyze field: nothing is sent to a model.
+  capability={...capability,hub:null,analysis:{harness:null,label:null,message:'Reference analysis is off. No analysis CLI is configured, so document text is not sent to a model.'}};
+  await f.run('loadCapabilities()');
+  assert.equal(f.get('upload-analyze-field').hidden,true);assert.match(f.get('analysis-status').textContent,/Reference analysis is off/);
+  assert.match(f.get('desk-identity').textContent,/No Team Hub selected/);
+  await f.run('saveUpload(submit)');assert.equal('analyze' in uploads.pop(),false);
+}
+
+async function unreadableBlogsAndBadges(){
+  const f=fixture();
+  for(const name of ['board','inbox']){
+    f.set('state',{view:name,offset:0});
+    f.set('result',{items:[],total:0,problems:[{id:'broken-article',location:'local'},{id:'shared-item',location:'hub'}],problem_count:3});
+    f.run('render(state,result)');
+    assert.match(text(f.get('results')),/3 blogs could not be read and are not listed: broken-article, shared-item \(Team Hub\), and more\. Ask Blog Studio in chat to inspect them\./);
+    f.set('result',{items:[],total:0,problems:[{id:'only-one',location:'local'}],problem_count:1});f.run('render(state,result)');
+    assert.match(text(f.get('results')),/1 blog could not be read and is not listed: only-one\./);
+  }
+  f.set('state',{view:'library',offset:0});f.set('result',{items:[],total:0,problems:[{id:'x',location:'local'}]});f.run('render(state,result)');
+  assert.doesNotMatch(text(f.get('results')),/could not be read/);
+  // Hub-supplied status text is shown as text and never becomes a CSS class.
+  assert.equal(f.run("badge('ready').className"),'badge ready');assert.equal(f.run("badge('conflicted').className"),'badge conflicted');
+  for(const hostile of ['sidebar','primary close','Needs analysis','not-shared']){
+    f.set('value',hostile);assert.equal(f.run('badge(value).className'),'badge');assert.equal(f.run('badge(value).textContent'),hostile);
+  }
+  assert.equal(f.run("badge('not-run').textContent"),'Not run');assert.equal(f.run('badge(null).className'),'badge');
+}
+
+async function busyAnalysis(){
+  const gate=deferred();
+  const f=fixture(async url=>{
+    if(url.startsWith('/api/source?'))return {id:'s',location:'local',expected:'e',record:{status:'ready',analysis:{status:'needs-analysis'},library:{}},excerpt:'text',limitation:'x'};
+    if(url==='/api/analyze'){await gate.promise;return {results:[]};}
+    return empty();
+  });
+  f.set('item',{id:'s',location:'local',title:'Reference'});await f.run('curate(item)');
+  const analyze=descendants(f.get('detail-content')).find(e=>e.tagName==='button'&&e.textContent==='Analyze reference');
+  const running=analyze.listeners.click();await new Promise(resolve=>setTimeout(resolve,5));
+  assert.equal(analyze.disabled,true);assert.equal(analyze.attributes['aria-busy'],'true');assert.match(analyze.textContent,/Analyzing/);
+  const note=f.get('detail-dialog').querySelector('.dialog-notice');
+  assert.equal(note.hidden,false);assert.match(note.textContent,/24,000 characters/);
+  gate.resolve();await running;
+  assert.equal(analyze.disabled,false);assert.equal(analyze.textContent,'Analyze reference');
+}
+
+async function refreshWithNewSelection(){
+  const writes=[];
+  const f=fixture((url,options)=>{
+    if(url==='/api/collections')return {items:[{key:'desk-1',name:'Past posts',type:'folder',refresh_files:true},{key:'site',name:'Site',type:'archive',refresh_files:false}]};
+    if(url==='/api/library-preview'&&options.method==='POST'){writes.push(JSON.parse(options.body));return {preview:'b'.repeat(32),expected:'e',collection:'Past posts',saved_collection:true,candidates:0,completed:0,remaining:0,counts:{},excluded:[],posts:[],selected:[],failures:[]};}
+    return {available:false};
+  });
+  f.get('import-type').value='collection';f.get('import-collection').value='desk-1';await f.run('openImport()');
+  assert.equal(f.get('import-folder-field').hidden,false);assert.match(f.get('import-folder-help').textContent,/Optional: choose the folder again/);
+  f.get('import-folder').files=[];await f.run('previewImport()');
+  assert.deepEqual({...writes.pop(),operation:undefined},{collection:'desk-1',operation:undefined});
+  f.get('import-folder').files=[{name:'three.md',webkitRelativePath:'Posts/three.md',size:5,arrayBuffer:async()=>new TextEncoder().encode('text.').buffer}];
+  await f.run('previewImport()');
+  const refreshed=writes.pop();assert.equal(refreshed.collection,'desk-1');assert.equal(refreshed.files[0].path,'Posts/three.md');assert.equal('name' in refreshed,false);
+  // A collection that reads a website has nothing to choose.
+  f.get('import-collection').value='site';f.run('importFields()');
+  assert.equal(f.get('import-folder-field').hidden,true);assert.equal(f.get('import-export-field').hidden,true);
+  // A draft collection says when it becomes real.
+  f.set('preview',{preview:'c'.repeat(32),expected:'e',collection:'New',saved_collection:false,candidates:0,completed:0,remaining:0,counts:{},excluded:[],posts:[],selected:[],failures:[]});
+  f.run('renderImport(preview)');assert.match(text(f.get('import-preview')),/saved, and shared with your Team Hub, when you import its first posts/);
+}
+
+function pageDefinesEveryElement(){
+  // The fixture creates any element on demand, so check the real page defines every id the script asks for.
+  const base='skills/blog-studio/assets/management/';
+  const script=fs.readFileSync(base+'app.js','utf8'),page=fs.readFileSync(base+'index.html','utf8');
+  const defined=new Set([...page.matchAll(/id="([^"]+)"/g)].map(m=>m[1]));
+  const wanted=new Set([...script.matchAll(/\$\('([a-z0-9-]+)'\)/g)].map(m=>m[1]));
+  for(const prefix of ['upload','import'])for(const m of script.matchAll(/\$\(prefix\+'(-[a-z-]+)'\)/g))wanted.add(prefix+m[1]);
+  for(const name of ['folder','export','url','links','scope','collection','name'])wanted.add('import-'+name+'-field');
+  const created=new Set([...script.matchAll(/\.id='([a-z0-9-]+)'/g)].map(m=>m[1]));
+  const missing=[...wanted].filter(id=>!defined.has(id)&&!created.has(id));
+  assert.deepEqual(missing,[],'app.js uses ids that index.html does not define');
 }

@@ -12,6 +12,13 @@ editor. Keep Unassigned when unknown. Record a requested decision using
 a saved draft and an explicit decision. Published requires an actual URL; no
 publication occurs. Draft changes invalidate the readiness decision.
 
+Put only the fields the author asked to change in that JSON. A `stage` in the
+file is a decision for the current saved draft, so never copy the existing stage
+along with an owner or date change: that would renew a stale ready/published
+decision. An empty `stage` clears the explicit stage and the board follows
+writing progress again. A blog whose record cannot be read is listed under
+`problems` instead of failing the board; inspect that blog folder.
+
 For shared-only work, use existing Hub checkout to resume the selected article;
 never overwrite unshared edits or choose a competing head silently. Queued and
 pending-review work may be visible locally but is not remote main. Sync creates

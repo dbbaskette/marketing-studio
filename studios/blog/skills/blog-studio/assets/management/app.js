@@ -19,12 +19,39 @@ function notice(message, error=false) {
   target.textContent=message;target.className=error?'dialog-notice error':'dialog-notice';target.hidden=false;
 }
 function savedNotice(result) {notice((result.receipts||[]).map(r=>r.label+': '+r.message).join(' ')||result.next_step||'Saved.');}
+function analysisChoice(prefix) {
+  // Sent only when an analysis CLI is configured; unchecked means "do not send this text to the model".
+  const analysis=access.analysis||{};
+  return analysis.harness?{analyze:$(prefix+'-analyze').checked!==false}:{};
+}
 function applyCapabilities() {
   $('access-status').textContent=access.message;
   $('upload-open').disabled=!access.actions.edit;
   $('import-open').disabled=!access.actions.edit;
   $('memory-open').disabled=!access.actions.memory;
   $('refresh-hub').disabled=!access.actions.refresh;
+  const analysis=access.analysis||{};
+  $('analysis-status').textContent=analysis.message||'';
+  $('analysis-status').hidden=!analysis.message;
+  for(const prefix of ['upload','import']) {
+    $(prefix+'-analyze-field').hidden=!analysis.harness;
+    $(prefix+'-analyze-label').textContent='Summarize and tag with '+(analysis.label||'your analysis CLI');
+    $(prefix+'-analysis-note').textContent=analysis.message||'';
+    $(prefix+'-analysis-note').hidden=!analysis.message;
+  }
+  const where=[];
+  if(access.workspace)where.push('Workspace: '+access.workspace);
+  if(access.hub)where.push('Team Hub: '+(access.hub.repository||'selected'));
+  else if(access.workspace)where.push('No Team Hub selected');
+  $('desk-identity').textContent=where.join(' · ');
+  $('desk-identity').hidden=!where.length;
+}
+async function busy(control, label, action) {
+  // One visible "working" state for slow actions: disabled, announced, and always restored.
+  const text=control.textContent;
+  control.disabled=true;control.setAttribute('aria-busy','true');control.textContent=label;
+  try {return await action();}
+  finally {control.disabled=false;control.removeAttribute('aria-busy');control.textContent=text;}
 }
 async function loadCapabilities() {
   const generation=++accessGeneration;
@@ -58,12 +85,42 @@ function readOnlyMemory(result, explanation) {
 async function loadReceipts(signal, current=()=>true) {
   const result=await api('receipts',undefined,signal);if(!current())return;const pending=result.items.filter(r=>!['shared','synchronized','local-only'].includes(r.sharing));
   $('sync-status').replaceChildren();$('sync-status').hidden=!pending.length;
-  for(const receipt of pending){const row=element('div');row.append(element('p',receipt.label+': '+receipt.message));if(receipt.retry&&access.actions.edit)row.append(button('Retry sync',async()=>{const saved=await api('retry-sync',{id:receipt.id});savedNotice(saved);await loadReceipts();}));$('sync-status').append(row);}
+  for(const receipt of pending){const row=element('div');row.append(element('p',receipt.label+': '+receipt.message));if(receipt.retry&&access.actions.edit){const retry=button('Retry sync',()=>busy(retry,'Retrying…',async()=>{const saved=await api('retry-sync',{id:receipt.id});savedNotice(saved);await loadReceipts();}));row.append(retry);}$('sync-status').append(row);}
 }
 
-async function api(route, data, signal) {if(data)document.querySelectorAll('.dialog-notice').forEach(e=>e.hidden=true);const response=await fetch('/api/'+route,{method:data?'POST':'GET',headers:{'X-Blog-Studio-Token':token,...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined,signal});const result=await response.json();if(!response.ok){const error=new Error(result.error||'The operation could not be completed.');error.status=response.status;error.code=result.code;throw error;}return result;}
+async function api(route, data, signal) {
+  if(data)document.querySelectorAll('.dialog-notice').forEach(e=>e.hidden=true);
+  const headers={'X-Blog-Studio-Token':token,...(data?{'Content-Type':'application/json'}:{})};
+  let response,result;
+  try {
+    response=await fetch('/api/'+route,{method:data?'POST':'GET',headers,body:data?JSON.stringify(data):undefined,signal});
+  } catch(error) {
+    if(error.name==='AbortError')throw error;
+    throw new Error('The desk helper is not answering. Ask Blog Studio in chat to open the editorial desk again.');
+  }
+  try {result=await response.json();}
+  catch(error) {throw new Error('The desk helper sent a reply this page could not read. Reload the desk.');}
+  if(!response.ok){const error=new Error(result.error||'The operation could not be completed.');error.status=response.status;error.code=result.code;throw error;}
+  return result;
+}
 function link(url, text) {if(!/^https:\/\//.test(url||''))return element('span',text);const a=element('a',text);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a;}
-function badge(value) {const labels={'not-run':'Not run','not-checked-live':'Not checked live','local-saved-not-shared':'Saved locally','pending-review':'Awaiting review','queued-unavailable':'Waiting to sync','needs-local-check':'Needs local check'};return element('span',labels[value]||value,'badge '+value);}
+const BADGE_LABELS={'not-run':'Not run','not-checked-live':'Not checked live','local-saved-not-shared':'Saved locally','pending-review':'Awaiting review','queued-unavailable':'Waiting to sync','needs-local-check':'Needs local check'};
+const BADGE_TONES=new Set(['ready','review','stale','waiting','unavailable','published','conflict','conflicting','conflicted']);
+function badge(value) {
+  // Status text can come from shared Hub records: show it as text, but never let it choose a CSS class.
+  const name=String(value??'');
+  return element('span',BADGE_LABELS[name]||name,BADGE_TONES.has(name)?'badge '+name:'badge');
+}
+function unreadableNote(result) {
+  // Blogs the helper could not read are named instead of silently missing.
+  const problems=result.problems||[];
+  if(!problems.length)return null;
+  const count=result.problem_count||problems.length,one=count===1;
+  const names=problems.map(p=>p.id+(p.location==='hub'?' (Team Hub)':'')).join(', ')+(count>problems.length?', and more':'');
+  const box=element('div',undefined,'context-note unreadable');box.setAttribute('role','note');
+  box.append(element('p',count+(one?' blog could not be read and is':' blogs could not be read and are')+' not listed: '+names+'. Ask Blog Studio in chat to inspect '+(one?'it':'them')+'.'));
+  return box;
+}
 function button(text, action, cls='secondary') {const b=element('button',text,cls);b.type='button';b.addEventListener('click',()=>Promise.resolve(action()).catch(e=>notice(e.message,true)));return b;}
 function textCell(row, text) {const cell=element('td',text??'—');cell.setAttribute('role','cell');row.append(cell);return cell;}
 function sameView(left, right) {
@@ -105,6 +162,8 @@ function render(state, result) {
   $('query').placeholder={board:'Blog title, author, owner…',inbox:'Blog, finding, status…',library:'Title, author, topic…',memory:'Title, kind, scope…'}[view];
   $('observation').textContent=result.observation||result.google_observation||'Saved content only. Historical product claims need current verification.';
   $('results').replaceChildren();
+  const unreadable=view==='board'||view==='inbox'?unreadableNote(result):null;
+  if(unreadable)$('results').append(unreadable);
   if(!result.items.length){const box=element('div',undefined,'empty');box.append(element('h3',{board:'Your next blog starts here',inbox:'Nothing in this saved inbox',library:'Build your reference shelf',memory:'Give your team useful context'}[view]),element('p',{board:'Upload a draft, start a blog in chat, or join your team’s Hub to find shared work.',inbox:'Run a review in chat to collect findings. Google review status is not checked live here.',library:'Choose “Import old blogs” to add a folder, website, feed or export, or upload a single reference.',memory:'Join a Team Hub, then save a note, context, or writing rule.'}[view]));$('results').append(box);return;}
   const table=element('table'),head=element('tr');table.setAttribute('role','table');head.setAttribute('role','row');table.className='view-'+view;const headings={board:['Blog / author','Stage','Owner / due','Working copy'],inbox:['Blog','Finding','Status','Next action'],library:['Reference / author','Status','Collection / date','Actions'],memory:['Memory','Kind','Applies to','Actions']}[view];headings.forEach(h=>{const th=element('th',h);th.setAttribute('scope','col');head.append(th);});const thead=element('thead');thead.append(head);table.append(thead);const body=element('tbody');
   for(const item of result.items){const row=element('tr');row.setAttribute('role','row');
@@ -119,21 +178,53 @@ function render(state, result) {
 function disclosure(label, ...content) {
   const box=element('details'),summary=element('summary',label);box.append(summary,...content);return box;
 }
+function changedFields(proposed, saved) {
+  // Forms send only what the person changed; an untouched field is never a decision.
+  const changes={};
+  for(const key of Object.keys(proposed))if(JSON.stringify(proposed[key])!==JSON.stringify(saved[key]))changes[key]=proposed[key];
+  return changes;
+}
 function editorialForm(item, result) {
-  const data=result.record.editorial||{},form=element('form');
+  const data=result.record.editorial||{},form=element('form'),stages=['idea','draft','review','ready','published'];
+  // An unknown recorded stage is shown as "follow writing progress", so leaving the select alone posts nothing.
+  const saved={owner:data.owner||'',due:data.due||'',publication_url:data.publication_url||'',stage:stages.includes(data.stage)?data.stage:''};
   for(const [key,label]of [['owner','Owner'],['due','Due date'],['publication_url','Publication URL']]) {
-    const field=element('label',label),input=element('input');input.name=key;input.value=data[key]||'';
+    const field=element('label',label),input=element('input');input.name=key;input.value=saved[key];
     input.type=key==='due'?'date':'text';input.maxLength=key==='publication_url'?2000:200;field.append(input);form.append(field);
+    saved[key]=key==='owner'?input.value.trim():input.value;  // What an untouched field returns later.
   }
   const field=element('label','Editorial stage'),select=element('select');select.name='stage';
-  for(const stage of ['idea','draft','review','ready','published']) {
-    const option=element('option',stage);option.value=stage;option.selected=stage===(data.stage||result.view.stage);select.append(option);
+  const follow=element('option','Follow writing progress (now: '+result.view.stage+')');follow.value='';select.append(follow);
+  for(const stage of stages) {
+    const option=element('option',stage);option.value=stage;select.append(option);
   }
+  select.value=saved.stage;
   field.append(select);form.append(field);
+  // Ready and published are decisions about one saved draft. They are recorded only with this box checked.
+  const confirmRow=element('label',undefined,'check'),confirmBox=element('input'),confirmText=element('span');
+  confirmBox.type='checkbox';confirmRow.append(confirmBox,confirmText);form.append(confirmRow);
+  const stale=Boolean(result.view.decision_stale);
+  const needsConfirmation=()=>{
+    const stage=select.value,needed=(stage==='ready'||stage==='published')&&(stage!==saved.stage||stale);
+    confirmRow.hidden=!needed;
+    if(!needed)confirmBox.checked=false;
+    confirmText.textContent=stage===saved.stage?'The draft changed after this decision. Record “'+stage+'” again for the current saved draft.':'Record “'+stage+'” for the current saved draft.';
+    return needed;
+  };
+  select.addEventListener('change',needsConfirmation);needsConfirmation();
   const actions=element('div',undefined,'form-actions'),save=element('button','Save editorial decision','primary');save.type='submit';actions.append(save);form.append(actions);
   form.addEventListener('submit',async event=>{
     event.preventDefault();save.disabled=true;
-    try {const values=Object.fromEntries(new FormData(form));const saved=await api('schedule',{id:item.id,expected:result.expected,...values});$('detail-dialog').close();await load();savedNotice(saved);}
+    try {
+      const values=Object.fromEntries(new FormData(form));
+      values.owner=values.owner.trim();
+      const changes=changedFields(values,saved),needed=needsConfirmation();
+      if('stage' in changes&&needed&&!confirmBox.checked){notice('Check the box to record “'+values.stage+'”, or choose another stage.',true);return;}
+      if(needed&&confirmBox.checked){changes.stage=values.stage;changes.confirm_stage=true;}
+      if(!Object.keys(changes).length){notice('No changes to save.');return;}
+      const saving=await api('schedule',{id:item.id,expected:result.expected,...changes});
+      $('detail-dialog').close();await load();savedNotice(saving);
+    }
     catch(error){notice(error.message,true);}
     finally{save.disabled=false;}
   });
@@ -176,9 +267,12 @@ function articleContent(item, result, selectedFinding) {
   for(const name of result.history)evidence.append(element('p',name));
   if(!result.history.length)evidence.append(element('p','Inspect earlier revisions in chat.'));
   content.append(disclosure('Evidence and history',evidence));
-  if(result.location==='hub'&&access.actions.edit&&!state.conflict&&!state.shared_newer)content.append(button('Resume in this workspace',async()=>{
-    const saved=await api('resume',{item:item.id});await showBlog({id:saved.id,location:'local'});await load();notice('Blog resumed. Use its continuation request to keep writing in chat.');
-  }));
+  if(result.location==='hub'&&access.actions.edit&&!state.conflict&&!state.shared_newer){
+    const resume=button('Resume in this workspace',()=>busy(resume,'Resuming…',async()=>{
+      const saved=await api('resume',{item:item.id});await showBlog({id:saved.id,location:'local'});await load();notice('Blog resumed. Use its continuation request to keep writing in chat.');
+    }));
+    content.append(resume);
+  }
 }
 async function showBlog(item) {
   const args={id:item.id,location:item.location||'local'};if(item.revision)args.revision=item.revision;
@@ -198,7 +292,14 @@ async function curate(item) {
   if(analysis.kind)overview.append(element('p',analysis.kind));
   for(const caution of analysis.cautions||[])overview.append(element('p',caution,'help'));
   if(analysis.message)overview.append(element('p',analysis.message,'help'));
-  if(analysis.status!=='ready'&&access.actions.edit)overview.append(button('Analyze reference',async()=>{notice('Analyzing with your selected writing CLI…');await api('analyze',{id:result.id,location:result.location,expected:result.expected});await load();await curate(item);}));
+  if(analysis.status!=='ready'&&access.actions.edit){
+    const analyze=button('Analyze reference',()=>busy(analyze,'Analyzing… this can take a few minutes',async()=>{
+      const running=api('analyze',{id:result.id,location:result.location,expected:result.expected});
+      notice('Analyzing with your selected writing CLI. Up to 24,000 characters of this reference are sent through it to its model provider.');
+      await running;await load();await curate(item);
+    }));
+    overview.append(analyze);
+  }
   $('detail-content').append(overview);
   if(!access.actions.edit){$('detail-content').append(element('p',access.message,'context-note'),element('pre',JSON.stringify(result.record.library||{},null,2),'source-excerpt'),element('h3','Saved text excerpt'),element('pre',result.excerpt||'No extracted text yet.','source-excerpt'));$('detail-dialog').showModal();return;}
   const form=element('form'),metadata=result.record.library||{},l=element('label','Curation'),select=element('select');select.name='curation';
@@ -219,9 +320,19 @@ async function curate(item) {
     e.preventDefault();if(blocked)return;save.disabled=true;
     try {
       const data=Object.fromEntries(new FormData(form));
-      if(data.curation==='retired'&&!confirm('Retire this reference from active search? Earlier snapshots remain in Git history.'))return;
-      for(const key of ['topics','products'])data[key]=data[key].split(',').map(v=>v.trim()).filter(Boolean);
-      const saved=await api('curate',{id:result.id,location:result.location,expected:result.expected,...data,confirmed:data.curation==='retired'});
+      // Compare what the form holds now with what it would show for the saved reference, in the same shape.
+      const tags=text=>text.split(',').map(v=>v.trim()).filter(Boolean),library=result.record.library||{};
+      const proposed={curation:data.curation,topics:tags(data.topics),products:tags(data.products),note:data.note};
+      const changes=changedFields(proposed,{
+        curation:['active','pending','retired'].includes(library.curation)?library.curation:'active',
+        topics:tags((library.topics||[]).join(', ')),products:tags((library.products||[]).join(', ')),
+        note:(result.record.note||'').replace(/\r\n?/g,'\n')});
+      if(!Object.keys(changes).length){notice('No changes to save.');return;}
+      if(changes.curation==='retired'){
+        if(!confirm('Retire this reference from active search? Earlier snapshots remain in Git history.'))return;
+        changes.confirmed=true;
+      }
+      const saved=await api('curate',{id:result.id,location:result.location,expected:result.expected,...changes});
       $('detail-dialog').close();await load();savedNotice(saved);
     } catch(error) {
       if(error.status===409){blocked=true;conflict.hidden=false;comparison.replaceChildren();}
@@ -235,13 +346,22 @@ async function curate(item) {
 async function editMemory(item) {
   const result=await api('memory-detail?'+new URLSearchParams({id:item.item,revision:item.revision}));
   if(!result.editable||!access.actions.memory){readOnlyMemory(result,result.read_only_reason||access.message);return;}
-  memoryEdit=result.record;
   $('memory-name').value=result.record.title;$('memory-kind').value=result.record.kind;
   $('memory-body').value=result.body;$('memory-scope').value=result.record.scope.level;
   $('memory-key').value=result.record.scope.key;$('memory-title').textContent='Edit shared memory';
+  // Read the baseline back from the controls: it is exactly what an untouched field returns later.
+  const loaded={kind:$('memory-kind').value,title:$('memory-name').value,body:$('memory-body').value,scope:$('memory-scope').value,scope_key:$('memory-key').value};
+  memoryEdit={item:result.record.item,revision:result.record.revision,loaded};
+  $('memory-truncated').hidden=!result.truncated;
   $('memory-form').querySelector('[type=submit]').disabled=false;$('memory-dialog').showModal();
 }
-let importState=null, importBusy=false, importChecks=new Map();
+let importState=null, importBusy=false, importChecks=new Map(), importCollections=[];
+function refreshKind() {
+  // 'folder' or 'export' when the chosen existing collection can take a new file selection.
+  if($('import-type').value!=='collection')return null;
+  const chosen=importCollections.find(c=>c.key===$('import-collection').value);
+  return chosen&&chosen.refresh_files?chosen.type:null;
+}
 function importSelectionControls(){
   const selected=[...importChecks.entries()].filter(([,check])=>check.checked).map(([key])=>key);
   const pending=importState?importState.posts.filter(p=>selected.includes(p.key)&&p.status==='pending').length:0;
@@ -255,11 +375,17 @@ function importSelectionControls(){
   return selected;
 }
 function importFields(){
-  const type=$('import-type').value, network=['archive','feed','sitemap','urls'].includes(type);
+  const type=$('import-type').value, network=['archive','feed','sitemap','urls'].includes(type), again=refreshKind();
   for(const name of ['folder','export','url','links','scope','collection','name']){
-    const visible={folder:type==='folder',export:type==='export',url:network&&type!=='urls',links:type==='urls',scope:network,collection:type==='collection',name:type!=='collection'}[name];
+    const visible={folder:type==='folder'||again==='folder',export:type==='export'||again==='export',url:network&&type!=='urls',links:type==='urls',scope:network,collection:type==='collection',name:type!=='collection'}[name];
     $('import-'+name+'-field').hidden=!visible;
   }
+  $('import-folder-help').textContent=again==='folder'
+    ?'Optional: choose the folder again to pick up new or changed files. Posts already saved are not duplicated. Leave this empty to re-check the files chosen earlier.'
+    :'Markdown, text, HTML, DOCX and PDF. Up to 500 files and 10 MiB in total. For larger folders, import in chat.';
+  $('import-export-help').textContent=again==='export'
+    ?'Optional: choose a newer export file for this collection. Leave this empty to re-check the export chosen earlier.'
+    :'A list of posts with title, text, and a URL or external_id. Author, dates, topics and products are optional.';
   $('import-name').required=type!=='collection';$('import-scope').required=network;
   $('import-url').required=network&&type!=='urls';
   $('import-url-label').textContent={archive:'Blog archive URL',feed:'Feed URL',sitemap:'Sitemap URL'}[type]||'Website URL';
@@ -276,6 +402,7 @@ function renderImport(result){
   importState=result;sessionStorage.setItem('blog-studio-import-preview',result.preview);
   const box=$('import-preview');box.replaceChildren();box.hidden=false;
   box.append(element('h3',result.collection),element('p',result.candidates+' candidates listed · '+result.remaining+' not yet processed'));
+  if(result.saved_collection===false)box.append(element('p','This collection is saved, and shared with your Team Hub, when you import its first posts. Closing now leaves nothing behind.','help'));
   if(result.coverage_note)box.append(element('p',result.coverage_note,'context-note'));
   if(result.scope)box.append(element('p','Permitted posts: '+result.scope,'help'));
   const counts=result.counts||{};
@@ -317,7 +444,9 @@ async function openImport(){
   $('import-dialog').showModal();importFields();
   try{
     const result=await api('collections'), select=$('import-collection');select.replaceChildren();
+    importCollections=result.items;
     for(const collection of result.items){const option=element('option',collection.name);option.value=collection.key;select.append(option);}
+    importFields();
     const saved=sessionStorage.getItem('blog-studio-import-preview');
     if(!importState){const preview=await api('library-preview'+(saved?'?preview='+encodeURIComponent(saved):''));if(preview.preview)renderImport(preview);}
   }catch(error){notice(error.message,true);}
@@ -327,18 +456,33 @@ async function encodeImportFile(file){
   for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
   return btoa(binary);
 }
+async function selectedFolderFiles(required){
+  const files=Array.from($('import-folder').files||[]).filter(f=>/\.(md|txt|html?|docx|pdf)$/i.test(f.name)&&!(f.webkitRelativePath||f.name).split('/').some(p=>p.startsWith('.')));
+  if(!files.length&&!required)return null;
+  if(!files.length||files.length>500||files.reduce((sum,f)=>sum+f.size,0)>10*1024*1024)throw new Error('Choose a folder with 1–500 supported files totaling at most 10 MiB.');
+  const encoded=[];
+  for(const file of files)encoded.push({path:file.webkitRelativePath||file.name,content:await encodeImportFile(file)});
+  return encoded;
+}
+async function selectedExport(required){
+  const file=($('import-export').files||[])[0];
+  if(!file&&!required)return null;
+  if(!file||!file.size||file.size>10*1024*1024)throw new Error('Choose a nonempty JSON export of at most 10 MiB.');
+  return encodeImportFile(file);
+}
 async function previewImport(){
   if(importBusy||!access.actions.edit)return;
   resetImportPreview();importBusyState(true,'Preparing your preview…');
   try{
     const type=$('import-type').value,payload=type==='collection'?{collection:$('import-collection').value}:{name:$('import-name').value.trim(),type};
-    if(type==='folder'){
-      const files=Array.from($('import-folder').files||[]).filter(f=>/\.(md|txt|html?|docx|pdf)$/i.test(f.name)&&!(f.webkitRelativePath||f.name).split('/').some(p=>p.startsWith('.')));
-      if(!files.length||files.length>500||files.reduce((sum,f)=>sum+f.size,0)>10*1024*1024)throw new Error('Choose a folder with 1–500 supported files totaling at most 10 MiB.');
-      payload.files=[];for(const file of files)payload.files.push({path:file.webkitRelativePath||file.name,content:await encodeImportFile(file)});
-    }else if(type==='export'){
-      const file=$('import-export').files[0];if(!file||!file.size||file.size>10*1024*1024)throw new Error('Choose a nonempty JSON export of at most 10 MiB.');
-      payload.export=await encodeImportFile(file);
+    const again=refreshKind();
+    if(type==='folder'||again==='folder'){
+      // A new collection needs a folder; refreshing one may bring a new selection or re-check the earlier one.
+      const files=await selectedFolderFiles(type==='folder');
+      if(files)payload.files=files;
+    }else if(type==='export'||again==='export'){
+      const content=await selectedExport(type==='export');
+      if(content)payload.export=content;
     }else if(type!=='collection'){
       payload.url=type==='urls'?$('import-links').value.trim():$('import-url').value.trim();payload.scope=$('import-scope').value.trim();
       if(type!=='urls')payload.discovery_scope=payload.url;
@@ -349,22 +493,57 @@ async function previewImport(){
 }
 async function saveImport(retry=false){
   if(importBusy||!importState||!access.actions.edit)return;
-  importBusyState(true,'Importing and analyzing selected posts with your writing CLI. Saved originals are kept if analysis needs a retry…');
+  const choice=analysisChoice('import');
+  importBusyState(true,choice.analyze?'Importing selected posts, then summarizing and tagging them with your analysis CLI. Saved originals are kept if analysis needs a retry…':'Importing selected posts…');
   try{
     const selected=importSelectionControls();
     if(!selected.length)throw new Error('Check the posts you want to import first.');
-    const payload={preview:importState.preview,expected:importState.expected,confirm:true,retry,selected};
+    const payload={preview:importState.preview,expected:importState.expected,confirm:true,retry,selected,...choice};
     const result=await api('library-import',{...payload,operation:operationFor('library-import',payload)});
     renderImport(result);await load();notice(result.sharing_message||'Posts saved to the Reference Library.');
   }catch(error){notice(error.message,true);}finally{importBusyState(false);}
+}
+
+async function saveUpload(submit){
+  const analyzing=analysisChoice('upload').analyze;
+  try{
+    await busy(submit,analyzing?'Uploading, then summarizing and tagging…':'Uploading…',async()=>{
+      const file=$('upload-file').files[0];
+      if(!file||file.size>10*1024*1024)throw new Error('Choose a file of at most 10 MiB.');
+      const payload={filename:file.name,content:await encodeImportFile(file),title:$('upload-title').value,author:$('upload-author').value,as_blog:$('upload-blog').checked,...analysisChoice('upload')};
+      const result=await api('upload',{...payload,operation:operationFor('upload',payload)});
+      $('upload-dialog').close();await load();savedNotice(result);
+    });
+  }catch(error){notice(error.message,true);}
+}
+async function saveMemory(submit){
+  submit.disabled=true;
+  try{
+    const fields={kind:$('memory-kind').value,title:$('memory-name').value,body:$('memory-body').value,scope:$('memory-scope').value,scope_key:$('memory-key').value};
+    let payload=fields;
+    if(memoryEdit){
+      // An edit sends only what changed; the rest stays exactly as saved.
+      const changes=changedFields(fields,memoryEdit.loaded);
+      if(!Object.keys(changes).length){notice('No changes to save.');return;}
+      payload={item:memoryEdit.item,revision:memoryEdit.revision,...changes};
+    }
+    const saved=await api('memory',{...payload,operation:operationFor('memory',payload)});
+    $('memory-dialog').close();await load();savedNotice(saved);
+  }catch(error){notice(error.message,true);}
+  finally{submit.disabled=false;}
 }
 
 for(const b of document.querySelectorAll('[data-view]'))b.addEventListener('click',()=>{view=b.dataset.view;offset=0;$('query').value='';document.querySelectorAll('[data-view]').forEach(e=>e.removeAttribute('aria-current'));b.setAttribute('aria-current','page');load().catch(e=>notice(e.message,true));});
 for(const b of document.querySelectorAll('[data-close]'))b.addEventListener('click',()=>b.closest('dialog').close());
 $('search-go').addEventListener('click',()=>{offset=0;load().catch(e=>notice(e.message,true));});$('query').addEventListener('keydown',e=>{if(e.key==='Enter')$('search-go').click();});$('stage').addEventListener('change',()=>{$('search-go').click();});
 $('previous').addEventListener('click',()=>{if($('previous').disabled)return;offset=Math.max(0,offset-limit);load().catch(e=>notice(e.message,true));});$('next').addEventListener('click',()=>{if($('next').disabled)return;offset+=limit;load().catch(e=>notice(e.message,true));});
-$('refresh-hub').addEventListener('click',async()=>{try{await api('refresh',{});await loadCapabilities();await load();notice('Team Hub refreshed. Google Docs content is refreshed separately in chat.');}catch(e){notice(e.message,true);}});
-$('check-access').addEventListener('click',async()=>{await loadCapabilities();await load();});
+$('refresh-hub').addEventListener('click',async()=>{
+  try{await busy($('refresh-hub'),'Refreshing…',async()=>{await api('refresh',{});await loadCapabilities();await load();});notice('Team Hub refreshed. Google Docs content is refreshed separately in chat.');}
+  catch(e){notice(e.message,true);}
+  finally{applyCapabilities();}
+});
+$('check-access').addEventListener('click',async()=>{try{await loadCapabilities();await load();}catch(e){notice(e.message,true);}});
+$('import-collection').addEventListener('change',importFields);
 $('import-new').addEventListener('click',()=>{if(!importBusy)resetImportPreview();});
 $('import-open').addEventListener('click',openImport);
 $('import-type').addEventListener('change',()=>{resetImportPreview();importFields();});
@@ -376,7 +555,7 @@ $('import-dialog').addEventListener('cancel',e=>{if(importBusy)e.preventDefault(
 $('import-reload').addEventListener('click',async()=>{if(importBusy||!importState)return;importBusyState(true,'Reloading your saved preview…');try{renderImport(await api('library-preview?preview='+encodeURIComponent(importState.preview)));}catch(error){notice(error.message,true);}finally{importBusyState(false);}});
 
 $('upload-open').addEventListener('click',()=>{if(access.actions.edit)$('upload-dialog').showModal();});
-$('upload-form').addEventListener('submit',async e=>{e.preventDefault();const submit=e.target.querySelector('[type=submit]');submit.disabled=true;try{const file=$('upload-file').files[0];if(!file||file.size>10*1024*1024)throw new Error('Choose a file of at most 10 MiB.');const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));const payload={filename:file.name,content:btoa(binary),title:$('upload-title').value,author:$('upload-author').value,as_blog:$('upload-blog').checked};const result=await api('upload',{...payload,operation:operationFor('upload',payload)});$('upload-dialog').close();await load();savedNotice(result);}catch(error){notice(error.message,true);}finally{submit.disabled=false;}});
-$('memory-open').addEventListener('click',()=>{if(!access.actions.memory)return;memoryEdit=null;$('memory-form').reset();$('memory-form').querySelector('[type=submit]').disabled=false;$('memory-title').textContent='Add shared memory';$('memory-dialog').showModal();});
-$('memory-form').addEventListener('submit',async e=>{e.preventDefault();const submit=e.target.querySelector('[type=submit]');submit.disabled=true;try{const payload={kind:$('memory-kind').value,title:$('memory-name').value,body:$('memory-body').value,scope:$('memory-scope').value,scope_key:$('memory-key').value,...(memoryEdit?{item:memoryEdit.item,revision:memoryEdit.revision}:{})};const saved=await api('memory',{...payload,operation:operationFor('memory',payload)});$('memory-dialog').close();await load();savedNotice(saved);}catch(error){notice(error.message,true);}finally{submit.disabled=false;}});
+$('upload-form').addEventListener('submit',e=>{e.preventDefault();saveUpload(e.target.querySelector('[type=submit]'));});
+$('memory-open').addEventListener('click',()=>{if(!access.actions.memory)return;memoryEdit=null;$('memory-truncated').hidden=true;$('memory-form').reset();$('memory-form').querySelector('[type=submit]').disabled=false;$('memory-title').textContent='Add shared memory';$('memory-dialog').showModal();});
+$('memory-form').addEventListener('submit',e=>{e.preventDefault();saveMemory(e.target.querySelector('[type=submit]'));});
 applyCapabilities();loadCapabilities().then(()=>load()).catch(e=>notice(e.message,true));

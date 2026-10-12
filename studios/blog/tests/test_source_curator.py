@@ -86,6 +86,81 @@ class CurationTests(Fixture):
         record=studio.item(self.root,'sources',ident)[1]
         self.assertEqual(record['note'],'Team correction.');self.assertEqual(record['library']['topics'],['specific-topic'])
         self.assertEqual(record['library']['products'],[]);self.assertEqual(record['analysis']['status'],'ready')
+
+    def upload(self, operation, text, **fields):
+        data = {'operation': operation, 'filename': 'post.md', 'content': base64.b64encode(text.encode()).decode(), **fields}
+        return management.dispatch(self.root, 'upload', data)
+
+    def test_note_only_curation_before_analysis_does_not_freeze_empty_tags(self):
+        # Analysis has not finished when the reference is first opened in the desk.
+        self.model.side_effect = ValueError('Selected CLI is unavailable.')
+        ident = self.upload('1' * 32, 'A synthetic post about gateways.')['source']['id']
+        untouched = self.upload('2' * 32, 'Another synthetic post about gateways.')['source']['id']
+        detail = management.source_detail(self.root, ident)
+        self.assertEqual(detail['record']['analysis']['status'], 'needs-analysis')
+        # An older page sends every field of the form; only the note actually changed.
+        saved = management.dispatch(self.root, 'curate', {'id': ident, 'expected': detail['expected'], 'curation': 'active',
+                                                          'topics': [], 'products': [], 'note': 'Reviewed by Morgan.'})
+        self.assertEqual(saved['curation_overrides'], ['note'])
+        self.model.side_effect = lambda engine, payload: {v['id']: dict(ANALYSIS) for v in payload} if isinstance(payload, list) else dict(ANALYSIS)
+        curator.retry(self.root, [ident, untouched])
+        for source in (ident, untouched):
+            record = studio.item(self.root, 'sources', source)[1]
+            self.assertEqual(record['analysis']['status'], 'ready')
+            self.assertEqual((record['library']['topics'], record['library']['products']), (['routing'], ['ExampleGate']))
+        self.assertEqual(studio.item(self.root, 'sources', ident)[1]['note'], 'Reviewed by Morgan.')
+        # A tag the author really changed is still protected from later analysis.
+        detail = management.source_detail(self.root, ident)
+        management.dispatch(self.root, 'curate', {'id': ident, 'expected': detail['expected'], 'topics': ['team-chosen']})
+        self.file.write_text('The post changed and is analyzed again.')
+        updated = self.command('source', 'update', '--id', ident, '--text-file', str(self.file))
+        self.assertEqual(updated['library']['topics'], ['team-chosen']);self.assertEqual(updated['library']['products'], ['ExampleGate'])
+
+    def test_unchecked_summarize_and_tag_keeps_text_away_from_the_model(self):
+        skipped = self.upload('1' * 32, 'A private synthetic draft.', analyze=False)['source']
+        self.model.assert_not_called()
+        self.assertEqual(skipped['analysis']['status'], 'needs-analysis');self.assertTrue(skipped['analysis']['skipped'])
+        self.assertIn('skipped', skipped['analysis']['message'])
+        self.assertEqual(skipped['status'], 'ready')  # Saved and usable; only the model call was left out.
+        with self.assertRaises(ValueError):self.upload('2' * 32, 'x', analyze='no')
+        # Checked, or absent as before, behaves as documented.
+        self.assertEqual(self.upload('3' * 32, 'An ordinary synthetic post.')['source']['analysis']['status'], 'ready')
+        self.assertEqual(self.upload('4' * 32, 'Another ordinary synthetic post.', analyze=True)['source']['analysis']['status'], 'ready')
+        self.assertEqual(self.model.call_count, 2)
+        # The same choice for an import batch.
+        export = [{'external_id': 'p-' + str(n), 'title': 'Post ' + str(n), 'text': 'Synthetic import ' + str(n) + '.'} for n in range(2)]
+        preview = management.dispatch(self.root, 'library-preview', {'operation': 'a' * 32, 'name': 'Private history', 'type': 'export',
+                                                                      'export': base64.b64encode(json.dumps(export).encode()).decode()})
+        chosen = {'preview': preview['preview'], 'confirm': True, 'retry': False}
+        first = management.dispatch(self.root, 'library-import', {**chosen, 'operation': 'b' * 32, 'expected': preview['expected'],
+                                                                  'selected': [preview['posts'][0]['key']], 'analyze': False})
+        self.assertEqual(first['counts']['imported'], 1);self.assertEqual(self.model.call_count, 2)
+        imported = next(row for row in blog_library.catalog(self.root)['items'] if row['title'] == 'Post 0')
+        self.assertEqual(imported['analysis']['status'], 'needs-analysis');self.assertTrue(imported['analysis']['skipped'])
+        second = management.dispatch(self.root, 'library-import', {**chosen, 'operation': 'c' * 32, 'expected': first['expected'],
+                                                                   'selected': [preview['posts'][1]['key']]})
+        self.assertEqual(second['counts']['imported'], 2);self.assertEqual(self.model.call_count, 3)  # Counts cover the whole preview.
+        self.assertEqual([entry['id'] for entry in self.model.call_args.args[1]],
+                         [next(row for row in blog_library.catalog(self.root)['items'] if row['title'] == 'Post 1')['id']])
+        with self.assertRaises(ValueError):
+            management.dispatch(self.root, 'library-import', {**chosen, 'operation': 'd' * 32, 'expected': second['expected'],
+                                                              'selected': [preview['posts'][1]['key']], 'analyze': 'yes'})
+        # Analysis the author asks for explicitly still runs for a skipped reference.
+        detail = management.source_detail(self.root, skipped['id'])
+        management.dispatch(self.root, 'analyze', {'id': skipped['id'], 'location': 'local', 'expected': detail['expected']})
+        self.assertEqual(studio.item(self.root, 'sources', skipped['id'])[1]['analysis']['status'], 'ready')
+
+    def test_skipping_applies_only_inside_its_block_and_only_to_this_thread(self):
+        import threading
+        seen = {}
+        with curator.skipping():
+            inside = self.source('Saved without the model.')
+            worker = threading.Thread(target=lambda:seen.update(other=curator._skip.get()));worker.start();worker.join()
+        self.assertTrue(inside['analysis']['skipped']);self.assertFalse(seen['other'])
+        self.assertEqual(self.source('Saved with the model.')['analysis']['status'], 'ready')
+        with curator.skipping(False):
+            self.assertEqual(self.source('Also saved with the model.')['analysis']['status'], 'ready')
+
     def test_codex_invocation_keeps_selected_model_but_disables_customizations(self):
         cfg=self.base/'codex';cfg.mkdir();(cfg/'config.toml').write_text('model="configured-model"\n[model_providers.secret]\napi_key="DO-NOT-COPY"\n[mcp_servers.secret]\ncommand="dangerous"\n')
         with patch.dict('os.environ',{'CODEX_HOME':str(cfg)}):options=curator.codex_options()
