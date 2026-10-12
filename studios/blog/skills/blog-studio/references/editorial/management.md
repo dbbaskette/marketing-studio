@@ -51,7 +51,7 @@ While a long import or analysis runs, other desk requests answer “another desk
 operation is still running” instead of hanging. When a blog cannot be read, the
 board and inbox list the rest and name it; inspect that blog folder in chat.
 
-Runtime 1.12.2 adds phone/tablet stacked results and focused details. Article and
+Phones and tablets get stacked results and focused details. Article and
 finding dialogs show bounded saved previews, review freshness, explicit stop
 points, and copyable article-specific requests. Use that selected identity when
 the author returns to chat; inspect current state before editing. A saved shared
@@ -66,7 +66,7 @@ collections, candidate lessons and conflicted memories have read-only details
 with focused continuation. Never convert them via the generic note editor.
 An access observation is informational, not a reusable write authorization.
 
-Runtime 1.14 adds Reference library → Import old blogs. Folder and JSON-export
+Reference library → Import old blogs brings in a collection. Folder and JSON-export
 pickers stage only selected files locally (500 files / 10 MiB total). Website,
 feed, sitemap and explicit links use approved HTTPS post scopes. Preview precedes
 explicit 25-post import batches; saved checkpoints survive desk restarts, retries
@@ -79,7 +79,7 @@ changed files. The same file under another folder name or collection updates the
 saved post instead of adding a copy.
 Larger local folders still use the focused library commands in chat.
 
-Runtime 1.14.1 lists all preview candidates with checkboxes, labels and URLs.
+The preview lists every candidate with a checkbox, label and URL.
 Nothing is selected automatically. Only checked posts are fetched; remaining
 checks persist across batches and restarts after the first import. Retry acts
 only on checked failed posts. Labels are source data, not proof a link is a blog.
