@@ -220,9 +220,9 @@ def inbox(root, article_id=None, limit=20, offset=0, online=False, account=None,
         rows = [r for r in rows if r['kind'] != 'Google review']
         link = doc_link(record)
         if link:
-            from google_drive import Client, GoogleError
+            from google_drive import Client, GoogleError, account_for
             import google_suggestions as gs
-            selected_client = client or Client(account)
+            selected_client = client or Client(account_for(root, account))
             document_id = link['url'].split('/d/', 1)[1].split('/', 1)[0]
             try:
                 document = gs.review_read(selected_client, document_id)

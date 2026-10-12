@@ -82,6 +82,16 @@ class PerformanceTests(unittest.TestCase):
         perf.check(self.root,self.aid,{})
         directory,record=studio.item(self.root,'articles',self.aid)
         self.assertEqual(studio.freshness(self.root,directory,record)['proofread']['status'],'failed')
+    def test_clearing_caches_also_removes_staged_google_files(self):
+        import google_drive
+        staged = google_drive.staging_path(self.root, 'capture');staged.mkdir()
+        (staged / 'document.md').write_text('Staged copy of a manuscript.', encoding='utf-8')
+        draft = self.root / 'articles' / self.aid / 'DRAFT.md'
+        before = draft.read_bytes() if draft.exists() else None
+        local_cache.maintain(self.root, clear=True)
+        self.assertFalse(staged.exists())
+        self.assertEqual(draft.read_bytes() if draft.exists() else None, before)
+
     def test_cache_bounds_privacy_corruption_and_clear(self):
         perf.check(self.root,self.aid,{})
         folder=local_cache.folder(self.root)

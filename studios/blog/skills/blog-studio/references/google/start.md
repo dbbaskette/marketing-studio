@@ -40,8 +40,8 @@ and does not change a blog’s editing destination. Ask only when that role is u
    write. Repeating the start selects an already linked blog without replacing
    its draft or baseline; compare/pull current Google changes using the return
    flow.
-4. Bind a new article's actual guidance task through the ordinary workspace flow;
-   retain pins on a resumed article. Respect the imported author voice and selected
+4. A new article records the installed guidance version itself; a resumed
+   article keeps what it recorded. Respect the imported author voice and selected
    writing defaults. With a selected Team Hub, the normal article mutation lifecycle
    shares its original, draft, link and formatted history there. Report sync status.
 5. Show the imported title and a clickable link to the observed working Google Doc and continue

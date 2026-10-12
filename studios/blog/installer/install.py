@@ -737,11 +737,16 @@ def run(args):
             if action == 'login' and (args.json or not sys.stdin.isatty()):
                 result['google'] = {'status': 'needs-interactive-login', 'next_step': 'Run sh installer/google-setup.sh --login in a terminal.'}
             else:
+                command = [sys.executable, str(helper)]
                 if action == 'login':
-                    print('Google user sign-in requests Drive access and changes the active gcloud account. No Cloud project or OAuth client is created.')
-                check = subprocess.run([sys.executable, str(helper), action], capture_output=action == 'check', text=True)
+                    print('Google sign-in asks for the access every gcloud sign-in requests plus full Google Drive access. '
+                          'No Cloud project or OAuth client is created, and the account gcloud already uses stays active.')
+                    email = input('Google account email to use for Docs: ').strip()
+                    if email:
+                        command += ['--account', email]
+                check = subprocess.run(command + [action], capture_output=action == 'check', text=True)
                 result['google'] = {'status': 'drive-read' if check.returncode == 0 else 'needs-setup',
-                    'next_step': 'Use sh installer/google-setup.sh --install-cli, then --login. Drive read does not verify Docs writes.'}
+                    'next_step': 'Use sh installer/google-setup.sh --install-cli, then --login you@example.com. Drive read does not verify Docs writes.'}
     if args.json:
         print(json.dumps(result, indent=2))
         return 0

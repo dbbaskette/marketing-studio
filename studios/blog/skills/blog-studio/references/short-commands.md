@@ -50,9 +50,8 @@ from Git; pass `--destination google|hub` only when already established.
   use [focused context](workspace/performance.md) for needed passages.
 - **Show status:** show the [status card](workspace/status.md).
 - **What changed / Undo that edit:** use [comparison and recovery](workspace/changes.md).
-- **Clear local caches:** use `cache --clear`, and for a workspace that has used
-  Google Docs also `google_drive.py --root <workspace> staging --clear` (staged
-  captures, plans and receipts); writing and history remain.
+- **Clear local caches:** use `cache --clear`. It also removes staged Google
+  captures, plans and receipts; writing and history remain.
 - **Show/change my defaults:** use [defaults](workspace/defaults.md).
 
 After a completed operation show a short result; open the full status card when
