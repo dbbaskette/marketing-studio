@@ -1,4 +1,5 @@
 """Managed installation of the whole skill in disposable homes; no sign-in, network or global changes."""
+
 import contextlib
 import fcntl
 import importlib.util
@@ -22,11 +23,12 @@ installer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(installer)
 
 HOLD_LOCK = (
-    "import importlib.util, sys, time, pathlib\n"
+    'import importlib.util, sys, time, pathlib\n'
     "spec = importlib.util.spec_from_file_location('installer', sys.argv[1])\n"
-    "module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)\n"
-    "with module.installation_lock(pathlib.Path(sys.argv[2])):\n"
-    "    print('locked', flush=True); time.sleep(120)\n")
+    'module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)\n'
+    'with module.installation_lock(pathlib.Path(sys.argv[2])):\n'
+    "    print('locked', flush=True); time.sleep(120)\n"
+)
 
 
 class InstallationCase(unittest.TestCase):
@@ -55,7 +57,11 @@ class InstallationCase(unittest.TestCase):
         """Run the command line in-process against the disposable home; returns (exit code, stdout, stderr)."""
         out, err = io.StringIO(), io.StringIO()
         argv = ['install.py', *arguments, '--home', str(self.home), '--source', str(self.source)]
-        with patch.object(sys, 'argv', argv), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        with (
+            patch.object(sys, 'argv', argv),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
             code = installer.main()
         return code, out.getvalue(), err.getvalue()
 
@@ -67,10 +73,18 @@ class InstallationTests(InstallationCase):
         self.assertTrue(result['version'].startswith(VERSION + '-'))
         self.assertEqual(self.targets['codex'].resolve(), self.targets['claude'].resolve())
         installed = self.targets['codex']
-        for name in ('SKILL.md', 'VERSION', 'scripts/studio.py', 'references/entry-flows.md', 'install-manifest.json'):
+        for name in (
+            'SKILL.md',
+            'VERSION',
+            'scripts/studio.py',
+            'references/entry-flows.md',
+            'install-manifest.json',
+        ):
             self.assertTrue((installed / name).is_file(), name)
         self.assertFalse((installed / 'scripts/sync_guidance.py').exists())
-        self.assertEqual(json.loads((installed / 'install-manifest.json').read_text())['version'], VERSION)
+        self.assertEqual(
+            json.loads((installed / 'install-manifest.json').read_text())['version'], VERSION
+        )
         self.assertEqual(self.install()['status'], 'already-installed')
         checked = installer.inspect(self.root, self.targets)
         self.assertEqual(checked['runtime_integrity'], 'verified')
@@ -81,7 +95,9 @@ class InstallationTests(InstallationCase):
     def test_one_version_file_feeds_installer_and_hub_compatibility(self):
         self.assertRegex(VERSION, r'^[0-9]+\.[0-9]+\.[0-9]+$')
         self.assertEqual(installer.package_manifest(SKILL)['version'], VERSION)
-        spec = importlib.util.spec_from_file_location('hub_store_version_probe', SKILL / 'scripts/hub_store.py')
+        spec = importlib.util.spec_from_file_location(
+            'hub_store_version_probe', SKILL / 'scripts/hub_store.py'
+        )
         store = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(store)
         self.assertEqual(store.VERSION, VERSION)
@@ -94,7 +110,9 @@ class InstallationTests(InstallationCase):
         self.assertEqual(tombstone['entry'], 'skills/blog-studio/SKILL.md')
         self.assertEqual(tombstone['content_root'], 'skills/blog-studio')
         # Every 1.x helper compares this against its own version and asks for the installer update.
-        self.assertGreaterEqual(tuple(int(n) for n in tombstone['minimum_runtime'].split('.')), (2, 0, 0))
+        self.assertGreaterEqual(
+            tuple(int(n) for n in tombstone['minimum_runtime'].split('.')), (2, 0, 0)
+        )
 
     def test_shipped_manifest_is_verified_and_changed_packages_are_rejected(self):
         manifest = installer.package_manifest(self.source)
@@ -103,7 +121,9 @@ class InstallationTests(InstallationCase):
         (self.source / 'SKILL.md').write_text('Changed after the manifest was written.')
         with self.assertRaisesRegex(installer.InstallError, 'recorded hash'):
             self.install()
-        (self.source / 'install-manifest.json').write_text(json.dumps(installer.package_manifest(self.source)))
+        (self.source / 'install-manifest.json').write_text(
+            json.dumps(installer.package_manifest(self.source))
+        )
         (self.source / 'references/unlisted.md').write_text('Not in the manifest.')
         with self.assertRaisesRegex(installer.InstallError, 'inventory'):
             self.install()
@@ -128,10 +148,14 @@ class InstallationTests(InstallationCase):
         self.assertFalse((installed / 'references/.DS_Store').exists())
         (installed / '.DS_Store').write_bytes(b'\0')
         (installed / 'scripts/.DS_Store').write_bytes(b'\0')
-        self.assertEqual(installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified')
+        self.assertEqual(
+            installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified'
+        )
         self.assertEqual(self.install()['status'], 'already-installed')
 
-    def test_installing_over_a_damaged_runtime_stages_a_replacement_and_keeps_the_damaged_copy(self):
+    def test_installing_over_a_damaged_runtime_stages_a_replacement_and_keeps_the_damaged_copy(
+        self,
+    ):
         self.install()
         damaged = self.targets['codex'].resolve()
         (damaged / 'scripts/studio.py').write_text('damaged runtime')
@@ -141,7 +165,9 @@ class InstallationTests(InstallationCase):
         replacement = self.targets['codex'].resolve()
         self.assertNotEqual(replacement, damaged)
         self.assertEqual((damaged / 'scripts/studio.py').read_text(), 'damaged runtime')
-        self.assertEqual(installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified')
+        self.assertEqual(
+            installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified'
+        )
         self.assertEqual(self.install()['status'], 'already-installed')
         self.assertEqual(self.targets['codex'].resolve(), replacement)
         self.assertNotIn(str(damaged), self.state()['history'])
@@ -152,7 +178,9 @@ class InstallationTests(InstallationCase):
         config.write_text('{broken')
         self.assertIn('invalid', installer.inspect(self.root, self.targets)['runtime_integrity'])
         self.assertEqual(self.install(repair=True)['status'], 'repaired')
-        self.assertEqual(installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified')
+        self.assertEqual(
+            installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified'
+        )
 
     def test_record_cannot_point_outside_managed_versions(self):
         self.install()
@@ -179,13 +207,17 @@ class InstallationTests(InstallationCase):
         cellar.mkdir(parents=True)
         (cellar / 'python3.99').write_text('')
         (prefix / 'opt').mkdir()
-        (prefix / 'opt/python@3.99').symlink_to('../Cellar/python@3.99/3.99.1', target_is_directory=True)
+        (prefix / 'opt/python@3.99').symlink_to(
+            '../Cellar/python@3.99/3.99.1', target_is_directory=True
+        )
         (prefix / 'bin').mkdir()
         (prefix / 'bin/python3').symlink_to('../Cellar/python@3.99/3.99.1/bin/python3.99')
         stable = prefix / 'opt/python@3.99/bin/python3.99'
         self.assertEqual(installer.stable_interpreter(cellar / 'python3.99'), stable)
         # A path the user's shell already uses is kept as given, not resolved.
-        self.assertEqual(installer.stable_interpreter(prefix / 'bin/python3'), prefix / 'bin/python3')
+        self.assertEqual(
+            installer.stable_interpreter(prefix / 'bin/python3'), prefix / 'bin/python3'
+        )
         self.install()
         recorded = json.loads((self.targets['codex'] / 'config.json').read_text())['python']
         self.assertEqual(recorded, str(installer.stable_interpreter(sys.executable)))
@@ -197,7 +229,9 @@ class InstallationTests(InstallationCase):
         self.install(interpreter=str(old))
         config = self.targets['codex'] / 'config.json'
         self.assertEqual(json.loads(config.read_text())['python'], str(old))
-        self.assertEqual(installer.inspect(self.root, self.targets)['interpreter']['status'], 'ready')
+        self.assertEqual(
+            installer.inspect(self.root, self.targets)['interpreter']['status'], 'ready'
+        )
         old.unlink()  # for example, a package manager removed that Python
         checked = installer.inspect(self.root, self.targets)
         self.assertEqual(checked['interpreter'], {'path': str(old), 'status': 'missing'})
@@ -205,8 +239,13 @@ class InstallationTests(InstallationCase):
         self.assertIn('repair', summary)
         self.assertNotIn('managed files verified', summary)
         self.assertEqual(self.install()['status'], 'repaired')
-        self.assertEqual(json.loads(config.read_text())['python'], str(installer.stable_interpreter(sys.executable)))
-        self.assertEqual(installer.inspect(self.root, self.targets)['interpreter']['status'], 'ready')
+        self.assertEqual(
+            json.loads(config.read_text())['python'],
+            str(installer.stable_interpreter(sys.executable)),
+        )
+        self.assertEqual(
+            installer.inspect(self.root, self.targets)['interpreter']['status'], 'ready'
+        )
 
     def test_individual_harness_targets_can_be_added(self):
         installer.install(self.source, self.root, {'codex': self.targets['codex']})
@@ -238,10 +277,12 @@ class InstallationTests(InstallationCase):
         # A newly selected third location exercises failure after the shared switch.
         extra = self.home / 'extra/skills/blog-studio'
         chosen = {'codex': self.targets['codex'], 'claude': extra}
+
         def fail(path, target):
             installer.replace_link(path, target)
             if path == extra:
                 raise OSError('Disposable activation failure')
+
         with self.assertRaises(OSError):
             installer.install(self.source, self.root, chosen, activate=fail)
         self.assertEqual(self.targets['codex'].resolve(), previous)
@@ -253,14 +294,18 @@ class InstallationTests(InstallationCase):
         first = self.install()
         previous = self.targets['codex'].resolve()
         self.change_package()
+
         def interrupted(path, target):
             installer.replace_link(path, target)
             raise KeyboardInterrupt()  # also how a termination signal arrives in the command line
+
         with self.assertRaises(KeyboardInterrupt):
             self.install(activate=interrupted)
         self.assertEqual(self.targets['codex'].resolve(), previous)
         self.assertEqual(Path(self.state()['version']).name, first['version'])
-        self.assertEqual(installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified')
+        self.assertEqual(
+            installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified'
+        )
         second = self.install()
         self.assertEqual(second['status'], 'installed')
         self.assertNotEqual(second['version'], first['version'])
@@ -272,19 +317,25 @@ class InstallationTests(InstallationCase):
         second = self.install()
         # The process died after `current` moved but before the record was written.
         (self.root / 'installation.json').write_bytes(record)
-        self.assertIn('interrupted', installer.inspect(self.root, self.targets)['runtime_integrity'])
+        self.assertIn(
+            'interrupted', installer.inspect(self.root, self.targets)['runtime_integrity']
+        )
         for repair in (True, False):
             (self.root / 'installation.json').write_bytes(record)
             result = self.install(repair=repair)
             self.assertEqual(result['status'], 'installed')
             self.assertIn('recovered', result)
             self.assertEqual(Path(self.state()['version']).name, second['version'])
-            self.assertEqual(installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified')
+            self.assertEqual(
+                installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified'
+            )
         self.assertEqual(installer.rollback(self.root)['version'], first['version'])
         # The same holds when the very first setup lost its record.
         (self.root / 'installation.json').unlink()
         self.assertEqual(self.install()['status'], 'installed')
-        self.assertEqual(installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified')
+        self.assertEqual(
+            installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified'
+        )
 
     def test_update_and_rollback_keep_old_versions_and_author_work(self):
         first = self.install()
@@ -310,22 +361,49 @@ class InstallationTests(InstallationCase):
     def test_existing_1x_installation_upgrades_in_place_and_can_roll_back(self):
         # The layout written by the 1.x installer: a bootstrap folder, its own manifest and config.
         old = self.root / 'versions/1.12.3-0123456789ab'
-        files = {'SKILL.md': 'Bootstrap entry.', 'scripts/studio.py': 'print("1.x")',
-                 'scripts/sync_guidance.py': 'VERSION = "1.12.2"', 'references/google/start.md': 'Old reference.'}
+        files = {
+            'SKILL.md': 'Bootstrap entry.',
+            'scripts/studio.py': 'print("1.x")',
+            'scripts/sync_guidance.py': 'VERSION = "1.12.2"',
+            'references/google/start.md': 'Old reference.',
+        }
         for name, text in files.items():
             (old / name).parent.mkdir(parents=True, exist_ok=True)
             (old / name).write_text(text)
-        (old / 'install-manifest.json').write_text(json.dumps({'schema': 1, 'version': '1.12.3',
-            'files': {name: installer.file_hash(old / name) for name in files}}))
+        (old / 'install-manifest.json').write_text(
+            json.dumps(
+                {
+                    'schema': 1,
+                    'version': '1.12.3',
+                    'files': {name: installer.file_hash(old / name) for name in files},
+                }
+            )
+        )
         gone = '/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/bin/python3.13'
-        (old / 'config.json').write_text(json.dumps({'python': gone, 'runtime_version': '1.12.3',
-            'trusted_source': 'https://github.com/dbbaskette/blog-studio.git'}))
+        (old / 'config.json').write_text(
+            json.dumps(
+                {
+                    'python': gone,
+                    'runtime_version': '1.12.3',
+                    'trusted_source': 'https://github.com/dbbaskette/blog-studio.git',
+                }
+            )
+        )
         installer.replace_link(self.root / 'current', old)
         for path in self.targets.values():
             path.parent.mkdir(parents=True)
             installer.replace_link(path, self.root / 'current')
-        (self.root / 'installation.json').write_text(json.dumps({'schema': 1, 'version': str(old), 'history': [],
-            'targets': {k: str(v) for k, v in self.targets.items()}, 'backups': []}))
+        (self.root / 'installation.json').write_text(
+            json.dumps(
+                {
+                    'schema': 1,
+                    'version': str(old),
+                    'history': [],
+                    'targets': {k: str(v) for k, v in self.targets.items()},
+                    'backups': [],
+                }
+            )
+        )
         self.assertEqual(installer.verify_package(old)['version'], '1.12.3')
         upgraded = self.install()
         self.assertEqual(upgraded['status'], 'installed')
@@ -337,7 +415,9 @@ class InstallationTests(InstallationCase):
         config = json.loads((old / 'config.json').read_text())
         self.assertTrue(installer.interpreter_works(config['python']))
         self.assertEqual(config['trusted_source'], 'https://github.com/dbbaskette/blog-studio.git')
-        self.assertEqual(installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified')
+        self.assertEqual(
+            installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified'
+        )
 
     def test_uninstall_preserves_work_and_other_target_then_refuses_foreign_link(self):
         self.install()
@@ -390,8 +470,11 @@ class LockTests(InstallationCase):
 
     def test_terminated_lock_holder_does_not_block_the_next_run(self):
         self.root.mkdir(parents=True)
-        holder = subprocess.Popen([sys.executable, '-c', HOLD_LOCK, str(REPO / 'installer/install.py'), str(self.root)],
-                                  stdout=subprocess.PIPE, text=True)
+        holder = subprocess.Popen(
+            [sys.executable, '-c', HOLD_LOCK, str(REPO / 'installer/install.py'), str(self.root)],
+            stdout=subprocess.PIPE,
+            text=True,
+        )
         try:
             self.assertEqual(holder.stdout.readline().strip(), 'locked')
             with self.assertRaisesRegex(installer.InstallError, 'Another installer'):
@@ -411,17 +494,32 @@ class CommandLineTests(InstallationCase):
         source = (REPO / 'installer/install.py').read_text()
         for removed in ('ls-remote', 'gh auth', 'repository_access', 'TRUSTED_SOURCE'):
             self.assertNotIn(removed, source)
-        with patch.object(installer.shutil, 'which', return_value=None), \
-                patch.object(installer.subprocess, 'run', wraps=subprocess.run) as run:
-            code, out, err = self.main('install', '--target', 'both', '--yes', '--offline', '--json')
+        with (
+            patch.object(installer.shutil, 'which', return_value=None),
+            patch.object(installer.subprocess, 'run', wraps=subprocess.run) as run,
+        ):
+            code, out, err = self.main(
+                'install', '--target', 'both', '--yes', '--offline', '--json'
+            )
         self.assertEqual(code, 0, err)
         self.assertEqual(json.loads(out)['status'], 'installed')
         for call in run.call_args_list:
             self.assertNotIn(Path(call.args[0][0]).name, ('git', 'gh', 'brew'))
 
     def test_check_reads_only_and_reports_optional_team_hub_tools(self):
-        result = subprocess.run([sys.executable, str(REPO / 'installer/install.py'), 'check',
-            '--home', str(self.home), '--offline', '--json'], capture_output=True, text=True)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(REPO / 'installer/install.py'),
+                'check',
+                '--home',
+                str(self.home),
+                '--offline',
+                '--json',
+            ],
+            capture_output=True,
+            text=True,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         checked = json.loads(result.stdout)
         self.assertEqual(checked['installation'], 'absent')
@@ -458,10 +556,23 @@ class CommandLineTests(InstallationCase):
         self.assertEqual(set(json.loads(out)['targets']), {'codex', 'claude'})
 
     def test_run_without_a_terminal_names_the_noninteractive_command(self):
-        result = subprocess.run([sys.executable, str(REPO / 'installer/install.py'), '--home', str(self.home),
-            '--source', str(self.source)], stdin=subprocess.DEVNULL, capture_output=True, text=True)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(REPO / 'installer/install.py'),
+                '--home',
+                str(self.home),
+                '--source',
+                str(self.source),
+            ],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+        )
         self.assertEqual(result.returncode, 1)
-        self.assertIn('sh installer/install.sh install --target <codex|claude|both> --yes', result.stderr)
+        self.assertIn(
+            'sh installer/install.sh install --target <codex|claude|both> --yes', result.stderr
+        )
         self.assertFalse((self.root / 'installation.json').exists())
 
     def test_termination_signal_unwinds_setup_instead_of_killing_it_mid_switch(self):
@@ -474,11 +585,14 @@ class CommandLineTests(InstallationCase):
         self.install()
         active = self.targets['codex'].resolve()
         self.change_package()
+
         def terminated(args):
             def stop(path, target):
                 installer.replace_link(path, target)
                 raise installer.Interrupted()
+
             installer.install(args.source, self.root, self.targets, activate=stop)
+
         with patch.object(installer, 'run', side_effect=terminated):
             code, _, err = self.main('install', '--yes')
         self.assertEqual(code, 130)
@@ -510,32 +624,57 @@ class CommandLineTests(InstallationCase):
         self.assertNotIn('/blog-studio', summary.replace(str(self.targets['codex']), ''))
         self.assertIn('verify discovery', summary)
         (self.targets['codex'].resolve() / 'scripts/studio.py').write_text('damaged')
-        damaged = installer.setup_summary(installer.inspect(self.root, {'codex': self.targets['codex']}))
+        damaged = installer.setup_summary(
+            installer.inspect(self.root, {'codex': self.targets['codex']})
+        )
         self.assertNotIn('managed files verified', damaged)
         self.assertIn('repair', damaged)
 
     def test_human_check_reports_missing_harness_without_mutation(self):
         checked = installer.inspect(self.root, {'claude': self.targets['claude']})
-        checked['tools'].update(python_supported=False, git=False, github_cli=False, claude_code_available=False)
+        checked['tools'].update(
+            python_supported=False, git=False, github_cli=False, claude_code_available=False
+        )
         summary = installer.setup_summary(checked)
-        for expected in ('python.org', 'Install/open Claude Code', 'not installed', 'Git not found', 'Local writing needs neither'):
+        for expected in (
+            'python.org',
+            'Install/open Claude Code',
+            'not installed',
+            'Git not found',
+            'Local writing needs neither',
+        ):
             self.assertIn(expected, summary)
         self.assertNotIn('$blog-studio', summary)
         self.assertFalse(self.root.exists())
 
     def test_optional_google_setup_offline_and_dry_run_do_not_start_login(self):
         for flags in (['--offline'], ['--dry-run', '--offline']):
-            with patch.object(installer, 'install', return_value={'status': 'installed'}), \
-                    patch.object(installer, 'inspect', return_value={'status': 'checked'}), \
-                    patch.object(installer.subprocess, 'run') as run:
-                code, out, err = self.main('install', '--target', 'both', '--google-docs', 'gcloud', '--yes', '--json', *flags)
+            with (
+                patch.object(installer, 'install', return_value={'status': 'installed'}),
+                patch.object(installer, 'inspect', return_value={'status': 'checked'}),
+                patch.object(installer.subprocess, 'run') as run,
+            ):
+                code, out, err = self.main(
+                    'install',
+                    '--target',
+                    'both',
+                    '--google-docs',
+                    'gcloud',
+                    '--yes',
+                    '--json',
+                    *flags,
+                )
             self.assertEqual(code, 0, err)
             run.assert_not_called()
 
     def test_optional_google_json_setup_never_starts_interactive_login(self):
-        with patch.object(installer, 'install', return_value={'status': 'installed'}), \
-                patch.object(installer.subprocess, 'run') as run:
-            code, out, err = self.main('install', '--target', 'both', '--google-docs', 'gcloud', '--yes', '--json')
+        with (
+            patch.object(installer, 'install', return_value={'status': 'installed'}),
+            patch.object(installer.subprocess, 'run') as run,
+        ):
+            code, out, err = self.main(
+                'install', '--target', 'both', '--google-docs', 'gcloud', '--yes', '--json'
+            )
         self.assertEqual(code, 0, err)
         run.assert_not_called()
         google = json.loads(out)['google']

@@ -1,4 +1,5 @@
 """Readable review comments and explicitly selected, revision-guarded edits."""
+
 import json
 import re
 import time
@@ -68,17 +69,34 @@ def build(doc, findings, selected_tabs, start=1):
     gs.validate(doc, findings, selected_tabs)
     paragraphs = rt.paragraphs(doc)
     sections = section_names(doc, paragraphs)
-    titles = {tab['tabProperties']['tabId']: tab['tabProperties'].get('title', tab['tabProperties']['tabId'])
-              for tab in rt.tabs(doc)}
+    titles = {
+        tab['tabProperties']['tabId']: tab['tabProperties'].get(
+            'title', tab['tabProperties']['tabId']
+        )
+        for tab in rt.tabs(doc)
+    }
     entries = []
     groups = []
     for number, finding in enumerate(findings, start):
         key, _ = rt.paragraph_at(doc, finding['tab_id'], finding['start_index'])
-        entry = {'number': number, 'finding': finding, 'paragraph': rt.paragraph_text(paragraphs[key])[:-1],
-                 'paragraph_start': key[1], 'section': sections[key], 'tab_title': titles[key[0]]}
+        entry = {
+            'number': number,
+            'finding': finding,
+            'paragraph': rt.paragraph_text(paragraphs[key])[:-1],
+            'paragraph_start': key[1],
+            'section': sections[key],
+            'tab_title': titles[key[0]],
+        }
         entries.append(entry)
         minor = bool(finding.get('minor')) and finding['kind'] == 'edit'
-        group = next((g for g in groups if minor and g['minor'] and g['key'] == key and len(g['entries']) < 4), None)
+        group = next(
+            (
+                g
+                for g in groups
+                if minor and g['minor'] and g['key'] == key and len(g['entries']) < 4
+            ),
+            None,
+        )
         if group is None:
             group = {'key': key, 'minor': minor, 'entries': []}
             groups.append(group)
@@ -92,14 +110,27 @@ def build(doc, findings, selected_tabs, start=1):
                 for entry in items:
                     render([entry])
                 return
-            raise GoogleError('This review comment is too long; shorten the finding before posting.')
+            raise GoogleError(
+                'This review comment is too long; shorten the finding before posting.'
+            )
         first = items[0]
         finding = first['finding']
         grouped = len(items) > 1
         quote = first['paragraph'] if grouped else finding['before']
         anchor = first['paragraph_start'] if grouped else finding['start_index']
-        span = {'tabId': finding['tab_id'], 'startIndex': anchor, 'endIndex': anchor + rt.utf16(quote)}
-        comments.append({'numbers': [entry['number'] for entry in items], 'content': body, 'quote': quote, 'range': span})
+        span = {
+            'tabId': finding['tab_id'],
+            'startIndex': anchor,
+            'endIndex': anchor + rt.utf16(quote),
+        }
+        comments.append(
+            {
+                'numbers': [entry['number'] for entry in items],
+                'content': body,
+                'quote': quote,
+                'range': span,
+            }
+        )
 
     for group in groups:
         render(group['entries'])
@@ -167,7 +198,9 @@ def next_number(client, root, directory, document_id, review_document):
     """Numbers continue per blog; comments already in the Doc are honoured when they can be listed."""
     highest = read_index(root, directory)['next_number'] - 1
     if 'comments' in review_document:
-        contents = [thread.get('headPost', {}).get('content') for thread in review_document['comments']]
+        contents = [
+            thread.get('headPost', {}).get('content') for thread in review_document['comments']
+        ]
     else:
         try:
             contents = [thread.get('content') for thread in client.review_comments(document_id)]
@@ -183,8 +216,10 @@ def register(root, directory, saved, key):
         return
     numbers = numbers_of(saved)
     if numbers and min(numbers) < index['next_number']:
-        raise GoogleError('Another review batch already uses these edit numbers. Make a fresh plan so its numbers '
-                          'continue from ' + str(index['next_number']) + '.')
+        raise GoogleError(
+            'Another review batch already uses these edit numbers. Make a fresh plan so its numbers '
+            'continue from ' + str(index['next_number']) + '.'
+        )
     index['operations'].append(key)
     index['next_number'] = max(index['next_number'], max(numbers, default=0) + 1)
     studio.write_json(index_path(directory), index)
@@ -202,8 +237,13 @@ def current(client, saved):
     inline, accepted = rt.read_views(client, saved['document_id'])
     if gs.signature(accepted) != saved['before_sha256']:
         raise GoogleError('Google changed; refresh the review before posting comments.')
-    if build(inline, saved['findings'], saved['tab_ids'], first_number(saved)) != saved['comment_plan']:
-        raise GoogleError('The comment plan differs from current Google content; no comments posted.')
+    if (
+        build(inline, saved['findings'], saved['tab_ids'], first_number(saved))
+        != saved['comment_plan']
+    ):
+        raise GoogleError(
+            'The comment plan differs from current Google content; no comments posted.'
+        )
     return inline
 
 
@@ -211,35 +251,63 @@ def read_threads(client, saved, backend):
     if backend == 'native-comments':
         doc = gs.review_read(client, saved['document_id'])
         anchors = gs.native_anchors(doc)
-        return [{'id': thread.get('commentId'), 'content': thread.get('headPost', {}).get('content'),
-                 'quote': thread.get('plainTextQuote'), 'resolved': thread.get('status') == 'RESOLVED',
-                 'ranges': [r for anchor in anchors if anchor['anchorId'] == thread.get('anchorId') for r in anchor['ranges']]}
-                for thread in doc.get('comments', [])]
-    return [{'id': thread.get('id'), 'content': thread.get('content'),
-             'quote': thread.get('quotedFileContent', {}).get('value'), 'resolved': thread.get('resolved', False),
-             'deleted': thread.get('deleted', False), 'mine': thread.get('author', {}).get('me', False)}
-            for thread in client.review_comments(saved['document_id'])]
+        return [
+            {
+                'id': thread.get('commentId'),
+                'content': thread.get('headPost', {}).get('content'),
+                'quote': thread.get('plainTextQuote'),
+                'resolved': thread.get('status') == 'RESOLVED',
+                'ranges': [
+                    r
+                    for anchor in anchors
+                    if anchor['anchorId'] == thread.get('anchorId')
+                    for r in anchor['ranges']
+                ],
+            }
+            for thread in doc.get('comments', [])
+        ]
+    return [
+        {
+            'id': thread.get('id'),
+            'content': thread.get('content'),
+            'quote': thread.get('quotedFileContent', {}).get('value'),
+            'resolved': thread.get('resolved', False),
+            'deleted': thread.get('deleted', False),
+            'mine': thread.get('author', {}).get('me', False),
+        }
+        for thread in client.review_comments(saved['document_id'])
+    ]
 
 
 def matches(thread, expected, backend):
-    if not thread.get('id') or thread.get('deleted') or thread.get('content') != expected['content']:
+    if (
+        not thread.get('id')
+        or thread.get('deleted')
+        or thread.get('content') != expected['content']
+    ):
         return False
     if backend != 'native-comments':
         return thread.get('quote') == expected['quote']
-    in_range = any(all(r.get(k) == v for k, v in expected['range'].items()) for r in thread.get('ranges', []))
+    in_range = any(
+        all(r.get(k) == v for k, v in expected['range'].items()) for r in thread.get('ranges', [])
+    )
     return gs.quote_matches(thread.get('quote'), expected['quote']) and in_range
 
 
 def finding_ids(saved, comment):
-    by_number = {entry['number']: entry['finding']['id'] for entry in saved['comment_plan']['entries']}
+    by_number = {
+        entry['number']: entry['finding']['id'] for entry in saved['comment_plan']['entries']
+    }
     return [by_number[number] for number in comment['numbers']]
 
 
 def posted(saved, comment, threads):
     """A planned comment is already in the Doc when a live thread carries all of its finding markers."""
     wanted = [marker(finding_id) for finding_id in finding_ids(saved, comment)]
-    return any(not thread.get('deleted') and all(mark in (thread.get('content') or '') for mark in wanted)
-               for thread in threads)
+    return any(
+        not thread.get('deleted') and all(mark in (thread.get('content') or '') for mark in wanted)
+        for thread in threads
+    )
 
 
 def any_marker(saved, threads):
@@ -255,7 +323,9 @@ def create_comment(client, saved, comment, receipt, receipt_path, sleep):
     """Post one Drive comment. Rate limits are waited out; any other refusal is recorded as not posted."""
     for wait in (*RATE_LIMIT_WAITS, None):
         try:
-            return client.create_review_comment(saved['document_id'], comment['content'], comment['quote'])
+            return client.create_review_comment(
+                saved['document_id'], comment['content'], comment['quote']
+            )
         except GoogleError as exc:
             if exc.rate_limited and wait is not None:
                 sleep(wait)
@@ -265,19 +335,35 @@ def create_comment(client, saved, comment, receipt, receipt_path, sleep):
                 receipt.pop('pending_comment', None)
                 receipt['not_posted'] = {'numbers': comment['numbers'], 'status': exc.status}
                 write_json(receipt_path, receipt)
-                raise GoogleError('The comment for ' + label(comment['numbers']) + ' was not posted: ' + str(exc)
-                                  + ' Earlier comments are in place. Run apply again to post the rest.',
-                                  status=exc.status, labels=exc.labels) from None
-            raise GoogleError('The comment for ' + label(comment['numbers']) + ' has an uncertain result: ' + str(exc)
-                              + ' Run apply again; it posts only comments that are missing from the Doc.') from None
+                raise GoogleError(
+                    'The comment for '
+                    + label(comment['numbers'])
+                    + ' was not posted: '
+                    + str(exc)
+                    + ' Earlier comments are in place. Run apply again to post the rest.',
+                    status=exc.status,
+                    labels=exc.labels,
+                ) from None
+            raise GoogleError(
+                'The comment for '
+                + label(comment['numbers'])
+                + ' has an uncertain result: '
+                + str(exc)
+                + ' Run apply again; it posts only comments that are missing from the Doc.'
+            ) from None
 
 
 def require_unchanged_inputs(directory, record, target, saved):
     kind = saved['kind']
-    if (target['document_id'] != saved['document_id'] or target['tab_ids'] != saved['tab_ids']
-            or digest(encoded(record['google']['baselines'][kind])) != saved['baseline_sha256']
-            or studio.artifact_fingerprint(directory, kind.upper() + '.md') != saved['local_sha256']):
-        raise GoogleError('Local writing or linked baseline changed; refresh before sending review comments.')
+    if (
+        target['document_id'] != saved['document_id']
+        or target['tab_ids'] != saved['tab_ids']
+        or digest(encoded(record['google']['baselines'][kind])) != saved['baseline_sha256']
+        or studio.artifact_fingerprint(directory, kind.upper() + '.md') != saved['local_sha256']
+    ):
+        raise GoogleError(
+            'Local writing or linked baseline changed; refresh before sending review comments.'
+        )
 
 
 def apply(client, root, saved, reserved=False, repost_missing=False, sleep=time.sleep):
@@ -318,15 +404,28 @@ def apply(client, root, saved, reserved=False, repost_missing=False, sleep=time.
         # List the selected surface before sending, including resolved findings.
         existing = read_threads(client, saved, backend)
         if not resuming and any_marker(saved, existing):
-            raise GoogleError('These findings already have review comments. Reconcile instead of reposting.')
+            raise GoogleError(
+                'These findings already have review comments. Reconcile instead of reposting.'
+            )
         if backend == 'drive-comments' and not may_comment(client, saved):
-            raise GoogleError('Google has not confirmed comment permission. Keep the review locally.')
-        if studio.artifact_fingerprint(directory, saved['kind'].upper() + '.md') != saved['local_sha256']:
+            raise GoogleError(
+                'Google has not confirmed comment permission. Keep the review locally.'
+            )
+        if (
+            studio.artifact_fingerprint(directory, saved['kind'].upper() + '.md')
+            != saved['local_sha256']
+        ):
             raise GoogleError('Local writing changed during preflight.')
         if not resuming:
             register(root, directory, saved, key)
-            receipt = {'status': 'submitting-comments', 'operation': key, 'document_id': saved['document_id'],
-                       'backend': backend, 'posted': [], 'applied': []}
+            receipt = {
+                'status': 'submitting-comments',
+                'operation': key,
+                'document_id': saved['document_id'],
+                'backend': backend,
+                'posted': [],
+                'applied': [],
+            }
             if reserved:
                 write_json(receipt_path, receipt)
             else:
@@ -334,8 +433,16 @@ def apply(client, root, saved, reserved=False, repost_missing=False, sleep=time.
                 for mark in markers:
                     write_new(mark, key.encode())
             gs.keep_plan(store, saved)
-        batch = {'client': client, 'root': root, 'directory': directory, 'saved': saved, 'receipt': receipt,
-                 'receipt_path': receipt_path, 'resuming': resuming, 'repost_missing': repost_missing}
+        batch = {
+            'client': client,
+            'root': root,
+            'directory': directory,
+            'saved': saved,
+            'receipt': receipt,
+            'receipt_path': receipt_path,
+            'resuming': resuming,
+            'repost_missing': repost_missing,
+        }
         if backend == 'native-comments':
             backend = post_native(batch, existing, doc)
             existing = []  # After a fallback the Drive surface was just checked for these findings.
@@ -358,9 +465,14 @@ def post_native(batch, existing, doc):
         mark_submitted(batch)
         return None
     if batch['resuming'] and len(missing) == len(planned) and not batch['repost_missing']:
-        raise GoogleError('The earlier comment request had an uncertain result and none of its comments are visible '
-                          'yet. Check Google Docs; if they are absent, run apply again with --repost-missing.')
-    requests = [{'insertComment': {'content': comment['content'], 'range': comment['range']}} for comment in missing]
+        raise GoogleError(
+            'The earlier comment request had an uncertain result and none of its comments are visible '
+            'yet. Check Google Docs; if they are absent, run apply again with --repost-missing.'
+        )
+    requests = [
+        {'insertComment': {'content': comment['content'], 'range': comment['range']}}
+        for comment in missing
+    ]
     try:
         response = client.native_comments_update(saved['document_id'], doc['revisionId'], requests)
     except GoogleError as exc:
@@ -376,8 +488,12 @@ def post_native(batch, existing, doc):
             # Google refused the only request, so nothing was posted and the findings stay usable.
             gs.release(batch['root'], saved)
             unregister(batch['root'], batch['directory'], gs.operation_key(saved))
-            raise GoogleError(str(exc) + ' No comment was posted and this attempt was released; refresh and plan again.',
-                              status=exc.status, labels=exc.labels) from None
+            raise GoogleError(
+                str(exc)
+                + ' No comment was posted and this attempt was released; refresh and plan again.',
+                status=exc.status,
+                labels=exc.labels,
+            ) from None
         raise
     receipt['native_ack'] = response.get('commentUpdateState')
     mark_submitted(batch)
@@ -386,7 +502,12 @@ def post_native(batch, existing, doc):
 
 def post_drive(batch, existing, sleep):
     """Ordinary Drive comments, one request each, skipping any that are already in the Doc."""
-    client, saved, receipt, receipt_path = batch['client'], batch['saved'], batch['receipt'], batch['receipt_path']
+    client, saved, receipt, receipt_path = (
+        batch['client'],
+        batch['saved'],
+        batch['receipt'],
+        batch['receipt_path'],
+    )
     if not may_comment(client, saved):
         raise GoogleError('Google has not confirmed comment permission. Keep the review locally.')
     uncertain = receipt.get('pending_comment')
@@ -401,8 +522,12 @@ def post_drive(batch, existing, sleep):
             write_json(receipt_path, receipt)
             continue
         if uncertain == numbers and not batch['repost_missing']:
-            raise GoogleError('The comment for ' + label(numbers) + ' had an uncertain result and is not visible in '
-                              'the Doc yet. Check All Comments; if it is absent, run apply again with --repost-missing.')
+            raise GoogleError(
+                'The comment for '
+                + label(numbers)
+                + ' had an uncertain result and is not visible in '
+                'the Doc yet. Check All Comments; if it is absent, run apply again with --repost-missing.'
+            )
         current(client, saved)
         receipt['pending_comment'] = numbers
         receipt.pop('not_posted', None)
@@ -424,33 +549,59 @@ def verify(client, root, saved):
     before, _ = rt.read_views(client, saved['document_id'])
     threads = read_threads(client, saved, backend)
     after, accepted = rt.read_views(client, saved['document_id'])
-    stable = before['revisionId'] == after['revisionId'] and gs.signature(accepted) == saved['before_sha256']
+    stable = (
+        before['revisionId'] == after['revisionId']
+        and gs.signature(accepted) == saved['before_sha256']
+    )
     results = []
     for comment in saved['comment_plan']['comments']:
         found = [thread for thread in threads if matches(thread, comment, backend)]
         only = found[0] if len(found) == 1 else None
-        results.append({'numbers': comment['numbers'], 'verified': only is not None,
-                        'thread_id': only['id'] if only else None,
-                        'resolved': only.get('resolved', False) if only else False})
-    acknowledged = receipt.get('native_ack') not in ('ALL_FAILED_UNKNOWN_REASON', 'NO_UPDATES_REQUESTED')
+        results.append(
+            {
+                'numbers': comment['numbers'],
+                'verified': only is not None,
+                'thread_id': only['id'] if only else None,
+                'resolved': only.get('resolved', False) if only else False,
+            }
+        )
+    acknowledged = receipt.get('native_ack') not in (
+        'ALL_FAILED_UNKNOWN_REASON',
+        'NO_UPDATES_REQUESTED',
+    )
     good = stable and all(result['verified'] for result in results) and acknowledged
-    editable = [str(entry['number']) for entry in saved['comment_plan']['entries'] if entry['finding']['kind'] == 'edit'][:2]
+    editable = [
+        str(entry['number'])
+        for entry in saved['comment_plan']['entries']
+        if entry['finding']['kind'] == 'edit'
+    ][:2]
     if editable:
         say = 'Apply ' + ('edits ' if len(editable) > 1 else 'edit ') + ' and '.join(editable)
         next_action = 'Then say “' + say + '” for the items you choose.'
     else:
         next_action = 'Discuss the feedback before deciding on wording.'
     if good:
-        message = ('Added ' + str(len(saved['findings'])) + ' proposed edits in ' + str(len(results))
-                   + ' comments. Your document text is unchanged.')
+        message = (
+            'Added '
+            + str(len(saved['findings']))
+            + ' proposed edits in '
+            + str(len(results))
+            + ' comments. Your document text is unchanged.'
+        )
     elif receipt.get('status') == 'submitting-comments' and stable:
         message = 'Some review comments are not posted yet. Run apply again; it posts only the missing ones.'
     else:
         message = 'Review posting is incomplete or Google changed. Inspect existing comments; do not repost.'
     where = 'Open Google Docs' + (' → All Comments' if backend == 'drive-comments' else '') + '. '
-    result = {'status': 'verified-comments' if good else 'needs-reconciliation', 'mode': backend,
-              'accepted_text_unchanged': stable, 'comments': results, 'operation': gs.operation_key(saved),
-              'message': message, 'next_step': where + next_action}
+    result = {
+        'status': 'verified-comments' if good else 'needs-reconciliation',
+        'mode': backend,
+        'accepted_text_unchanged': stable,
+        'comments': results,
+        'operation': gs.operation_key(saved),
+        'message': message,
+        'next_step': where + next_action,
+    }
     receipt['verification'] = result
     write_json(receipt_path, receipt)
     return result
@@ -467,25 +618,52 @@ def show(root, article_id):
             continue
         plan_path, saved, receipt = batch
         applied = receipt.get('applied', [])
-        rows = [{'number': entry['number'], 'section': entry['section'], 'current': entry['finding']['before'],
-                 'proposed': entry['finding'].get('after'), 'reason': entry['finding']['reason'],
-                 'applied': entry['number'] in applied, 'plan': str(plan_path)}
-                for entry in saved['comment_plan']['entries']]
-        reviews.append({'plan': str(plan_path), 'operation': gs.operation_key(saved), 'mode': receipt.get('backend'),
-                        'status': receipt.get('verification', {}).get('status', receipt.get('status')),
-                        'applied': applied, 'edits': rows})
+        rows = [
+            {
+                'number': entry['number'],
+                'section': entry['section'],
+                'current': entry['finding']['before'],
+                'proposed': entry['finding'].get('after'),
+                'reason': entry['finding']['reason'],
+                'applied': entry['number'] in applied,
+                'plan': str(plan_path),
+            }
+            for entry in saved['comment_plan']['entries']
+        ]
+        reviews.append(
+            {
+                'plan': str(plan_path),
+                'operation': gs.operation_key(saved),
+                'mode': receipt.get('backend'),
+                'status': receipt.get('verification', {}).get('status', receipt.get('status')),
+                'applied': applied,
+                'edits': rows,
+            }
+        )
         edits.extend(rows)
     if not reviews:
-        raise GoogleError('No review comments have been posted for this blog from this computer. '
-                          'Numbered edits can be applied only where their review was posted.')
+        raise GoogleError(
+            'No review comments have been posted for this blog from this computer. '
+            'Numbered edits can be applied only where their review was posted.'
+        )
     latest = reviews[-1]
-    return {'plan': latest['plan'], 'operation': latest['operation'], 'mode': latest['mode'], 'status': latest['status'],
-            'applied': sorted(number for review in reviews for number in review['applied']),
-            'edits': edits, 'reviews': reviews}
+    return {
+        'plan': latest['plan'],
+        'operation': latest['operation'],
+        'mode': latest['mode'],
+        'status': latest['status'],
+        'applied': sorted(number for review in reviews for number in review['applied']),
+        'edits': edits,
+        'reviews': reviews,
+    }
 
 
 def require_selection(numbers):
-    if not numbers or len(set(numbers)) != len(numbers) or any(type(number) is not int for number in numbers):
+    if (
+        not numbers
+        or len(set(numbers)) != len(numbers)
+        or any(type(number) is not int for number in numbers)
+    ):
         raise GoogleError('Select unique edit numbers from this review.')
 
 
@@ -502,24 +680,40 @@ def apply_selected(client, root, article_id, numbers):
     known = {number for _, chosen in groups for number in chosen}
     if known != set(numbers):
         unknown = ', '.join(str(number) for number in numbers if number not in known)
-        raise GoogleError('Unknown edit number(s) ' + unknown + '. Use show-review to list this blog’s numbered edits.')
+        raise GoogleError(
+            'Unknown edit number(s) '
+            + unknown
+            + '. Use show-review to list this blog’s numbered edits.'
+        )
     results = [apply_edits(client, root, saved, chosen) for saved, chosen in groups]
     if len(results) == 1:
         return results[0]
     done = all(result['status'] == 'applied' for result in results)
-    return {'status': 'applied' if done else 'applied-comments-unresolved', 'applied': sorted(numbers),
-            'batches': results, 'next_step': PULL_NEXT}
+    return {
+        'status': 'applied' if done else 'applied-comments-unresolved',
+        'applied': sorted(numbers),
+        'batches': results,
+        'next_step': PULL_NEXT,
+    }
 
 
 def verified_threads(receipt):
-    return {tuple(comment['numbers']): comment['thread_id'] for comment in receipt['verification']['comments']}
+    return {
+        tuple(comment['numbers']): comment['thread_id']
+        for comment in receipt['verification']['comments']
+    }
 
 
 def live_thread(threads, receipt, comment):
     """The verified thread for a planned comment, if it is still there with the same text."""
     wanted = verified_threads(receipt).get(tuple(comment['numbers']))
-    found = [thread for thread in threads
-             if thread.get('id') == wanted and thread.get('content') == comment['content'] and not thread.get('deleted')]
+    found = [
+        thread
+        for thread in threads
+        if thread.get('id') == wanted
+        and thread.get('content') == comment['content']
+        and not thread.get('deleted')
+    ]
     return found[0] if len(found) == 1 else None
 
 
@@ -527,27 +721,42 @@ def paragraph_edits(doc, entries, selected, receipt, numbers):
     """Whole-paragraph before/after for each paragraph touched by the selected edits."""
     edits = []
     applied = receipt.get('applied', [])
-    for key in dict.fromkeys((entry['finding']['tab_id'], entry['paragraph_start']) for entry in selected):
-        group = [entry for entry in entries if (entry['finding']['tab_id'], entry['paragraph_start']) == key]
+    for key in dict.fromkeys(
+        (entry['finding']['tab_id'], entry['paragraph_start']) for entry in selected
+    ):
+        group = [
+            entry
+            for entry in entries
+            if (entry['finding']['tab_id'], entry['paragraph_start']) == key
+        ]
         original = group[0]['paragraph']
 
         def projected(chosen):
             text = original
-            for entry in sorted(group, key=lambda item: item['finding']['start_index'], reverse=True):
+            for entry in sorted(
+                group, key=lambda item: item['finding']['start_index'], reverse=True
+            ):
                 if entry['number'] not in chosen:
                     continue
                 finding = entry['finding']
                 start = gs.position(original, finding['start_index'] - key[1])
-                text = text[:start] + finding['after'] + text[start + len(finding['before']):]
+                text = text[:start] + finding['after'] + text[start + len(finding['before']) :]
             return text
 
         before = projected(applied)
         after = projected(set(applied) | set(numbers))
-        found = [where for where, paragraph in rt.paragraphs(doc).items()
-                 if where[0] == key[0] and rt.paragraph_text(paragraph) == before + '\n']
+        found = [
+            where
+            for where, paragraph in rt.paragraphs(doc).items()
+            if where[0] == key[0] and rt.paragraph_text(paragraph) == before + '\n'
+        ]
         if len(found) != 1:
-            raise GoogleError('Google wording moved ambiguously or changed; refresh these findings.')
-        edits.append({'tab_id': key[0], 'start_index': found[0][1], 'before': before, 'after': after})
+            raise GoogleError(
+                'Google wording moved ambiguously or changed; refresh these findings.'
+            )
+        edits.append(
+            {'tab_id': key[0], 'start_index': found[0][1], 'before': before, 'after': after}
+        )
     return edits
 
 
@@ -560,7 +769,9 @@ def apply_edits(client, root, saved, numbers):
         if receipt.get('verification', {}).get('status') != 'verified-comments':
             raise GoogleError('Verify the posted review comments before applying selected edits.')
         if receipt.get('edit_attempt'):
-            raise GoogleError('An edit attempt needs reconciliation; use verify-edits, never repeat the write.')
+            raise GoogleError(
+                'An edit attempt needs reconciliation; use verify-edits, never repeat the write.'
+            )
         directory, _, target = gs.linked(root, saved['article'], saved['kind'])
         if target['document_id'] != saved['document_id'] or target['tab_ids'] != saved['tab_ids']:
             raise GoogleError('The linked Google document changed.')
@@ -568,21 +779,33 @@ def apply_edits(client, root, saved, numbers):
         local = studio.artifact_fingerprint(directory, draft)
         entries = saved['comment_plan']['entries']
         selected = [entry for entry in entries if entry['number'] in numbers]
-        if len(selected) != len(numbers) or any(entry['finding']['kind'] != 'edit' for entry in selected):
-            raise GoogleError('Choose text-edit numbers; broader feedback needs an explicit wording decision.')
+        if len(selected) != len(numbers) or any(
+            entry['finding']['kind'] != 'edit' for entry in selected
+        ):
+            raise GoogleError(
+                'Choose text-edit numbers; broader feedback needs an explicit wording decision.'
+            )
         if any(number in receipt.get('applied', []) for number in numbers):
             raise GoogleError('An edit was already applied.')
         doc = rt.inline_read(client, saved['document_id'])
         threads = read_threads(client, saved, receipt['backend'])
         for comment in saved['comment_plan']['comments']:
-            if set(comment['numbers']) & set(numbers) and live_thread(threads, receipt, comment) is None:
-                raise GoogleError('A selected review comment changed or disappeared; refresh the review.')
+            if (
+                set(comment['numbers']) & set(numbers)
+                and live_thread(threads, receipt, comment) is None
+            ):
+                raise GoogleError(
+                    'A selected review comment changed or disappeared; refresh the review.'
+                )
         planned = rt.build_plan(doc, paragraph_edits(doc, entries, selected, receipt, numbers))
         if studio.artifact_fingerprint(directory, draft) != local:
             raise GoogleError('Local writing changed during preflight.')
         # The state before the write is kept so a lost response can later be settled either way.
-        receipt['edit_attempt'] = {'numbers': numbers, 'expected_sha256': planned['expected_sha256'],
-                                   'before_sha256': rt.fingerprint(doc)}
+        receipt['edit_attempt'] = {
+            'numbers': numbers,
+            'expected_sha256': planned['expected_sha256'],
+            'before_sha256': rt.fingerprint(doc),
+        }
         write_json(receipt_path, receipt)
         try:
             client.native_update(saved['document_id'], doc['revisionId'], planned['requests'])
@@ -592,7 +815,9 @@ def apply_edits(client, root, saved, numbers):
                 write_json(receipt_path, receipt)
             raise
         if rt.verify(client, planned)['status'] != 'verified':
-            raise GoogleError('Google wording or formatting could not be verified. Keep the comments open; do not retry.')
+            raise GoogleError(
+                'Google wording or formatting could not be verified. Keep the comments open; do not retry.'
+            )
         return finish_edits(client, saved, receipt, receipt_path, numbers)
 
 
@@ -605,8 +830,12 @@ def finish_edits(client, saved, receipt, receipt_path, numbers):
     resolved = []
 
     def unresolved(step):
-        return {'status': 'applied-comments-unresolved', 'applied': numbers, 'resolved_comments': resolved,
-                'next_step': step}
+        return {
+            'status': 'applied-comments-unresolved',
+            'applied': numbers,
+            'resolved_comments': resolved,
+            'next_step': step,
+        }
 
     # Resolve only fully applied groups, never comments containing pending edits.
     for comment in saved['comment_plan']['comments']:
@@ -615,17 +844,25 @@ def finish_edits(client, saved, receipt, receipt_path, numbers):
         try:
             threads = read_threads(client, saved, backend)
         except GoogleError:
-            return unresolved('Edits are verified, but comments could not be read. Do not repeat the edits.')
+            return unresolved(
+                'Edits are verified, but comments could not be read. Do not repeat the edits.'
+            )
         thread = live_thread(threads, receipt, comment)
         if thread is None:
-            return unresolved('Edits are verified; inspect changed or missing comments. Do not repeat the edits.')
+            return unresolved(
+                'Edits are verified; inspect changed or missing comments. Do not repeat the edits.'
+            )
         if thread.get('resolved'):
             continue
         if receipt.get('resolving') == thread['id']:
-            return unresolved('An earlier resolution is uncertain; inspect it without repeating the request.')
+            return unresolved(
+                'An earlier resolution is uncertain; inspect it without repeating the request.'
+            )
         if backend == 'drive-comments' and not thread.get('mine'):
-            return unresolved('Edits are verified; this account cannot resolve another author’s comment. '
-                              'Pull the latest document.')
+            return unresolved(
+                'Edits are verified; this account cannot resolve another author’s comment. '
+                'Pull the latest document.'
+            )
         receipt['resolving'] = thread['id']
         write_json(receipt_path, receipt)
         try:
@@ -633,17 +870,26 @@ def finish_edits(client, saved, receipt, receipt_path, numbers):
                 client.resolve_review_comment(saved['document_id'], thread['id'])
             else:
                 latest = rt.inline_read(client, saved['document_id'])
-                client.resolve_native_comment(saved['document_id'], thread['id'], latest['revisionId'])
+                client.resolve_native_comment(
+                    saved['document_id'], thread['id'], latest['revisionId']
+                )
             check = read_threads(client, saved, backend)
             if not any(item['id'] == thread['id'] and item.get('resolved') for item in check):
                 raise GoogleError('Resolution could not be verified.')
         except GoogleError:
-            return unresolved('Edits are verified. Inspect unresolved comments and pull the latest document; '
-                              'do not repeat the edits.')
+            return unresolved(
+                'Edits are verified. Inspect unresolved comments and pull the latest document; '
+                'do not repeat the edits.'
+            )
         resolved.append(thread['id'])
         receipt.pop('resolving', None)
         write_json(receipt_path, receipt)
-    return {'status': 'applied', 'applied': numbers, 'resolved_comments': resolved, 'next_step': PULL_NEXT}
+    return {
+        'status': 'applied',
+        'applied': numbers,
+        'resolved_comments': resolved,
+        'next_step': PULL_NEXT,
+    }
 
 
 def verify_edits(client, root, saved):
@@ -658,14 +904,22 @@ def verify_edits(client, root, saved):
         if now == attempt['expected_sha256']:
             # The write landed exactly as planned: record it and finish what a normal apply would have done.
             finished = finish_edits(client, saved, receipt, receipt_path, attempt['numbers'])
-            status = 'applied-text-verified' if finished['status'] == 'applied' else finished['status']
+            status = (
+                'applied-text-verified' if finished['status'] == 'applied' else finished['status']
+            )
             return {**finished, 'status': status, 'numbers': attempt['numbers']}
         if attempt.get('before_sha256') and now == attempt['before_sha256']:
             # The Doc is exactly as it was before the attempt, so nothing was written.
             receipt.pop('edit_attempt')
             write_json(receipt_path, receipt)
-            return {'status': 'not-applied', 'numbers': attempt['numbers'],
-                    'next_step': 'The earlier edit did not reach Google and was cleared. Apply the edits again when ready.'}
-        return {'status': 'needs-reconciliation', 'numbers': attempt['numbers'],
-                'next_step': 'Google matches neither the planned result nor the earlier text. Inspect the Doc and its '
-                             'comments; do not repeat the write.'}
+            return {
+                'status': 'not-applied',
+                'numbers': attempt['numbers'],
+                'next_step': 'The earlier edit did not reach Google and was cleared. Apply the edits again when ready.',
+            }
+        return {
+            'status': 'needs-reconciliation',
+            'numbers': attempt['numbers'],
+            'next_step': 'Google matches neither the planned result nor the earlier text. Inspect the Doc and its '
+            'comments; do not repeat the write.',
+        }

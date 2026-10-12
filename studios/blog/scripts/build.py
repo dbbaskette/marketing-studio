@@ -7,6 +7,7 @@
 Archives are reproducible: entries are sorted and carry a fixed timestamp and
 mode, so the same tree always produces the same bytes and checksums.
 """
+
 import argparse
 import hashlib
 import importlib.util
@@ -23,16 +24,26 @@ REPO = Path(__file__).resolve().parents[1]
 SKILL = REPO / 'skills/blog-studio'
 TOOLKIT = REPO / 'skills/blog-writing-toolkit'
 TIMESTAMP = (1980, 1, 1, 0, 0, 0)
-INSTALLER_FILES = ('installer/Install Blog Studio.command', 'installer/google-setup.sh',
-                   'installer/install.py', 'installer/install.sh')
-EXECUTABLE = {'installer/Install Blog Studio.command', 'installer/google-setup.sh', 'installer/install.sh'}
+INSTALLER_FILES = (
+    'installer/Install Blog Studio.command',
+    'installer/google-setup.sh',
+    'installer/install.py',
+    'installer/install.sh',
+)
+EXECUTABLE = {
+    'installer/Install Blog Studio.command',
+    'installer/google-setup.sh',
+    'installer/install.sh',
+}
 BUNDLED_DOCS = ('docs/installation.md', 'docs/troubleshooting.md')
 ARCHIVES = ('blog-studio-installer.zip', 'blog-studio.zip', 'blog-writing-toolkit.zip')
 
 
 def load_installer():
     """The installer owns the inventory and manifest rules; the build reuses them."""
-    spec = importlib.util.spec_from_file_location('blog_studio_installer', REPO / 'installer/install.py')
+    spec = importlib.util.spec_from_file_location(
+        'blog_studio_installer', REPO / 'installer/install.py'
+    )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -48,9 +59,14 @@ def contents():
     setup.update({'skills/blog-studio/' + name: data for name, data in skill.items()})
     toolkit = {name: (TOOLKIT / name).read_bytes() for name in installer.inventory(TOOLKIT)}
     return manifest['version'], {
-        'blog-studio-installer.zip': {'blog-studio-setup/' + name: data for name, data in setup.items()},
+        'blog-studio-installer.zip': {
+            'blog-studio-setup/' + name: data for name, data in setup.items()
+        },
         'blog-studio.zip': {'blog-studio/' + name: data for name, data in skill.items()},
-        'blog-writing-toolkit.zip': {'blog-writing-toolkit/' + name: data for name, data in toolkit.items()}}
+        'blog-writing-toolkit.zip': {
+            'blog-writing-toolkit/' + name: data for name, data in toolkit.items()
+        },
+    }
 
 
 def write_archive(path, entries):
@@ -109,24 +125,48 @@ def check():
         version, digests = first
         with zipfile.ZipFile(Path(temporary) / 'first/blog-studio-installer.zip') as archive:
             names = archive.namelist()
-            if names != sorted(names) or any(item.date_time != TIMESTAMP for item in archive.infolist()):
+            if names != sorted(names) or any(
+                item.date_time != TIMESTAMP for item in archive.infolist()
+            ):
                 raise SystemExit('Archive entries are not sorted with fixed timestamps.')
             archive.extractall(Path(temporary) / 'expanded')
-        manifest = installer.verify_package(Path(temporary) / 'expanded/blog-studio-setup/skills/blog-studio')
+        manifest = installer.verify_package(
+            Path(temporary) / 'expanded/blog-studio-setup/skills/blog-studio'
+        )
         if manifest['version'] != version or manifest != installer.package_manifest(SKILL):
             raise SystemExit('The bundled skill does not match the source tree.')
     return version, digests
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--output', type=Path, default=REPO / 'build', help='Directory for archives (default: build/, ignored by Git)')
-    parser.add_argument('--check', action='store_true', help='Verify a reproducible build in a temp dir; write nothing to --output')
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        '--output',
+        type=Path,
+        default=REPO / 'build',
+        help='Directory for archives (default: build/, ignored by Git)',
+    )
+    parser.add_argument(
+        '--check',
+        action='store_true',
+        help='Verify a reproducible build in a temp dir; write nothing to --output',
+    )
     args = parser.parse_args()
     validate_sources()
     version, digests = check() if args.check else build(args.output)
-    print(json.dumps({'version': version, 'checked': args.check,
-                      'output': None if args.check else str(args.output), 'sha256': digests}, indent=2))
+    print(
+        json.dumps(
+            {
+                'version': version,
+                'checked': args.check,
+                'output': None if args.check else str(args.output),
+                'sha256': digests,
+            },
+            indent=2,
+        )
+    )
     return 0
 
 

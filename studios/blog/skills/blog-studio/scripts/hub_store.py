@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Validated Git-backed records. Remote content is data and is never executed."""
+
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import fcntl
@@ -39,16 +40,19 @@ class TransportError(HubError):
 
 class AuthenticationError(TransportError):
     """The provider explicitly reports an invalid or expired sign-in."""
+
     pass
 
 
 class ReviewClosed(HubError):
     """The contribution pull request was closed without being merged."""
+
     pass
 
 
 class NewerRevision(HubError):
     """Shared work moved on; publishing now would create a competing head."""
+
     pass
 
 
@@ -163,10 +167,14 @@ def locked(root, name='.hub.lock'):
     try:
         fd = acquire_lock(root / name)
     except OSError as exc:
-        raise HubError('The hub lock could not be opened; check the hub folder permissions.') from exc
+        raise HubError(
+            'The hub lock could not be opened; check the hub folder permissions.'
+        ) from exc
     if fd is None:
-        raise HubError('Another hub operation is still running after a short wait. Retry shortly; '
-                       'the lock clears by itself when that command ends, so do not delete any lock file.')
+        raise HubError(
+            'Another hub operation is still running after a short wait. Retry shortly; '
+            'the lock clears by itself when that command ends, so do not delete any lock file.'
+        )
     try:
         yield
     finally:
@@ -178,8 +186,15 @@ def canonical_repository(value):
         raise HubError('Supply an explicit GitHub owner/repository or HTTPS URL.')
     if '://' in value:
         url = urlsplit(value)
-        if (url.scheme != 'https' or url.hostname != 'github.com' or url.username or url.password
-                or url.port or url.query or url.fragment):
+        if (
+            url.scheme != 'https'
+            or url.hostname != 'github.com'
+            or url.username
+            or url.password
+            or url.port
+            or url.query
+            or url.fragment
+        ):
             raise HubError('Use a GitHub HTTPS URL without credentials, parameters, or fragments.')
         value = url.path.strip('/')
     value = value.removesuffix('.git')
@@ -209,7 +224,9 @@ def scrubbed(output, limit=300):
     line = (preferred or lines or [''])[-1]
     line = re.sub(r'(?i)\b([a-z][a-z0-9+.-]*://)[^/@\s]+@', r'\1', line)
     line = re.sub(r'\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+', '[redacted]', line)
-    line = re.sub(r'(?i)\b(authorization|token|password|secret)\b\s*[:=]\s*\S+', r'\1: [redacted]', line)
+    line = re.sub(
+        r'(?i)\b(authorization|token|password|secret)\b\s*[:=]\s*\S+', r'\1: [redacted]', line
+    )
     return line[:limit]
 
 
@@ -223,33 +240,53 @@ def git(repository, *args, data=None, extra_env=None, allow_failure=False):
     """
     env = environment()
     env.update(extra_env or {})
-    command = ['git', '--git-dir=' + str(repository), '-c', 'core.hooksPath=' + os.devnull,
-               '-c', 'commit.gpgsign=false', *args]
+    command = [
+        'git',
+        '--git-dir=' + str(repository),
+        '-c',
+        'core.hooksPath=' + os.devnull,
+        '-c',
+        'commit.gpgsign=false',
+        *args,
+    ]
     network = bool(args) and args[0] in NETWORK_COMMANDS
     name = 'git ' + (args[0] if args else '')
     try:
         result = subprocess.run(command, input=data, capture_output=True, env=env, timeout=45)
     except subprocess.TimeoutExpired as exc:
         if network:
-            raise TransportError('Git is unavailable or the hub operation timed out; saved work is retained.') from exc
-        raise HubError('A local Git step (' + name + ') timed out; saved work is retained.') from exc
+            raise TransportError(
+                'Git is unavailable or the hub operation timed out; saved work is retained.'
+            ) from exc
+        raise HubError(
+            'A local Git step (' + name + ') timed out; saved work is retained.'
+        ) from exc
     except OSError as exc:
         if network:
-            raise TransportError('Git is unavailable or the hub operation timed out; saved work is retained.') from exc
-        raise HubError('Git could not be started for a local step (' + name + '); saved work is retained.') from exc
+            raise TransportError(
+                'Git is unavailable or the hub operation timed out; saved work is retained.'
+            ) from exc
+        raise HubError(
+            'Git could not be started for a local step (' + name + '); saved work is retained.'
+        ) from exc
     if result.returncode and not allow_failure:
         cause = scrubbed(result.stderr)
         detail = ' Cause: ' + cause if cause else ''
         if network:
-            raise TransportError('Hub repository access or update failed; check connectivity, permissions, '
-                                 'and branch policy.' + detail)
-        raise HubError('A local Git step failed (' + name + '); this is not a network problem. '
-                       'Saved work is retained.' + detail)
+            raise TransportError(
+                'Hub repository access or update failed; check connectivity, permissions, '
+                'and branch policy.' + detail
+            )
+        raise HubError(
+            'A local Git step failed (' + name + '); this is not a network problem. '
+            'Saved work is retained.' + detail
+        )
     return result if allow_failure else result.stdout
 
 
 class GitHub:
     """Provider boundary. Tests substitute this object, never sign in or create real repos."""
+
     def call(self, *args, allow_missing=False):
         try:
             command = ['gh', *args]
@@ -257,13 +294,27 @@ class GitHub:
                 command += ['--hostname', 'github.com']
             result = subprocess.run(command, capture_output=True, env=environment(), timeout=45)
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise TransportError('GitHub CLI is unavailable or timed out. Check your own account access.') from exc
+            raise TransportError(
+                'GitHub CLI is unavailable or timed out. Check your own account access.'
+            ) from exc
         if result.returncode:
             if allow_missing and b'HTTP 404' in result.stderr:
                 return None
-            if any(marker in result.stderr.lower() for marker in (b'http 401', b'bad credentials', b'gh auth login', b'authentication required')):
-                raise AuthenticationError('GitHub sign-in expired or is unavailable. Sign in again before refreshing or editing shared work.')
-            raise TransportError('GitHub access failed. Check your account, repository permission, and organization policy.')
+            if any(
+                marker in result.stderr.lower()
+                for marker in (
+                    b'http 401',
+                    b'bad credentials',
+                    b'gh auth login',
+                    b'authentication required',
+                )
+            ):
+                raise AuthenticationError(
+                    'GitHub sign-in expired or is unavailable. Sign in again before refreshing or editing shared work.'
+                )
+            raise TransportError(
+                'GitHub access failed. Check your account, repository permission, and organization policy.'
+            )
         try:
             return json.loads(result.stdout) if result.stdout.strip() else {}
         except ValueError:
@@ -273,14 +324,25 @@ class GitHub:
         value = self.call('api', 'repos/' + repository, allow_missing=True)
         if value is None:
             return None
-        return {'id': value['id'], 'repository': value['full_name'].lower(),
-                'url': value['html_url'], 'private': value['private'],
-                'description': value.get('description') or '',
-                'write': value.get('permissions', {}).get('push'),
-                'default_branch': value.get('default_branch')}
+        return {
+            'id': value['id'],
+            'repository': value['full_name'].lower(),
+            'url': value['html_url'],
+            'private': value['private'],
+            'description': value.get('description') or '',
+            'write': value.get('permissions', {}).get('push'),
+            'default_branch': value.get('default_branch'),
+        }
 
     def create(self, repository, hub_id):
-        self.call('repo', 'create', repository, '--private', '--description', 'Blog Studio Team Hub ' + hub_id)
+        self.call(
+            'repo',
+            'create',
+            repository,
+            '--private',
+            '--description',
+            'Blog Studio Team Hub ' + hub_id,
+        )
 
     def actor(self):
         return self.call('api', 'user')['login']
@@ -293,23 +355,53 @@ class GitHub:
         return bool(value and value.get('protected'))
 
     def ensure_pr(self, repository, branch, title):
-        values = self.call('pr', 'list', '--repo', repository, '--head', branch,
-                           '--base', 'main', '--state', 'all', '--json', 'url,state')
+        values = self.call(
+            'pr',
+            'list',
+            '--repo',
+            repository,
+            '--head',
+            branch,
+            '--base',
+            'main',
+            '--state',
+            'all',
+            '--json',
+            'url,state',
+        )
         if values:
             opened = [p for p in values if p['state'] == 'OPEN']
             if opened:
                 return opened[0]['url']
-            raise ReviewClosed('The hub contribution PR was closed. Its saved operations are retained; inspect it before retrying.')
+            raise ReviewClosed(
+                'The hub contribution PR was closed. Its saved operations are retained; inspect it before retrying.'
+            )
         # The provider prints a URL, so use api to obtain structured observed metadata.
-        value = self.call('api', 'repos/' + repository + '/pulls', '-f', 'head=' + branch,
-                          '-f', 'base=main', '-f', 'title=' + title,
-                          '-f', 'body=Shared Blog Studio memory operations. Originals and parent revisions are preserved.')
+        value = self.call(
+            'api',
+            'repos/' + repository + '/pulls',
+            '-f',
+            'head=' + branch,
+            '-f',
+            'base=main',
+            '-f',
+            'title=' + title,
+            '-f',
+            'body=Shared Blog Studio memory operations. Originals and parent revisions are preserved.',
+        )
         return value['html_url']
 
 
 def manifest(hub_id, name, repository, mode='auto'):
-    return {'schema': 1, 'hub': uid(hub_id), 'name': name, 'repository': repository,
-            'branch': 'main', 'minimum_runtime': '1.3.0', 'contribution_mode': mode}
+    return {
+        'schema': 1,
+        'hub': uid(hub_id),
+        'name': name,
+        'repository': repository,
+        'branch': 'main',
+        'minimum_runtime': '1.3.0',
+        'contribution_mode': mode,
+    }
 
 
 def record_path(record, file='record.json', manifest=None):
@@ -317,7 +409,9 @@ def record_path(record, file='record.json', manifest=None):
     if manifest is None and '_path' in record:
         prefix = record['_path']
     else:
-        root = '.blog-studio/items' if (manifest or {}).get('storage_schema') == 2 else 'memory/items'
+        root = (
+            '.blog-studio/items' if (manifest or {}).get('storage_schema') == 2 else 'memory/items'
+        )
         prefix = root + '/' + uid(record['item']) + '/revisions/' + uid(record['revision']) + '/'
     return prefix + file
 
@@ -328,7 +422,9 @@ def relocate_records(files, manifest):
         return dict(files)
     output = {}
     for name, content in files.items():
-        target = '.blog-studio/' + name[len('memory/'):] if name.startswith('memory/items/') else name
+        target = (
+            '.blog-studio/' + name[len('memory/') :] if name.startswith('memory/items/') else name
+        )
         if target in output and output[target] != content:
             raise HubError('An operation ID has conflicting payloads after relocation.')
         output[target] = content
@@ -337,19 +433,28 @@ def relocate_records(files, manifest):
 
 def immutable_files(files, graph):
     """Compare published revision identities and bytes independently of their paths."""
-    return {(record['revision'], relative): files[record_path(record, relative)]
-            for record in graph['revisions'].values()
-            for relative in ('record.json', *record['files'])}
+    return {
+        (record['revision'], relative): files[record_path(record, relative)]
+        for record in graph['revisions'].values()
+        for relative in ('record.json', *record['files'])
+    }
 
 
 def generated_path(name, schema=3):
     if name in ('blogs/README.md', 'editorial/README.md', 'collections/README.md'):
         return True
     if schema in (1, 2):
-        return bool(re.fullmatch(r'blogs/[a-z0-9-]+/[a-z0-9-]+/(?:README|outline|context|history)\.md', name))
+        return bool(
+            re.fullmatch(
+                r'blogs/[a-z0-9-]+/[a-z0-9-]+/(?:README|outline|context|history)\.md', name
+            )
+        )
     if name == 'memory/README.md':
         return True
-    match = re.fullmatch(r'(?:blogs/[a-z0-9-]+/[a-z0-9-]+|memory/(?:rules|contexts|voices|notes|decisions)/[a-z0-9-]+)/(.+)', name)
+    match = re.fullmatch(
+        r'(?:blogs/[a-z0-9-]+/[a-z0-9-]+|memory/(?:rules|contexts|voices|notes|decisions)/[a-z0-9-]+)/(.+)',
+        name,
+    )
     if match:
         artifact_name(match[1])
         return True
@@ -359,14 +464,28 @@ def generated_path(name, schema=3):
 def validate_manifest(value, repository=None):
     try:
         required = tuple(int(x) for x in value['minimum_runtime'].split('.'))
-        if (not isinstance(value, dict) or value['schema'] != 1 or len(required) != 3
-                or any(x < 0 for x in required) or required > tuple(map(int, VERSION.split('.')))):
+        if (
+            not isinstance(value, dict)
+            or value['schema'] != 1
+            or len(required) != 3
+            or any(x < 0 for x in required)
+            or required > tuple(map(int, VERSION.split('.')))
+        ):
             raise HubError('This Team Hub needs a compatible newer Blog Studio runtime.')
-        if 'browse_schema' in value and (value['browse_schema'] not in (1, 2, 3) or required < {1: (1, 3, 0), 2: (1, 12, 3), 3: (1, 13, 0)}.get(value['browse_schema'], (999, 0, 0))):
+        if 'browse_schema' in value and (
+            value['browse_schema'] not in (1, 2, 3)
+            or required
+            < {1: (1, 3, 0), 2: (1, 12, 3), 3: (1, 13, 0)}.get(value['browse_schema'], (999, 0, 0))
+        ):
             raise HubError('This Team Hub library needs a compatible newer Blog Studio runtime.')
-        if ('storage_schema' in value and value['storage_schema'] != 2
-                or value.get('storage_schema') == 2 and (value.get('browse_schema') not in (2, 3) or required < (1, 13, 0))
-                or value.get('browse_schema') == 3 and value.get('storage_schema') != 2):
+        if (
+            'storage_schema' in value
+            and value['storage_schema'] != 2
+            or value.get('storage_schema') == 2
+            and (value.get('browse_schema') not in (2, 3) or required < (1, 13, 0))
+            or value.get('browse_schema') == 3
+            and value.get('storage_schema') != 2
+        ):
             raise HubError('This Team Hub layout needs a compatible newer Blog Studio runtime.')
         if 'history_schema' in value and (value['history_schema'] != 2 or required < (1, 13, 1)):
             raise HubError('This Team Hub history needs a compatible newer Blog Studio runtime.')
@@ -375,9 +494,13 @@ def validate_manifest(value, repository=None):
         if 'editorial_views' in value and (value['editorial_views'] != 1 or required < (1, 12, 0)):
             raise HubError('This Team Hub editorial view needs a compatible newer runtime.')
         uid(value['hub'])
-        if (value['branch'] != 'main' or value['contribution_mode'] not in ('auto', 'direct', 'review')
-                or not isinstance(value['name'], str) or not value['name'].strip()
-                or canonical_repository(value['repository']) != value['repository']):
+        if (
+            value['branch'] != 'main'
+            or value['contribution_mode'] not in ('auto', 'direct', 'review')
+            or not isinstance(value['name'], str)
+            or not value['name'].strip()
+            or canonical_repository(value['repository']) != value['repository']
+        ):
             raise HubError('The Team Hub manifest is invalid.')
         if repository and value['repository'] != repository:
             raise HubError('The hub manifest belongs to a different repository.')
@@ -390,8 +513,13 @@ def artifact_name(name):
     if not isinstance(name, str):
         raise HubError('Invalid memory artifact path.')
     path = PurePosixPath(name)
-    if ( path.is_absolute() or '..' in path.parts or '\\' in name
-            or not path.parts or any(not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,150}', p) for p in path.parts)):
+    if (
+        path.is_absolute()
+        or '..' in path.parts
+        or '\\' in name
+        or not path.parts
+        or any(not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,150}', p) for p in path.parts)
+    ):
         raise HubError('Invalid memory artifact path.')
     return path.as_posix()
 
@@ -417,8 +545,16 @@ def size_problem(label, content, media=None):
     limit = MAX_TEXT if media == 'text' else MAX_BINARY
     if len(content) <= limit:
         return None
-    return (label + ' is ' + readable_size(len(content)) + '; shared ' + media
-            + ' files are limited to ' + readable_size(limit) + '.')
+    return (
+        label
+        + ' is '
+        + readable_size(len(content))
+        + '; shared '
+        + media
+        + ' files are limited to '
+        + readable_size(limit)
+        + '.'
+    )
 
 
 def ancestor_files(graph, revisions):
@@ -465,12 +601,20 @@ def validate_files(files, repository=None):
         used.add('README.md')
     for name, data in files.items():
         if name in ('editorial/README.md', 'collections/README.md'):
-            if hub.get('editorial_views') != 1 or len(data) > MAX_TEXT:raise HubError('Unsupported generated editorial file.')
-            try:data.decode('utf-8')
-            except UnicodeError as exc:raise HubError('Editorial views must be UTF-8.') from exc
-            used.add(name);continue
-        if name.startswith('blogs/') or (name.startswith('memory/') and not name.startswith('memory/items/')):
-            if not generated_path(name, hub.get('browse_schema', 1)) or hub.get('browse_schema') not in (1, 2, 3):
+            if hub.get('editorial_views') != 1 or len(data) > MAX_TEXT:
+                raise HubError('Unsupported generated editorial file.')
+            try:
+                data.decode('utf-8')
+            except UnicodeError as exc:
+                raise HubError('Editorial views must be UTF-8.') from exc
+            used.add(name)
+            continue
+        if name.startswith('blogs/') or (
+            name.startswith('memory/') and not name.startswith('memory/items/')
+        ):
+            if not generated_path(name, hub.get('browse_schema', 1)) or hub.get(
+                'browse_schema'
+            ) not in (1, 2, 3):
                 raise HubError('Unsupported generated blog library file.')
             if name.startswith('memory/') and hub.get('storage_schema') != 2:
                 raise HubError('Unsupported reusable memory view.')
@@ -480,18 +624,24 @@ def validate_files(files, repository=None):
             if name.endswith(('.md', '.json')):
                 if len(data) > MAX_TEXT:
                     raise HubError('Generated blog text exceeds its size limit.')
-                try:data.decode('utf-8')
-                except UnicodeError as exc:raise HubError('Blog library pages must be UTF-8.') from exc
+                try:
+                    data.decode('utf-8')
+                except UnicodeError as exc:
+                    raise HubError('Blog library pages must be UTF-8.') from exc
             used.add(name)
             continue
         if name in ('hub.json', 'README.md'):
             if len(data) > MAX_TEXT:
                 raise HubError('Hub text exceeds the size limit.')
-            try:data.decode('utf-8')
-            except UnicodeError as exc:raise HubError('Hub text must be UTF-8.') from exc
+            try:
+                data.decode('utf-8')
+            except UnicodeError as exc:
+                raise HubError('Hub text must be UTF-8.') from exc
             continue
         storage = r'\.blog-studio/items' if hub.get('storage_schema') == 2 else r'memory/items'
-        match = re.fullmatch(storage + r'/([0-9a-f]{32})/revisions/([0-9a-f]{32})/record.json', name)
+        match = re.fullmatch(
+            storage + r'/([0-9a-f]{32})/revisions/([0-9a-f]{32})/record.json', name
+        )
         if not match:
             continue
         if len(data) > MAX_TEXT:
@@ -499,25 +649,40 @@ def validate_files(files, repository=None):
         try:
             record = json.loads(data)
             item, revision = match.groups()
-            if (record['schema'] != 1 or record['item'] != item or record['revision'] != revision
-                    or record['operation'] != revision or record['kind'] not in KINDS
-                    or record['status'] not in ('active', 'provisional', 'confirmed', 'tombstone')
-                    or not isinstance(record['parents'], list) or len(set(record['parents'])) != len(record['parents'])
-                    or not isinstance(record['data'], dict) or not isinstance(record['dependencies'], list)
-                    or not isinstance(record['title'], str) or len(record['title']) > 500
-                    or not isinstance(record['summary'], str) or len(record['summary']) > 1200
-                    or not isinstance(record['scope'], dict)
-                    or record['scope'].get('level') not in ('team', 'project', 'author', 'article')
-                    or not isinstance(record['scope'].get('key'), str)
-                    or not isinstance(record['tags'], list) or len(record['tags']) > 30
-                    or any(not isinstance(t, str) or len(t) > 100 for t in record['tags'])
-                    or not isinstance(record['actor'], str) or not isinstance(record['created_at'], str)):
+            if (
+                record['schema'] != 1
+                or record['item'] != item
+                or record['revision'] != revision
+                or record['operation'] != revision
+                or record['kind'] not in KINDS
+                or record['status'] not in ('active', 'provisional', 'confirmed', 'tombstone')
+                or not isinstance(record['parents'], list)
+                or len(set(record['parents'])) != len(record['parents'])
+                or not isinstance(record['data'], dict)
+                or not isinstance(record['dependencies'], list)
+                or not isinstance(record['title'], str)
+                or len(record['title']) > 500
+                or not isinstance(record['summary'], str)
+                or len(record['summary']) > 1200
+                or not isinstance(record['scope'], dict)
+                or record['scope'].get('level') not in ('team', 'project', 'author', 'article')
+                or not isinstance(record['scope'].get('key'), str)
+                or not isinstance(record['tags'], list)
+                or len(record['tags']) > 30
+                or any(not isinstance(t, str) or len(t) > 100 for t in record['tags'])
+                or not isinstance(record['actor'], str)
+                or not isinstance(record['created_at'], str)
+            ):
                 raise HubError('Invalid memory revision metadata.')
             if record['scope']['level'] == 'team' and record['scope']['key'] != '':
                 raise HubError('Team scope has no key.')
             if record['scope']['level'] != 'team' and not record['scope']['key']:
                 raise HubError('Scoped memory needs a key.')
-            if record['kind'] in ('rule', 'context') and 'key' in record['data'] and not isinstance(record['data']['key'], str):
+            if (
+                record['kind'] in ('rule', 'context')
+                and 'key' in record['data']
+                and not isinstance(record['data']['key'], str)
+            ):
                 raise HubError('A rule key must be text.')
             for parent in record['parents']:
                 uid(parent)
@@ -559,9 +724,14 @@ def validate_files(files, repository=None):
         for dependency in record['dependencies']:
             if not isinstance(dependency, dict):
                 raise HubError('Pinned memory dependencies must be records.')
-            uid(dependency.get('revision'));uid(dependency.get('item'))
+            uid(dependency.get('revision'))
+            uid(dependency.get('item'))
             target = revisions.get(dependency['revision'])
-            if not target or target['item'] != dependency.get('item') or target['kind'] != dependency.get('kind'):
+            if (
+                not target
+                or target['item'] != dependency.get('item')
+                or target['kind'] != dependency.get('kind')
+            ):
                 raise HubError('A pinned memory dependency is missing or mismatched.')
     # Iterative graph walk avoids recursion failures on long article histories.
     done = set()
@@ -573,11 +743,20 @@ def validate_files(files, repository=None):
             if current in done:
                 continue
             if leaving:
-                visiting.remove(current);done.add(current);continue
+                visiting.remove(current)
+                done.add(current)
+                continue
             if current in visiting:
                 raise HubError('Memory revision graph contains a cycle.')
-            visiting.add(current);stack.append((current, True))
-            stack.extend((parent, False) for parent in [*revisions[current]['parents'], *(d['revision'] for d in revisions[current]['dependencies'])])
+            visiting.add(current)
+            stack.append((current, True))
+            stack.extend(
+                (parent, False)
+                for parent in [
+                    *revisions[current]['parents'],
+                    *(d['revision'] for d in revisions[current]['dependencies']),
+                ]
+            )
     heads = {}
     for revision, record in revisions.items():
         if revision not in children:
@@ -601,10 +780,19 @@ def tree_files(repository, commit):
         except UnicodeError as exc:
             raise HubError('Hub paths must be UTF-8.') from exc
         path = PurePosixPath(name)
-        if (mode != b'100644' or kind != b'blob' or path.is_absolute() or '..' in path.parts
-                or '\\' in name):
+        if (
+            mode != b'100644'
+            or kind != b'blob'
+            or path.is_absolute()
+            or '..' in path.parts
+            or '\\' in name
+        ):
             raise HubError('Hub data must use regular non-executable files and safe paths.')
-        limit = MAX_BINARY if '/artifacts/' in name or generated_path(name) and not name.endswith(('.md', '.json')) else MAX_TEXT
+        limit = (
+            MAX_BINARY
+            if '/artifacts/' in name or generated_path(name) and not name.endswith(('.md', '.json'))
+            else MAX_TEXT
+        )
         if int(size) > limit:
             raise HubError('Hub file exceeds its size limit.')
         total += int(size)
@@ -612,14 +800,16 @@ def tree_files(repository, commit):
     if total > MAX_TOTAL or len(entries) > MAX_FILES:
         raise HubError('Hub snapshot exceeds its size or file limit.')
     # Batch reads avoid a subprocess for every stored source or draft revision.
-    stream = git(repository, 'cat-file', '--batch', data=b''.join(obj + b'\n' for _, obj in entries))
+    stream = git(
+        repository, 'cat-file', '--batch', data=b''.join(obj + b'\n' for _, obj in entries)
+    )
     offset = 0
     files = {}
     for name, _ in entries:
         header_end = stream.index(b'\n', offset)
         header = stream[offset:header_end].split()
         size = int(header[2])
-        files[name] = stream[header_end + 1:header_end + 1 + size]
+        files[name] = stream[header_end + 1 : header_end + 1 + size]
         offset = header_end + size + 2
     return files
 
@@ -628,7 +818,9 @@ def sweep_stale_indexes(repository):
     """Remove temporary indexes left behind by a commit that was killed part-way."""
     cutoff = time.time() - STALE_INDEX_SECONDS
     try:
-        candidates = [path for path in Path(repository).iterdir() if path.name.startswith(INDEX_PREFIX)]
+        candidates = [
+            path for path in Path(repository).iterdir() if path.name.startswith(INDEX_PREFIX)
+        ]
     except OSError:
         return
     for path in candidates:
@@ -645,35 +837,56 @@ def commit_files(repository, base, additions, message, actor, extra_parents=()):
     # so an interrupted commit cannot look like an unsaved local edit.
     sweep_stale_indexes(repository)
     index = Path(repository) / (INDEX_PREFIX + uuid.uuid4().hex)
-    env = {'GIT_INDEX_FILE': str(index), 'GIT_AUTHOR_NAME': actor,
-           'GIT_AUTHOR_EMAIL': 'blog-studio@localhost', 'GIT_COMMITTER_NAME': actor,
-           'GIT_COMMITTER_EMAIL': 'blog-studio@localhost'}
+    env = {
+        'GIT_INDEX_FILE': str(index),
+        'GIT_AUTHOR_NAME': actor,
+        'GIT_AUTHOR_EMAIL': 'blog-studio@localhost',
+        'GIT_COMMITTER_NAME': actor,
+        'GIT_COMMITTER_EMAIL': 'blog-studio@localhost',
+    }
     original_files = None
     try:
         git(repository, 'read-tree', base if base else '--empty', extra_env=env)
         for name, data in sorted(additions.items()):
             if data is None:
                 if name.startswith('memory/items/'):
-                    target = '.blog-studio/' + name[len('memory/'):]
-                    if original_files is None:original_files = tree_files(repository, base) if base else {}
+                    target = '.blog-studio/' + name[len('memory/') :]
+                    if original_files is None:
+                        original_files = tree_files(repository, base) if base else {}
                     original = original_files.get(name)
                     if original is not None and additions.get(target) != original:
                         raise HubError('Published revisions may only be relocated byte for byte.')
                     if original is None and target not in additions:
                         raise HubError('A relocated revision needs its retained destination.')
                 elif not generated_path(name):
-                    raise HubError('Only generated pages or byte-preserving relocations may be removed.')
-                git(repository, 'update-index', '--index-info',
-                    data=('0 ' + '0' * len(base or '0' * 40) + '\t' + name + '\n').encode(), extra_env=env)
+                    raise HubError(
+                        'Only generated pages or byte-preserving relocations may be removed.'
+                    )
+                git(
+                    repository,
+                    'update-index',
+                    '--index-info',
+                    data=('0 ' + '0' * len(base or '0' * 40) + '\t' + name + '\n').encode(),
+                    extra_env=env,
+                )
                 continue
             blob = git(repository, 'hash-object', '-w', '--stdin', data=data).decode().strip()
-            git(repository, 'update-index', '--add', '--cacheinfo', '100644,' + blob + ',' + name, extra_env=env)
+            git(
+                repository,
+                'update-index',
+                '--add',
+                '--cacheinfo',
+                '100644,' + blob + ',' + name,
+                extra_env=env,
+            )
         tree = git(repository, 'write-tree', extra_env=env).decode().strip()
         args = ['commit-tree', tree]
         for parent in dict.fromkeys([base, *extra_parents]):
             if parent:
                 args += ['-p', parent]
-        return git(repository, *args, data=(message + '\n').encode(), extra_env=env).decode().strip()
+        return (
+            git(repository, *args, data=(message + '\n').encode(), extra_env=env).decode().strip()
+        )
     finally:
         index.unlink(missing_ok=True)
         index.with_name(index.name + '.lock').unlink(missing_ok=True)

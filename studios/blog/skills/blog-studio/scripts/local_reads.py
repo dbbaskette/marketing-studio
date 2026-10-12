@@ -1,4 +1,5 @@
 """Bounded local reads reused only within an explicit, synchronous operation."""
+
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -10,8 +11,10 @@ MAX_FILES = 512
 @contextmanager
 def operation():
     token = _active.set({})
-    try: yield
-    finally: _active.reset(token)
+    try:
+        yield
+    finally:
+        _active.reset(token)
 
 
 def signature(path):
@@ -21,16 +24,20 @@ def signature(path):
 
 def read(path):
     cache = _active.get()
-    if cache is None: return path.read_bytes()
-    key = str(path.resolve());before=signature(path)
-    previous=cache.get(key)
-    if previous and previous[0]==before: return previous[1]
-    data=path.read_bytes()
+    if cache is None:
+        return path.read_bytes()
+    key = str(path.resolve())
+    before = signature(path)
+    previous = cache.get(key)
+    if previous and previous[0] == before:
+        return previous[1]
+    data = path.read_bytes()
     # Concurrent replacements are not eligible for reuse. Next access reads again.
-    if signature(path)!=before:
-        cache.pop(key,None)
+    if signature(path) != before:
+        cache.pop(key, None)
         return data
-    if len(cache)>=MAX_FILES or sum(len(v[1]) for v in cache.values())+len(data)>MAX_BYTES:
+    if len(cache) >= MAX_FILES or sum(len(v[1]) for v in cache.values()) + len(data) > MAX_BYTES:
         cache.clear()
-    if len(data)<=MAX_BYTES:cache[key]=(before,data)
+    if len(data) <= MAX_BYTES:
+        cache[key] = (before, data)
     return data

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Pure, deterministic GitHub browsing views over immutable Team Hub records."""
+
 from datetime import datetime, timezone
 import hashlib
 import html
@@ -8,8 +9,16 @@ import posixpath
 import re
 import unicodedata
 
-from hub_store import (HubError, MAX_TEXT, MAX_BINARY, encoded, record_path,
-                       validate_files, relocate_records, generated_path)
+from hub_store import (
+    HubError,
+    MAX_TEXT,
+    MAX_BINARY,
+    encoded,
+    record_path,
+    validate_files,
+    relocate_records,
+    generated_path,
+)
 
 START = '<!-- blog-studio:library:start -->'
 END = '<!-- blog-studio:library:end -->'
@@ -31,9 +40,10 @@ def slug(value, fallback):
     return re.sub(r'[^a-z0-9]+', '-', ascii_text.lower()).strip('-')[:70].rstrip('-') or fallback
 
 
-
 def link(label, target, page):
-    return '[' + safe(label) + '](' + posixpath.relpath(target, posixpath.dirname(page) or '.') + ')'
+    return (
+        '[' + safe(label) + '](' + posixpath.relpath(target, posixpath.dirname(page) or '.') + ')'
+    )
 
 
 def owner(record, graph):
@@ -61,12 +71,20 @@ def revision_change(record, graph):
         studio_data = value.get('data', {}).get('studio', {})
         google_data = studio_data.get('google', {}) if isinstance(studio_data, dict) else {}
         transfer_data = google_data.get('transfers', {}) if isinstance(google_data, dict) else {}
-        return any(isinstance(transfer, dict) and transfer.get('direction') == 'from-google'
-                   for transfer in transfer_data.values()) if isinstance(transfer_data, dict) else False
+        return (
+            any(
+                isinstance(transfer, dict) and transfer.get('direction') == 'from-google'
+                for transfer in transfer_data.values()
+            )
+            if isinstance(transfer_data, dict)
+            else False
+        )
 
     if not parents:
-        if any(isinstance(transfer, dict) and transfer.get('direction') == 'from-google'
-               for transfer in transfers.values()):
+        if any(
+            isinstance(transfer, dict) and transfer.get('direction') == 'from-google'
+            for transfer in transfers.values()
+        ):
             return 'Imported from Google Docs'
         return 'Article created'
     if len(parents) > 1:
@@ -82,25 +100,38 @@ def revision_change(record, graph):
     before_guidance = before.get('guidance') or before_studio.get('guidance')
     after_guidance = data.get('guidance') or studio.get('guidance')
     if after_guidance != before_guidance and after_guidance:
-        changes.append('Writing guidance pinned' if not before_guidance else 'Writing guidance updated')
+        changes.append(
+            'Writing guidance pinned' if not before_guidance else 'Writing guidance updated'
+        )
 
     if record.get('title') != parent.get('title'):
-        changes.append('Title changed: ' + str(parent.get('title', '')) + ' → ' + str(record.get('title', '')))
+        changes.append(
+            'Title changed: ' + str(parent.get('title', '')) + ' → ' + str(record.get('title', ''))
+        )
     before_stage = before_studio.get('stage')
     after_stage = studio.get('stage')
     if after_stage and after_stage != before_stage:
         changes.append('Stage set to ' + str(after_stage))
 
-    before_google = before_studio.get('google', {}) if isinstance(before_studio.get('google', {}), dict) else {}
+    before_google = (
+        before_studio.get('google', {}) if isinstance(before_studio.get('google', {}), dict) else {}
+    )
     if google.get('baselines') != before_google.get('baselines') and google.get('baselines'):
         changes.append('Google Docs checkpoint saved')
-    elif transfers != before_google.get('transfers', {}) and transfers and 'Imported from Google Docs' not in changes:
+    elif (
+        transfers != before_google.get('transfers', {})
+        and transfers
+        and 'Imported from Google Docs' not in changes
+    ):
         changes.append('Google Docs transfer saved')
 
     previous_files = parent.get('files', {})
     current_files = record.get('files', {})
-    for path, label in (('artifacts/DRAFT.md', 'Draft'), ('artifacts/OUTLINE.md', 'Outline'),
-                        ('artifacts/BRIEF.md', 'Brief')):
+    for path, label in (
+        ('artifacts/DRAFT.md', 'Draft'),
+        ('artifacts/OUTLINE.md', 'Outline'),
+        ('artifacts/BRIEF.md', 'Brief'),
+    ):
         old = previous_files.get(path, {}).get('sha256')
         new = current_files.get(path, {}).get('sha256')
         if old != new and new:
@@ -120,33 +151,50 @@ def revision_change(record, graph):
 def managed_block(readme):
     if START not in readme and END not in readme:
         return None
-    if readme.count(START) != 1 or readme.count(END) != 1 or readme.index(START) > readme.index(END):
-        raise HubError('The generated homepage markers were edited. Preserve those edits before rebuilding the blog library.')
-    return readme[readme.index(START):readme.index(END) + len(END)]
+    if (
+        readme.count(START) != 1
+        or readme.count(END) != 1
+        or readme.index(START) > readme.index(END)
+    ):
+        raise HubError(
+            'The generated homepage markers were edited. Preserve those edits before rebuilding the blog library.'
+        )
+    return readme[readme.index(START) : readme.index(END) + len(END)]
 
 
 def google_doc_links(data):
     """Expose only validated current Google identities, never arbitrary metadata URLs."""
-    if not isinstance(data, dict):return ''
+    if not isinstance(data, dict):
+        return ''
     google = data.get('google', {})
     baselines = google.get('baselines', {}) if isinstance(google, dict) else {}
-    if not isinstance(baselines, dict):return ''
+    if not isinstance(baselines, dict):
+        return ''
     result = ''
     for kind in ('draft', 'outline'):
         baseline = baselines.get(kind, {})
         document = baseline.get('document', {}) if isinstance(baseline, dict) else {}
-        if not isinstance(document, dict):continue
+        if not isinstance(document, dict):
+            continue
         doc_id = document.get('document_id')
-        if not isinstance(doc_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,200}', doc_id):continue
+        if not isinstance(doc_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,200}', doc_id):
+            continue
         url = 'https://docs.google.com/document/d/' + doc_id + '/edit'
-        if document.get('url') != url:continue
+        if document.get('url') != url:
+            continue
         label = 'Open working Google Doc' + (' (outline)' if kind == 'outline' else '')
         result += '[' + label + '](' + url + ')\n\n'
         try:
             observed = datetime.fromisoformat(document['observed_at'])
             if observed.tzinfo is not None:
                 stamp = observed.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
-                result += '**Last captured from Google' + (' (outline)' if kind == 'outline' else '') + ':** ' + stamp + '\n\n'
+                result += (
+                    '**Last captured from Google'
+                    + (' (outline)' if kind == 'outline' else '')
+                    + ':** '
+                    + stamp
+                    + '\n\n'
+                )
         except (KeyError, ValueError, TypeError):
             pass
     return result
@@ -155,9 +203,19 @@ def google_doc_links(data):
 def _render_legacy(files, graph, show_google_links=None, show_editorial=None, browse_schema=None):
     if show_google_links is None:
         show_google_links = graph['manifest'].get('google_doc_links') == 1
-    if show_editorial is None:show_editorial = graph['manifest'].get('editorial_views') == 1
+    if show_editorial is None:
+        show_editorial = graph['manifest'].get('editorial_views') == 1
     if browse_schema is None:
-        browse_schema = 2 if graph['manifest'].get('history_schema') == 2 or graph['manifest'].get('browse_schema') == 3 or (graph['manifest'].get('browse_schema') == 2 and graph['manifest'].get('storage_schema') != 2) else 1
+        browse_schema = (
+            2
+            if graph['manifest'].get('history_schema') == 2
+            or graph['manifest'].get('browse_schema') == 3
+            or (
+                graph['manifest'].get('browse_schema') == 2
+                and graph['manifest'].get('storage_schema') != 2
+            )
+            else 1
+        )
     rows = []
     for item, heads in sorted(graph['heads'].items()):
         records = [graph['revisions'][revision] for revision in heads]
@@ -165,8 +223,15 @@ def _render_legacy(files, graph, show_google_links=None, show_editorial=None, br
             continue
         records.sort(key=lambda r: (r['created_at'], r['revision']))
         record = records[-1]
-        rows.append({'item': item, 'record': record, 'heads': records,
-                     'author': owner(record, graph), 'conflict': len(records) > 1})
+        rows.append(
+            {
+                'item': item,
+                'record': record,
+                'heads': records,
+                'author': owner(record, graph),
+                'conflict': len(records) > 1,
+            }
+        )
     # Slugs are normalized for portability. Disambiguate authors with identical
     # ASCII slugs, then article titles using enough stable-ID characters to be unique.
     authors = {}
@@ -190,25 +255,56 @@ def _render_legacy(files, graph, show_google_links=None, show_editorial=None, br
             counter = 2
             original = candidate
             while candidate in assigned or (len(grouped) > 1 and candidate in reserved):
-                candidate = original + '-' + str(counter);counter += 1
-            row['folder'] = candidate;assigned.add(candidate)
-    rows.sort(key=lambda row: (row['author'].casefold(), row['record']['title'].casefold(), row['item']))
+                candidate = original + '-' + str(counter)
+                counter += 1
+            row['folder'] = candidate
+            assigned.add(candidate)
+    rows.sort(
+        key=lambda row: (row['author'].casefold(), row['record']['title'].casefold(), row['item'])
+    )
     output = {}
     for row in rows:
-        record = row['record'];folder = row['folder'];page = folder + '/README.md'
+        record = row['record']
+        folder = row['folder']
+        page = folder + '/README.md'
         data = record['data'].get('studio', {})
-        if not isinstance(data, dict):data = {}
-        stage = 'conflict — choose a revision in Blog Studio' if row['conflict'] else str(data.get('stage', record['status']))
+        if not isinstance(data, dict):
+            data = {}
+        stage = (
+            'conflict — choose a revision in Blog Studio'
+            if row['conflict']
+            else str(data.get('stage', record['status']))
+        )
         row['stage'] = stage
         row['updated'] = max(r['created_at'] for r in row['heads'])
         header = '# ' + safe(record['title']) + '\n\n' + NOTICE + '\n'
-        header += '**Author:** ' + safe(row['author']) + '  \n**Stage:** ' + safe(stage) + '  \n**Updated:** ' + safe(row['updated']) + '\n\n'
-        header += ' | '.join((link('All blogs', 'blogs/README.md', page), link('Context', folder + '/context.md', page),
-                              link('History', folder + '/history.md', page))) + '\n\n'
+        header += (
+            '**Author:** '
+            + safe(row['author'])
+            + '  \n**Stage:** '
+            + safe(stage)
+            + '  \n**Updated:** '
+            + safe(row['updated'])
+            + '\n\n'
+        )
+        header += (
+            ' | '.join(
+                (
+                    link('All blogs', 'blogs/README.md', page),
+                    link('Context', folder + '/context.md', page),
+                    link('History', folder + '/history.md', page),
+                )
+            )
+            + '\n\n'
+        )
         if row['conflict']:
             header += '## Competing revisions\n\nNo current draft is selected until the conflict is resolved.\n\n'
             for head in row['heads']:
-                header += '- ' + link(head['title'] + ' — ' + head['status'], record_path(head), page) + '\n'
+                header += (
+                    '- '
+                    + link(head['title'] + ' — ' + head['status'], record_path(head), page)
+                    + '\n'
+                )
         else:
             header += link('Canonical revision', record_path(record), page) + '\n\n'
             if show_google_links:
@@ -217,79 +313,213 @@ def _render_legacy(files, graph, show_google_links=None, show_editorial=None, br
             if isinstance(google, dict):
                 baselines, transfers = google.get('baselines', {}), google.get('transfers', {})
                 baseline = baselines.get('draft', {}) if isinstance(baselines, dict) else {}
-                transfer = transfers.get(baseline.get('transfer'), {}) if isinstance(transfers, dict) and isinstance(baseline, dict) else {}
-                snapshot = transfer.get('formatted_snapshot', {}) if isinstance(transfer, dict) else {}
+                transfer = (
+                    transfers.get(baseline.get('transfer'), {})
+                    if isinstance(transfers, dict) and isinstance(baseline, dict)
+                    else {}
+                )
+                snapshot = (
+                    transfer.get('formatted_snapshot', {}) if isinstance(transfer, dict) else {}
+                )
                 if isinstance(snapshot, dict):
-                    for name, label in (('document.docx', 'Last Google snapshot (DOCX)'), ('document.md', 'Last Google text (Markdown)')):
+                    for name, label in (
+                        ('document.docx', 'Last Google snapshot (DOCX)'),
+                        ('document.md', 'Last Google text (Markdown)'),
+                    ):
                         relative = snapshot.get(name, '')
                         artifact = 'artifacts/' + relative if isinstance(relative, str) else ''
                         if artifact in record['files']:
                             header += link(label, record_path(record, artifact), page) + '\n\n'
-            draft = 'artifacts/DRAFT.md' if record['files'].get('artifacts/DRAFT.md', {}).get('media') == 'text' else 'BODY.md'
+            draft = (
+                'artifacts/DRAFT.md'
+                if record['files'].get('artifacts/DRAFT.md', {}).get('media') == 'text'
+                else 'BODY.md'
+            )
             body = files[record_path(record, draft)].decode('utf-8')
             if not body.strip():
-                for candidate, label in (('artifacts/OUTLINE.md', 'Outline'), ('artifacts/BRIEF.md', 'Brief')):
+                for candidate, label in (
+                    ('artifacts/OUTLINE.md', 'Outline'),
+                    ('artifacts/BRIEF.md', 'Brief'),
+                ):
                     if record['files'].get(candidate, {}).get('media') == 'text':
-                        body = '## ' + label + '\n\n' + files[record_path(record, candidate)].decode('utf-8');break
-            header += '---\n\n' + (body if body.strip() else 'No draft or outline has been saved yet.\n')
+                        body = (
+                            '## '
+                            + label
+                            + '\n\n'
+                            + files[record_path(record, candidate)].decode('utf-8')
+                        )
+                        break
+            header += '---\n\n' + (
+                body if body.strip() else 'No draft or outline has been saved yet.\n'
+            )
             if record['files'].get('artifacts/OUTLINE.md', {}).get('media') == 'text':
                 outline_page = folder + '/outline.md'
-                output[outline_page] = (NOTICE + '\n' + link('Blog', page, outline_page) + '\n\n' + files[record_path(record, 'artifacts/OUTLINE.md')].decode('utf-8')).encode()
-                header = header.replace('---\n\n', link('Outline', outline_page, page) + '\n\n---\n\n', 1)
+                output[outline_page] = (
+                    NOTICE
+                    + '\n'
+                    + link('Blog', page, outline_page)
+                    + '\n\n'
+                    + files[record_path(record, 'artifacts/OUTLINE.md')].decode('utf-8')
+                ).encode()
+                header = header.replace(
+                    '---\n\n', link('Outline', outline_page, page) + '\n\n---\n\n', 1
+                )
         output[page] = header.encode()
         context_page = folder + '/context.md'
-        context = '# Selected context\n\n' + NOTICE + '\n' + link('Blog', page, context_page) + '\n\n'
+        context = (
+            '# Selected context\n\n' + NOTICE + '\n' + link('Blog', page, context_page) + '\n\n'
+        )
         if row['conflict']:
             context += 'Context differs between competing revisions. Inspect each canonical revision in the history.\n'
         else:
             context += '- Author: ' + safe(row['author']) + '\n- Stage: ' + safe(stage) + '\n'
             context += '- Research: ' + safe(data.get('research_policy', 'unspecified')) + '\n'
-            context += '- Stop: ' + safe(data.get('stop_point', 'unspecified')) + '\n\n## Selected sources, voice, and team context\n\n'
+            context += (
+                '- Stop: '
+                + safe(data.get('stop_point', 'unspecified'))
+                + '\n\n## Selected sources, voice, and team context\n\n'
+            )
             for dependency in record['dependencies']:
                 selected = graph['revisions'][dependency['revision']]
                 role = dependency.get('role', dependency['kind'])
-                context += '- ' + safe(role) + ': ' + link(selected['title'], record_path(selected, 'BODY.md'), context_page) + '\n'
-            if not record['dependencies']:context += 'None selected.\n'
+                context += (
+                    '- '
+                    + safe(role)
+                    + ': '
+                    + link(selected['title'], record_path(selected, 'BODY.md'), context_page)
+                    + '\n'
+                )
+            if not record['dependencies']:
+                context += 'None selected.\n'
             context += '\n## Active article preferences\n\n'
             memory = data.get('memory', {})
-            active = [(key, entry) for key, entry in memory.items() if isinstance(entry, dict) and entry.get('status') == 'active'] if isinstance(memory, dict) else []
-            context += ''.join('- ' + safe(key) + ': ' + safe(entry.get('text', '')) + '\n' for key, entry in sorted(active)) or 'None.\n'
+            active = (
+                [
+                    (key, entry)
+                    for key, entry in memory.items()
+                    if isinstance(entry, dict) and entry.get('status') == 'active'
+                ]
+                if isinstance(memory, dict)
+                else []
+            )
+            context += (
+                ''.join(
+                    '- ' + safe(key) + ': ' + safe(entry.get('text', '')) + '\n'
+                    for key, entry in sorted(active)
+                )
+                or 'None.\n'
+            )
         output[context_page] = context.encode()
         history_page = folder + '/history.md'
-        history = '# Revision history\n\n' + NOTICE + '\n' + link('Blog', page, history_page) + '\n\n'
+        history = (
+            '# Revision history\n\n' + NOTICE + '\n' + link('Blog', page, history_page) + '\n\n'
+        )
         if browse_schema == 1:
-            history += '| Saved | Title | Status | Content | Details |\n| --- | --- | --- | --- | --- |\n'
+            history += (
+                '| Saved | Title | Status | Content | Details |\n| --- | --- | --- | --- | --- |\n'
+            )
         else:
             history += '> Current marks the newest saved revision. Article state is the workflow status recorded in each snapshot.\n\n'
             history += '| Saved | Revision | What changed | Article state | Content | Record |\n| --- | --- | --- | --- | --- | --- |\n'
-        revisions = sorted((r for r in graph['revisions'].values() if r['item'] == row['item']), key=lambda r: (r['created_at'], r['revision']), reverse=True)
+        revisions = sorted(
+            (r for r in graph['revisions'].values() if r['item'] == row['item']),
+            key=lambda r: (r['created_at'], r['revision']),
+            reverse=True,
+        )
         current_heads = {head['revision'] for head in row['heads']}
         for saved in revisions:
-            content = next((name for name in ('artifacts/DRAFT.md', 'artifacts/OUTLINE.md', 'artifacts/BRIEF.md') if saved['files'].get(name, {}).get('media') == 'text'), 'BODY.md')
+            content = next(
+                (
+                    name
+                    for name in ('artifacts/DRAFT.md', 'artifacts/OUTLINE.md', 'artifacts/BRIEF.md')
+                    if saved['files'].get(name, {}).get('media') == 'text'
+                ),
+                'BODY.md',
+            )
             if browse_schema == 1:
-                history += '| ' + safe(saved['created_at']) + ' | ' + safe(saved['title']) + ' | ' + safe(saved['status']) + ' | ' + link('Read', record_path(saved, content), history_page) + ' | ' + link('Revision', record_path(saved), history_page) + ' |\n'
+                history += (
+                    '| '
+                    + safe(saved['created_at'])
+                    + ' | '
+                    + safe(saved['title'])
+                    + ' | '
+                    + safe(saved['status'])
+                    + ' | '
+                    + link('Read', record_path(saved, content), history_page)
+                    + ' | '
+                    + link('Revision', record_path(saved), history_page)
+                    + ' |\n'
+                )
             else:
-                marker = 'Current' if saved['revision'] in current_heads and len(current_heads) == 1 else 'Competing head' if saved['revision'] in current_heads else 'Earlier'
-                history += '| ' + safe(saved['created_at']) + ' | ' + marker + ' · ' + saved['revision'][:8] + ' | ' + safe(revision_change(saved, graph)) + ' | ' + safe(saved['status']) + ' | ' + link('Read', record_path(saved, content), history_page) + ' | ' + link('Record', record_path(saved), history_page) + ' |\n'
+                marker = (
+                    'Current'
+                    if saved['revision'] in current_heads and len(current_heads) == 1
+                    else 'Competing head'
+                    if saved['revision'] in current_heads
+                    else 'Earlier'
+                )
+                history += (
+                    '| '
+                    + safe(saved['created_at'])
+                    + ' | '
+                    + marker
+                    + ' · '
+                    + saved['revision'][:8]
+                    + ' | '
+                    + safe(revision_change(saved, graph))
+                    + ' | '
+                    + safe(saved['status'])
+                    + ' | '
+                    + link('Read', record_path(saved, content), history_page)
+                    + ' | '
+                    + link('Record', record_path(saved), history_page)
+                    + ' |\n'
+                )
         output[history_page] = history.encode()
+
     def index(page):
         result = '## Blog library\n\n' + NOTICE + '\n'
-        if show_editorial:result += link('Editorial board', 'editorial/README.md', page) + ' · ' + link('Reference collections', 'collections/README.md', page) + '\n\n'
-        if not rows:return result + 'No blogs have been shared yet. Save or import a selected article through Blog Studio.\n'
+        if show_editorial:
+            result += (
+                link('Editorial board', 'editorial/README.md', page)
+                + ' · '
+                + link('Reference collections', 'collections/README.md', page)
+                + '\n\n'
+            )
+        if not rows:
+            return (
+                result
+                + 'No blogs have been shared yet. Save or import a selected article through Blog Studio.\n'
+            )
         result += '| Blog | Author | Stage | Updated |\n| --- | --- | --- | --- |\n'
         for row in rows:
-            result += '| ' + link(row['record']['title'], row['folder'] + '/README.md', page) + ' | ' + safe(row['author']) + ' | ' + safe(row['stage']) + ' | ' + safe(row['updated']) + ' |\n'
+            result += (
+                '| '
+                + link(row['record']['title'], row['folder'] + '/README.md', page)
+                + ' | '
+                + safe(row['author'])
+                + ' | '
+                + safe(row['stage'])
+                + ' | '
+                + safe(row['updated'])
+                + ' |\n'
+            )
         return result
+
     output['blogs/README.md'] = ('# Blogs\n\n' + index('blogs/README.md')).encode()
     readme = files.get('README.md', b'').decode('utf-8')
     block = START + '\n' + index('README.md') + END
     previous = managed_block(readme)
-    output['README.md'] = (readme.replace(previous, block) if previous else readme.rstrip() + '\n\n' + block + '\n').encode()
-    if show_editorial:output.update(editorial_pages(graph))
+    output['README.md'] = (
+        readme.replace(previous, block) if previous else readme.rstrip() + '\n\n' + block + '\n'
+    ).encode()
+    if show_editorial:
+        output.update(editorial_pages(graph))
     if any(len(content) > MAX_TEXT for content in output.values()):
-        raise HubError('A generated library page exceeds the hub text limit; saved work remains queued.')
+        raise HubError(
+            'A generated library page exceeds the hub text limit; saved work remains queued.'
+        )
     return output
-
 
 
 def studio_data(record):
@@ -298,11 +528,20 @@ def studio_data(record):
 
 
 def artifact_view(relative):
-    names = {'DRAFT.md': 'draft.md', 'ORIGINAL.md': 'original.md', 'OUTLINE.md': 'outline.md',
-             'BRIEF.md': 'brief.md', 'INTERVIEW.md': 'interview.md', 'DECISIONS.md': 'decisions.md'}
-    if relative in names:return names[relative]
-    if relative.startswith('derived/'):return 'companions/' + relative[len('derived/'):]
-    if relative.startswith('history/'):return 'history/files/' + relative[len('history/'):]
+    names = {
+        'DRAFT.md': 'draft.md',
+        'ORIGINAL.md': 'original.md',
+        'OUTLINE.md': 'outline.md',
+        'BRIEF.md': 'brief.md',
+        'INTERVIEW.md': 'interview.md',
+        'DECISIONS.md': 'decisions.md',
+    }
+    if relative in names:
+        return names[relative]
+    if relative.startswith('derived/'):
+        return 'companions/' + relative[len('derived/') :]
+    if relative.startswith('history/'):
+        return 'history/files/' + relative[len('history/') :]
     return 'files/' + relative
 
 
@@ -310,19 +549,26 @@ def review_page(check, review, blog, page):
     result = '# ' + safe(check.replace('-', ' ').capitalize()) + ' review\n\n' + NOTICE + '\n'
     result += link('Blog', blog, page) + '\n\n'
     result += '**Status:** ' + safe(review.get('status', 'unknown')) + '\n\n'
-    if review.get('checked_at'):result += '**Checked:** ' + safe(review['checked_at']) + '\n\n'
+    if review.get('checked_at'):
+        result += '**Checked:** ' + safe(review['checked_at']) + '\n\n'
     data = review.get('result', {})
-    if not isinstance(data, dict):data = {'detail': data}
+    if not isinstance(data, dict):
+        data = {'detail': data}
     for key in ('coverage', 'detail', 'limits'):
-        if data.get(key):result += '**' + key.capitalize() + ':** ' + safe(data[key]) + '\n\n'
+        if data.get(key):
+            result += '**' + key.capitalize() + ':** ' + safe(data[key]) + '\n\n'
     findings = data.get('findings', [])
-    if not isinstance(findings, list):findings = [findings]
-    if not findings:result += 'No findings were recorded. See the coverage above.\n'
+    if not isinstance(findings, list):
+        findings = [findings]
+    if not findings:
+        result += 'No findings were recorded. See the coverage above.\n'
     for number, finding in enumerate(findings, 1):
         result += '## Edit or finding ' + str(number) + '\n\n'
-        if not isinstance(finding, dict):finding = {'detail': finding}
+        if not isinstance(finding, dict):
+            finding = {'detail': finding}
         for key, value in finding.items():
-            if isinstance(value, (dict, list)):value = json.dumps(value, ensure_ascii=False, indent=2)
+            if isinstance(value, (dict, list)):
+                value = json.dumps(value, ensure_ascii=False, indent=2)
             result += '**' + safe(key.replace('_', ' ').capitalize()) + ':**\n\n'
             result += '\n'.join('> ' + safe(line) for line in str(value).splitlines()) + '\n\n'
     return result.encode()
@@ -331,38 +577,102 @@ def review_page(check, review, blog, page):
 def render(files, graph, show_google_links=None, show_editorial=None, layout_schema=None):
     layout = graph['manifest'].get('browse_schema', 1) if layout_schema is None else layout_schema
     output = _render_legacy(files, graph, show_google_links, show_editorial)
-    if layout not in (2, 3) or graph['manifest'].get('storage_schema') != 2:return output
-    main_pages = {name: body for name, body in output.items()
-                  if name.startswith('blogs/') and name.endswith('/README.md') and name.count('/') == 3}
+    if layout not in (2, 3) or graph['manifest'].get('storage_schema') != 2:
+        return output
+    main_pages = {
+        name: body
+        for name, body in output.items()
+        if name.startswith('blogs/') and name.endswith('/README.md') and name.count('/') == 3
+    }
     for item, heads in graph['heads'].items():
         records = [graph['revisions'][r] for r in heads]
-        if records[0]['kind'] != 'article' or all(r['status'] == 'tombstone' for r in records):continue
-        page = next(name for name, body in main_pages.items()
-                    if any(('](' + posixpath.relpath(record_path(head), posixpath.dirname(name)) + ')').encode()
-                           in body.split(b'---\n\n', 1)[0] for head in records))
+        if records[0]['kind'] != 'article' or all(r['status'] == 'tombstone' for r in records):
+            continue
+        page = next(
+            name
+            for name, body in main_pages.items()
+            if any(
+                (
+                    '](' + posixpath.relpath(record_path(head), posixpath.dirname(name)) + ')'
+                ).encode()
+                in body.split(b'---\n\n', 1)[0]
+                for head in records
+            )
+        )
         folder = posixpath.dirname(page)
-        revisions = sorted((r for r in graph['revisions'].values() if r['item'] == item),
-                           key=lambda r: (r['created_at'], r['revision']), reverse=True)
+        revisions = sorted(
+            (r for r in graph['revisions'].values() if r['item'] == item),
+            key=lambda r: (r['created_at'], r['revision']),
+            reverse=True,
+        )
         history_page = folder + '/history.md'
-        history = '# Revision history\n\n' + NOTICE + '\n' + link('Blog', page, history_page) + '\n\n'
+        history = (
+            '# Revision history\n\n' + NOTICE + '\n' + link('Blog', page, history_page) + '\n\n'
+        )
         detailed = graph['manifest'].get('history_schema') == 2 or layout == 3
         if detailed:
             history += '> Current marks the newest saved revision. Article state is the workflow status recorded in each snapshot.\n\n'
             history += '| Saved | Revision | What changed | Article state | Content | Record |\n| --- | --- | --- | --- | --- | --- |\n'
         else:
-            history += '| Saved | Title | Status | Content | Details |\n| --- | --- | --- | --- | --- |\n'
+            history += (
+                '| Saved | Title | Status | Content | Details |\n| --- | --- | --- | --- | --- |\n'
+            )
         for saved in revisions:
             destination = folder + '/history/' + saved['revision']
-            content = next((name for name in ('artifacts/DRAFT.md', 'artifacts/OUTLINE.md', 'artifacts/BRIEF.md')
-                            if saved['files'].get(name, {}).get('media') == 'text'), 'BODY.md')
-            readable = destination + '/' + (artifact_view(content[10:]) if content.startswith('artifacts/') else 'draft.md')
+            content = next(
+                (
+                    name
+                    for name in ('artifacts/DRAFT.md', 'artifacts/OUTLINE.md', 'artifacts/BRIEF.md')
+                    if saved['files'].get(name, {}).get('media') == 'text'
+                ),
+                'BODY.md',
+            )
+            readable = (
+                destination
+                + '/'
+                + (artifact_view(content[10:]) if content.startswith('artifacts/') else 'draft.md')
+            )
             output[readable] = files[record_path(saved, content)]
             output[destination + '/record.json'] = files[record_path(saved)]
             if detailed:
-                marker = 'Current' if saved['revision'] in heads and len(heads) == 1 else 'Competing head' if saved['revision'] in heads else 'Earlier'
-                history += '| ' + safe(saved['created_at']) + ' | ' + marker + ' · ' + saved['revision'][:8] + ' | ' + safe(revision_change(saved, graph)) + ' | ' + safe(saved['status']) + ' | ' + link('Read', readable, history_page) + ' | ' + link('Record', destination + '/record.json', history_page) + ' |\n'
+                marker = (
+                    'Current'
+                    if saved['revision'] in heads and len(heads) == 1
+                    else 'Competing head'
+                    if saved['revision'] in heads
+                    else 'Earlier'
+                )
+                history += (
+                    '| '
+                    + safe(saved['created_at'])
+                    + ' | '
+                    + marker
+                    + ' · '
+                    + saved['revision'][:8]
+                    + ' | '
+                    + safe(revision_change(saved, graph))
+                    + ' | '
+                    + safe(saved['status'])
+                    + ' | '
+                    + link('Read', readable, history_page)
+                    + ' | '
+                    + link('Record', destination + '/record.json', history_page)
+                    + ' |\n'
+                )
             else:
-                history += '| ' + safe(saved['created_at']) + ' | ' + safe(saved['title']) + ' | ' + safe(saved['status']) + ' | ' + link('Read', readable, history_page) + ' | ' + link('Details', destination + '/record.json', history_page) + ' |\n'
+                history += (
+                    '| '
+                    + safe(saved['created_at'])
+                    + ' | '
+                    + safe(saved['title'])
+                    + ' | '
+                    + safe(saved['status'])
+                    + ' | '
+                    + link('Read', readable, history_page)
+                    + ' | '
+                    + link('Details', destination + '/record.json', history_page)
+                    + ' |\n'
+                )
             reviews = studio_data(saved).get('reviews', {})
             if isinstance(reviews, dict):
                 for check, review in sorted(reviews.items()):
@@ -372,59 +682,109 @@ def render(files, graph, show_google_links=None, show_editorial=None, layout_sch
         output[history_page] = history.encode()
         review_index = folder + '/reviews/README.md'
         source_index = folder + '/sources/README.md'
-        review_text = '# Reviews and edits\n\n' + NOTICE + '\n' + link('Blog', page, review_index) + '\n\n'
-        source_text = '# Selected sources\n\n' + NOTICE + '\n' + link('Blog', page, source_index) + '\n\n'
+        review_text = (
+            '# Reviews and edits\n\n' + NOTICE + '\n' + link('Blog', page, review_index) + '\n\n'
+        )
+        source_text = (
+            '# Selected sources\n\n' + NOTICE + '\n' + link('Blog', page, source_index) + '\n\n'
+        )
         main = output[page].decode()
         if len(heads) != 1:
             review_text += 'Competing revisions have separate reviews in the blog history. Resolve the conflict before choosing current edits.\n'
             source_text += 'Source pins differ between competing revisions. Inspect each saved revision in the history.\n'
             for saved in records:
-                main = main.replace(record_path(saved), folder + '/history/' + saved['revision'] + '/record.json')
-                main = main.replace(posixpath.relpath(record_path(saved), folder), 'history/' + saved['revision'] + '/record.json')
+                main = main.replace(
+                    record_path(saved), folder + '/history/' + saved['revision'] + '/record.json'
+                )
+                main = main.replace(
+                    posixpath.relpath(record_path(saved), folder),
+                    'history/' + saved['revision'] + '/record.json',
+                )
         else:
             saved = records[0]
             nav = []
             for relative, info in sorted(saved['files'].items()):
-                if not relative.startswith('artifacts/'):continue
+                if not relative.startswith('artifacts/'):
+                    continue
                 destination = folder + '/' + artifact_view(relative[10:])
                 output[destination] = files[record_path(saved, relative)]
-                main = main.replace(posixpath.relpath(record_path(saved, relative), folder), posixpath.relpath(destination, folder))
-                if destination.endswith('/original.md'):nav.append(link('Original', destination, page))
-                if destination.endswith('/draft.md'):nav.append(link('Draft file', destination, page))
+                main = main.replace(
+                    posixpath.relpath(record_path(saved, relative), folder),
+                    posixpath.relpath(destination, folder),
+                )
+                if destination.endswith('/original.md'):
+                    nav.append(link('Original', destination, page))
+                if destination.endswith('/draft.md'):
+                    nav.append(link('Draft file', destination, page))
             detail_path = folder + '/history/' + saved['revision'] + '/record.json'
-            main = main.replace(link('Canonical revision', record_path(saved), page), link('Version details', detail_path, page))
+            main = main.replace(
+                link('Canonical revision', record_path(saved), page),
+                link('Version details', detail_path, page),
+            )
             reviews = studio_data(saved).get('reviews', {})
             if isinstance(reviews, dict):
                 for check, review in sorted(reviews.items()):
-                    if not isinstance(review, dict) or review.get('status') == 'not-run':continue
+                    if not isinstance(review, dict) or review.get('status') == 'not-run':
+                        continue
                     target = folder + '/reviews/' + slug(check, 'review') + '.md'
                     output[target] = review_page(check, review, page, target)
                     output[target[:-3] + '.json'] = encoded(review)
-                    review_text += '- ' + link(check.replace('-', ' ').capitalize(), target, review_index) + ' — ' + safe(review.get('status', 'unknown')) + '\n'
-            if not reviews:review_text += 'No reviews have been recorded yet.\n'
+                    review_text += (
+                        '- '
+                        + link(check.replace('-', ' ').capitalize(), target, review_index)
+                        + ' — '
+                        + safe(review.get('status', 'unknown'))
+                        + '\n'
+                    )
+            if not reviews:
+                review_text += 'No reviews have been recorded yet.\n'
             for dependency in saved['dependencies']:
-                if dependency['kind'] != 'source':continue
+                if dependency['kind'] != 'source':
+                    continue
                 selected = graph['revisions'][dependency['revision']]
-                target = folder + '/sources/' + slug(selected['title'], 'source') + '-' + selected['item'] + '-' + selected['revision'] + '.md'
+                target = (
+                    folder
+                    + '/sources/'
+                    + slug(selected['title'], 'source')
+                    + '-'
+                    + selected['item']
+                    + '-'
+                    + selected['revision']
+                    + '.md'
+                )
                 output[target] = files[record_path(selected, 'BODY.md')]
-                source_text += '- ' + link(selected['title'], target, source_index) + ' (pinned revision)\n'
+                source_text += (
+                    '- ' + link(selected['title'], target, source_index) + ' (pinned revision)\n'
+                )
                 context = output[folder + '/context.md'].decode()
-                context = context.replace(posixpath.relpath(record_path(selected, 'BODY.md'), folder), posixpath.relpath(target, folder))
+                context = context.replace(
+                    posixpath.relpath(record_path(selected, 'BODY.md'), folder),
+                    posixpath.relpath(target, folder),
+                )
                 output[folder + '/context.md'] = context.encode()
-            if not any(d['kind'] == 'source' for d in saved['dependencies']):source_text += 'No sources have been selected yet.\n'
-            nav += [link('Reviews and edits', review_index, page), link('Sources', source_index, page)]
+            if not any(d['kind'] == 'source' for d in saved['dependencies']):
+                source_text += 'No sources have been selected yet.\n'
+            nav += [
+                link('Reviews and edits', review_index, page),
+                link('Sources', source_index, page),
+            ]
             main = main.replace('---\n\n', ' | '.join(nav) + '\n\n---\n\n', 1)
         output[page] = main.encode()
         output[review_index] = review_text.encode()
         output[source_index] = source_text.encode()
     output.update(memory_pages(files, graph))
     # The record root is an implementation detail; the homepage explains the author-facing folders.
-    addition = '\nBrowse each blog for its draft, original, reviews, selected sources, and history. '
+    addition = (
+        '\nBrowse each blog for its draft, original, reviews, selected sources, and history. '
+    )
     addition += '[Reusable team memory](memory/README.md) contains shared rules, voices, notes, and context.\n\n'
     output['README.md'] = output['README.md'].decode().replace(END, addition + END).encode()
     for name, body in output.items():
         limit = MAX_TEXT if name.endswith(('.md', '.json')) else MAX_BINARY
-        if len(body) > limit:raise HubError('A generated blog file exceeds the hub size limit; saved work remains queued.')
+        if len(body) > limit:
+            raise HubError(
+                'A generated blog file exceeds the hub size limit; saved work remains queued.'
+            )
     return output
 
 
@@ -434,21 +794,58 @@ def memory_pages(files, graph):
     text = '# Reusable team memory\n\n' + NOTICE + '\n'
     text += 'Shared rules, author voices, reusable context, notes, and decisions. '
     text += '[Blog drafts, reviews, and history](../blogs/README.md) stay with their blogs.\n\n'
-    groups = {'rule': 'rules', 'context': 'contexts', 'voice': 'voices', 'note': 'notes', 'decision': 'decisions'}
+    groups = {
+        'rule': 'rules',
+        'context': 'contexts',
+        'voice': 'voices',
+        'note': 'notes',
+        'decision': 'decisions',
+    }
     for item, heads in sorted(graph['heads'].items()):
         records = [graph['revisions'][r] for r in heads]
         saved = records[0]
-        if saved['kind'] not in groups or saved['scope']['level'] == 'article' or all(r['status'] == 'tombstone' for r in records):continue
-        destination = 'memory/' + groups[saved['kind']] + '/' + slug(saved['title'], 'untitled') + '-' + item + '/README.md'
-        body = '# ' + safe(saved['title']) + '\n\n' + NOTICE + '\n' + link('All memory', page, destination) + '\n\n'
-        body += '**Scope:** ' + safe(saved['scope']['level']) + (' — ' + safe(saved['scope']['key']) if saved['scope']['key'] else '') + '\n\n'
+        if (
+            saved['kind'] not in groups
+            or saved['scope']['level'] == 'article'
+            or all(r['status'] == 'tombstone' for r in records)
+        ):
+            continue
+        destination = (
+            'memory/'
+            + groups[saved['kind']]
+            + '/'
+            + slug(saved['title'], 'untitled')
+            + '-'
+            + item
+            + '/README.md'
+        )
+        body = (
+            '# '
+            + safe(saved['title'])
+            + '\n\n'
+            + NOTICE
+            + '\n'
+            + link('All memory', page, destination)
+            + '\n\n'
+        )
+        body += (
+            '**Scope:** '
+            + safe(saved['scope']['level'])
+            + (' — ' + safe(saved['scope']['key']) if saved['scope']['key'] else '')
+            + '\n\n'
+        )
         if len(heads) != 1:
             body += 'Competing revisions; choose an explicit revision in Blog Studio.\n\n'
-            body += ''.join('- ' + link(r['title'], record_path(r, 'BODY.md'), destination) + '\n' for r in records)
-        else:body += files[record_path(saved, 'BODY.md')].decode()
+            body += ''.join(
+                '- ' + link(r['title'], record_path(r, 'BODY.md'), destination) + '\n'
+                for r in records
+            )
+        else:
+            body += files[record_path(saved, 'BODY.md')].decode()
         output[destination] = body.encode()
         text += '- ' + safe(saved['kind']) + ': ' + link(saved['title'], destination, page) + '\n'
-    if not output:text += 'No reusable team memory has been saved yet.\n'
+    if not output:
+        text += 'No reusable team memory has been saved yet.\n'
     output[page] = text.encode()
     return output
 
@@ -459,66 +856,174 @@ def verify(files, graph):
     actual = {name: body for name, body in files.items() if generated_path(name, schema)}
     if graph['manifest'].get('browse_schema') not in (1, 2, BROWSE_SCHEMA):
         if actual or managed_block(files.get('README.md', b'').decode()):
-            raise HubError('The blog library destination already contains unmanaged content; it was preserved.')
+            raise HubError(
+                'The blog library destination already contains unmanaged content; it was preserved.'
+            )
         return
     expected = render(files, graph)
-    if (actual != {name: body for name, body in expected.items() if generated_path(name, schema)}
-            or managed_block(files.get('README.md', b'').decode()) != managed_block(expected['README.md'].decode())):
-        raise HubError('Generated blog pages were edited or removed. Preserve/import those edits and restore the generated pages before syncing; queued work is retained.')
+    if actual != {
+        name: body for name, body in expected.items() if generated_path(name, schema)
+    } or managed_block(files.get('README.md', b'').decode()) != managed_block(
+        expected['README.md'].decode()
+    ):
+        raise HubError(
+            'Generated blog pages were edited or removed. Preserve/import those edits and restore the generated pages before syncing; queued work is retained.'
+        )
 
 
 def changes(files, graph):
     show_links = graph['manifest'].get('google_doc_links') == 1 or any(
         google_doc_links(graph['revisions'][head]['data'].get('studio', {}))
-        for heads in graph['heads'].values() for head in heads
-        if graph['revisions'][head]['kind'] == 'article')
+        for heads in graph['heads'].values()
+        for head in heads
+        if graph['revisions'][head]['kind'] == 'article'
+    )
     show_editorial = graph['manifest'].get('editorial_views') == 1 or any(
-        r['data'].get('collection') or studio_data(r).get('editorial') or studio_data(r).get('library') or studio_data(r).get('editorial_assets')
-        for r in graph['revisions'].values())
-    manifest = dict(graph['manifest'], browse_schema=3, storage_schema=2, history_schema=2, minimum_runtime='1.13.1')
-    if show_editorial:manifest['editorial_views'] = 1
-    if show_links:manifest['google_doc_links'] = 1
+        r['data'].get('collection')
+        or studio_data(r).get('editorial')
+        or studio_data(r).get('library')
+        or studio_data(r).get('editorial_assets')
+        for r in graph['revisions'].values()
+    )
+    manifest = dict(
+        graph['manifest'],
+        browse_schema=3,
+        storage_schema=2,
+        history_schema=2,
+        minimum_runtime='1.13.1',
+    )
+    if show_editorial:
+        manifest['editorial_views'] = 1
+    if show_links:
+        manifest['google_doc_links'] = 1
     relocated = relocate_records(files, manifest)
     relocated['hub.json'] = encoded(manifest)
-    relocated_graph = validate_files({name: body for name, body in relocated.items()
-                                     if not generated_path(name, graph['manifest'].get('browse_schema', 1))}, None)
-    output = render(relocated, relocated_graph, show_google_links=show_links, show_editorial=show_editorial)
-    output.update({name: body for name, body in relocated.items() if name.startswith('.blog-studio/items/')})
+    relocated_graph = validate_files(
+        {
+            name: body
+            for name, body in relocated.items()
+            if not generated_path(name, graph['manifest'].get('browse_schema', 1))
+        },
+        None,
+    )
+    output = render(
+        relocated, relocated_graph, show_google_links=show_links, show_editorial=show_editorial
+    )
+    output.update(
+        {name: body for name, body in relocated.items() if name.startswith('.blog-studio/items/')}
+    )
     output['hub.json'] = encoded(manifest)
-    removals = {name: None for name in files if (generated_path(name, graph['manifest'].get('browse_schema', 1))
-                or name.startswith('memory/items/')) and name not in output}
+    removals = {
+        name: None
+        for name in files
+        if (
+            generated_path(name, graph['manifest'].get('browse_schema', 1))
+            or name.startswith('memory/items/')
+        )
+        and name not in output
+    }
     return {**removals, **{name: body for name, body in output.items() if files.get(name) != body}}
+
 
 def editorial_pages(graph):
     board_page = 'editorial/README.md'
     catalog_page = 'collections/README.md'
-    board = '# Editorial board\n\n' + NOTICE + '\nSaved metadata only; Google status is not checked live here.\n\n'
+    board = (
+        '# Editorial board\n\n'
+        + NOTICE
+        + '\nSaved metadata only; Google status is not checked live here.\n\n'
+    )
     board += '| Blog | Author | Owner | Stage | Due | Next action | Working Doc |\n| --- | --- | --- | --- | --- | --- | --- |\n'
-    library = '# Reference collections\n\n' + NOTICE + '\nHistorical posts are references. Reverify dated product claims before reuse.\n\n'
+    library = (
+        '# Reference collections\n\n'
+        + NOTICE
+        + '\nHistorical posts are references. Reverify dated product claims before reuse.\n\n'
+    )
     library += '| Source | Author | Collection | Published | Original | Curation |\n| --- | --- | --- | --- | --- | --- |\n'
     collections = []
-    names = {r['data']['collection']['key']: r['data']['collection']['name'] for r in graph['revisions'].values() if r['data'].get('collection')}
+    names = {
+        r['data']['collection']['key']: r['data']['collection']['name']
+        for r in graph['revisions'].values()
+        if r['data'].get('collection')
+    }
     from urllib.parse import urlsplit, quote
+
     for heads in sorted(graph['heads'].values()):
         saved = graph['revisions'][heads[-1]]
-        if saved['status'] == 'tombstone':continue
+        if saved['status'] == 'tombstone':
+            continue
         data = studio_data(saved)
         if saved['kind'] == 'article':
             # A shared record is data from another client; a malformed one must not stop every sync.
             details = data.get('editorial') if isinstance(data.get('editorial'), dict) else {}
             from editorial import row
+
             status = 'conflict' if len(heads) > 1 else row(data, saved['item'], 'hub')['stage']
             from editorial import doc_link
+
             doc = doc_link(data)
-            board += '| ' + link(saved['title'], record_path(saved, 'BODY.md'), board_page) + ' | ' + safe(data.get('author') or 'Unassigned') + ' | ' + safe(details.get('owner') or 'Unassigned') + ' | ' + safe(status) + ' | ' + safe(details.get('due') or '—') + ' | ' + safe(data.get('next_step') or 'Unassigned') + ' | ' + ('[Open Doc](' + doc['url'] + ')' if doc else '—') + ' |\n'
+            board += (
+                '| '
+                + link(saved['title'], record_path(saved, 'BODY.md'), board_page)
+                + ' | '
+                + safe(data.get('author') or 'Unassigned')
+                + ' | '
+                + safe(details.get('owner') or 'Unassigned')
+                + ' | '
+                + safe(status)
+                + ' | '
+                + safe(details.get('due') or '—')
+                + ' | '
+                + safe(data.get('next_step') or 'Unassigned')
+                + ' | '
+                + ('[Open Doc](' + doc['url'] + ')' if doc else '—')
+                + ' |\n'
+            )
         elif saved['kind'] == 'source' and data.get('library') and not data.get('pinned_reference'):
-            metadata = data['library'];uri = metadata.get('canonical_url') or ''
+            metadata = data['library']
+            uri = metadata.get('canonical_url') or ''
             parsed = urlsplit(uri)
-            original = '[Original](' + quote(uri, safe=':/?=&%#') + ')' if parsed.scheme == 'https' and parsed.hostname and not parsed.username and not parsed.password else '—'
-            library += '| ' + link(saved['title'], record_path(saved, 'BODY.md'), catalog_page) + ' | ' + safe(data.get('author') or 'Unknown') + ' | ' + safe(', '.join(names.get(k, k) for k in metadata.get('collections', []))) + ' | ' + safe(metadata.get('published') or 'Unknown') + ' | ' + original + ' | ' + safe('conflict' if len(heads) > 1 else metadata.get('curation', 'active')) + ' |\n'
+            original = (
+                '[Original](' + quote(uri, safe=':/?=&%#') + ')'
+                if parsed.scheme == 'https'
+                and parsed.hostname
+                and not parsed.username
+                and not parsed.password
+                else '—'
+            )
+            library += (
+                '| '
+                + link(saved['title'], record_path(saved, 'BODY.md'), catalog_page)
+                + ' | '
+                + safe(data.get('author') or 'Unknown')
+                + ' | '
+                + safe(', '.join(names.get(k, k) for k in metadata.get('collections', [])))
+                + ' | '
+                + safe(metadata.get('published') or 'Unknown')
+                + ' | '
+                + original
+                + ' | '
+                + safe('conflict' if len(heads) > 1 else metadata.get('curation', 'active'))
+                + ' |\n'
+            )
         elif saved['data'].get('collection'):
-            collections.append((saved, saved['data']['collection'], saved['data'].get('coverage', {})))
+            collections.append(
+                (saved, saved['data']['collection'], saved['data'].get('coverage', {}))
+            )
     library += '\n## Collection coverage\n\n'
     for saved, config, coverage in collections:
-        library += '- ' + safe(config['name']) + ': ' + safe(str(coverage.get('completed', 0))) + '/' + safe(str(coverage.get('discovered', 0))) + ' discovered posts processed; last refresh ' + safe(coverage.get('last_refresh') or 'not run') + ('; discovery limited' if coverage.get('discovery_limited') else '') + '; failed ' + safe(str(coverage.get('counts', {}).get('failed', 0))) + '.\n'
+        library += (
+            '- '
+            + safe(config['name'])
+            + ': '
+            + safe(str(coverage.get('completed', 0)))
+            + '/'
+            + safe(str(coverage.get('discovered', 0)))
+            + ' discovered posts processed; last refresh '
+            + safe(coverage.get('last_refresh') or 'not run')
+            + ('; discovery limited' if coverage.get('discovery_limited') else '')
+            + '; failed '
+            + safe(str(coverage.get('counts', {}).get('failed', 0)))
+            + '.\n'
+        )
     return {board_page: board.encode(), catalog_page: library.encode()}

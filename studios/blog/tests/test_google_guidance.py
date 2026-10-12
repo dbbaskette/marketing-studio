@@ -1,4 +1,5 @@
 """The Google guidance must match the helpers it tells an agent to run. No Google access."""
+
 import contextlib
 import io
 from pathlib import Path
@@ -15,15 +16,24 @@ import google_suggestions as gs
 import studio
 
 REFERENCES = ROOT / 'skills/blog-studio/references'
-GUIDANCE = (sorted((REFERENCES / 'google').glob('*.md')) + sorted((REFERENCES / 'modules').glob('blog-google-*.md'))
-            + [REFERENCES / 'short-commands.md'])
-HELPER = re.compile(r'(google_drive\.py|google_roundtrip\.py|google_suggestions\.py|studio\.py)\s+(.*)$')
+GUIDANCE = (
+    sorted((REFERENCES / 'google').glob('*.md'))
+    + sorted((REFERENCES / 'modules').glob('blog-google-*.md'))
+    + [REFERENCES / 'short-commands.md']
+)
+HELPER = re.compile(
+    r'(google_drive\.py|google_roundtrip\.py|google_suggestions\.py|studio\.py)\s+(.*)$'
+)
 
 
 class GoogleGuidanceTests(unittest.TestCase):
     def test_every_helper_command_in_the_guidance_parses(self):
-        parsers = {'google_drive.py': gd.build_parser(), 'google_roundtrip.py': rt.build_parser(),
-                   'google_suggestions.py': gs.build_parser(), 'studio.py': studio.parser()}
+        parsers = {
+            'google_drive.py': gd.build_parser(),
+            'google_roundtrip.py': rt.build_parser(),
+            'google_suggestions.py': gs.build_parser(),
+            'studio.py': studio.parser(),
+        }
         checked = 0
         for path in GUIDANCE:
             for line in path.read_text().split('\n'):
@@ -34,7 +44,10 @@ class GoogleGuidanceTests(unittest.TestCase):
                 if command[1] == 'studio.py' and 'route' in words:
                     continue  # The router takes free text and belongs to another module.
                 checked += 1
-                with self.subTest(file=path.name, command=line.strip()), contextlib.redirect_stderr(io.StringIO()):
+                with (
+                    self.subTest(file=path.name, command=line.strip()),
+                    contextlib.redirect_stderr(io.StringIO()),
+                ):
                     try:
                         parsers[command[1]].parse_args(words)
                     except SystemExit:
@@ -60,7 +73,9 @@ class GoogleGuidanceTests(unittest.TestCase):
         suggestions = (REFERENCES / 'google/suggestions.md').read_text()
         self.assertIn('Leave `DRAFT.md` as it is', short)
         self.assertIn('leaves\n`DRAFT.md` unchanged', suggestions)
-        self.assertNotIn('Read the current draft and save with `article save ... --label\n  proofread`', short)
+        self.assertNotIn(
+            'Read the current draft and save with `article save ... --label\n  proofread`', short
+        )
 
 
 if __name__ == '__main__':

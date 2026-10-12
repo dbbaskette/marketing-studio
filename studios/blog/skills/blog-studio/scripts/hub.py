@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Team Hub lifecycle, progressive memory lookup, and durable Git synchronization."""
+
 import argparse
 import json
 import os
@@ -9,20 +10,47 @@ import shutil
 import sys
 import uuid
 
-from hub_store import (VERSION, KINDS, HubError, TransportError, ReviewClosed, GitHub, uid, now, encoded,
-                       sha, atomic, write_json, read_json, contained, locked, canonical_repository,
-                       git, manifest, validate_files, artifact_name, tree_files, commit_files,
-                       record_path, relocate_records, immutable_files, ancestor_files, ancestors)
+from hub_store import (
+    VERSION,
+    KINDS,
+    HubError,
+    TransportError,
+    ReviewClosed,
+    GitHub,
+    uid,
+    now,
+    encoded,
+    sha,
+    atomic,
+    write_json,
+    read_json,
+    contained,
+    locked,
+    canonical_repository,
+    git,
+    manifest,
+    validate_files,
+    artifact_name,
+    tree_files,
+    commit_files,
+    record_path,
+    relocate_records,
+    immutable_files,
+    ancestor_files,
+    ancestors,
+)
 
 # Saves in the outbox that are part of this clone's view and are pushed by a sync.
 ACTIVE_STATES = ('queued', 'pending-review')
 # A guarded save whose parent is no longer a shared head. It is kept, never pushed
 # on its own, and waits for the author to compare, fork explicitly, or set it aside.
 HELD = 'newer-hub-revision'
-HELD_NEXT_STEP = ('A newer shared version exists, so this save was kept on this computer and not pushed. '
-                  'Compare the two versions first. Then either share yours as a competing version '
-                  '(hub.py import-workspace --fork) and resolve the conflict, or continue from the shared '
-                  'version and keep a local backup (hub.py checkout-workspace --set-aside-local).')
+HELD_NEXT_STEP = (
+    'A newer shared version exists, so this save was kept on this computer and not pushed. '
+    'Compare the two versions first. Then either share yours as a competing version '
+    '(hub.py import-workspace --fork) and resolve the conflict, or continue from the shared '
+    'version and keep a local backup (hub.py checkout-workspace --set-aside-local).'
+)
 LEGACY_INDEX = re.compile(r'\.index-[0-9a-f]{32}(?:\.lock)?')
 MAX_LISTED_PATHS = 10
 
@@ -46,12 +74,23 @@ class Registry:
     def __init__(self, root=None, provider=None, workspace_root=None):
         self.root = check_root(root or default_registry())
         self.provider = provider or GitHub()
-        self.workspace_root = check_root(workspace_root or (Path.home() / "blogs" if self.root == default_registry() else self.root / "workspaces"))
+        self.workspace_root = check_root(
+            workspace_root
+            or (
+                Path.home() / 'blogs'
+                if self.root == default_registry()
+                else self.root / 'workspaces'
+            )
+        )
 
     def state(self):
         path = contained(self.root, 'registry.json')
         value = read_json(path) if path.exists() else {'schema': 1, 'hubs': {}}
-        if not isinstance(value, dict) or value.get('schema') != 1 or not isinstance(value.get('hubs'), dict):
+        if (
+            not isinstance(value, dict)
+            or value.get('schema') != 1
+            or not isinstance(value.get('hubs'), dict)
+        ):
             raise HubError('The local hub registry is invalid.')
         return value
 
@@ -71,14 +110,24 @@ class Registry:
             return None
         value = read_json(path)
         if value.get('schema') != 1 or Path(value['registry']).resolve() != self.root:
-            raise HubError('The project selects a different hub registry. Use its recorded registry path.')
+            raise HubError(
+                'The project selects a different hub registry. Use its recorded registry path.'
+            )
         return self.hub(value['hub'])
 
     def select(self, hub_id, workspace):
         hub = self.hub(hub_id)
         workspace = check_root(workspace)
-        write_json(contained(workspace, '.team-hub.json'), {'schema': 1, 'hub': hub.id, 'registry': str(self.root)})
-        return {'status': 'selected', 'hub': hub.id, 'workspace': str(workspace), 'shared_work': True}
+        write_json(
+            contained(workspace, '.team-hub.json'),
+            {'schema': 1, 'hub': hub.id, 'registry': str(self.root)},
+        )
+        return {
+            'status': 'selected',
+            'hub': hub.id,
+            'workspace': str(workspace),
+            'shared_work': True,
+        }
 
     def leave(self, hub_id, workspace):
         selected = self.selected(workspace)
@@ -96,6 +145,7 @@ class Registry:
         selected_workspace = check_root(workspace) if workspace else hub.checkout / '.blog-studio'
         if hub.normal:
             from studio import initialize
+
             initialize(selected_workspace)
         if workspace or hub.normal:
             self.select(hub.id, selected_workspace)
@@ -109,9 +159,13 @@ class Registry:
         for hub_id, entry in state['hubs'].items():
             if entry['repository'] == repository:
                 if entry['provider_id'] != metadata['id']:
-                    raise HubError('This repository identity changed. The existing clone was preserved.')
+                    raise HubError(
+                        'This repository identity changed. The existing clone was preserved.'
+                    )
                 if destination and check_root(destination) != Path(entry['path']):
-                    raise HubError('This hub already has a managed local clone; reuse its recorded location.')
+                    raise HubError(
+                        'This hub already has a managed local clone; reuse its recorded location.'
+                    )
                 hub = Hub(self, hub_id, entry)
                 with locked(hub.root):
                     hub._refresh(metadata)
@@ -133,15 +187,36 @@ class Registry:
             hub_id = graph['manifest']['hub']
             if hub_id in state['hubs']:
                 raise HubError('The hub UUID is already registered to another repository.')
-            target = check_root(destination) if destination else self.workspace_root / repository.split('/')[1]
+            target = (
+                check_root(destination)
+                if destination
+                else self.workspace_root / repository.split('/')[1]
+            )
             if target.exists() or target.is_symlink():
                 raise HubError('The chosen local hub location already exists; it was preserved.')
-            entry = {'repository': repository, 'provider_id': metadata['id'],
-                     'path': str(target), 'layout': 'checkout', 'name': graph['manifest']['name'], 'url': metadata['url']}
+            entry = {
+                'repository': repository,
+                'provider_id': metadata['id'],
+                'path': str(target),
+                'layout': 'checkout',
+                'name': graph['manifest']['name'],
+                'url': metadata['url'],
+            }
             local = stage / '.blog-studio/hub'
-            write_json(local / 'config.json', {'schema': 1, 'hub': hub_id, 'actor': self.provider.actor(), **entry})
-            write_json(local / 'state.json', {'revision': commit, 'verified_at': now(),
-                'fresh': True, 'write': metadata.get('write'), 'review_branch': None})
+            write_json(
+                local / 'config.json',
+                {'schema': 1, 'hub': hub_id, 'actor': self.provider.actor(), **entry},
+            )
+            write_json(
+                local / 'state.json',
+                {
+                    'revision': commit,
+                    'verified_at': now(),
+                    'fresh': True,
+                    'write': metadata.get('write'),
+                    'review_branch': None,
+                },
+            )
             target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             shutil.move(str(stage), str(target))
             git(target / '.git', 'config', 'core.worktree', str(target))
@@ -165,15 +240,27 @@ class Registry:
             if hub.normal:
                 return {'status': 'already-migrated', **hub.status()}
             with locked(hub.root):
-                target = check_root(destination) if destination else self.workspace_root / hub.config['repository'].split('/')[1]
+                target = (
+                    check_root(destination)
+                    if destination
+                    else self.workspace_root / hub.config['repository'].split('/')[1]
+                )
                 # Only the existing writing workspace may already occupy the target.
                 workspace = target / '.blog-studio'
                 if target.exists():
                     selection = self.selected(workspace) if workspace.is_dir() else None
-                    if not selection or selection.id != hub.id or any(p.name != '.blog-studio' for p in target.iterdir()):
-                        raise HubError('The destination contains existing files or another Hub; it was preserved.')
+                    if (
+                        not selection
+                        or selection.id != hub.id
+                        or any(p.name != '.blog-studio' for p in target.iterdir())
+                    ):
+                        raise HubError(
+                            'The destination contains existing files or another Hub; it was preserved.'
+                        )
                     if (workspace / 'hub').exists():
-                        raise HubError('The destination already contains Hub state; it was preserved.')
+                        raise HubError(
+                            'The destination already contains Hub state; it was preserved.'
+                        )
                 files = hub._remote_files()
                 commit = hub._state()['revision']
                 stage = self.root / ('.migrate-' + uuid.uuid4().hex)
@@ -185,7 +272,13 @@ class Registry:
                     git(repository, 'config', 'core.bare', 'false')
                     git(repository, 'config', 'core.worktree', str(stage))
                     git(repository, 'fetch', '--quiet', str(hub.repository), commit)
-                    git(repository, 'remote', 'add', 'origin', 'https://github.com/' + hub.config['repository'] + '.git')
+                    git(
+                        repository,
+                        'remote',
+                        'add',
+                        'origin',
+                        'https://github.com/' + hub.config['repository'] + '.git',
+                    )
                     atomic(repository / 'info/exclude', b'/.blog-studio/\n.DS_Store\n')
                     git(repository, 'checkout', '--quiet', '-B', 'main', commit)
                     git(repository, 'update-ref', 'refs/remotes/origin/main', commit)
@@ -202,26 +295,43 @@ class Registry:
                     target.mkdir(parents=True, exist_ok=True, mode=0o700)
                     workspace.mkdir(exist_ok=True, mode=0o700)
                     # No existing files are replaced. Roll back only task-owned additions.
-                    moves = [(child, target / child.name) for child in stage.iterdir() if child.name != '.blog-studio']
-                    moves += [(child, workspace / child.name) for child in (stage / '.blog-studio').iterdir()]
+                    moves = [
+                        (child, target / child.name)
+                        for child in stage.iterdir()
+                        if child.name != '.blog-studio'
+                    ]
+                    moves += [
+                        (child, workspace / child.name)
+                        for child in (stage / '.blog-studio').iterdir()
+                    ]
                     if any(dest.exists() or dest.is_symlink() for source, dest in moves):
-                        raise HubError('The destination contains colliding files; it was preserved.')
+                        raise HubError(
+                            'The destination contains colliding files; it was preserved.'
+                        )
                     for source, dest in moves:
-                        shutil.move(str(source), str(dest));installed.append(dest)
+                        shutil.move(str(source), str(dest))
+                        installed.append(dest)
                     git(target / '.git', 'config', 'core.worktree', str(target))
                     state['hubs'][hub.id] = entry
                     write_json(self.root / 'registry.json', state)
                 except Exception:
                     for path in reversed(installed):
-                        if path.is_dir():shutil.rmtree(path)
-                        else:path.unlink()
+                        if path.is_dir():
+                            shutil.rmtree(path)
+                        else:
+                            path.unlink()
                     raise
                 finally:
                     shutil.rmtree(stage, ignore_errors=True)
                 from studio import initialize
+
                 initialize(workspace)
                 self.select(hub.id, workspace)
-                return {'status': 'migrated', 'preserved_legacy_copy': str(hub.root), **self.hub(hub.id).status()}
+                return {
+                    'status': 'migrated',
+                    'preserved_legacy_copy': str(hub.root),
+                    **self.hub(hub.id).status(),
+                }
 
     def create(self, repository, name, destination=None, workspace=None, mode='auto'):
         repository = canonical_repository(repository)
@@ -231,57 +341,96 @@ class Registry:
         with locked(self.root, '.registry.lock'):
             intent = read_json(intent_path) if intent_path.exists() else None
             if intent and (intent['name'] != name or intent['mode'] != mode):
-                raise HubError('A prior creation intent uses different settings. Resume it without changing the request.')
+                raise HubError(
+                    'A prior creation intent uses different settings. Resume it without changing the request.'
+                )
             metadata = self.provider.lookup(repository)
             if not intent:
                 if metadata:
-                    raise HubError('That repository already exists. Join it explicitly; no remote data was changed.')
-                intent = {'repository': repository, 'name': name, 'mode': mode,
-                          'hub': uuid.uuid4().hex, 'status': 'prepared', 'provider_id': None}
+                    raise HubError(
+                        'That repository already exists. Join it explicitly; no remote data was changed.'
+                    )
+                intent = {
+                    'repository': repository,
+                    'name': name,
+                    'mode': mode,
+                    'hub': uuid.uuid4().hex,
+                    'status': 'prepared',
+                    'provider_id': None,
+                }
                 write_json(intent_path, intent)
-            seed_files = {'hub.json': encoded(manifest(intent['hub'], name, repository, mode)),
-                          'README.md': ('# ' + name + '\n\nShared Blog Studio working memory. Use the installed skill to create revisions.\n').encode()}
+            seed_files = {
+                'hub.json': encoded(manifest(intent['hub'], name, repository, mode)),
+                'README.md': (
+                    '# '
+                    + name
+                    + '\n\nShared Blog Studio working memory. Use the installed skill to create revisions.\n'
+                ).encode(),
+            }
             from hub_browse import changes
+
             seed_files.update(changes(seed_files, validate_files(seed_files, repository)))
             marker = 'Blog Studio Team Hub ' + intent['hub']
             if metadata is None:
-                intent['status'] = 'creating';write_json(intent_path, intent)
+                intent['status'] = 'creating'
+                write_json(intent_path, intent)
                 try:
                     self.provider.create(repository, intent['hub'])
                 except TransportError:
                     metadata = self.provider.lookup(repository)
                     if not metadata:
-                        raise HubError('Remote creation outcome is unverified. The intent was retained; retry the same owner/name.')
+                        raise HubError(
+                            'Remote creation outcome is unverified. The intent was retained; retry the same owner/name.'
+                        )
                 metadata = metadata or self.provider.lookup(repository)
-            if (not metadata or not metadata['private'] or metadata.get('description') != marker
-                    or (intent['provider_id'] is not None and metadata['id'] != intent['provider_id'])):
-                raise HubError('An existing repository does not match this hub creation intent; it was preserved.')
-            intent['provider_id'] = metadata['id'];intent['status'] = 'remote-created';write_json(intent_path, intent)
+            if (
+                not metadata
+                or not metadata['private']
+                or metadata.get('description') != marker
+                or (intent['provider_id'] is not None and metadata['id'] != intent['provider_id'])
+            ):
+                raise HubError(
+                    'An existing repository does not match this hub creation intent; it was preserved.'
+                )
+            intent['provider_id'] = metadata['id']
+            intent['status'] = 'remote-created'
+            write_json(intent_path, intent)
             seed_dir = contained(self.root, 'creation', intent['hub'])
             seed_dir.mkdir(parents=True, exist_ok=True)
             repo = seed_dir / 'repository.git'
             if not repo.exists():
                 git(repo, 'init', '--bare', '--quiet', '--initial-branch=main')
             source = self.provider.transport(metadata)
-            fetched = git(repo, 'fetch', '--quiet', '--no-tags', source, 'refs/heads/main', allow_failure=True)
+            fetched = git(
+                repo, 'fetch', '--quiet', '--no-tags', source, 'refs/heads/main', allow_failure=True
+            )
             if fetched.returncode == 0:
                 commit = git(repo, 'rev-parse', 'FETCH_HEAD^{commit}').decode().strip()
                 graph = validate_files(tree_files(repo, commit), repository)
                 if graph['manifest']['hub'] != intent['hub']:
-                    raise HubError('Remote initialization belongs to another hub. No seed was pushed.')
+                    raise HubError(
+                        'Remote initialization belongs to another hub. No seed was pushed.'
+                    )
             else:
-                advertised = git(repo, 'ls-remote', '--exit-code', source, 'refs/heads/main', allow_failure=True)
+                advertised = git(
+                    repo, 'ls-remote', '--exit-code', source, 'refs/heads/main', allow_failure=True
+                )
                 if advertised.returncode != 2:
-                    raise TransportError('Remote initialization could not be verified. Retry the same create request; no seed was pushed.')
+                    raise TransportError(
+                        'Remote initialization could not be verified. Retry the same create request; no seed was pushed.'
+                    )
                 actor = self.provider.actor()
                 commit = commit_files(repo, None, seed_files, 'Initialize Team Hub', actor)
                 git(repo, 'push', '--quiet', source, commit + ':refs/heads/main')
-            intent['status'] = 'seeded';write_json(intent_path, intent)
+            intent['status'] = 'seeded'
+            write_json(intent_path, intent)
             hub = self._join(metadata, destination)
-            intent['status'] = 'joined';write_json(intent_path, intent)
+            intent['status'] = 'joined'
+            write_json(intent_path, intent)
         selected_workspace = check_root(workspace) if workspace else hub.checkout / '.blog-studio'
         if hub.normal:
             from studio import initialize
+
             initialize(selected_workspace)
         if workspace or hub.normal:
             self.select(hub.id, selected_workspace)
@@ -294,11 +443,20 @@ class Hub:
         self.id = uid(hub_id)
         self.checkout = check_root(entry['path'])
         self.normal = entry.get('layout') == 'checkout'
-        self.root = contained(self.checkout, '.blog-studio', 'hub') if self.normal else self.checkout
-        self.repository = contained(self.checkout, '.git') if self.normal else contained(self.root, 'repository.git')
+        self.root = (
+            contained(self.checkout, '.blog-studio', 'hub') if self.normal else self.checkout
+        )
+        self.repository = (
+            contained(self.checkout, '.git')
+            if self.normal
+            else contained(self.root, 'repository.git')
+        )
         self.config = read_json(contained(self.root, 'config.json'))
-        if (self.config.get('hub') != self.id or self.config.get('repository') != entry['repository']
-                or self.config.get('provider_id') != entry['provider_id']):
+        if (
+            self.config.get('hub') != self.id
+            or self.config.get('repository') != entry['repository']
+            or self.config.get('provider_id') != entry['provider_id']
+        ):
             raise HubError('The clone ownership record does not match the registry.')
 
     def _state(self):
@@ -329,7 +487,9 @@ class Hub:
 
     def _dirty_paths(self):
         listing = git(self.repository, 'status', '--porcelain', '-z', '--untracked-files=all')
-        entries = [entry for entry in listing.decode('utf-8', errors='replace').split('\0') if entry]
+        entries = [
+            entry for entry in listing.decode('utf-8', errors='replace').split('\0') if entry
+        ]
         paths, skip = [], False
         for entry in entries:
             if skip:  # the second path of a rename or copy
@@ -349,14 +509,18 @@ class Hub:
         self._sweep_legacy_indexes()
         head = git(self.repository, 'rev-parse', '--verify', 'HEAD', allow_failure=True)
         if head.returncode == 0 and head.stdout.decode().strip() != self._state()['revision']:
-            raise HubError('The Hub checkout contains a different commit. Preserve your local commits before syncing.')
+            raise HubError(
+                'The Hub checkout contains a different commit. Preserve your local commits before syncing.'
+            )
         dirty = self._dirty_paths()
         if dirty:
             listed = ', '.join(dirty[:MAX_LISTED_PATHS])
             if len(dirty) > MAX_LISTED_PATHS:
                 listed += ', and ' + str(len(dirty) - MAX_LISTED_PATHS) + ' more'
-            raise HubError('The Hub checkout has local edits: ' + listed + '. Save or move those edits '
-                           'before syncing; no files were overwritten.')
+            raise HubError(
+                'The Hub checkout has local edits: ' + listed + '. Save or move those edits '
+                'before syncing; no files were overwritten.'
+            )
 
     def _materialize(self, commit, files):
         """Show the validated commit in the author's checkout.
@@ -398,12 +562,21 @@ class Hub:
         receipt = self._published_path(intent['operation'])
         if not receipt.exists():
             request = intent.get('request', {})
-            write_json(receipt, {
-                'schema': 1, 'hub': self.id, 'operation': intent['operation'],
-                'item': request.get('item'), 'kind': request.get('kind'),
-                'created_at': intent.get('created_at'), 'request_hash': intent.get('request_hash'),
-                'payload_hash': intent.get('payload_hash'),
-                'published_commit': intent.get('published_commit') or commit, 'published_at': now()})
+            write_json(
+                receipt,
+                {
+                    'schema': 1,
+                    'hub': self.id,
+                    'operation': intent['operation'],
+                    'item': request.get('item'),
+                    'kind': request.get('kind'),
+                    'created_at': intent.get('created_at'),
+                    'request_hash': intent.get('request_hash'),
+                    'payload_hash': intent.get('payload_hash'),
+                    'published_commit': intent.get('published_commit') or commit,
+                    'published_at': now(),
+                },
+            )
         folder = contained(self.root, 'outbox', uid(intent['operation']))
         if folder.is_dir():
             shutil.rmtree(folder)
@@ -413,22 +586,38 @@ class Hub:
         metadata = metadata or self.registry.provider.lookup(self.config['repository'])
         if not metadata:
             raise TransportError('Hub repository is unavailable to this account.')
-        if (metadata['id'] != self.config['provider_id'] or not metadata['private']
-                or metadata['repository'] != self.config['repository']):
-            raise HubError('The remote identity or visibility changed; the existing clone was preserved.')
+        if (
+            metadata['id'] != self.config['provider_id']
+            or not metadata['private']
+            or metadata['repository'] != self.config['repository']
+        ):
+            raise HubError(
+                'The remote identity or visibility changed; the existing clone was preserved.'
+            )
         state = self._state()
-        git(self.repository, 'fetch', '--quiet', '--no-tags', self.registry.provider.transport(metadata), 'refs/heads/main')
+        git(
+            self.repository,
+            'fetch',
+            '--quiet',
+            '--no-tags',
+            self.registry.provider.transport(metadata),
+            'refs/heads/main',
+        )
         commit = git(self.repository, 'rev-parse', 'FETCH_HEAD^{commit}').decode().strip()
         files = tree_files(self.repository, commit)
         graph = validate_files(files, self.config['repository'])
         if graph['manifest']['hub'] != self.id:
             raise HubError('Remote hub UUID changed.')
         previous = self._remote_files()
-        previous_records = immutable_files(previous, validate_files(previous, self.config['repository']))
+        previous_records = immutable_files(
+            previous, validate_files(previous, self.config['repository'])
+        )
         current_records = immutable_files(files, graph)
         for identity, content in previous_records.items():
             if current_records.get(identity) != content:
-                raise HubError('A published memory revision was modified or removed. Existing data was preserved.')
+                raise HubError(
+                    'A published memory revision was modified or removed. Existing data was preserved.'
+                )
         delivered = []
         for intent in self._intents():
             if intent['state'] == 'published':  # left in the queue by an earlier runtime
@@ -450,21 +639,31 @@ class Hub:
         self._drop_legacy_snapshots()
         if state.get('library_review') and graph['manifest'].get('browse_schema') in (1, 2, 3):
             state.pop('library_review', None)
-        if not state.get('library_review') and not any(i['state'] == 'pending-review' for i in self._intents()):
-            state['review_branch'] = None;state.pop('pull_request', None);self._write_state(state)
+        if not state.get('library_review') and not any(
+            i['state'] == 'pending-review' for i in self._intents()
+        ):
+            state['review_branch'] = None
+            state.pop('pull_request', None)
+            self._write_state(state)
         return graph
 
     def refresh(self, offline=False):
         with locked(self.root):
             if offline:
-                state = self._state();state['fresh'] = False;self._write_state(state)
+                state = self._state()
+                state['fresh'] = False
+                self._write_state(state)
             else:
                 try:
                     self._refresh()
                 except TransportError as exc:
-                    state = self._state();state.update(fresh=False, error=str(exc));self._write_state(state)
+                    state = self._state()
+                    state.update(fresh=False, error=str(exc))
+                    self._write_state(state)
                 except HubError as exc:
-                    state = self._state();state.update(fresh=False, error=str(exc));self._write_state(state)
+                    state = self._state()
+                    state.update(fresh=False, error=str(exc))
+                    self._write_state(state)
                     raise
             return self.status()
 
@@ -497,7 +696,9 @@ class Hub:
             path = contained(root, *name.split('/'))
             content = path.read_bytes()
             if sha(content) != digest:
-                raise HubError('Queued operation content changed; the original operation was preserved.')
+                raise HubError(
+                    'Queued operation content changed; the original operation was preserved.'
+                )
             result[name] = content
         if sha(encoded(intent['files'])) != intent['payload_hash']:
             raise HubError('Queued operation manifest changed.')
@@ -531,7 +732,9 @@ class Hub:
         released = []
         with locked(self.root):
             for intent in self._intents():
-                waiting = intent['state'] == HELD or (intent['state'] == 'queued' and intent.get('guard'))
+                waiting = intent['state'] == HELD or (
+                    intent['state'] == 'queued' and intent.get('guard')
+                )
                 if intent['operation'] in operations and waiting:
                     intent.update(state='queued', guard=False, released_at=now())
                     self._write_intent(intent)
@@ -547,7 +750,9 @@ class Hub:
                     continue
                 target = contained(self.root, 'withdrawn', intent['operation'])
                 if target.exists():
-                    raise HubError('An earlier set-aside copy of this save exists; it was preserved.')
+                    raise HubError(
+                        'An earlier set-aside copy of this save exists; it was preserved.'
+                    )
                 target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
                 os.replace(contained(self.root, 'outbox', intent['operation']), target)
                 moved.append(intent['operation'])
@@ -594,24 +799,59 @@ class Hub:
         state = self._state()
         graph = self.graph()
         intents = self._intents()
-        return {'hub': self.id, 'name': graph['manifest']['name'], 'url': self.config['url'],
-                'revision': state['revision'], 'fresh': state.get('fresh', False),
-                'contribution_mode': graph['manifest']['contribution_mode'],
-                'contribution': 'write' if state.get('write') is True else 'read-only' if state.get('write') is False else 'unverified',
-                'queued': sum(i['state'] == 'queued' for i in intents),
-                'pending_review': sum(i['state'] == 'pending-review' for i in intents),
-                'held': sum(i['state'] == HELD for i in intents),
-                'conflicts': sum(len(v) > 1 for v in graph['heads'].values()),
-                'clone': str(self.checkout if self.normal else self.repository),
-                'workspace': str(self.checkout / '.blog-studio') if self.normal else None,
-                'layout': 'checkout' if self.normal else 'legacy-bare', 'error': state.get('error'),
-                'pull_request': state.get('pull_request'),
-                'blog_library': 'pending-review' if state.get('library_review') else 'available' if graph['manifest'].get('browse_schema') in (1, 2, 3) else 'upgrade-on-next-sync',
-                'blog_library_url': self.config['url'] + '/tree/main/blogs' if graph['manifest'].get('browse_schema') in (1, 2, 3) else None}
+        return {
+            'hub': self.id,
+            'name': graph['manifest']['name'],
+            'url': self.config['url'],
+            'revision': state['revision'],
+            'fresh': state.get('fresh', False),
+            'contribution_mode': graph['manifest']['contribution_mode'],
+            'contribution': 'write'
+            if state.get('write') is True
+            else 'read-only'
+            if state.get('write') is False
+            else 'unverified',
+            'queued': sum(i['state'] == 'queued' for i in intents),
+            'pending_review': sum(i['state'] == 'pending-review' for i in intents),
+            'held': sum(i['state'] == HELD for i in intents),
+            'conflicts': sum(len(v) > 1 for v in graph['heads'].values()),
+            'clone': str(self.checkout if self.normal else self.repository),
+            'workspace': str(self.checkout / '.blog-studio') if self.normal else None,
+            'layout': 'checkout' if self.normal else 'legacy-bare',
+            'error': state.get('error'),
+            'pull_request': state.get('pull_request'),
+            'blog_library': 'pending-review'
+            if state.get('library_review')
+            else 'available'
+            if graph['manifest'].get('browse_schema') in (1, 2, 3)
+            else 'upgrade-on-next-sync',
+            'blog_library_url': self.config['url'] + '/tree/main/blogs'
+            if graph['manifest'].get('browse_schema') in (1, 2, 3)
+            else None,
+        }
 
-    def save(self, kind, title, body='', *, item=None, parents=None, operation=None, data=None,
-             dependencies=None, artifacts=None, scope=None, tags=None, summary='', status='active',
-             offline=False, sync=True, actor=None, hold_if_stale=False, inherited=None):
+    def save(
+        self,
+        kind,
+        title,
+        body='',
+        *,
+        item=None,
+        parents=None,
+        operation=None,
+        data=None,
+        dependencies=None,
+        artifacts=None,
+        scope=None,
+        tags=None,
+        summary='',
+        status='active',
+        offline=False,
+        sync=True,
+        actor=None,
+        hold_if_stale=False,
+        inherited=None,
+    ):
         """Queue one immutable revision and, unless told otherwise, deliver it.
 
         hold_if_stale: a sync keeps this save local, instead of pushing a competing
@@ -630,39 +870,81 @@ class Hub:
             graph = self.graph()
             remote_record = graph['revisions'].get(operation)
             if parents is None:
-                parents = existing['request']['parents'] if existing else remote_record['parents'] if remote_record else graph['heads'].get(item, [])
+                parents = (
+                    existing['request']['parents']
+                    if existing
+                    else remote_record['parents']
+                    if remote_record
+                    else graph['heads'].get(item, [])
+                )
                 if len(parents) > 1:
-                    raise HubError('This item has competing revisions. Resolve them explicitly with all selected parents.')
+                    raise HubError(
+                        'This item has competing revisions. Resolve them explicitly with all selected parents.'
+                    )
             parents = sorted(uid(p) for p in parents)
             files = {'BODY.md': (body.encode('utf-8'), 'text')}
             for name, (content, media) in (artifacts or {}).items():
                 files['artifacts/' + artifact_name(name)] = (content, media)
             if inherited and parents:
                 held = ancestor_files(graph, parents)
-                files = {name: value for name, value in files.items()
-                         if not (inherited(name) and (name, sha(value[0])) in held)}
-            request = {'item': item, 'kind': kind, 'title': title, 'parents': parents, 'data': data or {},
-                       'dependencies': dependencies or [], 'scope': scope or {'level': 'team', 'key': ''},
-                       'tags': tags or [], 'summary': summary, 'status': status,
-                       'files': {name: {'sha256': sha(content), 'media': media} for name, (content, media) in files.items()}}
+                files = {
+                    name: value
+                    for name, value in files.items()
+                    if not (inherited(name) and (name, sha(value[0])) in held)
+                }
+            request = {
+                'item': item,
+                'kind': kind,
+                'title': title,
+                'parents': parents,
+                'data': data or {},
+                'dependencies': dependencies or [],
+                'scope': scope or {'level': 'team', 'key': ''},
+                'tags': tags or [],
+                'summary': summary,
+                'status': status,
+                'files': {
+                    name: {'sha256': sha(content), 'media': media}
+                    for name, (content, media) in files.items()
+                },
+            }
             request_hash = sha(encoded(request))
             if existing:
                 if existing['request_hash'] != request_hash:
                     raise HubError('An operation ID cannot be reused with different content.')
                 result = self._sync(offline) if sync else self.status()
-                return {**result, 'hub_commit': result['revision'], 'item': item, 'revision': operation, 'operation': operation}
+                return {
+                    **result,
+                    'hub_commit': result['revision'],
+                    'item': item,
+                    'revision': operation,
+                    'operation': operation,
+                }
             if remote_record:
                 remote_request = {key: remote_record[key] for key in request}
                 if sha(encoded(remote_request)) != request_hash:
                     raise HubError('An operation ID cannot be reused with different content.')
                 result = self._sync(offline) if sync else self.status()
-                return {**result, 'hub_commit': result['revision'], 'item': item, 'revision': operation, 'operation': operation}
-            record = {'schema': 1, 'operation': operation, 'revision': operation, **request,
-                      'actor': actor or self.config.get('actor') or 'Blog Studio member', 'created_at': now()}
+                return {
+                    **result,
+                    'hub_commit': result['revision'],
+                    'item': item,
+                    'revision': operation,
+                    'operation': operation,
+                }
+            record = {
+                'schema': 1,
+                'operation': operation,
+                'revision': operation,
+                **request,
+                'actor': actor or self.config.get('actor') or 'Blog Studio member',
+                'created_at': now(),
+            }
             prefix = record_path(record, '', graph['manifest'])
             additions = {prefix + name: content for name, (content, _) in files.items()}
             additions[prefix + 'record.json'] = encoded(record)
-            combined = dict(self.files());combined.update(additions)
+            combined = dict(self.files())
+            combined.update(additions)
             validate_files(combined, self.config['repository'])
             folder = contained(self.root, 'outbox', operation)
             stage = contained(self.root, 'outbox', '.' + operation)
@@ -673,16 +955,30 @@ class Hub:
                 for name, content in additions.items():
                     atomic(contained(stage, 'payload', *name.split('/')), content)
                 hashes = {name: sha(content) for name, content in additions.items()}
-                intent = {'hub': self.id, 'operation': operation, 'state': 'queued',
-                          'created_at': record['created_at'], 'request': request, 'request_hash': request_hash,
-                          'files': hashes, 'payload_hash': sha(encoded(hashes)), 'guard': bool(hold_if_stale)}
+                intent = {
+                    'hub': self.id,
+                    'operation': operation,
+                    'state': 'queued',
+                    'created_at': record['created_at'],
+                    'request': request,
+                    'request_hash': request_hash,
+                    'files': hashes,
+                    'payload_hash': sha(encoded(hashes)),
+                    'guard': bool(hold_if_stale),
+                }
                 write_json(stage / 'intent.json', intent)
                 os.replace(stage, folder)
             finally:
                 if stage.exists():
                     shutil.rmtree(stage)
             result = self._sync(offline) if sync else {'status': 'local-saved', **self.status()}
-            return {**result, 'hub_commit': result['revision'], 'item': item, 'revision': operation, 'operation': operation}
+            return {
+                **result,
+                'hub_commit': result['revision'],
+                'item': item,
+                'revision': operation,
+                'operation': operation,
+            }
 
     def _hold_stale(self, intents, graph):
         """Split queued saves into those safe to push and those that must wait.
@@ -700,8 +996,15 @@ class Hub:
             request = intent['request']
             intent.update(state=HELD, held_reason=reason, held_at=now())
             self._write_intent(intent)
-            held.append({'operation': intent['operation'], 'item': request['item'],
-                         'kind': request['kind'], 'title': request['title'], 'reason': reason})
+            held.append(
+                {
+                    'operation': intent['operation'],
+                    'item': request['item'],
+                    'kind': request['kind'],
+                    'title': request['title'],
+                    'reason': reason,
+                }
+            )
 
         waiting = list(intents)  # oldest first, so a chain of local saves is judged in order
         progressed = True
@@ -710,7 +1013,9 @@ class Hub:
             for intent in waiting:
                 request = intent['request']
                 parents = set(request['parents'])
-                needed = parents | {dependency['revision'] for dependency in request['dependencies']}
+                needed = parents | {
+                    dependency['revision'] for dependency in request['dependencies']
+                }
                 if not needed <= known:
                     deferred.append(intent)  # may build on a save judged later in this pass
                     continue
@@ -720,7 +1025,9 @@ class Hub:
                     hold(intent, 'parent-superseded')
                     continue
                 known.add(intent['operation'])
-                heads[request['item']] = (heads.get(request['item'], set()) - parents) | {intent['operation']}
+                heads[request['item']] = (heads.get(request['item'], set()) - parents) | {
+                    intent['operation']
+                }
                 ready.append(intent)
             waiting = deferred
         for intent in waiting:
@@ -734,7 +1041,9 @@ class Hub:
         """A sync result. A newly held save is the headline; sync_status keeps the rest."""
         result = {'status': status, **self.status()}
         if held:
-            result.update(status=HELD, sync_status=status, held_now=list(held), next_step=HELD_NEXT_STEP)
+            result.update(
+                status=HELD, sync_status=status, held_now=list(held), next_step=HELD_NEXT_STEP
+            )
         return result
 
     def _review_branch(self, intents, base, state):
@@ -759,11 +1068,15 @@ class Hub:
             if intent['state'] == 'pending-review':
                 intent['state'] = 'queued'
                 self._write_intent(intent)
-        return {'status': 'review-closed', **self.status(), 'closed_branch': branch,
-                'closed_pull_request': closed_request,
-                'next_step': 'The contribution pull request was closed without being merged. Nothing was lost: '
-                             'the saved work is queued again. Find out why it was closed, then sync again to '
-                             'open a new review on a fresh branch.'}
+        return {
+            'status': 'review-closed',
+            **self.status(),
+            'closed_branch': branch,
+            'closed_pull_request': closed_request,
+            'next_step': 'The contribution pull request was closed without being merged. Nothing was lost: '
+            'the saved work is queued again. Find out why it was closed, then sync again to '
+            'open a new review on a fresh branch.',
+        }
 
     def _sync(self, offline=False):
         if offline:
@@ -772,6 +1085,7 @@ class Hub:
             self._write_state(state)
             return {'status': 'queued-offline', **self.status()}
         from hub_browse import changes, verify
+
         repository = self.config['repository']
         provider = self.registry.provider
         held = []
@@ -792,7 +1106,9 @@ class Hub:
                 base = state['revision']
                 additions = {}
                 for intent in intents:
-                    additions.update(relocate_records(self._intent_files(intent), original_graph['manifest']))
+                    additions.update(
+                        relocate_records(self._intent_files(intent), original_graph['manifest'])
+                    )
                 policy_review = provider.review_required(repository)
                 mode = original_graph['manifest']['contribution_mode']
                 review = policy_review or mode == 'review' or bool(state.get('review_branch'))
@@ -810,10 +1126,20 @@ class Hub:
                     if not intents:
                         state['library_review'] = True
                     self._write_state(state)
-                    prior = git(self.repository, 'fetch', '--quiet', provider.transport(self.config),
-                                'refs/heads/' + branch, allow_failure=True)
+                    prior = git(
+                        self.repository,
+                        'fetch',
+                        '--quiet',
+                        provider.transport(self.config),
+                        'refs/heads/' + branch,
+                        allow_failure=True,
+                    )
                     if prior.returncode == 0:
-                        prior_commit = git(self.repository, 'rev-parse', 'FETCH_HEAD^{commit}').decode().strip()
+                        prior_commit = (
+                            git(self.repository, 'rev-parse', 'FETCH_HEAD^{commit}')
+                            .decode()
+                            .strip()
+                        )
                         branch_files = tree_files(self.repository, prior_commit)
                         branch_graph = validate_files(branch_files, repository)
                         verify(branch_files, branch_graph)
@@ -821,13 +1147,17 @@ class Hub:
                         branch_records = immutable_files(branch_files, branch_graph)
                         for identity in original_records.keys() & branch_records.keys():
                             if original_records[identity] != branch_records[identity]:
-                                raise HubError('A contribution branch changed an immutable memory revision.')
+                                raise HubError(
+                                    'A contribution branch changed an immutable memory revision.'
+                                )
                         for saved in branch_graph['revisions'].values():
                             for relative in ('record.json', *saved['files']):
                                 name = record_path(saved, relative, original_graph['manifest'])
                                 content = branch_files[record_path(saved, relative)]
                                 if name in additions and additions[name] != content:
-                                    raise HubError('A contribution branch reused an operation ID with different content.')
+                                    raise HubError(
+                                        'A contribution branch reused an operation ID with different content.'
+                                    )
                                 additions.setdefault(name, content)
                         extra_parents.append(prior_commit)
                 combined = dict(original)
@@ -839,11 +1169,23 @@ class Hub:
                     else:
                         combined[name] = content
                 validate_files(combined, repository)
-                commit = commit_files(self.repository, base, additions, 'Save Team Hub writing and memory',
-                                      self.config.get('actor', 'Blog Studio member'), extra_parents)
+                commit = commit_files(
+                    self.repository,
+                    base,
+                    additions,
+                    'Save Team Hub writing and memory',
+                    self.config.get('actor', 'Blog Studio member'),
+                    extra_parents,
+                )
                 target = branch if review else 'main'
-                pushed = git(self.repository, 'push', '--quiet', provider.transport(self.config),
-                             commit + ':refs/heads/' + target, allow_failure=True)
+                pushed = git(
+                    self.repository,
+                    'push',
+                    '--quiet',
+                    provider.transport(self.config),
+                    commit + ':refs/heads/' + target,
+                    allow_failure=True,
+                )
                 if pushed.returncode == 0:
                     if review:
                         for intent in intents:
@@ -878,7 +1220,9 @@ class Hub:
         content = files[record_path(record, relative)]
         if path.exists():
             if path.read_bytes() != content:
-                raise HubError('The local read artifact changed. Restore it before using this revision.')
+                raise HubError(
+                    'The local read artifact changed. Restore it before using this revision.'
+                )
         else:
             atomic(path, content)
             path.chmod(0o400)
@@ -896,7 +1240,9 @@ class Hub:
         graph = validate_files(files, self.config['repository'])
         if revision is not None and uid(revision) not in graph['revisions']:
             # A save of this clone that is being held is readable when named explicitly.
-            held = {intent['operation'] for intent in self.unshared_chain(revision, dependencies=True)}
+            held = {
+                intent['operation'] for intent in self.unshared_chain(revision, dependencies=True)
+            }
             if held:
                 files = self._with_local(self._remote_files(), self._intents(), also=held)
                 graph = validate_files(files, self.config['repository'])
@@ -908,18 +1254,31 @@ class Hub:
         record = graph['revisions'].get(uid(revision))
         if not record or record['item'] != item:
             raise HubError('Unknown memory item/revision.')
-        paths = {relative: self._cached_read(record, relative, files) for relative in record['files']}
+        paths = {
+            relative: self._cached_read(record, relative, files) for relative in record['files']
+        }
         visibility = 'shared'
         for intent in self._intents():
             if intent['operation'] == revision and intent['state'] != 'published':
                 visibility = intent['state']
-        result = {'record': record, 'paths': paths, 'heads': heads, 'conflicted': len(heads) > 1,
-                  'visibility': visibility, 'hub': self.id, 'hub_commit': self._state()['revision']}
+        result = {
+            'record': record,
+            'paths': paths,
+            'heads': heads,
+            'conflicted': len(heads) > 1,
+            'visibility': visibility,
+            'hub': self.id,
+            'hub_commit': self._state()['revision'],
+        }
         if inherit:
             inherited = {}
             for earlier in ancestors(graph, revision):
                 for relative in earlier['files']:
-                    if inherit(relative) and relative not in record['files'] and relative not in inherited:
+                    if (
+                        inherit(relative)
+                        and relative not in record['files']
+                        and relative not in inherited
+                    ):
                         inherited[relative] = self._cached_read(earlier, relative, files)
             result['inherited'] = inherited
         return result
@@ -937,23 +1296,48 @@ class Hub:
         for item, heads in graph['heads'].items():
             for revision in sorted(heads):
                 record = graph['revisions'][revision]
-                if (record['status'] == 'tombstone' or (kind and record['kind'] != kind)
-                        or (scope and record['scope'] != scope) or (tag and tag not in record['tags'])):
+                if (
+                    record['status'] == 'tombstone'
+                    or (kind and record['kind'] != kind)
+                    or (scope and record['scope'] != scope)
+                    or (tag and tag not in record['tags'])
+                ):
                     continue
                 prefix = record_path(record, '')
-                text = (record['title'] + ' ' + record['summary'] + ' ' + ' '.join(record['tags'])
-                        + ' ' + files[prefix + 'BODY.md'].decode()).casefold()
+                text = (
+                    record['title']
+                    + ' '
+                    + record['summary']
+                    + ' '
+                    + ' '.join(record['tags'])
+                    + ' '
+                    + files[prefix + 'BODY.md'].decode()
+                ).casefold()
                 if any(term not in text for term in terms):
                     continue
-                items.append({'item': item, 'revision': revision, 'kind': record['kind'],
-                              'title': record['title'], 'summary': record['summary'][:300],
-                              'scope': record['scope'], 'status': record['status'],
-                              'conflicted': len(heads) > 1})
+                items.append(
+                    {
+                        'item': item,
+                        'revision': revision,
+                        'kind': record['kind'],
+                        'title': record['title'],
+                        'summary': record['summary'][:300],
+                        'scope': record['scope'],
+                        'status': record['status'],
+                        'conflicted': len(heads) > 1,
+                    }
+                )
         items.sort(key=lambda row: (row['title'], row['item'], row['revision']))
         state = self._state()
-        return {'items': items[offset:offset+limit], 'total': len(items), 'offset': offset,
-                'truncated': len(items) > offset+limit, 'hub': self.id,
-                'revision': state['revision'], 'fresh': state.get('fresh', False)}
+        return {
+            'items': items[offset : offset + limit],
+            'total': len(items),
+            'offset': offset,
+            'truncated': len(items) > offset + limit,
+            'hub': self.id,
+            'revision': state['revision'],
+            'fresh': state.get('fresh', False),
+        }
 
     def context(self, project=None, author=None, article=None, limit=50):
         if not 1 <= limit <= 200:
@@ -968,10 +1352,21 @@ class Hub:
         for item, heads in graph['heads'].items():
             for revision in heads:
                 record = graph['revisions'][revision]
-                if record['data'].get('collection'):continue
-                if record['kind'] in ('rule', 'context') and record['scope'] in selected and record['status'] != 'tombstone':
-                    row = {'item': item, 'revision': revision, 'scope': record['scope'], 'title': record['title'],
-                           'conflicted': len(heads) > 1, 'key': record['data'].get('key')}
+                if record['data'].get('collection'):
+                    continue
+                if (
+                    record['kind'] in ('rule', 'context')
+                    and record['scope'] in selected
+                    and record['status'] != 'tombstone'
+                ):
+                    row = {
+                        'item': item,
+                        'revision': revision,
+                        'scope': record['scope'],
+                        'title': record['title'],
+                        'conflicted': len(heads) > 1,
+                        'key': record['data'].get('key'),
+                    }
                     (conflicts if len(heads) > 1 else result).append(row)
         keys = {}
         for row in result:
@@ -986,10 +1381,16 @@ class Hub:
                         conflicts.append(row)
         usable = [r for r in result if not r['conflicted']]
         usable.sort(key=lambda r: selected.index(r['scope']), reverse=True)
-        return {'selected': usable[:limit], 'conflicts': conflicts[:limit], 'total': len(usable),
-                'truncated': len(usable) > limit or len(conflicts) > limit,
-                'precedence': 'Current request, explicit article/author/project selections, then team defaults.',
-                'hub': self.id, 'revision': self._state()['revision'], 'fresh': self._state().get('fresh', False)}
+        return {
+            'selected': usable[:limit],
+            'conflicts': conflicts[:limit],
+            'total': len(usable),
+            'truncated': len(usable) > limit or len(conflicts) > limit,
+            'precedence': 'Current request, explicit article/author/project selections, then team defaults.',
+            'hub': self.id,
+            'revision': self._state()['revision'],
+            'fresh': self._state().get('fresh', False),
+        }
 
 
 def parser():
@@ -1000,39 +1401,79 @@ def parser():
     actions = p.add_subparsers(dest='action', required=True)
     actions.add_parser('list')
     for name in ('create', 'join'):
-        sub = actions.add_parser(name);sub.add_argument('--repo', required=True);sub.add_argument('--destination', type=Path)
+        sub = actions.add_parser(name)
+        sub.add_argument('--repo', required=True)
+        sub.add_argument('--destination', type=Path)
         if name == 'create':
-            sub.add_argument('--name', required=True);sub.add_argument('--mode', choices=('auto', 'direct', 'review'), default='auto')
-    sub = actions.add_parser('migrate');sub.add_argument('--destination', type=Path)
+            sub.add_argument('--name', required=True)
+            sub.add_argument('--mode', choices=('auto', 'direct', 'review'), default='auto')
+    sub = actions.add_parser('migrate')
+    sub.add_argument('--destination', type=Path)
     for name in ('select', 'leave', 'status'):
         actions.add_parser(name)
     for name in ('refresh', 'sync'):
-        sub = actions.add_parser(name);sub.add_argument('--offline', action='store_true')
+        sub = actions.add_parser(name)
+        sub.add_argument('--offline', action='store_true')
     for name in ('save', 'remember', 'resolve', 'remove'):
-        sub = actions.add_parser(name);sub.add_argument('--item');sub.add_argument('--parent', action='append')
-        sub.add_argument('--operation');sub.add_argument('--kind', choices=KINDS, default='note')
-        sub.add_argument('--title', required=True);sub.add_argument('--file', type=Path)
-        sub.add_argument('--data-file', type=Path);sub.add_argument('--dependencies-file', type=Path)
-        sub.add_argument('--scope', choices=('team', 'project', 'author', 'article'), default='team')
-        sub.add_argument('--scope-key', default='');sub.add_argument('--tag', action='append', default=[])
-        sub.add_argument('--summary', default='');sub.add_argument('--artifact', action='append', default=[])
-        sub.add_argument('--offline', action='store_true');sub.add_argument('--no-sync', action='store_true')
-        sub.add_argument('--status', choices=('active', 'provisional', 'confirmed'), default='active')
-    sub = actions.add_parser('read');sub.add_argument('--item', required=True);sub.add_argument('--revision')
-    sub = actions.add_parser('history');sub.add_argument('--item', required=True);sub.add_argument('--limit', type=int, default=20);sub.add_argument('--offset', type=int, default=0)
-    sub = actions.add_parser('find');sub.add_argument('--query', default='');sub.add_argument('--kind', choices=KINDS)
-    sub.add_argument('--tag');sub.add_argument('--limit', type=int, default=10);sub.add_argument('--offset', type=int, default=0)
-    sub = actions.add_parser('context');sub.add_argument('--project');sub.add_argument('--author');sub.add_argument('--article');sub.add_argument('--limit', type=int, default=50)
-    sub = actions.add_parser('import-workspace');sub.add_argument('--article', action='append', default=[])
-    sub.add_argument('--source', action='append', default=[]);sub.add_argument('--profile', action='append', default=[])
+        sub = actions.add_parser(name)
+        sub.add_argument('--item')
+        sub.add_argument('--parent', action='append')
+        sub.add_argument('--operation')
+        sub.add_argument('--kind', choices=KINDS, default='note')
+        sub.add_argument('--title', required=True)
+        sub.add_argument('--file', type=Path)
+        sub.add_argument('--data-file', type=Path)
+        sub.add_argument('--dependencies-file', type=Path)
+        sub.add_argument(
+            '--scope', choices=('team', 'project', 'author', 'article'), default='team'
+        )
+        sub.add_argument('--scope-key', default='')
+        sub.add_argument('--tag', action='append', default=[])
+        sub.add_argument('--summary', default='')
+        sub.add_argument('--artifact', action='append', default=[])
+        sub.add_argument('--offline', action='store_true')
+        sub.add_argument('--no-sync', action='store_true')
+        sub.add_argument(
+            '--status', choices=('active', 'provisional', 'confirmed'), default='active'
+        )
+    sub = actions.add_parser('read')
+    sub.add_argument('--item', required=True)
+    sub.add_argument('--revision')
+    sub = actions.add_parser('history')
+    sub.add_argument('--item', required=True)
+    sub.add_argument('--limit', type=int, default=20)
+    sub.add_argument('--offset', type=int, default=0)
+    sub = actions.add_parser('find')
+    sub.add_argument('--query', default='')
+    sub.add_argument('--kind', choices=KINDS)
+    sub.add_argument('--tag')
+    sub.add_argument('--limit', type=int, default=10)
+    sub.add_argument('--offset', type=int, default=0)
+    sub = actions.add_parser('context')
+    sub.add_argument('--project')
+    sub.add_argument('--author')
+    sub.add_argument('--article')
+    sub.add_argument('--limit', type=int, default=50)
+    sub = actions.add_parser('import-workspace')
+    sub.add_argument('--article', action='append', default=[])
+    sub.add_argument('--source', action='append', default=[])
+    sub.add_argument('--profile', action='append', default=[])
     sub.add_argument('--offline', action='store_true')
-    sub.add_argument('--fork', action='store_true',
-                     help='Share these saves as a competing version even though a newer shared version exists')
-    sub = actions.add_parser('checkout-workspace');sub.add_argument('--article', action='append', default=[])
-    sub.add_argument('--source', action='append', default=[]);sub.add_argument('--profile', action='append', default=[])
+    sub.add_argument(
+        '--fork',
+        action='store_true',
+        help='Share these saves as a competing version even though a newer shared version exists',
+    )
+    sub = actions.add_parser('checkout-workspace')
+    sub.add_argument('--article', action='append', default=[])
+    sub.add_argument('--source', action='append', default=[])
+    sub.add_argument('--profile', action='append', default=[])
     sub.add_argument('--offline', action='store_true')
-    sub.add_argument('--set-aside-local', action='store_true',
-                     help='Continue from the shared version; unshared local work is kept as a backup, not shared')
+    sub.add_argument(
+        '--set-aside-local',
+        action='store_true',
+        help='Continue from the shared version; unshared local work is kept as a backup, not shared',
+    )
     return p
 
 
@@ -1044,41 +1485,87 @@ def main():
             result = registry.list()
         elif args.action in ('create', 'join'):
             if args.action == 'create':
-                result = registry.create(args.repo, args.name, args.destination, args.workspace, args.mode)
+                result = registry.create(
+                    args.repo, args.name, args.destination, args.workspace, args.mode
+                )
             else:
                 result = registry.join(args.repo, args.destination, args.workspace)
         else:
-            hub = registry.hub(args.hub) if args.hub else registry.selected(args.workspace) if args.workspace else None
+            hub = (
+                registry.hub(args.hub)
+                if args.hub
+                else registry.selected(args.workspace)
+                if args.workspace
+                else None
+            )
             if not hub:
                 raise HubError('Select a joined hub or provide --hub and its registry.')
             if args.action in ('select', 'leave'):
                 if not args.workspace:
                     raise HubError('A project workspace is required.')
                 result = getattr(registry, args.action)(hub.id, args.workspace)
-            elif args.action == 'migrate':result = registry.migrate(hub.id, args.destination)
-            elif args.action == 'status':result = hub.status()
-            elif args.action in ('sync', 'refresh'):result = getattr(hub, args.action)(args.offline)
-            elif args.action == 'read':result = hub.read(args.item, args.revision)
+            elif args.action == 'migrate':
+                result = registry.migrate(hub.id, args.destination)
+            elif args.action == 'status':
+                result = hub.status()
+            elif args.action in ('sync', 'refresh'):
+                result = getattr(hub, args.action)(args.offline)
+            elif args.action == 'read':
+                result = hub.read(args.item, args.revision)
             elif args.action == 'history':
                 if not 1 <= args.limit <= 50 or args.offset < 0:
                     raise HubError('Choose a history limit from 1 to 50 and a nonnegative offset.')
                 graph = hub.graph()
-                records = sorted((r for r in graph['revisions'].values() if r['item'] == uid(args.item)), key=lambda r: r['created_at'], reverse=True)
-                result = {'revisions': [{k: r[k] for k in ('item','revision','parents','title','status','created_at','actor')} for r in records[args.offset:args.offset+args.limit]],
-                          'total': len(records), 'truncated': len(records) > args.offset+args.limit, 'heads': graph['heads'].get(args.item, [])[:50]}
-            elif args.action == 'find':result = hub.find(args.query, args.kind, tag=args.tag, limit=args.limit, offset=args.offset)
-            elif args.action == 'context':result = hub.context(args.project, args.author, args.article, limit=args.limit)
+                records = sorted(
+                    (r for r in graph['revisions'].values() if r['item'] == uid(args.item)),
+                    key=lambda r: r['created_at'],
+                    reverse=True,
+                )
+                result = {
+                    'revisions': [
+                        {
+                            k: r[k]
+                            for k in (
+                                'item',
+                                'revision',
+                                'parents',
+                                'title',
+                                'status',
+                                'created_at',
+                                'actor',
+                            )
+                        }
+                        for r in records[args.offset : args.offset + args.limit]
+                    ],
+                    'total': len(records),
+                    'truncated': len(records) > args.offset + args.limit,
+                    'heads': graph['heads'].get(args.item, [])[:50],
+                }
+            elif args.action == 'find':
+                result = hub.find(
+                    args.query, args.kind, tag=args.tag, limit=args.limit, offset=args.offset
+                )
+            elif args.action == 'context':
+                result = hub.context(args.project, args.author, args.article, limit=args.limit)
             elif args.action in ('import-workspace', 'checkout-workspace'):
                 if not args.workspace:
                     raise HubError('An explicit writing workspace is required.')
                 from hub_workspace import Workspace
+
                 adapter = Workspace(args.workspace, hub)
-                selections = {'articles': args.article, 'sources': args.source, 'profiles': args.profile}
+                selections = {
+                    'articles': args.article,
+                    'sources': args.source,
+                    'profiles': args.profile,
+                }
                 if args.action == 'import-workspace':
-                    result = adapter.publish_selected(selections, offline=args.offline, fork=args.fork)
+                    result = adapter.publish_selected(
+                        selections, offline=args.offline, fork=args.fork
+                    )
                 else:
-                    result = adapter.checkout_selected(selections, offline=args.offline,
-                                                       set_aside=args.set_aside_local)
+                    result = adapter.checkout_selected(
+                        selections, offline=args.offline, set_aside=args.set_aside_local
+                    )
             else:
                 parents = args.parent
                 if args.action in ('resolve', 'remove') and not args.item:
@@ -1086,30 +1573,54 @@ def main():
                 if args.action == 'resolve':
                     heads = hub.graph()['heads'].get(uid(args.item), [])
                     if len(heads) < 2 or set(parents or []) != set(heads):
-                        raise HubError('Resolution must name all current competing parent revisions.')
+                        raise HubError(
+                            'Resolution must name all current competing parent revisions.'
+                        )
                 body = args.file.read_text(encoding='utf-8') if args.file else ''
                 artifacts = {}
                 for entry in args.artifact:
                     if '=' not in entry:
                         raise HubError('Use --artifact name=absolute-file.')
-                    name, value = entry.split('=', 1);path = Path(value)
-                    if not path.is_absolute() or path.is_symlink():raise HubError('Select an absolute regular artifact file.')
+                    name, value = entry.split('=', 1)
+                    path = Path(value)
+                    if not path.is_absolute() or path.is_symlink():
+                        raise HubError('Select an absolute regular artifact file.')
                     content = path.read_bytes()
-                    try:content.decode('utf-8');media = 'text'
-                    except UnicodeError:media = 'binary'
+                    try:
+                        content.decode('utf-8')
+                        media = 'text'
+                    except UnicodeError:
+                        media = 'binary'
                     artifacts[name] = (content, media)
                 if args.scope != 'team' and not args.scope_key:
                     raise HubError('A project, author, or article rule needs its scope key.')
-                result = hub.save(args.kind, args.title, body, item=args.item, parents=parents,
-                    operation=args.operation, data=read_json(args.data_file) if args.data_file else None,
-                    dependencies=read_json(args.dependencies_file) if args.dependencies_file else None,
-                    artifacts=artifacts, scope={'level': args.scope, 'key': args.scope_key}, tags=args.tag,
-                    summary=args.summary, status='tombstone' if args.action == 'remove' else args.status,
-                    offline=args.offline, sync=not args.no_sync)
+                result = hub.save(
+                    args.kind,
+                    args.title,
+                    body,
+                    item=args.item,
+                    parents=parents,
+                    operation=args.operation,
+                    data=read_json(args.data_file) if args.data_file else None,
+                    dependencies=read_json(args.dependencies_file)
+                    if args.dependencies_file
+                    else None,
+                    artifacts=artifacts,
+                    scope={'level': args.scope, 'key': args.scope_key},
+                    tags=args.tag,
+                    summary=args.summary,
+                    status='tombstone' if args.action == 'remove' else args.status,
+                    offline=args.offline,
+                    sync=not args.no_sync,
+                )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except (HubError, OSError, ValueError, KeyError, TypeError) as exc:
-        message = str(exc) if isinstance(exc, HubError) else 'Hub operation could not finish. Check selected paths and input records; saved work is retained.'
+        message = (
+            str(exc)
+            if isinstance(exc, HubError)
+            else 'Hub operation could not finish. Check selected paths and input records; saved work is retained.'
+        )
         print(json.dumps({'status': 'error', 'error': message}))
         return 1
 

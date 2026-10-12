@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Portable Blog Studio artifacts. Standard library; no model/network access."""
+
 from __future__ import annotations
 
 import argparse
@@ -14,7 +15,14 @@ import shutil
 import sys
 import uuid
 
-PURPOSES = ('manuscript', 'outline', 'reference', 'inspiration', 'voice-sample', 'author-background')
+PURPOSES = (
+    'manuscript',
+    'outline',
+    'reference',
+    'inspiration',
+    'voice-sample',
+    'author-background',
+)
 MODES = ('existing', 'first-draft', 'outline-only', 'from-outline', 'interview', 'discover')
 CHECKS = ('proofread', 'factual-support', 'shape', 'humanization', 'geo')
 SOURCE_CHECKS = ('factual-support', 'geo')
@@ -64,6 +72,7 @@ def write_json(path, value):
 
 def read_json(path):
     from local_reads import read
+
     return json.loads(read(path).decode('utf-8'))
 
 
@@ -98,11 +107,14 @@ def locked(root):
     for the first to finish before reporting that the workspace is busy.
     """
     from hub_store import acquire_lock, release_lock
+
     fd = acquire_lock(inside(root, '.studio.lock'))
     if fd is None:
-        raise ValueError('Workspace is busy: another Blog Studio command is still running after a short wait. '
-                         'Retry shortly; the lock clears by itself when that command ends, so do not delete '
-                         '.studio.lock.')
+        raise ValueError(
+            'Workspace is busy: another Blog Studio command is still running after a short wait. '
+            'Retry shortly; the lock clears by itself when that command ends, so do not delete '
+            '.studio.lock.'
+        )
     try:
         yield
     finally:
@@ -147,7 +159,9 @@ def validate_samples(root, values):
     for value in values:
         _, source = item(root, 'sources', value)
         if 'voice-sample' not in source['purposes']:
-            raise ValueError('Profile samples must be classified as authored voice-sample material.')
+            raise ValueError(
+                'Profile samples must be classified as authored voice-sample material.'
+            )
         if source['status'] != 'ready':
             raise ValueError('Profile samples must have readable content.')
 
@@ -159,8 +173,14 @@ def profile_command(root, args):
         if directory.exists():
             raise ValueError('Profile already exists; use save to create a revision.')
         validate_samples(root, args.sample)
-        record = {'id': value, 'name': args.name, 'revision': 1, 'status': args.status,
-                  'sample_ids': args.sample, 'created_at': now()}
+        record = {
+            'id': value,
+            'name': args.name,
+            'revision': 1,
+            'status': args.status,
+            'sample_ids': args.sample,
+            'created_at': now(),
+        }
         guide = read_text(args.guide_file) if args.guide_file else ''
         if args.status == 'confirmed' and not guide.strip():
             raise ValueError('A confirmed profile needs a readable voice guide.')
@@ -180,14 +200,20 @@ def profile_command(root, args):
         saved = inside(directory, 'revisions', str(revision))
         if not (saved / 'record.json').exists():
             raise ValueError('Unknown profile revision.')
-        return {**read_json(saved / 'record.json'), 'guide': str(saved / 'VOICE.md'),
-                'background': str(saved / 'BACKGROUND.md'), 'rules': str(saved / 'rules.json')}
+        return {
+            **read_json(saved / 'record.json'),
+            'guide': str(saved / 'VOICE.md'),
+            'background': str(saved / 'BACKGROUND.md'),
+            'rules': str(saved / 'rules.json'),
+        }
     guide = read_text(args.guide_file)
     if not guide.strip():
         raise ValueError('Voice guide cannot be empty.')
     samples = args.sample if args.sample is not None else record['sample_ids']
     validate_samples(root, samples)
-    rules = read_json(Path(args.rules_file)) if args.rules_file else read_json(directory / 'rules.json')
+    rules = (
+        read_json(Path(args.rules_file)) if args.rules_file else read_json(directory / 'rules.json')
+    )
     validate_rules(rules)
     record['revision'] += 1
     record['sample_ids'] = samples
@@ -205,7 +231,9 @@ def validate_rules(rules):
     if not isinstance(rules, dict):
         raise ValueError('Rules must be a JSON object.')
     for name in ('banished_words', 'banished_phrases'):
-        if name in rules and (not isinstance(rules[name], list) or not all(isinstance(x, str) for x in rules[name])):
+        if name in rules and (
+            not isinstance(rules[name], list) or not all(isinstance(x, str) for x in rules[name])
+        ):
             raise ValueError(f'{name} must be a list of strings.')
     for name in ('no_em_dashes', 'no_ascii_double_hyphen'):
         if name in rules and not isinstance(rules[name], bool):
@@ -225,8 +253,13 @@ def sharing_limits(text, original, original_name):
     original is only a note: it stays on this computer while the text is shared.
     """
     from hub_store import size_problem
-    text_problem = size_problem('Its extracted text (content.md)', text.encode(), 'text') if text else None
-    original_note = size_problem('Its original file ' + original_name, original) if original else None
+
+    text_problem = (
+        size_problem('Its extracted text (content.md)', text.encode(), 'text') if text else None
+    )
+    original_note = (
+        size_problem('Its original file ' + original_name, original) if original else None
+    )
     return text_problem, original_note
 
 
@@ -241,15 +274,25 @@ def source_command(root, args):
             text = original.decode('utf-8')
         if text is None and args.file and Path(args.file).suffix.lower() in ('.html', '.htm'):
             from performance import extract
+
             extraction, _ = extract(root, original, Path(args.file).suffix)
             text = extraction['text']
         status = args.status or ('ready' if text and text.strip() else 'pending')
         if status == 'ready' and not (text and text.strip()):
-            raise ValueError('Ready source needs nonempty extracted text; use pending/unavailable otherwise.')
-        text_problem, original_note = sharing_limits(text, original, Path(args.file).name if args.file else '')
+            raise ValueError(
+                'Ready source needs nonempty extracted text; use pending/unavailable otherwise.'
+            )
+        text_problem, original_note = sharing_limits(
+            text, original, Path(args.file).name if args.file else ''
+        )
         if text_problem and shared_workspace(root):
-            raise ValueError("'" + args.name + "' is too large to share with the selected Team Hub. " + text_problem
-                             + ' Nothing was saved. Add a shorter excerpt with --text-file, or split the source.')
+            raise ValueError(
+                "'"
+                + args.name
+                + "' is too large to share with the selected Team Hub. "
+                + text_problem
+                + ' Nothing was saved. Add a shorter excerpt with --text-file, or split the source.'
+            )
         value = new_id(args.name)
         directory = inside(root, 'sources', value)
         directory.mkdir()
@@ -259,28 +302,53 @@ def source_command(root, args):
             atomic(directory / original_path, original)
         if text is not None:
             atomic(directory / 'content.md', text.encode())
-        record = {'id': value, 'name': args.name, 'origin': args.origin or (str(Path(args.file).resolve()) if args.file else ''),
-                  'original_filename': Path(args.file).name if args.file else None,
-                  'original_path': original_path, 'original_sha256': digest(original) if original is not None else None,
-                  'content_sha256': digest(text.encode()) if text is not None else None,
-                  'purposes': args.purpose, 'author': args.author, 'status': status,
-                  'note': args.note, 'revision': 1, 'created_at': now(), 'retrieved_at': now() if text else None}
+        record = {
+            'id': value,
+            'name': args.name,
+            'origin': args.origin or (str(Path(args.file).resolve()) if args.file else ''),
+            'original_filename': Path(args.file).name if args.file else None,
+            'original_path': original_path,
+            'original_sha256': digest(original) if original is not None else None,
+            'content_sha256': digest(text.encode()) if text is not None else None,
+            'purposes': args.purpose,
+            'author': args.author,
+            'status': status,
+            'note': args.note,
+            'revision': 1,
+            'created_at': now(),
+            'retrieved_at': now() if text else None,
+        }
         if extraction:
-            record['extraction'] = {k:v for k,v in extraction.items() if k != 'text'}
-        persist(directory, 'sources', record)  # Recoverable intake before a potentially slow CLI call.
+            record['extraction'] = {k: v for k, v in extraction.items() if k != 'text'}
+        persist(
+            directory, 'sources', record
+        )  # Recoverable intake before a potentially slow CLI call.
         from source_curator import enrich
+
         enrich(root, record, text)
         persist(directory, 'sources', record)
         notes = [note for note in (text_problem, original_note) if note]
         if notes:
             # Local-only detail for this response; not part of the saved record.
-            return {**record, 'sharing_limits': notes + [
-                'A Team Hub shares the extracted text; a file over the limit stays on this computer.']}
+            return {
+                **record,
+                'sharing_limits': notes
+                + [
+                    'A Team Hub shares the extracted text; a file over the limit stays on this computer.'
+                ],
+            }
         return record
     directory, record = item(root, 'sources', args.id)
     if args.action == 'show':
-        return {**record, 'content_path': str(inside(directory, 'content.md')) if (directory / 'content.md').exists() else None,
-                'original_file': str(inside(directory, record['original_path'])) if record['original_path'] else None}
+        return {
+            **record,
+            'content_path': str(inside(directory, 'content.md'))
+            if (directory / 'content.md').exists()
+            else None,
+            'original_file': str(inside(directory, record['original_path']))
+            if record['original_path']
+            else None,
+        }
     if args.text_file:
         text = read_text(args.text_file)
     else:
@@ -291,8 +359,13 @@ def source_command(root, args):
     if args.text_file and shared_workspace(root):
         text_problem, _ = sharing_limits(text, None, '')
         if text_problem:
-            raise ValueError("'" + record['name'] + "' would be too large to share with the selected Team Hub. "
-                             + text_problem + ' Nothing was changed. Supply a shorter excerpt with --text-file.')
+            raise ValueError(
+                "'"
+                + record['name']
+                + "' would be too large to share with the selected Team Hub. "
+                + text_problem
+                + ' Nothing was changed. Supply a shorter excerpt with --text-file.'
+            )
     history = inside(directory, 'revisions', str(record['revision']))
     history.mkdir(parents=True, exist_ok=True)
     write_json(history / 'record.json', record)
@@ -304,12 +377,15 @@ def source_command(root, args):
         record['retrieved_at'] = now()
     record['revision'] += 1
     record['status'] = status
-    if record.get('analysis',{}).get('sha256') != record.get('content_sha256') and record.get('analysis'):
-        record['analysis']['status']='needs-analysis'
+    if record.get('analysis', {}).get('sha256') != record.get('content_sha256') and record.get(
+        'analysis'
+    ):
+        record['analysis']['status'] = 'needs-analysis'
     if args.note is not None:
         record['note'] = args.note
     persist(directory, 'sources', record)
     from source_curator import enrich
+
     enrich(root, record, text)
     persist(directory, 'sources', record)
     return record
@@ -318,6 +394,7 @@ def source_command(root, args):
 def artifact_fingerprint(directory, filename):
     p = inside(directory, filename)
     from local_reads import read
+
     return digest(read(p)) if p.exists() else None
 
 
@@ -328,21 +405,38 @@ def evidence_state(root, record):
             continue
         directory, source = item(root, 'sources', attached['source_id'])
         from local_reads import read
+
         path = inside(directory, 'content.md')
         content = read(path) if path.is_file() else None
-        evidence.append({'id': source['id'], 'revision': source['revision'], 'status': source['status'],
-                         'hash': digest(content) if content is not None else None, 'origin': source['origin'],
-                         'readable': bool(content and content.decode('utf-8').strip())})
+        evidence.append(
+            {
+                'id': source['id'],
+                'revision': source['revision'],
+                'status': source['status'],
+                'hash': digest(content) if content is not None else None,
+                'origin': source['origin'],
+                'readable': bool(content and content.decode('utf-8').strip()),
+            }
+        )
     return evidence
 
 
 def fingerprints(root, directory, record, evidence=None):
     evidence = evidence_state(root, record) if evidence is None else evidence
-    return {'draft': artifact_fingerprint(directory, 'DRAFT.md'), 'voice': record['voice'],
-            'evidence': digest(json.dumps(evidence, sort_keys=True).encode()),
-            'guidance': (record.get('guidance') or {}).get('revision'),
-            'memory': digest(json.dumps(record['memory'], sort_keys=True).encode()) if record.get('memory') else None,
-            'hub_context': digest(json.dumps(record['hub_context']['selected'], sort_keys=True).encode()) if record.get('hub_context') else None}
+    return {
+        'draft': artifact_fingerprint(directory, 'DRAFT.md'),
+        'voice': record['voice'],
+        'evidence': digest(json.dumps(evidence, sort_keys=True).encode()),
+        'guidance': (record.get('guidance') or {}).get('revision'),
+        'memory': digest(json.dumps(record['memory'], sort_keys=True).encode())
+        if record.get('memory')
+        else None,
+        'hub_context': digest(
+            json.dumps(record['hub_context']['selected'], sort_keys=True).encode()
+        )
+        if record.get('hub_context')
+        else None,
+    }
 
 
 def ready_evidence(root, record):
@@ -362,18 +456,24 @@ def freshness(root, directory, record):
             reviews[check] = {'status': 'not-run'}
             continue
         shown = dict(saved)
-        keys = ('draft', 'voice', 'guidance', 'hub_context', 'memory', 'evidence') if check in SOURCE_CHECKS else ('draft', 'voice', 'guidance', 'hub_context', 'memory')
+        keys = (
+            ('draft', 'voice', 'guidance', 'hub_context', 'memory', 'evidence')
+            if check in SOURCE_CHECKS
+            else ('draft', 'voice', 'guidance', 'hub_context', 'memory')
+        )
         if any(saved['inputs'].get(key) != current[key] for key in keys):
             shown['status'] = 'stale'
             shown['previous_status'] = saved['status']
-        if check == 'factual-support' and not any(e['status'] == 'ready' and e['readable'] for e in evidence):
+        if check == 'factual-support' and not any(
+            e['status'] == 'ready' and e['readable'] for e in evidence
+        ):
             shown['status'] = 'unavailable'
             shown['detail'] = 'No readable factual references are selected.'
         reviews[check] = shown
     return reviews
 
 
-def save_artifact(directory, kind, body, record, label="save"):
+def save_artifact(directory, kind, body, record, label='save'):
     previous = None
     target = inside(directory, kind.upper() + '.md')
     if target.exists():
@@ -382,11 +482,22 @@ def save_artifact(directory, kind, body, record, label="save"):
         atomic(inside(directory, 'history', previous), target.read_bytes())
     atomic(target, body.encode())
     if target.read_bytes() != body.encode():
-        raise OSError('Saved artifact readback did not match; inspect the retained file before continuing.')
-    record['stage'] = 'draft' if kind == 'draft' else 'outline' if kind == 'outline' else record['stage']
+        raise OSError(
+            'Saved artifact readback did not match; inspect the retained file before continuing.'
+        )
+    record['stage'] = (
+        'draft' if kind == 'draft' else 'outline' if kind == 'outline' else record['stage']
+    )
     record['artifact_hashes'][kind] = digest(body.encode())
-    record.setdefault('artifact_events', []).append({'kind': kind, 'before': previous,
-        'after_sha256': record['artifact_hashes'][kind], 'label': label[:200], 'at': now()})
+    record.setdefault('artifact_events', []).append(
+        {
+            'kind': kind,
+            'before': previous,
+            'after_sha256': record['artifact_hashes'][kind],
+            'label': label[:200],
+            'at': now(),
+        }
+    )
     record['artifact_events'] = record['artifact_events'][-100:]
     return {'path': str(target), 'sha256': record['artifact_hashes'][kind], 'reopened': True}
 
@@ -400,12 +511,14 @@ def checked_author(value):
 def installed_guidance():
     """The guidance an article is written with is the installed skill version."""
     from hub_store import VERSION
+
     return {'revision': VERSION, 'source': 'installed'}
 
 
 def article_record(root, args, value):
     """Build new-article metadata without publishing a partially initialized article."""
     from writing_defaults import for_create
+
     default_voice = for_create(root, args)
     if default_voice:
         voice = {'mode': 'profile', **default_voice}
@@ -413,15 +526,36 @@ def article_record(root, args, value):
         voice = {'mode': 'profile', **voice_pin(root, args.profile)}
     else:
         voice = {'mode': args.voice or 'preserve', 'tone': args.tone or ''}
-    stops = {'existing': 'review', 'first-draft': 'draft', 'outline-only': 'outline',
-             'from-outline': 'draft', 'interview': 'outline', 'discover': 'brief'}
-    record = {'id': value, 'title': args.title, 'mode': args.mode, 'stage': 'intake',
-              'author': checked_author(args.author) if args.author else '',
-              'stop_point': args.stop or stops[args.mode], 'research_policy': args.research,
-              'voice': voice, 'sources': [], 'reviews': {}, 'artifact_hashes': {},
-              'next_step': 'Gather missing material and relevant context.', 'pending_question': None,
-              'created_at': now(), 'guidance': installed_guidance()}
-    record['writing_preferences'] = {key: getattr(args, key) for key in ('audience', 'blog_type', 'review_folder') if getattr(args, key, None) is not None}
+    stops = {
+        'existing': 'review',
+        'first-draft': 'draft',
+        'outline-only': 'outline',
+        'from-outline': 'draft',
+        'interview': 'outline',
+        'discover': 'brief',
+    }
+    record = {
+        'id': value,
+        'title': args.title,
+        'mode': args.mode,
+        'stage': 'intake',
+        'author': checked_author(args.author) if args.author else '',
+        'stop_point': args.stop or stops[args.mode],
+        'research_policy': args.research,
+        'voice': voice,
+        'sources': [],
+        'reviews': {},
+        'artifact_hashes': {},
+        'next_step': 'Gather missing material and relevant context.',
+        'pending_question': None,
+        'created_at': now(),
+        'guidance': installed_guidance(),
+    }
+    record['writing_preferences'] = {
+        key: getattr(args, key)
+        for key in ('audience', 'blog_type', 'review_folder')
+        if getattr(args, key, None) is not None
+    }
     return record
 
 
@@ -441,16 +575,31 @@ def article_command(root, args):
         sources = []
         for attached in record['sources']:
             source_directory, source = item(root, 'sources', attached['source_id'])
-            sources.append({**attached, 'name': source['name'], 'status': source['status'],
-                            'current_revision': source['revision'], 'changed_since_attach': source['revision'] != attached['revision'],
-                            'content_path': str(inside(source_directory, 'content.md')) if (source_directory / 'content.md').exists() else None})
-        return {**record, 'directory': str(directory), 'selected_sources': sources,
-                'reviews': freshness(root, directory, record)}
+            sources.append(
+                {
+                    **attached,
+                    'name': source['name'],
+                    'status': source['status'],
+                    'current_revision': source['revision'],
+                    'changed_since_attach': source['revision'] != attached['revision'],
+                    'content_path': str(inside(source_directory, 'content.md'))
+                    if (source_directory / 'content.md').exists()
+                    else None,
+                }
+            )
+        return {
+            **record,
+            'directory': str(directory),
+            'selected_sources': sources,
+            'reviews': freshness(root, directory, record),
+        }
     if args.action == 'restore':
         from author_workflow import restore
+
         return restore(root, args)
     if args.action in ('remember', 'forget', 'detach-context'):
         from experience import change_context
+
         change_context(record, args)
     elif args.action == 'rename':
         if not args.title.strip() or len(args.title.strip()) > 500:
@@ -466,19 +615,34 @@ def article_command(root, args):
         if shared_workspace(root) and content.is_file():
             text_problem, _ = sharing_limits(read_text(content), None, '')
             if text_problem:
-                raise ValueError("Source '" + source['name'] + "' cannot be attached to a shared blog. " + text_problem
-                                 + ' Nothing was changed. Replace its text with a shorter excerpt first '
-                                 + '(source update --id ' + args.source + ' --text-file …).')
+                raise ValueError(
+                    "Source '"
+                    + source['name']
+                    + "' cannot be attached to a shared blog. "
+                    + text_problem
+                    + ' Nothing was changed. Replace its text with a shorter excerpt first '
+                    + '(source update --id '
+                    + args.source
+                    + ' --text-file …).'
+                )
         roles = args.purpose or source['purposes']
         entry = {'source_id': args.source, 'purposes': roles, 'revision': source['revision']}
-        record['sources'] = [s for s in record['sources'] if s['source_id'] != args.source] + [entry]
+        record['sources'] = [s for s in record['sources'] if s['source_id'] != args.source] + [
+            entry
+        ]
     elif args.action == 'save':
         body = read_text(args.file)
         if not body.strip():
             raise ValueError('Cannot save an empty artifact.')
         if args.kind == 'draft' and record['stop_point'] in ('outline', 'brief'):
-            raise ValueError('This task stops before drafting. Update its stop point only when the author requests a draft.')
-        if args.kind == 'draft' and 'original' not in record['artifact_hashes'] and record['mode'] == 'existing':
+            raise ValueError(
+                'This task stops before drafting. Update its stop point only when the author requests a draft.'
+            )
+        if (
+            args.kind == 'draft'
+            and 'original' not in record['artifact_hashes']
+            and record['mode'] == 'existing'
+        ):
             raise ValueError('Save the imported original before saving an edited draft.')
         if args.kind == 'original' and (directory / 'ORIGINAL.md').exists():
             raise ValueError('Imported original is immutable; revisions belong in DRAFT.md.')
@@ -491,28 +655,48 @@ def article_command(root, args):
             record['stop_point'] = args.stop
     elif args.action == 'context':
         from hub_workspace import active
+
         adapter = active(root)
         if adapter is None:
             raise ValueError('Select a Team Hub before attaching shared context.')
         context = read_json(Path(args.file))
-        if context.get('hub') != adapter.hub.id or context.get('conflicts') or context.get('truncated'):
-            raise ValueError('Choose context from this hub and resolve applicable rule conflicts first.')
+        if (
+            context.get('hub') != adapter.hub.id
+            or context.get('conflicts')
+            or context.get('truncated')
+        ):
+            raise ValueError(
+                'Choose context from this hub and resolve applicable rule conflicts first.'
+            )
         graph = adapter.hub.graph()
         selected = []
         for reference in context.get('selected', []):
             shared = graph['revisions'].get(reference.get('revision'))
-            if not shared or shared['item'] != reference.get('item') or shared['kind'] not in ('rule', 'context'):
+            if (
+                not shared
+                or shared['item'] != reference.get('item')
+                or shared['kind'] not in ('rule', 'context')
+            ):
                 raise ValueError('A selected shared context revision is unavailable.')
             selected.append({'item': shared['item'], 'revision': shared['revision']})
-        record['hub_context'] = {'hub': adapter.hub.id, 'revision': context['revision'], 'selected': selected}
+        record['hub_context'] = {
+            'hub': adapter.hub.id,
+            'revision': context['revision'],
+            'selected': selected,
+        }
     elif args.action == 'guidance':
         # Older pins (a commit plus task/runtime fields) stay readable; they move to history on adoption.
         selected = installed_guidance()
         previous = record.get('guidance')
         if previous and previous.get('revision') != selected['revision']:
             if not args.adopt:
-                raise ValueError('This article records guidance ' + str(previous.get('revision')) + '; installed is '
-                                 + selected['revision'] + '. Use --adopt only when the author asks to re-record it; reviews become stale.')
+                raise ValueError(
+                    'This article records guidance '
+                    + str(previous.get('revision'))
+                    + '; installed is '
+                    + selected['revision']
+                    + '. Use --adopt only when the author asks to re-record it; reviews become stale.'
+                )
             record.setdefault('guidance_history', []).append(previous)
         if not previous or previous.get('revision') != selected['revision']:
             record['guidance'] = selected
@@ -532,26 +716,44 @@ def article_command(root, args):
         if args.status == 'current' and not artifact_fingerprint(directory, 'DRAFT.md'):
             raise ValueError('A current review requires a saved manuscript.')
         if args.status == 'current' and (not isinstance(data.get('findings'), list)):
-            raise ValueError('Current review needs a findings list and actual completed-check evidence.')
+            raise ValueError(
+                'Current review needs a findings list and actual completed-check evidence.'
+            )
         status = args.status
         if args.check == 'factual-support' and not ready_evidence(root, record):
             status = 'unavailable'
             data = {'findings': [], 'detail': 'No readable factual references are selected.'}
         if args.check in record['reviews']:
             previous = record['reviews'][args.check]
-            write_json(inside(directory, 'history', 'review-' + args.check + '-' + uuid.uuid4().hex + '.json'), previous)
-        record['reviews'][args.check] = {'status': status, 'result': data,
-                                        'inputs': fingerprints(root, directory, record), 'checked_at': now()}
+            write_json(
+                inside(
+                    directory, 'history', 'review-' + args.check + '-' + uuid.uuid4().hex + '.json'
+                ),
+                previous,
+            )
+        record['reviews'][args.check] = {
+            'status': status,
+            'result': data,
+            'inputs': fingerprints(root, directory, record),
+            'checked_at': now(),
+        }
     elif args.action == 'derive':
         body = read_text(args.file)
         name = identifier(args.name)
         target = inside(directory, 'derived', name + '.md')
         if target.exists():
-            atomic(inside(directory, 'history', 'derived-' + name + '-' + uuid.uuid4().hex + '.md'), target.read_bytes())
+            atomic(
+                inside(directory, 'history', 'derived-' + name + '-' + uuid.uuid4().hex + '.md'),
+                target.read_bytes(),
+            )
         atomic(target, body.encode())
     persist(directory, 'articles', record)
-    return {**record, 'directory': str(directory), 'reviews': freshness(root, directory, record),
-            **({'saved_artifact': saved_artifact} if args.action == 'save' else {})}
+    return {
+        **record,
+        'directory': str(directory),
+        'reviews': freshness(root, directory, record),
+        **({'saved_artifact': saved_artifact} if args.action == 'save' else {}),
+    }
 
 
 def parser():
@@ -562,112 +764,202 @@ def parser():
     listing = groups.add_parser('list')
     listing.add_argument('kind', choices=('profiles', 'sources', 'articles'))
     from blog_library import add_parser as library_parser
+
     library_parser(groups)
-    manage = groups.add_parser("manage");manage.add_argument("--port", type=int, default=0);manage.add_argument("--open", action="store_true");manage.add_argument("--harness", choices=("codex","claude"))
+    manage = groups.add_parser('manage')
+    manage.add_argument('--port', type=int, default=0)
+    manage.add_argument('--open', action='store_true')
+    manage.add_argument('--harness', choices=('codex', 'claude'))
     from deep_research import add_parser as research_parser
+
     research_parser(groups)
     from editorial import add_parser as editorial_parser
+
     editorial_parser(groups)
     from experience import add_parser as experience_parser
+
     experience_parser(groups)
     from performance import add_parser as performance_parser
+
     performance_parser(groups)
     from author_workflow import add_parser as author_parser
+
     author_parser(groups)
     profiles = groups.add_parser('profile').add_subparsers(dest='action', required=True)
     create = profiles.add_parser('create')
-    create.add_argument('--name', required=True); create.add_argument('--id')
-    create.add_argument('--guide-file'); create.add_argument('--background-file'); create.add_argument('--rules-file')
+    create.add_argument('--name', required=True)
+    create.add_argument('--id')
+    create.add_argument('--guide-file')
+    create.add_argument('--background-file')
+    create.add_argument('--rules-file')
     create.add_argument('--status', choices=('provisional', 'confirmed'), default='provisional')
     create.add_argument('--sample', action='append', default=[])
     save = profiles.add_parser('save')
-    save.add_argument('--id', required=True);save.add_argument('--guide-file', required=True)
-    save.add_argument('--background-file');save.add_argument('--rules-file')
-    save.add_argument('--status', choices=('provisional', 'confirmed'));save.add_argument('--sample', action='append')
-    show = profiles.add_parser('show');show.add_argument('--id', required=True);show.add_argument('--revision', type=int)
+    save.add_argument('--id', required=True)
+    save.add_argument('--guide-file', required=True)
+    save.add_argument('--background-file')
+    save.add_argument('--rules-file')
+    save.add_argument('--status', choices=('provisional', 'confirmed'))
+    save.add_argument('--sample', action='append')
+    show = profiles.add_parser('show')
+    show.add_argument('--id', required=True)
+    show.add_argument('--revision', type=int)
     sources = groups.add_parser('source').add_subparsers(dest='action', required=True)
     add = sources.add_parser('add')
-    add.add_argument('--name', required=True);add.add_argument('--file');add.add_argument('--text-file');add.add_argument('--origin')
+    add.add_argument('--name', required=True)
+    add.add_argument('--file')
+    add.add_argument('--text-file')
+    add.add_argument('--origin')
     add.add_argument('--purpose', action='append', choices=PURPOSES, required=True)
-    add.add_argument('--author', default='');add.add_argument('--note', default='')
+    add.add_argument('--author', default='')
+    add.add_argument('--note', default='')
     add.add_argument('--status', choices=('ready', 'pending', 'unavailable'))
-    show = sources.add_parser('show');show.add_argument('--id', required=True)
-    update = sources.add_parser('update');update.add_argument('--id', required=True);update.add_argument('--text-file')
-    update.add_argument('--status', choices=('ready', 'pending', 'unavailable'));update.add_argument('--note')
+    show = sources.add_parser('show')
+    show.add_argument('--id', required=True)
+    update = sources.add_parser('update')
+    update.add_argument('--id', required=True)
+    update.add_argument('--text-file')
+    update.add_argument('--status', choices=('ready', 'pending', 'unavailable'))
+    update.add_argument('--note')
     articles = groups.add_parser('article').add_subparsers(dest='action', required=True)
-    create = articles.add_parser('create');create.add_argument('--title', required=True);create.add_argument('--id')
-    create.add_argument('--mode', choices=MODES, required=True);create.add_argument('--profile');create.add_argument('--author')
-    create.add_argument('--voice', choices=('preserve', 'tone'));create.add_argument('--tone')
-    create.add_argument('--audience');create.add_argument('--blog-type');create.add_argument('--review-folder')
-    create.add_argument('--research', choices=('supplied-only', 'web-allowed', 'unspecified'), default='unspecified')
+    create = articles.add_parser('create')
+    create.add_argument('--title', required=True)
+    create.add_argument('--id')
+    create.add_argument('--mode', choices=MODES, required=True)
+    create.add_argument('--profile')
+    create.add_argument('--author')
+    create.add_argument('--voice', choices=('preserve', 'tone'))
+    create.add_argument('--tone')
+    create.add_argument('--audience')
+    create.add_argument('--blog-type')
+    create.add_argument('--review-folder')
+    create.add_argument(
+        '--research', choices=('supplied-only', 'web-allowed', 'unspecified'), default='unspecified'
+    )
     create.add_argument('--stop', choices=('draft', 'outline', 'review', 'brief'))
-    show = articles.add_parser('show');show.add_argument('--id', required=True)
-    rename = articles.add_parser('rename');rename.add_argument('--id', required=True);rename.add_argument('--title', required=True)
-    policy = articles.add_parser('research-policy');policy.add_argument('--id', required=True)
+    show = articles.add_parser('show')
+    show.add_argument('--id', required=True)
+    rename = articles.add_parser('rename')
+    rename.add_argument('--id', required=True)
+    rename.add_argument('--title', required=True)
+    policy = articles.add_parser('research-policy')
+    policy.add_argument('--id', required=True)
     policy.add_argument('--policy', choices=('supplied-only', 'web-allowed'), required=True)
-    author = articles.add_parser('author');author.add_argument('--id', required=True);author.add_argument('--name', required=True)
+    author = articles.add_parser('author')
+    author.add_argument('--id', required=True)
+    author.add_argument('--name', required=True)
     for operation in ('remember', 'forget'):
-        memory = articles.add_parser(operation); memory.add_argument('--id', required=True)
+        memory = articles.add_parser(operation)
+        memory.add_argument('--id', required=True)
         memory.add_argument('--key', required=True)
         if operation == 'remember':
             memory.add_argument('--file', required=True)
-    detach = articles.add_parser('detach-context');detach.add_argument('--id', required=True)
+    detach = articles.add_parser('detach-context')
+    detach.add_argument('--id', required=True)
     detach.add_argument('--item', required=True)
-    attach = articles.add_parser('attach');attach.add_argument('--id', required=True);attach.add_argument('--source', required=True)
+    attach = articles.add_parser('attach')
+    attach.add_argument('--id', required=True)
+    attach.add_argument('--source', required=True)
     attach.add_argument('--purpose', action='append', choices=PURPOSES)
-    save = articles.add_parser('save');save.add_argument('--id', required=True)
-    save.add_argument('--kind', choices=('brief', 'original', 'draft', 'outline'), required=True);save.add_argument('--file', required=True)
-    save.add_argument('--label', default='save', help='Operation name, such as proofread, for recovery')
-    restore = articles.add_parser('restore');restore.add_argument('--id', required=True)
+    save = articles.add_parser('save')
+    save.add_argument('--id', required=True)
+    save.add_argument('--kind', choices=('brief', 'original', 'draft', 'outline'), required=True)
+    save.add_argument('--file', required=True)
+    save.add_argument(
+        '--label', default='save', help='Operation name, such as proofread, for recovery'
+    )
+    restore = articles.add_parser('restore')
+    restore.add_argument('--id', required=True)
     restore.add_argument('--kind', choices=('draft', 'outline'), default='draft')
-    restore.add_argument('--revision', required=True);restore.add_argument('--expected')
+    restore.add_argument('--revision', required=True)
+    restore.add_argument('--expected')
     restore.add_argument('--apply', action='store_true')
-    progress = articles.add_parser('progress');progress.add_argument('--id', required=True)
-    progress.add_argument('--stage', choices=('intake', 'interview', 'brief', 'outline', 'draft', 'review', 'complete'), required=True)
-    progress.add_argument('--next-step', required=True);progress.add_argument('--pending-question')
+    progress = articles.add_parser('progress')
+    progress.add_argument('--id', required=True)
+    progress.add_argument(
+        '--stage',
+        choices=('intake', 'interview', 'brief', 'outline', 'draft', 'review', 'complete'),
+        required=True,
+    )
+    progress.add_argument('--next-step', required=True)
+    progress.add_argument('--pending-question')
     progress.add_argument('--stop', choices=('draft', 'outline', 'review', 'brief'))
-    context = articles.add_parser('context');context.add_argument('--id', required=True);context.add_argument('--file', required=True)
-    guidance = articles.add_parser('guidance', help='Record the installed guidance version for an article');guidance.add_argument('--id', required=True)
-    guidance.add_argument('--adopt', action='store_true', help='Author-requested: replace a different recorded version; reviews become stale')
-    note = articles.add_parser('note');note.add_argument('--id', required=True);note.add_argument('--kind', choices=('interview', 'decision'), required=True);note.add_argument('--text', required=True)
-    voice = articles.add_parser('voice');voice.add_argument('--id', required=True);voice.add_argument('--profile');voice.add_argument('--revision', type=int)
-    voice.add_argument('--voice', choices=('preserve', 'tone'), default='preserve');voice.add_argument('--tone')
-    review = articles.add_parser('review');review.add_argument('--id', required=True);review.add_argument('--check', choices=CHECKS, required=True)
-    review.add_argument('--status', choices=('current', 'unavailable', 'failed'), required=True);review.add_argument('--file')
-    derive = articles.add_parser('derive');derive.add_argument('--id', required=True);derive.add_argument('--name', required=True);derive.add_argument('--file', required=True)
+    context = articles.add_parser('context')
+    context.add_argument('--id', required=True)
+    context.add_argument('--file', required=True)
+    guidance = articles.add_parser(
+        'guidance', help='Record the installed guidance version for an article'
+    )
+    guidance.add_argument('--id', required=True)
+    guidance.add_argument(
+        '--adopt',
+        action='store_true',
+        help='Author-requested: replace a different recorded version; reviews become stale',
+    )
+    note = articles.add_parser('note')
+    note.add_argument('--id', required=True)
+    note.add_argument('--kind', choices=('interview', 'decision'), required=True)
+    note.add_argument('--text', required=True)
+    voice = articles.add_parser('voice')
+    voice.add_argument('--id', required=True)
+    voice.add_argument('--profile')
+    voice.add_argument('--revision', type=int)
+    voice.add_argument('--voice', choices=('preserve', 'tone'), default='preserve')
+    voice.add_argument('--tone')
+    review = articles.add_parser('review')
+    review.add_argument('--id', required=True)
+    review.add_argument('--check', choices=CHECKS, required=True)
+    review.add_argument('--status', choices=('current', 'unavailable', 'failed'), required=True)
+    review.add_argument('--file')
+    derive = articles.add_parser('derive')
+    derive.add_argument('--id', required=True)
+    derive.add_argument('--name', required=True)
+    derive.add_argument('--file', required=True)
     from google_workflow import add_parser
+
     add_parser(groups)
     return p
 
 
 def main():
-    p = parser();args = p.parse_args()
+    p = parser()
+    args = p.parse_args()
     root = Path(args.root).expanduser()
     if not root.is_absolute():
         p.error('--root must be absolute')
     root = root.resolve()
     from hub_store import HubError
+
     try:
         if args.group == 'manage':
             from management import main as manage
+
             return manage(root, args.port, args.open, args.harness)
         if args.group == 'library' and args.action in ('collections', 'find', 'read'):
             from blog_library import command
+
             result = command(root, args)
         elif args.group in ('resume', 'passages', 'check', 'cache'):
             from performance import command
+
             result = command(root, args)
         elif args.group in ('home', 'context', 'readiness'):
             from experience import command
+
             result = command(root, args)
-        elif args.group in ('status', 'route', 'changes') or (args.group == 'defaults' and args.action == 'show'):
+        elif args.group in ('status', 'route', 'changes') or (
+            args.group == 'defaults' and args.action == 'show'
+        ):
             from author_workflow import command
+
             result = command(root, args)
         elif args.group == 'editorial' and args.action in ('board', 'inbox', 'assets'):
             from editorial import command
+
             result = command(root, args)
         elif args.group == 'research' and args.action == 'status':
             from deep_research import command
+
             result = command(root, args)
         elif args.group == 'init':
             result = initialize(root)
@@ -686,39 +978,69 @@ def main():
             with locked(root):
                 if args.group in ('select', 'defaults'):
                     from author_workflow import command
+
                     result = command(root, args)
                 elif args.group == 'library':
                     from blog_library import command
+
                     result = command(root, args)
                 elif args.group == 'research':
                     from deep_research import command
+
                     result = command(root, args)
                 elif args.group == 'editorial':
                     from editorial import command
+
                     result = command(root, args)
-                elif args.group == 'profile': result = profile_command(root, args)
-                elif args.group == 'source': result = source_command(root, args)
+                elif args.group == 'profile':
+                    result = profile_command(root, args)
+                elif args.group == 'source':
+                    result = source_command(root, args)
                 elif args.group == 'google':
                     from google_workflow import command
+
                     result = command(root, args)
-                else: result = article_command(root, args)
-                mutation_group = 'article' if args.group in ('editorial', 'research') else 'source' if args.group == 'library' and args.action == 'curate' else args.group
+                else:
+                    result = article_command(root, args)
+                mutation_group = (
+                    'article'
+                    if args.group in ('editorial', 'research')
+                    else 'source'
+                    if args.group == 'library' and args.action == 'curate'
+                    else args.group
+                )
                 if args.group == 'google':
-                    mutation_group = 'source' if args.action == 'source' else 'article' if args.action not in ('compare', 'capabilities', 'status') else None
-                if mutation_group in ('profile', 'source', 'article') and args.action != 'show' and not (args.action == 'restore' and not args.apply):
+                    mutation_group = (
+                        'source'
+                        if args.action == 'source'
+                        else 'article'
+                        if args.action not in ('compare', 'capabilities', 'status')
+                        else None
+                    )
+                if (
+                    mutation_group in ('profile', 'source', 'article')
+                    and args.action != 'show'
+                    and not (args.action == 'restore' and not args.apply)
+                ):
                     from hub_workspace import active
                     from hub_store import HubError
+
                     try:
                         adapter = active(root)
                         if adapter:
                             result['hub_sync'] = adapter.publish_mutation(mutation_group, result)
                     except OSError as exc:
-                        result['hub_sync'] = {'status': 'local-saved-not-shared',
+                        result['hub_sync'] = {
+                            'status': 'local-saved-not-shared',
                             'error': 'Hub filesystem access failed (' + type(exc).__name__ + ').',
-                            'next_step': 'Local work is saved. Check sandbox/filesystem access to the selected Hub clone, then retry Hub sync; do not repeat the local operation.'}
+                            'next_step': 'Local work is saved. Check sandbox/filesystem access to the selected Hub clone, then retry Hub sync; do not repeat the local operation.',
+                        }
                     except HubError as exc:
-                        result['hub_sync'] = {'status': 'local-saved-not-shared', 'error': str(exc),
-                            'next_step': 'Retry the selected workspace import after resolving the hub issue.'}
+                        result['hub_sync'] = {
+                            'status': 'local-saved-not-shared',
+                            'error': str(exc),
+                            'next_step': 'Retry the selected workspace import after resolving the hub issue.',
+                        }
         if getattr(args, 'format', None) == 'markdown' and 'card' in result:
             print(result['card'])
         else:

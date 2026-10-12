@@ -1,4 +1,5 @@
 """Existing-Doc intake, retained formatting and original-target review; no live Google."""
+
 import copy
 import json
 from pathlib import Path
@@ -19,30 +20,48 @@ import test_google_suggestions as fixtures
 
 class GoogleStartTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
-        self.root = self.base/'workspace'; studio.initialize(self.root)
+        self.root = self.base / 'workspace'
+        studio.initialize(self.root)
         self.client = fixtures.ReviewProvider()
-        self.capture = self.base/'capture'
+        self.capture = self.base / 'capture'
         rt.capture(self.client, 'fixture-doc', 't.0', self.capture)
-        self.observation = self.capture/'observation.json'
-        obs = json.loads(self.observation.read_text()); obs['structure_verified'] = True
+        self.observation = self.capture / 'observation.json'
+        obs = json.loads(self.observation.read_text())
+        obs['structure_verified'] = True
         self.observation.write_text(json.dumps(obs))
-        self.words = ['--root', str(self.root), 'google', 'start', '--title', 'Imported blog',
-            '--observation', str(self.observation), '--file', str(self.capture/'document.md'), '--snapshot', str(self.capture)]
+        self.words = [
+            '--root',
+            str(self.root),
+            'google',
+            'start',
+            '--title',
+            'Imported blog',
+            '--observation',
+            str(self.observation),
+            '--file',
+            str(self.capture / 'document.md'),
+            '--snapshot',
+            str(self.capture),
+        ]
 
     def start(self):
         with studio.locked(self.root):
             return gw.command(self.root, studio.parser().parse_args(self.words))
 
     def test_import_preserves_original_formatted_snapshot_and_baseline_without_google_write(self):
-        with patch.object(subprocess, 'run', side_effect=AssertionError('No provider calls during local adoption')):
+        with patch.object(
+            subprocess, 'run', side_effect=AssertionError('No provider calls during local adoption')
+        ):
             result = self.start()
         directory, record = studio.item(self.root, 'articles', result['id'])
-        body = (self.capture/'document.md').read_bytes()
-        self.assertEqual((directory/'ORIGINAL.md').read_bytes(), body)
-        self.assertEqual((directory/'DRAFT.md').read_bytes(), body)
-        self.assertEqual(record['mode'], 'existing'); self.assertEqual(record['voice']['mode'], 'preserve')
+        body = (self.capture / 'document.md').read_bytes()
+        self.assertEqual((directory / 'ORIGINAL.md').read_bytes(), body)
+        self.assertEqual((directory / 'DRAFT.md').read_bytes(), body)
+        self.assertEqual(record['mode'], 'existing')
+        self.assertEqual(record['voice']['mode'], 'preserve')
         self.assertEqual(record['stop_point'], 'review')
         base = record['google']['baselines']['draft']
         self.assertEqual(base['document']['document_id'], 'fixture-doc')
@@ -51,193 +70,368 @@ class GoogleStartTests(unittest.TestCase):
         transfer = record['google']['transfers'][base['transfer']]
         self.assertEqual(transfer['direction'], 'from-google')
         for name, relative in transfer['formatted_snapshot'].items():
-            self.assertEqual((directory/relative).read_bytes(), (self.capture/name).read_bytes())
-        self.assertEqual(studio.read_json(self.root/'.active-article.json')['id'], result['id'])
+            self.assertEqual(
+                (directory / relative).read_bytes(), (self.capture / name).read_bytes()
+            )
+        self.assertEqual(studio.read_json(self.root / '.active-article.json')['id'], result['id'])
         self.assertEqual(self.client.writes, 0)
-        self.assertEqual(gw.compare(directory, record, 'draft', base['document'], body.decode())['status'], 'unchanged')
+        self.assertEqual(
+            gw.compare(directory, record, 'draft', base['document'], body.decode())['status'],
+            'unchanged',
+        )
 
     def test_proofread_then_suggestions_target_the_imported_doc(self):
-        result = self.start(); aid = result['id']
+        result = self.start()
+        aid = result['id']
         self.assertEqual(aw.route(self.root, 'proofread')['id'], aid)
         routed = aw.route(self.root, 'Push as suggestions')
-        self.assertEqual(routed['linked_document'], 'https://docs.google.com/document/d/fixture-doc/edit')
-        findings = [dict(id='proof-1', kind='edit', tab_id='t.0', start_index=5,
-            before='delay', after='wait', reason='Use plainer wording.')]
-        output = self.base/'plan.json'
+        self.assertEqual(
+            routed['linked_document'], 'https://docs.google.com/document/d/fixture-doc/edit'
+        )
+        findings = [
+            dict(
+                id='proof-1',
+                kind='edit',
+                tab_id='t.0',
+                start_index=5,
+                before='delay',
+                after='wait',
+                reason='Use plainer wording.',
+            )
+        ]
+        output = self.base / 'plan.json'
         gs.plan(self.client, self.root, aid, 'draft', findings, output)
         plan = json.loads(output.read_text())
         actual = self.client.native_review_update
         calls = []
+
         def write(doc, *args):
-            calls.append(doc); return actual(doc, *args)
+            calls.append(doc)
+            return actual(doc, *args)
+
         self.client.native_review_update = write
         self.assertEqual(gs.apply(self.client, self.root, plan)['status'], 'verified-pending')
         self.assertEqual(calls, ['fixture-doc'])
         directory, _ = studio.item(self.root, 'articles', aid)
-        self.assertEqual((directory/'ORIGINAL.md').read_bytes(), (directory/'DRAFT.md').read_bytes())
+        self.assertEqual(
+            (directory / 'ORIGINAL.md').read_bytes(), (directory / 'DRAFT.md').read_bytes()
+        )
 
     def test_repeated_start_selects_existing_without_overwriting_draft_or_baseline(self):
-        first = self.start(); directory, record = studio.item(self.root, 'articles', first['id'])
+        first = self.start()
+        directory, record = studio.item(self.root, 'articles', first['id'])
         baseline = copy.deepcopy(record['google'])
         studio.save_artifact(directory, 'draft', 'Local unsent edits.', record)
         studio.persist(directory, 'articles', record)
         again = self.start()
-        self.assertEqual(again['status'], 'already-linked'); self.assertEqual(again['id'], first['id'])
-        self.assertEqual(len(list((self.root/'articles').iterdir())), 1)
-        self.assertEqual((directory/'DRAFT.md').read_text(), 'Local unsent edits.')
+        self.assertEqual(again['status'], 'already-linked')
+        self.assertEqual(again['id'], first['id'])
+        self.assertEqual(len(list((self.root / 'articles').iterdir())), 1)
+        self.assertEqual((directory / 'DRAFT.md').read_text(), 'Local unsent edits.')
         self.assertEqual(studio.item(self.root, 'articles', first['id'])[1]['google'], baseline)
 
     def test_unverified_missing_revision_bad_identity_and_tampering_leave_no_article(self):
         original = json.loads(self.observation.read_text())
-        for change in ({'structure_verified': False}, {'revision_id': None}, {'format_sha256': None},
-                       {'url': 'https://docs.google.com/document/d/another/edit'}, {'content_sha256': 'a'*64}):
+        for change in (
+            {'structure_verified': False},
+            {'revision_id': None},
+            {'format_sha256': None},
+            {'url': 'https://docs.google.com/document/d/another/edit'},
+            {'content_sha256': 'a' * 64},
+        ):
             self.observation.write_text(json.dumps({**original, **change}))
-            with self.assertRaises(ValueError): self.start()
-            self.assertEqual(list((self.root/'articles').iterdir()), [])
+            with self.assertRaises(ValueError):
+                self.start()
+            self.assertEqual(list((self.root / 'articles').iterdir()), [])
         self.observation.write_text(json.dumps(original))
-        (self.capture/'document.docx').write_bytes(b'corrupt')
-        with self.assertRaises(ValueError): self.start()
-        self.assertFalse((self.root/'.active-article.json').exists())
+        (self.capture / 'document.docx').write_bytes(b'corrupt')
+        with self.assertRaises(ValueError):
+            self.start()
+        self.assertFalse((self.root / '.active-article.json').exists())
 
     def test_interrupted_snapshot_save_does_not_publish_partial_article(self):
         with patch.object(gw, 'save_formatted_snapshot', side_effect=OSError('disk full')):
-            with self.assertRaises(OSError): self.start()
-        self.assertEqual(list((self.root/'articles').iterdir()), [])
+            with self.assertRaises(OSError):
+                self.start()
+        self.assertEqual(list((self.root / 'articles').iterdir()), [])
         self.assertEqual(list(self.root.glob('.google-start-*')), [])
-        self.assertFalse((self.root/'.active-article.json').exists())
+        self.assertFalse((self.root / '.active-article.json').exists())
         self.assertEqual(self.start()['status'], 'started-from-google')
 
     def test_google_change_after_import_requires_refresh_before_suggestion_plan(self):
         aid = self.start()['id']
-        findings = [dict(id='proof-1', kind='edit', tab_id='t.0', start_index=5,
-            before='delay', after='wait', reason='Plainer wording.')]
+        findings = [
+            dict(
+                id='proof-1',
+                kind='edit',
+                tab_id='t.0',
+                start_index=5,
+                before='delay',
+                after='wait',
+                reason='Plainer wording.',
+            )
+        ]
         # Renaming the Doc or its tab changes neither text nor formatting.
         self.client.doc['title'] = 'Renamed in Google'
         self.client.doc['tabs'][0]['tabProperties']['title'] = 'Renamed tab'
-        gs.plan(self.client, self.root, aid, 'draft', findings, self.base/'renamed-plan.json')
+        gs.plan(self.client, self.root, aid, 'draft', findings, self.base / 'renamed-plan.json')
         with patch('google_drive.Client', return_value=self.client):
             directory, record = studio.item(self.root, 'articles', aid)
-            self.assertEqual(gw.sync_status(self.root, directory, record, online=True)['status'], 'in-sync')
+            self.assertEqual(
+                gw.sync_status(self.root, directory, record, online=True)['status'], 'in-sync'
+            )
         blocks = self.client.doc['tabs'][0]['documentTab']['body']['content']
         blocks[1]['paragraph']['paragraphStyle']['lineSpacing'] = 180
         with self.assertRaisesRegex(Exception, 'Pull the latest'):
-            gs.plan(self.client, self.root, aid, 'draft', findings, self.base/'plan.json')
+            gs.plan(self.client, self.root, aid, 'draft', findings, self.base / 'plan.json')
         self.assertEqual(self.client.writes, 0)
 
     def run_google(self, *words):
         with studio.locked(self.root):
-            return gw.command(self.root, studio.parser().parse_args(['--root', str(self.root), 'google', *words]))
+            return gw.command(
+                self.root, studio.parser().parse_args(['--root', str(self.root), 'google', *words])
+            )
 
     def proofread_and_send(self, aid):
         """Proofreading a linked Doc saves findings as the review; the draft itself is not rewritten."""
-        review = {'findings': [dict(id='proof-1', kind='edit', before='delay', after='wait', reason='Plainer.'),
-                               dict(id='proof-2', kind='edit', before='isn’t', after='is not', reason='Formal voice.')]}
-        saved_review = self.base/'proofread.json'; saved_review.write_text(json.dumps(review))
+        review = {
+            'findings': [
+                dict(id='proof-1', kind='edit', before='delay', after='wait', reason='Plainer.'),
+                dict(
+                    id='proof-2',
+                    kind='edit',
+                    before='isn’t',
+                    after='is not',
+                    reason='Formal voice.',
+                ),
+            ]
+        }
+        saved_review = self.base / 'proofread.json'
+        saved_review.write_text(json.dumps(review))
         with studio.locked(self.root):
-            studio.article_command(self.root, studio.parser().parse_args(['--root', str(self.root), 'article', 'review',
-                '--id', aid, '--check', 'proofread', '--status', 'current', '--file', str(saved_review)]))
-        gs.plan(self.client, self.root, aid, 'draft', json.loads(saved_review.read_text()), self.base/'review-plan.json')
-        plan = json.loads((self.base/'review-plan.json').read_text())
+            studio.article_command(
+                self.root,
+                studio.parser().parse_args(
+                    [
+                        '--root',
+                        str(self.root),
+                        'article',
+                        'review',
+                        '--id',
+                        aid,
+                        '--check',
+                        'proofread',
+                        '--status',
+                        'current',
+                        '--file',
+                        str(saved_review),
+                    ]
+                ),
+            )
+        gs.plan(
+            self.client,
+            self.root,
+            aid,
+            'draft',
+            json.loads(saved_review.read_text()),
+            self.base / 'review-plan.json',
+        )
+        plan = json.loads((self.base / 'review-plan.json').read_text())
         self.assertEqual(gs.apply(self.client, self.root, plan)['status'], 'verified-pending')
 
     def test_headline_flow_pulls_cleanly_when_a_suggestion_is_rejected(self):
-        aid = self.start()['id']; directory, _ = studio.item(self.root, 'articles', aid)
-        original = (directory/'DRAFT.md').read_text()
+        aid = self.start()['id']
+        directory, _ = studio.item(self.root, 'articles', aid)
+        original = (directory / 'DRAFT.md').read_text()
         self.proofread_and_send(aid)
-        self.assertEqual((directory/'DRAFT.md').read_text(), original)
+        self.assertEqual((directory / 'DRAFT.md').read_text(), original)
         # The team accepts the first proposal and rejects the second.
         fixtures.decide_suggestions(self.client, accept={'delay', 'wait'})
-        pull = self.base/'pull'; rt.capture(self.client, 'fixture-doc', None, pull)
+        pull = self.base / 'pull'
+        rt.capture(self.client, 'fixture-doc', None, pull)
         check = self.run_google('compare', '--id', aid, '--snapshot', str(pull))
-        self.assertEqual(check['status'], 'remote-only'); self.assertNotIn('merge', check)
-        result = self.run_google('accept', '--id', aid, '--snapshot', str(pull), '--expected-comparison', check['comparison'])
-        self.assertEqual(result['status'], 'accepted'); self.assertIsNone(result['merge'])
-        text = (directory/'DRAFT.md').read_text()
-        self.assertIn('The wait is in handoffs.', text); self.assertIn('isn’t slow', text); self.assertNotIn('is not', text)
-        self.assertEqual(self.run_google('compare', '--id', aid, '--snapshot', str(pull))['status'], 'unchanged')
+        self.assertEqual(check['status'], 'remote-only')
+        self.assertNotIn('merge', check)
+        result = self.run_google(
+            'accept',
+            '--id',
+            aid,
+            '--snapshot',
+            str(pull),
+            '--expected-comparison',
+            check['comparison'],
+        )
+        self.assertEqual(result['status'], 'accepted')
+        self.assertIsNone(result['merge'])
+        text = (directory / 'DRAFT.md').read_text()
+        self.assertIn('The wait is in handoffs.', text)
+        self.assertIn('isn’t slow', text)
+        self.assertNotIn('is not', text)
+        self.assertEqual(
+            self.run_google('compare', '--id', aid, '--snapshot', str(pull))['status'], 'unchanged'
+        )
 
     def test_rewritten_draft_still_merges_without_a_manual_conflict(self):
-        aid = self.start()['id']; directory, record = studio.item(self.root, 'articles', aid)
-        original = (directory/'DRAFT.md').read_text()
+        aid = self.start()['id']
+        directory, record = studio.item(self.root, 'articles', aid)
+        original = (directory / 'DRAFT.md').read_text()
         # An older habit: the proofread rewrote DRAFT.md with every proposed edit before sending.
         rewritten = original.replace('delay', 'wait').replace('isn’t', 'is not')
-        studio.save_artifact(directory, 'draft', rewritten, record); studio.persist(directory, 'articles', record)
+        studio.save_artifact(directory, 'draft', rewritten, record)
+        studio.persist(directory, 'articles', record)
         self.proofread_and_send(aid)
         fixtures.decide_suggestions(self.client, accept={'delay', 'wait'})
-        pull = self.base/'pull'; rt.capture(self.client, 'fixture-doc', None, pull)
+        pull = self.base / 'pull'
+        rt.capture(self.client, 'fixture-doc', None, pull)
         check = self.run_google('compare', '--id', aid, '--snapshot', str(pull))
-        self.assertEqual(check['status'], 'conflict'); self.assertEqual(check['merge']['status'], 'clean')
-        result = self.run_google('accept', '--id', aid, '--snapshot', str(pull), '--expected-comparison', check['comparison'])
+        self.assertEqual(check['status'], 'conflict')
+        self.assertEqual(check['merge']['status'], 'clean')
+        result = self.run_google(
+            'accept',
+            '--id',
+            aid,
+            '--snapshot',
+            str(pull),
+            '--expected-comparison',
+            check['comparison'],
+        )
         self.assertEqual(result['merge'], 'clean-merge')
         # The accepted edit matches; the rejected one stays local and visibly unsent.
-        self.assertEqual((directory/'DRAFT.md').read_text(), rewritten)
-        self.assertEqual(self.run_google('compare', '--id', aid, '--snapshot', str(pull))['status'], 'local-only')
+        self.assertEqual((directory / 'DRAFT.md').read_text(), rewritten)
+        self.assertEqual(
+            self.run_google('compare', '--id', aid, '--snapshot', str(pull))['status'], 'local-only'
+        )
 
     def test_pending_suggestions_import_only_accepted_manuscript(self):
-        findings = [dict(id='pending-1', kind='edit', tab_id='t.0', start_index=5,
-            before='delay', after='wait', reason='Plainer wording.')]
-        built = gs.build(self.client.native_read('fixture-doc', inline=True, comments=True), findings, ['t.0'])
+        findings = [
+            dict(
+                id='pending-1',
+                kind='edit',
+                tab_id='t.0',
+                start_index=5,
+                before='delay',
+                after='wait',
+                reason='Plainer wording.',
+            )
+        ]
+        built = gs.build(
+            self.client.native_read('fixture-doc', inline=True, comments=True), findings, ['t.0']
+        )
         self.client.native_review_update('fixture-doc', 'r1', built['requests'])
-        self.capture = self.base/'review-capture'
+        self.capture = self.base / 'review-capture'
         rt.capture(self.client, 'fixture-doc', 't.0', self.capture, include_review=True)
-        self.observation = self.capture/'observation.json'
-        obs = json.loads(self.observation.read_text()); obs['structure_verified'] = True
+        self.observation = self.capture / 'observation.json'
+        obs = json.loads(self.observation.read_text())
+        obs['structure_verified'] = True
         self.observation.write_text(json.dumps(obs))
-        self.words = ['--root', str(self.root), 'google', 'start', '--title', 'Pending',
-            '--observation', str(self.observation), '--file', str(self.capture/'document.md'), '--snapshot', str(self.capture)]
-        result = self.start(); directory, record = studio.item(self.root, 'articles', result['id'])
-        self.assertIn('delay', (directory/'DRAFT.md').read_text())
-        self.assertNotIn('wait', (directory/'DRAFT.md').read_text())
-        self.assertEqual(record['google']['baselines']['draft']['document']['review_state']['pending'], len(self.client.threads))
-        self.assertEqual(set(result['formatted_snapshot']), {'document.md', 'document.docx', 'snapshot.json'})
-        self.assertTrue((directory/result['local_snapshot']['accepted.json']).is_file())
+        self.words = [
+            '--root',
+            str(self.root),
+            'google',
+            'start',
+            '--title',
+            'Pending',
+            '--observation',
+            str(self.observation),
+            '--file',
+            str(self.capture / 'document.md'),
+            '--snapshot',
+            str(self.capture),
+        ]
+        result = self.start()
+        directory, record = studio.item(self.root, 'articles', result['id'])
+        self.assertIn('delay', (directory / 'DRAFT.md').read_text())
+        self.assertNotIn('wait', (directory / 'DRAFT.md').read_text())
+        self.assertEqual(
+            record['google']['baselines']['draft']['document']['review_state']['pending'],
+            len(self.client.threads),
+        )
+        self.assertEqual(
+            set(result['formatted_snapshot']), {'document.md', 'document.docx', 'snapshot.json'}
+        )
+        self.assertTrue((directory / result['local_snapshot']['accepted.json']).is_file())
 
     def test_start_takes_a_staged_capture_folder_alone_and_clears_it_afterwards(self):
         import google_drive as gd
+
         staged = gd.staging_path(self.root, 'capture')
         rt.capture(self.client, 'fixture-doc', None, staged)
-        obs = json.loads((staged/'observation.json').read_text()); obs['structure_verified'] = True
-        (staged/'observation.json').write_text(json.dumps(obs))
-        self.words = ['--root', str(self.root), 'google', 'start', '--title', 'Staged import', '--snapshot', str(staged)]
+        obs = json.loads((staged / 'observation.json').read_text())
+        obs['structure_verified'] = True
+        (staged / 'observation.json').write_text(json.dumps(obs))
+        self.words = [
+            '--root',
+            str(self.root),
+            'google',
+            'start',
+            '--title',
+            'Staged import',
+            '--snapshot',
+            str(staged),
+        ]
         result = self.start()
         self.assertEqual(result['status'], 'started-from-google')
         self.assertFalse(staged.exists())
         directory, _ = studio.item(self.root, 'articles', result['id'])
-        self.assertTrue((directory/result['local_snapshot']['native.json']).is_file())
+        self.assertTrue((directory / result['local_snapshot']['native.json']).is_file())
         # A capture kept somewhere else is the author's to manage and is left alone.
         self.assertTrue(self.capture.is_dir())
 
     def test_intake_routing_does_not_need_a_selected_article_and_preserves_url_case(self):
         url = 'https://docs.google.com/document/d/CaseSensitiveDoc/edit'
-        for phrase in ('Start from this Google Doc', 'Start a blog from this Google Doc', 'Use this Google Doc as my draft'):
-            route = aw.route(self.root, phrase+': '+url)
-            self.assertEqual(route['actions'], ['google-start']); self.assertEqual(route['document_input'], url)
-        self.assertEqual(aw.route(self.root, 'Start from this Google Doc')['actions'], ['google-start'])
-        self.assertEqual(aw.route(self.root, 'Use this Google Doc as a source: '+url)['status'], 'interpret-request')
+        for phrase in (
+            'Start from this Google Doc',
+            'Start a blog from this Google Doc',
+            'Use this Google Doc as my draft',
+        ):
+            route = aw.route(self.root, phrase + ': ' + url)
+            self.assertEqual(route['actions'], ['google-start'])
+            self.assertEqual(route['document_input'], url)
+        self.assertEqual(
+            aw.route(self.root, 'Start from this Google Doc')['actions'], ['google-start']
+        )
+        self.assertEqual(
+            aw.route(self.root, 'Use this Google Doc as a source: ' + url)['status'],
+            'interpret-request',
+        )
 
     def test_real_cli_import_and_resume_route(self):
-        process = subprocess.run([sys.executable, studio.__file__, *self.words], capture_output=True, text=True)
+        process = subprocess.run(
+            [sys.executable, studio.__file__, *self.words], capture_output=True, text=True
+        )
         self.assertEqual(process.returncode, 0, process.stderr)
         aid = json.loads(process.stdout)['id']
         self.assertEqual(aw.route(self.root, 'Push to Google Docs')['id'], aid)
-        self.assertEqual(aw.route(self.root, 'Pull from Google Docs')['linked_document'], 'https://docs.google.com/document/d/fixture-doc/edit')
+        self.assertEqual(
+            aw.route(self.root, 'Pull from Google Docs')['linked_document'],
+            'https://docs.google.com/document/d/fixture-doc/edit',
+        )
 
     def test_imported_link_and_formatted_history_survive_team_hub_checkout(self):
         from hub_fixtures import FakeProvider
         from hub import Registry
         from hub_workspace import Workspace
+
         result = self.start()
-        provider = FakeProvider(self.base/'remotes')
-        registry = Registry(self.base/'hub-a', provider)
+        provider = FakeProvider(self.base / 'remotes')
+        registry = Registry(self.base / 'hub-a', provider)
         hub_id = registry.create('fixture/import-hub', 'Import fixture')['hub']
         adapter = Workspace(self.root, registry.hub(hub_id))
         reference = adapter.publish_selected({'articles': [result['id']]})['items'][0]
-        other_registry = Registry(self.base/'hub-b', provider); other_registry.join('fixture/import-hub')
-        other = self.base/'other'; studio.initialize(other)
+        other_registry = Registry(self.base / 'hub-b', provider)
+        other_registry.join('fixture/import-hub')
+        other = self.base / 'other'
+        studio.initialize(other)
         reader = Workspace(other, other_registry.hub(hub_id))
         aid = reader.checkout_selected({'articles': [reference['item']]})['items'][0]['local_id']
         directory, record = studio.item(other, 'articles', aid)
-        self.assertEqual(record['google']['baselines']['draft']['document']['document_id'], 'fixture-doc')
-        self.assertEqual((directory/'ORIGINAL.md').read_bytes(), (self.capture/'document.md').read_bytes())
+        self.assertEqual(
+            record['google']['baselines']['draft']['document']['document_id'], 'fixture-doc'
+        )
+        self.assertEqual(
+            (directory / 'ORIGINAL.md').read_bytes(), (self.capture / 'document.md').read_bytes()
+        )
         for name, relative in result['formatted_snapshot'].items():
-            self.assertEqual((directory/relative).read_bytes(), (self.capture/name).read_bytes())
+            self.assertEqual(
+                (directory / relative).read_bytes(), (self.capture / name).read_bytes()
+            )

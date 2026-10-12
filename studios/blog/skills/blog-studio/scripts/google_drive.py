@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Google Drive transfers through gcloud user login; no OAuth project setup."""
+
 import argparse
 import hashlib
 import io
@@ -24,7 +25,7 @@ DOC_MIME = 'application/vnd.google-apps.document'
 DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 LIMIT = 20 * 1024 * 1024
 LOGIN = 'gcloud auth login <your-email> --enable-gdrive-access --force --no-activate'
-SIGN_IN = ('Sign in with google_drive.py login --account <your-email> (it runs ' + LOGIN + ').')
+SIGN_IN = 'Sign in with google_drive.py login --account <your-email> (it runs ' + LOGIN + ').'
 STAGING = '.google-staging'
 STAGING_MAX_AGE = 7 * 24 * 3600
 ACCOUNT_FILE = '.google-account.json'
@@ -61,6 +62,7 @@ class GoogleError(Exception):
 
 class ReviewUnavailable(GoogleError):
     """Read-only evidence that the native review surface is unavailable."""
+
     def __init__(self, message):
         super().__init__(message, review_unavailable=True)
 
@@ -83,12 +85,16 @@ def gcloud():
     found = shutil.which('gcloud')
     if found:
         return found
-    for path in ('/opt/homebrew/share/google-cloud-sdk/bin/gcloud',
-                 '/usr/local/share/google-cloud-sdk/bin/gcloud',
-                 str(Path.home() / 'google-cloud-sdk/bin/gcloud')):
+    for path in (
+        '/opt/homebrew/share/google-cloud-sdk/bin/gcloud',
+        '/usr/local/share/google-cloud-sdk/bin/gcloud',
+        str(Path.home() / 'google-cloud-sdk/bin/gcloud'),
+    ):
         if Path(path).is_file() and os.access(path, os.X_OK):
             return path
-    raise GoogleError('gcloud is missing. Run installer/google-setup.sh --install-cli, or use an organization-approved Google Cloud CLI installation.')
+    raise GoogleError(
+        'gcloud is missing. Run installer/google-setup.sh --install-cli, or use an organization-approved Google Cloud CLI installation.'
+    )
 
 
 def token(account=None):
@@ -98,14 +104,33 @@ def token(account=None):
     try:
         result = subprocess.run(args, capture_output=True, text=True, timeout=30)
     except PermissionError:
-        raise GoogleError('Local gcloud execution or credential access was denied. Check sandbox/filesystem access; signing in again will not fix a local access denial.') from None
+        raise GoogleError(
+            'Local gcloud execution or credential access was denied. Check sandbox/filesystem access; signing in again will not fix a local access denial.'
+        ) from None
     except OSError:
-        raise GoogleError('Could not run local gcloud. Check executable and filesystem access before attempting sign-in.') from None
+        raise GoogleError(
+            'Could not run local gcloud. Check executable and filesystem access before attempting sign-in.'
+        ) from None
     except subprocess.TimeoutExpired:
-        raise GoogleError('Local gcloud token lookup timed out. Check connectivity and the local CLI before retrying; no Google write was sent.') from None
+        raise GoogleError(
+            'Local gcloud token lookup timed out. Check connectivity and the local CLI before retrying; no Google write was sent.'
+        ) from None
     diagnostic = (result.stderr or '')[:8192].lower()
-    if result.returncode and any(k in diagnostic for k in ('permission denied', 'operation not permitted', 'unable to open database file')) and any(k in diagnostic for k in ('credentials.db', 'gcloud', 'sqlite')):
-        raise GoogleError('Local gcloud credential access was denied. Check sandbox/filesystem access to the gcloud configuration; do not repeat login to fix a local access denial.')
+    if (
+        result.returncode
+        and any(
+            k in diagnostic
+            for k in (
+                'permission denied',
+                'operation not permitted',
+                'unable to open database file',
+            )
+        )
+        and any(k in diagnostic for k in ('credentials.db', 'gcloud', 'sqlite'))
+    ):
+        raise GoogleError(
+            'Local gcloud credential access was denied. Check sandbox/filesystem access to the gcloud configuration; do not repeat login to fix a local access denial.'
+        )
     value = result.stdout.strip()
     if result.returncode or not value or any(c.isspace() for c in value):
         raise GoogleError('Google authentication is unavailable. ' + SIGN_IN)
@@ -133,7 +158,10 @@ class Client:
     def request(self, url, *, method='GET', body=None, mime='application/json', binary=False):
         # Tokens may only go to these fixed Google APIs; never follow a redirect.
         parsed = urllib.parse.urlsplit(url)
-        if parsed.scheme != 'https' or parsed.netloc not in ('www.googleapis.com', 'docs.googleapis.com'):
+        if parsed.scheme != 'https' or parsed.netloc not in (
+            'www.googleapis.com',
+            'docs.googleapis.com',
+        ):
             raise GoogleError('Unsupported Google API destination.')
         payload = encoded(body) if isinstance(body, dict) else body
         # Only idempotent reads are repeated. A write is sent exactly once.
@@ -147,8 +175,12 @@ class Client:
                 getattr(self, 'sleep', time.sleep)(delay)
 
     def _send(self, url, method, payload, mime, binary):
-        req = urllib.request.Request(url, data=payload, method=method,
-            headers={'Authorization': 'Bearer ' + self.authorize(), 'Content-Type': mime})
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            method=method,
+            headers={'Authorization': 'Bearer ' + self.authorize(), 'Content-Type': mime},
+        )
         try:
             with self.opener.open(req, timeout=60) as response:
                 data = response.read(LIMIT + 1)
@@ -158,16 +190,24 @@ class Client:
                 return data
             value = json.loads(data)
             if not isinstance(value, dict):
-                raise GoogleError('Google returned an unexpected response; reconcile any write before retrying.')
+                raise GoogleError(
+                    'Google returned an unexpected response; reconcile any write before retrying.'
+                )
             return value
         except urllib.error.HTTPError as exc:
             raise self._http_error(exc, method) from None
         except (OSError, ValueError):
             if method == 'GET':
-                raise GoogleError('Google could not be reached or returned an invalid response. '
-                                  'Nothing was written; this read is safe to repeat.', network=True) from None
-            raise GoogleError('Google response was unavailable or invalid. A write may have completed; '
-                              'reconcile before retrying.', network=True) from None
+                raise GoogleError(
+                    'Google could not be reached or returned an invalid response. '
+                    'Nothing was written; this read is safe to repeat.',
+                    network=True,
+                ) from None
+            raise GoogleError(
+                'Google response was unavailable or invalid. A write may have completed; '
+                'reconcile before retrying.',
+                network=True,
+            ) from None
 
     def _http_error(self, exc, method):
         """Parse only bounded diagnostics and expose fixed allowlisted labels."""
@@ -178,11 +218,20 @@ class Client:
                 error = payload['error']
         except (OSError, ValueError):
             pass
-        allowed = {'PERMISSION_DENIED', 'UNAUTHENTICATED', 'INVALID_ARGUMENT',
-                   'ACCESS_TOKEN_SCOPE_INSUFFICIENT', 'ACCESS_TOKEN_EXPIRED',
-                   'insufficientPermissions', 'insufficientFilePermissions',
-                   'SERVICE_DISABLED', 'accessNotConfigured', 'RATE_LIMIT_EXCEEDED',
-                   'rateLimitExceeded', 'userRateLimitExceeded'}
+        allowed = {
+            'PERMISSION_DENIED',
+            'UNAUTHENTICATED',
+            'INVALID_ARGUMENT',
+            'ACCESS_TOKEN_SCOPE_INSUFFICIENT',
+            'ACCESS_TOKEN_EXPIRED',
+            'insufficientPermissions',
+            'insufficientFilePermissions',
+            'SERVICE_DISABLED',
+            'accessNotConfigured',
+            'RATE_LIMIT_EXCEEDED',
+            'rateLimitExceeded',
+            'userRateLimitExceeded',
+        }
         labels = set()
         if isinstance(error.get('status'), str) and error['status'] in allowed:
             labels.add(error['status'])
@@ -197,19 +246,27 @@ class Client:
         detail = error.get('message', '')
         detail = detail.lower() if isinstance(detail, str) else ''
         if labels & {'ACCESS_TOKEN_SCOPE_INSUFFICIENT', 'insufficientPermissions'}:
-            message = ('Google authorization lacks required OAuth scopes. With explicit setup approval, reauthorize '
-                       'the intended account with gcloud auth login --enable-gdrive-access --force --no-activate. '
-                       'Do not switch to comments or broaden consent automatically.')
+            message = (
+                'Google authorization lacks required OAuth scopes. With explicit setup approval, reauthorize '
+                'the intended account with gcloud auth login --enable-gdrive-access --force --no-activate. '
+                'Do not switch to comments or broaden consent automatically.'
+            )
         elif exc.code == 401:
             self._token = None
             message = 'Google sign-in expired. ' + SIGN_IN
         elif exc.code == 404:
             who = getattr(self, 'account', None) or 'the signed-in Google account'
-            message = ('Google could not find this file, or it is not shared with ' + who + '. Check the link '
-                       'and the Doc’s sharing; nothing was written.')
+            message = (
+                'Google could not find this file, or it is not shared with '
+                + who
+                + '. Check the link '
+                'and the Doc’s sharing; nothing was written.'
+            )
         elif exc.code == 403:
-            message = ('Google denied this operation. Check file permission, API access and organization policy. '
-                       'This alone does not establish review unavailability.')
+            message = (
+                'Google denied this operation. Check file permission, API access and organization policy. '
+                'This alone does not establish review unavailability.'
+            )
         elif exc.code in (400, 409, 412) and method != 'GET':
             message = 'Google rejected the write. Reread the document and revision before making another request.'
         elif exc.code == 429:
@@ -218,11 +275,19 @@ class Client:
             message = 'Google request failed (HTTP ' + str(exc.code) + ').'
         if labels:
             message += ' [' + ', '.join(sorted(labels)) + ']'
-        unknown_reason = any(isinstance(row, dict) and row.get('reason') not in allowed for row in rows)
-        unsupported = (exc.code in (400, 403) and not (labels - {'INVALID_ARGUMENT', 'PERMISSION_DENIED'})
-                       and not unknown_reason
-                       and any(k in detail for k in ('writemode', 'commentsviewmode', 'insertcomment'))
-                       and any(k in detail for k in ('unknown name', 'not supported', 'unsupported', 'not available')))
+        unknown_reason = any(
+            isinstance(row, dict) and row.get('reason') not in allowed for row in rows
+        )
+        unsupported = (
+            exc.code in (400, 403)
+            and not (labels - {'INVALID_ARGUMENT', 'PERMISSION_DENIED'})
+            and not unknown_reason
+            and any(k in detail for k in ('writemode', 'commentsviewmode', 'insertcomment'))
+            and any(
+                k in detail
+                for k in ('unknown name', 'not supported', 'unsupported', 'not available')
+            )
+        )
         return GoogleError(message, status=exc.code, review_unavailable=unsupported, labels=labels)
 
     def drive(self, path, **query):
@@ -231,20 +296,30 @@ class Client:
     def check(self):
         about = self.drive('about', fields='importFormats')
         formats = about.get('importFormats', {})
-        return {'status': 'drive-read', 'html_import_advertised': DOC_MIME in formats.get('text/html', []),
-                'docx_import_advertised': DOC_MIME in formats.get(DOCX, []),
-                'native_docs': 'unverified', 'write': 'unverified'}
+        return {
+            'status': 'drive-read',
+            'html_import_advertised': DOC_MIME in formats.get('text/html', []),
+            'docx_import_advertised': DOC_MIME in formats.get(DOCX, []),
+            'native_docs': 'unverified',
+            'write': 'unverified',
+        }
 
     def metadata(self, file_id):
-        return self.drive('files/' + identifier(file_id), supportsAllDrives='true',
-            fields='id,name,mimeType,parents,webViewLink,modifiedTime,version,trashed,capabilities(canEdit,canAddChildren,canComment)')
+        return self.drive(
+            'files/' + identifier(file_id),
+            supportsAllDrives='true',
+            fields='id,name,mimeType,parents,webViewLink,modifiedTime,version,trashed,capabilities(canEdit,canAddChildren,canComment)',
+        )
 
     def permissions(self, file_id):
         result = []
         page = None
         for _ in range(100):
-            query = {'supportsAllDrives': 'true', 'pageSize': 100,
-                     'fields': 'nextPageToken,permissions(id,type,role,emailAddress,domain,allowFileDiscovery,permissionDetails)'}
+            query = {
+                'supportsAllDrives': 'true',
+                'pageSize': 100,
+                'fields': 'nextPageToken,permissions(id,type,role,emailAddress,domain,allowFileDiscovery,permissionDetails)',
+            }
             if page:
                 query['pageToken'] = page
             response = self.drive('files/' + identifier(file_id) + '/permissions', **query)
@@ -260,81 +335,169 @@ class Client:
             raise GoogleError('Choose an existing Google Drive folder.')
         permissions = self.permissions(folder_id)
         snapshot = {'folder_id': folder_id, 'permissions': permissions}
-        return {**snapshot, 'audience_sha256': digest(encoded(snapshot)),
-                'can_add_children': meta.get('capabilities', {}).get('canAddChildren', False)}
+        return {
+            **snapshot,
+            'audience_sha256': digest(encoded(snapshot)),
+            'can_add_children': meta.get('capabilities', {}).get('canAddChildren', False),
+        }
 
     def native_read(self, file_id, inline=False, comments=False, accepted_preview=False):
         if comments and (not inline or accepted_preview):
             raise GoogleError('Thread reads require inline suggestions.')
-        mode = ('PREVIEW_SUGGESTIONS_ACCEPTED' if accepted_preview else
-                'SUGGESTIONS_INLINE' if inline else 'PREVIEW_WITHOUT_SUGGESTIONS')
+        mode = (
+            'PREVIEW_SUGGESTIONS_ACCEPTED'
+            if accepted_preview
+            else 'SUGGESTIONS_INLINE'
+            if inline
+            else 'PREVIEW_WITHOUT_SUGGESTIONS'
+        )
         params = {'includeTabsContent': 'true', 'suggestionsViewMode': mode}
-        if comments: params['commentsViewMode'] = 'COMMENTS_VIEW_MODE_INCLUDED'
+        if comments:
+            params['commentsViewMode'] = 'COMMENTS_VIEW_MODE_INCLUDED'
         return self.request(DOCS + identifier(file_id) + '?' + urllib.parse.urlencode(params))
 
     def native_review_update(self, file_id, revision, requests):
         if not isinstance(revision, str) or not revision.strip() or not requests:
             raise GoogleError('A fresh revision and selected review operations are required.')
-        return self.request(DOCS + identifier(file_id) + ':batchUpdate', method='POST',
-            body={'writeControl': {'requiredRevisionId': revision, 'writeMode': 'SUGGEST'},
-                  'requests': requests})
+        return self.request(
+            DOCS + identifier(file_id) + ':batchUpdate',
+            method='POST',
+            body={
+                'writeControl': {'requiredRevisionId': revision, 'writeMode': 'SUGGEST'},
+                'requests': requests,
+            },
+        )
 
     def native_comments_update(self, file_id, revision, requests):
         if not revision or not requests or any(set(r) != {'insertComment'} for r in requests):
             raise GoogleError('A fresh revision and comment-only requests are required.')
-        return self.request(DOCS + identifier(file_id) + ':batchUpdate', method='POST',
-            body={'writeControl': {'requiredRevisionId': revision}, 'requests': requests})
+        return self.request(
+            DOCS + identifier(file_id) + ':batchUpdate',
+            method='POST',
+            body={'writeControl': {'requiredRevisionId': revision}, 'requests': requests},
+        )
 
     def review_comments(self, file_id):
-        result=[]; page=None
+        result = []
+        page = None
         for _ in range(100):
-            query={'fields':'nextPageToken,comments(id,content,quotedFileContent,resolved,deleted,author(me))',
-                   'pageSize':100, 'includeDeleted':'true'}
-            if page:query['pageToken']=page
-            response=self.drive('files/'+identifier(file_id)+'/comments', **query)
-            result.extend(response.get('comments',[]))
-            page=response.get('nextPageToken')
-            if not page:return result
+            query = {
+                'fields': 'nextPageToken,comments(id,content,quotedFileContent,resolved,deleted,author(me))',
+                'pageSize': 100,
+                'includeDeleted': 'true',
+            }
+            if page:
+                query['pageToken'] = page
+            response = self.drive('files/' + identifier(file_id) + '/comments', **query)
+            result.extend(response.get('comments', []))
+            page = response.get('nextPageToken')
+            if not page:
+                return result
         raise GoogleError('Comment listing was incomplete; no review action performed.')
 
     def create_review_comment(self, file_id, content, quote):
-        return self.request(DRIVE+'files/'+identifier(file_id)+'/comments?fields=id,content,quotedFileContent,resolved,author(me)',
-            method='POST',body={'content':content,'quotedFileContent':{'mimeType':'text/plain','value':quote}})
+        return self.request(
+            DRIVE
+            + 'files/'
+            + identifier(file_id)
+            + '/comments?fields=id,content,quotedFileContent,resolved,author(me)',
+            method='POST',
+            body={
+                'content': content,
+                'quotedFileContent': {'mimeType': 'text/plain', 'value': quote},
+            },
+        )
 
     def resolve_review_comment(self, file_id, comment_id):
-        return self.request(DRIVE+'files/'+identifier(file_id)+'/comments/'+identifier(comment_id)+'/replies?fields=id,action',
-            method='POST',body={'action':'resolve','content':'Selected edits applied and verified by Blog Studio.'})
+        return self.request(
+            DRIVE
+            + 'files/'
+            + identifier(file_id)
+            + '/comments/'
+            + identifier(comment_id)
+            + '/replies?fields=id,action',
+            method='POST',
+            body={
+                'action': 'resolve',
+                'content': 'Selected edits applied and verified by Blog Studio.',
+            },
+        )
 
     def resolve_native_comment(self, file_id, comment_id, revision):
-        return self.request(DOCS+identifier(file_id)+':batchUpdate',method='POST',body={
-            'writeControl':{'requiredRevisionId':revision}, 'requests':[{'addCommentReply':{
-                'commentId':comment_id,'post':{'commentAction':'RESOLVE'}}}]})
+        return self.request(
+            DOCS + identifier(file_id) + ':batchUpdate',
+            method='POST',
+            body={
+                'writeControl': {'requiredRevisionId': revision},
+                'requests': [
+                    {
+                        'addCommentReply': {
+                            'commentId': comment_id,
+                            'post': {'commentAction': 'RESOLVE'},
+                        }
+                    }
+                ],
+            },
+        )
 
     def native_update(self, file_id, revision, requests):
         if not isinstance(revision, str) or not revision.strip():
             raise GoogleError('A fresh requiredRevisionId is mandatory.')
-        if not isinstance(requests, list) or not requests or not all(isinstance(r, dict) for r in requests):
+        if (
+            not isinstance(requests, list)
+            or not requests
+            or not all(isinstance(r, dict) for r in requests)
+        ):
             raise GoogleError('Provide a nonempty JSON array of selected native edits.')
-        response = self.request(DOCS + identifier(file_id) + ':batchUpdate', method='POST',
-            body={'writeControl': {'requiredRevisionId': revision}, 'requests': requests})
-        return {'status': 'written-unverified', 'document_id': file_id,
-                'write_control': response.get('writeControl'), 'next_step': 'Read all affected tabs and verify before google confirm.'}
+        response = self.request(
+            DOCS + identifier(file_id) + ':batchUpdate',
+            method='POST',
+            body={'writeControl': {'requiredRevisionId': revision}, 'requests': requests},
+        )
+        return {
+            'status': 'written-unverified',
+            'document_id': file_id,
+            'write_control': response.get('writeControl'),
+            'next_step': 'Read all affected tabs and verify before google confirm.',
+        }
 
     def locate(self, operation):
         if not re.fullmatch(r'[0-9a-f]{32}', operation):
             raise GoogleError('Use the original 32-character operation ID.')
-        result = self.drive('files', q="trashed = false and appProperties has { key='blogStudioOperation' and value='" + operation + "' }",
-            spaces='drive', pageSize=100, includeItemsFromAllDrives='true', supportsAllDrives='true',
-            fields='nextPageToken,files(id,name,mimeType,webViewLink,parents)')
-        return {'status': 'reconcile-only', 'operation': operation, 'matches': result.get('files', []),
-                'incomplete': bool(result.get('nextPageToken')), 'next_step': 'Inspect matches; an empty result does not authorize repeating an uncertain upload.'}
+        result = self.drive(
+            'files',
+            q="trashed = false and appProperties has { key='blogStudioOperation' and value='"
+            + operation
+            + "' }",
+            spaces='drive',
+            pageSize=100,
+            includeItemsFromAllDrives='true',
+            supportsAllDrives='true',
+            fields='nextPageToken,files(id,name,mimeType,webViewLink,parents)',
+        )
+        return {
+            'status': 'reconcile-only',
+            'operation': operation,
+            'matches': result.get('files', []),
+            'incomplete': bool(result.get('nextPageToken')),
+            'next_step': 'Inspect matches; an empty result does not authorize repeating an uncertain upload.',
+        }
 
     def export(self, file_id, format):
         meta = self.metadata(file_id)
         if meta.get('mimeType') != DOC_MIME:
             raise GoogleError('The selected file is not a native Google Doc.')
-        mime = {'txt': 'text/plain', 'md': 'text/markdown', 'pdf': 'application/pdf', 'docx': DOCX}[format]
-        data = self.request(DRIVE + 'files/' + identifier(file_id) + '/export?' + urllib.parse.urlencode({'mimeType': mime}), binary=True)
+        mime = {'txt': 'text/plain', 'md': 'text/markdown', 'pdf': 'application/pdf', 'docx': DOCX}[
+            format
+        ]
+        data = self.request(
+            DRIVE
+            + 'files/'
+            + identifier(file_id)
+            + '/export?'
+            + urllib.parse.urlencode({'mimeType': mime}),
+            binary=True,
+        )
         if format == 'pdf' and not data.startswith(b'%PDF-'):
             raise GoogleError('Export was not a PDF.')
         if format == 'docx':
@@ -352,7 +515,9 @@ class Client:
             raise GoogleError('Provide a title (1–500 characters) and a file no larger than 20 MB.')
         mime = {'.html': 'text/html', '.txt': 'text/plain', '.docx': DOCX}.get(path.suffix.lower())
         if not mime:
-            raise GoogleError('Import accepts HTML, plain text or DOCX. Convert Markdown deliberately before upload.')
+            raise GoogleError(
+                'Import accepts HTML, plain text or DOCX. Convert Markdown deliberately before upload.'
+            )
         data = path.read_bytes()
         if mime == DOCX:
             validate_docx(data)
@@ -360,8 +525,14 @@ class Client:
             data.decode('utf-8')
         if folder_id:
             observed = self.audience(folder_id)
-            if not observed['can_add_children'] or not audience_sha256 or observed['audience_sha256'] != audience_sha256:
-                raise GoogleError('Review the destination audience and pass its current audience_sha256 before uploading.')
+            if (
+                not observed['can_add_children']
+                or not audience_sha256
+                or observed['audience_sha256'] != audience_sha256
+            ):
+                raise GoogleError(
+                    'Review the destination audience and pass its current audience_sha256 before uploading.'
+                )
         # Sign-in problems surface here, before a receipt exists, so they never look like an uncertain upload.
         self.authorize()
         metadata = {'name': title, 'mimeType': DOC_MIME}
@@ -371,24 +542,54 @@ class Client:
         metadata['appProperties'] = {'blogStudioOperation': operation}
         # Reserve before POST. Existing receipts ALWAYS stop another upload, even
         # after a crash or ambiguous network result. Recovery is read-only.
-        receipt = {'schema': 1, 'operation': operation, 'status': 'submitting',
-                   'content_sha256': digest(data), 'folder_id': folder_id}
+        receipt = {
+            'schema': 1,
+            'operation': operation,
+            'status': 'submitting',
+            'content_sha256': digest(data),
+            'folder_id': folder_id,
+        }
         state_path = Path(state_path)
         write_new(state_path, encoded(receipt))
-        uncertain = ('Upload outcome needs reconciliation. Keep receipt ' + str(state_path) + '; run reconcile --operation '
-                     + operation + '. Do not repeat import with a new receipt.')
+        uncertain = (
+            'Upload outcome needs reconciliation. Keep receipt '
+            + str(state_path)
+            + '; run reconcile --operation '
+            + operation
+            + '. Do not repeat import with a new receipt.'
+        )
         boundary = 'blogstudio_' + uuid.uuid4().hex
-        body = (('--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n').encode()
-                + encoded(metadata) + ('\r\n--' + boundary + '\r\nContent-Type: ' + mime + '\r\n\r\n').encode()
-                + data + ('\r\n--' + boundary + '--\r\n').encode())
+        body = (
+            ('--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n').encode()
+            + encoded(metadata)
+            + ('\r\n--' + boundary + '\r\nContent-Type: ' + mime + '\r\n\r\n').encode()
+            + data
+            + ('\r\n--' + boundary + '--\r\n').encode()
+        )
         try:
-            response = self.request(UPLOAD + '?' + urllib.parse.urlencode({'uploadType': 'multipart',
-                'supportsAllDrives': 'true', 'fields': 'id,mimeType,webViewLink,parents'}), method='POST',
-                body=body, mime='multipart/related; boundary=' + boundary)
+            response = self.request(
+                UPLOAD
+                + '?'
+                + urllib.parse.urlencode(
+                    {
+                        'uploadType': 'multipart',
+                        'supportsAllDrives': 'true',
+                        'fields': 'id,mimeType,webViewLink,parents',
+                    }
+                ),
+                method='POST',
+                body=body,
+                mime='multipart/related; boundary=' + boundary,
+            )
             if response.get('mimeType') != DOC_MIME or not response.get('id'):
-                raise GoogleError('Google did not confirm a native Doc. Reconcile the operation before retrying.')
-            receipt.update(status='created-unverified', document_id=identifier(response['id']),
-                url='https://docs.google.com/document/d/' + identifier(response['id']) + '/edit')
+                raise GoogleError(
+                    'Google did not confirm a native Doc. Reconcile the operation before retrying.'
+                )
+            receipt.update(
+                status='created-unverified',
+                document_id=identifier(response['id']),
+                url='https://docs.google.com/document/d/' + identifier(response['id']) + '/edit',
+            )
             # Preserve the known remote ID even if later readback fails.
             temp = state_path.with_name(state_path.name + '.' + uuid.uuid4().hex)
             try:
@@ -396,13 +597,20 @@ class Client:
                 os.replace(temp, state_path)
             finally:
                 temp.unlink(missing_ok=True)
-            return {**receipt, 'next_step': 'Read back actual content, structure, folder and access before confirming the handoff.'}
+            return {
+                **receipt,
+                'next_step': 'Read back actual content, structure, folder and access before confirming the handoff.',
+            }
         except GoogleError as exc:
             if exc.definite and not receipt.get('document_id'):
                 # Google refused the request, so nothing was created and the reservation can go.
                 state_path.unlink(missing_ok=True)
-                raise GoogleError('Google refused the upload, so no document was created and the receipt was released. '
-                                  + str(exc), status=exc.status, labels=exc.labels) from None
+                raise GoogleError(
+                    'Google refused the upload, so no document was created and the receipt was released. '
+                    + str(exc),
+                    status=exc.status,
+                    labels=exc.labels,
+                ) from None
             raise GoogleError(uncertain) from None
         except OSError:
             raise GoogleError(uncertain) from None
@@ -450,7 +658,9 @@ def staging_root(root, create=False):
 def staging_path(root, prefix, suffix=''):
     """A new private staging path. The caller creates the file or folder."""
     stamp = time.strftime('%Y%m%dT%H%M%S', time.gmtime())
-    return staging_root(root, create=True) / (prefix + '-' + stamp + '-' + uuid.uuid4().hex[:8] + suffix)
+    return staging_root(root, create=True) / (
+        prefix + '-' + stamp + '-' + uuid.uuid4().hex[:8] + suffix
+    )
 
 
 def staged(root, path):
@@ -541,6 +751,7 @@ def account_for(root=None, account=None):
 def linked_documents(root):
     """IDs of the Google Docs that blogs in this workspace are linked to."""
     import studio
+
     base = workspace(root)
     folder = base / 'articles'
     found = set()
@@ -556,7 +767,11 @@ def linked_documents(root):
         google = record.get('google', {}) if isinstance(record, dict) else {}
         baselines = google.get('baselines', {}) if isinstance(google, dict) else {}
         for baseline in baselines.values():
-            document_id = baseline.get('document', {}).get('document_id') if isinstance(baseline, dict) else None
+            document_id = (
+                baseline.get('document', {}).get('document_id')
+                if isinstance(baseline, dict)
+                else None
+            )
             if isinstance(document_id, str):
                 found.add(document_id)
     return found
@@ -567,19 +782,27 @@ def require_linked(root, file_id, first_handoff=False):
     if first_handoff:
         return
     if root is None:
-        raise GoogleError('Writes are limited to Google Docs linked to a blog. Pass --root <workspace>; use '
-                          '--first-handoff only for the explicit first handoff of a new editing copy.')
+        raise GoogleError(
+            'Writes are limited to Google Docs linked to a blog. Pass --root <workspace>; use '
+            '--first-handoff only for the explicit first handoff of a new editing copy.'
+        )
     if identifier(file_id) not in linked_documents(root):
-        raise GoogleError('This Google Doc is not linked to a blog in this workspace, so it will not be changed. '
-                          'Start from the Doc or confirm its handoff first; use --first-handoff only for the '
-                          'explicit first handoff of a new editing copy.')
+        raise GoogleError(
+            'This Google Doc is not linked to a blog in this workspace, so it will not be changed. '
+            'Start from the Doc or confirm its handoff first; use --first-handoff only for the '
+            'explicit first handoff of a new editing copy.'
+        )
 
 
 def active_account():
     """gcloud's active account, read from local configuration only."""
     try:
-        result = subprocess.run([gcloud(), 'config', 'get-value', 'account', '--quiet'],
-                                capture_output=True, text=True, timeout=30)
+        result = subprocess.run(
+            [gcloud(), 'config', 'get-value', 'account', '--quiet'],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
     except (OSError, subprocess.TimeoutExpired):
         return None
     value = result.stdout.strip()
@@ -596,9 +819,11 @@ def login(account=None, activate=False):
     elif not activate:
         current = active_account()
         if current:
-            raise GoogleError('gcloud is already signed in as ' + current + '. Name the Google Docs account '
-                              '(login --account you@example.com) to add it without switching, or pass --activate '
-                              'to make this sign-in gcloud’s active account.')
+            raise GoogleError(
+                'gcloud is already signed in as ' + current + '. Name the Google Docs account '
+                '(login --account you@example.com) to add it without switching, or pass --activate '
+                'to make this sign-in gcloud’s active account.'
+            )
     command += ['--enable-gdrive-access', '--force']
     if account and not activate:
         command.append('--no-activate')
@@ -609,36 +834,60 @@ def login(account=None, activate=False):
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--account', help='Use this already-authorized gcloud account without switching the active account.')
-    parser.add_argument('--root', type=Path, help='Writing workspace: its remembered Google account, private staging '
-                        'folder, and the linked Docs that writes are limited to.')
+    parser.add_argument(
+        '--account',
+        help='Use this already-authorized gcloud account without switching the active account.',
+    )
+    parser.add_argument(
+        '--root',
+        type=Path,
+        help='Writing workspace: its remembered Google account, private staging '
+        'folder, and the linked Docs that writes are limited to.',
+    )
     actions = parser.add_subparsers(dest='action', required=True)
     actions.add_parser('check')
     sign_in = actions.add_parser('login')
-    sign_in.add_argument('--activate', action='store_true', help='Also make this sign-in gcloud\'s active account.')
-    remembered = actions.add_parser('account', help='Show, set or clear the Google account remembered for --root.')
+    sign_in.add_argument(
+        '--activate', action='store_true', help="Also make this sign-in gcloud's active account."
+    )
+    remembered = actions.add_parser(
+        'account', help='Show, set or clear the Google account remembered for --root.'
+    )
     choice = remembered.add_mutually_exclusive_group()
     choice.add_argument('--set', dest='set_account', metavar='EMAIL')
     choice.add_argument('--clear', action='store_true')
-    staging = actions.add_parser('staging', help='Inspect or clear staged captures, plans, findings and receipts.')
+    staging = actions.add_parser(
+        'staging', help='Inspect or clear staged captures, plans, findings and receipts.'
+    )
     staging.add_argument('--clear', action='store_true')
     for name in ('metadata', 'audience', 'read', 'export', 'update'):
         sub = actions.add_parser(name)
         sub.add_argument('--file-id', required=True)
         if name == 'read':
-            sub.add_argument('--output', type=Path, help='New local JSON file; defaults to the workspace staging folder.')
+            sub.add_argument(
+                '--output',
+                type=Path,
+                help='New local JSON file; defaults to the workspace staging folder.',
+            )
         if name == 'export':
             sub.add_argument('--output', type=Path, required=True)
             sub.add_argument('--format', choices=('txt', 'md', 'pdf', 'docx'), required=True)
         if name == 'update':
             sub.add_argument('--revision', required=True)
             sub.add_argument('--requests', type=Path, required=True)
-            sub.add_argument('--first-handoff', action='store_true',
-                             help='Explicit first handoff of a new editing copy that is not linked yet.')
+            sub.add_argument(
+                '--first-handoff',
+                action='store_true',
+                help='Explicit first handoff of a new editing copy that is not linked yet.',
+            )
     sub = actions.add_parser('import')
     sub.add_argument('--file', type=Path, required=True)
     sub.add_argument('--title', required=True)
-    sub.add_argument('--receipt', type=Path, help='New private receipt; defaults to the workspace staging folder.')
+    sub.add_argument(
+        '--receipt',
+        type=Path,
+        help='New private receipt; defaults to the workspace staging folder.',
+    )
     sub.add_argument('--folder-id')
     sub.add_argument('--audience-sha256')
     actions.add_parser('reconcile').add_argument('--operation', required=True)
@@ -650,14 +899,18 @@ def staged_default(args, value, prefix, suffix):
     if value:
         return value
     if not args.root:
-        raise GoogleError('Pass --root <workspace> so this file goes to its private staging folder, or name a path.')
+        raise GoogleError(
+            'Pass --root <workspace> so this file goes to its private staging folder, or name a path.'
+        )
     return staging_path(args.root, prefix, suffix)
 
 
 def import_receipt(args):
     """One staged receipt per file, title and folder, so repeating the same import is always stopped."""
     if not args.root:
-        raise GoogleError('Pass --root <workspace> so the receipt goes to its private staging folder, or name a path.')
+        raise GoogleError(
+            'Pass --root <workspace> so the receipt goes to its private staging folder, or name a path.'
+        )
     identity = digest(args.file.read_bytes() + encoded([args.title, args.folder_id]))
     return staging_root(args.root, create=True) / ('import-receipt-' + identity[:16] + '.json')
 
@@ -665,14 +918,24 @@ def import_receipt(args):
 def run(args):
     if args.action == 'account':
         if not args.root:
-            raise GoogleError('Pass --root <workspace>; the Google account is remembered per workspace.')
+            raise GoogleError(
+                'Pass --root <workspace>; the Google account is remembered per workspace.'
+            )
         if args.set_account:
-            return {'status': 'account-saved', 'account': remember_account(args.root, args.set_account)}
+            return {
+                'status': 'account-saved',
+                'account': remember_account(args.root, args.set_account),
+            }
         if args.clear:
             return {'status': 'account-cleared', 'removed': forget_account(args.root)}
         saved = saved_account(args.root)
-        return {'status': 'account', 'account': saved,
-                'source': 'workspace' if saved else 'gcloud active account (none saved for this workspace)'}
+        return {
+            'status': 'account',
+            'account': saved,
+            'source': 'workspace'
+            if saved
+            else 'gcloud active account (none saved for this workspace)',
+        }
     if args.action == 'staging':
         if not args.root:
             raise GoogleError('Pass --root <workspace>; staging belongs to one workspace.')
@@ -701,16 +964,24 @@ def run(args):
         return {'status': 'native-read', 'file': str(output), 'structure_verified': False}
     if args.action == 'export':
         write_new(args.output, client.export(args.file_id, args.format))
-        return {'status': 'exported', 'file': str(args.output), 'format': args.format,
-                'next_step': 'Inspect the actual export. Plain text does not prove accepted suggestions, '
-                             'all-tab coverage or native fidelity.'}
+        return {
+            'status': 'exported',
+            'file': str(args.output),
+            'format': args.format,
+            'next_step': 'Inspect the actual export. Plain text does not prove accepted suggestions, '
+            'all-tab coverage or native fidelity.',
+        }
     if args.action == 'import':
         receipt = args.receipt or import_receipt(args)
         try:
-            return client.import_new(args.file, args.title, receipt, args.folder_id, args.audience_sha256)
+            return client.import_new(
+                args.file, args.title, receipt, args.folder_id, args.audience_sha256
+            )
         except FileExistsError:
-            raise GoogleError('This import was already attempted (receipt ' + str(receipt) + '). Reconcile that '
-                              'attempt first; an existing receipt always stops another upload.') from None
+            raise GoogleError(
+                'This import was already attempted (receipt ' + str(receipt) + '). Reconcile that '
+                'attempt first; an existing receipt always stops another upload.'
+            ) from None
     if args.action == 'reconcile':
         return client.locate(args.operation)
     require_linked(args.root, args.file_id, args.first_handoff)
@@ -725,8 +996,16 @@ def main():
     except GoogleError as exc:
         print(json.dumps({'status': 'unavailable', 'error': str(exc)}), file=sys.stderr)
     except (OSError, ValueError):
-        print(json.dumps({'status': 'unavailable', 'error': 'Local input or output failed: check the file paths and '
-                          'JSON, and use a new output path. Nothing was sent to Google by this step.'}), file=sys.stderr)
+        print(
+            json.dumps(
+                {
+                    'status': 'unavailable',
+                    'error': 'Local input or output failed: check the file paths and '
+                    'JSON, and use a new output path. Nothing was sent to Google by this step.',
+                }
+            ),
+            file=sys.stderr,
+        )
     return 1
 
 
