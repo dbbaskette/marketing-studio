@@ -175,7 +175,9 @@ class RoundTripTests(unittest.TestCase):
                 'after': after,
             }
             for b, after in zip(
-                blocks[1:3], ['The delay comes from handoffs.', '😀 This is not slow.']
+                blocks[1:3],
+                ['The delay comes from handoffs.', '😀 This is not slow.'],
+                strict=False,
             )
         ]
 
@@ -231,7 +233,7 @@ class RoundTripTests(unittest.TestCase):
         self.assertEqual(self.client.writes, 1)
         before = original['tabs'][0]['documentTab']['body']['content']
         after = rt.semantic(self.client.doc)['tabs'][0]['documentTab']['body']['content']
-        for a, b in zip(before[1:], after[1:]):
+        for a, b in zip(before[1:], after[1:], strict=False):
             self.assertEqual(a['paragraph']['paragraphStyle'], b['paragraph']['paragraphStyle'])
         self.assertEqual(before[-1], after[-1])
         self.assertTrue(
@@ -324,7 +326,7 @@ class RoundTripTests(unittest.TestCase):
         requests = rt.build_plan(self.client.doc, [{'before': before, 'after': after}])['requests']
         texts = [r['insertText']['text'] for r in requests if 'insertText' in r]
         styles = [r['updateTextStyle']['textStyle'] for r in requests if 'updateTextStyle' in r]
-        return list(zip(texts, styles))
+        return list(zip(texts, styles, strict=False))
 
     def test_inserted_text_takes_the_right_neighbours_style_and_never_lengthens_a_link(self):
         link = {'link': {'url': 'https://example.invalid'}, 'underline': True}

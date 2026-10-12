@@ -370,7 +370,7 @@ def parse_discovery(content, kind, url, scope):
         parser.feed(content.decode('utf-8'))
         candidates = [
             {'url': urljoin(url, link), 'label': ' '.join(label.split())}
-            for link, label in zip(parser.links, parser.labels)
+            for link, label in zip(parser.links, parser.labels, strict=False)
         ]
     else:
         try:
@@ -1430,7 +1430,8 @@ def read_source(root, ident, query='', limit=3, max_chars=4000):
         'passages': result,
         'truncated': len(matching) > len(result)
         or any(
-            len(content[s['start'] : s['end']]) > len(r['quote']) for s, r in zip(matching, result)
+            len(content[s['start'] : s['end']]) > len(r['quote'])
+            for s, r in zip(matching, result, strict=False)
         ),
         'historical': record.get('library', {}).get('historical') is True,
         'warning': 'Reverify dated software claims before reuse.',

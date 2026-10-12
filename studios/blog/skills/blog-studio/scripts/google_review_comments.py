@@ -481,7 +481,9 @@ def post_native(batch, existing, doc):
             current(client, saved)
             receipt['backend'] = 'drive-comments'
             if any_marker(saved, read_threads(client, saved, 'drive-comments')):
-                raise GoogleError('A review comment already exists; reconcile before continuing.')
+                raise GoogleError(
+                    'A review comment already exists; reconcile before continuing.'
+                ) from exc
             write_json(batch['receipt_path'], receipt)
             return 'drive-comments'
         if exc.definite and len(missing) == len(planned):

@@ -374,12 +374,12 @@ class Registry:
                 write_json(intent_path, intent)
                 try:
                     self.provider.create(repository, intent['hub'])
-                except TransportError:
+                except TransportError as exc:
                     metadata = self.provider.lookup(repository)
                     if not metadata:
                         raise HubError(
                             'Remote creation outcome is unverified. The intent was retained; retry the same owner/name.'
-                        )
+                        ) from exc
                 metadata = metadata or self.provider.lookup(repository)
             if (
                 not metadata

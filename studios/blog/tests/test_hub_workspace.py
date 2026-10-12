@@ -736,8 +736,12 @@ class HubWorkspaceTests(unittest.TestCase):
         shared_history = [name for r in revisions for name in self.history_files(r)]
         self.assertEqual(len(shared_history), len(set(shared_history)))
         # Paths grow by the same amount per save, and bytes by about one save's worth.
-        path_steps = [later[0] - earlier[0] for earlier, later in zip(sizes, sizes[1:])]
-        byte_steps = [later[1] - earlier[1] for earlier, later in zip(sizes, sizes[1:])]
+        path_steps = [
+            later[0] - earlier[0] for earlier, later in zip(sizes, sizes[1:], strict=False)
+        ]
+        byte_steps = [
+            later[1] - earlier[1] for earlier, later in zip(sizes, sizes[1:], strict=False)
+        ]
         self.assertEqual(len(set(path_steps[1:])), 1, path_steps)
         self.assertLess(byte_steps[-1] - byte_steps[1], len(draft), byte_steps)
         # Another clone still gets every earlier draft, under the same names.

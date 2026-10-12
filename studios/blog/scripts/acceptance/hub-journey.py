@@ -315,7 +315,7 @@ def main():
         assert created['hub'] == joined['hub']
         workspaces = [Path(value['workspace']) for value in (created, joined)]
         clones = [Path(value['clone']) for value in (created, joined)]
-        for home, clone in zip(homes, clones):
+        for home, clone in zip(homes, clones, strict=False):
             assert clone == home / 'blogs' / args.repo.split('/')[1]
             assert (clone / '.git').is_dir()
         title = 'Synthetic ExampleDB tutorial ' + base.name

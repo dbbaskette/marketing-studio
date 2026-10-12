@@ -558,7 +558,7 @@ def build_plan(document, edits):
             styles[a:b] = [chosen] * len(replacement)
         # Expected readback preserves every unchanged character's original style and all paragraph properties.
         paragraph['elements'] = [
-            {'textRun': {'content': c, 'textStyle': s}} for c, s in zip(chars, styles)
+            {'textRun': {'content': c, 'textStyle': s}} for c, s in zip(chars, styles, strict=False)
         ]
     if len(requests) > 900:
         raise GoogleError('Too many native operations; split into smaller reviewed patches.')
