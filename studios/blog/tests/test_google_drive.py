@@ -69,11 +69,9 @@ class GoogleDriveTests(unittest.TestCase):
 
     def test_http_error_is_redacted_and_writes_are_not_retried(self):
         client = gd.Client()
-        client.opener.open = Mock(
-            side_effect=urllib.error.HTTPError(
-                gd.DRIVE, 403, 'secret', {}, io.BytesIO(b'secret-token')
-            )
-        )
+        refusal = urllib.error.HTTPError(gd.DRIVE, 403, 'secret', {}, io.BytesIO(b'secret-token'))
+        self.addCleanup(refusal.close)
+        client.opener.open = Mock(side_effect=refusal)
         with patch.object(gd, 'token', return_value='secret-token'):
             with self.assertRaises(gd.GoogleError) as error:
                 client.request(gd.DRIVE + 'files', method='POST', body={'name': 'draft'})
@@ -203,7 +201,10 @@ class GoogleDriveTests(unittest.TestCase):
 
     def http_error(self, status, payload=None):
         body = io.BytesIO(json.dumps(payload or {}).encode())
-        return urllib.error.HTTPError(gd.DRIVE, status, 'error', {}, body)
+        error = urllib.error.HTTPError(gd.DRIVE, status, 'error', {}, body)
+        # Closed with the test, so no late ResourceWarning lands in another test's captured stderr.
+        self.addCleanup(error.close)
+        return error
 
     def answer(self, value):
         response = MagicMock()

@@ -8,8 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from hub_fixtures import FakeProvider  # first: it puts the helper scripts on the import path
 from hub import Registry
-from hub_fixtures import FakeProvider
 import hub_store as store
 from hub_browse import render, verify, changes
 
