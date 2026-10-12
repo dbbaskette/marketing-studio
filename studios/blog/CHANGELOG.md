@@ -60,6 +60,29 @@ blog, is retired.
   CLI, and each has a checkbox to skip it. Opening the desk no longer turns
   summaries on by itself.
 
+- **Google review can always be continued.** A timed-out or refused
+  suggestion, a comment batch interrupted by a rate limit, and an uncertain
+  "Apply edits" can each be verified and resumed instead of blocking the blog.
+  Review edits are numbered per blog, so a second round does not reuse "Edit 1".
+- **Edits on both sides are merged.** When you and a teammate changed different
+  paragraphs, pulling combines them; only a paragraph changed on both sides
+  asks you to choose. With a linked Doc, "Proofread" saves findings and leaves
+  your draft alone, so rejecting a suggestion no longer ends in a conflict.
+- **Fewer false stops.** A teammate's pending suggestion no longer blocks
+  starting from, pulling, or commenting on a Doc. Renaming a Doc is not treated
+  as a change. Strikethrough, underline, superscript, code and titles survive a
+  pull, and inserted words no longer inherit a neighboring link or bold.
+- **Google data stays closer to home.** A Doc's raw data, which can include
+  collaborators' comment threads, stays on your computer instead of syncing to
+  the Team Hub. Staged captures are cleaned up, writes are limited to Docs
+  linked to a blog, the Google account is remembered per workspace, and sign-in
+  no longer switches the account gcloud is using.
+
+Known limits: a Doc with tables, images or footnotes cannot be pulled while
+suggestions are pending; a Hub that was already large keeps its earlier history;
+and everyone sharing a Hub should update to 2.0 together. Google behavior was
+verified against recorded fixtures, not a live account.
+
 **Upgrading from 1.x:** run the 2.0 installer; it upgrades in place. Until
 then a 1.x installation answers a new blog with “This guidance needs a newer
 local Blog Studio runtime. Run the installer update.” Existing 1.x blogs can
