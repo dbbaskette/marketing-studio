@@ -4,14 +4,27 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import sys
 import uuid
 
-from hub_store import (VERSION, KINDS, HubError, TransportError, GitHub, uid, now, encoded,
+from hub_store import (VERSION, KINDS, HubError, TransportError, ReviewClosed, GitHub, uid, now, encoded,
                        sha, atomic, write_json, read_json, contained, locked, canonical_repository,
                        git, manifest, validate_files, artifact_name, tree_files, commit_files,
-                       record_path, relocate_records, immutable_files)
+                       record_path, relocate_records, immutable_files, ancestor_files, ancestors)
+
+# Saves in the outbox that are part of this clone's view and are pushed by a sync.
+ACTIVE_STATES = ('queued', 'pending-review')
+# A guarded save whose parent is no longer a shared head. It is kept, never pushed
+# on its own, and waits for the author to compare, fork explicitly, or set it aside.
+HELD = 'newer-hub-revision'
+HELD_NEXT_STEP = ('A newer shared version exists, so this save was kept on this computer and not pushed. '
+                  'Compare the two versions first. Then either share yours as a competing version '
+                  '(hub.py import-workspace --fork) and resolve the conflict, or continue from the shared '
+                  'version and keep a local backup (hub.py checkout-workspace --set-aside-local).')
+LEGACY_INDEX = re.compile(r'\.index-[0-9a-f]{32}(?:\.lock)?')
+MAX_LISTED_PATHS = 10
 
 
 def default_registry():
@@ -179,7 +192,9 @@ class Registry:
                     git(repository, 'config', 'branch.main.remote', 'origin')
                     git(repository, 'config', 'branch.main.merge', 'refs/heads/main')
                     local = stage / '.blog-studio/hub'
-                    shutil.copytree(hub.root, local, ignore=shutil.ignore_patterns('repository.git', '.hub.lock'))
+                    # The unread per-commit copies of earlier runtimes are not carried over.
+                    skipped = shutil.ignore_patterns('repository.git', '.hub.lock', 'snapshots')
+                    shutil.copytree(hub.root, local, ignore=skipped)
                     state = self.state()
                     entry = dict(state['hubs'][hub.id], path=str(target), layout='checkout')
                     config = dict(hub.config, **entry)
@@ -302,34 +317,96 @@ class Hub:
             raise HubError('The repository now contains a different hub UUID.')
         return files
 
+    def _sweep_legacy_indexes(self):
+        """Earlier runtimes kept their temporary Git index in the checkout root.
+
+        One left behind by a killed commit looks like an unsaved edit and blocks
+        every later sync. This runs under the hub lock, so none can be in use.
+        """
+        for path in self.checkout.iterdir():
+            if LEGACY_INDEX.fullmatch(path.name) and path.is_file() and not path.is_symlink():
+                path.unlink(missing_ok=True)
+
+    def _dirty_paths(self):
+        listing = git(self.repository, 'status', '--porcelain', '-z', '--untracked-files=all')
+        entries = [entry for entry in listing.decode('utf-8', errors='replace').split('\0') if entry]
+        paths, skip = [], False
+        for entry in entries:
+            if skip:  # the second path of a rename or copy
+                skip = False
+                continue
+            paths.append(entry[3:])
+            skip = entry[:1] in ('R', 'C')
+        return paths
+
     def _checkout_clean(self):
-        if self.normal:
-            exclude = contained(self.repository, 'info', 'exclude')
-            patterns = exclude.read_bytes() if exclude.exists() else b''
-            if b'.DS_Store' not in patterns.splitlines():
-                atomic(exclude, patterns.rstrip(b'\n') + b'\n.DS_Store\n')
-            head = git(self.repository, 'rev-parse', '--verify', 'HEAD', allow_failure=True)
-            if head.returncode == 0 and head.stdout.decode().strip() != self._state()['revision']:
-                raise HubError('The Hub checkout contains a different commit. Preserve your local commits before syncing.')
-        if self.normal and git(self.repository, 'status', '--porcelain', '--untracked-files=all').strip():
-            raise HubError('The Hub checkout has local edits. Save or move those edits before syncing; no files were overwritten.')
+        if not self.normal:
+            return
+        exclude = contained(self.repository, 'info', 'exclude')
+        patterns = exclude.read_bytes() if exclude.exists() else b''
+        if b'.DS_Store' not in patterns.splitlines():
+            atomic(exclude, patterns.rstrip(b'\n') + b'\n.DS_Store\n')
+        self._sweep_legacy_indexes()
+        head = git(self.repository, 'rev-parse', '--verify', 'HEAD', allow_failure=True)
+        if head.returncode == 0 and head.stdout.decode().strip() != self._state()['revision']:
+            raise HubError('The Hub checkout contains a different commit. Preserve your local commits before syncing.')
+        dirty = self._dirty_paths()
+        if dirty:
+            listed = ', '.join(dirty[:MAX_LISTED_PATHS])
+            if len(dirty) > MAX_LISTED_PATHS:
+                listed += ', and ' + str(len(dirty) - MAX_LISTED_PATHS) + ' more'
+            raise HubError('The Hub checkout has local edits: ' + listed + '. Save or move those edits '
+                           'before syncing; no files were overwritten.')
 
     def _materialize(self, commit, files):
+        """Show the validated commit in the author's checkout.
+
+        Earlier runtimes also wrote a private copy of every commit under
+        snapshots/. Nothing read those copies, so they are no longer written.
+        """
         if self.normal:
             self._checkout_clean()
             git(self.repository, 'checkout', '--quiet', '-B', 'main', commit)
             git(self.repository, 'update-ref', 'refs/remotes/origin/main', commit)
             git(self.repository, 'config', 'branch.main.remote', 'origin')
             git(self.repository, 'config', 'branch.main.merge', 'refs/heads/main')
-        root = contained(self.root, 'snapshots', commit)
-        for name, content in files.items():
-            target = contained(root, *name.split('/'))
-            if target.exists():
-                if sha(target.read_bytes()) != sha(content):
-                    raise HubError('A validated local hub snapshot changed. Restore it before reading that revision.')
-            else:
-                atomic(target, content);target.chmod(0o400)
-        return root
+
+    def _drop_legacy_snapshots(self):
+        """Reclaim the unread per-commit copies an earlier runtime left behind."""
+        folder = self.root / 'snapshots'
+        if folder.is_symlink() or not folder.is_dir():
+            return
+        # rmtree removes links themselves, never what they point to.
+        shutil.rmtree(folder, ignore_errors=True)
+
+    def _published_path(self, operation):
+        return contained(self.root, 'published', uid(operation) + '.json')
+
+    def _published(self, operation):
+        """The small receipt kept after a save reached the shared main branch."""
+        path = self._published_path(operation)
+        return read_json(path) if path.exists() else None
+
+    def _retire(self, intent, commit):
+        """Replace a delivered save's queue entry with a small receipt.
+
+        The bytes are now in the shared repository, so the local payload copy is
+        dropped. An idempotent retry of the same operation is answered from the
+        shared record itself; the receipt keeps the hashes and the commit that
+        first showed the save on main, recorded once.
+        """
+        receipt = self._published_path(intent['operation'])
+        if not receipt.exists():
+            request = intent.get('request', {})
+            write_json(receipt, {
+                'schema': 1, 'hub': self.id, 'operation': intent['operation'],
+                'item': request.get('item'), 'kind': request.get('kind'),
+                'created_at': intent.get('created_at'), 'request_hash': intent.get('request_hash'),
+                'payload_hash': intent.get('payload_hash'),
+                'published_commit': intent.get('published_commit') or commit, 'published_at': now()})
+        folder = contained(self.root, 'outbox', uid(intent['operation']))
+        if folder.is_dir():
+            shutil.rmtree(folder)
 
     def _refresh(self, metadata=None):
         self._checkout_clean()
@@ -352,20 +429,25 @@ class Hub:
         for identity, content in previous_records.items():
             if current_records.get(identity) != content:
                 raise HubError('A published memory revision was modified or removed. Existing data was preserved.')
-        published = []
+        delivered = []
         for intent in self._intents():
+            if intent['state'] == 'published':  # left in the queue by an earlier runtime
+                delivered.append(intent)
+                continue
+            if intent['state'] not in ACTIVE_STATES:
+                continue
             additions = relocate_records(self._intent_files(intent), graph['manifest'])
             if all(name in files for name in additions):
                 if any(files[name] != data for name, data in additions.items()):
                     raise HubError('Remote operation ID was reused with different content.')
-                published.append(intent)
+                delivered.append(intent)
         self._materialize(commit, files)
         state.update(revision=commit, fresh=True, verified_at=now(), write=metadata.get('write'))
         state.pop('error', None)
         self._write_state(state)
-        for intent in published:
-            intent['state'] = 'published';intent['published_commit'] = commit
-            self._write_intent(intent)
+        for intent in delivered:
+            self._retire(intent, commit)
+        self._drop_legacy_snapshots()
         if state.get('library_review') and graph['manifest'].get('browse_schema') in (1, 2, 3):
             state.pop('library_review', None)
         if not state.get('library_review') and not any(i['state'] == 'pending-review' for i in self._intents()):
@@ -394,7 +476,12 @@ class Hub:
                 if path.name.startswith('.'):
                     continue
                 uid(path.name)
-                intent = read_json(contained(folder, path.name, 'intent.json'))
+                try:
+                    intent = read_json(contained(folder, path.name, 'intent.json'))
+                except HubError:
+                    if not path.exists():  # retired by a refresh while this read was listing
+                        continue
+                    raise
                 if intent['operation'] != path.name or intent['hub'] != self.id:
                     raise HubError('The saved operation belongs to another hub.')
                 values.append(intent)
@@ -416,30 +503,88 @@ class Hub:
             raise HubError('Queued operation manifest changed.')
         return result
 
+    def intent_state(self, operation):
+        """State of one save that has not reached shared main, or None."""
+        path = contained(self.root, 'outbox', uid(operation), 'intent.json')
+        return read_json(path)['state'] if path.exists() else None
+
+    def unshared_chain(self, revision, dependencies=False):
+        """Saves ending at this revision that never reached shared main, newest first.
+
+        With dependencies, the unshared sources and voices those saves pin are
+        included too, because a save cannot be delivered without them.
+        """
+        intents = {intent['operation']: intent for intent in self._intents()}
+        chain, queue = [], [revision]
+        while queue:
+            intent = intents.pop(queue.pop(), None)
+            if intent is None:
+                continue
+            chain.append(intent)
+            queue.extend(intent['request']['parents'])
+            if dependencies:
+                queue.extend(d['revision'] for d in intent['request']['dependencies'])
+        return chain
+
+    def release(self, operations):
+        """Let held saves be pushed as a competing version: the author's explicit choice."""
+        released = []
+        with locked(self.root):
+            for intent in self._intents():
+                waiting = intent['state'] == HELD or (intent['state'] == 'queued' and intent.get('guard'))
+                if intent['operation'] in operations and waiting:
+                    intent.update(state='queued', guard=False, released_at=now())
+                    self._write_intent(intent)
+                    released.append(intent['operation'])
+        return released
+
+    def withdraw(self, operations):
+        """Set unshared saves aside intact; they leave the queue and are never pushed."""
+        moved = []
+        with locked(self.root):
+            for intent in self._intents():
+                if intent['operation'] not in operations or intent['state'] != HELD:
+                    continue
+                target = contained(self.root, 'withdrawn', intent['operation'])
+                if target.exists():
+                    raise HubError('An earlier set-aside copy of this save exists; it was preserved.')
+                target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                os.replace(contained(self.root, 'outbox', intent['operation']), target)
+                moved.append(intent['operation'])
+        return moved
+
+    def _with_local(self, remote, intents, also=()):
+        """The shared tree plus this clone's saves that are waiting to be delivered.
+
+        also: operations to include even though they are held, for reading one
+        held save explicitly (for example to compare it with the shared version).
+        """
+        files = dict(remote)
+        layout = validate_files(remote, self.config['repository'])['manifest']
+        for intent in intents:
+            if intent['state'] not in ACTIVE_STATES and intent['operation'] not in also:
+                continue
+            try:
+                payload = self._intent_files(intent)
+            except FileNotFoundError:
+                if contained(self.root, 'outbox', intent['operation']).exists():
+                    raise
+                continue  # delivered and retired while this lock-free read was running
+            for name, data in relocate_records(payload, layout).items():
+                if name in files and files[name] != data:
+                    raise HubError('An operation ID has conflicting payloads.')
+                files[name] = data
+        return files
+
     def files(self, include_local=True):
         files = self._remote_files()
-        layout = validate_files(files, self.config['repository'])['manifest']
-        if include_local:
-            for intent in self._intents():
-                if intent['state'] != 'published':
-                    for name, data in relocate_records(self._intent_files(intent), layout).items():
-                        if name in files and files[name] != data:
-                            raise HubError('An operation ID has conflicting payloads.')
-                        files[name] = data
-        return files
+        return self._with_local(files, self._intents()) if include_local else files
 
     def view(self):
         """One local Git tree observation for a read-only card; never remote freshness."""
         remote = self._remote_files()
-        files = dict(remote)
         intents = self._intents()
-        layout = validate_files(remote, self.config['repository'])['manifest']
-        for intent in intents:
-            if intent['state'] != 'published':
-                for name, data in relocate_records(self._intent_files(intent), layout).items():
-                    if name in files and files[name] != data:
-                        raise HubError('An operation ID has conflicting payloads.')
-                    files[name] = data
+        files = self._with_local(remote, intents)
         return validate_files(files, self.config['repository']), remote, intents
 
     def graph(self, include_local=True):
@@ -455,6 +600,7 @@ class Hub:
                 'contribution': 'write' if state.get('write') is True else 'read-only' if state.get('write') is False else 'unverified',
                 'queued': sum(i['state'] == 'queued' for i in intents),
                 'pending_review': sum(i['state'] == 'pending-review' for i in intents),
+                'held': sum(i['state'] == HELD for i in intents),
                 'conflicts': sum(len(v) > 1 for v in graph['heads'].values()),
                 'clone': str(self.checkout if self.normal else self.repository),
                 'workspace': str(self.checkout / '.blog-studio') if self.normal else None,
@@ -465,7 +611,15 @@ class Hub:
 
     def save(self, kind, title, body='', *, item=None, parents=None, operation=None, data=None,
              dependencies=None, artifacts=None, scope=None, tags=None, summary='', status='active',
-             offline=False, sync=True, actor=None):
+             offline=False, sync=True, actor=None, hold_if_stale=False, inherited=None):
+        """Queue one immutable revision and, unless told otherwise, deliver it.
+
+        hold_if_stale: a sync keeps this save local, instead of pushing a competing
+        head, when its parent has been superseded on the shared branch.
+        inherited: predicate over record file names. A matching file is left out
+        when an ancestor revision already holds the same bytes under the same
+        name, so unchanged history is stored once instead of in every revision.
+        """
         if kind not in KINDS:
             raise HubError('Unsupported memory kind.')
         operation = uid(operation) if operation else uuid.uuid4().hex
@@ -483,6 +637,10 @@ class Hub:
             files = {'BODY.md': (body.encode('utf-8'), 'text')}
             for name, (content, media) in (artifacts or {}).items():
                 files['artifacts/' + artifact_name(name)] = (content, media)
+            if inherited and parents:
+                held = ancestor_files(graph, parents)
+                files = {name: value for name, value in files.items()
+                         if not (inherited(name) and (name, sha(value[0])) in held)}
             request = {'item': item, 'kind': kind, 'title': title, 'parents': parents, 'data': data or {},
                        'dependencies': dependencies or [], 'scope': scope or {'level': 'team', 'key': ''},
                        'tags': tags or [], 'summary': summary, 'status': status,
@@ -517,7 +675,7 @@ class Hub:
                 hashes = {name: sha(content) for name, content in additions.items()}
                 intent = {'hub': self.id, 'operation': operation, 'state': 'queued',
                           'created_at': record['created_at'], 'request': request, 'request_hash': request_hash,
-                          'files': hashes, 'payload_hash': sha(encoded(hashes))}
+                          'files': hashes, 'payload_hash': sha(encoded(hashes)), 'guard': bool(hold_if_stale)}
                 write_json(stage / 'intent.json', intent)
                 os.replace(stage, folder)
             finally:
@@ -526,44 +684,139 @@ class Hub:
             result = self._sync(offline) if sync else {'status': 'local-saved', **self.status()}
             return {**result, 'hub_commit': result['revision'], 'item': item, 'revision': operation, 'operation': operation}
 
+    def _hold_stale(self, intents, graph):
+        """Split queued saves into those safe to push and those that must wait.
+
+        A guarded save waits when one of its parents is no longer a shared head:
+        pushing it would silently create a competing version of someone else's
+        newer work. Any save that builds on, or pins, a waiting save waits too,
+        because the shared tree could not validate without it.
+        """
+        heads = {item: set(revisions) for item, revisions in graph['heads'].items()}
+        known = set(graph['revisions'])
+        ready, held = [], []
+
+        def hold(intent, reason):
+            request = intent['request']
+            intent.update(state=HELD, held_reason=reason, held_at=now())
+            self._write_intent(intent)
+            held.append({'operation': intent['operation'], 'item': request['item'],
+                         'kind': request['kind'], 'title': request['title'], 'reason': reason})
+
+        waiting = list(intents)  # oldest first, so a chain of local saves is judged in order
+        progressed = True
+        while waiting and progressed:
+            progressed, deferred = False, []
+            for intent in waiting:
+                request = intent['request']
+                parents = set(request['parents'])
+                needed = parents | {dependency['revision'] for dependency in request['dependencies']}
+                if not needed <= known:
+                    deferred.append(intent)  # may build on a save judged later in this pass
+                    continue
+                progressed = True
+                superseded = not parents <= heads.get(request['item'], set())
+                if intent['state'] == 'queued' and intent.get('guard') and superseded:
+                    hold(intent, 'parent-superseded')
+                    continue
+                known.add(intent['operation'])
+                heads[request['item']] = (heads.get(request['item'], set()) - parents) | {intent['operation']}
+                ready.append(intent)
+            waiting = deferred
+        for intent in waiting:
+            if intent['state'] == 'queued':
+                hold(intent, 'depends-on-held-save')
+            else:
+                ready.append(intent)
+        return ready, held
+
+    def _outcome(self, status, held=()):
+        """A sync result. A newly held save is the headline; sync_status keeps the rest."""
+        result = {'status': status, **self.status()}
+        if held:
+            result.update(status=HELD, sync_status=status, held_now=list(held), next_step=HELD_NEXT_STEP)
+        return result
+
+    def _review_branch(self, intents, base, state):
+        """Contribution branch name, avoiding branches whose pull request was closed."""
+        name = 'codex/hub-' + (intents[0]['operation'] if intents else base[:32])
+        closed = set(state.get('closed_review_branches', []))
+        candidate, attempt = name, 1
+        while candidate in closed:
+            attempt += 1
+            candidate = name + '-r' + str(attempt)
+        return candidate
+
+    def _review_closed(self, branch):
+        """Requeue work whose pull request was closed, on a fresh branch next time."""
+        state = self._state()
+        state['closed_review_branches'] = [*state.get('closed_review_branches', []), branch][-20:]
+        closed_request = state.pop('pull_request', None)
+        state['review_branch'] = None
+        state.pop('library_review', None)
+        self._write_state(state)
+        for intent in self._intents():
+            if intent['state'] == 'pending-review':
+                intent['state'] = 'queued'
+                self._write_intent(intent)
+        return {'status': 'review-closed', **self.status(), 'closed_branch': branch,
+                'closed_pull_request': closed_request,
+                'next_step': 'The contribution pull request was closed without being merged. Nothing was lost: '
+                             'the saved work is queued again. Find out why it was closed, then sync again to '
+                             'open a new review on a fresh branch.'}
+
     def _sync(self, offline=False):
         if offline:
-            state = self._state();state['fresh'] = False;self._write_state(state)
+            state = self._state()
+            state['fresh'] = False
+            self._write_state(state)
             return {'status': 'queued-offline', **self.status()}
+        from hub_browse import changes, verify
+        repository = self.config['repository']
+        provider = self.registry.provider
+        held = []
         try:
             self._refresh()
             for attempt in range(3):
-                intents = [i for i in self._intents() if i['state'] != 'published']
-                from hub_browse import changes, verify
                 original = self._remote_files()
-                original_graph = validate_files(original, self.config['repository'])
+                original_graph = validate_files(original, repository)
                 verify(original, original_graph)
+                active = [i for i in self._intents() if i['state'] in ACTIVE_STATES]
+                intents, newly_held = self._hold_stale(active, original_graph)
+                held += newly_held
                 if not intents and not changes(original, original_graph):
-                    return {'status': 'synchronized', **self.status()}
+                    return self._outcome('synchronized', held)
                 state = self._state()
                 if state.get('write') is False:
-                    return {'status': 'queued-read-only', **self.status()}
+                    return self._outcome('queued-read-only', held)
                 base = state['revision']
-                original = self._remote_files()
                 additions = {}
                 for intent in intents:
                     additions.update(relocate_records(self._intent_files(intent), original_graph['manifest']))
-                policy_review = self.registry.provider.review_required(self.config['repository'])
-                mode = validate_files(original)['manifest']['contribution_mode']
+                policy_review = provider.review_required(repository)
+                mode = original_graph['manifest']['contribution_mode']
                 review = policy_review or mode == 'review' or bool(state.get('review_branch'))
-                branch = state.get('review_branch') or 'codex/hub-' + (intents[0]['operation'] if intents else base[:32])
+                branch = state.get('review_branch') or self._review_branch(intents, base, state)
                 extra_parents = []
                 if review:
+                    if state.get('pull_request'):
+                        # A review already exists for this branch. If it was closed,
+                        # stop before pushing more work to a branch nobody will merge.
+                        try:
+                            provider.ensure_pr(repository, branch, 'Update Team Hub memory')
+                        except ReviewClosed:
+                            return self._review_closed(branch)
                     state['review_branch'] = branch
-                    if not intents:state['library_review'] = True
+                    if not intents:
+                        state['library_review'] = True
                     self._write_state(state)
-                    prior = git(self.repository, 'fetch', '--quiet', self.registry.provider.transport(self.config),
+                    prior = git(self.repository, 'fetch', '--quiet', provider.transport(self.config),
                                 'refs/heads/' + branch, allow_failure=True)
                     if prior.returncode == 0:
                         prior_commit = git(self.repository, 'rev-parse', 'FETCH_HEAD^{commit}').decode().strip()
                         branch_files = tree_files(self.repository, prior_commit)
-                        verify(branch_files, validate_files(branch_files, self.config['repository']))
-                        branch_graph = validate_files(branch_files, self.config['repository'])
+                        branch_graph = validate_files(branch_files, repository)
+                        verify(branch_files, branch_graph)
                         original_records = immutable_files(original, original_graph)
                         branch_records = immutable_files(branch_files, branch_graph)
                         for identity in original_records.keys() & branch_records.keys():
@@ -577,96 +830,130 @@ class Hub:
                                     raise HubError('A contribution branch reused an operation ID with different content.')
                                 additions.setdefault(name, content)
                         extra_parents.append(prior_commit)
-                combined = dict(original);combined.update(additions)
-                additions.update(changes(combined, validate_files(combined, self.config['repository'])))
+                combined = dict(original)
+                combined.update(additions)
+                additions.update(changes(combined, validate_files(combined, repository)))
                 for name, content in additions.items():
-                    if content is None:combined.pop(name, None)
-                    else:combined[name] = content
-                validate_files(combined, self.config['repository'])
+                    if content is None:
+                        combined.pop(name, None)
+                    else:
+                        combined[name] = content
+                validate_files(combined, repository)
                 commit = commit_files(self.repository, base, additions, 'Save Team Hub writing and memory',
                                       self.config.get('actor', 'Blog Studio member'), extra_parents)
                 target = branch if review else 'main'
-                pushed = git(self.repository, 'push', '--quiet', self.registry.provider.transport(self.config),
+                pushed = git(self.repository, 'push', '--quiet', provider.transport(self.config),
                              commit + ':refs/heads/' + target, allow_failure=True)
                 if pushed.returncode == 0:
                     if review:
                         for intent in intents:
-                            intent['state'] = 'pending-review';self._write_intent(intent)
-                        url = self.registry.provider.ensure_pr(self.config['repository'], branch, 'Update Team Hub memory')
-                        state = self._state();state['pull_request'] = url;self._write_state(state)
-                        return {'status': 'pending-review', **self.status()}
+                            intent['state'] = 'pending-review'
+                            self._write_intent(intent)
+                        try:
+                            url = provider.ensure_pr(repository, branch, 'Update Team Hub memory')
+                        except ReviewClosed:
+                            return self._review_closed(branch)
+                        state = self._state()
+                        state['pull_request'] = url
+                        self._write_state(state)
+                        return self._outcome('pending-review', held)
                     self._refresh()
-                    return {'status': 'shared', **self.status()}
+                    return self._outcome('shared', held)
                 # Reconcile even after uncertain/rejected delivery before retrying the same IDs.
                 self._refresh()
-            return {'status': 'queued-contention', **self.status()}
+            return self._outcome('queued-contention', held)
         except TransportError as exc:
-            state = self._state();state.update(fresh=False, error=str(exc));self._write_state(state)
+            state = self._state()
+            state.update(fresh=False, error=str(exc))
+            self._write_state(state)
             return {'status': 'queued-unavailable', **self.status()}
 
     def sync(self, offline=False):
         with locked(self.root):
             return self._sync(offline)
 
-    def read(self, item, revision=None):
+    def _cached_read(self, record, relative, files):
+        """A read-only local copy of one revision file, verified against the tree."""
+        path = contained(self.root, 'reads', record['revision'], *relative.split('/'))
+        content = files[record_path(record, relative)]
+        if path.exists():
+            if path.read_bytes() != content:
+                raise HubError('The local read artifact changed. Restore it before using this revision.')
+        else:
+            atomic(path, content)
+            path.chmod(0o400)
+        return str(path)
+
+    def read(self, item, revision=None, inherit=None):
+        """Materialize one revision for reading. A pure read: no exclusive lock.
+
+        inherit: predicate over record file names. Matching files that earlier
+        revisions hold, and this one does not repeat, are returned as
+        'inherited' (nearest ancestor first) so a checkout can rebuild them.
+        """
         item = uid(item)
-        with locked(self.root):
-            files = self.files()
-            graph = validate_files(files, self.config['repository'])
-            heads = graph['heads'].get(item, [])
-            if revision is None:
-                if len(heads) != 1:
-                    raise HubError('Select a revision explicitly; this item is missing or conflicted.')
-                revision = heads[0]
-            record = graph['revisions'].get(uid(revision))
-            if not record or record['item'] != item:
-                raise HubError('Unknown memory item/revision.')
-            prefix = record_path(record, '')
-            contents = {name: content for name, content in files.items() if name.startswith(prefix)}
-            cache = contained(self.root, 'reads', revision)
-            paths = {}
-            for relative in record['files']:
-                path = contained(cache, *relative.split('/'))
-                content = contents[prefix + relative]
-                if path.exists() and path.read_bytes() != content:
-                    raise HubError('The local read artifact changed. Restore it before using this revision.')
-                if not path.exists():
-                    atomic(path, content);path.chmod(0o400)
-                paths[relative] = str(path)
-            visibility = 'shared'
-            for intent in self._intents():
-                if intent['operation'] == revision and intent['state'] != 'published':
-                    visibility = intent['state']
-            return {'record': record, 'paths': paths, 'heads': heads, 'conflicted': len(heads) > 1,
-                    'visibility': visibility, 'hub': self.id, 'hub_commit': self._state()['revision']}
+        files = self.files()
+        graph = validate_files(files, self.config['repository'])
+        if revision is not None and uid(revision) not in graph['revisions']:
+            # A save of this clone that is being held is readable when named explicitly.
+            held = {intent['operation'] for intent in self.unshared_chain(revision, dependencies=True)}
+            if held:
+                files = self._with_local(self._remote_files(), self._intents(), also=held)
+                graph = validate_files(files, self.config['repository'])
+        heads = graph['heads'].get(item, [])
+        if revision is None:
+            if len(heads) != 1:
+                raise HubError('Select a revision explicitly; this item is missing or conflicted.')
+            revision = heads[0]
+        record = graph['revisions'].get(uid(revision))
+        if not record or record['item'] != item:
+            raise HubError('Unknown memory item/revision.')
+        paths = {relative: self._cached_read(record, relative, files) for relative in record['files']}
+        visibility = 'shared'
+        for intent in self._intents():
+            if intent['operation'] == revision and intent['state'] != 'published':
+                visibility = intent['state']
+        result = {'record': record, 'paths': paths, 'heads': heads, 'conflicted': len(heads) > 1,
+                  'visibility': visibility, 'hub': self.id, 'hub_commit': self._state()['revision']}
+        if inherit:
+            inherited = {}
+            for earlier in ancestors(graph, revision):
+                for relative in earlier['files']:
+                    if inherit(relative) and relative not in record['files'] and relative not in inherited:
+                        inherited[relative] = self._cached_read(earlier, relative, files)
+            result['inherited'] = inherited
+        return result
 
     def find(self, query='', kind=None, scope=None, tag=None, limit=10, offset=0):
+        """Search current records. A pure read: no exclusive lock."""
         if not 1 <= limit <= 50:
             raise HubError('Choose a result limit between 1 and 50.')
         if offset < 0:
             raise HubError('A result offset must be nonnegative.')
-        with locked(self.root):
-            files = self.files();graph = validate_files(files, self.config['repository'])
-            terms = query.casefold().split()
-            items = []
-            for item, heads in graph['heads'].items():
-                for revision in sorted(heads):
-                    record = graph['revisions'][revision]
-                    if (record['status'] == 'tombstone' or (kind and record['kind'] != kind)
-                            or (scope and record['scope'] != scope) or (tag and tag not in record['tags'])):
-                        continue
-                    prefix = record_path(record, '')
-                    text = (record['title'] + ' ' + record['summary'] + ' ' + ' '.join(record['tags'])
-                            + ' ' + files[prefix + 'BODY.md'].decode()).casefold()
-                    if any(term not in text for term in terms):
-                        continue
-                    items.append({'item': item, 'revision': revision, 'kind': record['kind'],
-                                  'title': record['title'], 'summary': record['summary'][:300],
-                                  'scope': record['scope'], 'status': record['status'],
-                                  'conflicted': len(heads) > 1})
-            items.sort(key=lambda row: (row['title'], row['item'], row['revision']))
-            return {'items': items[offset:offset+limit], 'total': len(items), 'offset': offset, 'truncated': len(items) > offset+limit,
-                    'hub': self.id, 'revision': self._state()['revision'], 'fresh': self._state().get('fresh', False)}
+        files = self.files()
+        graph = validate_files(files, self.config['repository'])
+        terms = query.casefold().split()
+        items = []
+        for item, heads in graph['heads'].items():
+            for revision in sorted(heads):
+                record = graph['revisions'][revision]
+                if (record['status'] == 'tombstone' or (kind and record['kind'] != kind)
+                        or (scope and record['scope'] != scope) or (tag and tag not in record['tags'])):
+                    continue
+                prefix = record_path(record, '')
+                text = (record['title'] + ' ' + record['summary'] + ' ' + ' '.join(record['tags'])
+                        + ' ' + files[prefix + 'BODY.md'].decode()).casefold()
+                if any(term not in text for term in terms):
+                    continue
+                items.append({'item': item, 'revision': revision, 'kind': record['kind'],
+                              'title': record['title'], 'summary': record['summary'][:300],
+                              'scope': record['scope'], 'status': record['status'],
+                              'conflicted': len(heads) > 1})
+        items.sort(key=lambda row: (row['title'], row['item'], row['revision']))
+        state = self._state()
+        return {'items': items[offset:offset+limit], 'total': len(items), 'offset': offset,
+                'truncated': len(items) > offset+limit, 'hub': self.id,
+                'revision': state['revision'], 'fresh': state.get('fresh', False)}
 
     def context(self, project=None, author=None, article=None, limit=50):
         if not 1 <= limit <= 200:
@@ -739,9 +1026,13 @@ def parser():
     sub = actions.add_parser('import-workspace');sub.add_argument('--article', action='append', default=[])
     sub.add_argument('--source', action='append', default=[]);sub.add_argument('--profile', action='append', default=[])
     sub.add_argument('--offline', action='store_true')
+    sub.add_argument('--fork', action='store_true',
+                     help='Share these saves as a competing version even though a newer shared version exists')
     sub = actions.add_parser('checkout-workspace');sub.add_argument('--article', action='append', default=[])
     sub.add_argument('--source', action='append', default=[]);sub.add_argument('--profile', action='append', default=[])
     sub.add_argument('--offline', action='store_true')
+    sub.add_argument('--set-aside-local', action='store_true',
+                     help='Continue from the shared version; unshared local work is kept as a backup, not shared')
     return p
 
 
@@ -783,8 +1074,11 @@ def main():
                 from hub_workspace import Workspace
                 adapter = Workspace(args.workspace, hub)
                 selections = {'articles': args.article, 'sources': args.source, 'profiles': args.profile}
-                if args.action == 'import-workspace':result = adapter.publish_selected(selections, offline=args.offline)
-                else:result = adapter.checkout_selected(selections, offline=args.offline)
+                if args.action == 'import-workspace':
+                    result = adapter.publish_selected(selections, offline=args.offline, fork=args.fork)
+                else:
+                    result = adapter.checkout_selected(selections, offline=args.offline,
+                                                       set_aside=args.set_aside_local)
             else:
                 parents = args.parent
                 if args.action in ('resolve', 'remove') and not args.item:

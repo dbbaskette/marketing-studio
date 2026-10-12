@@ -90,17 +90,23 @@ def persist(directory, kind, record):
 
 @contextmanager
 def locked(root):
-    lock = inside(root, '.studio.lock')
+    """Serialize commands that change the workspace.
+
+    The lock is held on a persistent file and released by the operating system
+    when its holder exits, however that happens, so a killed command cannot
+    leave the workspace locked. A second command waits a short, bounded time
+    for the first to finish before reporting that the workspace is busy.
+    """
+    from hub_store import acquire_lock, release_lock
+    fd = acquire_lock(inside(root, '.studio.lock'))
+    if fd is None:
+        raise ValueError('Workspace is busy: another Blog Studio command is still running after a short wait. '
+                         'Retry shortly; the lock clears by itself when that command ends, so do not delete '
+                         '.studio.lock.')
     try:
-        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-    except FileExistsError:
-        raise ValueError('Workspace is busy. If a previous process crashed, inspect its .studio.lock before removing it.')
-    try:
-        with os.fdopen(fd, 'w') as stream:
-            stream.write(str(os.getpid()))
         yield
     finally:
-        lock.unlink(missing_ok=True)
+        release_lock(fd)
 
 
 def initialize(root):
@@ -206,6 +212,24 @@ def validate_rules(rules):
             raise ValueError(f'{name} must be true or false.')
 
 
+def shared_workspace(root):
+    """True when this workspace saves to a Team Hub."""
+    return inside(root, '.team-hub.json').exists()
+
+
+def sharing_limits(text, original, original_name):
+    """Size-limit findings for a source, before anything is written.
+
+    Returns (text_problem, original_note). The extracted text is the evidence a
+    shared blog depends on, so text over the limit is a problem. An oversized
+    original is only a note: it stays on this computer while the text is shared.
+    """
+    from hub_store import size_problem
+    text_problem = size_problem('Its extracted text (content.md)', text.encode(), 'text') if text else None
+    original_note = size_problem('Its original file ' + original_name, original) if original else None
+    return text_problem, original_note
+
+
 def source_command(root, args):
     if args.action == 'add':
         original = Path(args.file).read_bytes() if args.file else None
@@ -222,6 +246,10 @@ def source_command(root, args):
         status = args.status or ('ready' if text and text.strip() else 'pending')
         if status == 'ready' and not (text and text.strip()):
             raise ValueError('Ready source needs nonempty extracted text; use pending/unavailable otherwise.')
+        text_problem, original_note = sharing_limits(text, original, Path(args.file).name if args.file else '')
+        if text_problem and shared_workspace(root):
+            raise ValueError("'" + args.name + "' is too large to share with the selected Team Hub. " + text_problem
+                             + ' Nothing was saved. Add a shorter excerpt with --text-file, or split the source.')
         value = new_id(args.name)
         directory = inside(root, 'sources', value)
         directory.mkdir()
@@ -243,15 +271,28 @@ def source_command(root, args):
         from source_curator import enrich
         enrich(root, record, text)
         persist(directory, 'sources', record)
+        notes = [note for note in (text_problem, original_note) if note]
+        if notes:
+            # Local-only detail for this response; not part of the saved record.
+            return {**record, 'sharing_limits': notes + [
+                'A Team Hub shares the extracted text; a file over the limit stays on this computer.']}
         return record
     directory, record = item(root, 'sources', args.id)
     if args.action == 'show':
         return {**record, 'content_path': str(inside(directory, 'content.md')) if (directory / 'content.md').exists() else None,
                 'original_file': str(inside(directory, record['original_path'])) if record['original_path'] else None}
-    text = read_text(args.text_file) if args.text_file else ((directory / 'content.md').read_text() if (directory / 'content.md').exists() else None)
+    if args.text_file:
+        text = read_text(args.text_file)
+    else:
+        text = read_text(directory / 'content.md') if (directory / 'content.md').exists() else None
     status = args.status or record['status']
     if status == 'ready' and not (text and text.strip()):
         raise ValueError('Ready source needs extracted text.')
+    if args.text_file and shared_workspace(root):
+        text_problem, _ = sharing_limits(text, None, '')
+        if text_problem:
+            raise ValueError("'" + record['name'] + "' would be too large to share with the selected Team Hub. "
+                             + text_problem + ' Nothing was changed. Supply a shorter excerpt with --text-file.')
     history = inside(directory, 'revisions', str(record['revision']))
     history.mkdir(parents=True, exist_ok=True)
     write_json(history / 'record.json', record)
@@ -420,7 +461,14 @@ def article_command(root, args):
     elif args.action == 'author':
         record['author'] = checked_author(args.name)
     elif args.action == 'attach':
-        _, source = item(root, 'sources', args.source)
+        source_directory, source = item(root, 'sources', args.source)
+        content = inside(source_directory, 'content.md')
+        if shared_workspace(root) and content.is_file():
+            text_problem, _ = sharing_limits(read_text(content), None, '')
+            if text_problem:
+                raise ValueError("Source '" + source['name'] + "' cannot be attached to a shared blog. " + text_problem
+                                 + ' Nothing was changed. Replace its text with a shorter excerpt first '
+                                 + '(source update --id ' + args.source + ' --text-file …).')
         roles = args.purpose or source['purposes']
         entry = {'source_id': args.source, 'purposes': roles, 'revision': source['revision']}
         record['sources'] = [s for s in record['sources'] if s['source_id'] != args.source] + [entry]
@@ -623,17 +671,20 @@ def main():
             result = command(root, args)
         elif args.group == 'init':
             result = initialize(root)
+        elif args.group == 'list':
+            # A pure read: it does not take the exclusive workspace lock.
+            if not (root / 'studio.json').is_file():
+                raise ValueError('Initialize this workspace first.')
+            result = []
+            for folder in sorted(inside(root, args.kind).iterdir()):
+                if folder.is_dir():
+                    _, record = item(root, args.kind, folder.name)
+                    result.append(record)
         else:
             if not (root / 'studio.json').is_file():
                 raise ValueError('Initialize this workspace first.')
             with locked(root):
-                if args.group == 'list':
-                    result = []
-                    for folder in sorted(inside(root, args.kind).iterdir()):
-                        if folder.is_dir():
-                            _, record = item(root, args.kind, folder.name)
-                            result.append(record)
-                elif args.group in ('select', 'defaults'):
+                if args.group in ('select', 'defaults'):
                     from author_workflow import command
                     result = command(root, args)
                 elif args.group == 'library':

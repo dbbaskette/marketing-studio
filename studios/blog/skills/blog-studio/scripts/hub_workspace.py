@@ -9,11 +9,26 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import studio
-from hub_store import HubError, uid, sha, encoded, atomic, write_json, read_json, contained
-from hub import Registry, check_root
+from hub_store import (HubError, NewerRevision, uid, sha, encoded, atomic, write_json, read_json,
+                       contained, size_problem)
+from hub import Registry, check_root, HELD
 
 GROUP_KIND = {'articles': 'article', 'sources': 'source', 'profiles': 'voice'}
 KIND_GROUP = {value: key for key, value in GROUP_KIND.items()}
+# Local article history that is shared once. A later revision does not repeat a
+# history file an ancestor revision already holds, and a checkout rebuilds the
+# whole folder from those ancestors. Google transfer snapshots are not covered.
+LOCAL_HISTORY = re.compile(
+    r'history/(?:(?:draft|outline|brief|original|derived-[A-Za-z0-9_.-]+)-[A-Za-z0-9_.-]+\.md'
+    r'|(?:review|editorial)-[A-Za-z0-9_.-]+\.json)')
+SOURCE_ORIGINAL = re.compile(r'original(?:\.[A-Za-z0-9]+)?')
+HISTORY_FOLDERS = ('history/', 'revisions/', 'imported-history/')
+IMPORTED_PROFILE_RECORD = re.compile(r'(?:imported-history/)+revisions/[0-9]+/record\.json')
+
+
+def inherited_history(name):
+    """Record file names whose bytes a revision may inherit from its ancestors."""
+    return name.startswith('artifacts/') and bool(LOCAL_HISTORY.fullmatch(name[len('artifacts/'):]))
 GUIDANCE_REPOSITORY = 'https://github.com/dbbaskette/blog-studio.git'
 
 
@@ -54,9 +69,26 @@ class Workspace:
         self.state = read_json(self.path) if self.path.exists() else {'schema': 1, 'hub': hub.id, 'items': {}}
         if self.state.get('schema') != 1 or self.state.get('hub') != hub.id:
             raise HubError('This workspace is bound to a different hub; select a separate workspace or migrate explicitly.')
+        # Files kept on this computer because they exceed a sharing limit.
+        self.notices = []
 
     def persist(self):
         write_json(self.path, self.state)
+
+    def reload(self):
+        """Read the binding map again. Call this after taking the workspace lock.
+
+        The map is loaded when the adapter is built, which can be seconds before
+        the lock is held (a checkout refreshes the hub first). Another command
+        may have saved a newer binding in that window; writing the older copy
+        back would make the next save build on a superseded revision.
+        """
+        if not self.path.exists():
+            return
+        state = read_json(self.path)
+        if state.get('schema') != 1 or state.get('hub') != self.hub.id:
+            raise HubError('This workspace is bound to a different hub; select a separate workspace or migrate explicitly.')
+        self.state = state
 
     def local_item(self, group, local_id):
         return studio.item(self.root, group, studio.identifier(local_id))
@@ -98,13 +130,16 @@ class Workspace:
             artifacts[name] = (content, media)
         return artifacts
 
-    def _payload(self, group, local_id, visiting=None, read_only=False, projection=None):
+    def _payload(self, group, local_id, visiting=None, read_only=False, projection=None, fork=False):
         visiting = visiting or set()
         key = self.key(group, local_id)
         if key in visiting:
             raise HubError('Workspace references form a cycle.')
         visiting.add(key)
-        reference_for = (lambda group, ident, unused=None: self._bound_ref(group, ident)) if read_only else self._publish
+        if read_only:
+            reference_for = lambda group, ident, unused=None: self._bound_ref(group, ident)
+        else:
+            reference_for = lambda group, ident, seen=None: self._publish(group, ident, seen, fork=fork)
         directory, record = projection or self.local_item(group, local_id)
         dependencies = []
         data = {k: v for k, v in record.items() if k not in ('id', 'revision', 'guidance', 'guidance_history', 'hub_context', 'hub_projection')}
@@ -122,7 +157,10 @@ class Workspace:
                 _, source_record = self.local_item('sources', source_id)
                 if selected['revision'] != source_record['revision']:
                     pin_key = source_id + '/' + str(selected['revision'])
-                    reference = self._bound_ref('source-pins', pin_key) if read_only else self._publish_source_pin(source_id, selected['revision'])
+                    if read_only:
+                        reference = self._bound_ref('source-pins', pin_key)
+                    else:
+                        reference = self._publish_source_pin(source_id, selected['revision'], article=local_id)
                 else:
                     reference = reference_for('sources', source_id, visiting)
                 reference['role'] = 'source'
@@ -170,14 +208,61 @@ class Workspace:
         visiting.remove(key)
         return request, artifacts, body
 
-    def _publish(self, group, local_id, visiting=None):
+    def _shareable(self, group, local_id, title, artifacts, data):
+        """Apply the hub's size limits before a save is queued.
+
+        The current working files must fit: one over the limit stops the save
+        here, naming the file and the limit, instead of failing with a generic
+        message on every later sync. An oversized original file, or an
+        oversized file in the local history folders, is not needed to continue
+        the work elsewhere, so it stays on this computer and the rest is shared
+        with a note saying so.
+        """
+        shipped, kept_local = {}, []
+        for name, (content, media) in artifacts.items():
+            problem = size_problem(name, content, media)
+            if problem is None:
+                shipped[name] = (content, media)
+            elif name.startswith(HISTORY_FOLDERS) or (group == 'sources' and SOURCE_ORIGINAL.fullmatch(name)):
+                kept_local.append({'file': name, 'bytes': len(content), 'reason': problem})
+            else:
+                raise HubError("'" + title + "' (" + local_id + ') cannot be shared: ' + problem
+                               + ' Shorten or split that file and save again; for a source, replace its text'
+                               + ' with an excerpt (studio.py source update --id ' + local_id + ' --text-file …).')
+        if kept_local:
+            data = dict(data, files_kept_local=[{'file': entry['file'], 'bytes': entry['bytes']}
+                                                for entry in kept_local])
+            if data.get('original_path') in {entry['file'] for entry in kept_local}:
+                data['original_path'] = None
+            notice = {'local_id': local_id, 'title': title,
+                      'kept_on_this_computer': [entry['reason'] for entry in kept_local]}
+            if notice not in self.notices:
+                self.notices.append(notice)
+        return shipped, data
+
+    def _publish(self, group, local_id, visiting=None, fork=False):
+        """Queue the current state of one local item as a new shared revision.
+
+        fork: the author explicitly accepts creating a competing version when a
+        newer shared one exists. Without it the save is guarded: a sync keeps it
+        on this computer rather than push a second head.
+        """
         key = self.key(group, local_id)
-        request, artifacts, body = self._payload(group, local_id, visiting)
+        request, artifacts, body = self._payload(group, local_id, visiting, fork=fork)
         title, data, dependencies = request['title'], request['data'], request['dependencies']
         fingerprint = sha(encoded(request))
         saved = self.state['items'].get(key)
-        if saved and saved['fingerprint'] == fingerprint:
+        if saved and fork:
+            chain = self.hub.unshared_chain(saved['revision'], dependencies=True)
+            self.hub.release({intent['operation'] for intent in chain})
+        held = bool(saved) and self.hub.intent_state(saved['revision']) == HELD
+        unchanged = bool(saved) and saved['fingerprint'] == fingerprint
+        if held and (visiting or not unchanged):
+            # Nothing may build on, or pin, a save that is waiting for a decision.
+            raise NewerRevision(self._newer_message(group, local_id, saved['item']))
+        if unchanged:
             return {'item': saved['item'], 'revision': saved['revision'], 'kind': GROUP_KIND[group]}
+        shipped, data = self._shareable(group, local_id, title, artifacts, data)
         # Parent is the version this local projection actually edited, not a newly fetched head.
         operation = sha(encoded([self.hub.id, key, saved['revision'] if saved else None, fingerprint]))[:32]
         shared_item = saved['item'] if saved else None
@@ -185,14 +270,50 @@ class Workspace:
             shared_item = sha(encoded(['library-source', self.hub.id, data['library']['identity']]))[:32]
         result = self.hub.save(GROUP_KIND[group], title, body, operation=operation, item=shared_item,
             parents=[saved['revision']] if saved else [], data={'studio': data}, dependencies=dependencies,
-            artifacts=artifacts, sync=False,
+            artifacts=shipped, sync=False, hold_if_stale=not fork,
+            inherited=inherited_history if group == 'articles' else None,
             scope={'level': 'author' if group == 'profiles' else 'team', 'key': title if group == 'profiles' else ''})
         self.state['items'][key] = {**(saved or {}), 'item': result['item'], 'revision': result['revision'], 'fingerprint': fingerprint}
         # A crash after enqueue but before this map write is recoverable by matching the operation payload.
         self.persist()
         return {'item': result['item'], 'revision': result['revision'], 'kind': GROUP_KIND[group]}
 
-    def _publish_source_pin(self, local_id, revision):
+    def _choices(self, group, local_id, item):
+        """What the author can do when a newer shared version exists."""
+        flag = {'articles': '--article', 'sources': '--source', 'profiles': '--profile'}[group]
+        fork = ('share yours as a competing version (hub.py import-workspace ' + flag + ' ' + local_id
+                + ' --fork) and resolve the conflict, ')
+        if group == 'articles':
+            return ('Compare first (studio.py changes --id ' + local_id + ' --against hub). Then either ' + fork
+                    + 'or continue from the shared version and keep a local backup (hub.py checkout-workspace '
+                    + flag + ' ' + str(item) + ' --set-aside-local).')
+        # Each shared source or voice revision is checked out as its own local copy.
+        return ('Either ' + fork + 'or check out the shared version (hub.py checkout-workspace ' + flag + ' '
+                + str(item) + ') and use that copy instead; this one stays on this computer.')
+
+    def _newer_message(self, group, local_id, item):
+        return ('A newer shared version of ' + local_id + ' exists, so this save stays on this computer and was '
+                'not pushed. ' + self._choices(group, local_id, item))
+
+    def _report(self, outcome, keys, blocked=()):
+        """Make a save that was kept back the headline of a publish result."""
+        waiting = list(blocked)
+        for key in keys:
+            saved = self.state['items'].get(key)
+            if saved and self.hub.intent_state(saved['revision']) == HELD:
+                group, local_id = key.split('/', 1)
+                entry = {'local_id': local_id, 'item': saved['item'],
+                         'next_step': self._newer_message(group, local_id, saved['item'])}
+                if entry not in waiting:
+                    waiting.append(entry)
+        if waiting:
+            outcome.setdefault('sync_status', outcome.get('status'))
+            outcome.update(status=HELD, newer_revision=waiting, next_step=waiting[0]['next_step'])
+        if self.notices:
+            outcome['kept_on_this_computer'] = self.notices
+        return outcome
+
+    def _publish_source_pin(self, local_id, revision, article=None):
         key = 'source-pins/' + studio.identifier(local_id) + '/' + str(revision)
         if key in self.state['items']:
             saved = self.state['items'][key]
@@ -214,6 +335,15 @@ class Workspace:
             data['original_path'] = None
             data['original_sha256'] = None
         operation = sha(encoded([self.hub.id, key, data, {n: sha(v[0]) for n, v in artifacts.items()}]))[:32]
+        pinned_text = artifacts.get('content.md')
+        problem = size_problem('content.md', *pinned_text) if pinned_text else None
+        if problem:
+            # The blog still pins this earlier revision, so shortening the source is not enough.
+            raise HubError("'" + record['name'] + "' (" + local_id + ') revision ' + str(revision)
+                           + ', which this blog pins, cannot be shared: ' + problem + ' Attach the source again to '
+                           + 'use its current text (studio.py article attach --id ' + str(article or '<blog id>')
+                           + ' --source ' + local_id + '), then save.')
+        artifacts, data = self._shareable('sources', local_id, record['name'], artifacts, data)
         result = self.hub.save('source', record['name'], artifacts.get('content.md', (b'', 'text'))[0].decode(),
             operation=operation, data={'studio': data}, artifacts=artifacts, sync=False)
         self.state['items'][key] = {'item': result['item'], 'revision': result['revision'], 'fingerprint': 'pinned'}
@@ -240,8 +370,9 @@ class Workspace:
         return {'item': result['item'], 'revision': result['revision'], 'kind': 'voice'}
 
     def record_confirmed_saves(self, result):
-        # A queued/review/offline result is not a save to remote main.
-        if result.get('status') not in ('shared', 'synchronized'):
+        # A queued/review/offline result is not a save to remote main. When a save
+        # was kept back, sync_status still says what happened to everything else.
+        if result.get('sync_status', result.get('status')) not in ('shared', 'synchronized'):
             return
         self.state = read_json(self.path) if self.path.exists() else self.state
         remote = self.hub.graph(include_local=False)['revisions']
@@ -254,32 +385,61 @@ class Workspace:
         if changed:
             self.persist()
 
-    def publish_selected(self, selections, offline=False):
+    def publish_selected(self, selections, offline=False, fork=False):
         if not (self.root / 'studio.json').exists():
             raise HubError('Initialize the selected local writing workspace first.')
         if not any(selections.values()):
             raise HubError('Select the articles, sources, or profiles to import; no workspace sweep is performed.')
-        references = []
+        references, keys, blocked = [], [], []
+        self.notices = []
         with studio.locked(self.root):
+            self.reload()
             for group in ('sources', 'profiles', 'articles'):
                 for local_id in selections.get(group, []):
-                    references.append(self._publish(group, local_id))
+                    keys.append(self.key(group, local_id))
+                    try:
+                        references.append(self._publish(group, local_id, fork=fork))
+                    except NewerRevision as exc:
+                        saved = self.state['items'].get(keys[-1], {})
+                        blocked.append({'local_id': local_id, 'item': saved.get('item'), 'next_step': str(exc)})
         result = self.hub.sync(offline)
         with studio.locked(self.root):
             self.record_confirmed_saves(result)
-        return {'items': references, **result}
+        return self._report({'items': references, **result}, keys, blocked)
 
     def publish_mutation(self, group, result, offline=False):
         # Called while studio owns its workspace lock; only the concrete changed item/dependencies.
         mapped = {'article': 'articles', 'source': 'sources', 'profile': 'profiles'}[group]
-        reference = self._publish(mapped, result['id'])
+        self.reload()
+        self.notices = []
+        key = self.key(mapped, result['id'])
+        blocked = []
+        try:
+            reference = self._publish(mapped, result['id'])
+        except NewerRevision as exc:
+            saved = self.state['items'].get(key, {})
+            reference = {'item': saved.get('item'), 'revision': saved.get('revision'), 'kind': GROUP_KIND[mapped]}
+            blocked.append({'local_id': result['id'], 'item': saved.get('item'), 'next_step': str(exc)})
         sync = self.hub.sync(offline)
         self.record_confirmed_saves(sync)
-        return {'item': reference, **sync}
+        return self._report({'item': reference, **sync}, [key], blocked)
 
-    def _checkout(self, item, revision=None, stack=None):
+    def _place(self, target, content):
+        """Write one projected file; two shared files must never land on one path."""
+        if target.exists():
+            raise HubError('Two shared files map to the same local file (' + target.name
+                           + '); nothing was replaced. Report this hub revision.')
+        atomic(target, content)
+
+    def _checkout(self, item, revision=None, stack=None, set_aside=False):
+        """Project one shared revision into this workspace and return its local ID.
+
+        set_aside: the author chose to continue from the shared version. Local
+        work that was never shared is then moved to .hub-history as a backup
+        instead of stopping the checkout; it is not deleted and not pushed.
+        """
         stack = stack or set()
-        shared = self.hub.read(item, revision)
+        shared = self.hub.read(item, revision, inherit=inherited_history)
         record = shared['record']
         pair = (record['item'], record['revision'])
         if pair in stack:
@@ -315,8 +475,15 @@ class Workspace:
             if not saved:
                 raise HubError('An unrelated local projection already exists; its files were preserved.')
             request, _, _ = self._payload(group, local_id, read_only=True)
-            if sha(encoded(request)) != saved['fingerprint']:
-                raise HubError('This projection has unshared local edits. Save them to the hub or use a separate workspace before resuming.')
+            kept_back = self.hub.intent_state(saved['revision']) == HELD
+            edited = sha(encoded(request)) != saved['fingerprint']
+            if kept_back and not set_aside:
+                raise HubError('This projection has unshared local edits that were kept back because a newer shared '
+                               'version exists. ' + self._choices(group, local_id, record['item']))
+            if edited and not set_aside:
+                raise HubError('This projection has unshared local edits. Save them to the hub or use a separate '
+                               'workspace before resuming, or rerun the checkout with --set-aside-local to keep '
+                               'them as a backup under .hub-history and continue from the shared version.')
         stack.add(pair)
         resolved = {}
         for dependency in record['dependencies']:
@@ -354,15 +521,20 @@ class Workspace:
             for relative, path in shared['paths'].items():
                 if relative.startswith('artifacts/'):
                     name = relative[10:]
-                    if group in ('profiles', 'sources') and name.startswith('revisions/'):
+                    if group in ('profiles', 'sources') and name.startswith(('revisions/', 'imported-history/')):
+                        # Every handoff nests earlier history one level deeper, so the
+                        # sender's own revisions never land on history it had imported.
                         name = 'imported-history/' + name
                     if name in ('record.json', 'session.json'):
                         raise HubError('Artifact may not replace the projection metadata.')
                     content = Path(path).read_bytes()
-                    if group == 'profiles' and name.startswith('imported-history/revisions/') and name.endswith('record.json'):
+                    if group == 'profiles' and IMPORTED_PROFILE_RECORD.fullmatch(name):
                         history = json.loads(content);history['id'] = local_id;history['revision'] = 1;history['sample_ids'] = data['sample_ids']
                         content = encoded(history)
-                    atomic(studio.inside(stage, *name.split('/')), content)
+                    self._place(studio.inside(stage, *name.split('/')), content)
+            # Earlier revisions hold the history this one does not repeat.
+            for relative, path in shared.get('inherited', {}).items():
+                self._place(studio.inside(stage, *relative[10:].split('/')), Path(path).read_bytes())
             if group == 'profiles':
                 studio.write_json(stage / 'record.json', data)
                 studio.snapshot_profile(stage, data)
@@ -397,6 +569,11 @@ class Workspace:
             if stage.exists():shutil.rmtree(stage)
         self.state['items'][key] = {'item': record['item'], 'revision': record['revision'], 'fingerprint': data['hub_projection']['fingerprint']}
         self.persist()
+        if set_aside and saved:
+            # The backup in .hub-history holds the local files; the queue entries
+            # move out of the outbox intact so they can never be pushed later.
+            chain = self.hub.unshared_chain(saved['revision'])
+            self.hub.withdraw({intent['operation'] for intent in chain})
         stack.remove(pair)
         return local_id
 
@@ -409,20 +586,22 @@ class Workspace:
         value = self.state['items'][(group + '/' + local_id) if group in ('profile-pins', 'source-pins') else self.key(group, local_id)]
         return {'item': value['item'], 'revision': value['revision'], 'kind': GROUP_KIND.get(group, 'source' if group == 'source-pins' else 'voice'), **extra}
 
-    def checkout_selected(self, selections, offline=False):
+    def checkout_selected(self, selections, offline=False, set_aside=False):
         if not any(selections.values()):
             raise HubError('Select the shared item IDs to resume or import.')
         self.hub.refresh(offline)
         studio.initialize(self.root)
         results = []
         with studio.locked(self.root):
+            self.reload()
             for group in ('sources', 'profiles', 'articles'):
                 for item in selections.get(group, []):
                     graph = self.hub.graph()
                     heads = graph['heads'].get(uid(item), [])
                     if len(heads) != 1 or graph['revisions'][heads[0]]['kind'] != GROUP_KIND[group]:
                         raise HubError('Select an unambiguous item of the requested kind.')
-                    results.append({'kind': GROUP_KIND[group], 'item': item, 'local_id': self._checkout(item)})
+                    local_id = self._checkout(item, set_aside=set_aside)
+                    results.append({'kind': GROUP_KIND[group], 'item': item, 'local_id': local_id})
             if self.hub.status()['fresh']:
                 self.record_confirmed_saves({'status': 'synchronized'})
         self.hub.registry.select(self.hub.id, self.root)

@@ -2,12 +2,14 @@
 """Validated Git-backed records. Remote content is data and is never executed."""
 from contextlib import contextmanager
 from datetime import datetime, timezone
+import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
+import time
 import uuid
 from urllib.parse import urlsplit
 
@@ -19,6 +21,12 @@ MAX_TOTAL = 100 * MAX_TEXT
 MAX_FILES = 20000
 ID_RE = re.compile(r'[0-9a-f]{32}')
 REV_RE = re.compile(r'[0-9a-f]{40,64}')
+# Commands that talk to the remote. Every other Git command is local plumbing.
+NETWORK_COMMANDS = ('fetch', 'push', 'ls-remote')
+LOCK_WAIT_SECONDS = 20.0
+LOCK_POLL_SECONDS = 0.05
+INDEX_PREFIX = 'blog-studio-index-'
+STALE_INDEX_SECONDS = 600
 
 
 class HubError(Exception):
@@ -31,6 +39,16 @@ class TransportError(HubError):
 
 class AuthenticationError(TransportError):
     """The provider explicitly reports an invalid or expired sign-in."""
+    pass
+
+
+class ReviewClosed(HubError):
+    """The contribution pull request was closed without being merged."""
+    pass
+
+
+class NewerRevision(HubError):
+    """Shared work moved on; publishing now would create a competing head."""
     pass
 
 
@@ -90,23 +108,69 @@ def contained(root, *parts):
     return path
 
 
+def lock_wait_seconds():
+    """Bounded wait for a busy lock; BLOG_STUDIO_LOCK_WAIT overrides it (seconds)."""
+    try:
+        value = float(os.environ.get('BLOG_STUDIO_LOCK_WAIT', LOCK_WAIT_SECONDS))
+    except ValueError:
+        value = LOCK_WAIT_SECONDS
+    return min(max(value, 0.0), 300.0)
+
+
+def acquire_lock(path, wait=None):
+    """Take an exclusive advisory lock, or return None when it stays busy.
+
+    The lock is a flock on a persistent file. The operating system releases it
+    when the holder exits for any reason, so a crashed or killed command never
+    leaves the folder locked. The file itself carries no meaning: one left by an
+    older runtime (which treated its mere existence as the lock) is reused.
+    """
+    wait = lock_wait_seconds() if wait is None else wait
+    deadline = time.monotonic() + wait
+    fd = os.open(path, os.O_CREAT | os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    os.close(fd)
+                    return None
+                time.sleep(LOCK_POLL_SECONDS)
+        # The PID is a diagnostic aid only; nothing reads it to decide ownership.
+        os.ftruncate(fd, 0)
+        os.write(fd, str(os.getpid()).encode())
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def release_lock(fd):
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
 @contextmanager
 def locked(root, name='.hub.lock'):
     root = Path(root)
     if root.is_symlink():
         raise HubError('Managed hub storage must not be a symlink.')
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    path = root / name
     try:
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-    except FileExistsError as exc:
-        raise HubError('Another hub operation is running. Retry after it finishes.') from exc
+        fd = acquire_lock(root / name)
+    except OSError as exc:
+        raise HubError('The hub lock could not be opened; check the hub folder permissions.') from exc
+    if fd is None:
+        raise HubError('Another hub operation is still running after a short wait. Retry shortly; '
+                       'the lock clears by itself when that command ends, so do not delete any lock file.')
     try:
-        with os.fdopen(fd, 'w') as stream:
-            stream.write(str(os.getpid()))
         yield
     finally:
-        path.unlink(missing_ok=True)
+        release_lock(fd)
 
 
 def canonical_repository(value):
@@ -137,17 +201,50 @@ def environment():
     return env
 
 
+def scrubbed(output, limit=300):
+    """One readable line of a tool's error output, without credentials or tokens."""
+    text = output.decode('utf-8', errors='replace') if isinstance(output, bytes) else str(output)
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    preferred = [line for line in lines if line.lower().startswith(('fatal:', 'error:'))]
+    line = (preferred or lines or [''])[-1]
+    line = re.sub(r'(?i)\b([a-z][a-z0-9+.-]*://)[^/@\s]+@', r'\1', line)
+    line = re.sub(r'\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+', '[redacted]', line)
+    line = re.sub(r'(?i)\b(authorization|token|password|secret)\b\s*[:=]\s*\S+', r'\1: [redacted]', line)
+    return line[:limit]
+
+
 def git(repository, *args, data=None, extra_env=None, allow_failure=False):
+    """Run Git. Only network commands report a transport problem.
+
+    A failed fetch, push or ls-remote means the remote could not be reached or
+    refused the request, so queued work may simply be retried later. Any other
+    failure is local (disk, permissions, a damaged clone) and is reported as
+    such, with the cause, instead of being mistaken for being offline.
+    """
     env = environment()
     env.update(extra_env or {})
     command = ['git', '--git-dir=' + str(repository), '-c', 'core.hooksPath=' + os.devnull,
                '-c', 'commit.gpgsign=false', *args]
+    network = bool(args) and args[0] in NETWORK_COMMANDS
+    name = 'git ' + (args[0] if args else '')
     try:
         result = subprocess.run(command, input=data, capture_output=True, env=env, timeout=45)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise TransportError('Git is unavailable or the hub operation timed out; saved work is retained.') from exc
+    except subprocess.TimeoutExpired as exc:
+        if network:
+            raise TransportError('Git is unavailable or the hub operation timed out; saved work is retained.') from exc
+        raise HubError('A local Git step (' + name + ') timed out; saved work is retained.') from exc
+    except OSError as exc:
+        if network:
+            raise TransportError('Git is unavailable or the hub operation timed out; saved work is retained.') from exc
+        raise HubError('Git could not be started for a local step (' + name + '); saved work is retained.') from exc
     if result.returncode and not allow_failure:
-        raise TransportError('Hub repository access or update failed; check connectivity, permissions, and branch policy.')
+        cause = scrubbed(result.stderr)
+        detail = ' Cause: ' + cause if cause else ''
+        if network:
+            raise TransportError('Hub repository access or update failed; check connectivity, permissions, '
+                                 'and branch policy.' + detail)
+        raise HubError('A local Git step failed (' + name + '); this is not a network problem. '
+                       'Saved work is retained.' + detail)
     return result if allow_failure else result.stdout
 
 
@@ -202,7 +299,7 @@ class GitHub:
             opened = [p for p in values if p['state'] == 'OPEN']
             if opened:
                 return opened[0]['url']
-            raise HubError('The hub contribution PR was closed. Its saved operations are retained; inspect it before retrying.')
+            raise ReviewClosed('The hub contribution PR was closed. Its saved operations are retained; inspect it before retrying.')
         # The provider prints a URL, so use api to obtain structured observed metadata.
         value = self.call('api', 'repos/' + repository + '/pulls', '-f', 'head=' + branch,
                           '-f', 'base=main', '-f', 'title=' + title,
@@ -297,6 +394,61 @@ def artifact_name(name):
             or not path.parts or any(not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,150}', p) for p in path.parts)):
         raise HubError('Invalid memory artifact path.')
     return path.as_posix()
+
+
+def media_of(content):
+    """'text' for UTF-8 content, otherwise 'binary': the rule shared records use."""
+    try:
+        content.decode('utf-8')
+    except UnicodeError:
+        return 'binary'
+    return 'text'
+
+
+def readable_size(count):
+    megabyte = 1024 * 1024
+    unit = f'{count / megabyte:.1f} MB' if count >= megabyte else f'{count / 1024:.1f} KB'
+    return f'{count:,} bytes ({unit})'
+
+
+def size_problem(label, content, media=None):
+    """Explain why a file is too large to share, or return None when it fits."""
+    media = media or media_of(content)
+    limit = MAX_TEXT if media == 'text' else MAX_BINARY
+    if len(content) <= limit:
+        return None
+    return (label + ' is ' + readable_size(len(content)) + '; shared ' + media
+            + ' files are limited to ' + readable_size(limit) + '.')
+
+
+def ancestor_files(graph, revisions):
+    """(name, sha256) of every file recorded by these revisions and their ancestors."""
+    held, seen, queue = set(), set(), list(revisions)
+    while queue:
+        revision = queue.pop()
+        record = graph['revisions'].get(revision)
+        if record is None or revision in seen:
+            continue
+        seen.add(revision)
+        held.update((name, info['sha256']) for name, info in record['files'].items())
+        queue.extend(record['parents'])
+    return held
+
+
+def ancestors(graph, revision):
+    """Earlier revisions of one item, nearest generation first."""
+    ordered, seen = [], {revision}
+    generation = list(graph['revisions'][revision]['parents'])
+    while generation:
+        following = []
+        for parent in generation:
+            if parent in seen or parent not in graph['revisions']:
+                continue
+            seen.add(parent)
+            ordered.append(graph['revisions'][parent])
+            following.extend(graph['revisions'][parent]['parents'])
+        generation = following
+    return ordered
 
 
 def validate_files(files, repository=None):
@@ -472,9 +624,27 @@ def tree_files(repository, commit):
     return files
 
 
+def sweep_stale_indexes(repository):
+    """Remove temporary indexes left behind by a commit that was killed part-way."""
+    cutoff = time.time() - STALE_INDEX_SECONDS
+    try:
+        candidates = [path for path in Path(repository).iterdir() if path.name.startswith(INDEX_PREFIX)]
+    except OSError:
+        return
+    for path in candidates:
+        try:
+            if path.is_file() and not path.is_symlink() and path.stat().st_mtime < cutoff:
+                path.unlink()
+        except OSError:
+            continue
+
+
 def commit_files(repository, base, additions, message, actor, extra_parents=()):
     """Own index only; no working checkout, hooks, shell, or remote code."""
-    index = Path(repository).parent / ('.index-' + uuid.uuid4().hex)
+    # The index lives inside the Git directory, never in the author's checkout,
+    # so an interrupted commit cannot look like an unsaved local edit.
+    sweep_stale_indexes(repository)
+    index = Path(repository) / (INDEX_PREFIX + uuid.uuid4().hex)
     env = {'GIT_INDEX_FILE': str(index), 'GIT_AUTHOR_NAME': actor,
            'GIT_AUTHOR_EMAIL': 'blog-studio@localhost', 'GIT_COMMITTER_NAME': actor,
            'GIT_COMMITTER_EMAIL': 'blog-studio@localhost'}
