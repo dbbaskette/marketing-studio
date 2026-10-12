@@ -418,7 +418,7 @@ def parse_discovery(content, kind, url, scope):
                 if not uri:
                     continue
 
-                def text(*keys):
+                def text(*keys, values=values):
                     for key in keys:
                         node = values.get(key)
                         if node is not None:

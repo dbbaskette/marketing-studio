@@ -395,7 +395,7 @@ def retry(root, ids, sync=True):
             except ValueError as exc:
                 failure = exc
 
-        def runner(_engine, payload):
+        def runner(_engine, payload, failure=failure, found=found):
             if failure:
                 raise failure
             return found[payload['id']]

@@ -733,7 +733,7 @@ def paragraph_edits(doc, entries, selected, receipt, numbers):
         ]
         original = group[0]['paragraph']
 
-        def projected(chosen):
+        def projected(chosen, original=original, group=group, key=key):
             text = original
             for entry in sorted(
                 group, key=lambda item: item['finding']['start_index'], reverse=True
