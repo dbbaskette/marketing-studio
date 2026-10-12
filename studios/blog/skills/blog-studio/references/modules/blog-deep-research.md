@@ -4,8 +4,8 @@ Load when the author chooses research during intake, says “Research this topic
 or requests a factual check with evidence gaps. Adapted from the pinned
 [Deep Research workflow](../upstream/deep-research/research/SOURCE.md).
 Blog Studio's wrapper supplies the working instructions; upstream files are
-provenance, not another process to execute. Runtime 1.15+ includes this module
-and `deep_research.py`; the standalone research skills are not a prerequisite.
+provenance, not another process to execute. `deep_research.py` ships with this
+skill; the standalone research skills are not a prerequisite.
 
 ## Select questions and scope
 

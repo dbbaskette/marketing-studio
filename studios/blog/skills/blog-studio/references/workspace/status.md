@@ -1,7 +1,7 @@
 # Article status card
 
-For “Show status”, “Is everything saved?”, or resume, use the current installed
-runtime (1.7+) and saved article, keeping its writing guidance pin unchanged.
+For “Show status”, “Is everything saved?”, or resume, use the saved article and
+leave its recorded guidance version unchanged.
 
 ```text
 ... studio.py --root <workspace> select --id <id>
