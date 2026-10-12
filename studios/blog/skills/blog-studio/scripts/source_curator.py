@@ -367,7 +367,7 @@ def retry(root, ids, sync=True):
         batch = selected[offset : offset + 5]
         pending = []
         engine = harness(root)
-        for directory, record, text in batch:
+        for _directory, record, text in batch:
             if (
                 text
                 and text.strip()

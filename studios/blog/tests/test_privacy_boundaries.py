@@ -35,7 +35,7 @@ class PrivacyTests(unittest.TestCase):
             self.assertEqual(hub_store.GitHub().actor(), 'fixture')
             hub_store.GitHub().create('fixture/private-hub', 'a' * 32)
         self.assertEqual(len(observed), 2)
-        for command, kwargs in observed:
+        for _command, kwargs in observed:
             self.assertEqual(kwargs['env']['GH_HOST'], 'github.com')
             self.assertNotIn('GH_DEBUG', kwargs['env'])
             self.assertTrue(kwargs['capture_output'])

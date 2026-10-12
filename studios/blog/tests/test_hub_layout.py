@@ -195,7 +195,7 @@ class LayoutTests(unittest.TestCase):
     def test_sources_and_memory_are_scoped_and_views_cannot_be_overwritten(self):
         source = self.ha.save('source', 'Selected benchmark', 'Selected evidence')
         self.ha.save('source', 'Other source', 'Unrelated evidence')
-        rule = self.ha.save('rule', 'Team punctuation', 'Use consistent punctuation')
+        self.ha.save('rule', 'Team punctuation', 'Use consistent punctuation')
         self.ha.save(
             'note',
             'Only this blog',

@@ -259,7 +259,7 @@ class Registry:
                         raise HubError(
                             'The destination already contains Hub state; it was preserved.'
                         )
-                files = hub._remote_files()
+                hub._remote_files()  # called for its validation; the result is not needed
                 commit = hub._state()['revision']
                 stage = self.root / ('.migrate-' + uuid.uuid4().hex)
                 stage.mkdir(mode=0o700)
@@ -1089,7 +1089,7 @@ class Hub:
         held = []
         try:
             self._refresh()
-            for attempt in range(3):
+            for _attempt in range(3):
                 original = self._remote_files()
                 original_graph = validate_files(original, repository)
                 verify(original, original_graph)

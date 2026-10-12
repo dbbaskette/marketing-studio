@@ -406,7 +406,7 @@ def memories(root, limit=20, offset=0, query=''):
         return {'items': [], 'total': 0, 'next_step': 'Join a Team Hub to curate shared memory.'}
     graph = adapter.hub.graph()
     rows = []
-    for item_id, heads in graph['heads'].items():
+    for heads in graph['heads'].values():
         for revision in heads:
             record = graph['revisions'][revision]
             if (

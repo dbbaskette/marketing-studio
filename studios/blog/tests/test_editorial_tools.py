@@ -186,7 +186,7 @@ class EditorialTests(Fixture):
     def test_board_explicit_ownership_ready_and_guarded_decisions(self):
         ident = self.article()
         self.assertEqual(editorial.board(self.root)['items'][0]['owner'], 'Unassigned')
-        record = editorial.schedule(
+        editorial.schedule(
             self.root, ident, {'owner': 'Morgan', 'due': '2020-01-01', 'stage': 'review'}
         )
         row = editorial.board(self.root, owner='Morgan', stage='review')['items'][0]
@@ -377,7 +377,7 @@ class EditorialTests(Fixture):
     def test_companions_are_bounded_grounded_and_stale_after_tampering(self):
         ident = self.article()
         quote = 'The gateway calls the service.'
-        record = editorial.package(
+        editorial.package(
             self.root,
             ident,
             {
@@ -851,7 +851,7 @@ class LibraryTests(Fixture):
             hub_id = registry.create('fixture/' + team, team)['hub']
             adapters[root] = Workspace(root, registry.hub(hub_id))
         with patch('hub_workspace.active', side_effect=lambda root: adapters.get(root)):
-            for root, adapter in adapters.items():
+            for root in adapters:
                 export = self.base / (root.name + '-export.json')
                 export.write_text(
                     json.dumps(
@@ -960,7 +960,7 @@ class HubEditorialTests(Fixture):
             'hub',
         )
         original = self.hub.read(shared['item'])['record']
-        newer = self.hub.save(
+        self.hub.save(
             'article',
             original['title'],
             'A newer draft',

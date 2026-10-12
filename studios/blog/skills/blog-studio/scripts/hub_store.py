@@ -713,7 +713,7 @@ def validate_files(files, repository=None):
         raise HubError('The repository contains unsupported or unrecorded hub files.')
     children = set()
     item_kinds = {}
-    for revision, record in revisions.items():
+    for record in revisions.values():
         kind = item_kinds.setdefault(record['item'], record['kind'])
         if kind != record['kind']:
             raise HubError('An item cannot change its memory kind.')

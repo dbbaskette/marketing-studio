@@ -703,7 +703,7 @@ def render(files, graph, show_google_links=None, show_editorial=None, layout_sch
         else:
             saved = records[0]
             nav = []
-            for relative, info in sorted(saved['files'].items()):
+            for relative in sorted(saved['files']):
                 if not relative.startswith('artifacts/'):
                     continue
                 destination = folder + '/' + artifact_view(relative[10:])
@@ -1011,7 +1011,7 @@ def editorial_pages(graph):
                 (saved, saved['data']['collection'], saved['data'].get('coverage', {}))
             )
     library += '\n## Collection coverage\n\n'
-    for saved, config, coverage in collections:
+    for _saved, config, coverage in collections:
         library += (
             '- '
             + safe(config['name'])

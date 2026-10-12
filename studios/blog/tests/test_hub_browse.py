@@ -46,7 +46,7 @@ class BrowseTests(unittest.TestCase):
 
     def test_new_hub_index_and_article_render_links_without_extra_private_content(self):
         self.assertIn(b'No blogs have been shared', self.files()['README.md'])
-        note = self.ha.save('note', 'Private planning', 'SECRET unrelated planning')
+        self.ha.save('note', 'Private planning', 'SECRET unrelated planning')
         source = self.ha.save('source', 'Pilot notes', 'SECRET source body')
         self.ha.save(
             'article',
@@ -362,7 +362,7 @@ class BrowseTests(unittest.TestCase):
         self.assertIn(b'COMBINED', self.files()['blogs/dan/resolved/README.md'])
 
     def test_manual_generated_edits_block_overwrite_and_keep_queued_work(self):
-        saved = self.save()
+        self.save()
         base = store.git(self.remote, 'rev-parse', 'main').decode().strip()
         custom = self.files()['README.md'] + b'\nCustom team instructions.\n'
         commit = store.commit_files(

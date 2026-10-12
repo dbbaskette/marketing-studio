@@ -1103,7 +1103,7 @@ class HubWorkspaceTests(unittest.TestCase):
         self.command(self.a, 'article', 'attach', '--id', aid, '--source', source)
         self.save(self.a, aid, 'draft', 'A draft that cites the transcript.')
         with patch.object(store_module, 'MAX_TEXT', 4096):
-            for attempt in range(2):
+            for _attempt in range(2):
                 with self.assertRaises(HubError) as failure:
                     self.wa.publish_selected({'articles': [aid]})
                 message = str(failure.exception)

@@ -581,7 +581,7 @@ def capabilities(args, root):
     if datetime.fromisoformat(value['checked_at']).tzinfo is None:
         raise ValueError('Capability timestamp needs a timezone.')
     object_fields(value['capabilities'], CAPABILITIES)
-    for name, cap in value['capabilities'].items():
+    for cap in value['capabilities'].values():
         object_fields(cap, ('status', 'tool'), ('status',))
         if cap['status'] not in ('exposed', 'verified', 'unavailable', 'unknown'):
             raise ValueError('Invalid capability status.')
