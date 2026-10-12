@@ -87,34 +87,52 @@ class ExperienceTests(unittest.TestCase):
         self.assertTrue(all(value['status']=='signed-in' for value in result['harnesses'].values()))
         self.assertNotIn(secret,json.dumps(result));self.assertFalse(self.root.exists())
         self.assertEqual(result['google']['status'],'not-checked')
-        package=self.base/'runtime'
-        shutil.copytree(SCRIPTS.parents[2]/'bootstrap/blog-studio',package,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
-        self.assertEqual(experience.integrity(package)['status'],'verified')
+        # An installed copy is the whole skill plus the manifest setup wrote; a checkout has none.
+        package=self.base/'installed skill'
+        shutil.copytree(SCRIPTS.parent,package,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+        version=(SCRIPTS.parent/'VERSION').read_text().strip()
+        self.assertEqual(experience.integrity(package),{'status':'unverified','version':version,'next_step':experience.integrity(package)['next_step']})
+        files={p.relative_to(package).as_posix():studio.digest(p.read_bytes()) for p in package.rglob('*') if p.is_file()}
         manifest=package/'install-manifest.json'
+        manifest.write_text(json.dumps({'schema':1,'version':version,'files':files}))
+        self.assertEqual(experience.integrity(package),{'status':'verified','version':version})
+        for name in ('.DS_Store','scripts/.DS_Store'):(package/name).write_bytes(b'\0')
+        (package/'config.json').write_text(json.dumps({'python':sys.executable,'runtime_version':version}))
+        self.assertEqual(experience.integrity(package)['status'],'verified')
+        (package/'config.json').write_text(json.dumps({'python':str(self.base/'removed/python3'),'runtime_version':version}))
+        self.assertEqual(experience.integrity(package)['interpreter'],'missing')
+        (package/'config.json').unlink();(package/'references/extra.md').write_text('Not in the manifest.')
+        self.assertEqual(experience.integrity(package)['status'],'repair-needed')
+        (package/'references/extra.md').unlink();(package/'SKILL.md').write_text('Changed.')
+        self.assertEqual(experience.integrity(package)['status'],'repair-needed')
         manifest.write_text('{"schema":1,"version":"1.3.0","files":{}}')
         self.assertEqual(experience.integrity(package)['status'],'repair-needed')
-        manifest.write_text('{"schema":1,"version":"1.3.0","files":[]}')
+        manifest.write_text('{"schema":1,"version":"'+version+'","files":[]}')
         self.assertEqual(experience.integrity(package)['status'],'repair-needed')
         with patch.object(experience.shutil,'which',return_value=None):
             self.assertEqual(experience.auth_status('claude')['status'],'missing')
         with patch.object(experience.shutil,'which',return_value='claude'),patch.object(experience,'probe',return_value=subprocess.CompletedProcess([],0,'unexpected','')):
             self.assertEqual(experience.auth_status('claude')['status'],'unverified')
 
-    def test_online_updates_are_metadata_only_and_preserve_saved_pins(self):
+    def test_readiness_reports_installed_guidance_without_any_network_or_repository_call(self):
         self.cli('init')
         task=self.root/'task-context/tasks'/'a'
         task.mkdir(parents=True)
-        pin=task/'pin.json';pin.write_text('{"revision":"old"}')
-        encoded=base64.b64encode(b'{"version":"1.3.0"}').decode()
+        pin=task/'pin.json';pin.write_text('{"revision":"old"}')  # left by a 1.x installation
+        version=(SCRIPTS.parent/'VERSION').read_text().strip()
+        probes=[]
         def fake(arguments):
-            return subprocess.CompletedProcess(arguments,0,json.dumps({'content':encoded}) if arguments[0]=='gh' else '{"loggedIn":true}', '')
-        remote=subprocess.CompletedProcess([],0,'b'*40+'\trefs/heads/main\n','')
-        with patch.object(experience.shutil,'which',return_value='/fixture/tool'), patch.object(experience,'probe',side_effect=fake), patch.object(experience,'integrity',return_value={'status':'verified','version':'1.2.0'}), patch.object(experience.subprocess,'run',return_value=remote) as network:
-            result=experience.readiness(self.root,'claude',online=True)
-        self.assertEqual(result['runtime']['update_status'],'available')
-        self.assertTrue(result['guidance']['differs_from_saved_tasks'])
+            probes.append(arguments[0]);return subprocess.CompletedProcess(arguments,0,'{"loggedIn":true}','')
+        for online in (False,True):
+            with patch.object(experience.shutil,'which',return_value='/fixture/tool'), patch.object(experience,'probe',side_effect=fake), patch.object(experience.subprocess,'run') as external:
+                result=experience.readiness(self.root,'claude',online=online)
+            external.assert_not_called()
+            self.assertEqual(result['guidance']['status'],'installed');self.assertEqual(result['guidance']['version'],version)
+            self.assertEqual(result['runtime']['version'],version);self.assertNotIn('update_status',result['runtime'])
+            self.assertNotIn('approved',json.dumps(result))
+        self.assertEqual(set(probes),{'claude'})
         self.assertEqual(pin.read_text(),'{"revision":"old"}')
-        self.assertEqual(network.call_args.args[0][:2],['git','ls-remote'])
+        self.assertEqual(self.cli('readiness','--harness','claude','--online')['guidance']['version'],version)
 
     def test_symlink_escape_is_not_read_by_discovery_or_context(self):
         self.cli('init');outside=self.base/'outside';outside.mkdir()

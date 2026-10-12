@@ -28,7 +28,7 @@ def main():
     (root/'original.md').write_text('# Better handoffs\n\nWe reviewed six notes. Two did not name the next owner. We have no measurement of delivery speed. Name the next owner before handing work over.\n')
     skill='Use Blog Studio.'
     intro=(f'{skill}\nUse the project-local full skill in {local}/SKILL.md for this candidate acceptance test. '
-           f'This is the full offline package, with no bootstrap or guidance task. Its runtime is {local}/scripts. '
+           f'Its helpers are in {local}/scripts. '
            f'Run helpers using {sys.executable} {local}/scripts/studio.py with the needed arguments, without shell variables or command chaining. Use file tools to read/write files. '
            'Work only inside this disposable directory and its .blog-studio workspace. '
            'Do not access external services, research, account settings, other user files, or other agents. '

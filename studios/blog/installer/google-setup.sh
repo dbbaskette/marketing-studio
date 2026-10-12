@@ -35,7 +35,7 @@ for setup_python in python3 python3.14 python3.13 python3.12 python3.11 \
       printf '%s\n' 'Sign in with the Google account approved for your work. Google will request Drive access.' \
         'This updates the active gcloud account. No Cloud project, billing, or sharing settings are changed.'
     fi
-    exec "$setup_python" "$setup_dir/../bootstrap/blog-studio/scripts/google_drive.py" "$setup_action"
+    exec "$setup_python" "$setup_dir/../skills/blog-studio/scripts/google_drive.py" "$setup_action"
   fi
 done
 printf '%s\n' 'Python 3.11 or later is required. Run Blog Studio setup first.' >&2

@@ -1,20 +1,24 @@
 # Setup and help inside the harness
 
-Use the installed runtime returned by the bootstrap; offline packages use their
-`scripts/`. This flow creates no article and makes no model requests.
+Helpers are in this skill's `scripts/` folder (`<runtime>`). This flow creates
+no article and makes no model requests.
 
 ```text
 python3 <runtime>/studio.py --root <absolute-workspace> readiness --harness codex
-python3 <runtime>/studio.py --root <absolute-workspace> readiness --harness claude --online
+python3 <runtime>/studio.py --root <absolute-workspace> readiness --harness claude
 ```
 
-Run for first-use help, “check my setup,” or setup failures, not every turn.
-`--online` checks private approved main with existing Git credentials, without
-fetching executable code or moving article pins. Show a short ready/action-needed
-summary and the specific next action; keep raw diagnostics and identities out of
-chat. CLI sign-in and file integrity do not prove live skill discovery. The current
-successful invocation is discovery evidence for this session only. Never start a
-login, install, repair, or account change just to check readiness.
+Run for first-use help, “check my setup,” or setup failures, not every turn. It
+checks, on this computer only, the installed files against their manifest, the
+helper interpreter, harness sign-in and the workspace. Show a short
+ready/action-needed summary and the specific next action; keep raw diagnostics
+and identities out of chat. For `repair-needed`, ask the author to run the
+installer again; do not edit installed files. Updates work the same way: the
+author downloads the installer from the latest release and runs it. Nothing
+updates in the background, and saved articles keep their recorded guidance
+version. CLI sign-in and file integrity do not prove live skill discovery. The
+current successful invocation is discovery evidence for this session only. Never
+start a login, install, repair, or account change just to check readiness.
 
 A new workspace is normal. Use the author's current writing project `.blog-studio`
 or their chosen location. Name it and initialize only when saving work. Offer

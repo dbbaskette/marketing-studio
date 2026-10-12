@@ -17,24 +17,23 @@ run_dir="$(mktemp -d /private/tmp/blog-studio-ci.XXXXXX)"
 (cd "$source_dir" && tar --exclude=.git --exclude=__pycache__ -cf - .) | (cd "$run_dir" && tar -xf -)
 cd "$run_dir"
 { sw_vers; "$python_bin" --version; git --version; command -v codex || true; command -v claude || true; } > "$results_dir/environment.txt"
-"$python_bin" -m unittest discover -s tests -v > "$results_dir/tests.log" 2>&1
-"$python_bin" scripts/measure_guidance.py --check > "$results_dir/guidance.json"
-"$python_bin" skills/blog-studio/scripts/validate_package.py > "$results_dir/package.txt"
-"$python_bin" skills/blog-writing-toolkit/scripts/validate_package.py >> "$results_dir/package.txt"
-sh -n installer/install.sh
-bash -n 'installer/Install Blog Studio.command'
-node scripts/ci/check-newcomer.cjs > "$results_dir/newcomer-prompts.json"
-# Exercise the real CLI and shell launcher, separately from unit fixtures.
+# The shared check list, then this project's Mac-only launcher checks.
+bash scripts/ci/check.sh "$python_bin" "$results_dir"
+rm -f "$results_dir/result.txt"  # PASS is written only after the launcher checks below
+"$python_bin" scripts/build.py --output "$run_dir/build" > "$results_dir/bundle.json"
+(cd "$run_dir" && unzip -q build/blog-studio-installer.zip -d expanded)
+setup="$run_dir/expanded/blog-studio-setup"
+# Exercise the released bundle through its real CLI and shell launcher.
 for target in codex claude both; do
   pilot_home="$run_dir/pilot-$target"
-  /bin/sh installer/install.sh install --home "$pilot_home" --target "$target" --yes --offline > "$results_dir/install-$target.txt"
-  /bin/sh installer/install.sh check --home "$pilot_home" --target "$target" --offline --json > "$results_dir/check-$target.json"
-  /bin/sh installer/install.sh uninstall --home "$pilot_home" --target "$target" --yes >> "$results_dir/install-$target.txt"
+  /bin/sh "$setup/installer/install.sh" install --home "$pilot_home" --target "$target" --yes > "$results_dir/install-$target.txt"
+  /bin/sh "$setup/installer/install.sh" check --home "$pilot_home" --json > "$results_dir/check-$target.json"
+  /bin/sh "$setup/installer/install.sh" uninstall --home "$pilot_home" --yes >> "$results_dir/install-$target.txt"
 done
-printf '\n' | env PATH=/usr/bin:/bin:/usr/sbin:/sbin /bin/bash 'installer/Install Blog Studio.command' --dry-run --offline > "$results_dir/launcher-gui-path.txt"
-env PATH=/usr/bin:/bin:/usr/sbin:/sbin /bin/sh installer/install.sh --dry-run --offline --json > "$results_dir/shell-minimal-path.json"
+printf '\n' | env PATH=/usr/bin:/bin:/usr/sbin:/sbin /bin/bash "$setup/installer/Install Blog Studio.command" --dry-run > "$results_dir/launcher-gui-path.txt"
+env PATH=/usr/bin:/bin:/usr/sbin:/sbin /bin/sh "$setup/installer/install.sh" --dry-run --json > "$results_dir/shell-minimal-path.json"
 # Assessment is observational, never a bypass or a claim of GUI consent.
-cp 'installer/Install Blog Studio.command' "$run_dir/Quarantined Installer.command"
+cp "$setup/installer/Install Blog Studio.command" "$run_dir/Quarantined Installer.command"
 xattr -w com.apple.quarantine '0083;00000000;BlogStudioPilot;' "$run_dir/Quarantined Installer.command"
 if spctl --assess --type execute "$run_dir/Quarantined Installer.command" > "$results_dir/quarantine-assessment.txt" 2>&1; then
   echo 'assessment accepted; actual GUI launch still requires observation' >> "$results_dir/quarantine-assessment.txt"

@@ -10,3 +10,6 @@ __pycache__/
 .pytest_cache/
 .venv/
 .DS_Store
+
+# Release archives are built into this folder and published with GitHub Releases
+build/

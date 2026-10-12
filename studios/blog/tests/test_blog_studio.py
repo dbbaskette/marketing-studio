@@ -205,21 +205,38 @@ class StudioTests(unittest.TestCase):
         self.assertFalse(text_checks.preserve(before,before)['needs_review'])
         self.assertTrue(text_checks.preserve('20 hours, then 20 hours.','20 hours.')['needs_review'])
 
-    def test_guidance_pin_is_saved_and_replaced_only_deliberately(self):
+    def test_new_article_records_installed_guidance_and_keeps_it_until_adopted(self):
+        version=(PACKAGE/'VERSION').read_text().strip();pin={'revision':version,'source':'installed'}
+        aid=self.article();self.assertEqual(self.cli('article','show','--id',aid)['guidance'],pin)
+        self.save(aid,'draft','Existing draft.');self.review(aid,'proofread')
+        # Re-recording the same version changes nothing; no task or cached variants remain.
+        same=self.cli('article','guidance','--id',aid)
+        self.assertEqual(same['guidance'],pin);self.assertNotIn('guidance_history',same)
+        self.assertEqual(same['reviews']['proofread']['status'],'current')
+        self.cli('article','guidance','--id',aid,'--task','a'*32,ok=False)
+        self.cli('article','guidance','--id',aid,'--cached',ok=False)
+        self.assertFalse((self.root/'task-context').exists())
+
+    def test_article_pinned_by_an_earlier_release_still_loads_and_adopts_only_on_request(self):
         aid=self.article();self.save(aid,'draft','Existing draft.')
-        first='a'*32;second='b'*32
-        for task,revision in ((first,'a'*40),(second,'b'*40)):
-            path=self.root/'task-context'/'tasks'/task/'pin.json'
-            path.parent.mkdir(parents=True)
-            path.write_text(json.dumps({'task':task,'revision':revision}))
-        self.cli('article','guidance','--id',aid,'--task',first)
+        path=self.root/'articles'/aid/'session.json';record=json.loads(path.read_text())
+        # What 1.x stored: a guidance commit, its task, and a helper path that no longer exists.
+        legacy={'task':'a'*32,'revision':'a'*40,'runtime':str(self.base/'removed/versions/1.15.0-abc/scripts'),'freshness':'pinned'}
+        record['guidance']=legacy;path.write_text(json.dumps(record))
         self.review(aid,'proofread')
-        self.cli('article','guidance','--id',aid,'--task',second,ok=False)
-        result=self.cli('article','guidance','--id',aid,'--task',second,'--adopt','--cached')
-        self.assertEqual(result['guidance']['freshness'],'cached')
-        self.assertEqual(result['guidance_history'][0]['task'],first)
+        self.assertEqual(self.cli('article','show','--id',aid)['guidance'],legacy)
+        self.assertEqual(self.cli('context','--id',aid)['guidance']['revision'],'a'*40)
+        self.assertEqual(self.cli('resume','--id',aid)['context']['pins']['guidance']['revision'],'a'*40)
+        self.assertEqual(self.cli('status','--id',aid,'--details')['details']['guidance']['revision'],'a'*40)
+        self.assertEqual(self.cli('home')['items'][0]['id'],aid)
+        self.save(aid,'draft','Edited draft.');self.review(aid,'proofread')
+        self.assertIn('--adopt',self.cli('article','guidance','--id',aid,ok=False))
+        self.assertEqual(self.cli('article','show','--id',aid)['reviews']['proofread']['status'],'current')
+        result=self.cli('article','guidance','--id',aid,'--adopt')
+        self.assertEqual(result['guidance'],{'revision':(PACKAGE/'VERSION').read_text().strip(),'source':'installed'})
+        self.assertEqual(result['guidance_history'],[legacy])
         self.assertEqual(result['reviews']['proofread']['status'],'stale')
-        self.assertEqual((self.root/'articles'/aid/'DRAFT.md').read_text(),'Existing draft.')
+        self.assertEqual((self.root/'articles'/aid/'DRAFT.md').read_text(),'Edited draft.')
 
     def test_package_integrity(self):
         self.assertEqual(validator.validate(),[])

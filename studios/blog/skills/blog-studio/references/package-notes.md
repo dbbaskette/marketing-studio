@@ -16,17 +16,17 @@ through focused references. Routine work does not require those four originals.
 BlogForge servers, accounts, APIs, and model providers are not
 required. Use the host's model and actual available tools.
 
-Local helper scripts require Python 3.10+ and the standard library. They do not
+Local helper scripts require Python 3.11+ and the standard library. They do not
 fetch links, extract binary documents, write prose with a model, or call paid
 services. The agent performs those tasks using available host capabilities and
 records the results. Workspaces live outside the installed skill.
 
 Run `python3 scripts/validate_package.py` for source integrity, routing, and
 local-link validation. It checks all twenty modules and their conditional routes.
-The full offline package includes that validator. Repository snapshots retain
-provenance and references; use the installed runtime for executable helpers and
-the managed installer for runtime checks. For offline/manual discovery, install
-the complete folder, or load `SKILL.md` by absolute path immediately. No implicit-only or explicit-only invocation restriction is
+The installer copies this whole folder, entry file, references and helpers
+together, and records a manifest of file hashes that `readiness` verifies. For a
+manual install, copy the complete folder into a skill root, or load `SKILL.md`
+by absolute path. No implicit-only or explicit-only invocation restriction is
 introduced. Copying a package into a skill root requires ordinary filesystem
 permissions; do not work around host restrictions.
 

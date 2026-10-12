@@ -47,12 +47,19 @@ Read conditionally: [intake](references/intake.md) for incoming files/links;
 [Google Docs](references/google/workflow.md) for Google links or operations;
 [brand handoff](references/brand-handoff.md) for an explicitly selected brand.
 
+## Helpers and saved work
+
+This folder is the whole skill; nothing is downloaded when a task starts.
+`<runtime>` is the `scripts/` folder beside this file. Run only those helpers,
+with the interpreter named in `config.json` beside this file (setup verified
+it). Without that file or interpreter, use any Python 3.11+ and suggest running
+the installer's repair. Save work in an absolute workspace, by default
+`.blog-studio` under the author's content project, never inside this folder.
+
 Read [workspace](references/workspace.md) when discovering/resuming/saving
 work. Reuse checkpoints and exact source/voice/guidance pins; retain originals
 and history, and stale affected reviews. For team requests or `.team-hub.json`,
-read [hub router](references/hub/workflow.md). Bootstrap helpers run from its
-returned installed `runtime`, never the snapshot; offline helpers use `scripts/`.
-Verify saved files reopen.
+read [hub router](references/hub/workflow.md). Verify saved files reopen.
 
 For team pipeline, attention, launch packages, evidence, visual companions, old-blog
 collections or the editorial desk, load only the relevant [editorial operation](references/editorial/workflow.md).

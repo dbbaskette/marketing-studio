@@ -27,11 +27,11 @@ the author asks what is remembered or wants to correct/remove it.
 
 Select the resumed article with `select --id <id>` and show its returned
 [status card](status.md), with one relevant next step. Keep technical pins in
-details unless requested; preserve them in the saved task.
+details unless requested; preserve them in the saved article.
 
-With the bootstrap, reopen the saved guidance task/runtime using
-`sync_guidance.py resume --workspace <root> --task <saved-task>`.
-A missing runtime is a limitation, not recovered state. Shared checkout,
-missing local task IDs, or deliberate guidance changes use [pins](pins.md)
-and the [hub router](../hub/workflow.md). Keep current dependencies pinned until
-a requested refresh. Verify the selected artifact reopens before claiming resume.
+Resume needs no guidance step: work continues with the installed skill, and the
+article keeps its recorded guidance version until the author asks to change it
+([pins](pins.md)). Ignore a `task` or `runtime` saved by an earlier release;
+helpers run from this skill's `scripts/`. Shared checkout uses the
+[hub router](../hub/workflow.md). Keep current dependencies pinned until a
+requested refresh. Verify the selected artifact reopens before claiming resume.

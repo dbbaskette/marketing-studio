@@ -79,12 +79,15 @@ def validate(root=ROOT):
             if url.scheme or url.netloc or not url.path:continue
             target = (p.parent / unquote(url.path)).resolve()
             if not target.is_relative_to(root) or not target.is_file():errors.append(f'Broken link in {relative}: {link}')
-    for script in ('studio.py', 'text_checks.py', 'linkedin_import.py', 'hub.py', 'hub_store.py', 'hub_workspace.py', 'google_workflow.py', 'experience.py', 'hub_browse.py', 'google_drive.py', 'google_roundtrip.py', 'editorial.py', 'blog_library.py', 'management.py', *(['deep_research.py'] if research_path.is_file() else [])):
-        p = root / 'scripts' / script
-        if not p.is_file():errors.append(f'Missing helper {script}')
-        else:
-            try:compile(p.read_text(), str(p), 'exec')
-            except SyntaxError as exc:errors.append(str(exc))
+    version = root / 'VERSION'
+    if not version.is_file() or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+\n?', version.read_text()):
+        errors.append('VERSION must hold one release number such as 2.0.0.')
+    scripts = sorted((root / 'scripts').glob('*.py'))
+    for required in ('studio.py', 'hub.py', 'experience.py'):
+        if not (root / 'scripts' / required).is_file():errors.append(f'Missing helper {required}')
+    for p in scripts:
+        try:compile(p.read_text(), str(p), 'exec')
+        except SyntaxError as exc:errors.append(str(exc))
     return errors
 
 

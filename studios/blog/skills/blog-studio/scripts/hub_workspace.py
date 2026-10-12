@@ -142,8 +142,11 @@ class Workspace:
                 data['voice'] = {'mode': 'profile', 'ref': reference}
             guidance = record.get('guidance')
             if guidance:
-                data['guidance'] = {'repository': GUIDANCE_REPOSITORY, 'revision': guidance['revision'],
-                                    'freshness': guidance.get('shared_freshness', guidance.get('freshness', 'pinned'))}
+                data['guidance'] = {'repository': GUIDANCE_REPOSITORY, 'revision': guidance['revision']}
+                # Pins written before 2.0 carried a freshness label; keep it so unchanged articles do not churn.
+                legacy = guidance.get('shared_freshness', guidance.get('freshness'))
+                if legacy:
+                    data['guidance']['freshness'] = legacy
             history = record.get('guidance_history', [])
             if history:
                 data['guidance_history'] = [{'repository': GUIDANCE_REPOSITORY, 'revision': p['revision']} for p in history]
@@ -339,9 +342,12 @@ class Workspace:
             data['sources'] = [{'source_id': resolved[(r['item'], r['revision'])], 'purposes': r['purposes'], 'revision': 1} for r in data['sources']]
             if data['voice'].get('mode') == 'profile':
                 ref = data['voice']['ref'];data['voice'] = {'mode': 'profile', 'profile_id': resolved[(ref['item'], ref['revision'])], 'revision': 1}
+            # A shared pin is a record of which guidance the article used; helpers always run from this installation.
             if data.get('guidance'):
-                data['guidance'] = {**data['guidance'], 'task': None, 'runtime': str(Path(__file__).resolve().parent), 'shared_freshness': data['guidance'].get('freshness', 'pinned'), 'freshness': 'unrestored'}
-            data['guidance_history'] = [{**g, 'task': None, 'runtime': str(Path(__file__).resolve().parent)} for g in data.get('guidance_history', [])]
+                pinned = data['guidance']
+                data['guidance'] = {'revision': pinned['revision'], 'source': 'shared',
+                                    **({'shared_freshness': pinned['freshness']} if pinned.get('freshness') else {})}
+            data['guidance_history'] = [{'revision': g['revision'], 'source': 'shared'} for g in data.get('guidance_history', [])]
         data['hub_projection'] = {'hub': self.hub.id, 'item': record['item'], 'revision': record['revision']}
         stage = Path(tempfile.mkdtemp(prefix='.hub-projection-', dir=self.root))
         try:
