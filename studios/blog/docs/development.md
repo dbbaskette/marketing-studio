@@ -11,6 +11,9 @@ The main README is for authors. This page collects repository and maintenance de
   and the optional Google setup helper.
 - `scripts/build.py`: builds the release archives into `build/` (ignored by Git).
 - `scripts/ci/check.sh`: the one list of project checks.
+- `pyproject.toml` and `requirements-dev.txt`: settings and pinned version for
+  ruff, the formatter and linter. Development and CI only; the skill itself
+  needs nothing but the Python standard library.
 - `guidance/manifest.json`: upgrade notice read by 1.x installations; see
   [PACKAGE](../PACKAGE.md).
 - `preview/blog-studio.html`: optional local prompt generator for beginners. It
@@ -42,21 +45,53 @@ Use Python 3.11 or later. Node is needed for the two browser-script checks.
 bash scripts/ci/check.sh "$(command -v python3)" /tmp/blog-studio-checks
 ```
 
-That script is what CI and the release workflow run. It checks shell syntax,
-validates both skill folders, proves the build is reproducible
-(`scripts/build.py --check`), checks the prompt generator and the guidance
-inventory, then runs the test suite. Results and the test log are written to
-the directory you name. While working, run one test file directly:
+That script is what CI and the release workflow run. It lints and checks
+formatting, checks shell syntax, validates both skill folders, proves the build
+is reproducible (`scripts/build.py --check`), checks the prompt generator and
+the guidance budgets, then runs the test suite. Results and the test log are
+written to the directory you name. While working, run one test file directly:
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_installation.py'
 ```
 
-When guidance text changes, refresh the inventory with
-`python3 scripts/measure_guidance.py` before running the checks. Tests use
-disposable homes and local Git repositories; they never touch your real skill
-folders or accounts. See [verification boundary](local-ci.md) for how the
-hosted and self-hosted workflows relate.
+Tests use disposable homes and local Git repositories; they never touch your
+real skill folders or accounts, and the Team Hub tests ignore your own Git
+configuration.
+
+The gate for a pull request is the Tart workflow, shown as
+`Verify Blog Studio / verify (…)`. The hosted workflow, `Hosted checks`, runs
+the same script and is currently disabled in the repository settings. See
+[verification boundary](local-ci.md).
+
+### Format and lint
+
+Python in `skills/blog-studio/scripts/`, `installer/`, `scripts/` and `tests/`
+is formatted and linted with ruff, at the version pinned in
+`requirements-dev.txt`. Other versions format differently, so use that one:
+
+```sh
+python3 -m pip install -r requirements-dev.txt   # once
+ruff format
+ruff check --fix
+```
+
+With `uv`, `uvx ruff@<pinned version> format` works without installing
+anything. `check.sh` runs both checks first. On a machine with neither ruff nor
+`uv` it says that lint was skipped and continues; the pull request gate does
+not skip it.
+
+### Guidance budgets
+
+Rewording guidance needs no extra step. The check fails only when the entry, a
+route or the whole library grows more than 5% or 50 tokens, whichever is
+larger, past the sizes recorded in the
+[guidance inventory](estimates/blog-studio-token-inventory.json). Then shorten
+the text, or record the new sizes on purpose:
+
+```sh
+python3 scripts/measure_guidance.py
+```
 
 ## Build and release
 

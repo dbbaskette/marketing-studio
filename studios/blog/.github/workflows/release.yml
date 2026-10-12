@@ -35,9 +35,14 @@ jobs:
         if: steps.version.outputs.released == 'false'
         with:
           python-version: '3.13'
+      - name: Install the pinned linter
+        if: steps.version.outputs.released == 'false'
+        run: python -m pip install -r requirements-dev.txt
       - name: Run project checks
         if: steps.version.outputs.released == 'false'
         shell: bash
+        env:
+          BLOG_STUDIO_REQUIRE_LINT: '1'
         run: bash scripts/ci/check.sh "$(command -v python)" "$RUNNER_TEMP/blog-studio-checks"
       - name: Build release archives
         if: steps.version.outputs.released == 'false'
