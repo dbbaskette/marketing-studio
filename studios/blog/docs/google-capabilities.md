@@ -41,9 +41,9 @@ in the [dated acceptance record](issue-validation-2026-10-03.md).
 
 | Operation | Local gcloud route | Connected Codex evidence | Remaining live boundary |
 | --- | --- | --- | --- |
-| Source read, accepted text, nested tabs | Native Docs read with suggestions excluded | Selected-tab intake and native multi-tab reads verified | Rediscover access/scope in each participant's harness |
+| Source read, accepted text, nested tabs | Native Docs read with suggestions excluded; a teammate's pending suggestion does not block a capture | Selected-tab intake and native multi-tab reads verified | Rediscover access/scope in each participant's harness |
 | New editing copy | Drive HTML/DOCX/text import with audience check and recovery receipt | Native handoff, heading/link readback verified | No template fidelity implied by plain import |
-| Existing-document edits | Native Docs update with required revision and readback | Stale revision rejected; three-way conflict and resolved return verified | Current file permission and author decisions remain necessary |
+| Existing-document edits | Native Docs update with required revision and readback, limited to Docs linked in the workspace; non-overlapping edits merge three ways on return | Stale revision rejected; three-way conflict and resolved return verified | Current file permission and author decisions remain necessary |
 | Native template copy | Base adapter does not implement copying | Complete native multi-tab template, styles and date control retained | Use a capable connector; no unsupported control mutation promised |
 | Pending suggestions and anchored review | Separate configured review helper; native readback required | Pending suggestion and visible explanatory anchor verified through gcloud | Connector has no top-level writeMode; no general anchor/parity assumption |
 | Ordinary review comments | Review helper with current quoted context and readback | Document-level and native anchored outcomes verified separately | Cannot infer inline location from a Drive API response |
@@ -77,12 +77,20 @@ The command checks record consistency, not the truth of a provider operation.
 The [adapter contract](../skills/blog-studio/references/google/adapter.md) and
 [checkpoint contract](../skills/blog-studio/references/google/checkpoints.md)
 define canonical Doc identity/URL, selected tab IDs, actual revision or disclosed
-fingerprint fallback, direction/time, accepted-text hash and verification.
+fingerprint fallback, direction/time, accepted-text hash and verification. The
+formatting fingerprint covers tab content only, so renaming a Doc or tab is not
+a change.
 Provider revisions guard existing-document writes; fingerprints alone do not.
 Before return, compare the saved baseline with both current copies. Preserve
 originals, formatted DOCX/native evidence, Markdown history and article pins.
 Suggestions/comments remain separate and are never implicitly accepted.
 
-Credentials stay in the connector or gcloud store. Share only selected article
-content; sources, interviews, rules and voices are not automatic attachments.
-Sharing, export and editorial readiness remain separate from publication.
+Credentials stay in the connector or gcloud store; the workspace remembers only
+which signed-in account to use. The gcloud sign-in itself is broad (the Google
+Cloud CLI's standard access plus full Drive access), so the helpers confine
+themselves: fixed Google API hosts, named files, and writes only to linked Docs.
+Share only selected article content; sources, interviews, rules and voices are
+not automatic attachments. The Hub receives returned text, the DOCX snapshot and
+fingerprints; raw native Docs JSON, which can hold reviewers' comment threads,
+stays on the computer that captured it. Sharing, export and editorial readiness
+remain separate from publication.

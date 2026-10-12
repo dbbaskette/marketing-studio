@@ -4,13 +4,12 @@ Keep one stable linked Google Doc per blog. The document ID and fresh comparison
 identify the working copy; a title or milestone name cannot prove freshness.
 Load this reference when resuming a linked article or asking which copy is current.
 
-Runtime 1.6 adds:
-
 ```text
 ... studio.py --root <workspace> google status --id <article> --kind draft --online
 ```
 
-Use `outline` for an outline-only task. The optional `--account` selects an already
+Use `outline` for an outline-only task. The check uses the Google account
+remembered for the workspace; the optional `--account` selects another already
 signed-in gcloud account without switching it. This checks the saved Doc through
 native read-only calls; it never exports, edits, accepts suggestions, logs in or
 saves a manuscript. Only a machine-local check cache changes. No Google access or
@@ -22,15 +21,17 @@ network means **Not checked**, never “In sync.” Keep writing locally when ap
 | Google has changes | Bring the team's edits/formatting back |
 | Local changes pending | Send the selected local edits when requested |
 | Both changed | Compare and reconcile before sending; changes may overlap or have converged |
-| Suggestions pending | Runtime 1.9+: accepted text matches; review pending Google suggestions, then pull |
+| Suggestions pending | Accepted text matches; review pending Google suggestions, then pull |
 | Not checked | No fresh comparable read; resolve access, scope or baseline when needed |
 
 The live check uses the native formatting fingerprint established by the formatted
-return workflow. Older text-only baselines need one inspected formatted return.
-Runtime 1.9 separates pending suggestions from accepted text and reports review
-counts after a stable native read. Changed tab scope or failed/incomplete reads
-remain Not checked. A status
-is true at its check time, not a guarantee against later edits. Writes still need
+return workflow. It needs no stored native snapshot, so another Hub member can
+run it right after checkout. Older text-only baselines need one inspected
+formatted return. Pending suggestions, a teammate's included, are kept apart
+from accepted text and counted; no comment readback is required. Renaming the
+Doc or a tab is not a change. Changed tab scope or failed/incomplete reads remain
+Not checked. A status is true at its check time, not a guarantee against later
+edits. Writes still need
 fresh revision guards. A connector-only session uses its fresh read and the existing
 compare contract; if equivalent evidence is unavailable, report Not checked rather
 than installing or logging into another provider automatically.

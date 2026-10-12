@@ -11,6 +11,9 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/blog-studio/scripts'))
 import studio
+import google_drive as gd
+import google_roundtrip as rt
+import google_suggestions as gs
 import google_workflow as google
 from hub_fixtures import FakeProvider
 from hub import Registry
@@ -206,7 +209,7 @@ class GoogleWorkflowTests(unittest.TestCase):
         from test_google_roundtrip import Provider
         import google_roundtrip as rt
         client = Provider()
-        self.save('draft', client.export('fixture-doc', 'md').decode())
+        self.save('draft', gs.accepted_markdown(client.native_read('fixture-doc')).decode())
         self.handoff()
         self.run_command('article','review','--id',self.aid,'--check','proofread','--status','current','--file',self.file({'findings':[]}))
         snapshots = []
@@ -282,6 +285,177 @@ class GoogleWorkflowTests(unittest.TestCase):
             legacy = self.run_command('google','status','--id',self.aid,'--online')
             self.assertEqual(legacy['status'],'not-checked');self.assertIsNone(legacy['last_known_status'])
             provider.assert_not_called()
+
+    BODY = '# Blog\n\nFirst paragraph stays.\n\nSecond paragraph here.\n\nThird paragraph here.\n'
+
+    def compare_and_accept(self, inputs, *extra):
+        check = self.run_command('google','compare','--id',self.aid,*inputs)
+        return check, self.run_command('google','accept','--id',self.aid,*inputs,'--expected-comparison',check['comparison'],*extra)
+
+    def test_edits_to_different_passages_merge_automatically(self):
+        self.save('draft', self.BODY); self.handoff()
+        self.save('draft', self.BODY.replace('Third paragraph here.', 'Third paragraph, edited locally.'))
+        remote = self.BODY.replace('First paragraph stays.', 'First paragraph, edited in Google.')
+        check, result = self.compare_and_accept(self.obs(remote, revision_id='revision-2'))
+        self.assertEqual(check['status'], 'conflict')
+        self.assertEqual((check['merge']['status'], check['merge']['conflicts']), ('clean', 0))
+        preview = Path(check['merge']['file'])
+        self.assertEqual(preview.parent, gd.staging_root(self.root))
+        self.assertEqual((result['status'], result['merge']), ('accepted', 'clean-merge'))
+        self.assertEqual(self.body(), '# Blog\n\nFirst paragraph, edited in Google.\n\nSecond paragraph here.\n\n'
+                                      'Third paragraph, edited locally.\n')
+        self.assertFalse(preview.exists())
+        # The local edit is still not in Google, and the checkpoint says so.
+        again = self.run_command('google','compare','--id',self.aid,*self.obs(remote, revision_id='revision-2'))
+        self.assertEqual(again['status'], 'local-only'); self.assertIn('kept', result['next_step'])
+        _, record = studio.item(self.root, 'articles', self.aid)
+        self.assertTrue(record['google']['transfers'][result['transfer']]['merged'])
+
+    def test_overlapping_edits_need_the_author_and_a_resolution_cannot_drop_google_only_text(self):
+        self.save('draft', self.BODY); self.handoff()
+        local = self.BODY.replace('Second paragraph here.', 'Second paragraph, local wording.')
+        self.save('draft', local)
+        remote = self.BODY.replace('Second paragraph here.', 'Second paragraph, Google wording.').replace('# Blog', '# Blog title')
+        inputs = self.obs(remote, revision_id='revision-2')
+        check = self.run_command('google','compare','--id',self.aid,*inputs)
+        self.assertEqual((check['merge']['status'], check['merge']['conflicts']), ('conflicts', 1))
+        marked = Path(check['merge']['file']).read_text()
+        self.assertIn('<<<<<<< local\nSecond paragraph, local wording.\n=======\nSecond paragraph, Google wording.\n>>>>>>> google', marked)
+        self.assertTrue(marked.startswith('# Blog title\n'))  # Google's heading change, which nobody contested, is already merged.
+        accept = ('google','accept','--id',self.aid,*inputs,'--expected-comparison',check['comparison'])
+        with self.assertRaisesRegex(ValueError, 'same passage'): self.run_command(*accept)
+        with self.assertRaisesRegex(ValueError, 'conflict markers'): self.run_command(*accept,'--resolution-file',self.file(marked))
+        # Keeping only the local text would silently lose the heading that Google alone changed.
+        with self.assertRaisesRegex(ValueError, 'only Google changed'): self.run_command(*accept,'--resolution-file',self.file(local))
+        self.assertEqual(self.body(), local)
+        chosen = marked.replace('<<<<<<< local\n', '').replace('=======\nSecond paragraph, Google wording.\n>>>>>>> google\n', '')
+        result = self.run_command(*accept,'--resolution-file',self.file(chosen))
+        self.assertEqual(result['merge'], 'resolution')
+        self.assertEqual(self.body(), '# Blog title\n\nFirst paragraph stays.\n\nSecond paragraph, local wording.\n\nThird paragraph here.\n')
+
+    def test_author_can_explicitly_discard_google_only_text(self):
+        self.save('draft', self.BODY); self.handoff()
+        remote = self.BODY.replace('First paragraph stays.', 'First paragraph, edited in Google.')
+        inputs = self.obs(remote, revision_id='revision-2')
+        check = self.run_command('google','compare','--id',self.aid,*inputs)
+        accept = ('google','accept','--id',self.aid,*inputs,'--expected-comparison',check['comparison'],'--resolution-file',self.file(self.BODY))
+        with self.assertRaisesRegex(ValueError, 'only Google changed'): self.run_command(*accept)
+        self.assertEqual(self.run_command(*accept,'--discard-remote')['merge'], 'resolution')
+        self.assertEqual(self.body(), self.BODY)
+
+    def test_merge_chunks_take_one_sided_changes_and_flag_real_overlaps(self):
+        base = ['a', '', 'b', '', 'c']
+        self.assertEqual(google.merge_chunks(base, ['A', '', 'b', '', 'c'], ['a', '', 'b', '', 'C']),
+                         [('ours', ['A']), ('same', ['', 'b', '']), ('theirs', ['C'])])
+        self.assertEqual(google.merge_chunks(base, ['a', '', 'B', '', 'c'], ['a', '', 'B', '', 'c'])[1], ('same', ['B']))
+        self.assertEqual(google.merge_chunks(base, ['a', '', 'B1', '', 'c'], ['a', '', 'B2', '', 'c'])[1], ('conflict', ['B1'], ['B2']))
+        self.assertEqual(google.merge_chunks(base, ['a', '', 'c'], ['a', '', 'b', '', 'c', '', 'd']),
+                         [('same', ['a', '']), ('ours', []), ('same', ['c']), ('theirs', ['', 'd'])])
+        self.assertEqual(google.merged_text(google.merge_chunks(base, base, base)), ('a\n\nb\n\nc', 0))
+
+    def formatted_baseline(self):
+        """Hand off the fixture Doc's own text, then accept an inspected capture so the baseline has formatting."""
+        from test_google_roundtrip import Provider
+        client = Provider()
+        self.save('draft', gs.accepted_markdown(client.native_read('fixture-doc')).decode()); self.handoff()
+        folder = gd.staging_path(self.root, 'capture'); rt.capture(client, 'fixture-doc', None, folder)
+        check, result = self.compare_and_accept(['--snapshot', str(folder)])
+        return client, folder, check, result
+
+    def test_accept_takes_a_capture_folder_alone_and_clears_it_from_staging(self):
+        client, folder, check, result = self.formatted_baseline()
+        self.assertEqual((check['status'], result['status']), ('unchanged', 'accepted'))
+        self.assertFalse(folder.exists())
+        self.assertEqual(set(result['formatted_snapshot']), {'document.md', 'document.docx', 'snapshot.json'})
+        directory, record = studio.item(self.root, 'articles', self.aid)
+        document = record['google']['baselines']['draft']['document']
+        self.assertEqual((document['format_version'], document['projection']), (2, rt.PROJECTION))
+        self.assertTrue((directory/result['local_snapshot']['native.json']).is_file())
+        with self.assertRaisesRegex(ValueError, '--snapshot'):
+            self.run_command('google','compare','--id',self.aid)
+
+    def test_formatted_baseline_cannot_be_replaced_by_a_hand_built_observation(self):
+        client, _, _, _ = self.formatted_baseline()
+        body = self.body()
+        inputs = self.obs(body + '\nA teammate added this.\n', revision_id='revision-2')
+        check = self.run_command('google','compare','--id',self.aid,*inputs)
+        self.assertEqual(check['status'], 'remote-only')
+        with self.assertRaisesRegex(ValueError, 'formatted Google baseline'):
+            self.run_command('google','accept','--id',self.aid,*inputs,'--expected-comparison',check['comparison'])
+        folder = self.base/'for-handoff'; rt.capture(client, 'fixture-doc', None, folder)
+        prepared = self.run_command('google','prepare','--id',self.aid,'--snapshot',str(folder))
+        with self.assertRaisesRegex(ValueError, 'formatted Google baseline'):
+            self.run_command('google','confirm','--id',self.aid,'--transfer',prepared['transfer'],*self.obs())
+        _, record = studio.item(self.root, 'articles', self.aid)
+        self.assertTrue(record['google']['baselines']['draft']['document']['format_sha256'])
+        self.assertEqual(self.body(), body)
+        # The same handoff confirms with its capture.
+        observation = json.loads((folder/'observation.json').read_text()); observation['structure_verified'] = True
+        (folder/'observation.json').write_text(json.dumps(observation))
+        confirmed = self.run_command('google','confirm','--id',self.aid,'--transfer',prepared['transfer'],'--snapshot',str(folder))
+        self.assertEqual(confirmed['status'], 'confirmed')
+
+    def test_confirmation_tolerates_incidental_whitespace_but_not_changed_paragraphs(self):
+        self.save('draft', 'First paragraph.\n\nSecond paragraph.\n')
+        prepared = self.run_command('google','prepare','--id',self.aid)
+        with self.assertRaises(ValueError):
+            self.run_command('google','confirm','--id',self.aid,'--transfer',prepared['transfer'],*self.obs('First paragraph.\nSecond paragraph.\n'))
+        with self.assertRaises(ValueError):
+            self.run_command('google','confirm','--id',self.aid,'--transfer',prepared['transfer'],*self.obs('First paragraph.\n\nSecond  paragraph.\n'))
+        readback = 'First paragraph.  \n\n\nSecond paragraph.'
+        confirmed = self.run_command('google','confirm','--id',self.aid,'--transfer',prepared['transfer'],*self.obs(readback))
+        self.assertEqual(confirmed['status'], 'confirmed')
+        self.assertEqual(self.run_command('google','compare','--id',self.aid,*self.obs(readback))['status'], 'unchanged')
+
+    def test_online_status_uses_the_account_remembered_for_the_workspace(self):
+        client, _, _, _ = self.formatted_baseline()
+        gd.remember_account(self.root, 'writer@example.invalid')
+        with patch('google_drive.Client', return_value=client) as made:
+            self.assertEqual(self.run_command('google','status','--id',self.aid,'--online')['status'], 'in-sync')
+            made.assert_called_once_with('writer@example.invalid')
+            self.run_command('google','status','--id',self.aid,'--online','--account','other@example.invalid')
+            made.assert_called_with('other@example.invalid')
+
+    def test_raw_docs_json_and_comment_threads_never_reach_the_hub(self):
+        import test_google_suggestions as fixtures
+        client = fixtures.ReviewProvider()
+        self.save('draft', gs.accepted_markdown(client.native_read('fixture-doc')).decode()); self.handoff()
+        # In Google: a colleague's pending suggestion and a reviewer's comment thread.
+        fixtures.add_teammate_suggestion(client)
+        client.comments.append({'commentId':'c1','anchorId':'a1','status':'OPEN','plainTextQuote':'delay',
+                                'headPost':{'content':'PRIVATE REVIEWER REMARK'}})
+        folder = self.base/'review'; rt.capture(client, 'fixture-doc', None, folder)
+        self.assertIn(b'PRIVATE REVIEWER REMARK', (folder/'native.json').read_bytes())
+        _, accepted = self.compare_and_accept(['--snapshot', str(folder)])
+        directory, _ = studio.item(self.root, 'articles', self.aid)
+        self.assertIn(b'PRIVATE REVIEWER REMARK', (directory/accepted['local_snapshot']['native.json']).read_bytes())
+        provider = FakeProvider(self.base/'remotes')
+        ra = Registry(self.base/'hubs-a', provider); rb = Registry(self.base/'hubs-b', provider)
+        hub_id = ra.create('fixture/private-review', 'Review fixtures')['hub']; rb.join('fixture/private-review')
+        reference = Workspace(self.root, ra.hub(hub_id)).publish_selected({'articles': [self.aid]})['items'][0]
+        published = ra.hub(hub_id)._remote_files()
+        self.assertTrue(any(name.endswith('-document.docx') for name in published))
+        for name, data in published.items():
+            self.assertNotIn('native', name); self.assertNotIn('accepted.json', name)
+            for private in (b'PRIVATE REVIEWER REMARK', b'teammate-1', b'commentId', b'suggestedInsertionIds', b'"tabs"'):
+                self.assertNotIn(private, data, name)
+        # A second member gets the link, text, DOCX and fingerprints, and none of the raw JSON.
+        other = self.base/'other'; studio.initialize(other)
+        aid = Workspace(other, rb.hub(hub_id)).checkout_selected({'articles': [reference['item']]})['items'][0]['local_id']
+        other_directory, other_record = studio.item(other, 'articles', aid)
+        self.assertEqual(list(other_directory.rglob('*native.json')) + list(other_directory.rglob('*accepted.json')), [])
+        self.assertTrue((other_directory/accepted['formatted_snapshot']['document.docx']).is_file())
+        self.assertEqual(other_record['google']['baselines']['draft']['document']['format_version'], 2)
+        # Their live status works at once: it compares fingerprints and needs no stored native snapshot.
+        with patch('google_drive.Client', return_value=client):
+            status = self.run_command('google','status','--id',aid,'--online',root=other)
+        self.assertEqual(status['status'], 'pending-review'); self.assertEqual(status['review_state']['pending'], 1)
+        # Their own pull works too, and gives this computer its own private native copy.
+        pull = self.base/'second-pull'; rt.capture(client, 'fixture-doc', None, pull)
+        check = self.run_command('google','compare','--id',aid,'--snapshot',str(pull),root=other)
+        self.assertEqual((check['status'], check['format_changed']), ('unchanged', False))
+        again = self.run_command('google','accept','--id',aid,'--snapshot',str(pull),'--expected-comparison',check['comparison'],root=other)
+        self.assertTrue((other_directory/again['local_snapshot']['native.json']).is_file())
 
     def test_cli_returns_compact_error_for_malformed_observation(self):
         script=Path(studio.__file__)

@@ -3,8 +3,10 @@
 Use the user's chosen connection. For local Codex/Claude CLI sessions, the
 [gcloud adapter](gcloud.md) provides user-authenticated Drive transfers and
 capability-dependent native Docs reads/guarded writes without creating an OAuth
-client or Cloud project. Use its installed runtime helper. If a suitable Workspace
-connector is already available, use it and its current Google skill instructions.
+client or Cloud project. Use its installed runtime helper. Starting from a Doc,
+formatted pulls, live status, review suggestions and review comments are built
+on that helper's captures. If a suitable Workspace connector is already
+available, use it and its current Google skill instructions for what it covers.
 Discover actual operations in this harness; a synced skill alone is not a
 connection. Do not install tools or start login unless setup is requested.
 Missing operations remain unavailable while local writing continues.
@@ -77,6 +79,9 @@ parameters, change the hosted connector, or start a new login without a setup re
 - Retry uncertain creates/copies/comments/shares only after locating the result;
   use the observed operation result/ID, never duplicate blindly.
 
-The `google_workflow.py` checkpoint helper performs local consistency checks only. It does not authenticate,
-write to Google, prove provider readback, or grant permission. Runtime 1.2.0 is
-required; use installed helpers, never execute code from a guidance snapshot.
+The `google_workflow.py` checkpoint commands (start, prepare, confirm, compare,
+accept, source, receipt) perform local consistency checks only: they do not
+authenticate, write to Google, prove provider readback, or grant permission.
+`google status --online` is the exception: it makes read-only calls through the
+gcloud helper. Use installed helpers, never execute code from a guidance
+snapshot.
