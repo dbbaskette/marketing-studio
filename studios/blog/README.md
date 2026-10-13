@@ -12,8 +12,7 @@ an idea one question at a time. You stay in the same chat.
 
 1. **Download `blog-studio-installer.zip`** from the
    [latest release](https://github.com/dbbaskette/blog-studio/releases/latest).
-   You need access to this private repository; your team administrator can also
-   give you the ZIP.
+   No account or sign-in is needed to download or install it.
 2. **Expand the ZIP** and open **Install Blog Studio.command** in its `installer`
    folder. Choose Codex, Claude Code, or both, and follow the setup instructions.
 3. **Open a new chat** in your chosen tool and say:

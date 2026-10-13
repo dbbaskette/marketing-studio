@@ -77,6 +77,25 @@ Two limits to know:
 - `main` has no branch protection rule, so GitHub does not enforce the gate. If
   a rule is added, require the four `verify (…)` checks.
 
+## Changing a workflow file
+
+This repository is public, so the runner service that starts the Tart machines
+treats its workflow files as an approved set. It serves a pull request only
+while both are true on `main`:
+
+- the active workflows are exactly the ones the service lists, and
+- each listed workflow file matches the hash recorded for it.
+
+Adding a workflow, enabling a disabled one, or editing a listed file therefore
+stops every Tart check until the owner records the new set and hashes in the
+runner service's configuration. While it refuses, the service logs
+`Public trusted workflow boundary changed`, and the pull request's `verify (…)`
+checks stay queued.
+
+Treat `.github/workflows/` as owner-approved files. A pull request that touches
+them says so at the top of its description, and the owner re-approves the set
+after it merges. Until then, run `check.sh` yourself before merging anything.
+
 `verify-tart.yml` uses `pull_request_target`, so its definition always comes
 from `main` and a pull request cannot edit the conditions that decide whether
 its code may run on the self-hosted machines. A change to that file therefore
