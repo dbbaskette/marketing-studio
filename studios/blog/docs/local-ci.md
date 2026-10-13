@@ -35,8 +35,9 @@ that can use the network. With neither, it prints
 `SKIPPED lint and format check`, records the same line in `lint.txt` and carries
 on with the other checks.
 
-Set `BLOG_STUDIO_REQUIRE_LINT=1` to make a missing linter a failure instead of a
-skip. All three workflows set it.
+Under GitHub Actions a missing linter is a failure instead of a skip, so the
+gate cannot pass without linting. Set `BLOG_STUDIO_REQUIRE_LINT=1` for the same
+behavior elsewhere; the release script does.
 
 ### Guidance budgets
 
@@ -53,9 +54,11 @@ or record the new sizes on purpose with `python3 scripts/measure_guidance.py`.
 | --- | --- | --- | --- |
 | `verify-tart.yml` | `Verify Blog Studio / verify (…)` | Pull requests opened by the repository owner from this repository | Self-hosted Tart virtual machines, macOS and Linux, Python 3.11 and 3.13 |
 | `ci.yml` | `Hosted checks / hosted (…)` | Every pull request and push to `main`, while the workflow is enabled | GitHub-hosted Linux and macOS, Python 3.11 and 3.13 |
-| `release.yml` | `Release / release` | Push to `main`, or run by hand | GitHub-hosted Linux. If the version in `VERSION` has no tag: `check.sh`, build, publish the release |
 
-All three run `check.sh` and nothing else for the project checks.
+Both run `check.sh` and nothing else for the project checks. Releases are
+published by `scripts/release.sh`, run by the owner from a current `main`; it
+runs `check.sh` first. There is no release workflow, because the runner service
+described below allows only its one approved workflow to be active.
 
 ## The gate
 

@@ -58,10 +58,6 @@ jobs:
           printf 'CI_PYTHON=%s\n' "$python_bin" >> "$GITHUB_ENV"
       - name: Test helpers, installer, bundle, guidance and source integrity
         shell: bash
-        env:
-          # This workflow is the pull request gate, so a missing linter fails it. check.sh
-          # fetches the pinned ruff through uv, which the runner already provides.
-          BLOG_STUDIO_REQUIRE_LINT: '1'
         run: |
           bash scripts/ci/check.sh "$CI_PYTHON" "$RUNNER_TEMP/blog-studio-checks" || {
             cat "$RUNNER_TEMP/blog-studio-checks/tests.log" || true

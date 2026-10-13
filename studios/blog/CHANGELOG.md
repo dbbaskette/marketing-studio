@@ -3,6 +3,19 @@
 Releases are published from `skills/blog-studio/VERSION`. Each entry says what
 changes for authors first, then what changes for maintainers.
 
+## Unreleased
+
+**For maintainers**
+
+- Releases are published with `bash scripts/release.sh` from a clean, current
+  `main`. The `release.yml` workflow added in 2.0.0 is removed: the runner
+  service that checks pull requests serves this repository only while its one
+  approved workflow is the only active one, so a second workflow stopped every
+  pull request check.
+- `verify-tart.yml` is back to its approved content. `check.sh` now requires
+  the linter whenever it runs under GitHub Actions, so the workflow does not
+  have to ask for it.
+
 ## 2.0.0
 
 Blog Studio is now installed as one complete skill. The earlier design, a small

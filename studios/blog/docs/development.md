@@ -45,7 +45,7 @@ Use Python 3.11 or later. Node is needed for the two browser-script checks.
 bash scripts/ci/check.sh "$(command -v python3)" /tmp/blog-studio-checks
 ```
 
-That script is what CI and the release workflow run. It lints and checks
+That script is what CI and the release script run. It lints and checks
 formatting, checks shell syntax, validates both skill folders, proves the build
 is reproducible (`scripts/build.py --check`), checks the prompt generator and
 the guidance budgets, then runs the test suite. Results and the test log are
@@ -116,11 +116,16 @@ To release:
 1. Change `skills/blog-studio/VERSION` and add a section headed `## <version>`
    to [CHANGELOG](../CHANGELOG.md).
 2. Merge to `main`.
-3. `release.yml` sees that tag `v<version>` does not exist, runs the checks,
+3. From a clean checkout of the current `main`, run `bash scripts/release.sh`.
+   It refuses if tag `v<version>` already exists; otherwise it runs the checks,
    builds, and publishes the GitHub Release with the three archives, their
-   checksums and that changelog section.
+   checksums and that changelog section. `--dry-run` does everything except
+   publish.
 
-A push that does not change `VERSION` publishes nothing. Raise the major
+Releasing is a script rather than a workflow because the runner service that
+checks pull requests serves this repository only while its one approved
+workflow is the only active one; see
+[changing a workflow file](local-ci.md#changing-a-workflow-file). Raise the major
 version when an installed copy can no longer read existing workspaces or Team
 Hubs without a migration; otherwise raise the minor or patch number. Team Hub
 layout compatibility is tracked separately by the `minimum_runtime` values in

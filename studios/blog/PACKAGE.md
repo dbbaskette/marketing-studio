@@ -58,10 +58,10 @@ include list, sorts entries, and stamps a fixed time and mode, so the same tree
 produces the same bytes on the same Python build. It never writes into the
 source tree.
 
-Merging a change to `VERSION` into `main` runs
-[`release.yml`](.github/workflows/release.yml): if tag `v<VERSION>` does not
-exist yet, it runs the checks, builds, and creates the tag and its GitHub
-Release with the archives, checksums and that version's changelog section.
+After a change to `VERSION` is merged into `main`, the owner runs
+[`scripts/release.sh`](scripts/release.sh): if tag `v<VERSION>` does not exist
+yet, it runs the checks, builds, and creates the tag and its GitHub Release
+with the archives, checksums and that version's changelog section.
 See the [developer guide](docs/development.md).
 
 ## Team Hub and writing data
