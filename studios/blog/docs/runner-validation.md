@@ -45,13 +45,16 @@ worker, not a live assistant.
 - `python skills/blog-studio/scripts/validate_package.py` and
   `python scripts/build.py --check`: passed; package links and reproducibility
   were checked. Guidance remains within the recorded budgets.
-- Desktop layout inspected in the collaborative browser using the actual page,
+- Desktop and 390-pixel mobile layout inspected in the collaborative browser using the actual page,
   CSS and scripts with synthetic API responses. The new-blog form and review
   dialog were inspected. A form-padding problem was corrected. The browser
   could not reach the local server, so this is layout evidence, not a browser
   to server acceptance run. The HTTP pipeline was exercised separately.
 
-The full local suite and Tart results are recorded with the pull request.
+The full local check script passed 455 tests across 29 files before the final
+runner refinements; the updated runner then passed all 23 targeted tests and
+the process-adapter tests. The final commit's full matrix runs on the existing
+Tart runner and its results are recorded with the pull request.
 Live model calls, multi-account GitHub permissions and live Google transfers
 were not exercised. Two local clones of one fixture account establish neither
 multi-account permissions nor Google acceptance. This runner uses the existing
