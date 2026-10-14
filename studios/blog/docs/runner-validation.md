@@ -40,14 +40,21 @@ Use the checkout’s Python 3.11+ interpreter (`.venv/bin/python` locally).
 All reports below were produced on 2026-10-14.
 
 - `BLOG_STUDIO_TEST_JOBS=8 bash scripts/ci/check.sh "$PWD/.venv/bin/python"
-  /tmp/blog-studio-training-parity-check-20261014`: results are recorded in that
-  directory and on the pull request.
+  /tmp/blog-studio-training-parity-check-20261014`: exercised 462 tests. The
+  initial run had four failures: two HTTP assertions expected the old page name,
+  and two archive comparisons overlapped edits to packaged assets. After the
+  title assertions were updated and the tree settled, all five `test_bundle.py`
+  tests and both affected HTTP tests passed. The other full-run results are
+  retained. Lint, format, package, build and guidance checks passed.
 - `python -m unittest discover -s tests -p 'test_blog_runner.py'`: 28 targeted
   checks passed, covering authenticated HTTP gates, both subprocess adapters,
   cancellation, edit protection, modes, local defaults, approved comparisons and
   a second-clone Hub handoff with selected sources, voice and approval history.
   The final completed-page revision regression also passed separately with
   `-k completed_page_revision`.
+- Rechecks: `python -m unittest discover -s tests -p test_bundle.py` (5 passed),
+  plus `test_editorial_tools.py -k ManagementTests.test_http_auth_host_origin_paths_and_page`
+  and `-k ManagementTests.test_headers_methods_and_cross_site_requests` (1 each).
 - `node scripts/ci/check-management.cjs`: passed after the final page edits.
   Covers explicit confirmation, version tokens, rendered Markdown, unsafe link
   refusal, stale-reader protection, navigation during creation, wizard modes,
