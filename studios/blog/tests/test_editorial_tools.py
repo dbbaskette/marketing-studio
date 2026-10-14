@@ -1697,7 +1697,7 @@ class ManagementTests(Fixture):
         self.assertEqual(self.request(server, token, '/../../private')[0], 404)
         status, page = self.request(server, token, '/')
         self.assertEqual(status, 200)
-        self.assertIn(b'Editorial desk', page)
+        self.assertIn(b'<title>Blog Studio</title>', page)
         self.assertEqual(
             self.request(
                 server,
@@ -1870,7 +1870,7 @@ class ManagementTests(Fixture):
         server, token = self.unbound()
         status, headers, page = self.exchange(server, token, '/')
         self.assertEqual(status, 200)
-        self.assertIn(b'Editorial desk', page)
+        self.assertIn(b'<title>Blog Studio</title>', page)
         self.assertEqual(headers['Cross-Origin-Resource-Policy'], 'same-origin')
         self.assertEqual(headers['Server'], 'Blog Studio desk')
         self.assertEqual(headers['X-Content-Type-Options'], 'nosniff')

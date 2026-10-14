@@ -28,6 +28,9 @@ ASSETS = Path(__file__).resolve().parents[1] / 'assets' / 'management'
 STATIC = {
     '/': ('index.html', 'text/html; charset=utf-8'),
     '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
+    '/runner.js': ('runner.js', 'text/javascript; charset=utf-8'),
+    '/markdown.js': ('markdown.js', 'text/javascript; charset=utf-8'),
+    '/blog.css': ('blog.css', 'text/css; charset=utf-8'),
     '/style.css': ('style.css', 'text/css; charset=utf-8'),
 }
 MAX_BODY = 15 * 1024 * 1024
@@ -1201,7 +1204,15 @@ def dispatch(root, route, data):
             )
         return result
     with studio.locked(root):
+        if route == 'run-settings':
+            from blog_runner import settings
+
+            return settings(root, data)
         adapter = authorize_write(root)
+        if route.startswith('run-'):
+            from blog_runner import dispatch as run_dispatch
+
+            return run_dispatch(root, route[4:], data)
         if route == 'library-preview':
             return library_preview(root, data)
         if route == 'library-import':
@@ -1441,6 +1452,19 @@ def whole(value):
 def view(root, name, query):
     """Read-only desk views by name. Returns None for an unknown view."""
     arg = lambda key, default=None: query.get(key, [default])[0]
+    if name in ('runs', 'run', 'run-options', 'run-file', 'run-settings'):
+        import blog_runner
+
+        with studio.locked(root):
+            if name == 'runs':
+                return blog_runner.catalog(root)
+            if name == 'run-options':
+                return blog_runner.options(root)
+            if name == 'run-settings':
+                return blog_runner.settings(root)
+            if name == 'run-file':
+                return blog_runner.document(root, arg('id'), arg('stage'))
+            return blog_runner.engine(root).describe(arg('id'))
     limit, offset = whole(arg('limit', 20)), whole(arg('offset', 0))
     if name == 'board':
         return editorial.board(root, arg('query', ''), arg('stage'), arg('owner'), limit, offset)
@@ -1687,7 +1711,20 @@ def main(root, port=0, open_browser=False, harness=None):
     if harness:
         source_curator.configure(root, harness)
     analysis = launch_note(root, harness)
-    httpd, url = server(root, port)
+    import blog_runner
+    from hub_store import acquire_lock, release_lock
+
+    # A second desk may read, but must never launch a second scheduler for this workspace.
+    runner_lock = acquire_lock(studio.inside(root, '.blog-runner.lock'), wait=0)
+    if runner_lock is None:
+        raise ValueError('A Blog Studio page is already running for this workspace. Use that page.')
+    runner = blog_runner.engine(root)
+    try:
+        httpd, url = server(root, port)
+    except BaseException:
+        release_lock(runner_lock)
+        raise
+    runner.start()
     print(
         json.dumps(
             {
@@ -1706,7 +1743,9 @@ def main(root, port=0, open_browser=False, harness=None):
     except KeyboardInterrupt:
         pass
     finally:
+        runner.close()
         httpd.server_close()
+        release_lock(runner_lock)
     return 0
 
 

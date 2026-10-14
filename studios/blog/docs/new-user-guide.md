@@ -1,6 +1,8 @@
 # Blog Studio: your first writing session
 
-Blog Studio is a skill inside the Codex or Claude Code CLI. You talk to it in plain language: bring an idea, notes, an outline, or an existing blog, then choose how much help you want. The browser preview is an optional prompt generator; your writing session happens in the CLI.
+This walkthrough uses Blog Studio in a Codex or Claude Code chat. Bring an idea,
+notes, an outline, or an existing blog, then choose how much help you want.
+For the guided browser page, see [writing on the page](runner.md).
 
 Follow this walkthrough to create, revise, and resume your first blog. The example
 uses fictional notes so you can try the process before using your own material.

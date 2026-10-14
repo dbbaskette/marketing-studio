@@ -121,6 +121,8 @@ def route(root, text, article_id=None, destination=None):
         'show pipeline': ('editorial-board', 'references/editorial/board.md'),
         'show editorial board': ('editorial-board', 'references/editorial/board.md'),
         'open editorial desk': ('manage', 'references/editorial/management.md'),
+        'open the page': ('manage', 'references/guided-runs.md'),
+        'open blog studio': ('manage', 'references/guided-runs.md'),
         'what needs my attention': ('editorial-inbox', 'references/editorial/inbox.md'),
         'refresh our blog library': ('library-preview-refresh', 'references/editorial/library.md'),
         'learn from our old blogs': ('library-lessons', 'references/editorial/library.md'),

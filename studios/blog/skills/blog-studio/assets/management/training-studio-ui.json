@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/dbbaskette/training-studio",
+  "revision": "fb085420790579c86cc94c8c51ba044f0697ddd0",
+  "files": {
+    "style.css": "8730278986bae5a73ebac3adb3835d31cb4fe8440b7f93793d8b1e421ab4cf21",
+    "markdown.js": "ca2be26c9054f706527d386434b5dd9ef368dcae69f41230cfa341a76bc95c43"
+  },
+  "note": "Shared page materials and safe Markdown renderer; blog-specific controller and compatibility styles are authored here."
+}

@@ -5,6 +5,23 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+**For authors**
+
+- Use Training Studio’s current page layout, navigation, three-step creation,
+  progress stages, paper reviews and approval sheets, with Blog Studio modes
+  for writing, outlining, revising and reviewing. Save local defaults in Settings
+  and compare a revision with its last approved version.
+- Create and run guided blogs from the page, or work through the same stages
+  with the skill in a conversation. Research questions, findings, outline,
+  draft, review and export package each wait for your approval.
+- Select your sources, voice, research scope and Codex or Claude CLI. Pause,
+  stop, retry, download Markdown, ask for changes to an earlier stage, or
+  continue the same blog in chat. Existing manuscripts can enter at review.
+- Changed inputs invalidate decisions. Old page actions and late worker results
+  cannot replace newer saved work. Runs and decisions share through the existing
+  Hub; execution starts only on computers where you explicitly resume it.
+
+
 **For maintainers**
 
 - Releases are published with `bash scripts/release.sh` from a clean, current

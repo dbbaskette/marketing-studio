@@ -3,7 +3,7 @@
 Blog Studio is a skill for the Codex or Claude Code app or CLI on your computer.
 Setup copies the whole skill, its instructions and helper scripts together, into
 a folder that setup manages. Nothing is downloaded while you write. To get a
-newer version, you run a newer installer.
+newer version, download or pull the update and run setup again.
 
 ## Before you start
 
@@ -12,14 +12,33 @@ newer version, you run a newer installer.
   is missing, install it from [python.org](https://www.python.org/downloads/macos/)
   and run setup again. Setup finds Python by itself, including Homebrew and
   python.org installations.
-- **The installer ZIP**, from the repository's
+- **An installer download or repository clone.** Get the ZIP from the
   [latest release](https://github.com/dbbaskette/blog-studio/releases/latest) or
-  from your team administrator.
+  your team administrator, or clone the public repository using Git.
 
-You do not need Git, the GitHub CLI, Node, a Google account or a model API key
-to install or to write. Git and the GitHub CLI are used only for a Team Hub.
+Git is needed for the clone option or a Team Hub; a ZIP install and local writing
+can work without it. You do not need the GitHub CLI, Node, a Google account or a
+model API key to install or to write. A Team Hub also needs the GitHub CLI.
 
 ## Install
+
+Choose either method. Both use the same installer and managed skill locations.
+
+### Clone and run
+
+With Git installed, open Terminal and run:
+
+```sh
+git clone https://github.com/dbbaskette/blog-studio.git
+cd blog-studio
+sh installer/install.sh
+```
+
+Cloning downloads the current code from the repository. The ZIP option below
+installs the packaged release. You do not need a GitHub account to download
+either one.
+
+### Download the ZIP
 
 1. Open the [latest release](https://github.com/dbbaskette/blog-studio/releases/latest)
    and download `blog-studio-installer.zip`.
@@ -35,16 +54,19 @@ to install or to write. Git and the GitHub CLI are used only for a Team Hub.
    Finder; it runs the same setup. macOS may refuse to open that launcher
    because it is an unsigned download. The Terminal command above normally
    still works, so use it rather than changing security settings.
-4. Choose **Codex**, **Claude Code** or **Both**, check the locations shown, and
+
+### Finish setup
+
+1. Choose **Codex**, **Claude Code** or **Both**, check the locations shown, and
    confirm.
-5. Open a **new** session in your tool and invoke the skill: `$blog-studio` in
-   Codex, `/blog-studio` in Claude Code. Try: “Help me build an outline from my
-   notes. Stop at the outline.”
+2. Open your tool in a folder for your writing, start a **new** session, and invoke
+   the skill: `$blog-studio` in Codex, `/blog-studio` in Claude Code. Try: “Help me
+   build an outline from my notes. Stop at the outline.”
 
 Setup needs no `sudo` and no network. It verifies every copied file, runs the
 helpers once in a throwaway folder, and only then switches the skill on. Finding
 the skill inside your tool is the one thing setup cannot check for you, which is
-why step 5 asks for a new session.
+why the final step asks for a new session.
 
 To install without questions, for example from a script or when an assistant
 runs setup for you:
@@ -62,6 +84,16 @@ sh "/path with spaces/blog-studio-setup/installer/install.sh" check
 If you want to confirm the download is intact, the release also carries
 `blog-studio-installer.zip.sha256`. With both files in one folder, run
 `shasum -a 256 -c blog-studio-installer.zip.sha256`.
+
+## Open the writing page
+
+After installation, ask your assistant: **“Use Blog Studio. Open the page.”**
+Use an existing writing workspace or choose a new one outside the skill folder.
+The same page supports the editorial desk and **New blog**. Writing there needs
+an installed, signed-in Codex or Claude CLI. The installer brings the runner as
+part of the complete skill; no extra Python packages are needed.
+
+See [page and conversation workflows](https://github.com/dbbaskette/blog-studio/blob/main/docs/runner.md).
 
 ## What setup puts where
 
@@ -85,9 +117,18 @@ removing Blog Studio do not touch it.
 
 ## Update
 
-Download the installer ZIP from the newest release and run setup again. It
-updates the tools you chose the first time, keeps the previous version for
-rollback, and leaves your writing alone. If only one tool is set up, setup asks
+For a repository clone, open Terminal in your `blog-studio` folder and run:
+
+```sh
+git pull --ff-only
+sh installer/install.sh
+```
+
+For a ZIP install, download the installer ZIP from the newest release and run
+setup again.
+
+Both methods update the tools you chose the first time, keep the previous version
+for rollback, and leave your writing alone. If only one tool is set up, setup asks
 once whether to add the other. Open a new session afterwards.
 
 Each blog records the Blog Studio version it was started with, so its completed
@@ -112,8 +153,8 @@ upgrades the existing installation in place.
 
 ## Check, repair, roll back or remove
 
-Run these from the `blog-studio-setup` folder of any current installer download.
-Both launchers accept the same words.
+Run these from your current `blog-studio` clone or expanded `blog-studio-setup`
+folder. Both launchers accept the same words.
 
 ```sh
 sh installer/install.sh check
