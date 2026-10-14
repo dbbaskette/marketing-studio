@@ -26,6 +26,24 @@ needs a newer Blog Studio runtime, this update is what it is asking for.
 
 [Setup help, company laptop instructions, and updates →](docs/installation.md)
 
+## Two ways to work
+
+| | On the page | In a conversation |
+| --- | --- | --- |
+| Start | Open the page and choose **New blog** | Ask your assistant to use **Blog Studio** |
+| Writing | The runner starts Codex or Claude for each stage | Your assistant writes with you |
+| Decisions | Approve or request changes on the page | Approve or request changes in chat |
+| Resume | Open **Writing runs** | Ask to continue your saved blog |
+
+Both keep the same sources, voice and saved writing. A guided blog stops for
+approval at research questions, findings, outline, draft, review and export
+package; you can omit research or choose an earlier stop. You can switch between
+the page and your conversation without making another blog.
+
+To open the page, say **“Use Blog Studio. Open the page.”** It needs a signed-in
+Codex or Claude CLI to run the writing. Closing the browser leaves it working;
+keep its terminal open. [Writing on the page and in chat →](docs/runner.md)
+
 ## Start with what you have
 
 | You have… | Say… |

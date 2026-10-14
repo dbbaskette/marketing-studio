@@ -5,6 +5,10 @@ description: Write and revise blogs, learn author voices, resume work, browse an
 
 # Blog Studio
 
+For a guided blog with approvals, or “run this on the page,” read
+[guided runs](references/guided-runs.md). The same blog can run on the page or
+in this conversation. Ordinary focused writing requests keep the routes below.
+
 Read [entry flow](references/entry-flows.md) for writing starts. For setup/help,
 “My blogs,” or memory controls, load only [getting started](references/getting-started.md),
 [resume](references/workspace/resume.md), or [context](references/workspace/context.md).

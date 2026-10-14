@@ -21,11 +21,11 @@ function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{reso
 function fixture(responder=()=>({items:[],total:0})){
   const nodes=new Map();const get=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};
   const document={getElementById:get,createElement:t=>new Element(t),querySelector:s=>s==='dialog[open]'?[...nodes.values()].find(n=>n.open):null,querySelectorAll:s=>[...nodes.values()].flatMap(n=>n.querySelectorAll(s))};
-  const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:()=>'',setItem:()=>{},removeItem:()=>{}},history:{replaceState:()=>{}},URLSearchParams,AbortController,Uint8Array,btoa,FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:()=>true,crypto:{randomUUID:()=> 'a'.repeat(32)},fetch:async(url,options)=>{const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
+  const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:()=>'',setItem:()=>{},removeItem:()=>{}},history:{replaceState:()=>{}},URLSearchParams,AbortController,Uint8Array,btoa,FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:()=>true,crypto:{randomUUID:()=> 'a'.repeat(32)},setInterval:()=>0,fetch:async(url,options)=>{const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
   const source=fs.readFileSync('skills/blog-studio/assets/management/app.js','utf8').split("for(const b of document.querySelectorAll('[data-view]'))")[0];
   vm.runInContext(source,context);
   vm.runInContext("access={status:'local-only',message:'Local only',actions:{edit:true,memory:false,refresh:false}}",context);
-  return {get,nodes,run:code=>vm.runInContext(code,context),set:(name,value)=>{context[name]=value;}};
+  return {get,nodes,run:code=>vm.runInContext(code,context),set:(name,value)=>{context[name]=value;},loadRunner:()=>vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/runner.js','utf8'),context)};
 }
 async function check(){
   const f=fixture();const dialog=f.get('detail-dialog');dialog.open=true;
@@ -49,11 +49,12 @@ async function check(){
   await unreadableBlogsAndBadges();
   await busyAnalysis();
   await refreshWithNewSelection();
+  await guidedRuns();
   pageDefinesEveryElement();
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -400,7 +401,7 @@ async function refreshWithNewSelection(){
 function pageDefinesEveryElement(){
   // The fixture creates any element on demand, so check the real page defines every id the script asks for.
   const base='skills/blog-studio/assets/management/';
-  const script=fs.readFileSync(base+'app.js','utf8'),page=fs.readFileSync(base+'index.html','utf8');
+  const script=fs.readFileSync(base+'app.js','utf8')+fs.readFileSync(base+'runner.js','utf8'),page=fs.readFileSync(base+'index.html','utf8');
   const defined=new Set([...page.matchAll(/id="([^"]+)"/g)].map(m=>m[1]));
   const wanted=new Set([...script.matchAll(/\$\('([a-z0-9-]+)'\)/g)].map(m=>m[1]));
   for(const prefix of ['upload','import'])for(const m of script.matchAll(/\$\(prefix\+'(-[a-z-]+)'\)/g))wanted.add(prefix+m[1]);
@@ -408,4 +409,27 @@ function pageDefinesEveryElement(){
   const created=new Set([...script.matchAll(/\.id='([a-z0-9-]+)'/g)].map(m=>m[1]));
   const missing=[...wanted].filter(id=>!defined.has(id)&&!created.has(id));
   assert.deepEqual(missing,[],'app.js uses ids that index.html does not define');
+}
+
+async function guidedRuns(){
+  const requests=[];
+  const found={id:'synthetic',title:'Synthetic blog',status:'waiting-for-approval',next:'outline',approval:'page',expected:'version-1',enabled:true,directory:'/synthetic/articles/synthetic',content:'# Outline\nSynthetic writing.',stages:[{stage:'outline',label:'Outline',status:'draft',notes:'Assistant judgment, not verification.'},{stage:'draft',label:'Draft',status:'pending'}]};
+  const f=fixture((url,options)=>{requests.push({url,options});if(url==='/api/run-approve')return {...found,next:'draft',expected:'version-2',status:'queued',stages:[{...found.stages[0],status:'approved'},found.stages[1]]};return found;});
+  f.loadRunner();f.set('found',found);f.run('renderRun(found)');
+  const content=f.get('run-content');
+  assert.ok(descendants(content).some(e=>e.textContent==='Approve Outline'));
+  assert.ok(descendants(content).some(e=>e.textContent==='Continue in chat'));
+  assert.ok(descendants(content).some(e=>e.textContent==='# Outline\nSynthetic writing.'));
+  const approve=descendants(content).find(e=>e.textContent==='Approve Outline');await approve.listeners.click();
+  assert.equal(requests[0].url,'/api/run-approve');
+  assert.deepEqual(JSON.parse(requests[0].options.body),{id:'synthetic',expected:'version-1'});
+  f.set('found',{...found,approval:'conversation',status:'in-chat'});f.run('renderRun(found)');
+  assert.ok(descendants(content).some(e=>e.textContent==='Run this from here'));
+  assert.ok(!descendants(content).some(e=>e.textContent==='Approve Outline'));
+  f.set('found',{...found,status:'failed',error:'Synthetic failure',enabled:false});f.run('renderRun(found)');
+  assert.ok(descendants(content).some(e=>e.textContent==='Retry step'));
+  assert.ok(descendants(content).some(e=>e.textContent==='Synthetic failure'));
+  f.set('found',{items:[{id:'synthetic',title:'Synthetic blog',status:'working',next:'outline'}],total:1});
+  f.run('renderRuns(found)');assert.equal(f.get('heading').textContent,'Writing runs');
+  assert.ok(descendants(f.get('results')).some(e=>e.textContent==='Synthetic blog'));
 }

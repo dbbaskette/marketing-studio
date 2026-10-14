@@ -759,6 +759,9 @@ def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--root', required=True, help='Absolute path to an author-chosen data workspace')
     groups = p.add_subparsers(dest='group', required=True)
+    from blog_runner import add_parser as run_parser
+
+    run_parser(groups)
     groups.add_parser('init')
     listing = groups.add_parser('list')
     listing.add_argument('kind', choices=('profiles', 'sources', 'articles'))
@@ -934,7 +937,11 @@ def main():
             from management import main as manage
 
             return manage(root, args.port, args.open, args.harness)
-        if args.group == 'library' and args.action in ('collections', 'find', 'read'):
+        if args.group == 'run':
+            from blog_runner import command
+
+            result = command(root, args)
+        elif args.group == 'library' and args.action in ('collections', 'find', 'read'):
             from blog_library import command
 
             result = command(root, args)

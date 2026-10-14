@@ -76,3 +76,6 @@ research** once when scope is undecided. “Research uploaded sources only” an
 “Research uploaded sources plus external research” select a mode directly;
 record it with `article research-policy` and reuse it for the current blog.
 Proofreading remains separate.
+
+For “Open the page,” guided stage approvals, or switching a blog between chat
+and the page, use [guided runs](guided-runs.md).

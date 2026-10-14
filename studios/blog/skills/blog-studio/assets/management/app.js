@@ -10,7 +10,7 @@ let access = {status:'checking',message:'Checking Hub access…',actions:{edit:f
 let accessGeneration = 0;
 const operationCache = new Map();
 function operationFor(kind,data){const key=kind+JSON.stringify(data);if(!operationCache.has(key))operationCache.set(key,crypto.randomUUID().replaceAll('-',''));return operationCache.get(key);}
-const views = {board:['Blogs in progress','Plan the next handoff. Open a Doc. Keep writing.','Writing pipeline'],inbox:['Needs attention','Find waiting decisions, review findings and stale companions.','Review inbox'],library:['Reference library','Find earlier work and curate the material your team uses.','Sources and historical posts'],memory:['Team memory','Keep useful knowledge and writing guidance easy to find.','Shared notes, context and rules']};
+const views = {runs:['Writing runs','Start a blog, review each stage, and pick up where you left off.','Your writing runs'],board:['Blogs in progress','Plan the next handoff. Open a Doc. Keep writing.','Writing pipeline'],inbox:['Needs attention','Find waiting decisions, review findings and stale companions.','Review inbox'],library:['Reference library','Find earlier work and curate the material your team uses.','Sources and historical posts'],memory:['Team memory','Keep useful knowledge and writing guidance easy to find.','Shared notes, context and rules']};
 function element(tag, text, cls) {const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function notice(message, error=false) {
   const dialog=document.querySelector('dialog[open]');
@@ -27,6 +27,7 @@ function analysisChoice(prefix) {
 function applyCapabilities() {
   $('access-status').textContent=access.message;
   $('upload-open').disabled=!access.actions.edit;
+  $('new-blog').disabled=!access.actions.edit;
   $('import-open').disabled=!access.actions.edit;
   $('memory-open').disabled=!access.actions.memory;
   $('refresh-hub').disabled=!access.actions.refresh;
@@ -157,6 +158,7 @@ async function load() {
 }
 function render(state, result) {
   const {view,offset}=state, total=result.total;
+  if(view==='runs'){renderRuns(result);return;}
   $('heading').textContent=views[view][0];$('subtitle').textContent=views[view][1];$('section-title').textContent=views[view][2];$('count').textContent=total+' '+(total===1?'item':'items');
   $('import-open').hidden=view!=='library';$('stage-filter').hidden=view!=='board';$('memory-open').hidden=view!=='memory';$('previous').disabled=offset===0;$('next').disabled=offset+limit>=total;$('page-label').textContent=total?`${offset+1}–${Math.min(offset+limit,total)} of ${total}`:'No items yet';
   $('query').placeholder={board:'Blog title, author, owner…',inbox:'Blog, finding, status…',library:'Title, author, topic…',memory:'Title, kind, scope…'}[view];
@@ -164,7 +166,7 @@ function render(state, result) {
   $('results').replaceChildren();
   const unreadable=view==='board'||view==='inbox'?unreadableNote(result):null;
   if(unreadable)$('results').append(unreadable);
-  if(!result.items.length){const box=element('div',undefined,'empty');box.append(element('h3',{board:'Your next blog starts here',inbox:'Nothing in this saved inbox',library:'Build your reference shelf',memory:'Give your team useful context'}[view]),element('p',{board:'Upload a draft, start a blog in chat, or join your team’s Hub to find shared work.',inbox:'Run a review in chat to collect findings. Google review status is not checked live here.',library:'Choose “Import old blogs” to add a folder, website, feed or export, or upload a single reference.',memory:'Join a Team Hub, then save a note, context, or writing rule.'}[view]));$('results').append(box);return;}
+  if(!result.items.length){const box=element('div',undefined,'empty');box.append(element('h3',{board:'Your next blog starts here',inbox:'Nothing in this saved inbox',library:'Build your reference shelf',memory:'Give your team useful context'}[view]),element('p',{board:'Choose New blog to write here, upload a draft, or start a blog in chat.',inbox:'Run a review in chat to collect findings. Google review status is not checked live here.',library:'Choose “Import old blogs” to add a folder, website, feed or export, or upload a single reference.',memory:'Join a Team Hub, then save a note, context, or writing rule.'}[view]));$('results').append(box);return;}
   const table=element('table'),head=element('tr');table.setAttribute('role','table');head.setAttribute('role','row');table.className='view-'+view;const headings={board:['Blog / author','Stage','Owner / due','Working copy'],inbox:['Blog','Finding','Status','Next action'],library:['Reference / author','Status','Collection / date','Actions'],memory:['Memory','Kind','Applies to','Actions']}[view];headings.forEach(h=>{const th=element('th',h);th.setAttribute('scope','col');head.append(th);});const thead=element('thead');thead.append(head);table.append(thead);const body=element('tbody');
   for(const item of result.items){const row=element('tr');row.setAttribute('role','row');
     if(view==='board'){const cell=textCell(row,'');cell.append(button(item.title,()=>showBlog(item),'title-button'),element('p',item.author));const stage=textCell(row,'');stage.append(badge(item.stage));if(item.conflict||item.shared_newer)stage.append(element('p',item.conflict?'Competing revisions':'New shared revision'));const owner=textCell(row,item.owner);if(item.due)owner.append(element('p',(item.overdue?'Overdue · ':'Due · ')+item.due,item.overdue?'overdue':''));const doc=textCell(row,'');doc.append(item.google?link(item.google.url,'Open Google Doc ↗'):element('span',item.location==='hub'?'Saved in Team Hub':'Local writing'));if(item.google)doc.append(element('p','Saved link; refresh Google in chat'));}
@@ -239,6 +241,7 @@ function articleContent(item, result, selectedFinding) {
   const counts={};for(const review of state.reviews)counts[review.status]=(counts[review.status]||0)+1;
   status.append(element('p','Reviews: '+(Object.entries(counts).map(([name,count])=>count+' '+name).join(', ')||'none saved')+'.'));
   content.append(status);
+  if(result.location==='local'&&access.actions.edit&&!state.conflict&&!state.shared_newer)content.append(button('Open writing run',()=>openBlogRun(item.id)));
   if(selectedFinding) {
     const finding=selectedFinding.finding,section=element('section',undefined,'selected-finding');
     section.append(element('h3',finding.kind+' · '+finding.status));

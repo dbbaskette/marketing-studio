@@ -30,3 +30,12 @@ dialog{border:1px solid var(--line);border-radius:12px;padding:0;color:var(--ink
 .import-post-list a{display:block;margin:.5rem 0 0 2rem;overflow-wrap:anywhere;font-size:.85rem}
 
 #import-dialog .import-actions{position:sticky;bottom:-20px;background:white;padding:12px 0;border-top:1px solid var(--line);z-index:1}
+
+/* Guided runs share the desk's typography, controls and responsive layout. */
+.run-card{padding:1.2rem;border-bottom:1px solid var(--line,#ddd)}
+.run-stages{padding-left:1.5rem;line-height:1.8}
+.run-stages details{font-size:.9rem;line-height:1.5}
+.run-actions{display:flex;flex-wrap:wrap;gap:.6rem;margin:1rem 0}
+#run-dialog{width:min(980px,94vw)}
+#run-content .manuscript-preview{max-height:55vh;white-space:pre-wrap;overflow-wrap:anywhere}
+#new-blog-form select[multiple]{min-height:7rem}

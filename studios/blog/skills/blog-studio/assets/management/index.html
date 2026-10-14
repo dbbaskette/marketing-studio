@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Blog Studio · Editorial desk</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Blog Studio</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script><script src="/runner.js" defer></script></head>
 <body>
-<aside class="sidebar"><a class="brand" href="/">BLOG<br><strong>STUDIO<span>✎</span></strong></a><p class="workspace-label">Editorial desk</p><nav aria-label="Workspace views"><button data-view="board" aria-current="page"><span>Blogs in progress</span></button><button data-view="inbox"><span>Needs attention</span></button><button data-view="library"><span>Reference library</span></button><button data-view="memory"><span>Team memory</span></button></nav><div class="sidebar-note"><span class="dot"></span>Private, on your computer<p>Connected to your selected writing workspace. GitHub controls team access.</p></div></aside>
+<aside class="sidebar"><a class="brand" href="/">BLOG<br><strong>STUDIO<span>✎</span></strong></a><p class="workspace-label">Editorial desk</p><nav aria-label="Workspace views"><button data-view="runs"><span>Writing runs</span></button><button data-view="board" aria-current="page"><span>Blogs in progress</span></button><button data-view="inbox"><span>Needs attention</span></button><button data-view="library"><span>Reference library</span></button><button data-view="memory"><span>Team memory</span></button></nav><div class="sidebar-note"><span class="dot"></span>Private, on your computer<p>Connected to your selected writing workspace. GitHub controls team access.</p></div></aside>
 
-<main><header><div><p class="eyebrow">Your team’s work, in one place</p><h1 id="heading">Blogs in progress</h1><p id="subtitle">Plan the next handoff. Open a Doc. Keep writing.</p></div><div class="actions"><button id="refresh-hub" class="secondary">Refresh Hub</button><button id="upload-open" class="primary">＋ Upload</button></div></header>
+<main><header><div><p class="eyebrow">Your team’s work, in one place</p><h1 id="heading">Blogs in progress</h1><p id="subtitle">Plan the next handoff. Open a Doc. Keep writing.</p></div><div class="actions"><button id="new-blog" class="primary">＋ New blog</button><button id="refresh-hub" class="secondary">Refresh Hub</button><button id="upload-open" class="secondary">Upload</button></div></header>
 
 <section class="access-panel" aria-label="Workspace access">
 <div class="access-lines">
@@ -21,7 +21,7 @@
 <section class="desk-panel"><div class="panel-heading"><h2 id="section-title">Writing pipeline</h2><span id="count"></span></div><p id="loading" role="status" aria-live="polite" hidden></p><div id="results" aria-live="polite"></div><footer class="pagination"><button id="previous" class="secondary">← Previous</button><span id="page-label"></span><button id="next" class="secondary">Next →</button></footer></section>
 
 <p class="footnote" id="observation">Saved metadata. Google Docs status is checked only when you request it in chat.</p>
-<section class="chat-tip"><div class="tip-mark">↗</div><div><h2>Keep the writing in your chat</h2><p>Ask Blog Studio to <strong>proofread</strong>, <strong>show evidence</strong>, <strong>prepare a publication package</strong>, or <strong>find our previous blogs about a topic</strong>.</p></div></section>
+<section class="chat-tip"><div class="tip-mark">↗</div><div><h2>Write here or in your chat</h2><p>Choose <strong>New blog</strong> to run each stage here, or ask your assistant to use <strong>Blog Studio</strong>. Your sources, voice and saved writing stay together.</p></div></section>
 </main>
 <dialog id="detail-dialog"><div class="dialog-header"><h2 id="detail-title">Blog details</h2><button data-close class="close" aria-label="Close dialog">×</button></div><div id="detail-content" class="dialog-content"></div></dialog>
 
@@ -61,4 +61,24 @@ When an analysis CLI is configured and “Summarize and tag” stays checked at 
 <div class="import-actions"><button id="import-save" class="primary" hidden>Import first batch</button><button id="import-retry" class="secondary" hidden>Retry failed posts</button><button id="import-reload" class="secondary" hidden>Reload saved preview</button></div>
 </div></dialog>
 
+<dialog id="new-blog-dialog"><form id="new-blog-form">
+<div class="dialog-header"><h2 id="new-blog-heading">New blog</h2><button type="button" data-close class="close" aria-label="Close dialog">×</button></div>
+<div class="dialog-content"><input id="new-blog-id" type="hidden">
+<label>Title<input id="new-blog-title" required maxlength="500"></label>
+<label>What should this blog accomplish?<textarea id="new-blog-goal" required maxlength="2000" rows="3"></textarea></label>
+<label>Who is it for?<input id="new-blog-audience" required maxlength="500"></label>
+<label>Author<input id="new-blog-author" maxlength="200"></label>
+<label>Voice<select id="new-blog-voice"><option value="">Use the tone below</option></select></label>
+<label>Tone<input id="new-blog-tone" maxlength="2000" value="Clear, conversational and specific"></label>
+<label>Sources<select id="new-blog-sources" multiple size="5" aria-describedby="new-blog-source-help"></select></label>
+<p id="new-blog-source-help" class="help">Choose saved references. To add files, close this form and choose Upload first. Originals stay saved.</p>
+<label>Research<select id="new-blog-research"><option value="supplied-only">Selected sources only</option><option value="web-allowed">Selected sources plus public research</option><option value="none">No research</option></select></label>
+<label>Stop after<select id="new-blog-stop"><option value="package">Export package</option><option value="review">Review</option><option value="draft">Draft</option><option value="outline">Outline</option></select></label>
+<label>Assistant<select id="new-blog-engine"><option value="codex">Codex</option><option value="claude">Claude Code</option></select></label>
+<label>Time limit per step (seconds)<input id="new-blog-seconds" type="number" min="30" max="3600" value="600" required></label>
+<p id="new-blog-readiness" class="help"></p>
+<p class="help">Your selected assistant receives this brief, selected sources and voice. Public research uses its web search. It works until each approval, and never publishes. Usage is billed under your assistant account; this runner enforces time limits, not spending limits.</p>
+<button type="submit" class="primary">Create and start</button></div>
+</form></dialog>
+<dialog id="run-dialog"><div class="dialog-header"><h2 id="run-title">Writing run</h2><button data-close class="close" aria-label="Close dialog">×</button></div><div id="run-content" class="dialog-content"></div></dialog>
 </body></html>

@@ -63,6 +63,16 @@ If you want to confirm the download is intact, the release also carries
 `blog-studio-installer.zip.sha256`. With both files in one folder, run
 `shasum -a 256 -c blog-studio-installer.zip.sha256`.
 
+## Open the writing page
+
+After installation, ask your assistant: **“Use Blog Studio. Open the page.”**
+Use an existing writing workspace or choose a new one outside the skill folder.
+The same page supports the editorial desk and **New blog**. Writing there needs
+an installed, signed-in Codex or Claude CLI. The installer brings the runner as
+part of the complete skill; no extra Python packages are needed.
+
+See [page and conversation workflows](https://github.com/dbbaskette/blog-studio/blob/main/docs/runner.md).
+
 ## What setup puts where
 
 | Location | Purpose |
