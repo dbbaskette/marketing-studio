@@ -2,7 +2,7 @@
 const $ = id => document.getElementById(id);
 const token = location.hash.slice(1) || sessionStorage.getItem('blog-studio-session') || '';
 if(token)sessionStorage.setItem('blog-studio-session',token);
-history.replaceState(null, '', location.pathname);
+history.replaceState(null, '', location.pathname+(location.search||''));
 let view = 'board', offset = 0, total = 0, memoryEdit = null;
 const limit = 20;
 let loadGeneration = 0, loadController = null, renderedState = null;

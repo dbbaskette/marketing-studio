@@ -20,9 +20,17 @@ on this computer, from their last saved stage.
 
 ## Your first blog
 
-Choose **New blog**. Give a title, purpose and audience, select a saved voice or
-describe a tone, and choose the sources you want. To add files, use **Upload**
-first; originals are retained. The assistant receives only selected source and
+The page follows Training Studio’s current layout: **Home**, **Blogs**,
+**Status** and **Settings**, with the same glass navigation and toolbar, progress
+stages, paper documents and decision sheets. Home groups **Needs you**, **In
+progress** and **Finished**. Settings saves writing defaults on this computer
+for future page runs; existing runs keep their choices.
+
+Choose **New blog** and work through three steps: topic and audience; mode and
+voice; sources, assistant and limits. Choose **Write a blog**, **Outline only**,
+**Revise a draft**, or **Review a draft**. Revision and review accept an uploaded
+manuscript or a saved readable source; the original is retained. You can upload
+references in the wizard too. The assistant receives only selected source and
 voice context plus this blog's saved writing preferences, memories and explicitly
 selected team context. Oversized context is refused rather than silently cut.
 
@@ -43,19 +51,28 @@ spending limit; your account's usage charges or limits still apply.
 Every row has a separate approval. Choose an earlier stage under **Ask for
 changes** to revise the draft or outline after reviewing it. The later stages
 are made and approved again. You can stop at outline, draft or review instead
-of making a package. A draft brought in from the editorial desk starts at review
-and is retained as written.
+of making a package. A saved draft can enter at review or revision. Review mode
+keeps the manuscript as written; revision makes a new draft while retaining the
+original.
 
-**Writing runs** shows all guided blogs. Open one to see progress, read its
-current document, download saved Markdown files, approve or ask for changes.
+**Blogs** shows all guided blogs and saved writing. Open a run to see steps and
+made files. Each review page renders the saved Markdown as a paper document,
+with **Checked for you**, **Worth a look** and **What changed** alongside it.
+Comparisons use the exact last approved version. **Approve** opens a confirmation
+sheet; **Ask for changes** lets you select an earlier stage. A finished or
+paused run returns to **Resume** when you request a revision. A changed version
+stays separate from the document you are reading until you choose to reload it.
+The editorial pipeline, library, findings and memory tools remain available under
+**Editorial tools** on Blogs.
+
 Assistant notes are its judgment, not proof of completed checks. Public source
 links and quoted claims need review: the browser runner does not independently
 fetch and validate every citation. An approved review does not mark all existing
 Blog Studio factual checks as passed.
 
 **Pause after this step** lets the current job finish and prevents another.
-**Stop now** ends its process. Failed jobs retain previous writing and offer
-**Retry step**. No job automatically approves the result or publishes a blog.
+**Stop** ends its process. Failed jobs retain previous writing and offer
+**Try again**. No job automatically approves the result or publishes a blog.
 One job works at a time in this workspace. Models can search the web only in a
 public research job; they have no shell, file tools, connected apps or approval
 tools. Only the runner saves their returned documents.
@@ -68,9 +85,9 @@ stage and waits for your decision. Short requests such as “proofread this” k
 their existing focused workflow.
 
 You can start in either place. **Run this from here** moves a conversation run
-to the page. **Continue in chat** stops its browser worker and gives you a
-request to paste into your assistant. The same files and decisions stay in use.
-For an ordinary saved blog, open its details and choose **Open writing run**.
+to the page. **Continue in the conversation** stops its browser worker and gives
+you a request to paste into your assistant. The same files and decisions stay in use.
+For an ordinary saved blog, open its details and choose **Run this blog**.
 
 ## Saved work and teams
 

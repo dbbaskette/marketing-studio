@@ -29,6 +29,8 @@ STATIC = {
     '/': ('index.html', 'text/html; charset=utf-8'),
     '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
     '/runner.js': ('runner.js', 'text/javascript; charset=utf-8'),
+    '/markdown.js': ('markdown.js', 'text/javascript; charset=utf-8'),
+    '/blog.css': ('blog.css', 'text/css; charset=utf-8'),
     '/style.css': ('style.css', 'text/css; charset=utf-8'),
 }
 MAX_BODY = 15 * 1024 * 1024
@@ -1202,6 +1204,10 @@ def dispatch(root, route, data):
             )
         return result
     with studio.locked(root):
+        if route == 'run-settings':
+            from blog_runner import settings
+
+            return settings(root, data)
         adapter = authorize_write(root)
         if route.startswith('run-'):
             from blog_runner import dispatch as run_dispatch
@@ -1446,7 +1452,7 @@ def whole(value):
 def view(root, name, query):
     """Read-only desk views by name. Returns None for an unknown view."""
     arg = lambda key, default=None: query.get(key, [default])[0]
-    if name in ('runs', 'run', 'run-options', 'run-file'):
+    if name in ('runs', 'run', 'run-options', 'run-file', 'run-settings'):
         import blog_runner
 
         with studio.locked(root):
@@ -1454,13 +1460,10 @@ def view(root, name, query):
                 return blog_runner.catalog(root)
             if name == 'run-options':
                 return blog_runner.options(root)
+            if name == 'run-settings':
+                return blog_runner.settings(root)
             if name == 'run-file':
-                directory, _, run = blog_runner.load(root, arg('id'))
-                stage = arg('stage')
-                if stage not in run['pipeline']:
-                    raise ValueError('Choose a stage in this blog’s run.')
-                path = studio.inside(directory, blog_runner.STAGES[stage][1])
-                return {'name': path.name, 'content': path.read_text()}
+                return blog_runner.document(root, arg('id'), arg('stage'))
             return blog_runner.engine(root).describe(arg('id'))
     limit, offset = whole(arg('limit', 20)), whole(arg('offset', 0))
     if name == 'board':

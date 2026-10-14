@@ -1,6 +1,7 @@
 """One blog pipeline shared by conversation guidance and the local browser runner."""
 
 import json
+import difflib
 from pathlib import Path
 import re
 import threading
@@ -56,6 +57,42 @@ GUIDES = {
     'package': 'modules/blog-repurpose.md',
 }
 ENGINES = {}
+DEFAULTS = {
+    'engine': 'codex',
+    'seconds': 600,
+    'research': 'supplied-only',
+    'stop': 'package',
+    'tone': 'Clear, conversational and specific',
+    'author': '',
+}
+MODES = ('write', 'outline', 'revise', 'review')
+
+
+def settings(root, data=None):
+    """Local page defaults, never shared as team writing rules or run decisions."""
+    path = studio.inside(root, '.blog-run-settings.json')
+    if data is not None:
+        if set(data) != set(DEFAULTS):
+            raise ValueError('Save the displayed writing defaults only.')
+        if data['engine'] not in ('codex', 'claude') or data['research'] not in (
+            'none',
+            'supplied-only',
+            'web-allowed',
+        ):
+            raise ValueError('Choose a listed assistant and research scope.')
+        if data['stop'] not in ('outline', 'draft', 'review', 'package'):
+            raise ValueError('Choose a listed stop point.')
+        if type(data['seconds']) is not int or not 30 <= data['seconds'] <= 3600:
+            raise ValueError('Choose a step limit between 30 and 3600 seconds.')
+        for key, maximum in (('tone', 2000), ('author', 200)):
+            text(data[key], key, maximum)
+        studio.write_json(path, {'schema': 1, 'defaults': data})
+    saved = studio.read_json(path) if path.is_file() else {}
+    return {
+        'configured': bool(saved),
+        'defaults': {**DEFAULTS, **saved.get('defaults', {})},
+        'workspace': str(root),
+    }
 
 
 def text(value, label, maximum=2000, required=False):
@@ -220,6 +257,7 @@ def survey(root, ident):
         'directory': str(directory),
         'brief': run['brief'],
         'existing': run['existing'],
+        'mode': run.get('mode', 'review' if run['existing'] else 'write'),
         'decisions': run.get('decisions', [])[-30:],
     }
 
@@ -259,9 +297,29 @@ def create(root, data, approval='conversation'):
         'stop',
         'engine',
         'seconds',
+        'mode',
+        'manuscript',
     }
     if set(data) - allowed:
         raise ValueError('Unknown new-blog field.')
+    mode = data.get('mode', 'write')
+    if mode not in MODES:
+        raise ValueError('Choose write, outline, revise or review.')
+    manuscript = None
+    if data.get('manuscript'):
+        if mode not in ('revise', 'review'):
+            raise ValueError('Choose revise or review to start from a manuscript.')
+        if data.get('id'):
+            raise ValueError('Choose a saved blog or a supplied manuscript, not both.')
+        folder, source = studio.item(root, 'sources', data['manuscript'])
+        path = studio.inside(folder, 'content.md')
+        if source['status'] != 'ready' or not path.is_file() or not path.read_text().strip():
+            raise ValueError('Choose a draft with readable text.')
+        manuscript = path.read_text()
+        if len(manuscript) > 200_000:
+            raise ValueError('Use a manuscript up to 200,000 characters.')
+    if mode in ('revise', 'review') and not (data.get('id') or manuscript):
+        raise ValueError('Choose an existing blog or upload a draft first.')
     engine = data.get('engine', 'codex')
     if engine not in ('codex', 'claude'):
         raise ValueError('Choose Codex or Claude.')
@@ -272,6 +330,12 @@ def create(root, data, approval='conversation'):
     if research not in ('supplied-only', 'web-allowed', 'none'):
         raise ValueError('Choose supplied sources, public research, or no research.')
     stop = data.get('stop', 'package')
+    if mode == 'outline':
+        stop = 'outline'
+    elif mode == 'review':
+        stop = 'review'
+    elif mode == 'revise' and stop == 'outline':
+        raise ValueError('A revision starts at draft. Choose draft, review or export package.')
     if stop not in ('outline', 'draft', 'review', 'package'):
         raise ValueError('Choose outline, draft, review or export package.')
     brief = {
@@ -287,20 +351,26 @@ def create(root, data, approval='conversation'):
         raise ValueError('Select at most 50 different sources.')
     for source in sources:
         studio.item(root, 'sources', source)
-    existing = bool(data.get('id'))
-    if existing:
+    existing = bool(data.get('id') or manuscript)
+    if data.get('id'):
         directory, record = studio.item(root, 'articles', data['id'])
         if studio.inside(directory, STATE).exists():
             raise ValueError('This blog already has a guided run. Open that run instead.')
         existing = (directory / 'DRAFT.md').is_file() or (directory / 'ORIGINAL.md').is_file()
-        if existing and stop in ('outline', 'draft'):
+        if mode in ('revise', 'review') and not existing:
+            raise ValueError('This blog has no saved manuscript to revise or review.')
+        if existing and stop in ('outline', 'draft') and mode != 'revise':
             raise ValueError('An existing draft starts at review. Choose review or export package.')
     else:
         args = SimpleNamespace(
             action='create',
             id=None,
             title=title,
-            mode='outline-only' if stop == 'outline' else 'first-draft',
+            mode='existing'
+            if manuscript
+            else 'outline-only'
+            if stop == 'outline'
+            else 'first-draft',
             profile=profile,
             author=text(data.get('author', ''), 'author', 200) or None,
             voice='tone',
@@ -327,7 +397,11 @@ def create(root, data, approval='conversation'):
         record['voice'] = {'mode': 'profile', **studio.voice_pin(root, profile)}
     record['research_policy'] = 'supplied-only' if research == 'none' else research
     pipeline = [] if research == 'none' else ['research-plan', 'research']
-    pipeline += ['review', 'package'] if existing else ['outline', 'draft', 'review', 'package']
+    pipeline += (
+        (['draft', 'review', 'package'] if mode == 'revise' else ['review', 'package'])
+        if existing
+        else ['outline', 'draft', 'review', 'package']
+    )
     pipeline = pipeline[: pipeline.index(stop) + 1]
     run = {
         'schema': 1,
@@ -336,6 +410,7 @@ def create(root, data, approval='conversation'):
         'seconds': seconds,
         'brief': brief,
         'existing': existing,
+        'mode': mode,
         'pipeline': pipeline,
         'stages': {},
     }
@@ -343,6 +418,9 @@ def create(root, data, approval='conversation'):
     if not data.get('id'):
         directory.mkdir()
         studio.write_json(studio.inside(root, '.active-article.json'), {'id': record['id']})
+    if manuscript:
+        studio.save_artifact(directory, 'original', manuscript, record, 'supplied manuscript')
+        studio.save_artifact(directory, 'draft', manuscript, record, 'supplied manuscript')
     save(root, directory, record, run, 'Created from ' + approval)
     return survey(root, record['id'])
 
@@ -417,6 +495,14 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
         ):
             raise ValueError('Only a current submitted draft can be approved.')
         run['stages'][stage]['status'] = 'approved'
+        approved_hash = run['stages'][stage]['hash']
+        studio.atomic(
+            studio.inside(
+                directory, 'history', 'derived-blog-approved-' + stage + '-' + approved_hash + '.md'
+            ),
+            studio.inside(directory, STAGES[stage][1]).read_bytes(),
+        )
+        run.setdefault('approved', {})[stage] = approved_hash
     elif action == 'changes':
         if not stage:
             raise ValueError('This run is complete. Start a new revision in chat.')
@@ -454,6 +540,8 @@ def job(root, ident):
         raise ValueError('This job needs smaller source excerpts. Continue it in chat.')
     references = Path(__file__).resolve().parents[1] / 'references'
     guidance = STAGES[stage][2] + '\n\n' + (references / GUIDES[stage]).read_text()
+    if stage == 'draft' and run['existing']:
+        guidance += '\nRevise the supplied manuscript in the scope of its brief. Preserve its stance, meaningful qualifiers and author voice; retain unsupported claims as questions rather than inventing support.'
     guidance += '\n\n' + (references / 'style/house.md').read_text()
     return found, payload, guidance
 
@@ -509,7 +597,7 @@ class Engine:
             status = 'waiting-for-approval'
         elif status == 'working' and self.current != ident:
             status = 'queued' if local.get('enabled') else 'paused'
-        elif status == 'waiting-for-approval':
+        elif status in ('waiting-for-approval', 'complete'):
             # The prior gate was just decided; the next job has not started yet.
             status = 'queued' if local.get('enabled') else 'paused'
         return {
@@ -628,7 +716,21 @@ def catalog(root):
             if studio.inside(path.parent, STATE).is_file():
                 found = engine(root).describe(ident)
                 rows.append(
-                    {k: found[k] for k in ('id', 'title', 'status', 'next', 'approval', 'error')}
+                    {
+                        k: found[k]
+                        for k in (
+                            'id',
+                            'title',
+                            'status',
+                            'next',
+                            'approval',
+                            'error',
+                            'stages',
+                            'complete',
+                            'engine',
+                            'mode',
+                        )
+                    }
                 )
         except (ValueError, OSError, KeyError):
             rows.append(
@@ -650,12 +752,71 @@ def options(root):
             result.append({'id': record['id'], 'name': record['name'], 'status': record['status']})
         return result
 
-    import shutil
+    agents = {}
+    for name in ('codex', 'claude'):
+        try:
+            blog_worker.source_curator.executable(name)
+            agents[name] = True
+        except ValueError:
+            agents[name] = False
 
     return {
         'profiles': records('profiles'),
         'sources': records('sources'),
-        'agents': {name: bool(shutil.which(name)) for name in ('codex', 'claude')},
+        'agents': agents,
+        'settings': settings(root),
+    }
+
+
+def document(root, ident, stage):
+    directory, _, run = load(root, ident)
+    if stage not in run['pipeline']:
+        raise ValueError('Choose a stage in this blog’s run.')
+    path = studio.inside(directory, STAGES[stage][1])
+    content = path.read_text()
+    previous = None
+    approved = run.get('approved', {}).get(stage, '')
+    if re.fullmatch('[a-f0-9]{64}', approved):
+        before = studio.inside(
+            directory, 'history', 'derived-blog-approved-' + stage + '-' + approved + '.md'
+        )
+        if before.is_file() and studio.digest(before.read_bytes()) == approved:
+            previous = before.read_text()
+    found = survey(root, ident)
+    row = next(row for row in found['stages'] if row['stage'] == stage)
+    differences = (
+        list(
+            difflib.unified_diff(
+                (previous or '').splitlines(),
+                content.splitlines(),
+                fromfile='Last approved',
+                tofile='This version',
+                n=3,
+            )
+        )
+        if previous is not None
+        else []
+    )
+    return {
+        'name': path.name,
+        'content': content,
+        'previous': previous,
+        'diff': differences[:4000],
+        'diff_truncated': len(differences) > 4000,
+        'stage': stage,
+        'label': row['label'],
+        'status': row['status'],
+        'notes': row['notes'],
+        'expected': found['expected'],
+        'checks': [
+            {'label': 'Saved document contains readable text', 'passed': bool(content.strip())},
+            {
+                'label': 'Document matches its submitted version and selected inputs',
+                'passed': row['status'] in ('draft', 'approved'),
+            },
+        ],
+        'id': ident,
+        'title': found['title'],
     }
 
 
@@ -742,6 +903,8 @@ def add_parser(groups):
     create_cmd.add_argument('--engine', choices=('codex', 'claude'), default='codex')
     create_cmd.add_argument('--seconds', type=int, default=600)
     create_cmd.add_argument('--source', action='append', default=[])
+    create_cmd.add_argument('--mode', choices=MODES, default='write')
+    create_cmd.add_argument('--manuscript')
     commands.add_parser('list')
     for name in ('status', 'submit', 'approve', 'changes', 'handoff'):
         cmd = commands.add_parser(name)

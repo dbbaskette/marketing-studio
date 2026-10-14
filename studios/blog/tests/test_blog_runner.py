@@ -370,6 +370,115 @@ class BlogRunnerTests(Fixture):
         self.assertTrue(found['complete'])
         self.assertEqual(found['status'], 'complete')
 
+    def test_writing_modes_select_real_pipelines(self):
+        source = self.source('# A supplied manuscript\nA fictional gateway routes requests.')
+        for mode, expected in (
+            ('write', ['outline', 'draft', 'review', 'package']),
+            ('outline', ['outline']),
+            ('revise', ['draft', 'review', 'package']),
+            ('review', ['review']),
+        ):
+            with self.subTest(mode=mode):
+                extra = {'manuscript': source['id']} if mode in ('revise', 'review') else {}
+                found = self.create(mode=mode, **extra)
+                self.assertEqual([row['stage'] for row in found['stages']], expected)
+                self.assertEqual(found['mode'], mode)
+                if extra:
+                    directory, _ = studio.item(self.root, 'articles', found['id'])
+                    original = (directory / 'ORIGINAL.md').read_text()
+                    found = self.submit(found, '# Revised\nA clearer fictional explanation.')
+                    self.assertEqual((directory / 'ORIGINAL.md').read_text(), original)
+                    if mode == 'review':
+                        self.assertEqual((directory / 'DRAFT.md').read_text(), original)
+
+    def test_revision_mode_can_stop_at_draft(self):
+        found = self.create(mode='revise', id=self.article(), stop='draft')
+        self.assertEqual([row['stage'] for row in found['stages']], ['draft'])
+        found = self.approve(self.submit(found))
+        self.assertTrue(found['complete'])
+
+    def test_completed_page_revision_returns_to_a_resumable_stage(self):
+        found = self.create(page=True, stop='outline')
+        engine = runner.engine(self.root)
+        engine.control(found['id'], 'resume')
+        found = self.approve(self.submit(found, page=True), page=True)
+        engine.once(found['id'])
+        found = runner.dispatch(
+            self.root,
+            'changes',
+            {
+                'id': found['id'],
+                'expected': found['expected'],
+                'stage': 'outline',
+                'request': 'Clarify the fictional argument',
+            },
+        )
+        self.assertFalse(found['complete'])
+        self.assertEqual(found['next'], 'outline')
+        self.assertEqual(found['status'], 'paused')
+        self.assertFalse(found['enabled'])
+
+    def test_modes_reject_missing_or_competing_manuscripts_before_writing(self):
+        with self.assertRaisesRegex(ValueError, 'upload a draft'):
+            self.create(mode='review')
+        source = self.source('A synthetic original')
+        with self.assertRaisesRegex(ValueError, 'Choose revise or review'):
+            self.create(mode='write', manuscript=source['id'])
+        with self.assertRaisesRegex(ValueError, 'revision starts at draft'):
+            self.create(mode='revise', manuscript=source['id'], stop='outline')
+        ident = self.article()
+        directory, _ = studio.item(self.root, 'articles', ident)
+        before = (directory / 'DRAFT.md').read_bytes()
+        with self.assertRaisesRegex(ValueError, 'not both'):
+            self.create(mode='revise', id=ident, manuscript=source['id'])
+        self.assertEqual((directory / 'DRAFT.md').read_bytes(), before)
+        (directory / 'DRAFT.md').unlink()
+        with self.assertRaisesRegex(ValueError, 'no saved manuscript'):
+            self.create(mode='review', id=ident)
+        self.assertFalse((directory / runner.STATE).exists())
+
+    def test_settings_are_local_defaults_and_do_not_change_existing_runs(self):
+        found = self.create()
+        defaults = dict(runner.DEFAULTS, engine='claude', seconds=120, author='Avery')
+        with patch.object(
+            management,
+            'authorize_write',
+            side_effect=AssertionError('Local defaults must not need Hub contribution rights'),
+        ):
+            saved = management.dispatch(self.root, 'run-settings', defaults)
+        self.assertTrue(saved['configured'])
+        self.assertEqual(saved['defaults'], defaults)
+        self.assertEqual(runner.survey(self.root, found['id'])['engine'], 'codex')
+        self.assertFalse(list((self.root / 'articles').glob('*/derived/*settings*')))
+        with self.assertRaises(ValueError):
+            runner.settings(self.root, dict(defaults, seconds=0))
+        self.assertEqual(runner.settings(self.root)['defaults'], defaults)
+
+    def test_review_document_compares_against_last_approved_version(self):
+        found = self.approve(self.submit(self.create(), '# Outline\nThe first argument.'))
+        found = runner.decide(
+            self.root,
+            found['id'],
+            found['expected'],
+            'changes',
+            'Clarify the argument',
+            target='outline',
+        )
+        found = self.submit(found, '# Outline\nA clearer argument.')
+        shown = runner.document(self.root, found['id'], 'outline')
+        self.assertEqual(shown['previous'], '# Outline\nThe first argument.')
+        self.assertIn('-The first argument.', shown['diff'])
+        self.assertIn('+A clearer argument.', shown['diff'])
+        self.assertEqual(shown['expected'], found['expected'])
+        self.assertTrue(all(check['passed'] for check in shown['checks']))
+        directory, _ = studio.item(self.root, 'articles', found['id'])
+        (directory / 'OUTLINE.md').write_text('A local change outside the runner')
+        shown = runner.document(self.root, found['id'], 'outline')
+        self.assertFalse(shown['checks'][1]['passed'])
+        history = next((directory / 'history').glob('derived-blog-approved-outline-*.md'))
+        history.write_text('Changed outside the runner')
+        self.assertIsNone(runner.document(self.root, found['id'], 'outline')['previous'])
+
     def test_pause_keeps_current_stage_but_prevents_next_job(self):
         found = self.create(page=True)
         engine = runner.Engine(self.root)
@@ -528,4 +637,6 @@ class RunnerHubTests(Fixture):
             self.assertEqual(resumed['next'], 'draft')
             self.assertFalse(resumed['enabled'])
             self.assertEqual(resumed['approval'], 'conversation')
+            previous = runner.document(other, local_id, 'outline')['previous']
+            self.assertEqual(previous, '# Outline\nSynthetic argument.')
             runner.ENGINES.pop(str(other), None)

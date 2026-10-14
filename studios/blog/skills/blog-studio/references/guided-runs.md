@@ -11,9 +11,11 @@ a paragraph or draft.
 ## Start
 
 For the page, run `... manage --open`. Keep that process running. The page's
-**New blog** form selects the brief, sources, voice, research scope, assistant,
-time limit and stop. It runs the assistant through each stage and waits for the
-person's decision. Opening it does not turn on reference analysis.
+**New blog** wizard selects the brief, mode, sources, voice, research scope,
+assistant, time limit and stop in three steps. **Home** groups work needing a
+decision, in progress and finished; **Blogs** opens saved runs. **Settings** saves
+defaults for future page runs on this computer. It runs the assistant through
+each stage and waits for the person's decision. Opening it does not turn on reference analysis.
 
 For a conversation, gather title, audience, goal, selected sources and voice,
 research scope and requested stop. Then use:
@@ -26,8 +28,13 @@ research scope and requested stop. Then use:
 Use `--research web-allowed` only for authorized public research, or `none` to
 omit research. Add `--source <id>` for each chosen source and `--profile <id>`
 for a saved voice, or `--tone "description"`. `--author` overrides a saved
-default. `--stop` can be `outline`, `draft`, `review` or `package`. For an
-existing article, use `--id <article-id>`; a saved manuscript starts at review.
+default. `--mode write` is the default; `outline` stops at outline. Use
+`--mode revise --manuscript <source-id>` to revise a saved readable source, or
+`--mode review --manuscript <source-id>` to review it without rewriting.
+The original and working manuscript are retained. `--stop` can be `outline`,
+`draft`, `review` or `package`. For an existing article, use `--id <article-id>`;
+a saved manuscript starts at review, or use `--mode revise --id <article-id>` to
+start with revision.
 This creates no model process in chat: you do the writing here.
 
 ## Each stage
@@ -57,7 +64,10 @@ reattachment; inspect and compare before replacing local work.
 
 `... run list` finds guided blogs. Reload status before continuing. In page
 approval mode the CLI refuses decisions and submissions: tell the person to
-use that run's page. Do not ask for or extract its session key to decide for them.
+use that run's page. The page renders each saved document, shows its file/input
+checks and assistant notes, and compares revisions with the last approved version. Approve
+opens a confirmation sheet; it never approves merely by opening the document.
+Do not ask for or extract its session key to decide for them.
 
 From chat, `... run handoff --id <id> --expected <latest>` moves decisions to
 the page, paused until the person presses **Resume** there. **Run this from

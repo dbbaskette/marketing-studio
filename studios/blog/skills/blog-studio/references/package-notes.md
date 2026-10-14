@@ -16,10 +16,16 @@ through focused references. Routine work does not require those four originals.
 BlogForge servers, accounts, APIs, and model providers are not
 required. Use the host's model and actual available tools.
 
-Local helper scripts require Python 3.11+ and the standard library. They do not
-fetch links, extract binary documents, write prose with a model, or call paid
-services. The agent performs those tasks using available host capabilities and
-records the results. Workspaces live outside the installed skill.
+Local helper scripts require Python 3.11+ and the standard library. The guided
+page runner starts a signed-in Codex or Claude CLI for bounded writing jobs;
+public research is allowed only when selected. Website imports fetch selected
+public pages. Other writing and connected-service operations use the host’s
+available capabilities. Workspaces live outside the installed skill.
+
+The browser bundles Training Studio’s MIT-licensed page stylesheet and safe DOM
+Markdown renderer unchanged. [The UI provenance record](../assets/management/training-studio-ui.json)
+pins their source revision and hashes; [the upstream license](../assets/management/training-studio-LICENSE.txt)
+is included. Blog modes, controller and compatibility styles are authored here.
 
 Run `python3 scripts/validate_package.py` for source integrity, routing, and
 local-link validation. It checks all twenty modules and their conditional routes.

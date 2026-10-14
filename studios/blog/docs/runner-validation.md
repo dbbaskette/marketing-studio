@@ -29,34 +29,60 @@ worker, not a live assistant.
 | Run this from here | Conversation decisions | Page decisions, queued locally | Handoff |
 | Import existing manuscript | Saved draft | Review pending, manuscript unchanged | Existing draft |
 | Read-only Hub write | Any page mutation | Refused | Access boundary |
+| Choose a mode | New blog | Write/outline/revise/review pipeline, original retained | Mode matrix |
+| Change page defaults | Existing runs | Future page defaults saved locally; runs unchanged | Local settings |
+| Compare a revision | Earlier approval exists | Exact approved snapshot and current diff | Document and Hub round-trip |
+| Server changes while reading | Review page open | Existing document retained, approval disabled | Browser and DOM |
 
 ## Commands and outcomes
 
-- `python -m unittest discover -s tests -p 'test_blog_runner.py'`: 23 targeted
-  checks passed, including an authenticated HTTP run through all four writing
-  gates, real subprocess adapter fixtures, cancellation, manual-edit protection
-  and a second-clone Hub handoff with selected sources and voice.
-- `node scripts/ci/check-management.cjs`: passed, including page decision tokens,
-  chat/page controls, retry rendering and element IDs for both browser scripts.
-- `python scripts/acceptance/hub-journey.py --local-fixture --run-directory
-  /tmp/blog-studio-runner-hub-acceptance-20261014`: PASS, all 41 real CLI steps.
-  Covers create/join, source and voice intake, blog saves, reviews, cross-clone
-  resume/edit, offline queue/retry, status, readable folders and overwrite guards.
-- `python skills/blog-studio/scripts/validate_package.py` and
-  `python scripts/build.py --check`: passed; package links and reproducibility
-  were checked. Guidance remains within the recorded budgets.
-- Desktop and 390-pixel mobile layout inspected in the collaborative browser using the actual page,
-  CSS and scripts with synthetic API responses. The new-blog form and review
-  dialog were inspected. A form-padding problem was corrected. The browser
-  could not reach the local server, so this is layout evidence, not a browser
-  to server acceptance run. The HTTP pipeline was exercised separately.
+Use the checkout’s Python 3.11+ interpreter (`.venv/bin/python` locally).
+All reports below were produced on 2026-10-14.
 
-The full local check script passed 455 tests across 29 files before the final
-runner refinements; the updated runner then passed all 23 targeted tests and
-the process-adapter tests. The final commit's full matrix runs on the existing
-Tart runner and its results are recorded with the pull request.
+- `BLOG_STUDIO_TEST_JOBS=8 bash scripts/ci/check.sh "$PWD/.venv/bin/python"
+  /tmp/blog-studio-training-parity-check-20261014`: results are recorded in that
+  directory and on the pull request.
+- `python -m unittest discover -s tests -p 'test_blog_runner.py'`: 28 targeted
+  checks passed, covering authenticated HTTP gates, both subprocess adapters,
+  cancellation, edit protection, modes, local defaults, approved comparisons and
+  a second-clone Hub handoff with selected sources, voice and approval history.
+  The final completed-page revision regression also passed separately with
+  `-k completed_page_revision`.
+- `node scripts/ci/check-management.cjs`: passed after the final page edits.
+  Covers explicit confirmation, version tokens, rendered Markdown, unsafe link
+  refusal, stale-reader protection, navigation during creation, wizard modes,
+  completed-run revisions, handoff controls and the existing editorial tools.
+  The DOM fixture now respects the browser’s read-only textarea `type` property.
+- `python scripts/acceptance/hub-journey.py --local-fixture --run-directory
+  /tmp/blog-studio-training-parity-hub-20261014`: PASS, all 41 steps.
+  It records the real commands for create/join, source and voice intake, blog
+  saves, reviews, cross-clone resume/edit, offline queue/retry, status, readable
+  folders and overwrite guards. The preceding 41-step walkthrough also passed.
+- The real CLI mode walkthrough passed all 24 commands. It creates write,
+  outline, revise and review runs, submits and approves each planned stage, and reopens the retained originals.
+  Report: `/tmp/blog-studio-training-parity-modes-report.json`.
+- `python skills/blog-studio/scripts/validate_package.py`, the skill-creator
+  `quick_validate.py` (with PyYAML supplied by uv), and guidance budgets passed.
+  The copied Training Studio stylesheet and Markdown renderer match both the
+  recorded hashes and the inspected source revision; its MIT license is bundled.
+
+The collaborative browser reached the actual authenticated loopback server
+using the real HTML, CSS, scripts and HTTP routes, with a scripted worker. It
+saved settings, created and completed an outline through all three wizard steps,
+approved writing stages, requested an earlier draft revision, opened the exact
+last-approved comparison, and verified an outside edit preserves the document
+being read while disabling approval. Desktop and 390-pixel mobile layouts were
+inspected; mobile has four tabs and no horizontal overflow. Escape closes the
+comparison sheet and restores background interaction. Report:
+`/tmp/blog-studio-training-parity-browser-report.json`.
+
+The initial Tart matrix passed Linux 3.11 and 3.13. Both macOS jobs failed before
+tests because the runner environment could not obtain the pinned Ruff 0.15.14.
+The final commit uses the existing Tart workflow again; current job results are
+recorded with the pull request. No workflow files were changed.
+
 Live model calls, multi-account GitHub permissions and live Google transfers
 were not exercised. Two local clones of one fixture account establish neither
 multi-account permissions nor Google acceptance. This runner uses the existing
-CLI source boundary, not Training Studio's research companion: its browser
+CLI source boundary, rather than Training Studio’s research companion; public
 research reports and citations still need human review.

@@ -7,6 +7,10 @@ changes for authors first, then what changes for maintainers.
 
 **For authors**
 
+- Use Training Studio’s current page layout, navigation, three-step creation,
+  progress stages, paper reviews and approval sheets, with Blog Studio modes
+  for writing, outlining, revising and reviewing. Save local defaults in Settings
+  and compare a revision with its last approved version.
 - Create and run guided blogs from the page, or work through the same stages
   with the skill in a conversation. Research questions, findings, outline,
   draft, review and export package each wait for your approval.

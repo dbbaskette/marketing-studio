@@ -33,10 +33,12 @@ needs a newer Blog Studio runtime, this update is what it is asking for.
 | Start | Open the page and choose **New blog** | Ask your assistant to use **Blog Studio** |
 | Writing | The runner starts Codex or Claude for each stage | Your assistant writes with you |
 | Decisions | Approve or request changes on the page | Approve or request changes in chat |
-| Resume | Open **Writing runs** | Ask to continue your saved blog |
+| Resume | Open **Home** or **Blogs** | Ask to continue your saved blog |
 
-Both keep the same sources, voice and saved writing. A guided blog stops for
-approval at research questions, findings, outline, draft, review and export
+The page uses Training Studio’s navigation, three-step setup, progress stages
+and paper review pages. Choose **Write a blog**, **Outline only**, **Revise a
+draft**, or **Review a draft**. Both entry points keep the same sources, voice
+and saved writing. A guided blog stops for approval at research questions, findings, outline, draft, review and export
 package; you can omit research or choose an earlier stop. You can switch between
 the page and your conversation without making another blog.
 
