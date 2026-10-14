@@ -4,9 +4,10 @@
 
 **Turn ideas, notes, and rough drafts into blogs that sound like you.**
 
-Blog Studio is a writing assistant for **Codex or Claude Code**. Bring an idea,
-source material, or an existing draft. Choose your audience and voice, then work
-in chat or use a guided browser page that stops for your approval at each stage.
+Blog Studio gives you a **browser UI to create, run, and review blogs**, powered
+by your **Codex or Claude Code** assistant. Bring an idea, notes, or a draft; the
+assistant does the writing and the UI brings each stage back for your approval.
+You can also work directly in chat.
 
 [Install Blog Studio](#install-blog-studio) · [Start your first blog](#start-your-first-blog) · [Get help](docs/troubleshooting.md)
 
@@ -66,25 +67,52 @@ Enter `$blog-studio` in Codex or `/blog-studio` in Claude Code to load the skill
 
 ## Start your first blog
 
-### Use the writing page
+### Drive the process from the browser UI
 
-In your Codex or Claude Code chat, say:
+Open your Codex or Claude Code chat and say:
 
 > Use Blog Studio. Open the page.
 
-On the page, choose **New blog**. The three-step wizard asks about your topic
-and audience, how you want to work, and the sources and assistant to use.
-Choose **Write a blog**, **Outline only**, **Revise a draft**, or **Review a draft**.
-You can upload notes or a manuscript and choose a tone or saved author voice.
+Or open the UI directly from your cloned `blog-studio` folder with Python 3.11
+or newer:
 
-Your assistant works through the selected stages. Read each result, then
-**Approve** it or **Ask for changes**. **Home** shows what needs your attention;
-**Blogs** holds your saved work.
+```sh
+python3 skills/blog-studio/scripts/studio.py --root "$HOME/blogs/.blog-studio" manage --open
+```
 
-Keep the terminal that opened the page running. You can close the browser and
-return while the assistant works.
+This opens the browser for that writing workspace, creating it if needed. If
+`python3` is an older version, use your Python 3.11+ command or ask your assistant
+to open the page. Keep the terminal running while you use Blog Studio.
 
-[Writing page walkthrough and controls →](docs/runner.md)
+Once the page is open, use its controls to drive the work:
+
+1. **Set your defaults.** On first launch, save your preferred assistant, author,
+   tone, research choice, and step time limit. You can change these later in
+   **Settings**.
+2. **Choose New blog.** Work through three short steps: give the topic and
+   audience; choose **Write a blog**, **Outline only**, **Revise a draft**, or
+   **Review a draft** and a voice; then select or upload sources, choose Codex or
+   Claude Code, and set limits. To revise or review, supply the manuscript.
+3. **Press Start the blog.** Blog Studio starts the selected assistant and runs
+   the next stage. The progress view shows its steps and the files made so far.
+   A new blog can go through research, outline, draft, review, and export package.
+4. **Review when it needs you.** Open the item under **Needs you** on Home or
+   choose **Review** on its run. Read the document, assistant notes, and any
+   comparison with the last approved version. Choose **Approve** and confirm to
+   let the next stage begin.
+5. **Request changes in the UI.** Choose **Ask for changes**, select the stage,
+   and describe what you want—for example, “Make the introduction more direct.”
+   The next version comes back for review. If the run is paused, choose **Resume**.
+6. **Collect your writing.** Open saved documents under **Made so far** and use
+   **Download** to keep a Markdown copy. Your originals, stages, and decisions
+   stay saved with the blog.
+
+You can leave the browser while it works and return to **Home** to see **Needs
+you**, **In progress**, and **Finished**. Use **Pause after this step** to pause
+between stages, or **Stop** to end a running step. **Blogs** holds your saved
+runs; **Status** checks which assistants are available on this computer.
+
+[All UI controls, stages, and page/chat handoff →](docs/runner.md)
 
 ### Write in chat
 
@@ -101,10 +129,12 @@ reusable writing style, say **“Help me set up my voice.”**
 
 ## Save and come back
 
-Your drafts, sources, voice profiles, and earlier revisions stay in your writing
-workspace on your computer. In chat, say **“My blogs”** to find saved work or
-**“Continue [title]”** to resume. **“Show status”** tells you where the current
-blog is saved and what to do next.
+In the UI, open **Blogs**, select your blog, and review its current stage or
+choose **Resume** if it is paused. Your drafts, sources, voice profiles, and
+earlier revisions stay in your writing workspace on your computer.
+
+In chat, say **“My blogs”** to find saved work or **“Continue [title]”** to resume.
+**“Show status”** tells you where the current blog is saved and what to do next.
 
 The page and chat use the same saved blog. You can move between them as you work.
 
