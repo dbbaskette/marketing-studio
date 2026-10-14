@@ -5,6 +5,8 @@ import base64
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import json
+import os
+import signal
 from pathlib import Path
 import re
 import secrets
@@ -1452,6 +1454,10 @@ def whole(value):
 def view(root, name, query):
     """Read-only desk views by name. Returns None for an unknown view."""
     arg = lambda key, default=None: query.get(key, [default])[0]
+    if name == 'computer':
+        import computer
+
+        return computer.report()
     if name in ('runs', 'run', 'run-options', 'run-file', 'run-settings'):
         import blog_runner
 
@@ -1705,7 +1711,36 @@ def launch_note(root, harness):
     return {'harness': analysis['harness'], 'saved_by_this_launch': bool(harness), 'note': note}
 
 
-def main(root, port=0, open_browser=False, harness=None):
+def main(root, port=0, open_browser=False, harness=None, data_root=None, leased=False, human=False):
+    from start_studio import running
+
+    version = Path(__file__).resolve().parents[1]
+    data = data_root or (
+        version.parent.parent
+        if version.parent.name == 'versions'
+        else Path(os.environ.get('BLOG_STUDIO_DATA', str(Path.home() / '.local/share/blog-studio')))
+    )
+    old = {}
+    if threading.current_thread() is threading.main_thread():
+
+        def interrupt(signum, frame):
+            raise KeyboardInterrupt
+
+        for name in ('SIGTERM', 'SIGHUP'):
+            if hasattr(signal, name):
+                number = getattr(signal, name)
+                old[number] = signal.signal(number, interrupt)
+    try:
+        if leased:
+            return serve(root, port, open_browser, harness, human=human)
+        with running(Path(data), root):
+            return serve(root, port, open_browser, harness, human=human)
+    finally:
+        for number, handler in old.items():
+            signal.signal(number, handler)
+
+
+def serve(root, port=0, open_browser=False, harness=None, human=False):
     studio.initialize(root)
     # Only an explicit --harness changes the saved analysis choice; opening the desk alone never does.
     if harness:
@@ -1724,21 +1759,30 @@ def main(root, port=0, open_browser=False, harness=None):
     except BaseException:
         release_lock(runner_lock)
         raise
-    runner.start()
-    print(
-        json.dumps(
-            {
-                'url': url,
-                'access': 'local session only',
-                'stop': 'Press Ctrl+C to close the desk.',
-                'analysis': analysis,
-            }
-        ),
-        flush=True,
-    )
-    if open_browser:
-        webbrowser.open(url)
     try:
+        runner.start()
+        shown_url = url if sys.stdout.isatty() else url.split('#')[0]
+        if human:
+            print('Workspace: ' + str(root) + '\nOpen Blog Studio: ' + shown_url, flush=True)
+            if not sys.stdout.isatty():
+                print(
+                    'The private session link is sent to your browser. To copy it, start Blog Studio in your own terminal.',
+                    flush=True,
+                )
+        else:
+            print(
+                json.dumps(
+                    {
+                        'url': shown_url,
+                        'access': 'local session only',
+                        'stop': 'Press Ctrl+C to close the desk.',
+                        'analysis': analysis,
+                    }
+                ),
+                flush=True,
+            )
+        if open_browser:
+            webbrowser.open(url)
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass

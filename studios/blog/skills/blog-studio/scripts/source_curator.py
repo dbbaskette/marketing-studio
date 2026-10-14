@@ -5,7 +5,6 @@ from contextvars import ContextVar
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
 import tomllib
@@ -107,13 +106,9 @@ def harness(root):
 
 
 def executable(engine):
-    path = shutil.which(engine)
-    if not path and engine == 'codex':
-        bundled = Path(
-            '/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex'
-        )
-        if bundled.is_file():
-            path = str(bundled)
+    from computer import cli_path
+
+    path = cli_path(engine)
     if not path:
         raise ValueError(
             'Selected writing CLI is unavailable. Open it and sign in, then retry analysis.'

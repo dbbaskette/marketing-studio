@@ -22,6 +22,16 @@ to share; the output contains paths and versions, never credentials.
 | Rollback rejects the previous version | Its files were changed after installation. Stay on the current version, or run setup from the installer you want. |
 | “A discovery link was changed outside the installer” | Something replaced the link in your tool's skill folder. Setup will not delete what it did not create. Inspect that folder, move it away if you no longer need it, then run setup. |
 
+## Opening the page
+
+| What you see | What to do |
+| --- | --- |
+| You want to open Blog Studio | Double-click `~/Applications/Open Blog Studio.command` on a Mac, or run `sh ~/.local/share/blog-studio/studio`. |
+| Setup says Blog Studio is open | Press Ctrl-C in the page’s terminal or close that window, then run setup again. File checks and computer checks can still run while the page is open. |
+| A start command is changed or missing | Run installer `check`, then `repair`. Your own or edited launcher files are preserved; move them aside yourself if you want setup to replace that command. |
+| A writing CLI or sign-in is missing | Choose **Status → Check this computer**, or run `sh ~/.local/share/blog-studio/studio check`. Follow the listed steps, then check again. |
+| You want a different writing folder | Run `sh ~/.local/share/blog-studio/studio --root /absolute/path/to/workspace`. The next launch remembers that folder. |
+
 ## In your tool
 
 | What you see | What to do |

@@ -234,6 +234,23 @@ def read_state(root):
                 raise ValueError()
         if any(not Path(name).is_absolute() for name in state['targets'].values()):
             raise ValueError()
+        if 'launchers' in state:
+            home = Path(state.get('launcher_home', root))
+            allowed = {
+                root / 'studio',
+                root / 'blog',
+                home / 'Applications/Open Blog Studio.command',
+            }
+            if not home.is_absolute() or not isinstance(state['launchers'], dict):
+                raise ValueError()
+            for name, entry in state['launchers'].items():
+                if (
+                    not isinstance(entry, dict)
+                    or Path(name) not in allowed
+                    or entry.get('path') != name
+                    or not re.fullmatch('[a-f0-9]{64}', entry.get('sha256', ''))
+                ):
+                    raise ValueError()
         return state
     except (OSError, ValueError, TypeError, KeyError) as exc:
         raise InstallError('The installation record is invalid. Keep it for diagnosis.') from exc
@@ -438,6 +455,165 @@ def backup_path(root, path):
     return root / 'backups' / (stamp + '-' + label + '-' + uuid.uuid4().hex[:8])
 
 
+PYTHONS = (
+    'python3',
+    'python3.14',
+    'python3.13',
+    'python3.12',
+    'python3.11',
+    '/opt/homebrew/bin/python3',
+    '/opt/homebrew/bin/python3.14',
+    '/opt/homebrew/bin/python3.13',
+    '/opt/homebrew/bin/python3.12',
+    '/opt/homebrew/bin/python3.11',
+    '/usr/local/bin/python3',
+    '/usr/local/bin/python3.14',
+    '/usr/local/bin/python3.13',
+    '/usr/local/bin/python3.12',
+    '/usr/local/bin/python3.11',
+    '/Library/Frameworks/Python.framework/Versions/Current/bin/python3',
+)
+
+
+def launcher_home(root, home=None):
+    # Low-level callers with custom roots never write to the real user's Applications.
+    return (
+        Path(home).resolve()
+        if home
+        else root.parents[2]
+        if root.parent.name == 'share' and root.parent.parent.name == '.local'
+        else root
+    )
+
+
+def launcher_texts(root, home):
+    names = ' '.join(
+        shlex.quote(name) for name in (str(stable_interpreter(sys.executable)), *PYTHONS)
+    )
+    prefix = '#!/bin/sh\n# Written by the Blog Studio installer.\n'
+    search = f"""for candidate in {names}; do
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)' >/dev/null 2>&1; then
+    exec "$candidate" "$script" "$@"
+  fi
+done
+printf '%s\\n' 'Blog Studio needs Python 3.11 or newer.' 'Install it from https://www.python.org/downloads/ and open Blog Studio again.' >&2
+exit 1
+"""
+    studio = (
+        prefix
+        + f"""script={shlex.quote(str(root / 'current/scripts/start_studio.py'))}
+if [ -f "$script" ]; then
+  set -- --home {shlex.quote(str(home))} --data-root {shlex.quote(str(root))} "$@"
+else
+  script={shlex.quote(str(root / 'current/scripts/studio.py'))}
+  [ "$#" -eq 0 ] && set -- --root {shlex.quote(str(home / 'blogs/.blog-studio'))} manage --open
+fi
+[ -f "$script" ] || {{ printf '%s\\n' 'Blog Studio is not installed here. Run its installer again.' >&2; exit 1; }}
+"""
+        + search
+    )
+    helper = (
+        prefix
+        + f"""script={shlex.quote(str(root / 'current/scripts/studio.py'))}
+[ -f "$script" ] || {{ printf '%s\\n' 'Blog Studio is not installed here. Run its installer again.' >&2; exit 1; }}
+"""
+        + search
+    )
+    finder = (
+        prefix
+        + f"""/bin/sh {shlex.quote(str(root / 'studio'))}
+studio_exit=$?
+if [ -t 0 ]; then
+  printf '\\n%s' 'Blog Studio has stopped. Press Return to close this window. '
+  read -r studio_close
+fi
+exit "$studio_exit"
+"""
+    )
+    result = {root / 'studio': studio, root / 'blog': helper}
+    if sys.platform == 'darwin':
+        result[home / 'Applications/Open Blog Studio.command'] = finder
+    return result
+
+
+def launcher_matches(path, entry):
+    return bool(
+        entry
+        and str(path) == entry.get('path')
+        and path.is_file()
+        and not path.is_symlink()
+        and file_hash(path) == entry.get('sha256')
+    )
+
+
+def restore_launchers(changes):
+    for path, prior, mode in reversed(changes):
+        if prior is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(prior)
+            path.chmod(mode)
+
+
+def write_launchers(root, home, state, changes):
+    kept = (state or {}).get('launchers', {})
+    written, skipped = {}, []
+    for path, content in launcher_texts(root, home).items():
+        entry = kept.get(str(path))
+        if path.name == 'Open Blog Studio.command' and str(root / 'studio') not in written:
+            skipped.append(str(path))
+            continue
+        if (path.exists() or path.is_symlink()) and not launcher_matches(path, entry):
+            skipped.append(str(path))
+            continue
+        changes.append(
+            (
+                path,
+                path.read_bytes() if path.exists() else None,
+                path.stat().st_mode & 0o777 if path.exists() else 0o755,
+            )
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pending = path.with_name('.' + path.name + '-' + uuid.uuid4().hex)
+        try:
+            pending.write_text(content)
+            pending.chmod(0o755)
+            os.replace(pending, path)
+        finally:
+            pending.unlink(missing_ok=True)
+        written[str(path)] = {'path': str(path), 'sha256': file_hash(path)}
+    return written, skipped
+
+
+@contextmanager
+def not_running(root):
+    root.mkdir(parents=True, exist_ok=True)
+    with (root / '.studio-running.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise InstallError(
+                'Blog Studio is open on this computer. Close its terminal window or press Ctrl-C there, then run setup again.'
+            ) from exc
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def computer_checks(source=SOURCE_ROOT, sign_in=True, home=None):
+    path = Path(source) / 'scripts/computer.py'
+    if not path.is_file():
+        return None  # Compatibility with a package from before the start commands.
+    source_manifest(source)
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location('blog_setup_computer', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.report(home=home, sign_in=sign_in)
+
+
 def install(
     source,
     root,
@@ -447,6 +623,7 @@ def install(
     activate=replace_link,
     repair=False,
     legacy=(),
+    home=None,
 ):
     """Install or update; `repair` is the same operation and is kept as a familiar verb."""
     source = Path(source).resolve()
@@ -459,7 +636,7 @@ def install(
     interpreter = stable_interpreter(interpreter or sys.executable)
     for path in selected.values():
         safe_destination(path, root)
-    with installation_lock(root):
+    with installation_lock(root), not_running(root):
         state = read_state(root)
         current = root / 'current'
         if current.exists() and not current.is_symlink():
@@ -498,11 +675,17 @@ def install(
             and not blocked
             and state['targets'] == wanted
             and all(same_link(path, current) for path in all_targets.values())
+            and all(
+                launcher_matches(path, state.get('launchers', {}).get(str(path)))
+                for path in launcher_texts(root, launcher_home(root, home))
+            )
         ):
             return {
                 'status': 'repaired' if configured else 'already-installed',
                 'version': version.name,
                 'targets': wanted,
+                'launchers': state.get('launchers', {}),
+                'preserved_launchers': [],
             }
         history = list((state or {}).get('history', []))
         for earlier in (recorded, active):
@@ -522,6 +705,7 @@ def install(
         }
         moved = []
         linked = []
+        launcher_changes = []
         try:
             for path in blocked:
                 backup = backup_path(root, path)
@@ -539,8 +723,13 @@ def install(
                 if not same_link(path, current) or not (path / 'SKILL.md').is_file():
                     raise InstallError('A harness discovery link could not be verified.')
             saved['backups'] += [{'original': str(p), 'backup': str(b)} for p, b in moved]
+            saved['launchers'], skipped = write_launchers(
+                root, launcher_home(root, home), state, launcher_changes
+            )
+            saved['launcher_home'] = str(launcher_home(root, home))
             atomic_json(root / 'installation.json', saved)
         except BaseException:
+            restore_launchers(launcher_changes)
             # Also runs for Ctrl-C and termination signals: leave what was there before.
             for path in reversed(linked):
                 if same_link(path, current):
@@ -563,6 +752,8 @@ def install(
             'backups': saved['backups'],
             'moved_to_backup': [str(b) for _, b in moved],
             'live_harness_discovery': 'not-yet-verified',
+            'launchers': saved['launchers'],
+            'preserved_launchers': skipped,
         }
         if recovered:
             result['recovered'] = 'An interrupted earlier setup was completed.'
@@ -571,7 +762,7 @@ def install(
 
 def rollback(root):
     root = Path(root).resolve()
-    with installation_lock(root):
+    with installation_lock(root), not_running(root):
         state = read_state(root)
         if not state or not state.get('history'):
             raise InstallError('There is no previous managed version to restore.')
@@ -590,12 +781,17 @@ def rollback(root):
         )
         # The old version's recorded interpreter may be gone; record one that runs.
         configure(target, manifest, stable_interpreter(sys.executable))
+        launcher_changes = []
         replace_link(current, target)
         try:
             state['history'] = state['history'][:-1] + ([str(leaving)] if leaving != target else [])
             state['version'] = str(target)
+            state['launchers'], skipped = write_launchers(
+                root, launcher_home(root, state.get('launcher_home')), state, launcher_changes
+            )
             atomic_json(root / 'installation.json', state)
         except BaseException:
+            restore_launchers(launcher_changes)
             if original is not None:
                 replace_link(current, original)
             raise
@@ -604,7 +800,7 @@ def rollback(root):
 
 def uninstall(root, agents):
     root = Path(root).resolve()
-    with installation_lock(root):
+    with installation_lock(root), not_running(root):
         state = read_state(root)
         if not state:
             return {'status': 'not-installed'}
@@ -626,12 +822,19 @@ def uninstall(root, agents):
                     removed.append((agent, path))
             new_state = dict(state)
             new_state['targets'] = {k: v for k, v in state['targets'].items() if k not in agents}
+            if not new_state['targets']:
+                new_state['launchers'] = {}
             atomic_json(root / 'installation.json', new_state)
         except BaseException:
             for _, path in removed:
                 if not path.is_symlink():
                     replace_link(path, current)
             raise
+        if not new_state['targets']:
+            for name, entry in state.get('launchers', {}).items():
+                path = Path(name)
+                if launcher_matches(path, entry):
+                    path.unlink()
         return {
             'status': 'uninstalled',
             'removed': [k for k, _ in removed],
@@ -685,6 +888,13 @@ def inspect(root, selected):
             for k, p in selected.items()
         },
         'installation': 'recorded' if state else 'absent',
+        'launchers': {
+            name: {
+                'path': name,
+                'status': 'ready' if launcher_matches(Path(name), entry) else 'changed or missing',
+            }
+            for name, entry in (state or {}).get('launchers', {}).items()
+        },
         'live_harness_discovery': 'Verify inside a new local harness session.',
     }
     if state or current.is_symlink():
@@ -768,6 +978,19 @@ def setup_summary(result):
         + ('found' if tools['github_cli'] else 'not found')
         + '. Local writing needs neither.'
     )
+    for name, launcher in result.get('launchers', {}).items():
+        lines.append(
+            ('Open: sh ' if Path(name).name == 'studio' else 'Launcher: ')
+            + (name if name.endswith('.command') else shlex.quote(name))
+            + ' ('
+            + launcher['status']
+            + ')'
+        )
+    if result.get('computer'):
+        for row in result['computer']['checks']:
+            lines.append(row['label'] + ': ' + row['detail'])
+            if row['next_step']:
+                lines.append('  ' + row['next_step'])
     if result.get('planned_changes'):
         lines.append(
             'Preview only: no installation changed. Run setup to install at the locations above.'
@@ -910,6 +1133,8 @@ def run(args):
     agents = tuple(selected)
     if args.action == 'check' or args.dry_run:
         result = inspect(root, selected)
+        if not args.dry_run:
+            result['computer'] = computer_checks(args.source, home=args.home)
         if args.dry_run:
             result['planned_changes'] = {k: str(v) for k, v in selected.items()}
             result['package_verified'] = source_manifest(args.source)['version']
@@ -966,6 +1191,7 @@ def run(args):
                 replace=args.replace,
                 repair=args.action == 'repair',
                 legacy=legacy,
+                home=args.home,
             )
         except ReplaceRequired as needed:
             if args.yes:
@@ -985,6 +1211,7 @@ def run(args):
                 replace=True,
                 repair=args.action == 'repair',
                 legacy=legacy,
+                home=args.home,
             )
     elif args.action == 'rollback':
         result = rollback(root)
@@ -1023,6 +1250,8 @@ def run(args):
                     'status': 'drive-read' if check.returncode == 0 else 'needs-setup',
                     'next_step': 'Use sh installer/google-setup.sh --install-cli, then --login you@example.com. Drive read does not verify Docs writes.',
                 }
+    if installing:
+        result['computer'] = computer_checks(args.source, home=args.home)
     if args.json:
         print(json.dumps(result, indent=2))
         return 0
@@ -1042,6 +1271,27 @@ def run(args):
         if args.root:
             check_command += ['--root', str(args.root.absolute())]
         print('To check setup: ' + shlex.join(check_command))
+    if result.get('launchers'):
+        print('Open Blog Studio:')
+        for name in result['launchers']:
+            print(
+                (
+                    '  Double-click: '
+                    if name.endswith('.command')
+                    else '  Run: sh '
+                    if Path(name).name == 'studio'
+                    else '  Helper: sh '
+                )
+                + (name if name.endswith('.command') else shlex.quote(name))
+            )
+    for name in result.get('preserved_launchers', []):
+        print('Your launcher was left unchanged: ' + name)
+    if result.get('computer'):
+        print('\nThis computer:')
+        for row in result['computer']['checks']:
+            print('  ' + row['label'] + ': ' + row['detail'])
+            if row['next_step']:
+                print('    ' + row['next_step'])
     if result.get('google'):
         print('Google: ' + result['google']['status'])
         if result['google'].get('next_step'):

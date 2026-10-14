@@ -59,14 +59,15 @@ either one.
 
 1. Choose **Codex**, **Claude Code** or **Both**, check the locations shown, and
    confirm.
-2. Open your tool in a folder for your writing, start a **new** session, and invoke
-   the skill: `$blog-studio` in Codex, `/blog-studio` in Claude Code. Try: “Help me
-   build an outline from my notes. Stop at the outline.”
+2. Read the computer checks and next steps printed by setup, then open the UI
+   using the command or Mac launcher it names. To use the skill in chat instead,
+   open your writing folder in a **new** session and invoke `$blog-studio` in
+   Codex or `/blog-studio` in Claude Code.
 
 Setup needs no `sudo` and no network. It verifies every copied file, runs the
 helpers once in a throwaway folder, and only then switches the skill on. Finding
 the skill inside your tool is the one thing setup cannot check for you, which is
-why the final step asks for a new session.
+why chat use needs a new session.
 
 To install without questions, for example from a script or when an assistant
 runs setup for you:
@@ -87,13 +88,47 @@ If you want to confirm the download is intact, the release also carries
 
 ## Open the writing page
 
-After installation, ask your assistant: **“Use Blog Studio. Open the page.”**
-Use an existing writing workspace or choose a new one outside the skill folder.
-The same page supports the editorial desk and **New blog**. Writing there needs
-an installed, signed-in Codex or Claude CLI. The installer brings the runner as
-part of the complete skill; no extra Python packages are needed.
+On a Mac, double-click **Open Blog Studio.command** in `~/Applications` (the
+Applications folder inside your home folder). On Mac or Linux, run:
 
-See [page and conversation workflows](https://github.com/dbbaskette/blog-studio/blob/main/docs/runner.md).
+```sh
+sh ~/.local/share/blog-studio/studio
+```
+
+The page opens in your browser and runs for as long as its terminal stays open.
+Press Ctrl-C or close that window to stop it. Saved writing is retained. The
+command follows the installed `current` version and finds Python 3.11+ itself,
+including when the usual `python3` is older or the first Python was removed.
+
+The first launch uses `~/blogs/.blog-studio`. To choose a different workspace:
+
+```sh
+sh ~/.local/share/blog-studio/studio --root "$HOME/Documents/My blogs/.blog-studio"
+```
+
+That choice is remembered for the next launch. The page does not turn on reference
+analysis just because you opened it. Use **New blog** to choose sources and start
+writing. See [page and conversation workflows](https://github.com/dbbaskette/blog-studio/blob/main/docs/runner.md).
+
+## Check this computer
+
+Setup finishes with the same computer report available in **Status → Check this
+computer** on the page, or from Terminal:
+
+```sh
+sh ~/.local/share/blog-studio/studio check
+```
+
+It reports the Python in use, available Codex and Claude Code CLIs, Codex sign-in,
+and optional Git/GitHub CLI tools and Git identity for a Team Hub. Missing items
+include what to do next. Claude sign-in is confirmed when a writing step runs;
+the report asks you to open `claude` once if needed. It never claims a model job
+has succeeded just because a CLI was found.
+
+These checks do not start models, sign in, install software, or change Git
+settings. Provider output and account identities are not included in the report.
+`sh installer/install.sh check` also verifies installed files, skill links,
+recorded Python, and generated launchers. Add `--json` for structured results.
 
 ## What setup puts where
 
@@ -103,6 +138,9 @@ See [page and conversation workflows](https://github.com/dbbaskette/blog-studio/
 | `~/.claude/skills/blog-studio` | Link that Claude Code discovers; follows `CLAUDE_CONFIG_DIR` |
 | `~/.local/share/blog-studio/versions/` | Verified copies of each installed version |
 | `~/.local/share/blog-studio/current` | Link to the version in use; both tools share it |
+| `~/.local/share/blog-studio/studio` | Open the UI or run `check` |
+| `~/.local/share/blog-studio/blog` | Run the workspace helper with a supported Python |
+| `~/Applications/Open Blog Studio.command` | Mac double-click launcher |
 | `~/.local/share/blog-studio/backups/` | Skill folders that setup moved aside with your consent |
 | `<writing-project>/.blog-studio/` | Your workspace: sources, voices, blogs and reviews |
 
@@ -127,8 +165,9 @@ sh installer/install.sh
 For a ZIP install, download the installer ZIP from the newest release and run
 setup again.
 
-Both methods update the tools you chose the first time, keep the previous version
-for rollback, and leave your writing alone. If only one tool is set up, setup asks
+Close Blog Studio before updating, repairing, rolling back, or uninstalling; setup
+refuses to change an installation while its page is running. Both update methods
+keep the previous version for rollback and leave your writing alone. If only one tool is set up, setup asks
 once whether to add the other. Open a new session afterwards.
 
 Each blog records the Blog Studio version it was started with, so its completed
@@ -174,10 +213,15 @@ sh installer/install.sh uninstall
 - **rollback** switches back to the version you had before the last update,
   after verifying it. Run it again to return. Rolling back to 1.x restores a
   version that can continue existing blogs but cannot start new ones.
-- **uninstall** removes the links from your tools. It keeps your writing, Team
+- **uninstall** removes the links from your tools and, when the last tool is
+  removed, the unchanged launchers setup wrote. It keeps your writing, Team
   Hubs, backups and the installed versions. To free the space, delete
   `~/.local/share/blog-studio/versions` afterwards; leave the rest of that
   folder if you use a Team Hub.
+
+A launcher of your own, or one you edited after setup, is preserved during
+installation and removal. Setup names any launcher it could not create; move your
+file aside yourself if you want setup to provide that command, then run repair.
 
 Without `--target`, these commands act on the tools chosen at installation, so
 repairing a Codex-only setup does not add Claude Code.

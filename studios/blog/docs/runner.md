@@ -7,7 +7,19 @@ stages and decisions.
 
 ## Open the page
 
-Ask your assistant to **“Use Blog Studio. Open the page.”** Or, from a checkout:
+On a Mac, double-click **Open Blog Studio.command** in your home Applications
+folder. On Mac or Linux, run the installed command:
+
+```sh
+sh ~/.local/share/blog-studio/studio
+```
+
+It finds a supported Python and opens the page. It starts with
+`~/blogs/.blog-studio`, or the workspace you last chose with
+`sh ~/.local/share/blog-studio/studio --root <absolute-workspace>`.
+
+You can also ask your assistant to **“Use Blog Studio. Open the page.”** From a
+source checkout, the Python entry point remains available:
 
 ```sh
 python3 skills/blog-studio/scripts/studio.py --root "$HOME/blogs/.blog-studio" manage --open
@@ -24,7 +36,9 @@ The page follows Training Studio’s current layout: **Home**, **Blogs**,
 **Status** and **Settings**, with the same glass navigation and toolbar, progress
 stages, paper documents and decision sheets. Home groups **Needs you**, **In
 progress** and **Finished**. Settings saves writing defaults on this computer
-for future page runs; existing runs keep their choices.
+for future page runs; existing runs keep their choices. **Status → Check this
+computer** shares setup’s read-only checks and next steps. You can run the same
+report with `sh ~/.local/share/blog-studio/studio check`.
 
 Choose **New blog** and work through three steps: topic and audience; mode and
 voice; sources, assistant and limits. Choose **Write a blog**, **Outline only**,

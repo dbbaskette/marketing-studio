@@ -7,6 +7,11 @@ changes for authors first, then what changes for maintainers.
 
 **For authors**
 
+- Open Blog Studio with a permanent shell command or Mac launcher, like Training
+  Studio. Setup and the UI share computer checks with actionable next steps. Start
+  commands find a supported Python and remember your selected writing workspace.
+  Updates preserve custom launchers and wait until the running page is closed.
+
 - Use Training Studio’s current page layout, navigation, three-step creation,
   progress stages, paper reviews and approval sheets, with Blog Studio modes
   for writing, outlining, revising and reviewing. Save local defaults in Settings

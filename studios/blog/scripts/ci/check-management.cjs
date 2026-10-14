@@ -443,6 +443,9 @@ async function guidedRuns(){
   assert.ok(descendants(content).some(e=>e.textContent==='Needs you'));
   f.run('studio.ordinary=[];sBlogs()');assert.equal(f.get('title').textContent,'Blogs');
   assert.ok(descendants(content).some(e=>e.textContent==='Synthetic blog'));
+  f.run("studio.computer={checks:[{label:'Codex',status:'action',detail:'Sign-in needed',next_step:'Run codex login'}]};studio.settings={workspace:'/synthetic'};sStatusPage()");
+  assert.ok(descendants(content).some(e=>e.textContent==='Run codex login'));
+  assert.ok(f.get('actions').children.some(e=>e.textContent==='Check this computer'));
   // Safe Markdown turns no document-supplied HTML or javascript link into active content.
   f.run("sPage(window.TrainingStudioMarkdown.render('<script>bad()</script> [bad](javascript:bad()) [good](https://example.com)'))");
   assert.equal(descendants(content).some(e=>e.tagName==='script'),false);

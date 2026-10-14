@@ -60,8 +60,11 @@ release instead, use the ZIP below.
 ### Finish setup
 
 Choose **Codex**, **Claude Code**, or **Both** and follow the setup prompts.
-Then open your chosen tool in a folder for your writing and start a **new chat**.
-Enter `$blog-studio` in Codex or `/blog-studio` in Claude Code to load the skill.
+Setup prints how to open Blog Studio and checks this computer, with the next
+steps for anything missing. You can then use the UI below.
+
+To write in chat, open your chosen tool in a folder for your writing and start a
+**new chat**. Enter `$blog-studio` in Codex or `/blog-studio` in Claude Code.
 
 [Detailed setup, company laptop help, and repair instructions →](docs/installation.md)
 
@@ -69,20 +72,16 @@ Enter `$blog-studio` in Codex or `/blog-studio` in Claude Code to load the skill
 
 ### Drive the process from the browser UI
 
-Open your Codex or Claude Code chat and say:
-
-> Use Blog Studio. Open the page.
-
-Or open the UI directly from your cloned `blog-studio` folder with Python 3.11
-or newer:
+On a Mac, double-click **Open Blog Studio.command** in the **Applications**
+folder inside your home folder. On Mac or Linux, open Terminal and run:
 
 ```sh
-python3 skills/blog-studio/scripts/studio.py --root "$HOME/blogs/.blog-studio" manage --open
+sh ~/.local/share/blog-studio/studio
 ```
 
-This opens the browser for that writing workspace, creating it if needed. If
-`python3` is an older version, use your Python 3.11+ command or ask your assistant
-to open the page. Keep the terminal running while you use Blog Studio.
+The UI opens in your browser. Leave its terminal window open while it works;
+press **Ctrl-C** there to stop. The launcher finds a supported Python for you,
+even when the computer’s `python3` is older.
 
 Once the page is open, use its controls to drive the work:
 
@@ -110,7 +109,9 @@ Once the page is open, use its controls to drive the work:
 You can leave the browser while it works and return to **Home** to see **Needs
 you**, **In progress**, and **Finished**. Use **Pause after this step** to pause
 between stages, or **Stop** to end a running step. **Blogs** holds your saved
-runs; **Status** checks which assistants are available on this computer.
+runs. In **Status**, choose **Check this computer** for assistant and sign-in
+checks, optional Team Hub tools, and instructions for anything missing. You can
+also run `sh ~/.local/share/blog-studio/studio check` from Terminal.
 
 [All UI controls, stages, and page/chat handoff →](docs/runner.md)
 

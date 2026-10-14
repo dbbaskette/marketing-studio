@@ -39,6 +39,11 @@ class InstallationCase(unittest.TestCase):
         self.home.mkdir()
         self.root = self.home / '.local/share/blog-studio'
         self.targets = installer.targets(self.home, ('codex', 'claude'))
+        computer = patch.object(
+            installer, 'computer_checks', return_value={'checks': [], 'notes': []}
+        )
+        computer.start()
+        self.addCleanup(computer.stop)
         # A source checkout: the installer computes the manifest from the folder.
         self.source = self.home / 'installer source/skills/blog-studio'
         shutil.copytree(SKILL, self.source, ignore=shutil.ignore_patterns('__pycache__'))
@@ -621,7 +626,7 @@ class CommandLineTests(InstallationCase):
         summary = installer.setup_summary(checked)
         self.assertIn('$blog-studio', summary)
         self.assertIn('version ' + VERSION, summary)
-        self.assertNotIn('/blog-studio', summary.replace(str(self.targets['codex']), ''))
+        self.assertNotIn('use /blog-studio to', summary)
         self.assertIn('verify discovery', summary)
         (self.targets['codex'].resolve() / 'scripts/studio.py').write_text('damaged')
         damaged = installer.setup_summary(
@@ -685,3 +690,101 @@ class CommandLineTests(InstallationCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class StartupInstallationTests(InstallationCase):
+    def test_launchers_follow_current_and_preserve_local_edits(self):
+        with patch.object(sys, 'platform', 'darwin'):
+            self.install()
+            finder = self.home / 'Applications/Open Blog Studio.command'
+            self.assertTrue(finder.is_file())
+            opener = self.root / 'studio'
+            self.assertIn('current/scripts/start_studio.py', opener.read_text())
+            self.assertEqual(
+                installer.inspect(self.root, self.targets)['launchers'][str(opener)]['status'],
+                'ready',
+            )
+            helper = self.root / 'blog'
+            helper.write_text('# My own helper\n')
+            self.change_package()
+            result = self.install()
+            self.assertIn(str(helper), result['preserved_launchers'])
+            self.assertEqual(helper.read_text(), '# My own helper\n')
+            installer.rollback(self.root)
+            self.assertEqual(helper.read_text(), '# My own helper\n')
+            installer.uninstall(self.root, ('codex',))
+            self.assertTrue(opener.exists())
+            installer.uninstall(self.root, ('claude',))
+            self.assertFalse(opener.exists())
+            self.assertFalse(finder.exists())
+            self.assertEqual(helper.read_text(), '# My own helper\n')
+
+    def test_foreign_start_command_is_never_overwritten_or_advertised_by_finder(self):
+        self.root.mkdir(parents=True)
+        opener = self.root / 'studio'
+        opener.write_text('My existing command\n')
+        with patch.object(sys, 'platform', 'darwin'):
+            result = self.install(replace=True)
+        self.assertEqual(opener.read_text(), 'My existing command\n')
+        self.assertIn(str(opener), result['preserved_launchers'])
+        self.assertFalse((self.home / 'Applications/Open Blog Studio.command').exists())
+
+    def test_running_page_blocks_update_rollback_and_uninstall(self):
+        self.install()
+        spec = importlib.util.spec_from_file_location(
+            'start_fixture', SKILL / 'scripts/start_studio.py'
+        )
+        start = importlib.util.module_from_spec(spec)
+        import sys as system
+
+        with patch.object(system, 'path', [str(SKILL / 'scripts'), *system.path]):
+            spec.loader.exec_module(start)
+        before = (self.root / 'installation.json').read_bytes()
+        with start.running(self.root, self.home / 'synthetic-writing'):
+            for action in (
+                lambda: self.install(),
+                lambda: installer.rollback(self.root),
+                lambda: installer.uninstall(self.root, ('codex', 'claude')),
+            ):
+                with self.assertRaisesRegex(installer.InstallError, 'Blog Studio is open'):
+                    action()
+        self.assertEqual((self.root / 'installation.json').read_bytes(), before)
+
+    def test_shell_finds_new_python_and_quotes_paths_and_supports_older_runtimes(self):
+        runtime = self.home / 'fixture runtime'
+        (runtime / 'scripts').mkdir(parents=True)
+        stub = 'import sys,json\nprint(json.dumps(sys.argv[1:]))\n'
+        (runtime / 'scripts/start_studio.py').write_text(stub)
+        (runtime / 'scripts/studio.py').write_text(stub)
+        self.root.mkdir(parents=True)
+        (self.root / 'current').symlink_to(runtime)
+        binary = self.home / 'fixture bin'
+        binary.mkdir()
+        (binary / 'python3').write_text('#!/bin/sh\nexit 1\n')
+        (binary / 'python3').chmod(0o755)
+        (binary / 'python3.11').symlink_to(sys.executable)
+        with (
+            patch.object(installer, 'stable_interpreter', return_value=Path('/missing/python')),
+            patch.object(installer, 'PYTHONS', ('python3', 'python3.11')),
+        ):
+            for path, content in installer.launcher_texts(self.root, self.home).items():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+        env = {**os.environ, 'PATH': str(binary)}
+
+        def command(name, *args):
+            done = subprocess.run(
+                ['/bin/sh', str(self.root / name), *args], capture_output=True, text=True, env=env
+            )
+            self.assertEqual(done.returncode, 0, done.stderr)
+            return json.loads(done.stdout)
+
+        self.assertEqual(command('studio', 'check', '--json')[-2:], ['check', '--json'])
+        self.assertEqual(
+            command('blog', '--root', str(self.home), 'status'),
+            ['--root', str(self.home), 'status'],
+        )
+        (runtime / 'scripts/start_studio.py').unlink()
+        self.assertEqual(
+            command('studio'), ['--root', str(self.home / 'blogs/.blog-studio'), 'manage', '--open']
+        )

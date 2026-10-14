@@ -1940,7 +1940,10 @@ class ManagementTests(Fixture):
                 ),
                 patch('sys.stdout', output),
             ):
-                self.assertEqual(management.main(self.root, harness=harness), 0)
+                self.assertEqual(
+                    management.main(self.root, harness=harness, data_root=self.base / 'page-data'),
+                    0,
+                )
             return json.loads(output.getvalue())['analysis']
 
         first = launch()
