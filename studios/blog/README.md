@@ -24,6 +24,23 @@ team sharing or a document connection.
 
 ## Install Blog Studio
 
+Choose either method. Both run the same setup.
+
+### Clone and run
+
+If you have Git, open Terminal and run:
+
+```sh
+git clone https://github.com/dbbaskette/blog-studio.git
+cd blog-studio
+sh installer/install.sh
+```
+
+This installs the current code from the repository. To install a packaged
+release instead, use the ZIP below.
+
+### Download the ZIP
+
 1. **[Download the installer ZIP](https://github.com/dbbaskette/blog-studio/releases/latest/download/blog-studio-installer.zip).**
    Choose `blog-studio-installer.zip` if you are browsing the
    [release page](https://github.com/dbbaskette/blog-studio/releases/latest).
@@ -38,10 +55,12 @@ team sharing or a document connection.
    ```
 
    If you extracted it somewhere else, use that folder's path in the first line.
-4. **Choose Codex, Claude Code, or Both** and follow the setup prompts.
-5. **Open your chosen tool in a folder for your writing**, then start a **new
-   chat**. Enter `$blog-studio` in Codex or `/blog-studio` in Claude Code to load
-   the skill.
+
+### Finish setup
+
+Choose **Codex**, **Claude Code**, or **Both** and follow the setup prompts.
+Then open your chosen tool in a folder for your writing and start a **new chat**.
+Enter `$blog-studio` in Codex or `/blog-studio` in Claude Code to load the skill.
 
 [Detailed setup, company laptop help, and repair instructions →](docs/installation.md)
 
@@ -91,8 +110,10 @@ The page and chat use the same saved blog. You can move between them as you work
 
 ## Update or get help
 
-To update, download the latest installer ZIP and run setup again. Then start a
-new chat. Updating keeps your writing and saved voices.
+For a cloned copy, run `git pull --ff-only` and then `sh installer/install.sh`
+inside the `blog-studio` folder. For a ZIP install, download the latest installer
+ZIP and run setup again. Start a new chat afterwards. Updating keeps your
+writing and saved voices. [More update options →](docs/installation.md#update)
 
 If Blog Studio does not appear, first try a new chat. For installation checks,
 repair, or other problems, use the [setup help](docs/troubleshooting.md).
