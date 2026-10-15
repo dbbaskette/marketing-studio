@@ -115,7 +115,10 @@ def settings(root, data=None):
         for key, maximum in (('tone', 2000), ('author', 200)):
             text(data[key], key, maximum)
         changes = {}
-        if data['engine'] != (before['engine'] or DEFAULTS['engine']):
+        displayed_engine = (
+            before['engine'] if before['engine'] in ('codex', 'claude') else DEFAULTS['engine']
+        )
+        if data['engine'] != displayed_engine:
             changes['assistant'] = {'agent': data['engine']}
         if data['author'] != (before['author'] or DEFAULTS['author']):
             changes['person'] = {'name': data['author']}
@@ -129,7 +132,9 @@ def settings(root, data=None):
         studio.write_json(path, {'schema': 1, 'defaults': private})
         base = {
             **data,
-            'engine': shared.get('assistant', {}).get('agent') or DEFAULTS['engine'],
+            'engine': shared.get('assistant', {}).get('agent')
+            if shared.get('assistant', {}).get('agent') in ('codex', 'claude')
+            else DEFAULTS['engine'],
             'author': shared.get('person', {}).get('name') or DEFAULTS['author'],
         }
         saved = {'defaults': private}

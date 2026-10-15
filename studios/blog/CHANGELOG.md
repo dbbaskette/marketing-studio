@@ -5,6 +5,15 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- Shared Settings conflicts now offer an explicit reload and retry. Reloading
+  keeps local writing preferences and shows the current shared values.
+- Joining a team checks for concurrent Settings changes before preparing the
+  clone and before activating it. A refusal keeps the previous active workspace
+  and the other studio's settings. Local writing saves preserve an unsupported
+  shared assistant and its model/effort.
+- Refresh the backlog for the current page and shared workspaces; closed
+  live-evidence issues are no longer described as implementation gates.
+
 ## 2.1.0 — 2026-10-15
 
 **For authors**
