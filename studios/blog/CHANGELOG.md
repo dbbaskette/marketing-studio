@@ -5,6 +5,8 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+## 2.1.0 — 2026-10-15
+
 **For authors**
 
 - Add a brand skill's repository and release in Settings, select an installed
@@ -15,8 +17,8 @@ changes for authors first, then what changes for maintainers.
 - Join one team repository alongside Training and Presentation Studio. Blogs use
   readable folders, one confirmed driver, explicit takeover/handover, decision
   sharing and numbered revisions. Selected legacy Hub work can be migrated while
-  preserving its source. Shared studios settings live in one file, edited directly from Settings.
-  Legacy local copies migrate without overwriting existing shared values.
+  preserving its source. Shared studios settings live in one file, edited directly from
+  Settings. Legacy local copies migrate without overwriting existing shared values.
 
 - Open Blog Studio with a permanent shell command or Mac launcher, like Training
   Studio. Setup and the UI share computer checks with actionable next steps. Start
@@ -25,8 +27,8 @@ changes for authors first, then what changes for maintainers.
 
 - Use Training Studio’s current page layout, navigation, three-step creation,
   progress stages, paper reviews and approval sheets, with Blog Studio modes
-  for writing, outlining, revising and reviewing. Save local defaults in Settings
-  and compare a revision with its last approved version.
+  for writing, outlining, revising and reviewing. Edit shared settings and local
+  writing preferences in Settings, and compare a revision with its last approved version.
 - Create and run guided blogs from the page, or work through the same stages
   with the skill in a conversation. Research questions, findings, outline,
   draft, review and export package each wait for your approval.
@@ -36,7 +38,6 @@ changes for authors first, then what changes for maintainers.
 - Changed inputs invalidate decisions. Old page actions and late worker results
   cannot replace newer saved work. Runs and decisions share through the existing
   Hub; execution starts only on computers where you explicitly resume it.
-
 
 **For maintainers**
 
