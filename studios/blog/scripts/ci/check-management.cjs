@@ -55,11 +55,12 @@ async function check(){
   await guidedRuns();
   await brandInputs();
   await sharedSettings();
+  await staleSharedForms();
   pageDefinesEveryElement();
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','brand skill inputs and confirmation','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','brand skill inputs and confirmation','shared settings refusal/reload/retry','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -401,6 +402,47 @@ async function refreshWithNewSelection(){
   // A draft collection says when it becomes real.
   f.set('preview',{preview:'c'.repeat(32),expected:'e',collection:'New',saved_collection:false,candidates:0,completed:0,remaining:0,counts:{},excluded:[],posts:[],selected:[],failures:[]});
   f.run('renderImport(preview)');assert.match(text(f.get('import-preview')),/saved, and shared with your Team Hub, when you import its first posts/);
+}
+
+async function staleSharedForms(){
+  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:'Before'},oldBefore={engine:'codex',author:'Before'},freshBefore={engine:'claude',author:'Other studio'};
+  let saved=false,reads=0;const requests=[];
+  const f=fixture((url,options)=>{
+    if(options?.method==='POST'){const data=JSON.parse(options.body);requests.push({url,data});if(!saved)return {__http:400,error:'Shared settings changed in another studio. Reload before saving.'};return {defaults:{...defaults,...data},shared_before:freshBefore,workspace:'/synthetic'};}
+    if(url==='/api/run-settings'){reads++;return {defaults:{...defaults,engine:'claude',author:'Other studio'},shared_before:freshBefore,workspace:'/synthetic'};}
+    if(url==='/api/run-options')return {settings:{defaults},sources:[],profiles:[],agents:{}};if(url==='/api/team')return {};return empty();
+  });
+  f.loadRunner();f.set('defaults',defaults);f.set('before',oldBefore);f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic'};studio.screen='settings';sSettings()");
+  const byId=id=>descendants(f.get('studio-page')).find(e=>e.id===id);
+  let input=byId('settings-author');input.value='My stale author';input.listeners.input();
+  input=byId('settings-tone');input.value='Unsaved local tone';input.listeners.input();
+  await f.get('studio-page').children[0].listeners.submit({preventDefault(){}});
+  assert.equal(reads,0,'refusal never silently reloads or retries');assert.equal(requests.length,1);
+  let reload=descendants(f.get('studio-page')).find(e=>e.textContent==='Reload shared settings');assert.ok(reload);
+  await reload.listeners.click();assert.equal(reads,1);assert.equal(requests.length,1);
+  assert.equal(byId('settings-author').value,'Other studio');assert.equal(byId('settings-tone').value,'Unsaved local tone');
+  saved=true;await f.get('studio-page').children[0].listeners.submit({preventDefault(){}});
+  assert.deepEqual(requests[1].data.shared_before,freshBefore);assert.equal(requests[1].data.engine,'claude');assert.equal(requests[1].data.tone,'Unsaved local tone');
+
+  for(const kind of ['brand','team']){
+    let current=false;const posted=[];
+    const old=kind==='brand'?{repository:'/synthetic/brand',release:'v1.0.0',skills:[],shared_before:{repository:'/synthetic/brand',release:'v1.0.0'}}:{repository:'/synthetic/team',branch:'main',share:'decision',shared_before:{team:{repository:'/synthetic/team',branch:'main'},share:'decision'}};
+    const fresh=kind==='brand'?{...old,release:'v2.0.0',shared_before:{repository:'/synthetic/brand',release:'v2.0.0'}}:{...old,share:'asked',shared_before:{team:{repository:'/synthetic/team',branch:'main'},share:'asked'}};
+    const g=fixture((url,options)=>{
+      if(options?.method==='POST'){posted.push({url,data:JSON.parse(options.body)});if(!current)return {__http:400,error:'Shared settings changed in another studio. Reload before saving.'};return fresh;}
+      if(url==='/api/'+kind){current=true;return fresh;}if(url==='/api/run-settings')return {defaults,workspace:'/synthetic'};if(url==='/api/run-options')return {settings:{defaults},sources:[],profiles:[],agents:{}};return empty();
+    });
+    g.loadRunner();g.set('shown',old);g.set('defaults',defaults);g.run("studio.settings={defaults,workspace:'/synthetic'};studio.screen='settings';studio."+kind+"=shown;sPage("+(kind==='brand'?'sBrandCard()':'sTeamCard()')+")");
+    const fields=()=>descendants(g.get('studio-page'));
+    const field=fields().find(e=>e.id===(kind==='brand'?'brand-release':'team-sharing'));
+    await field.parent.parent.listeners.submit({preventDefault(){}});
+    assert.equal(posted.length,1);assert.deepEqual(posted[0].data.shared_before,old.shared_before);
+    reload=fields().find(e=>e.textContent==='Reload shared settings');await reload.listeners.click();assert.equal(posted.length,1);
+    const refreshed=fields().find(e=>e.id===(kind==='brand'?'brand-release':'team-sharing'));
+    assert.equal(refreshed.value,kind==='brand'?'v2.0.0':'asked');
+    await refreshed.parent.parent.listeners.submit({preventDefault(){}});
+    assert.equal(posted.length,2);assert.deepEqual(posted[1].data.shared_before,fresh.shared_before);
+  }
 }
 
 async function sharedSettings(){

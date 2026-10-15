@@ -388,6 +388,7 @@ def set_up(
     folder: str | None,
     branch: str | None,
     share: str | None,
+    remember_workspace: bool = True,
 ) -> Workspace:
     """Adopt or lay out the runner's folder in a repository, and remember the workspace."""
     if share not in (None, *SHARE):
@@ -424,11 +425,10 @@ def set_up(
         _commit(repo, f'Set up the Blog Studio workspace in {where}/', written)
     before = current()
     kept = before.share if before and before.repo == repo else SHARE[0]
-    return remember(
-        Workspace(
-            str((found or described)['name']), repo, where, on_branch(repo), address, share or kept
-        )
+    workspace = Workspace(
+        str((found or described)['name']), repo, where, on_branch(repo), address, share or kept
     )
+    return remember(workspace) if remember_workspace else workspace
 
 
 def join(
@@ -437,6 +437,7 @@ def join(
     branch: str | None = None,
     name: str | None = None,
     share: str | None = None,
+    remember_workspace: bool = True,
 ) -> Workspace:
     """Set the workspace up from a repository's address, in a clone of the runner's own."""
     need_git()
@@ -456,7 +457,7 @@ def join(
             'for a different repository. Give this one another name.'
         )
     try:
-        return set_up(repo, label, address, folder, branch, share)
+        return set_up(repo, label, address, folder, branch, share, remember_workspace)
     except WorkspaceError:
         if fresh:  # a first set-up that was refused leaves nothing behind
             shutil.rmtree(repo, ignore_errors=True)

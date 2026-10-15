@@ -139,15 +139,13 @@ handling, responsive layouts and article/finding continuation.
 [Desk concurrency validation](desk-concurrency-validation.md) records the
 verified request-ordering and source-conflict fixes.
 
-[Remaining acceptance](remaining-acceptance.md) maps every open issue to delivered
-implementation and its live-only remainder. [Google capabilities](google-capabilities.md)
+[Current backlog and verification](remaining-acceptance.md) records the planned
+implementation sets and separates current work from historical acceptance. [Google capabilities](google-capabilities.md)
 records the team contract and actual connection boundaries.
 
 [Performance workloads and budgets](performance.md) distinguish local synthetic
-fixtures from live provider/model latency. Run live acceptance last:
-[#9](https://github.com/dbbaskette/blog-studio/issues/9),
-[#10](https://github.com/dbbaskette/blog-studio/issues/10), and
-[#15](https://github.com/dbbaskette/blog-studio/issues/15).
+fixtures from live provider/model latency. Closed live-evidence issues are not
+implementation gates; new defects should be tracked against the current app.
 
 ## Architecture, history, and attribution
 

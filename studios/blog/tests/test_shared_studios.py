@@ -267,6 +267,52 @@ class ConfigTests(unittest.TestCase):
             )
         self.assertEqual(self.config.read_bytes(), before)
 
+    def test_local_save_preserves_an_unsupported_assistant_and_its_model(self):
+        root = self.base / 'writing'
+        studio.initialize(root)
+        raw = '{"schema":1,"assistant":{"agent":"future-agent","model":"future-model","effort":"high"}}'
+        self.config.write_text(raw)
+        shown = blog_runner.settings(root)
+        self.assertEqual(shown['defaults']['engine'], 'codex')
+        saved = blog_runner.settings(
+            root, {**shown['defaults'], 'tone': 'New tone', 'shared_before': shown['shared_before']}
+        )
+        self.assertEqual(saved['defaults']['engine'], 'codex')
+        self.assertEqual(self.config.read_text(), raw)
+
+    def test_migration_checks_missing_members_inside_the_writer_lock(self):
+        root = self.base / 'writing'
+        studio.initialize(root)
+        studio.write_json(root / '.team-sync.json', {'share': 'asked'})
+        original = studios_config.update
+
+        def concurrent(changes, **kwargs):
+            original({'share': 'decision', 'person': {'name': 'Another studio'}})
+            return original(changes, **kwargs)
+
+        with patch.object(studios_config, 'update', concurrent):
+            notice, problem = studios_config.migrate(root)
+        self.assertIsNone(problem)
+        self.assertIn('share', notice)
+        self.assertEqual(studios_config.read()[0]['share'], 'decision')
+        self.assertEqual(studios_config.read()[0]['person']['name'], 'Another studio')
+        self.assertNotIn('share', studio.read_json(root / '.team-sync.json'))
+
+    def test_missing_clone_still_migrates_share_before_removing_it(self):
+        studio.write_json(
+            gitstate.settings_path(),
+            {
+                'schema': 1,
+                'name': 'Missing',
+                'repo': str(self.base / 'missing'),
+                'folder': 'blogs',
+                'share': 'asked',
+            },
+        )
+        self.assertIsNone(gitstate.current())
+        self.assertEqual(studios_config.read()[0]['share'], 'asked')
+        self.assertNotIn('share', studio.read_json(gitstate.settings_path()))
+
 
 class TeamTests(unittest.TestCase):
     def setUp(self):
@@ -328,6 +374,56 @@ class TeamTests(unittest.TestCase):
         self.assertFalse(
             set(studio.read_json(gitstate.settings_path())) & {'address', 'branch', 'share'}
         )
+
+    def test_stale_join_is_refused_before_git_and_can_retry_after_reload(self):
+        before = teams.status(self.root)['shared_before']
+        pointer = gitstate.settings_path().read_bytes()
+        studios_config.update({'share': 'asked'})
+        with patch.object(gitstate, 'join') as join:
+            with self.assertRaisesRegex(ValueError, 'changed in another studio'):
+                teams.join(str(self.remote), share='decision', shared_before=before)
+            join.assert_not_called()
+        self.assertEqual(gitstate.settings_path().read_bytes(), pointer)
+        reloaded = teams.status(self.root)['shared_before']
+        self.assertEqual(
+            teams.join(str(self.remote), share='decision', shared_before=reloaded), self.root
+        )
+
+    def test_settings_change_during_join_keeps_the_current_workspace(self):
+        previous = gitstate.local(self.base / 'other-local', folder='blogs')
+        pointer = gitstate.settings_path().read_bytes()
+        original = gitstate.sync
+
+        def concurrent(found):
+            report = original(found)
+            studios_config.update({'share': 'asked'})
+            return report
+
+        with patch.object(gitstate, 'sync', concurrent):
+            with self.assertRaisesRegex(ValueError, 'changed in another studio'):
+                teams.join(str(self.remote), share='decision')
+        self.assertEqual(gitstate.settings_path().read_bytes(), pointer)
+        self.assertEqual(gitstate.current().root, previous.root)
+        self.assertEqual(studios_config.read()[0]['share'], 'asked')
+        self.assertTrue(self.root.is_dir())
+
+    def test_page_share_mode_refuses_a_stale_baseline(self):
+        import management
+
+        before = teams.status(self.root)['shared_before']
+        studios_config.update({'share': 'asked'})
+        with self.assertRaisesRegex(ValueError, 'changed in another studio'):
+            management.dispatch(
+                self.root, 'team-share-mode', {'share': 'decision', 'shared_before': before}
+            )
+        self.assertEqual(studios_config.read()[0]['share'], 'asked')
+        shown = teams.status(self.root)
+        saved = management.dispatch(
+            self.root,
+            'team-share-mode',
+            {'share': 'decision', 'shared_before': shown['shared_before']},
+        )
+        self.assertEqual(saved['share'], 'decision')
 
     def create(self):
         return blog_runner.create(

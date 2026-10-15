@@ -285,6 +285,7 @@ def status(root):
         'share': shared.get('share') or 'decision',
         'shared_problem': problem or migration_problem,
         'migration_notice': migration_notice,
+        'shared_before': team_before(shared),
     }
     if found:
         return {
@@ -305,12 +306,32 @@ def status(root):
     }
 
 
-def join(address, branch='main', share='decision'):
+def team_before(shared):
+    return {
+        'team': {key: shared.get('team', {}).get(key) for key in ('repository', 'branch')},
+        'share': shared.get('share'),
+    }
+
+
+def join(address, branch='main', share='decision', shared_before=None):
     studios_config.repository(address)
-    studios_config.update({})  # Refuse unreadable shared settings before changing the clone.
+    if share not in ('decision', 'asked'):
+        raise ValueError('Choose a listed sharing mode.')
+    if shared_before is None:
+        shared_before = team_before(studios_config.read()[0])
+    if (
+        not isinstance(shared_before, dict)
+        or set(shared_before) != {'team', 'share'}
+        or not isinstance(shared_before['team'], dict)
+        or set(shared_before['team']) != {'repository', 'branch'}
+    ):
+        raise ValueError('Reload the displayed team settings before joining.')
     # The core owns a distinct clone, never the checkout used by Training or Presentation Studio.
     with support.locked(support.data_root() / '.joining-blog.lock'):
-        found = gitstate.join(address, folder='blogs', branch=branch, share=share)
+        studios_config.update({}, expected=shared_before)
+        found = gitstate.join(
+            address, folder='blogs', branch=branch, share=share, remember_workspace=False
+        )
         with internal():
             studio.initialize(found.root)
             studio.write_json(found.root / '.team-sync.json', {})
@@ -321,8 +342,10 @@ def join(address, branch='main', share='decision'):
                 'The team folder was kept here but could not be shared. Check repository write access and retry joining.'
             )
         studios_config.update(
-            {'team': {'repository': address, 'branch': found.branch}, 'share': share}
+            {'team': {'repository': address, 'branch': found.branch}, 'share': share},
+            expected=shared_before,
         )
+        gitstate.remember(found)
     return found.root
 
 

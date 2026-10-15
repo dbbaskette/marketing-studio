@@ -1426,7 +1426,7 @@ def dispatch(root, route, data):
             brand_skill.configure(data) if route == 'brand-configure' else brand_skill.install(data)
         )
     if route == 'team-join':
-        if set(data) - {'repository', 'branch', 'share'}:
+        if set(data) - {'repository', 'branch', 'share', 'shared_before'}:
             raise ValueError('Unknown team setting.')
         from blog_runner import engine
 
@@ -1434,7 +1434,7 @@ def dispatch(root, route, data):
             raise ValueError('Stop the current writing step before joining a team repository.')
         repository = data.get('repository', '')
         branch, share = data.get('branch', 'main'), data.get('share', 'decision')
-        target = join(repository, branch, share)
+        target = join(repository, branch, share, data.get('shared_before'))
         return {**status(target), 'switch_workspace': str(target)}
     if route in ('team-sync', 'team-share-mode'):
         if route == 'team-share-mode':
@@ -1442,7 +1442,12 @@ def dispatch(root, route, data):
                 raise ValueError('Choose a listed sharing mode.')
             import studios_config
 
-            studios_config.update({'share': data['share']})
+            before = data.get('shared_before')
+            if before is None:
+                before = {'share': studios_config.read()[0].get('share')}
+            if not isinstance(before, dict) or 'share' not in before:
+                raise ValueError('Reload the displayed sharing setting before saving.')
+            studios_config.update({'share': data['share']}, expected={'share': before['share']})
             return status(root)
         return refresh(root, push=True)
     if route.startswith('team-'):
