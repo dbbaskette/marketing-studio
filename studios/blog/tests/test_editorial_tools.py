@@ -4,6 +4,7 @@ import base64
 import http.client
 import io
 import json
+import os
 from pathlib import Path
 import socket
 import tempfile
@@ -28,6 +29,16 @@ class Fixture(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name).resolve()
+        environment = patch.dict(
+            os.environ,
+            {
+                'BLOG_STUDIO_DATA': str(self.base / 'studio-data'),
+                'STUDIOS_CONFIG': str(self.base / 'studios-config.json'),
+                'BRAND_SKILL_RUNTIME': str(self.base / 'no-brand'),
+            },
+        )
+        environment.start()
+        self.addCleanup(environment.stop)
         self.root = self.base / 'writing'
         studio.initialize(self.root)
         self.file = self.base / 'input.md'

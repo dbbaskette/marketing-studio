@@ -35,18 +35,59 @@ on this computer, from their last saved stage.
 The page follows Training Studio’s current layout: **Home**, **Blogs**,
 **Status** and **Settings**, with the same glass navigation and toolbar, progress
 stages, paper documents and decision sheets. Home groups **Needs you**, **In
-progress** and **Finished**. Settings saves writing defaults on this computer
-for future page runs; existing runs keep their choices. **Status → Check this
+progress** and **Finished**. Settings edits shared values for all studios and local writing preferences for
+future blogs; existing runs keep their choices. **Status → Check this
 computer** shares setup’s read-only checks and next steps. You can run the same
 report with `sh ~/.local/share/blog-studio/studio check`.
 
 Choose **New blog** and work through three steps: topic and audience; mode and
-voice; sources, assistant and limits. Choose **Write a blog**, **Outline only**,
+voice and optional brand; sources, assistant and limits. Choose **Write a blog**, **Outline only**,
 **Revise a draft**, or **Review a draft**. Revision and review accept an uploaded
 manuscript or a saved readable source; the original is retained. You can upload
 references in the wizard too. The assistant receives only selected source and
 voice context plus this blog's saved writing preferences, memories and explicitly
 selected team context. Oversized context is refused rather than silently cut.
+
+## Your brand skill
+
+Open **Settings → Brand skill**, as in Training Studio. A brand skill belongs to
+your organisation and is supplied separately. You can write without one.
+
+- **Its repository** takes an https or ssh address that Git can access with your
+  existing sign-in. **Which release** takes a tag such as `v1.4.0`; leave it empty
+  for the newest. **Check and save** reads release tags before saving anything.
+  A failed check preserves the previous settings. Clear both fields to forget
+  the repository; installed skills stay installed.
+- **Use this brand skill** lists skills found in the usual shared install and
+  assistant skill folders, following Training Studio's discovery rules.
+  `BRAND_SKILL_RUNTIME` can point to a particular installed skill folder.
+  Choose one and press **Use this skill**. The choice stays on this computer.
+- **Install the brand skill** or **Install selected release** opens a sheet with
+  the repository, tag and commit. Nothing is downloaded or installed until you
+  choose **Install it now**. Only install from a repository you trust.
+  Installation is refused while a blog is working and blocks new writing jobs until
+  it finishes. Home and Status show its result. Use **Check and save** again to
+  check for another release.
+
+The install uses the release's own installer, with the same ZIP/checksum or
+tag-clone protocol as Training Studio. It rechecks that the tag still points to
+the commit shown. Research installation is skipped. If the release declares it
+would install or replace another companion, Blog Studio refuses before running
+the installer; install a compatible companion yourself first.
+
+In **New blog → Its shape → Brand**, select a brand and variant from that skill,
+or **No brand**. A shared `brand.brand` / `brand.variant` default is offered when
+the selected skill has it. The blog exports a contract for the `blog` medium
+and keeps its exact naming and design guides with the run. Existing blogs keep
+that contract when settings or installed skills change, including when resumed
+on another computer. Brand naming rules and visual guidance stay separate from
+the author's voice; a logo or palette does not imply a company tone.
+
+The brand repository, release and identity live in the shared settings file.
+Installed skill paths and release-check observations stay in Blog Studio's local
+data folder. Only the selected contract travels with a blog.
+
+## Run and review
 
 Choose selected sources only, sources plus public research, or no research. Pick
 Codex or Claude Code, already installed and signed in, and a time limit for each
@@ -109,8 +150,12 @@ Join from **Settings** or **Status**. The page switches to its own team clone.
 Blogs have one driver, with **Take this blog**, **Take over**, **Hand over**, and
 numbered **Publish revision** controls. **Share now** retries pending decisions.
 See [team workspaces and migration](team-workspace.md) and the
-[shared studios defaults](shared-studios.md). Existing local settings win over
-shared defaults; writing never requires a shared config file.
+[shared studios settings](shared-studios.md). Settings saves shared values to
+that file directly, with no local override or additional consent toggle. Missing
+or unreadable shared settings use built-in defaults; writing remains available.
+Legacy local copies migrate only to missing shared members, then are removed.
+An existing shared value is kept and reported. An unreadable file is preserved
+and shared-value saves are refused until it can be read.
 
 ## Saved work and teams
 

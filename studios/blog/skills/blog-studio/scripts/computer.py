@@ -171,13 +171,13 @@ def report(home=None, sign_in=True):
     shared, problem = config.read()
     add(
         'studios-config',
-        'Shared studios defaults',
+        'Shared studios settings',
         'manual' if problem else 'ready',
         problem
         or (
-            'Shared defaults loaded.'
+            'Shared settings loaded from studios-config.json.'
             if shared
-            else 'No shared defaults file; using this studio’s settings.'
+            else 'No shared settings file; using built-in defaults.'
         ),
     )
     path_python = values.get('python3')

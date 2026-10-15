@@ -42,11 +42,9 @@ def space(root):
 
 
 def preference(root):
-    local = support.read_json(root / '.team-sync.json', {})
-    if not isinstance(local, dict):
-        local = {}
+    studios_config.migrate(root)
     shared, _ = studios_config.read()
-    chosen = local.get('share', shared.get('share', 'decision'))
+    chosen = shared.get('share', 'decision')
     return chosen if chosen in gitstate.SHARE else 'decision'
 
 
@@ -135,7 +133,7 @@ def refresh(root, push=False):
     # Upstream holds this lock only to inspect/replay the clone, never during fetch/push.
     report = gitstate.sync(found, push=push, before=lambda at: _learn(root, found, at), held=held)
     with held, internal():
-        studio.write_json(root / '.team-sync.json', {'share': preference(root), 'report': report})
+        studio.write_json(root / '.team-sync.json', {'report': report})
     return report
 
 
@@ -278,42 +276,53 @@ def action(root, ident, action, expected=None):
 
 
 def status(root):
+    migration_notice, migration_problem = studios_config.migrate(root)
     found = space(root)
     shared, problem = studios_config.read()
+    preferences = {
+        'repository': shared.get('team', {}).get('repository') or '',
+        'branch': shared.get('team', {}).get('branch') or 'main',
+        'share': shared.get('share') or 'decision',
+        'shared_problem': problem or migration_problem,
+        'migration_notice': migration_notice,
+    }
     if found:
         return {
+            **preferences,
             'joined': True,
             'workspace': str(root),
-            'repository': found.address,
-            'branch': found.branch,
-            'share': found.share,
+            'active_repository': found.address,
+            'active_branch': found.branch,
+            'configuration_notice': 'Shared team settings changed. Join the configured repository to use it here; this workspace and its writing are kept.'
+            if (preferences['repository'], preferences['branch']) != (found.address, found.branch)
+            else None,
             'report': support.read_json(root / '.team-sync.json', {}).get('report', {}),
             'published': team.published(found),
-            'shared_problem': problem,
         }
     return {
         'joined': False,
-        'repository': shared.get('team', {}).get('repository', ''),
-        'branch': shared.get('team', {}).get('branch', 'main'),
-        'share': shared.get('share', 'decision'),
-        'shared_problem': problem,
+        **preferences,
     }
 
 
 def join(address, branch='main', share='decision'):
     studios_config.repository(address)
+    studios_config.update({})  # Refuse unreadable shared settings before changing the clone.
     # The core owns a distinct clone, never the checkout used by Training or Presentation Studio.
     with support.locked(support.data_root() / '.joining-blog.lock'):
         found = gitstate.join(address, folder='blogs', branch=branch, share=share)
         with internal():
             studio.initialize(found.root)
-            studio.write_json(found.root / '.team-sync.json', {'share': share})
+            studio.write_json(found.root / '.team-sync.json', {})
         gitstate.commit(found, 'Set up Blog Studio writing folders')
         report = gitstate.sync(found)
         if not report['shared']:
             raise ValueError(
                 'The team folder was kept here but could not be shared. Check repository write access and retry joining.'
             )
+        studios_config.update(
+            {'team': {'repository': address, 'branch': found.branch}, 'share': share}
+        )
     return found.root
 
 

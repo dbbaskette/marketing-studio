@@ -34,6 +34,65 @@ worker, not a live assistant.
 | Compare a revision | Earlier approval exists | Exact approved snapshot and current diff | Document and Hub round-trip |
 | Server changes while reading | Review page open | Existing document retained, approval disabled | Browser and DOM |
 
+## Brand skill inputs
+
+The 2026-10-15 brand addition uses only synthetic skills, tagged local Git
+repositories, disposable homes and a scripted writer. It never starts a provider
+or installs an organisation's real brand into a fixture.
+
+- `.venv/bin/python -m unittest discover -s tests -p test_brand_skill.py -v`:
+  12 checks pass. They exercise discovery and selection of two installed skills,
+  real release-tag checks and installation through the release's Node installer,
+  explicit confirmation, moved-tag and companion replacement refusals, writing
+  exclusion during installation, the authenticated page API and the real
+  `studio.py run create --brand fictional --variant dark` command. A saved brand
+  contract survives selection changes, removal of its skill and a second clone.
+- `.venv/bin/python -m unittest discover -s tests -p test_blog_runner.py -v`:
+  all 29 existing runner checks pass.
+- `node scripts/ci/check-management.cjs`: brand repository/release and installed
+  skill forms submit the displayed values; installation runs only after its
+  confirmation sheet; per-blog brand/variant inputs and opting out are exercised.
+- `.venv/bin/python scripts/acceptance/studios-journey.py --run-directory
+  /tmp/blog-brand-studios-journey-20261015 --training-checkout
+  <training-checkout>`: all 41 synthetic CLI commands pass,
+  including team setup, intake, saves/reviews, cross-clone handover, offline
+  retry, readable folders and local-edit protection.
+
+T3's collaborative browser could open the preview but navigation and snapshots
+failed in its automation client, including a fresh tab. Visual browser
+verification is unavailable for this addition; HTTP and DOM coverage above is
+recorded separately.
+
+## Shared settings: issue 96
+
+The shared values now come exclusively from `studios-config.json`. Settings
+updates changed members directly, while limits and installed skill paths stay
+local. Migration copies only absent shared members, removes legacy copies after
+the shared write, and reports preserved shared values. Existing runs and active
+clones retain their original writing/connection; changed team settings require
+an explicit join.
+
+| Trigger | Before | After | Coverage |
+| --- | --- | --- | --- |
+| Save shared settings | Displayed values | Changed shared members updated; no local copies | Direct Settings write |
+| Read after another studio saves | Older shared values | New shared values, local limits retained | Cross-studio next read |
+| Upgrade with local copies | Legacy preferences and shared file | Only missing members copied; local copies removed | Idempotent migration |
+| Shared file unreadable/invalid | Legacy copies retained | Built-in shared defaults; shared saves refused; bytes kept | Read and write refusal |
+| Save a stale form | Another member changed | Unrelated changes kept; same-member conflicts refused | Atomic expected-value check |
+| Change team repository elsewhere | Existing clone open | New join input; active writing stays in its clone | Connection safety |
+| Change brand repository/release elsewhere | Checked release cached | New shared inputs; outdated release observation discarded | Brand source refresh |
+
+- `.venv/bin/python -m unittest discover -s tests -p test_shared_studios.py -v`:
+  18 checks pass, including migration, unreadable-file preservation, cross-studio
+  reads, stale form intent and team connection safety.
+- The 12 brand and 29 runner checks pass with the single-source settings flow.
+- `.venv/bin/python scripts/acceptance/studios-journey.py --run-directory
+  /tmp/blog-config96-studios-journey-20261015 --training-checkout
+  <training-checkout>`: all 41 synthetic CLI commands pass again.
+- The common convention is byte-identical in the Blog, Training and Presentation
+  documentation changes. Training's runtime adoption is tracked separately in
+  `dbbaskette/training-studio#70`.
+
 ## Commands and outcomes
 
 Use the checkout’s Python 3.11+ interpreter (`.venv/bin/python` locally).

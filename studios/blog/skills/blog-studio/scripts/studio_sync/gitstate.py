@@ -174,9 +174,6 @@ def remember(workspace: Workspace) -> Workspace:
             'name': workspace.name,
             'repo': str(workspace.repo),
             'folder': workspace.folder,
-            'branch': workspace.branch,
-            'address': workspace.address,
-            'share': workspace.share,
         },
     )
     return workspace
@@ -188,13 +185,21 @@ def current() -> Workspace | None:
     if not isinstance(kept, dict) or kept.get('schema') != SCHEMA:
         return None
     try:
+        import studios_config
+
+        root = Path(kept['repo']) / kept['folder']
+        studios_config.migrate(root)
+        described = marker(root.parent, root.name)
+        if not described:
+            return None
+        shared, _ = studios_config.read()
         found = Workspace(
             str(kept['name']),
             Path(kept['repo']),
             str(kept['folder']),
-            str(kept['branch']),
-            kept.get('address'),
-            kept['share'] if kept.get('share') in SHARE else SHARE[0],
+            described['branch'],
+            described.get('repository'),
+            shared.get('share') if shared.get('share') in SHARE else SHARE[0],
         )
     except (KeyError, TypeError):
         return None
@@ -208,7 +213,10 @@ def share_when(when: str) -> Workspace:
     workspace = current()
     if workspace is None:
         raise WorkspaceError('No workspace is set up on this computer yet.')
-    return remember(replace(workspace, share=when))
+    import studios_config
+
+    studios_config.update({'share': when})
+    return replace(workspace, share=when)
 
 
 # --- git ---------------------------------------------------------------------------------

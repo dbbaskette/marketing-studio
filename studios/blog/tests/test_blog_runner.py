@@ -2,6 +2,7 @@
 
 import json
 import http.client
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -20,6 +21,16 @@ import management
 class BlogRunnerTests(Fixture):
     def setUp(self):
         super().setUp()
+        environment = patch.dict(
+            os.environ,
+            {
+                'BLOG_STUDIO_DATA': str(self.base / 'runner-data'),
+                'BRAND_SKILL_RUNTIME': str(self.base / 'no-brand'),
+                'STUDIOS_CONFIG': str(self.base / 'studios.json'),
+            },
+        )
+        environment.start()
+        self.addCleanup(environment.stop)
         self.addCleanup(lambda: runner.ENGINES.pop(str(self.root), None))
 
     def create(self, page=False, **extra):

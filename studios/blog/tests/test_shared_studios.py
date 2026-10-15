@@ -23,11 +23,14 @@ class ConfigTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
         self.config = self.base / 'studios.json'
-        self.patch = patch.dict(os.environ, {'STUDIOS_CONFIG': str(self.config)})
+        self.patch = patch.dict(
+            os.environ,
+            {'STUDIOS_CONFIG': str(self.config), 'BLOG_STUDIO_DATA': str(self.base / 'data')},
+        )
         self.patch.start()
         self.addCleanup(self.patch.stop)
 
-    def test_missing_invalid_and_local_override(self):
+    def test_shared_changes_and_invalid_file_use_builtins(self):
         self.assertEqual(studios_config.read(), ({}, None))
         studio.initialize(self.base / 'writing')
         root = self.base / 'writing'
@@ -39,20 +42,21 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(defaults['defaults']['author'], 'Fictional Author')
         local = {**defaults['defaults'], 'engine': 'codex'}
         blog_runner.settings(root, local)
-        self.assertEqual(studios_config.read()[0]['assistant']['agent'], 'claude')
+        self.assertEqual(studios_config.read()[0]['assistant']['agent'], 'codex')
+        saved = studio.read_json(root / '.blog-run-settings.json')['defaults']
+        self.assertNotIn('engine', saved)
+        self.assertNotIn('author', saved)
         self.config.write_text('{invalid')
         self.assertEqual(blog_runner.settings(root)['defaults']['engine'], 'codex')
         self.assertTrue(blog_runner.settings(root)['shared_problem'])
         self.assertEqual(self.config.read_text(), '{invalid')
 
-    def test_consent_changes_only_leaves_and_preserves_unknown_bytes(self):
+    def test_settings_changes_only_leaves_and_preserves_unknown_bytes(self):
         raw = '{\n "schema": 1, "person": {"name": "Old", "unknown" : [1,  2]},\n "assistant": {"agent":"codex", "model" : "preserve"}, "future" : { "n": 1e3 }\n}\n'
         self.config.write_text(raw)
         studio.initialize(self.base / 'writing')
         old = blog_runner.settings(self.base / 'writing')['defaults']
-        blog_runner.settings(
-            self.base / 'writing', {**old, 'author': 'New', 'for_all_studios': True}
-        )
+        blog_runner.settings(self.base / 'writing', {**old, 'author': 'New'})
         self.assertEqual(self.config.read_text(), raw.replace('"Old"', '"New"'))
         studios_config.update(
             {'team': {'repository': 'git@example.test:team/studios.git', 'branch': 'main'}}
@@ -103,11 +107,165 @@ class ConfigTests(unittest.TestCase):
         ):
             with self.assertRaises(ValueError):
                 studios_config.update({'team': {'repository': address}})
+            with self.assertRaises(ValueError):
+                studios_config.update({'brand': {'repository': address}})
         self.assertEqual(self.config.read_bytes(), before)
         self.config.write_text('[]')
         with self.assertRaises(ValueError):
             studios_config.update({'person': {'name': 'New'}})
         self.assertEqual(self.config.read_text(), '[]')
+
+    def test_migration_moves_missing_values_and_removes_local_copies(self):
+        root = self.base / 'writing'
+        studio.initialize(root)
+        local = dict(
+            blog_runner.DEFAULTS,
+            engine='codex',
+            author='Local Author',
+            tone='A local writing preference',
+            model='legacy-model',
+            effort='high',
+            output='google',
+        )
+        studio.write_json(root / '.blog-run-settings.json', {'schema': 1, 'defaults': local})
+        data = self.base / 'data'
+        studio.write_json(
+            data / 'brand.json',
+            {
+                'repository': 'https://example.invalid/brand.git',
+                'release': 'v1.4.0',
+                'runtime': '/synthetic/installed-brand',
+                'unrelated': [1, 2],
+            },
+        )
+        studio.write_json(
+            data / 'workspace.json',
+            {
+                'schema': 1,
+                'name': 'Synthetic',
+                'repo': '/synthetic/clone',
+                'folder': 'blogs',
+                'address': 'git@example.invalid:team/studios.git',
+                'branch': 'main',
+                'share': 'decision',
+            },
+        )
+        studio.write_json(root / '.team-sync.json', {'share': 'asked', 'report': {'shared': False}})
+        raw = '{"schema":1,"assistant":{"agent":"claude"},"person":{"name":"Shared Author"},"future" : { "n": 1e3 }}\n'
+        self.config.write_text(raw)
+        shown = blog_runner.settings(root)
+        self.assertEqual(shown['defaults']['engine'], 'claude')
+        self.assertEqual(shown['defaults']['author'], 'Shared Author')
+        self.assertIn('Existing shared values were kept', shown['migration_notice'])
+        shared = studios_config.read()[0]
+        self.assertEqual(shared['assistant']['model'], 'legacy-model')
+        self.assertEqual(shared['brand']['release'], 'v1.4.0')
+        self.assertEqual(shared['team']['branch'], 'main')
+        self.assertEqual(shared['share'], 'asked')
+        self.assertEqual(shared['output'], 'google')
+        self.assertIn('"future" : { "n": 1e3 }', self.config.read_text())
+        private = studio.read_json(root / '.blog-run-settings.json')['defaults']
+        self.assertEqual(private['tone'], 'A local writing preference')
+        self.assertFalse(set(private) & {'engine', 'author', 'model', 'effort', 'output'})
+        brand = studio.read_json(data / 'brand.json')
+        self.assertEqual(brand, {'runtime': '/synthetic/installed-brand', 'unrelated': [1, 2]})
+        self.assertFalse(
+            set(studio.read_json(data / 'workspace.json')) & {'address', 'branch', 'share'}
+        )
+        self.assertEqual(studio.read_json(root / '.team-sync.json'), {'report': {'shared': False}})
+        before, modified = self.config.read_bytes(), self.config.stat().st_mtime_ns
+        studios_config.migrate(root)
+        self.assertEqual(self.config.read_bytes(), before)
+        self.assertEqual(self.config.stat().st_mtime_ns, modified)
+
+    def test_invalid_shared_file_preserves_legacy_values_and_refuses_saving(self):
+        root = self.base / 'writing'
+        studio.initialize(root)
+        local_path = root / '.blog-run-settings.json'
+        studio.write_json(
+            local_path,
+            {
+                'schema': 1,
+                'defaults': dict(
+                    blog_runner.DEFAULTS,
+                    engine='claude',
+                    author='Legacy Author',
+                    tone='Private tone',
+                ),
+            },
+        )
+        self.config.write_text('{invalid')
+        before = local_path.read_bytes()
+        shown = blog_runner.settings(root)
+        self.assertEqual(shown['defaults']['engine'], blog_runner.DEFAULTS['engine'])
+        self.assertEqual(shown['defaults']['author'], '')
+        self.assertEqual(shown['defaults']['tone'], 'Private tone')
+        self.assertTrue(shown['shared_problem'])
+        with self.assertRaises(ValueError):
+            blog_runner.settings(root, {**shown['defaults'], 'author': 'New Author'})
+        self.assertEqual(local_path.read_bytes(), before)
+        self.assertEqual(self.config.read_text(), '{invalid')
+
+    def test_another_studio_change_is_seen_on_next_read_without_local_shadow(self):
+        one, two = self.base / 'one', self.base / 'two'
+        studio.initialize(one)
+        studio.initialize(two)
+        old = blog_runner.settings(one)['defaults']
+        blog_runner.settings(
+            one, {**old, 'author': 'Author One', 'engine': 'claude', 'tone': 'Local tone'}
+        )
+        self.assertEqual(blog_runner.settings(two)['defaults']['author'], 'Author One')
+        studios_config.update(
+            {
+                'person': {'name': 'Author Two'},
+                'assistant': {'agent': 'codex'},
+                'brand': {'repository': 'https://example.invalid/brand.git', 'release': 'v1.4.0'},
+            }
+        )
+        current = blog_runner.settings(one)
+        self.assertEqual(current['defaults']['author'], 'Author Two')
+        self.assertEqual(current['defaults']['engine'], 'codex')
+        self.assertEqual(current['defaults']['tone'], 'Local tone')
+        self.assertNotIn('author', studio.read_json(one / '.blog-run-settings.json')['defaults'])
+
+    def test_unreadable_shared_file_never_gets_replaced(self):
+        self.config.write_text('{"schema":1,"person":{"name":"Kept"}}')
+        original = Path.read_text
+
+        def unreadable(path, *args, **kwargs):
+            if path == self.config:
+                raise PermissionError('Synthetic unreadable config')
+            return original(path, *args, **kwargs)
+
+        before = self.config.read_bytes()
+        with patch.object(Path, 'read_text', unreadable):
+            self.assertTrue(studios_config.read()[1])
+            with self.assertRaises(ValueError):
+                studios_config.update({'person': {'name': 'New'}})
+        self.assertEqual(self.config.read_bytes(), before)
+
+    def test_a_stale_form_preserves_other_changes_and_refuses_same_member_conflicts(self):
+        root = self.base / 'writing'
+        studio.initialize(root)
+        studios_config.update({'person': {'name': 'Before'}, 'assistant': {'agent': 'codex'}})
+        shown = blog_runner.settings(root)
+        studios_config.update({'person': {'name': 'Other Studio'}})
+        saved = blog_runner.settings(
+            root, {**shown['defaults'], 'engine': 'claude', 'shared_before': shown['shared_before']}
+        )
+        self.assertEqual(saved['defaults']['author'], 'Other Studio')
+        self.assertEqual(saved['defaults']['engine'], 'claude')
+        before = self.config.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'changed in another studio'):
+            blog_runner.settings(
+                root,
+                {
+                    **shown['defaults'],
+                    'author': 'Stale Author',
+                    'shared_before': shown['shared_before'],
+                },
+            )
+        self.assertEqual(self.config.read_bytes(), before)
 
 
 class TeamTests(unittest.TestCase):
@@ -153,6 +311,23 @@ class TeamTests(unittest.TestCase):
     def other(self):
         os.environ['BLOG_STUDIO_DATA'] = str(self.base / 'two')
         return teams.join(str(self.remote))
+
+    def test_shared_team_changes_do_not_silently_move_the_current_clone(self):
+        studios_config.update(
+            {
+                'team': {'repository': 'https://example.invalid/new-team.git', 'branch': 'preview'},
+                'share': 'asked',
+            }
+        )
+        found = teams.status(self.root)
+        self.assertEqual(found['repository'], 'https://example.invalid/new-team.git')
+        self.assertEqual(found['active_repository'], str(self.remote))
+        self.assertTrue(found['configuration_notice'])
+        self.assertEqual(teams.space(self.root).share, 'asked')
+        self.assertEqual(gitstate.current().root, self.root)
+        self.assertFalse(
+            set(studio.read_json(gitstate.settings_path())) & {'address', 'branch', 'share'}
+        )
 
     def create(self):
         return blog_runner.create(
@@ -213,7 +388,7 @@ class TeamTests(unittest.TestCase):
         self.assertFalse(report['shared'])
         support.git(self.root.parent, 'remote', 'set-url', 'origin', str(self.remote))
         self.assertTrue(teams.refresh(self.root, push=True)['shared'])
-        studio.write_json(self.root / '.team-sync.json', {'share': 'asked'})
+        studios_config.update({'share': 'asked'})
         current = blog_runner.survey(self.root, ident)
         blog_runner.decide(self.root, ident, current['expected'], 'approve')
         self.assertTrue(gitstate.unshared(teams.space(self.root), ident))
@@ -224,7 +399,7 @@ class TeamTests(unittest.TestCase):
         ident = found['id']
         other = self.other()
         os.environ['BLOG_STUDIO_DATA'] = str(self.base / 'one')
-        studio.write_json(self.root / '.team-sync.json', {'share': 'asked'})
+        studios_config.update({'share': 'asked'})
         studio.atomic(self.root / ident / 'OUTLINE.md', b'Unshared local writing')
         teams.saved(self.root, ident)
         os.environ['BLOG_STUDIO_DATA'] = str(self.base / 'two')
@@ -391,7 +566,6 @@ class TeamPageTests(unittest.TestCase):
                         'repository': str(self.remote),
                         'branch': 'main',
                         'share': 'asked',
-                        'for_all_studios': False,
                     }
                 ),
                 {'X-Blog-Studio-Token': token, 'Content-Type': 'application/json'},

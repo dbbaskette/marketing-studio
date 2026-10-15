@@ -28,7 +28,9 @@ research scope and requested stop. Then use:
 Use `--research web-allowed` only for authorized public research, or `none` to
 omit research. Add `--source <id>` for each chosen source and `--profile <id>`
 for a saved voice, or `--tone "description"`. `--author` overrides a saved
-default. `--mode write` is the default; `outline` stops at outline. Use
+default. Select an installed brand with `--brand ID --variant VARIANT`, or
+`--brand ''` for no brand. Read its pinned guides in `derived/blog-run.json`;
+keep its naming rules separate from the author voice. `--mode write` is the default; `outline` stops at outline. Use
 `--mode revise --manuscript <source-id>` to revise a saved readable source, or
 `--mode review --manuscript <source-id>` to review it without rewriting.
 The original and working manuscript are retained. `--stop` can be `outline`,

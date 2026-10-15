@@ -2,14 +2,13 @@
 
 Use the same team repository address in Training Studio, Blog Studio and
 Presentation Studio. The [shared convention](shared-studios.md) describes the
-folder layout and shared defaults.
+folder layout and shared settings.
 
 On **Settings** or **Status**, open **Join our team repository**. Enter its Git
-address and branch, or use the values pre-filled from shared studios defaults.
+address and branch, or use the values pre-filled from shared studios settings.
 Git must already have your name, email and repository access configured. The
 studio never changes your global Git configuration. Local writing needs no Git.
-Choose **After every decision** or **Only when I choose Share now**. Check the
-shared-defaults option only if you want changed team values used by other studios.
+Choose **After every decision** or **Only when I choose Share now**. Saving these values updates the shared file for all studios.
 
 Joining opens the writing page on Blog Studio's own clone. The permanent launcher
 remembers it. Another studio's checkout is never reused. The branch should allow
@@ -72,8 +71,10 @@ destination folders and archives. Existing local work is kept on any refusal.
 Use `--source`, `--profile` or `--memory` to migrate explicitly selected standalone
 references, voices or legacy memory items. Each option may be repeated.
 
-Shared defaults currently supply Blog Studio's author, assistant agent, team
-repository, branch and sharing choice. Model, effort, brand and output settings
-are retained for studios that use them; Blog Studio's worker uses its CLI's model
-configuration. Changing author or assistant in Settings offers an unchecked
-**Use changed author and assistant defaults for all studios** choice.
+Shared settings supply Blog Studio's author, assistant agent, team repository,
+branch, sharing choice and brand repository/release/identity. They live only in
+`~/.config/studios-config.json` (or `STUDIOS_CONFIG`), and Settings edits that file
+directly. Models, effort and output are preserved for studios that use them;
+Blog Studio's worker still uses its CLI's model configuration. Writing limits,
+tone and other Blog Studio choices stay local. Legacy shared copies migrate only
+to missing members, then are removed; existing shared values win and are reported.

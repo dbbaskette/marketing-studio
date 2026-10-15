@@ -27,6 +27,11 @@ by supporting URLs. With no evidence, say what is unknown. Do not claim that a r
 source or link was independently verified. The notes field describes limits and your own
 judgment; content holds the requested Markdown document."""
 
+POLICY += """\nWhen a selected brand contract is supplied, follow its organisation and product naming
+rules. Use its design guide only for visual handoff suggestions. Keep brand identity separate
+from the selected author voice: preserve that voice and its provisional or confirmed status.
+Do not infer company tone from a logo, palette or font. Never claim a brand audit was run."""
+
 
 def generate(engine, payload, guidance, seconds=600, web=False, stop=None):
     """One process group, disposable working directory, bounded time and output.

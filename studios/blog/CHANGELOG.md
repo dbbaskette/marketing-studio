@@ -7,11 +7,16 @@ changes for authors first, then what changes for maintainers.
 
 **For authors**
 
+- Add a brand skill's repository and release in Settings, select an installed
+  skill, and install a checked release after confirmation, like Training Studio.
+  Choose a brand and variant for each new blog; existing blogs retain their exact
+  brand guides and keep the author's voice separate.
+
 - Join one team repository alongside Training and Presentation Studio. Blogs use
   readable folders, one confirmed driver, explicit takeover/handover, decision
   sharing and numbered revisions. Selected legacy Hub work can be migrated while
-  preserving its source. Shared studios defaults pre-fill setup; local settings
-  win, and shared values change only with the author’s explicit consent.
+  preserving its source. Shared studios settings live in one file, edited directly from Settings.
+  Legacy local copies migrate without overwriting existing shared values.
 
 - Open Blog Studio with a permanent shell command or Mac launcher, like Training
   Studio. Setup and the UI share computer checks with actionable next steps. Start

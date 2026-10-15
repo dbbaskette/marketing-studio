@@ -87,10 +87,11 @@ Once the page is open, use its controls to drive the work:
 
 1. **Set your defaults.** On first launch, save your preferred assistant, author,
    tone, research choice, and step time limit. You can change these later in
-   **Settings**.
+   **Settings**. Under **Brand skill**, enter its repository and release or choose
+   an installed skill, just as in Training Studio. See [brand setup](docs/runner.md#your-brand-skill).
 2. **Choose New blog.** Work through three short steps: give the topic and
    audience; choose **Write a blog**, **Outline only**, **Revise a draft**, or
-   **Review a draft** and a voice; then select or upload sources, choose Codex or
+   **Review a draft**, a voice and an optional brand; then select or upload sources, choose Codex or
    Claude Code, and set limits. To revise or review, supply the manuscript.
 3. **Press Start the blog.** Blog Studio starts the selected assistant and runs
    the next stage. The progress view shows its steps and the files made so far.

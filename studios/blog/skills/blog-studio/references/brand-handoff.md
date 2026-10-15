@@ -1,9 +1,16 @@
 # Selected brand and author voice
 
 Use this only when the user explicitly selects a brand or asks for branded visual
-companions. Resolve that identity through its installed brand skill. Tanzu Brand
-can export a task contract with `contract export --medium blog --output NEW_DIR`.
+companions. Resolve that identity through the selected installed brand skill.
+Its companion command exports a task contract with
+`contract export --medium blog --brand ID --variant VARIANT --output NEW_DIR`.
 Read the resulting `VOICE.md` for language and `DESIGN.md` for visual work.
+
+The page's **Settings → Brand skill** accepts its repository and release and
+selects an installed skill, as in Training Studio. **New blog** selects the
+brand/variant. Guided CLI runs accept `--brand ID --variant VARIANT`; `--brand ''`
+opts out of a shared default. Read a guided run's pinned `brand` guides in
+`derived/blog-run.json`; settings changes never replace that saved contract.
 
 Keep organization naming/case rules separate from the article's existing author
 voice. A palette, logo or font does not establish company tone. Unspecified tone

@@ -69,27 +69,39 @@ MODES = ('write', 'outline', 'revise', 'review')
 
 
 def settings(root, data=None):
-    """Local page defaults, never shared as team writing rules or run decisions."""
-    path = studio.inside(root, '.blog-run-settings.json')
+    """Shared settings come only from studios config; writing limits stay local."""
     import studios_config
 
+    path = studio.inside(root, '.blog-run-settings.json')
+    migration_notice, migration_problem = studios_config.migrate(root)
     shared, shared_problem = studios_config.read()
-    base = dict(DEFAULTS)
+    shared_problem = shared_problem or migration_problem
+    saved = studio.read_json(path) if path.is_file() else {}
+    private = {
+        key: value
+        for key, value in saved.get('defaults', {}).items()
+        if key in DEFAULTS and key not in ('engine', 'author')
+    }
+    base = {**DEFAULTS, **private}
     agent = shared.get('assistant', {}).get('agent')
     name = shared.get('person', {}).get('name')
     if agent in ('codex', 'claude'):
         base['engine'] = agent
     if isinstance(name, str) and len(name) <= 200:
         base['author'] = name
-    saved = studio.read_json(path) if path.is_file() else {}
-    previous = {**base, **saved.get('defaults', {})}
     if data is not None:
         data = dict(data)
-        consent = data.pop('for_all_studios', False)
-        if type(consent) is not bool:
-            raise ValueError('Choose whether to use these values for all studios.')
+        before = data.pop(
+            'shared_before',
+            {
+                'engine': shared.get('assistant', {}).get('agent'),
+                'author': shared.get('person', {}).get('name'),
+            },
+        )
+        if not isinstance(before, dict) or set(before) != {'engine', 'author'}:
+            raise ValueError('Reload the displayed shared settings before saving.')
         if set(data) != set(DEFAULTS):
-            raise ValueError('Save the displayed writing defaults only.')
+            raise ValueError('Save the displayed writing settings only.')
         if data['engine'] not in ('codex', 'claude') or data['research'] not in (
             'none',
             'supplied-only',
@@ -102,23 +114,34 @@ def settings(root, data=None):
             raise ValueError('Choose a step limit between 30 and 3600 seconds.')
         for key, maximum in (('tone', 2000), ('author', 200)):
             text(data[key], key, maximum)
-        studio.write_json(path, {'schema': 1, 'defaults': data})
-        if consent:
-            changes = {}
-            if data['engine'] != previous['engine']:
-                changes['assistant'] = {'agent': data['engine']}
-            if data['author'] != previous['author']:
-                changes['person'] = {'name': data['author']}
-            if changes:
-                try:
-                    shared = studios_config.update(changes)
-                except ValueError as exc:
-                    shared_problem = str(exc)
-    saved = studio.read_json(path) if path.is_file() else {}
+        changes = {}
+        if data['engine'] != (before['engine'] or DEFAULTS['engine']):
+            changes['assistant'] = {'agent': data['engine']}
+        if data['author'] != (before['author'] or DEFAULTS['author']):
+            changes['person'] = {'name': data['author']}
+        expected = {}
+        if 'assistant' in changes:
+            expected['assistant'] = {'agent': before['engine']}
+        if 'person' in changes:
+            expected['person'] = {'name': before['author']}
+        shared = studios_config.update(changes, expected=expected)
+        private = {key: value for key, value in data.items() if key not in ('engine', 'author')}
+        studio.write_json(path, {'schema': 1, 'defaults': private})
+        base = {
+            **data,
+            'engine': shared.get('assistant', {}).get('agent') or DEFAULTS['engine'],
+            'author': shared.get('person', {}).get('name') or DEFAULTS['author'],
+        }
+        saved = {'defaults': private}
     return {
         'configured': bool(saved),
-        'defaults': {**base, **saved.get('defaults', {})},
+        'defaults': base,
+        'shared_before': {
+            'engine': shared.get('assistant', {}).get('agent'),
+            'author': shared.get('person', {}).get('name'),
+        },
         'shared_problem': shared_problem,
+        'migration_notice': migration_notice,
         'workspace': str(root),
     }
 
@@ -206,6 +229,8 @@ def inputs(root, record, run):
         'research_policy': record['research_policy'],
         'guidance': (record.get('guidance') or {}).get('revision'),
     }
+    if run.get('brand'):
+        payload['brand'] = run['brand']
     if len(json.dumps(payload)) > 300_000:
         raise ValueError(
             'Selected context is too large for one writing job. Use focused excerpts in chat.'
@@ -293,6 +318,9 @@ def survey(root, ident):
         'brief': run['brief'],
         'existing': run['existing'],
         'mode': run.get('mode', 'review' if run['existing'] else 'write'),
+        'brand': {key: run['brand'][key] for key in ('skill', 'version', 'brand', 'variant')}
+        if run.get('brand')
+        else None,
         'decisions': run.get('decisions', [])[-30:],
     }
 
@@ -326,6 +354,11 @@ def create(root, data, approval='conversation'):
     defaults = settings(root)['defaults']
     data.setdefault('engine', defaults['engine'])
     data.setdefault('author', defaults['author'])
+    if 'brand' not in data:
+        import brand_skill
+
+        for key, value in brand_skill.defaults().items():
+            data.setdefault(key, value)
     allowed = {
         'id',
         'title',
@@ -341,6 +374,8 @@ def create(root, data, approval='conversation'):
         'seconds',
         'mode',
         'manuscript',
+        'brand',
+        'variant',
     }
     if set(data) - allowed:
         raise ValueError('Unknown new-blog field.')
@@ -384,6 +419,9 @@ def create(root, data, approval='conversation'):
         'goal': text(data.get('goal', ''), 'goal', required=True),
         'audience': text(data.get('audience', ''), 'audience', 500, required=True),
     }
+    import brand_skill
+
+    selected_brand = brand_skill.snapshot(data.get('brand', ''), data.get('variant', ''))
     title = text(data.get('title', ''), 'title', 500, required=not data.get('id'))
     profile = data.get('profile') or None
     if profile:
@@ -456,6 +494,8 @@ def create(root, data, approval='conversation'):
         'pipeline': pipeline,
         'stages': {},
     }
+    if selected_brand:
+        run['brand'] = selected_brand
     inputs(root, record, run)  # Refuse unusable context before creating a partial blog.
     if not data.get('id'):
         directory.mkdir()
@@ -657,6 +697,13 @@ class Engine:
         }
 
     def once(self, ident):
+        import brand_skill
+
+        with brand_skill.using(quiet=True) as available:
+            if available:
+                return self._once(ident)
+
+    def _once(self, ident):
         if not self.local(ident).get('enabled'):
             return
         from team_workspace import before
@@ -860,11 +907,16 @@ def options(root):
         except ValueError:
             agents[name] = False
 
+    import brand_skill
+
+    brand = brand_skill.status()
+    brand['default'] = brand_skill.defaults(brand)
     return {
         'profiles': records('profiles'),
         'sources': records('sources'),
         'agents': agents,
         'settings': settings(root),
+        'brand': brand,
     }
 
 
@@ -992,7 +1044,17 @@ def add_parser(groups):
         dest='action', required=True
     )
     create_cmd = commands.add_parser('create')
-    for name in ('title', 'author', 'audience', 'goal', 'tone', 'profile', 'id'):
+    for name in (
+        'title',
+        'author',
+        'audience',
+        'goal',
+        'tone',
+        'profile',
+        'id',
+        'brand',
+        'variant',
+    ):
         create_cmd.add_argument('--' + name, required=name in ('audience', 'goal'))
     create_cmd.add_argument(
         '--research', choices=('none', 'supplied-only', 'web-allowed'), default='supplied-only'

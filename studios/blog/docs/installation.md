@@ -239,8 +239,8 @@ repairing a Codex-only setup does not add Claude Code.
 ## Optional: Shared studios repository
 
 Use **Settings → Join our team repository** to keep blogs beside your team’s
-trainings and presentations. Shared defaults can pre-fill setup; local settings
-always win. See [team workspaces](https://github.com/dbbaskette/blog-studio/blob/main/docs/team-workspace.md).
+trainings and presentations. Shared settings live in one `studios-config.json` file; Settings changes are
+available to all studios on their next read. See [team workspaces](https://github.com/dbbaskette/blog-studio/blob/main/docs/team-workspace.md).
 
 ## Optional: Team Hub
 
