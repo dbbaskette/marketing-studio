@@ -103,6 +103,15 @@ to the page. **Continue in the conversation** stops its browser worker and gives
 you a request to paste into your assistant. The same files and decisions stay in use.
 For an ordinary saved blog, open its details and choose **Run this blog**.
 
+## Shared studios repository
+
+Join from **Settings** or **Status**. The page switches to its own team clone.
+Blogs have one driver, with **Take this blog**, **Take over**, **Hand over**, and
+numbered **Publish revision** controls. **Share now** retries pending decisions.
+See [team workspaces and migration](team-workspace.md) and the
+[shared studios defaults](shared-studios.md). Existing local settings win over
+shared defaults; writing never requires a shared config file.
+
 ## Saved work and teams
 
 Outlines and drafts remain `OUTLINE.md` and `DRAFT.md`. Research questions,

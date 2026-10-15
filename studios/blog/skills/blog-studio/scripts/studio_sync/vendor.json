@@ -1,0 +1,20 @@
+{
+  "repository": "https://github.com/dbbaskette/training-studio",
+  "revision": "87981a0737bc9eb187c48b29f5ff8903620f2e89",
+  "files": {
+    "gitstate.py": {
+      "source": "runner/gitstate.py",
+      "source_sha256": "3cc69a7858cf074af715b782c7d57f1fb5c346c2d789cd20ebff0c345cb14c4c"
+    },
+    "team.py": {
+      "source": "runner/team.py",
+      "source_sha256": "238ef5394c940804df0b4ca53181fe6575296da43d614348a1702b17bac8610f"
+    },
+    "support.py": {
+      "source": "skills/training-studio/scripts/hub.py",
+      "source_sha256": "6632bb0c02c7be6d3bc086a4a0c952690cbd7b334cf12ce9fe97c54bfabcf500",
+      "note": "Selected Git primitives, Blog paths and version/JSON adapters; hooks disabled."
+    }
+  },
+  "adaptations": "Relative imports, Blog names, local ignore rules and support adapters. Upstream fetch/replay/push, kept refs, claims and numbered publication tags retained."
+}

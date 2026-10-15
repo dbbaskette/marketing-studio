@@ -156,7 +156,8 @@ repair, or other problems, use the [setup help](docs/troubleshooting.md).
 | Learn from your writing and reuse your voice | [Voice setup walkthrough](docs/new-user-guide.md#build-and-reuse-your-voice) |
 | Research a topic or check claims | [Writing and review commands](docs/prompt-cheat-sheet.md#write-and-review) |
 | Edit and review with others in Google Docs | [Google Docs guide](docs/google-docs.md) |
-| Share blogs, sources, and writing rules with a team | [Create or join a private Team Hub](docs/team-hub.md) |
+| Share a repository with Training and Presentation Studio | [Join a team workspace](docs/team-workspace.md) |
+| Use an existing Team Hub or move selected blogs | [Legacy Team Hubs](docs/team-hub.md) · [Migration](docs/team-workspace.md#bring-selected-work-from-a-legacy-team-hub) |
 | Browse the editorial pipeline or import earlier posts | [Editorial tools and reference library](docs/editorial-desk.md) |
 | Understand where your content goes | [Privacy details](docs/privacy-review.md) |
 

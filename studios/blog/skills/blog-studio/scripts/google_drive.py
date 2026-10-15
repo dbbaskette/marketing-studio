@@ -753,7 +753,7 @@ def linked_documents(root):
     import studio
 
     base = workspace(root)
-    folder = base / 'articles'
+    folder = studio.inside(base, 'articles')
     found = set()
     if not folder.is_dir():
         return found
@@ -786,6 +786,19 @@ def require_linked(root, file_id, first_handoff=False):
             'Writes are limited to Google Docs linked to a blog. Pass --root <workspace>; use '
             '--first-handoff only for the explicit first handoff of a new editing copy.'
         )
+    from team_workspace import before, space, guard
+    import studio
+
+    if space(Path(root)):
+        before(Path(root))
+        for session in studio.inside(Path(root), 'articles').glob('*/session.json'):
+            record = studio.read_json(session)
+            baselines = record.get('google', {}).get('baselines', {})
+            if any(
+                baseline.get('document', {}).get('document_id') == file_id
+                for baseline in baselines.values()
+            ):
+                guard(Path(root), session.parent.name)
     if identifier(file_id) not in linked_documents(root):
         raise GoogleError(
             'This Google Doc is not linked to a blog in this workspace, so it will not be changed. '

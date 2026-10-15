@@ -5,6 +5,9 @@ description: Write and revise blogs, learn author voices, resume work, browse an
 
 # Blog Studio
 
+For a shared studios repository, drivers, handovers or migration, read
+[team workspace](references/workspace/team-workspace.md).
+
 To start a blog or continue one with `derived/blog-run.json`, read
 [guided runs](references/guided-runs.md). It works on the page or in chat.
 Focused outline, draft, edit and interview requests keep the routes below.

@@ -71,7 +71,23 @@ MODES = ('write', 'outline', 'revise', 'review')
 def settings(root, data=None):
     """Local page defaults, never shared as team writing rules or run decisions."""
     path = studio.inside(root, '.blog-run-settings.json')
+    import studios_config
+
+    shared, shared_problem = studios_config.read()
+    base = dict(DEFAULTS)
+    agent = shared.get('assistant', {}).get('agent')
+    name = shared.get('person', {}).get('name')
+    if agent in ('codex', 'claude'):
+        base['engine'] = agent
+    if isinstance(name, str) and len(name) <= 200:
+        base['author'] = name
+    saved = studio.read_json(path) if path.is_file() else {}
+    previous = {**base, **saved.get('defaults', {})}
     if data is not None:
+        data = dict(data)
+        consent = data.pop('for_all_studios', False)
+        if type(consent) is not bool:
+            raise ValueError('Choose whether to use these values for all studios.')
         if set(data) != set(DEFAULTS):
             raise ValueError('Save the displayed writing defaults only.')
         if data['engine'] not in ('codex', 'claude') or data['research'] not in (
@@ -87,10 +103,22 @@ def settings(root, data=None):
         for key, maximum in (('tone', 2000), ('author', 200)):
             text(data[key], key, maximum)
         studio.write_json(path, {'schema': 1, 'defaults': data})
+        if consent:
+            changes = {}
+            if data['engine'] != previous['engine']:
+                changes['assistant'] = {'agent': data['engine']}
+            if data['author'] != previous['author']:
+                changes['person'] = {'name': data['author']}
+            if changes:
+                try:
+                    shared = studios_config.update(changes)
+                except ValueError as exc:
+                    shared_problem = str(exc)
     saved = studio.read_json(path) if path.is_file() else {}
     return {
         'configured': bool(saved),
-        'defaults': {**DEFAULTS, **saved.get('defaults', {})},
+        'defaults': {**base, **saved.get('defaults', {})},
+        'shared_problem': shared_problem,
         'workspace': str(root),
     }
 
@@ -149,9 +177,15 @@ def inputs(root, record, run):
         from hub_workspace import active
 
         adapter = active(root)
-        if adapter is None:
+        if adapter is None and not (root / 'hub.json').is_file():
             raise ValueError('The selected team context needs its Team Hub. Reconnect it in chat.')
         for ref in record['hub_context']['selected']:
+            if adapter is None:
+                migrated = studio.read_json(
+                    studio.inside(root, '.shared', 'memory', ref['revision'] + '.json')
+                )
+                shared.append({'kind': migrated['kind'], 'body': migrated['body']})
+                continue
             revision = adapter.hub.graph()['revisions'][ref['revision']]
             materialized = adapter.hub.read(ref['item'], ref['revision'])
             shared.append(
@@ -230,6 +264,7 @@ def survey(root, ident):
     revision = studio.digest(
         (
             studio.inside(directory, STATE).read_bytes()
+            + ((directory / 'run.json').read_bytes() if (directory / 'run.json').is_file() else b'')
             + json.dumps(
                 [
                     [
@@ -279,11 +314,18 @@ def save(root, directory, record, run, event):
     studio.persist(directory, 'articles', record)
     from management import share, receipt
 
+    from team_workspace import saved
+
+    saved(root, record['id'], event)
     result = share(root, 'article', record)
     receipt(root, 'Guided blog', result, 'article')
 
 
 def create(root, data, approval='conversation'):
+    data = dict(data)
+    defaults = settings(root)['defaults']
+    data.setdefault('engine', defaults['engine'])
+    data.setdefault('author', defaults['author'])
     allowed = {
         'id',
         'title',
@@ -556,6 +598,7 @@ class Engine:
         self.stop = threading.Event()
         self.current = None
         self.thread = None
+        self.sync_thread = None
 
     def local(self, ident):
         path = studio.inside(self.root, '.blog-runs', studio.identifier(ident) + '.json')
@@ -600,8 +643,13 @@ class Engine:
         elif status in ('waiting-for-approval', 'complete'):
             # The prior gate was just decided; the next job has not started yet.
             status = 'queued' if local.get('enabled') else 'paused'
+        from team_workspace import driver, space
+
+        owner = driver(self.root, ident) if space(self.root) else None
         return {
             **found,
+            'team': bool(space(self.root)),
+            'driver': owner,
             'status': status,
             'error': local.get('error', ''),
             'enabled': local.get('enabled', False),
@@ -609,6 +657,20 @@ class Engine:
         }
 
     def once(self, ident):
+        if not self.local(ident).get('enabled'):
+            return
+        from team_workspace import before
+
+        preview = survey(self.root, ident)
+        if (
+            not preview['complete']
+            and preview['approval'] == 'page'
+            and not any(
+                row['stage'] == preview['next'] and row['status'] == 'draft'
+                for row in preview['stages']
+            )
+        ):
+            before(self.root, ident)
         with studio.locked(self.root):
             local = self.local(ident)
             if not local.get('enabled'):
@@ -634,6 +696,9 @@ class Engine:
                 )
                 self.keep_local(ident, local)
                 return
+            from team_workspace import guard
+
+            guard(self.root, ident)
             found, payload, guidance = job(self.root, ident)
             local.update(status='working', error='')
             self.keep_local(ident, local)
@@ -658,6 +723,9 @@ class Engine:
                     raise ValueError(
                         'The blog changed while the worker ran. Your edit was kept. Retry from the latest version.'
                     )
+                from team_workspace import before
+
+                before(self.root, ident)
                 submit(self.root, ident, found['next'], result, found['expected'], page=True)
                 state = self.local(ident)
                 state.update(status='waiting-for-approval', error='')
@@ -676,6 +744,29 @@ class Engine:
         finally:
             self.current = None
 
+    def sync_team(self):
+        from team_workspace import refresh
+
+        while not self.closed.is_set():
+            try:
+                refresh(self.root)
+            except (ValueError, OSError) as exc:
+                # A failed background check remains visible until a successful one.
+                from team_workspace import space, internal
+                from studio_sync import support
+
+                found = space(self.root)
+                if found:
+                    with support.locked(found.repo / '.git/blog-studio.lock'), internal():
+                        prior = support.read_json(self.root / '.team-sync.json', {})
+                        prior = prior if isinstance(prior, dict) else {}
+                        studio.write_json(
+                            self.root / '.team-sync.json',
+                            {**prior, 'report': {'shared': False, 'notice': str(exc)[:500]}},
+                        )
+            if self.closed.wait(60):
+                return
+
     def serve(self):
         while not self.closed.is_set():
             folder = studio.inside(self.root, '.blog-runs')
@@ -693,6 +784,11 @@ class Engine:
             self.wake.clear()
 
     def start(self):
+        from team_workspace import space
+
+        if space(self.root):
+            self.sync_thread = threading.Thread(target=self.sync_team, daemon=True)
+            self.sync_thread.start()
         self.thread = threading.Thread(target=self.serve, daemon=True)
         self.thread.start()
 
@@ -702,6 +798,8 @@ class Engine:
         self.wake.set()
         if self.thread:
             self.thread.join(timeout=5)
+        if self.sync_thread:
+            self.sync_thread.join(timeout=5)
 
 
 def engine(root):
@@ -729,6 +827,8 @@ def catalog(root):
                             'complete',
                             'engine',
                             'mode',
+                            'team',
+                            'driver',
                         )
                     }
                 )
@@ -900,7 +1000,7 @@ def add_parser(groups):
     create_cmd.add_argument(
         '--stop', choices=('outline', 'draft', 'review', 'package'), default='package'
     )
-    create_cmd.add_argument('--engine', choices=('codex', 'claude'), default='codex')
+    create_cmd.add_argument('--engine', choices=('codex', 'claude'))
     create_cmd.add_argument('--seconds', type=int, default=600)
     create_cmd.add_argument('--source', action='append', default=[])
     create_cmd.add_argument('--mode', choices=MODES, default='write')

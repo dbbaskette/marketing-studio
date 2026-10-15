@@ -631,7 +631,7 @@ def source_rows(root):
     rows = []
     files = adapter.hub.files() if adapter else {}
     graph = validate_files(files, adapter.hub.config['repository']) if adapter else None
-    if (root / 'sources').exists():
+    if studio.inside(root, 'sources').exists():
         for directory in sorted(studio.inside(root, 'sources').iterdir()):
             if not directory.is_dir():
                 continue

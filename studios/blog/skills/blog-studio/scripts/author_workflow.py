@@ -268,6 +268,15 @@ def hub_state(root, record):
         'url': None,
         'observation': 'cached',
     }
+    from team_workspace import space, status as team_status
+
+    if space(root):
+        report = team_status(root).get('report', {})
+        return {
+            **output,
+            'status': 'shared' if report.get('shared') else 'queued',
+            'observation': report.get('notice') or 'Last team sync observation.',
+        }
     try:
         adapter = active(root)
         if adapter is None:

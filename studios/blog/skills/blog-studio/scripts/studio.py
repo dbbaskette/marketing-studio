@@ -47,6 +47,16 @@ def new_id(name):
 
 
 def inside(root, *parts):
+    # Team work is plain blogs/<id>; reusable references and voices live beside it.
+    if parts and parts[0] in ('articles', 'sources', 'profiles') and (root / 'hub.json').is_file():
+        marker = read_json(root / 'hub.json')
+        if marker.get('tool') == 'blog-studio':
+            mapped = {
+                'articles': (),
+                'sources': ('.shared', 'references'),
+                'profiles': ('.shared', 'voices'),
+            }
+            parts = (*mapped[parts[0]], *parts[1:])
     path = root.joinpath(*parts)
     resolved = path.resolve()
     if not resolved.is_relative_to(root.resolve()):
@@ -55,6 +65,9 @@ def inside(root, *parts):
 
 
 def atomic(path, data):
+    from team_workspace import guard_path
+
+    guard_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name('.' + path.name + '.' + uuid.uuid4().hex + '.tmp')
     try:
@@ -97,7 +110,7 @@ def persist(directory, kind, record):
 
 
 @contextmanager
-def locked(root):
+def _locked(root):
     """Serialize commands that change the workspace.
 
     The lock is held on a persistent file and released by the operating system
@@ -120,6 +133,20 @@ def locked(root):
         release_lock(fd)
 
 
+@contextmanager
+def locked(root):
+    from team_workspace import space
+    from studio_sync.support import locked as team_locked
+
+    found = space(root)
+    if found:
+        with team_locked(found.repo / '.git/blog-studio.lock'), _locked(root):
+            yield
+    else:
+        with _locked(root):
+            yield
+
+
 def initialize(root):
     package = Path(__file__).resolve().parents[1]
     if root == package or root.is_relative_to(package):
@@ -131,7 +158,14 @@ def initialize(root):
     elif read_json(manifest).get('schema_version') != 1:
         raise ValueError('Unsupported workspace version.')
     for kind in ('profiles', 'sources', 'articles'):
-        inside(root, kind).mkdir(exist_ok=True)
+        inside(root, kind).mkdir(parents=True, exist_ok=True)
+    if (root / 'hub.json').is_file() and read_json(root / 'hub.json').get('tool') == 'blog-studio':
+        shared_readme = inside(root, '.shared', 'README.md')
+        if not shared_readme.exists():
+            atomic(
+                shared_readme,
+                b'# Shared Blog Studio material\n\nreferences/ holds selected sources; voices/ holds author profiles; memory/ holds rules and context.\n',
+            )
     return {'root': str(root), 'schema_version': 1}
 
 
@@ -781,6 +815,9 @@ def parser():
     from experience import add_parser as experience_parser
 
     experience_parser(groups)
+    from team_workspace import add_parser as team_parser
+
+    team_parser(groups)
     from performance import add_parser as performance_parser
 
     performance_parser(groups)
@@ -933,6 +970,42 @@ def main():
     from hub_store import HubError
 
     try:
+        if args.group == 'team':
+            from team_workspace import command
+
+            print(json.dumps(command(root, args), indent=2))
+            return 0
+        from team_workspace import before, saved, space
+
+        team_mutation = args.group in (
+            'article',
+            'profile',
+            'source',
+            'run',
+            'google',
+            'library',
+            'research',
+            'editorial',
+        ) and args.action not in (
+            'show',
+            'status',
+            'list',
+            'collections',
+            'find',
+            'read',
+            'board',
+            'inbox',
+            'assets',
+            'compare',
+            'capabilities',
+        )
+        if team_mutation:
+            before(
+                root,
+                getattr(args, 'id', None)
+                if args.group in ('article', 'run', 'editorial', 'research', 'google')
+                else None,
+            )
         if args.group == 'manage':
             from management import main as manage
 
@@ -1047,6 +1120,14 @@ def main():
                             'error': str(exc),
                             'next_step': 'Retry the selected workspace import after resolving the hub issue.',
                         }
+        if team_mutation and space(root):
+            ident = (
+                result.get('id')
+                if isinstance(result, dict)
+                and args.group in ('article', 'run', 'editorial', 'research', 'google')
+                else None
+            )
+            result['team_sync'] = saved(root, ident)
         if getattr(args, 'format', None) == 'markdown' and 'card' in result:
             print(result['card'])
         else:

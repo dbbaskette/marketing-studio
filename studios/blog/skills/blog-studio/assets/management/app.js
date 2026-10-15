@@ -18,7 +18,7 @@ function notice(message, error=false) {
   if(dialog){target=dialog.querySelector('.dialog-notice');if(!target){target=element('p',undefined,'dialog-notice');target.setAttribute('role','alert');dialog.append(target);}}
   target.textContent=message;target.className=error?'dialog-notice error':'dialog-notice';target.hidden=false;
 }
-function savedNotice(result) {notice((result.receipts||[]).map(r=>r.label+': '+r.message).join(' ')||result.next_step||'Saved.');}
+function savedNotice(result) {if(result.team_sync){notice(result.team_sync.shared?'Saved and shared with the team repository.':result.team_sync.notice||'Saved on this computer; sharing is pending.');return;}notice((result.receipts||[]).map(r=>r.label+': '+r.message).join(' ')||result.next_step||'Saved.');}
 function analysisChoice(prefix) {
   // Sent only when an analysis CLI is configured; unchecked means "do not send this text to the model".
   const analysis=access.analysis||{};
@@ -42,7 +42,8 @@ function applyCapabilities() {
   }
   const where=[];
   if(access.workspace)where.push('Workspace: '+access.workspace);
-  if(access.hub)where.push('Team Hub: '+(access.hub.repository||'selected'));
+  if(access.team)where.push('Team repository: '+(access.team.repository||'local'));
+  else if(access.hub)where.push('Team Hub: '+(access.hub.repository||'selected'));
   else if(access.workspace)where.push('No Team Hub selected');
   $('desk-identity').textContent=where.join(' · ');
   $('desk-identity').hidden=!where.length;

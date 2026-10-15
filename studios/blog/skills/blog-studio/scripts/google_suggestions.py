@@ -764,6 +764,9 @@ def receipt_status(receipt):
 
 def apply_native(client, root, saved):
     """Submit the planned suggestions once, after proving nothing changed since planning."""
+    from team_workspace import before
+
+    before(root, saved['article'])
     directory, record, target = linked(root, saved['article'], saved['kind'])
     draft = saved['kind'].upper() + '.md'
     if (
@@ -832,6 +835,9 @@ def apply_native(client, root, saved):
 
 def apply(client, root, saved, repost_missing=False):
     """Suggestions first; readable comments when Google definitely cannot take suggestions, or when asked."""
+    from team_workspace import before
+
+    before(root, saved['article'])
     from google_review_comments import apply as comments_apply, unavailable
 
     if saved.get('mode') == 'comments':

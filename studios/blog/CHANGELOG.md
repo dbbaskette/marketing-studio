@@ -7,6 +7,12 @@ changes for authors first, then what changes for maintainers.
 
 **For authors**
 
+- Join one team repository alongside Training and Presentation Studio. Blogs use
+  readable folders, one confirmed driver, explicit takeover/handover, decision
+  sharing and numbered revisions. Selected legacy Hub work can be migrated while
+  preserving its source. Shared studios defaults pre-fill setup; local settings
+  win, and shared values change only with the author’s explicit consent.
+
 - Open Blog Studio with a permanent shell command or Mac launcher, like Training
   Studio. Setup and the UI share computer checks with actionable next steps. Start
   commands find a supported Python and remember your selected writing workspace.

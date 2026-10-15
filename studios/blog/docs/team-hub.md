@@ -1,5 +1,8 @@
 # Shared writing with Team Hub
 
+For the current shared studios repository, use [team workspaces](team-workspace.md).
+This guide covers existing Team Hubs, which remain available for explicit migration.
+
 Team Hub keeps the team's read/write work in a private GitHub repository,
 separate from Blog Studio's skill repository. Each member has a managed local
 clone. Blogs, outlines, sources, voices, interviews, decisions, reviews, reusable

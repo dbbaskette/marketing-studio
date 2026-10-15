@@ -65,6 +65,21 @@ def capabilities(root):
     from hub_workspace import active
 
     adapter = active(root)
+    from team_workspace import space, status as team_status
+
+    if space(root):
+        return {
+            'status': 'team-workspace',
+            'message': 'Shared studios repository. One computer drives each blog.',
+            'checked_at': studio.now(),
+            'actions': {'edit': True, 'memory': True, 'refresh': True},
+            'google': 'not-checked',
+            'google_message': 'Google access is checked separately.',
+            'analysis': source_curator.disclosure(root),
+            'workspace': str(root),
+            'hub': None,
+            'team': team_status(root),
+        }
     status, edit, refresh, memory = 'local-only', True, False, False
     message = 'No Team Hub selected. Local blogs and references are editable; join a Hub for shared memory.'
     if adapter:
@@ -408,6 +423,18 @@ def memories(root, limit=20, offset=0, query=''):
     from hub_workspace import active
 
     adapter = active(root)
+    from team_workspace import space, memory_list
+
+    if space(root):
+        return page(
+            [
+                row
+                for row in memory_list(root)
+                if query.casefold() in (row['title'] + ' ' + row['summary']).casefold()
+            ],
+            limit,
+            offset,
+        )
     if not adapter:
         return {'items': [], 'total': 0, 'next_step': 'Join a Team Hub to curate shared memory.'}
     graph = adapter.hub.graph()
@@ -800,6 +827,10 @@ def memory_detail(root, ident, revision=None):
     from hub_workspace import active
 
     adapter = active(root)
+    from team_workspace import space, memory_detail as team_memory_detail
+
+    if space(root):
+        return team_memory_detail(root, ident, revision)
     if not adapter:
         raise ValueError('Select a Hub.')
     saved = adapter.hub.read(ident, revision)
@@ -1188,7 +1219,7 @@ def curation_changes(record, values):
     }
 
 
-def dispatch(root, route, data):
+def _dispatch(root, route, data):
     if route == 'refresh':
         if data:
             raise ValueError('Refresh takes no fields.')
@@ -1385,6 +1416,75 @@ def dispatch(root, route, data):
     raise ValueError('Unknown management action.')
 
 
+def dispatch(root, route, data):
+    from team_workspace import space, before, saved, status, refresh, action, join
+
+    if route == 'team-join':
+        if set(data) - {'repository', 'branch', 'share', 'for_all_studios'}:
+            raise ValueError('Unknown team setting.')
+        import studios_config
+
+        from blog_runner import engine
+
+        if engine(root).current:
+            raise ValueError('Stop the current writing step before joining a team repository.')
+        chosen = status(root)
+        repository = data.get('repository', '')
+        branch, share = data.get('branch', 'main'), data.get('share', 'decision')
+        target = join(repository, branch, share)
+        problem = None
+        if data.get('for_all_studios') is True:
+            changes = {}
+            team_changes = {
+                key: value
+                for key, value in {'repository': repository, 'branch': branch}.items()
+                if value != chosen.get(key)
+            }
+            if team_changes:
+                changes['team'] = team_changes
+            if share != chosen.get('share'):
+                changes['share'] = share
+            if changes:
+                try:
+                    studios_config.update(changes)
+                except ValueError as exc:
+                    problem = str(exc)
+        return {**status(target), 'switch_workspace': str(target), 'shared_problem': problem}
+    if route in ('team-sync', 'team-share-mode'):
+        if route == 'team-share-mode':
+            if data.get('share') not in ('decision', 'asked'):
+                raise ValueError('Choose a listed sharing mode.')
+            with studio.locked(root):
+                studio.write_json(root / '.team-sync.json', {'share': data['share']})
+            return status(root)
+        return refresh(root, push=True)
+    if route.startswith('team-'):
+        if data.get('confirmed') is not True or not isinstance(data.get('expected'), str):
+            raise ValueError('Confirm the current blog before changing its driver or publishing.')
+        return action(root, data.get('id'), route[5:], data['expected'])
+    if space(root):
+        if route in ('refresh', 'retry-sync'):
+            return refresh(root, push=True)
+        if route == 'memory':
+            from team_workspace import save_memory
+
+            before(root)
+            result = save_memory(root, data)
+            result['team_sync'] = saved(root)
+            return result
+        before(
+            root,
+            data.get('id')
+            if route.startswith('run-') and route != 'run-create' or route in ('schedule',)
+            else None,
+        )
+    result = _dispatch(root, route, data)
+    if space(root) and route != 'run-settings':
+        ident = result.get('id') if route.startswith('run-') or route == 'schedule' else None
+        result['team_sync'] = saved(root, ident)
+    return result
+
+
 class Busy(Exception):
     """Another desk request still holds the workspace."""
 
@@ -1454,6 +1554,10 @@ def whole(value):
 def view(root, name, query):
     """Read-only desk views by name. Returns None for an unknown view."""
     arg = lambda key, default=None: query.get(key, [default])[0]
+    if name == 'team':
+        from team_workspace import status
+
+        return status(root)
     if name == 'computer':
         import computer
 
@@ -1636,6 +1740,7 @@ def server(root, port=0, bind=True):
                 self.fail(exc)
 
         def do_POST(self):
+            nonlocal root
             try:
                 self.check(True)
                 if (
@@ -1666,6 +1771,25 @@ def server(root, port=0, bind=True):
                     raise ValueError('Supply a JSON object.')
                 with serialized():
                     result = dispatch(root, self.path[5:], data)
+                    if result.get('switch_workspace') and Path(result['switch_workspace']) != root:
+                        import blog_runner
+
+                        target = Path(result['switch_workspace'])
+                        from hub_store import acquire_lock, release_lock
+
+                        lease = acquire_lock(target / '.blog-runner.lock', wait=0)
+                        if lease is None:
+                            raise ValueError(
+                                'A page is already running for that team workspace. Use that page.'
+                            )
+                        blog_runner.engine(root).close()
+                        if getattr(self.server, 'team_runner_lock', None) is not None:
+                            release_lock(self.server.team_runner_lock)
+                        self.server.team_runner_lock = lease
+                        root = target
+                        self.server.active_root = root
+                        blog_runner.ENGINES.pop(str(root), None)
+                        blog_runner.engine(root).start()
                 self.reply(200, result)
             except Exception as exc:
                 self.fail(exc, writing=True)
@@ -1788,6 +1912,11 @@ def serve(root, port=0, open_browser=False, harness=None, human=False):
         pass
     finally:
         runner.close()
+        active_root = getattr(httpd, 'active_root', None)
+        if active_root:
+            blog_runner.engine(active_root).close()
+        if getattr(httpd, 'team_runner_lock', None) is not None:
+            release_lock(httpd.team_runner_lock)
         httpd.server_close()
         release_lock(runner_lock)
     return 0

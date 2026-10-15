@@ -93,3 +93,13 @@ were not exercised. Two local clones of one fixture account establish neither
 multi-account permissions nor Google acceptance. This runner uses the existing
 CLI source boundary, rather than Training Studio’s research companion; public
 research reports and citations still need human review.
+
+## Shared workspace driver changes
+
+| Before | Trigger | Result | Evidence |
+| --- | --- | --- | --- |
+| This computer owns a blog and may have a worker | Background check learns a different shared driver | Stop the worker, disable local scheduling, preserve unshared commits under a recovery ref, then replay the shared state | `test_takeover_keeps_unshared_work_and_requires_online_claim` |
+| Fetch is waiting on the repository | Read the local page | Reading can take the workspace files lock while fetch waits | `test_fetch_does_not_hold_the_workspace_files_lock` |
+
+Shared-workspace checks run on their own thread, including while a model job is
+running. A failed check remains visible on Status until a successful one.

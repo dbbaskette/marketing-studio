@@ -61,6 +61,8 @@ def main(argv=None):
         found = computer.report(home)
         print(json.dumps(found, indent=2) if args.json else computer.describe(found))
         return 0
+    previous_data = os.environ.get('BLOG_STUDIO_DATA')
+    os.environ['BLOG_STUDIO_DATA'] = str(data)
     try:
         settings = data / 'page.json'
         if settings.is_symlink():
@@ -74,8 +76,13 @@ def main(argv=None):
             raise ValueError(
                 'The saved workspace in page.json is invalid. Pass --root with your writing folder.'
             )
+        from studio_sync.gitstate import current
+
+        joined = current()
         workspace = (
-            args.root or Path(kept.get('workspace', home / 'blogs/.blog-studio'))
+            args.root
+            or (joined.root if joined else None)
+            or Path(kept.get('workspace', home / 'blogs/.blog-studio'))
         ).expanduser()
         if not workspace.is_absolute():
             raise ValueError('Use an absolute writing workspace path with --root.')
@@ -107,6 +114,11 @@ def main(argv=None):
     except (OSError, ValueError, TypeError) as exc:
         print('Blog Studio: ' + str(exc), file=sys.stderr)
         return 1
+    finally:
+        if previous_data is None:
+            os.environ.pop('BLOG_STUDIO_DATA', None)
+        else:
+            os.environ['BLOG_STUDIO_DATA'] = previous_data
 
 
 if __name__ == '__main__':

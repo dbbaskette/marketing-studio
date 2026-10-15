@@ -66,7 +66,11 @@ def home(root, query='', stage=None, limit=10, offset=0):
         **page(rows, limit, offset),
         'workspace': str(root),
         'workspace_status': 'ready' if (root / 'studio.json').exists() else 'new',
-        'sharing': 'selected-team-hub' if (root / '.team-hub.json').exists() else 'local',
+        'sharing': 'team-workspace'
+        if (root / 'hub.json').is_file()
+        else 'selected-team-hub'
+        if (root / '.team-hub.json').exists()
+        else 'local',
         'problems': problems[:10],
         'problem_count': len(problems),
         'next_step': 'Choose a saved article or start new writing. Resolve duplicate titles by ID.',
@@ -117,7 +121,11 @@ def context(root, article_id):
         'next_step': record['next_step'],
         'pending_question': record['pending_question'],
         'research_policy': record['research_policy'],
-        'sharing': 'selected-team-hub' if (root / '.team-hub.json').exists() else 'local',
+        'sharing': 'team-workspace'
+        if (root / 'hub.json').is_file()
+        else 'selected-team-hub'
+        if (root / '.team-hub.json').exists()
+        else 'local',
         'article_memory': memory,
         'sources': sources[:50],
         'sources_truncated': len(sources) > 50,

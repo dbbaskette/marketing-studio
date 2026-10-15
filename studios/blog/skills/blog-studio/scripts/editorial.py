@@ -356,7 +356,7 @@ def inbox(
         [article_id]
         if article_id
         else [p.name for p in studio.inside(root, 'articles').iterdir() if p.is_dir()]
-        if (root / 'articles').exists()
+        if studio.inside(root, 'articles').exists()
         else []
     )
     if shared_id:

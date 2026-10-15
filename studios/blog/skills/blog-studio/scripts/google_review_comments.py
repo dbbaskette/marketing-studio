@@ -368,6 +368,9 @@ def require_unchanged_inputs(directory, record, target, saved):
 
 def apply(client, root, saved, reserved=False, repost_missing=False, sleep=time.sleep):
     """Post the planned comments once. A repeated call resumes an interrupted batch by its in-Doc markers."""
+    from team_workspace import before
+
+    before(root, saved['article'])
     directory, record, target = gs.linked(root, saved['article'], saved['kind'])
     require_unchanged_inputs(directory, record, target, saved)
     store = gs.ledger(root)
@@ -764,6 +767,9 @@ def paragraph_edits(doc, entries, selected, receipt, numbers):
 
 def apply_edits(client, root, saved, numbers):
     """Caller supplies the user's explicit selection; thread resolution is not approval."""
+    from team_workspace import before
+
+    before(root, saved['article'])
     require_selection(numbers)
     receipt_path = path(root, saved)
     with locked(gs.ledger(root)):

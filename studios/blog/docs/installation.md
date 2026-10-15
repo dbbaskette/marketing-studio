@@ -236,6 +236,12 @@ repairing a Codex-only setup does not add Claude Code.
 | `--home`, `--root` | Use another home or managed folder; meant for tests |
 | `--offline` | Accepted for older instructions; setup never uses the network |
 
+## Optional: Shared studios repository
+
+Use **Settings → Join our team repository** to keep blogs beside your team’s
+trainings and presentations. Shared defaults can pre-fill setup; local settings
+always win. See [team workspaces](https://github.com/dbbaskette/blog-studio/blob/main/docs/team-workspace.md).
+
 ## Optional: Team Hub
 
 A Team Hub shares blogs, sources and team rules through a private GitHub
