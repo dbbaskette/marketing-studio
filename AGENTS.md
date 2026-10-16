@@ -1,7 +1,7 @@
 # Marketing Studio working agreements
 
 - Marketing Studio owns shared settings and launching. Studio pipelines stay in
-  their independent repositories.
+  their independently runnable directories under studios/.
 - Use full product names in code, documentation, issues, and commits.
 - Python 3.11 or newer, standard library only, and no frontend build step.
 - No writing or training content belongs in this repository.
