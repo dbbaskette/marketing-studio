@@ -1,0 +1,81 @@
+# Short requests use saved context
+
+Use this for short workflow requests, not a new intake interview. Resolve the
+current article from this conversation first; `select --id <id>` persists the
+choice for later sessions. If none is established, `route` uses the saved selection
+or the only article. Never choose arbitrarily among duplicate titles.
+
+```text
+python3 <runtime>/studio.py --root <workspace> route "Pull and proofread" --id <id>
+```
+
+The helper returns a plan, not evidence of execution. Read its focused references
+and perform the actions in order using existing writing/Google/Hub helpers.
+For synonyms outside its small alias set, infer ordinary intent and use the same
+routes. Bare “push”/“pull” needs a destination if context cannot distinguish Google
+from Git; pass `--destination google|hub` only when already established.
+
+- **Start from this Google Doc: [link]:** use [Google manuscript intake](google/start.md)
+  to preserve the original, formatted snapshot, and working Doc link together.
+  Subsequent proofreading suggestions use that same Doc.
+- **Proofread:** correct spelling, grammar, punctuation; keep facts, author voice,
+  and structure. Use [exact-input diagnostics](workspace/performance.md) when
+  repeating mechanical checks. Do not expand to research or a developmental rewrite.
+  Where the corrections go depends on the route result's `linked_document`:
+  - **No linked Google Doc:** read the current draft and save the corrected text
+    with `article save ... --label proofread`.
+  - **Linked Google Doc:** the Doc is where the team's wording changes, so record
+    each correction as a finding (exact current wording, proposed wording,
+    reason) and save the list with `article review --check proofread --status
+    current --file <findings.json>`. Leave `DRAFT.md` as it is: it changes when
+    accepted text is pulled. The same file is the input for “Push as
+    suggestions.” Apply the corrections to `DRAFT.md` directly only when the
+    author asks for local or direct edits (for example before “Push to Google
+    Docs”).
+- **Push to Google Docs:** reuse the linked Doc. On first handoff, use the selected
+  review-folder preference if present; obtain missing destination/access details.
+  Read current Google state, handle conflicts, preserve formatting, and verify
+  before checkpointing. The request authorizes the selected transfer, not sharing
+  changes or sending background material.
+- **Pull from Google Docs:** capture the linked Doc, compare, and accept through
+  the [return contract](modules/blog-google-return.md). Edits to different
+  passages merge by themselves; only passages both sides changed need the
+  author. Pull does not accept suggestions or push back.
+- **Pull and proofread:** complete and verify return first, then proofread locally.
+  If return is blocked/conflicted, resolve it before editing a potentially stale copy.
+- **Save and sync:** save completed selected work and its dependencies to the selected
+  Hub; without a Hub, save locally and report that. Report queued/review/conflict
+  states accurately. Do not sweep unrelated workspace content.
+- **Continue:** use `resume --id <id>` once for compact context and the status card;
+  use [focused context](workspace/performance.md) for needed passages.
+- **Show status:** show the [status card](workspace/status.md).
+- **What changed / Undo that edit:** use [comparison and recovery](workspace/changes.md).
+- **Clear local caches:** use `cache --clear`. It also removes staged Google
+  captures, plans and receipts; writing and history remain.
+- **Show/change my defaults:** use [defaults](workspace/defaults.md).
+
+After a completed operation show a short result; open the full status card when
+requested or on resume. Never require the user to repeat formatting, checkpoint,
+privacy, or verification instructions already supplied by the skill.
+
+**“Push feedback as comments”** (or **“Push as comments”**) uses the same fresh-Doc review flow with `google_suggestions.py plan --mode comments`. Carry the router’s `review_mode` into planning; omitted mode means `auto`. This explicit choice posts comments first and never attempts suggested text changes. Prefer anchored comments when supported; otherwise use numbered Drive comments. “Push changes to Google” uses the suggestion-first review route; “Push to Google Docs” retains its draft-transfer route.
+
+**“Push as suggestions”** loads [Google suggestions](google/suggestions.md). Refresh the linked Doc first, reconcile conflicts, then post the saved proofreading findings as guarded native suggestions/comments. The review helper uses the configured gcloud account when a connector lacks `writeMode`, and falls back to numbered review comments when necessary. **“Show review edits”** lists every numbered edit posted for this blog; **“Apply edits 2 and 4”** applies only that selection after a fresh check. Edit numbers continue across review batches, so a number always means one edit.
+
+For “Show our pipeline,” “What needs my attention?”, “Open editorial desk,”
+“Package this for launch,” “Show evidence,” “This needs a diagram,” or old-blog
+import/find/refresh, load the [editorial router](editorial/workflow.md) and only its
+requested operation. These routes preserve writing pins and never approve release.
+
+**“Research this topic”** loads [deep research](modules/blog-deep-research.md) for
+the current blog. **“Fact-check”** or **“Check the facts”** inspects existing
+evidence, researches unresolved claims within the permitted scope, then saves
+the factual-support review. **“Show research”** shows the saved brief and gaps.
+Research offers **Uploaded sources only** or **Uploaded sources plus external
+research** once when scope is undecided. “Research uploaded sources only” and
+“Research uploaded sources plus external research” select a mode directly;
+record it with `article research-policy` and reuse it for the current blog.
+Proofreading remains separate.
+
+For “Open the page,” guided stage approvals, or switching a blog between chat
+and the page, use [guided runs](guided-runs.md).

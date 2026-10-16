@@ -1,0 +1,1181 @@
+{
+  "date": "2026-10-01",
+  "method": "ceil(Unicode character count / 4), per file; planning estimates, not tokenizer counts or billed usage",
+  "excluded": "host context, conversation, author data, outputs, scripts, licenses, metadata, locks, preview",
+  "files": {
+    "SKILL.md": {
+      "characters": 4378,
+      "estimated_tokens": 1095,
+      "sha256": "1ad0434fa96e18feba816f4f9e0da7a635cc987d5c081d6add46744c2f0d18be"
+    },
+    "references/blogforge/generate/prompts/document.j2": {
+      "characters": 2237,
+      "estimated_tokens": 560,
+      "sha256": "6b2b71326a9062387eca7deb1ea5423d868a1a47e5166ffcdeb8d163427988fb"
+    },
+    "references/blogforge/generate/prompts/outline.j2": {
+      "characters": 3638,
+      "estimated_tokens": 910,
+      "sha256": "de2670eac5d4b745336fa8572cc58b8ee5b6cd70d61c75cd6e030901c1f51fe7"
+    },
+    "references/blogforge/voice/assets/ai-tells/patterns.md": {
+      "characters": 8506,
+      "estimated_tokens": 2127,
+      "sha256": "68ece5ca68c0c521f00bda7a1cff188ed9233b3168fc65ea60822cb357bb7bb0"
+    },
+    "references/blogforge/voice/assets/ai-tells/phrases.txt": {
+      "characters": 1704,
+      "estimated_tokens": 426,
+      "sha256": "a4b0198fa591822dd952174b4bdd966ee0606f30e42948972b700765e54bd2d8"
+    },
+    "references/blogforge/voice/assets/ai-tells/sentence-starters.txt": {
+      "characters": 219,
+      "estimated_tokens": 55,
+      "sha256": "e49645fc9f1e19cebffdfe0afbc9753640b070bfecde4b2c519b217a0030eb13"
+    },
+    "references/blogforge/voice/assets/ai-tells/words.txt": {
+      "characters": 1102,
+      "estimated_tokens": 276,
+      "sha256": "0ee879a93a97d86ba612e0f002413df6c1679efa6d81dea53fb97d040eea494b"
+    },
+    "references/blogforge/voice/assets/humanize/lenses.md": {
+      "characters": 3393,
+      "estimated_tokens": 849,
+      "sha256": "0d3814cfa31a8836931a4ccf8bf35db4c72cc4dce80a31f5cf4a73c9397cc7b8"
+    },
+    "references/brand-handoff.md": {
+      "characters": 1372,
+      "estimated_tokens": 343,
+      "sha256": "47cd7c54870cf384e10fb3a69dfb7a1a2e259ecf0822a9ddf2993de79c1f1484"
+    },
+    "references/composition.md": {
+      "characters": 1255,
+      "estimated_tokens": 314,
+      "sha256": "c83864165a76b39c77b6e5b0d9548e9c6f0af60ba8abdcbd9aa76a43bf5a9cdf"
+    },
+    "references/editorial/board.md": {
+      "characters": 1598,
+      "estimated_tokens": 400,
+      "sha256": "ec7fcba1a8ff91d04adc1a894c457814fb337e802b561bfd76e63cdb36fdf806"
+    },
+    "references/editorial/evidence.md": {
+      "characters": 1211,
+      "estimated_tokens": 303,
+      "sha256": "a33c0d4ba2c3e042457275c36b9f3e3a7a0eec9eb050827b3a5f0233812d620f"
+    },
+    "references/editorial/inbox.md": {
+      "characters": 1096,
+      "estimated_tokens": 274,
+      "sha256": "38f12b6816ebac6cb1d3ec140ee835fde77772cf5b7377e1bd89659178c2d663"
+    },
+    "references/editorial/library.md": {
+      "characters": 4855,
+      "estimated_tokens": 1214,
+      "sha256": "0066df81272d36daa9d62b56a093f6029a5ce1498e8bc52b37fe2b25276a8c02"
+    },
+    "references/editorial/management.md": {
+      "characters": 5514,
+      "estimated_tokens": 1379,
+      "sha256": "563cbcfc57ed9dab545ecbc60d6e22a6f919ebf4728a31f9b647bdbbb357df6f"
+    },
+    "references/editorial/package.md": {
+      "characters": 1331,
+      "estimated_tokens": 333,
+      "sha256": "c3e4502a8085fdec279df598dd4304bed8ee11b4d209a66209f73ead90f109d6"
+    },
+    "references/editorial/visual.md": {
+      "characters": 1263,
+      "estimated_tokens": 316,
+      "sha256": "d4c3ea0ca1ab012ddfd798d1ea47092c89d112440d0f38649c43abfb1c3b4401"
+    },
+    "references/editorial/workflow.md": {
+      "characters": 907,
+      "estimated_tokens": 227,
+      "sha256": "bc0755140ce04121884eb795a80fc52127f086ac9bd1ff32459674c30bd01cdf"
+    },
+    "references/entry-flows.md": {
+      "characters": 2611,
+      "estimated_tokens": 653,
+      "sha256": "c8328a76633bff2d858cb28d0c83a5e7ef23a68b6ea72b77c3998bed31e9f528"
+    },
+    "references/export.md": {
+      "characters": 1105,
+      "estimated_tokens": 277,
+      "sha256": "add44b30e0d5714a157b173f15f557163f8a96f9c22883f4af09881a26d74d6b"
+    },
+    "references/getting-started.md": {
+      "characters": 2158,
+      "estimated_tokens": 540,
+      "sha256": "73c9d354d0fa280fb4e71fa956464e89dc6917497f723a231a7351f7d90e98d7"
+    },
+    "references/google/adapter.md": {
+      "characters": 5707,
+      "estimated_tokens": 1427,
+      "sha256": "d22553c19ee0350d0dba8cc203634320ed8d3a2420092ebce80998fed53abe0b"
+    },
+    "references/google/checkpoints.md": {
+      "characters": 6460,
+      "estimated_tokens": 1615,
+      "sha256": "d5aa851a41e1a1ed6d2ab4d649962f9ea9b12113fd49808c364e29a22e29ac29"
+    },
+    "references/google/gcloud.md": {
+      "characters": 10113,
+      "estimated_tokens": 2529,
+      "sha256": "38dd0a9a3a47db9c6b567568fbe24404fc967c50403741c70f8a6faf25780fcc"
+    },
+    "references/google/roundtrip.md": {
+      "characters": 7997,
+      "estimated_tokens": 2000,
+      "sha256": "64817d0d0cbf479021b5928efe0160ef15277b709e58893b5fc93fb6fec7c687"
+    },
+    "references/google/start.md": {
+      "characters": 3440,
+      "estimated_tokens": 860,
+      "sha256": "488391ef2e48ca6673656c4ae608ec4efca73e2c2f28d1010e8fc1239510e5cf"
+    },
+    "references/google/status.md": {
+      "characters": 3381,
+      "estimated_tokens": 846,
+      "sha256": "326ac0557a355ca988cbbfb959e669425abdf2ad483d45635c2684bf474abe6b"
+    },
+    "references/google/suggestions.md": {
+      "characters": 11411,
+      "estimated_tokens": 2853,
+      "sha256": "60bda8f7f58a6b10080e7f6df1f7e45fac37192c65469d98de33f528e81081e8"
+    },
+    "references/google/workflow.md": {
+      "characters": 1575,
+      "estimated_tokens": 394,
+      "sha256": "6ead74e1bcaea3972e6a3be7967fa0ee72314814e092bc02cce78cfccd5e4b2e"
+    },
+    "references/headline-lab.md": {
+      "characters": 574,
+      "estimated_tokens": 144,
+      "sha256": "4dc9950a24602bd49d17149ec36bdfbf43b72dd400a549c6281910a97f590ac8"
+    },
+    "references/hub/library.md": {
+      "characters": 2870,
+      "estimated_tokens": 718,
+      "sha256": "dda1a681a44f3b4987f48121bc8a26b98c77aa0e73a0531decc564c22d915323"
+    },
+    "references/hub/memory.md": {
+      "characters": 4692,
+      "estimated_tokens": 1173,
+      "sha256": "a70c862a5c5bdb9a60d62be75f08d1daef1ecd636584b77c99f08b2a3af702cb"
+    },
+    "references/hub/setup.md": {
+      "characters": 4093,
+      "estimated_tokens": 1024,
+      "sha256": "6a422190b8928945975fd86bc8dc8fbc924811fdf208c98ab4aa5a29a95503de"
+    },
+    "references/hub/sync.md": {
+      "characters": 3599,
+      "estimated_tokens": 900,
+      "sha256": "c0d3a247b199ff254741cdde659a437bae59c0a1b52663574bc51637d3d409f8"
+    },
+    "references/hub/workflow.md": {
+      "characters": 2501,
+      "estimated_tokens": 626,
+      "sha256": "52006b7e5695c03edaec101cc9495de90ad00adc46f4429e66aa1704525ab4f0"
+    },
+    "references/intake.md": {
+      "characters": 2445,
+      "estimated_tokens": 612,
+      "sha256": "ba24832c5ce1179bcafc3651ce0d261f8fe100cd9678069a35e84110402776a2"
+    },
+    "references/library-notes.md": {
+      "characters": 4257,
+      "estimated_tokens": 1065,
+      "sha256": "4098039bff4889d2d2b75451c8aef50f2a1945cc796048918f2faced67a15820"
+    },
+    "references/modules/blog-argument-outline.md": {
+      "characters": 1736,
+      "estimated_tokens": 434,
+      "sha256": "5175e34ad5b99094d42470ffce25d1489902fc3b04f4dc66fcf16ce3821a5367"
+    },
+    "references/modules/blog-author-interview.md": {
+      "characters": 1659,
+      "estimated_tokens": 415,
+      "sha256": "a7fc75be17a70d3c06dea94dceada2e3858cdf8dac13efc3038eb39e267ea430"
+    },
+    "references/modules/blog-deep-research.md": {
+      "characters": 8945,
+      "estimated_tokens": 2237,
+      "sha256": "909492782da044dc030c5648a8d5a2a9d54bf5e44e28dfeb8b3a02b273a7ebeb"
+    },
+    "references/modules/blog-fact-check.md": {
+      "characters": 2457,
+      "estimated_tokens": 615,
+      "sha256": "bba3863ab166037a91ed3523ea73d21366b36f07c5916f29ff3efde30fcf8461"
+    },
+    "references/modules/blog-geo-review.md": {
+      "characters": 1596,
+      "estimated_tokens": 399,
+      "sha256": "7629ccb9d2947ea78150b473fb592154d0428d7f354babac3f56c6e9ccce57bd"
+    },
+    "references/modules/blog-google-export.md": {
+      "characters": 3640,
+      "estimated_tokens": 910,
+      "sha256": "9f20f00528087321bd057475a0af49cedf2b2430b1f2a76a1c4c463322b5f14a"
+    },
+    "references/modules/blog-google-handoff.md": {
+      "characters": 3387,
+      "estimated_tokens": 847,
+      "sha256": "b5fa07d8e7abb24d174b9ad74b15aaff09219a3ea5e04873e74907fd0a516e29"
+    },
+    "references/modules/blog-google-return.md": {
+      "characters": 4152,
+      "estimated_tokens": 1038,
+      "sha256": "7634b882fc64f190e3ac240b2256f5429f77b72c7fd89ef21835557923035f79"
+    },
+    "references/modules/blog-google-review.md": {
+      "characters": 3357,
+      "estimated_tokens": 840,
+      "sha256": "36d7aeddc4df53b584e1fedff245708b866ef40fb1905e9a6275b496caacf7b5"
+    },
+    "references/modules/blog-google-source.md": {
+      "characters": 2706,
+      "estimated_tokens": 677,
+      "sha256": "95562974589ca28dfd502c564b92e944f2fc036d4a4b68ff607499f37021520f"
+    },
+    "references/modules/blog-google-template.md": {
+      "characters": 2897,
+      "estimated_tokens": 725,
+      "sha256": "9057886e7a077784737ac3c5b4b836f0779045bf5e469585705a380c8404acb9"
+    },
+    "references/modules/blog-humanize.md": {
+      "characters": 1740,
+      "estimated_tokens": 435,
+      "sha256": "c6488fbb6c2881b615e491ffeed661de96724c166e063f522c69ae3f8a39e677"
+    },
+    "references/modules/blog-repurpose.md": {
+      "characters": 1711,
+      "estimated_tokens": 428,
+      "sha256": "856b24f92ce573f6f715231ebe737136a009533ba1d86cd474eafc57501fe755"
+    },
+    "references/modules/blog-source-intake.md": {
+      "characters": 1480,
+      "estimated_tokens": 370,
+      "sha256": "14e2f5fd7835da81448d4051a052830a70213cab143aaf74606f5b655fbb15cf"
+    },
+    "references/modules/blog-voice-check.md": {
+      "characters": 1729,
+      "estimated_tokens": 433,
+      "sha256": "1b4737c11e160ccddb7dc74faed9515fb93364ab5b2df4dc9f87675bbfb9ff81"
+    },
+    "references/modules/blog-voice-profile.md": {
+      "characters": 1489,
+      "estimated_tokens": 373,
+      "sha256": "8085a149033db0bcf85824140a5277929b1bb1f31fafdce47b80324922f30c6a"
+    },
+    "references/modules/blog-write.md": {
+      "characters": 6461,
+      "estimated_tokens": 1616,
+      "sha256": "793f665fd5824b4c3ae379b2c08172ca4d77dbaefb50fb00d505847291cbba7e"
+    },
+    "references/modules/blog.md": {
+      "characters": 2324,
+      "estimated_tokens": 581,
+      "sha256": "a671e1d81ef74abeca3beeb275375277288eb20dcc4131ff5d89fa506952336c"
+    },
+    "references/modules/content-strategy.md": {
+      "characters": 4793,
+      "estimated_tokens": 1199,
+      "sha256": "209081f4d89b97f25543d1c9f6a3be23961094602562c264b53055d67c8dba7d"
+    },
+    "references/modules/copy-editing.md": {
+      "characters": 6018,
+      "estimated_tokens": 1505,
+      "sha256": "d1c5675fc2d446f88af88343cce0103f549e4e4781f4906937c1109c91287626"
+    },
+    "references/modules/copywriting.md": {
+      "characters": 3388,
+      "estimated_tokens": 847,
+      "sha256": "f1f7bbe9261648a433bbd0ae10d8b8177f606984321ba6c66aaaf6769730f1be"
+    },
+    "references/package-notes.md": {
+      "characters": 2696,
+      "estimated_tokens": 674,
+      "sha256": "5cf5a66dbeeda407a4728c2b2a86da5b80210cad3ed6d42d836834334f033bf2"
+    },
+    "references/privacy.md": {
+      "characters": 4170,
+      "estimated_tokens": 1043,
+      "sha256": "7001530b5058c319ec5cdfebfcd4901644932fe7b3625bbc16c007c73d68f503"
+    },
+    "references/review/evidence.md": {
+      "characters": 2094,
+      "estimated_tokens": 524,
+      "sha256": "1f38b6e47e6cd706d043fa8e32a76583f1c63fb30a26fb4423e3ed134bd0bc86"
+    },
+    "references/review/shape.md": {
+      "characters": 1333,
+      "estimated_tokens": 334,
+      "sha256": "86d8e867ebbaf7917d9a5754cea4ad07ddc02471c70554b875919b68a13c4e39"
+    },
+    "references/review.md": {
+      "characters": 2362,
+      "estimated_tokens": 591,
+      "sha256": "ec1e53c5b7722e32d7ea1ecd3c3361d381ae2ef9852838ec619b24310f4d70dc"
+    },
+    "references/revision.md": {
+      "characters": 1137,
+      "estimated_tokens": 285,
+      "sha256": "ff220715a53d4b42937990a5d40a484c0a3eee145109e7154b96d1555ba30100"
+    },
+    "references/short-commands.md": {
+      "characters": 5953,
+      "estimated_tokens": 1489,
+      "sha256": "730bd5116c110d5f272b491691684fe884f0d9eb0d088604c370221297b95f3e"
+    },
+    "references/style/examples.md": {
+      "characters": 1936,
+      "estimated_tokens": 484,
+      "sha256": "e0fd3d25f3c20f9d19e2f2f02b41bf99a11f6fc92ab380a2bb0faf60dc0374e3"
+    },
+    "references/style/forms.md": {
+      "characters": 4079,
+      "estimated_tokens": 1020,
+      "sha256": "635c38275392902a91cb65fd040325325ef9c45caf75a45cbd51c701926940e4"
+    },
+    "references/style/house.md": {
+      "characters": 2492,
+      "estimated_tokens": 623,
+      "sha256": "df88ec765dc425e7b7fddbfc54295e7b41f466cf58adcc767075bf0accc594b8"
+    },
+    "references/style/performance.md": {
+      "characters": 1989,
+      "estimated_tokens": 498,
+      "sha256": "da4015356782d1cf2f6f0d20c86d691507ab3b646e06bd8b432df0b88509bc5d"
+    },
+    "references/style/software.md": {
+      "characters": 2214,
+      "estimated_tokens": 554,
+      "sha256": "264747f617575330a98e30e69575cabe583656d58070e0ca69570f54991c2bbd"
+    },
+    "references/style/sources.md": {
+      "characters": 3732,
+      "estimated_tokens": 933,
+      "sha256": "c48680dfdd3ec61bef92246af9ec58f2cbad3828ce72d82de0bcee5a5a36400b"
+    },
+    "references/style/visuals.md": {
+      "characters": 1388,
+      "estimated_tokens": 347,
+      "sha256": "752b1da348e224f0b740c7cdd7b550d9cfee5f92ae844673b5edbef23e87e727"
+    },
+    "references/upstream/claude-blog/skills/blog/SOURCE.md": {
+      "characters": 24810,
+      "estimated_tokens": 6203,
+      "sha256": "7ce5833fb6905f8451552304ef95678a18eec658901e0cc975b8a19fed5ebc4c"
+    },
+    "references/upstream/claude-blog/skills/blog/references/ai-crawler-guide.md": {
+      "characters": 20098,
+      "estimated_tokens": 5025,
+      "sha256": "dd637426004b99ddc5c2c96bc49da9e0e9d79fa5d2ea985ffe4443ae50bd61ed"
+    },
+    "references/upstream/claude-blog/skills/blog/references/ai-slop-detection.md": {
+      "characters": 7919,
+      "estimated_tokens": 1980,
+      "sha256": "32f24bc6c3a064f2f54da589eac4f880256afe6a8545382c2bac615e3f0bc407"
+    },
+    "references/upstream/claude-blog/skills/blog/references/blog-delivery-contract.md": {
+      "characters": 15518,
+      "estimated_tokens": 3880,
+      "sha256": "1ee9c185a69d086e521109b4e445bc8199572a4a7b06dc9c5d64e9f6ca25895a"
+    },
+    "references/upstream/claude-blog/skills/blog/references/cognitive-load.md": {
+      "characters": 6740,
+      "estimated_tokens": 1685,
+      "sha256": "ca0f994ef813328f6bb2ed78a9d63ae0982ab5503b7634e18bdc9707617bfd57"
+    },
+    "references/upstream/claude-blog/skills/blog/references/content-rules.md": {
+      "characters": 14843,
+      "estimated_tokens": 3711,
+      "sha256": "93838dafb909991c176f4331963323a5737613f37610e2feea18fe1b229be453"
+    },
+    "references/upstream/claude-blog/skills/blog/references/content-templates.md": {
+      "characters": 23463,
+      "estimated_tokens": 5866,
+      "sha256": "37f4699c4bd79c53429481154470a181cf3c9e6f955209365f1a4f0a6e3b1d5d"
+    },
+    "references/upstream/claude-blog/skills/blog/references/cta-placement.md": {
+      "characters": 2325,
+      "estimated_tokens": 582,
+      "sha256": "2ab2b8ad6555e290c2bf96c7a78b7878152a04f40549bc3ff51d05630b99abe4"
+    },
+    "references/upstream/claude-blog/skills/blog/references/distribution-playbook.md": {
+      "characters": 19345,
+      "estimated_tokens": 4837,
+      "sha256": "9f23c80e8468cc461997f0b08bc77c35440f2ce32db2bf2e026080bd01de6eeb"
+    },
+    "references/upstream/claude-blog/skills/blog/references/editorial-heuristics.md": {
+      "characters": 10514,
+      "estimated_tokens": 2629,
+      "sha256": "8f7b31e9db91e5ac3bd66f4d81c013bb0655fe6b744971715ac68ead1cbd5e9e"
+    },
+    "references/upstream/claude-blog/skills/blog/references/eeat-signals.md": {
+      "characters": 14300,
+      "estimated_tokens": 3575,
+      "sha256": "ed0aea4025076cda88281eac01aeb875a2ed5e0232ddf2c964c05887532b86fe"
+    },
+    "references/upstream/claude-blog/skills/blog/references/flow-alignment.md": {
+      "characters": 6319,
+      "estimated_tokens": 1580,
+      "sha256": "d9febf9d512f42ce39e5d51d944e7ca07f2ab682a8268618b47bc4ac022b466d"
+    },
+    "references/upstream/claude-blog/skills/blog/references/geo-optimization.md": {
+      "characters": 11361,
+      "estimated_tokens": 2841,
+      "sha256": "8e13668c4107a9ed707f86726916206047ba00da6d23cfb6b10ddb751b34efaa"
+    },
+    "references/upstream/claude-blog/skills/blog/references/google-landscape-2026.md": {
+      "characters": 10528,
+      "estimated_tokens": 2632,
+      "sha256": "181321fc89f8570679d98bd668f8d7a1bc445e8fecd121528328904db7d36627"
+    },
+    "references/upstream/claude-blog/skills/blog/references/internal-linking.md": {
+      "characters": 13621,
+      "estimated_tokens": 3406,
+      "sha256": "ca2bc275af1fe9cb41585a6ee46e696974995238f1279010ce3fa80763ed7d92"
+    },
+    "references/upstream/claude-blog/skills/blog/references/orchestration-details.md": {
+      "characters": 3202,
+      "estimated_tokens": 801,
+      "sha256": "0f46434c3a87647f49eaf6e0f113751bf51f87d37416851b4cd69a49bafc2ae7"
+    },
+    "references/upstream/claude-blog/skills/blog/references/platform-guides.md": {
+      "characters": 34826,
+      "estimated_tokens": 8707,
+      "sha256": "cd3f400809efa8d6f2d021f7c2e639474ea33989c61472d46c474ee7ab940284"
+    },
+    "references/upstream/claude-blog/skills/blog/references/quality-scoring.md": {
+      "characters": 8521,
+      "estimated_tokens": 2131,
+      "sha256": "ab563a355938159fdbb66e3966b0864eb8197c883cd07ad70ef1d9f88e436967"
+    },
+    "references/upstream/claude-blog/skills/blog/references/research-quality.md": {
+      "characters": 11532,
+      "estimated_tokens": 2883,
+      "sha256": "7942a5a40a33eea5711592987fb6cacac29460662e23c1bb0d9a35555ce37f4d"
+    },
+    "references/upstream/claude-blog/skills/blog/references/schema-stack.md": {
+      "characters": 25841,
+      "estimated_tokens": 6461,
+      "sha256": "61958878a5789e792738cdf571828935727a4a8304d4b271c3a762c1197c4114"
+    },
+    "references/upstream/claude-blog/skills/blog/references/synthesis-contract.md": {
+      "characters": 7560,
+      "estimated_tokens": 1890,
+      "sha256": "bc358388a210e083429b9233c5087103bdc111a2974a93c3dfcb5cb3e7866cb6"
+    },
+    "references/upstream/claude-blog/skills/blog/references/video-embeds.md": {
+      "characters": 7630,
+      "estimated_tokens": 1908,
+      "sha256": "da2dd1128fdbd412186c6175a9d6de4d77af540adda357fbba3dc12c667fc615"
+    },
+    "references/upstream/claude-blog/skills/blog/references/visual-media.md": {
+      "characters": 14527,
+      "estimated_tokens": 3632,
+      "sha256": "cf972559ef46e4a712d19289fd18577a8364ed8732561940093b0a56070c7be5"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/case-study.md": {
+      "characters": 13365,
+      "estimated_tokens": 3342,
+      "sha256": "44d383f52cda7b6927cabd5c62e3b3a24d653ba3bc21d780154dc2991516fb15"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/comparison.md": {
+      "characters": 14848,
+      "estimated_tokens": 3712,
+      "sha256": "342e346a0554e9f5053176a7872094402a610c4ce99c99a9b91c276ec30b9099"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/data-research.md": {
+      "characters": 13707,
+      "estimated_tokens": 3427,
+      "sha256": "438fddb2f2ff52a2cc21ac40663cd94687c9e926d33b16f01ebc0740eff7bdee"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/faq-knowledge.md": {
+      "characters": 12874,
+      "estimated_tokens": 3219,
+      "sha256": "b7fbcfa2df520432bbb35e6b131614ff9d8bef8ad051f0211ba7c08d09bed270"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/how-to-guide.md": {
+      "characters": 10047,
+      "estimated_tokens": 2512,
+      "sha256": "78b622fe51166717584acbd1c3e7c6dbb941879b6f926cc2f0a931e2f4d28cd6"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/listicle.md": {
+      "characters": 12041,
+      "estimated_tokens": 3011,
+      "sha256": "b4af2351da7a9b530d81021d687afd2baa90847986107f7329f3f02d72d60195"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/news-analysis.md": {
+      "characters": 10210,
+      "estimated_tokens": 2553,
+      "sha256": "e146115478ca33a51e6b6afb8dc6ed5fa906b8fd9bd118727e40835e60a4187d"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/pillar-page.md": {
+      "characters": 14041,
+      "estimated_tokens": 3511,
+      "sha256": "e8409dec628cf8ac99969ae7d3e9f283d1a2c239d364041619d8ee3a7ca8ede4"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/product-review.md": {
+      "characters": 12211,
+      "estimated_tokens": 3053,
+      "sha256": "52005ac49d613fa624cc77b22de0c0e683fd03a9661e4eea2f4e52afecd6a9ce"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/roundup.md": {
+      "characters": 12987,
+      "estimated_tokens": 3247,
+      "sha256": "15bce96ce2475823102154e6684ef1a165cdd21190247ee79de9371e7aab2c21"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/thought-leadership.md": {
+      "characters": 13562,
+      "estimated_tokens": 3391,
+      "sha256": "2d4516afa8ec22aad71395d1888413350748bdc084a585ee3b6dbdcb522e3d97"
+    },
+    "references/upstream/claude-blog/skills/blog/templates/tutorial.md": {
+      "characters": 10488,
+      "estimated_tokens": 2622,
+      "sha256": "0bf0453ecbb407bf097233c3f02d7584dcaa0b13b9ae97f83163db6f304973ad"
+    },
+    "references/upstream/claude-blog/skills/blog-write/SOURCE.md": {
+      "characters": 22340,
+      "estimated_tokens": 5585,
+      "sha256": "523bb06666235df94920de3eb7eb4d3e17c09e33c5ab7b39cfe196e29a4a5bc4"
+    },
+    "references/upstream/claude-blog/skills/blog-write/references/delivery.md": {
+      "characters": 2867,
+      "estimated_tokens": 717,
+      "sha256": "e66aee9580652279badef206cb4bccd6fe02fe8e70a771d117f1c32503069201"
+    },
+    "references/upstream/deep-research/research/SOURCE.md": {
+      "characters": 4263,
+      "estimated_tokens": 1066,
+      "sha256": "575073c5483454245d6c29ef8f12c77a0831b5d9eec0e98631129db1a6425671"
+    },
+    "references/upstream/deep-research/research-add-fields/SOURCE.md": {
+      "characters": 858,
+      "estimated_tokens": 215,
+      "sha256": "93757fb5ea7462de38206c0f2c18cb7726fe773137f6b7959d6587ae2f2bfcf9"
+    },
+    "references/upstream/deep-research/research-add-items/SOURCE.md": {
+      "characters": 721,
+      "estimated_tokens": 181,
+      "sha256": "52195e187e55941525e6006709dacb0b409448717958af86e73cbf6682b9e616"
+    },
+    "references/upstream/deep-research/research-deep/SOURCE.md": {
+      "characters": 3318,
+      "estimated_tokens": 830,
+      "sha256": "8fcc496fb1af291d30a9aa70e005f33cfbe08c8fff1942fb50ff7c9979d532cb"
+    },
+    "references/upstream/deep-research/research-report/SOURCE.md": {
+      "characters": 3776,
+      "estimated_tokens": 944,
+      "sha256": "3f338b814cda64564170b821eb9d9f597126639d8330b0d9b43dff9fbcbb945b"
+    },
+    "references/upstream/marketingskills/skills/content-strategy/SOURCE.md": {
+      "characters": 18533,
+      "estimated_tokens": 4634,
+      "sha256": "0ad572d607884c561668810f77cd21bbe3e0508c64090f2997661a728360f946"
+    },
+    "references/upstream/marketingskills/skills/content-strategy/references/content-distribution.md": {
+      "characters": 5522,
+      "estimated_tokens": 1381,
+      "sha256": "1861a1aab0627ab29c279000879a9889242da1ba85e677acdc759c66a6241778"
+    },
+    "references/upstream/marketingskills/skills/content-strategy/references/headless-cms.md": {
+      "characters": 8385,
+      "estimated_tokens": 2097,
+      "sha256": "c0a7b87f47c8f7af907ce73facf1ed4721ade811e53f86ddf22f4bc0d7ca324e"
+    },
+    "references/upstream/marketingskills/skills/copy-editing/SOURCE.md": {
+      "characters": 14974,
+      "estimated_tokens": 3744,
+      "sha256": "9b5a20be3dc5513c8f0b4f4c4960857e4d28ed83698a5b33c8dde9dc75a47bf6"
+    },
+    "references/upstream/marketingskills/skills/copy-editing/references/checklist.md": {
+      "characters": 1728,
+      "estimated_tokens": 432,
+      "sha256": "db143b969b45b0933fe6eb772992890d1472d036a6c887fc98665e4fb48da43c"
+    },
+    "references/upstream/marketingskills/skills/copy-editing/references/content-refresh.md": {
+      "characters": 2280,
+      "estimated_tokens": 570,
+      "sha256": "8a3a2d301bb2b8b2a780f5bef43093ab42295041b2fea2a9caeca2421ef3c79b"
+    },
+    "references/upstream/marketingskills/skills/copy-editing/references/plain-english-alternatives.md": {
+      "characters": 8258,
+      "estimated_tokens": 2065,
+      "sha256": "df4f820d4c63ae8a517c64a243c101658352cd07d002355bf3c97de0a00f3775"
+    },
+    "references/upstream/marketingskills/skills/copywriting/SOURCE.md": {
+      "characters": 8359,
+      "estimated_tokens": 2090,
+      "sha256": "ce18137ae31ab37f261078501431649865ab6b403054d97490754e82acb002d8"
+    },
+    "references/upstream/marketingskills/skills/copywriting/references/copy-frameworks.md": {
+      "characters": 14237,
+      "estimated_tokens": 3560,
+      "sha256": "d98818886525908bf17dd6412d0b72731b313d6eef3e1ab6b365828a3a342779"
+    },
+    "references/upstream/marketingskills/skills/copywriting/references/natural-transitions.md": {
+      "characters": 5684,
+      "estimated_tokens": 1421,
+      "sha256": "4ff23f8943af2f65b072f26f1c53ce55f19cc26d7be211c11cae8e34b43e859f"
+    },
+    "references/voice-flow.md": {
+      "characters": 2522,
+      "estimated_tokens": 631,
+      "sha256": "3eabe7e0e31ea2924e8f9a19be9d0ffda093461adb5a0107634f719040f9f849"
+    },
+    "references/workspace/articles.md": {
+      "characters": 1638,
+      "estimated_tokens": 410,
+      "sha256": "d0174d189eec06856f0fb6c92ff7421e076deb5ed21761bb43437e05f65a043d"
+    },
+    "references/workspace/changes.md": {
+      "characters": 2405,
+      "estimated_tokens": 602,
+      "sha256": "a57ec1e1590fd936b7a76672cbe5549c2848d4beab0b5cb90eb6c6006ad7f97f"
+    },
+    "references/workspace/checks.md": {
+      "characters": 727,
+      "estimated_tokens": 182,
+      "sha256": "fd53f9749aee98a252cc0b521883301038175ce5f1f13cca320535c24b19e6aa"
+    },
+    "references/workspace/context.md": {
+      "characters": 2156,
+      "estimated_tokens": 539,
+      "sha256": "e502e2ac0c13bec008529b9d29b7f86a90a07fa84c8fc62b6b508327e008f3d6"
+    },
+    "references/workspace/create.md": {
+      "characters": 1438,
+      "estimated_tokens": 360,
+      "sha256": "27015b4b80eeb1fdcc5c77e89d4e72496a0a099d3c8313e9e50660f5f5591e1d"
+    },
+    "references/workspace/defaults.md": {
+      "characters": 2063,
+      "estimated_tokens": 516,
+      "sha256": "fec401b456f919fda2d9f806411d80efefc549d6a9cd6c53ef93ef89db109450"
+    },
+    "references/workspace/performance.md": {
+      "characters": 2407,
+      "estimated_tokens": 602,
+      "sha256": "da412b356dc3e5ac18ae7894ab119e388f68af61f69a015c732e3f8d9b0e7252"
+    },
+    "references/workspace/pins.md": {
+      "characters": 1462,
+      "estimated_tokens": 366,
+      "sha256": "567d9ff1977c0a8c6fac4ebfa993b614468f4ad38ec1e957ecf792bcd83a2cf4"
+    },
+    "references/workspace/profiles.md": {
+      "characters": 1262,
+      "estimated_tokens": 316,
+      "sha256": "020310916e2c15291fbd0d2267d753751d3b27d3c3250027fafaa1922efec08d"
+    },
+    "references/workspace/reference-memory.md": {
+      "characters": 5236,
+      "estimated_tokens": 1309,
+      "sha256": "f05ae4c50931244e73fed839fa39c93568a8f62471d69853f5e9ac1951d6a411"
+    },
+    "references/workspace/resume.md": {
+      "characters": 2021,
+      "estimated_tokens": 506,
+      "sha256": "1fe27713385f569dea511dad9a3e52ae5519a65c109c3615c7812fae3dd914aa"
+    },
+    "references/workspace/reviews.md": {
+      "characters": 1263,
+      "estimated_tokens": 316,
+      "sha256": "cddc257af48ee021c6f527a51ccc599dd499a66bb0a216bd0a0a651f58d23e81"
+    },
+    "references/workspace/sources.md": {
+      "characters": 1620,
+      "estimated_tokens": 405,
+      "sha256": "4d2d6c77bf419d36cade432461c543a318fbedda670956ed6f3884ab90d5b554"
+    },
+    "references/workspace/status.md": {
+      "characters": 1505,
+      "estimated_tokens": 377,
+      "sha256": "af676f1459702a331e6b6f63f484eac7fc2bc3a454a760e489355c9ed81ad589"
+    },
+    "references/workspace.md": {
+      "characters": 920,
+      "estimated_tokens": 230,
+      "sha256": "d698280803c2d1b55ec41189430b292bf73e510c8a10eb7938e5b94690884794"
+    }
+  },
+  "library_tokens": 213624,
+  "routes": {
+    "outline_with_sources": {
+      "files": [
+        "SKILL.md",
+        "references/entry-flows.md",
+        "references/workspace.md",
+        "references/intake.md",
+        "references/modules/blog-source-intake.md",
+        "references/workspace/sources.md",
+        "references/workspace/create.md",
+        "references/workspace/articles.md",
+        "references/modules/blog-argument-outline.md"
+      ],
+      "scenario": "New local outline-only article from readable supplied notes and an explicit tone; no voice profile or hub.",
+      "estimated_tokens": 4569
+    },
+    "first_draft_with_sources": {
+      "files": [
+        "SKILL.md",
+        "references/entry-flows.md",
+        "references/workspace.md",
+        "references/intake.md",
+        "references/modules/blog-source-intake.md",
+        "references/workspace/sources.md",
+        "references/workspace/create.md",
+        "references/workspace/articles.md",
+        "references/modules/blog-argument-outline.md",
+        "references/modules/blog-write.md"
+      ],
+      "scenario": "New local draft from supplied notes and explicit tone; internal outline, no specialized template or extra composition reference.",
+      "estimated_tokens": 6185
+    },
+    "quick_edit": {
+      "files": [
+        "SKILL.md",
+        "references/entry-flows.md",
+        "references/workspace.md",
+        "references/workspace/resume.md",
+        "references/workspace/articles.md",
+        "references/workspace/checks.md",
+        "references/workspace/reviews.md",
+        "references/modules/copy-editing.md",
+        "references/revision.md",
+        "references/modules/blog-voice-check.md"
+      ],
+      "scenario": "Saved local article; controlled polish, selected voice-rule check and saved review. No new source/profile intake.",
+      "estimated_tokens": 5615
+    },
+    "voice_setup": {
+      "files": [
+        "SKILL.md",
+        "references/entry-flows.md",
+        "references/workspace.md",
+        "references/intake.md",
+        "references/modules/blog-source-intake.md",
+        "references/workspace/sources.md",
+        "references/voice-flow.md",
+        "references/modules/blog-voice-profile.md",
+        "references/workspace/profiles.md"
+      ],
+      "scenario": "New standalone profile from selected readable authored samples; no article creation.",
+      "estimated_tokens": 4685
+    },
+    "comprehensive_review": {
+      "files": [
+        "SKILL.md",
+        "references/entry-flows.md",
+        "references/workspace.md",
+        "references/workspace/resume.md",
+        "references/workspace/reviews.md",
+        "references/workspace/checks.md",
+        "references/review.md",
+        "references/modules/blog-voice-check.md",
+        "references/modules/blog-fact-check.md",
+        "references/modules/blog-humanize.md",
+        "references/modules/blog-geo-review.md",
+        "references/review/shape.md",
+        "references/review/evidence.md"
+      ],
+      "scenario": "Saved article with selected evidence/voice; five requested feedback checks and stored coverage, without rewriting or an optional deep humanization rubric.",
+      "estimated_tokens": 6313
+    },
+    "quick_polish": {
+      "files": [
+        "SKILL.md",
+        "references/entry-flows.md",
+        "references/workspace.md",
+        "references/workspace/resume.md",
+        "references/workspace/articles.md",
+        "references/modules/copy-editing.md"
+      ],
+      "scenario": "Saved local draft; light clarity and voice polish, no separately requested check or recorded review.",
+      "estimated_tokens": 4399
+    }
+  },
+  "team_hub_routes": {
+    "setup": {
+      "files": [
+        "references/hub/workflow.md",
+        "references/hub/setup.md"
+      ],
+      "estimated_tokens": 1650
+    },
+    "memory": {
+      "files": [
+        "references/hub/workflow.md",
+        "references/hub/memory.md"
+      ],
+      "estimated_tokens": 1799
+    },
+    "sync": {
+      "files": [
+        "references/hub/workflow.md",
+        "references/hub/sync.md"
+      ],
+      "estimated_tokens": 1526
+    }
+  },
+  "conditional_privacy_reference": {
+    "files": [
+      "references/privacy.md"
+    ],
+    "estimated_tokens": 1043,
+    "note": "Load before upstream service instructions or external research/media/posting; essential boundary is always in the parent."
+  },
+  "entry_guidance": {
+    "files": [
+      "SKILL.md",
+      "references/entry-flows.md"
+    ],
+    "estimated_tokens": 1748,
+    "target_tokens": [
+      800,
+      1200
+    ],
+    "note": "Entry file plus entry flow. Conditional reads are additional."
+  },
+  "workspace_operations": {
+    "resume": {
+      "files": [
+        "references/workspace.md",
+        "references/workspace/resume.md"
+      ],
+      "estimated_tokens": 736
+    },
+    "sources": {
+      "files": [
+        "references/workspace.md",
+        "references/workspace/sources.md"
+      ],
+      "estimated_tokens": 635
+    },
+    "profiles": {
+      "files": [
+        "references/workspace.md",
+        "references/workspace/profiles.md"
+      ],
+      "estimated_tokens": 546
+    },
+    "article_save": {
+      "files": [
+        "references/workspace.md",
+        "references/workspace/articles.md"
+      ],
+      "estimated_tokens": 640
+    },
+    "article_create": {
+      "files": [
+        "references/workspace.md",
+        "references/workspace/create.md"
+      ],
+      "estimated_tokens": 590
+    },
+    "reviews": {
+      "files": [
+        "references/workspace.md",
+        "references/workspace/reviews.md"
+      ],
+      "estimated_tokens": 546
+    },
+    "guidance_restore": {
+      "files": [
+        "references/workspace.md",
+        "references/workspace/pins.md"
+      ],
+      "estimated_tokens": 596
+    },
+    "mechanical_checks": {
+      "files": [
+        "references/workspace.md",
+        "references/workspace/checks.md"
+      ],
+      "estimated_tokens": 412
+    },
+    "readiness": {
+      "files": [
+        "references/getting-started.md"
+      ],
+      "estimated_tokens": 540
+    },
+    "context": {
+      "files": [
+        "references/workspace.md",
+        "references/workspace/context.md"
+      ],
+      "estimated_tokens": 769
+    },
+    "status_card": {
+      "files": [
+        "references/workspace/status.md"
+      ],
+      "estimated_tokens": 377,
+      "note": "Conditional runtime 1.7 author operation; ordinary entry and author data are additional."
+    },
+    "writing_defaults": {
+      "files": [
+        "references/workspace/defaults.md"
+      ],
+      "estimated_tokens": 516,
+      "note": "Conditional runtime 1.7 author operation; ordinary entry and author data are additional."
+    },
+    "changes_restore": {
+      "files": [
+        "references/workspace/changes.md"
+      ],
+      "estimated_tokens": 602,
+      "note": "Conditional runtime 1.7 author operation; ordinary entry and author data are additional."
+    },
+    "short_commands": {
+      "files": [
+        "references/short-commands.md"
+      ],
+      "estimated_tokens": 1489,
+      "note": "Conditional runtime 1.7 author operation; ordinary entry and author data are additional."
+    },
+    "reference_memory": {
+      "files": [
+        "references/workspace/reference-memory.md"
+      ],
+      "estimated_tokens": 1309,
+      "note": "Conditional reference retention and bounded reuse; source bodies are retrieved separately."
+    }
+  },
+  "craft_guides": {
+    "writing": {
+      "files": [
+        "references/modules/blog-write.md"
+      ],
+      "estimated_tokens": 1616
+    },
+    "editing": {
+      "files": [
+        "references/modules/copy-editing.md"
+      ],
+      "estimated_tokens": 1505
+    },
+    "strategy": {
+      "files": [
+        "references/modules/content-strategy.md"
+      ],
+      "estimated_tokens": 1199
+    },
+    "titles": {
+      "files": [
+        "references/modules/copywriting.md"
+      ],
+      "estimated_tokens": 847
+    },
+    "deep_research": {
+      "files": [
+        "references/modules/blog-deep-research.md",
+        "references/privacy.md",
+        "references/workspace/sources.md",
+        "references/review/evidence.md"
+      ],
+      "estimated_tokens": 4209,
+      "note": "Conditional research only; immutable upstream sources stay unloaded during ordinary use."
+    }
+  },
+  "google_operations": {
+    "router": {
+      "files": [
+        "references/google/workflow.md"
+      ],
+      "estimated_tokens": 394
+    },
+    "adapter_contract": {
+      "files": [
+        "references/google/adapter.md"
+      ],
+      "estimated_tokens": 1427
+    },
+    "checkpoint_contract": {
+      "files": [
+        "references/google/checkpoints.md"
+      ],
+      "estimated_tokens": 1615
+    },
+    "source": {
+      "files": [
+        "references/google/workflow.md",
+        "references/modules/blog-google-source.md"
+      ],
+      "estimated_tokens": 1071
+    },
+    "handoff": {
+      "files": [
+        "references/google/workflow.md",
+        "references/modules/blog-google-handoff.md"
+      ],
+      "estimated_tokens": 1241
+    },
+    "return": {
+      "files": [
+        "references/google/workflow.md",
+        "references/modules/blog-google-return.md"
+      ],
+      "estimated_tokens": 1432
+    },
+    "review": {
+      "files": [
+        "references/google/workflow.md",
+        "references/modules/blog-google-review.md"
+      ],
+      "estimated_tokens": 1234
+    },
+    "template": {
+      "files": [
+        "references/google/workflow.md",
+        "references/modules/blog-google-template.md"
+      ],
+      "estimated_tokens": 1119
+    },
+    "export": {
+      "files": [
+        "references/google/workflow.md",
+        "references/modules/blog-google-export.md"
+      ],
+      "estimated_tokens": 1304
+    },
+    "gcloud": {
+      "files": [
+        "references/google/gcloud.md"
+      ],
+      "estimated_tokens": 2529
+    },
+    "roundtrip": {
+      "files": [
+        "references/google/roundtrip.md"
+      ],
+      "estimated_tokens": 2000
+    },
+    "status": {
+      "files": [
+        "references/google/status.md"
+      ],
+      "estimated_tokens": 846
+    },
+    "suggestions": {
+      "files": [
+        "references/google/suggestions.md"
+      ],
+      "estimated_tokens": 2853
+    },
+    "start": {
+      "files": [
+        "references/google/start.md"
+      ],
+      "estimated_tokens": 860
+    }
+  },
+  "google_operations_note": "Unique Blog Studio instruction estimates. Each operation includes its router. Add adapter/checkpoint contracts and privacy once as applicable; parent, provider/plugin skills, document content and generated artifacts are additional.",
+  "house_style_operations": {
+    "core": {
+      "files": [
+        "references/style/house.md"
+      ],
+      "estimated_tokens": 623
+    },
+    "planning": {
+      "files": [
+        "references/style/house.md",
+        "references/style/forms.md"
+      ],
+      "estimated_tokens": 1643
+    },
+    "product_draft": {
+      "files": [
+        "references/style/house.md",
+        "references/style/software.md"
+      ],
+      "estimated_tokens": 1177
+    },
+    "practical_post": {
+      "files": [
+        "references/style/house.md",
+        "references/style/software.md",
+        "references/style/examples.md"
+      ],
+      "estimated_tokens": 1661
+    },
+    "performance_post": {
+      "files": [
+        "references/style/house.md",
+        "references/style/software.md",
+        "references/style/performance.md"
+      ],
+      "estimated_tokens": 1675
+    },
+    "visual_extension": {
+      "files": [
+        "references/style/visuals.md"
+      ],
+      "estimated_tokens": 347
+    },
+    "maintenance_sources": {
+      "files": [
+        "references/style/sources.md"
+      ],
+      "estimated_tokens": 933
+    }
+  },
+  "editorial_operations": {
+    "board": {
+      "files": [
+        "references/editorial/workflow.md",
+        "references/editorial/board.md"
+      ],
+      "estimated_tokens": 627
+    },
+    "inbox": {
+      "files": [
+        "references/editorial/workflow.md",
+        "references/editorial/inbox.md"
+      ],
+      "estimated_tokens": 501
+    },
+    "evidence": {
+      "files": [
+        "references/editorial/workflow.md",
+        "references/editorial/evidence.md"
+      ],
+      "estimated_tokens": 530
+    },
+    "package": {
+      "files": [
+        "references/editorial/workflow.md",
+        "references/editorial/package.md"
+      ],
+      "estimated_tokens": 560
+    },
+    "visual": {
+      "files": [
+        "references/editorial/workflow.md",
+        "references/editorial/visual.md"
+      ],
+      "estimated_tokens": 543
+    },
+    "library": {
+      "files": [
+        "references/editorial/workflow.md",
+        "references/editorial/library.md"
+      ],
+      "estimated_tokens": 1441
+    },
+    "management": {
+      "files": [
+        "references/editorial/workflow.md",
+        "references/editorial/management.md"
+      ],
+      "estimated_tokens": 1606
+    }
+  }
+}

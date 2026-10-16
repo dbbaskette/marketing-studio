@@ -1,0 +1,16 @@
+# Local author data and credentials
+.blog-studio/
+.env
+.env.*
+!.env.example
+
+# Python and editor caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+.DS_Store
+
+# Release archives are built into this folder and published with GitHub Releases
+build/

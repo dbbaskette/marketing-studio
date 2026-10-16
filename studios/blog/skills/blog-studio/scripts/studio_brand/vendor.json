@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/dbbaskette/training-studio",
+  "revision": "0881ce768039ebeb9e1fa39b89cedf792bf5d40e",
+  "files": {
+    "brand.py": {
+      "source": "runner/brand.py",
+      "source_sha256": "205ee6329c6235c37fd73e37b097960c52fcfdb79e4ec7a8be6d8086ef018b4e"
+    },
+    "source.py": {
+      "source": "runner/brand_source.py",
+      "source_sha256": "4e2296b5f7ee5fbb8c97b9e6c5b36e2a293d6a232c00c2cf2f239ec903fd5d7a"
+    },
+    "companion.py": {
+      "source": "runner/companion.py",
+      "source_sha256": "f573c5b67db34ce948e7095d33a20477561037f7415f0fd84ccd02f92e940c16"
+    }
+  },
+  "adaptations": "Relative imports and Blog Git/settings adapters. Contract exports use the blog medium without a slide delivery flag. Installer wording names Blog Studio."
+}

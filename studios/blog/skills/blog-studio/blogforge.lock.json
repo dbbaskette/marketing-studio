@@ -1,0 +1,43 @@
+{
+  "repository": "https://github.com/dbbaskette/blogforge",
+  "commit": "ad1f2d3912d745dec5136808519a8cd238e635fd",
+  "collected_on": "2026-10-01",
+  "adaptation": "Modules adapt inspected BlogForge functions. Assets are byte-for-byte local snapshots. No upstream runtime is bundled.",
+  "files": [
+    {
+      "upstream_path": "packages/api/blogforge/voice/assets/humanize/lenses.md",
+      "path": "references/blogforge/voice/assets/humanize/lenses.md",
+      "sha256": "0d3814cfa31a8836931a4ccf8bf35db4c72cc4dce80a31f5cf4a73c9397cc7b8"
+    },
+    {
+      "upstream_path": "packages/api/blogforge/voice/assets/ai-tells/patterns.md",
+      "path": "references/blogforge/voice/assets/ai-tells/patterns.md",
+      "sha256": "68ece5ca68c0c521f00bda7a1cff188ed9233b3168fc65ea60822cb357bb7bb0"
+    },
+    {
+      "upstream_path": "packages/api/blogforge/voice/assets/ai-tells/words.txt",
+      "path": "references/blogforge/voice/assets/ai-tells/words.txt",
+      "sha256": "0ee879a93a97d86ba612e0f002413df6c1679efa6d81dea53fb97d040eea494b"
+    },
+    {
+      "upstream_path": "packages/api/blogforge/voice/assets/ai-tells/phrases.txt",
+      "path": "references/blogforge/voice/assets/ai-tells/phrases.txt",
+      "sha256": "a4b0198fa591822dd952174b4bdd966ee0606f30e42948972b700765e54bd2d8"
+    },
+    {
+      "upstream_path": "packages/api/blogforge/voice/assets/ai-tells/sentence-starters.txt",
+      "path": "references/blogforge/voice/assets/ai-tells/sentence-starters.txt",
+      "sha256": "e49645fc9f1e19cebffdfe0afbc9753640b070bfecde4b2c519b217a0030eb13"
+    },
+    {
+      "upstream_path": "packages/api/blogforge/generate/prompts/outline.j2",
+      "path": "references/blogforge/generate/prompts/outline.j2",
+      "sha256": "de2670eac5d4b745336fa8572cc58b8ee5b6cd70d61c75cd6e030901c1f51fe7"
+    },
+    {
+      "upstream_path": "packages/api/blogforge/generate/prompts/document.j2",
+      "path": "references/blogforge/generate/prompts/document.j2",
+      "sha256": "6b2b71326a9062387eca7deb1ea5423d868a1a47e5166ffcdeb8d163427988fb"
+    }
+  ]
+}

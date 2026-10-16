@@ -1,0 +1,80 @@
+# Universal AI-tell phrases. One per line. Matched case-insensitively as substrings.
+# Note: a few entries (e.g. "a testament to") intentionally overlap the lint.py _AI_INFLATION detector.
+It's important to note that
+It's worth noting that
+In today's digital age
+In an ever-evolving world
+Embark on a journey
+Let's dive in
+Dive into
+At its core
+In essence
+When it comes to
+Designed to enhance
+Stands as a testament to
+In conclusion
+In summary
+a testament to
+plays a vital role
+in the heart of
+leaves an indelible mark
+shed light on
+valuable insights
+results-driven
+actionable insights
+innovative solutions
+drive efficiency
+solid foundation
+strong collaborator
+complex challenges
+track record
+in today's fast-paced
+in the dynamic world of
+as the world continues to evolve
+this paper presents
+this paper will discuss
+another key factor
+a related challenge
+plays a crucial role
+in the realm of
+navigating the complexities
+a wide range of
+a diverse array of
+rich cultural heritage
+rich tapestry
+deeply rooted
+setting the stage for
+marking a pivotal moment
+a turning point
+it is worth noting
+the bottom line
+broader implications
+challenges and opportunities
+first and foremost
+last but not least
+paving the way
+pave the way
+stand the test of time
+in recent years
+underscores the importance
+highlights the importance
+emphasizing the importance
+serves as a bridge
+holds the distinction of being
+future prospects
+more than just
+gone are the days
+look no further
+here's the kicker
+but here's the thing
+at the end of the day
+in a nutshell
+picture this
+imagine a world where
+without further ado
+cemented its status
+solidified its status
+maintains an active presence
+crucial role in shaping
+treasure trove
+poised to

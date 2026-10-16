@@ -1,0 +1,143 @@
+{
+  "board": {
+    "samples": [
+      {
+        "seconds": 0.0609,
+        "subprocess_calls": 2,
+        "validation_calls": 2,
+        "response_chars": 4675,
+        "total": 10
+      },
+      {
+        "seconds": 0.0631,
+        "subprocess_calls": 2,
+        "validation_calls": 2,
+        "response_chars": 4675,
+        "total": 10
+      },
+      {
+        "seconds": 0.0624,
+        "subprocess_calls": 2,
+        "validation_calls": 2,
+        "response_chars": 4675,
+        "total": 10
+      }
+    ],
+    "median_seconds": 0.0624
+  },
+  "inbox-one": {
+    "samples": [
+      {
+        "seconds": 0.0612,
+        "subprocess_calls": 2,
+        "validation_calls": 2,
+        "response_chars": 643,
+        "total": 0
+      },
+      {
+        "seconds": 0.0614,
+        "subprocess_calls": 2,
+        "validation_calls": 2,
+        "response_chars": 643,
+        "total": 0
+      },
+      {
+        "seconds": 0.0612,
+        "subprocess_calls": 2,
+        "validation_calls": 2,
+        "response_chars": 643,
+        "total": 0
+      }
+    ],
+    "median_seconds": 0.0612
+  },
+  "inbox-ten": {
+    "samples": [
+      {
+        "seconds": 0.6696,
+        "subprocess_calls": 22,
+        "validation_calls": 22,
+        "response_chars": 4999,
+        "total": 0
+      },
+      {
+        "seconds": 0.6715,
+        "subprocess_calls": 22,
+        "validation_calls": 22,
+        "response_chars": 4999,
+        "total": 0
+      },
+      {
+        "seconds": 0.6772,
+        "subprocess_calls": 22,
+        "validation_calls": 22,
+        "response_chars": 4999,
+        "total": 0
+      }
+    ],
+    "median_seconds": 0.6715
+  },
+  "catalog": {
+    "samples": [
+      {
+        "seconds": 0.138,
+        "subprocess_calls": 4,
+        "validation_calls": 4,
+        "response_chars": 6280,
+        "total": 30
+      },
+      {
+        "seconds": 0.1273,
+        "subprocess_calls": 4,
+        "validation_calls": 4,
+        "response_chars": 6281,
+        "total": 30
+      },
+      {
+        "seconds": 0.1282,
+        "subprocess_calls": 4,
+        "validation_calls": 4,
+        "response_chars": 6281,
+        "total": 30
+      }
+    ],
+    "median_seconds": 0.1282
+  },
+  "route_cases": {
+    "proofread": "routed",
+    "proofread this": "interpret-request",
+    "pull and proofread": "routed",
+    "pull from google docs and then proofread": "interpret-request",
+    "open editorial desk": "routed"
+  },
+  "schema": 1,
+  "scope": "Synthetic disposable local workspace and bare Git provider; no model, account or Google calls.",
+  "source_revision": "bdd4842542e9788f4ae334fb2a57e1baa63424e4",
+  "environment": {
+    "python": "3.14.5",
+    "os": "Darwin",
+    "machine": "arm64"
+  },
+  "workload": {
+    "articles": 10,
+    "sources": 30,
+    "samples_per_operation": 3,
+    "profiler": "cProfile",
+    "cache": "First and repeated calls in one prepared process, not flushed filesystem cache."
+  },
+  "notes": [
+    "Medians include profiler overhead; not production latency or end-to-end authoring measurements.",
+    "No optimization implemented; before/after gain is unknown.",
+    "The raw URL boundary result does not establish a normal-save missing-link defect: actual handoff normalizes the URL and retains the link."
+  ],
+  "raw_url_boundary": null,
+  "reproductions": {
+    "stale_view_response": "Old board response after memory response throws: Cannot read properties of undefined (reading level).",
+    "inbox_search": {
+      "query": "NoSuchTitle",
+      "http_status": 200,
+      "returned_total": 1
+    },
+    "normal_handoff_link": "Normalized /edit URL remains visible; selected tab IDs stored separately."
+  }
+}
