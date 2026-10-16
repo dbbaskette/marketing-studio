@@ -20,6 +20,12 @@ data folder. It prepares all three native workspaces, independently reads the
 saved assistant and workspace, and checks that later defaults cannot move them.
 No provider job, real team repository, or real user settings are used.
 
+`python3 scripts/ci/native_launch_acceptance.py` additionally launches all three
+native page servers against disposable data. Test-only replacements disable
+background update and research actions in the presentation and training runners.
+It checks that the native pages serve, repeated Open reuses a process, and closing
+the launcher stops every owned process. It requires sibling source checkouts.
+
 Browser acceptance should cover the three-step first run, a reload into the launch
 page, settings edits, remote-to-local switching, missing installations, the
 computer check, and narrow layouts. Use disposable preferences and synthetic
