@@ -5,7 +5,9 @@ and JavaScript syntax checks, Marketing Studio's tests, every studio's native
 suite and package validator, standalone setup/launch acceptance, a synthetic
 Blog Studio Hub journey, and shared-studios acceptance. Blog Studio's pinned
 lint tools are installed from its `requirements-dev.txt` in a disposable tools
-virtual environment. Logs are retained per outcome.
+virtual environment. Logs are retained per outcome. Acceptance Git fixtures run in local disposable
+storage; they are copied to the results mount after commands finish. The shared
+mount is used for records, not as an active Git working directory.
 
 Tests cover settings merges and locking, stale forms, HTTP access controls,
 native workspace contracts, private CLI reuse, deterministic full/subset

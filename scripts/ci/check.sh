@@ -24,9 +24,6 @@ run home-and-suite "$python" -m unittest discover -s tests -v
 run blog-studio bash -c 'cd studios/blog && BLOG_STUDIO_REQUIRE_LINT=1 BLOG_STUDIO_TEST_JOBS=4 bash scripts/ci/check.sh "$1" "$2"' _ "$python" "$results/blog-studio"
 run presentation-studio bash -c 'cd studios/presentation && "$1" scripts/ci/run_tests.py --jobs 4 && "$1" skills/presentation-studio/scripts/validate_package.py' _ "$python"
 run training-studio bash -c 'cd studios/training && bash scripts/ci/check.sh "$1"' _ "$python"
-run native-setup "$python" scripts/ci/native_acceptance.py
-run native-launch "$python" scripts/ci/native_launch_acceptance.py
-run blog-hub-journey "$python" studios/blog/scripts/acceptance/hub-journey.py --local-fixture --run-directory "$results/hub-fixture"
-run shared-studios-journey "$python" studios/blog/scripts/acceptance/studios-journey.py --run-directory "$results/studios-journey" --training-checkout "$PWD/studios/training"
+bash scripts/ci/acceptance.sh "$python" "$results"
 printf 'PASS\n' > "$results/result.txt"
 echo "All suite checks passed. Logs: $results"

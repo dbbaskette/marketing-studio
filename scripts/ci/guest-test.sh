@@ -27,5 +27,9 @@ cd "$work/repo"
 "$python" -m venv "$work/tools"
 "$work/tools/bin/pip" install -r studios/blog/requirements-dev.txt > "$results_dir/provisioning.log" 2>&1
 export PATH="$work/tools/bin:$PATH"
-bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+if [[ "${1:-full}" == acceptance ]]; then
+  bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+else
+  bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+fi
 printf 'PASS\n' > "$results_dir/result.txt"
