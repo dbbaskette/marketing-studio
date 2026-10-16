@@ -160,6 +160,17 @@ class StartupTests(unittest.TestCase):
             process.stdout.close()
             process.stderr.close()
 
+    def test_loopback_startup_never_waits_for_hostname_resolution(self):
+        from management import server
+
+        with patch('socket.getfqdn', side_effect=AssertionError('No DNS during startup')):
+            httpd, _ = server(self.workspace)
+        try:
+            self.assertEqual(httpd.server_name, '127.0.0.1')
+            self.assertGreater(httpd.server_port, 0)
+        finally:
+            httpd.server_close()
+
     def test_invalid_preferences_do_not_get_replaced(self):
         self.data.mkdir(parents=True)
         saved = self.data / 'page.json'

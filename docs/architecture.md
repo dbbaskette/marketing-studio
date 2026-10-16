@@ -35,7 +35,8 @@ using the shared leaf-patching implementation. Existing shared settings remain i
 
 Marketing Studio and Presentation Studio use the shared loopback server directly.
 Training Studio inherits its protocol checks and retains its domain-specific reads
-and writes. Blog Studio retains its specialized server and stronger existing CSP,
+and writes. Blog Studio reuses the loopback bind method to avoid DNS during startup. It retains
+its specialized server and stronger existing CSP,
 its workspace lock, timeouts, and content limits. Its protocol is not flattened
 into the other studios' contract.
 
