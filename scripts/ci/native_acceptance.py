@@ -1,4 +1,4 @@
-"""Disposable acceptance against sibling checkouts or installed studio runtimes."""
+"""Disposable acceptance against bundled checkouts or installed studio runtimes."""
 import argparse
 import json, os, subprocess, sys, tempfile
 from pathlib import Path
@@ -8,7 +8,7 @@ parser.add_argument('--installed', action='store_true')
 args=parser.parse_args()
 original_home=Path.home()
 def studio_root(identifier):
-    return (original_home/'.local/share'/(identifier+'-studio')/'current').resolve() if args.installed else repo.parent/(identifier+'-studio')
+    return (original_home/'.local/share'/(identifier+'-studio')/'current').resolve() if args.installed else repo/'studios'/identifier
 for identifier in ('blog','presentation','training'):
     if not studio_root(identifier).is_dir():
         parser.error('Install or check out all three studios before running native acceptance.')

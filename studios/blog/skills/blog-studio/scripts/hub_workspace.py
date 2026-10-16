@@ -45,7 +45,7 @@ def inherited_history(name):
     )
 
 
-GUIDANCE_REPOSITORY = 'https://github.com/dbbaskette/blog-studio.git'
+GUIDANCE_REPOSITORY = 'https://github.com/dbbaskette/marketing-studio.git'
 
 
 def active(workspace):

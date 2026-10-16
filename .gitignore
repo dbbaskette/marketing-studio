@@ -9,3 +9,5 @@ test-results/
 # Local maintenance records are not part of the application distribution.
 /docs/branch-cleanup-2026-10-15.md
 /scripts/cleanup/
+/dist/
+/build/

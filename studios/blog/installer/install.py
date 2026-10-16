@@ -22,6 +22,13 @@ import sys
 import tempfile
 import uuid
 
+# The shared package is linked in source and copied into standalone installations.
+_shared_scripts = Path(__file__).resolve().parents[1] / 'scripts'
+if not (_shared_scripts / 'studio_core').is_dir():
+    _shared_scripts = Path(__file__).resolve().parents[1] / 'skills/blog-studio/scripts'
+if str(_shared_scripts) not in sys.path:
+    sys.path.insert(0, str(_shared_scripts))
+
 try:
     import fcntl
 except ImportError:  # Windows is not a supported installation target.
@@ -113,17 +120,22 @@ def ignore_local(directory, names):
 
 
 def inventory(root):
-    return sorted(
+    from studio_core.packaging import files
+
+    return [
         p.relative_to(root).as_posix()
-        for p in root.rglob('*')
+        for p in files(root)
         if p.is_file() and packaged(p.relative_to(root))
-    )
+    ]
 
 
 def reject_links(root):
-    for path in root.rglob('*'):
-        if path.is_symlink() and packaged(path.relative_to(root)):
-            raise InstallError('Package files and folders must be regular, not links.')
+    from studio_core.packaging import files
+
+    try:
+        files(root)
+    except ValueError as exc:
+        raise InstallError(str(exc)) from exc
 
 
 def file_hash(path):

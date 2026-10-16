@@ -39,3 +39,15 @@ The root check script owns the suite outcome and invokes each studio's native
 checks. Native acceptance owns standalone settings and launch behavior. Installer
 integration tests own bundle contents, isolated installs and data preservation.
 The shared Tart wrapper owns VM lifecycle and retains environment/test logs.
+
+- Histories imported, namespaced branches/tags retained, and source-tree hashes
+  matched before behavioral edits. Original source checkouts were not changed.
+- Shared storage, server protections, companion installation, and identical page
+  assets extracted. Targeted native settings/security/desk/package tests passed.
+- The suite builds deterministic full and subset installers. Isolated tests cover
+  individual installation, independent native commands, repeat installation,
+  rollback, failed-install restoration, active-work refusal, and content retention.
+- Additional authorized scope: generated README header, first-run documentation,
+  and a simple CLI with private reuse of the running application.
+- Full native suites, clean-machine verification, and external cutover remain the
+  final gates before old repository retirement.

@@ -20,5 +20,8 @@ fi
 rsync -a --exclude=.git --exclude=.claude --exclude=__pycache__ "$source_dir/" "$work/repo/"
 cd "$work/repo"
 { sw_vers; "$python" --version; node --version; git --version; } > "$results_dir/environment.txt"
-bash scripts/ci/check.sh "$python" 2>&1 | tee "$results_dir/tests.log"
+"$python" -m venv "$work/tools"
+"$work/tools/bin/pip" install -r studios/blog/requirements-dev.txt > "$results_dir/provisioning.log" 2>&1
+export PATH="$work/tools/bin:$PATH"
+bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 printf 'PASS\n' > "$results_dir/result.txt"

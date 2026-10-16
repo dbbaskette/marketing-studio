@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "repository": "https://github.com/dbbaskette/marketing-studio",
+  "studios": [
+    "blog",
+    "presentation",
+    "training"
+  ]
+}

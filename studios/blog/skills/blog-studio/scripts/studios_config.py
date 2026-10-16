@@ -107,42 +107,7 @@ def read():
         )
 
 
-def _patch(raw, keys, value):
-    """Replace only a selected JSON value; unrelated bytes, including formatting, survive."""
-    decoder = json.JSONDecoder()
-    start = len(raw) - len(raw.lstrip())
-    _, end = decoder.raw_decode(raw, start)
-    at = start + 1
-    while at < end:
-        while raw[at].isspace() or raw[at] == ',':
-            at += 1
-        if raw[at] == '}':
-            break
-        key, after = decoder.raw_decode(raw, at)
-        at = after
-        while raw[at].isspace() or raw[at] == ':':
-            at += 1
-        found, after = decoder.raw_decode(raw, at)
-        if key == keys[0]:
-            replacement = (
-                _patch(raw[at:after], keys[1:], value)
-                if len(keys) > 1
-                else json.dumps(value, ensure_ascii=False)
-            )
-            return raw[:at] + replacement + raw[after:]
-        at = after
-    nested = value
-    for key in reversed(keys[1:]):
-        nested = {key: nested}
-    prefix = ',' if json.loads(raw).keys() else ''
-    return (
-        raw[: end - 1]
-        + prefix
-        + json.dumps(keys[0])
-        + ': '
-        + json.dumps(nested, ensure_ascii=False)
-        + raw[end - 1 :]
-    )
+from studio_core.studios_config import patch_json as _patch
 
 
 def update(changes, missing_only=False, expected=None):

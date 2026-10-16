@@ -522,7 +522,7 @@ class Upkeep:
             # Not `manifest()`: that refuses guidance a newer version needs, which is just
             # what is looked for here.
             kept = json.loads(sync_guidance.git(
-                'cat-file', 'blob', f'{commit}:guidance/manifest.json', repo=cache))
+                'cat-file', 'blob', f"{commit}:{sync_guidance.source().get('manifest', 'guidance/manifest.json')}", repo=cache))
             root = str(kept['content_root']).strip('/')
             found = sync_guidance.git('cat-file', 'blob', f'{commit}:{root}/VERSION',
                                       repo=cache).decode().strip()
@@ -561,7 +561,7 @@ class Upkeep:
                 or not sync_guidance.on_main(commit, cache):
             return None
         try:
-            text = sync_guidance.git('cat-file', 'blob', f'{commit}:installer/companions.json',
+            text = sync_guidance.git('cat-file', 'blob', f"{commit}:{'pins/companions.json' if sync_guidance.source().get('manifest', '').startswith('studios/') else 'installer/companions.json'}",
                                      repo=cache)
             with tempfile.TemporaryDirectory() as holder:
                 kept = Path(holder) / 'companions.json'
@@ -763,10 +763,25 @@ class Upkeep:
 
     # --- the upgrade ---------------------------------------------------------------------
 
+    def suite_managed(self) -> bool:
+        path = self.home / '.local/share/marketing-studio/installation.json'
+        try:
+            if SELF.removesuffix('-studio') in json.loads(path.read_text()).get('studios', []):
+                return True
+            raise ValueError('Not installed by this suite record')
+        except (OSError, ValueError, TypeError):
+            try:
+                source = json.loads((self.folder / 'source.json').read_text())
+                return source.get('repository', '').removesuffix('.git') == 'https://github.com/dbbaskette/marketing-studio'
+            except (OSError, ValueError, TypeError, AttributeError):
+                return False
+
     def upgrade(self, working: bool, version: str) -> dict:
         """Install the newest Training Studio, `version`, beside this one, in the background.
         Refused, in a sentence, from a checkout, while a training is working, while anything
         else is in hand, and when the newest known is not `version` or not newer."""
+        if self.suite_managed():
+            raise WorkspaceError('Update this studio with the Marketing Studio installer.')
         with self._lock:
             found = self._found
             self._refuse_busy()
@@ -1197,10 +1212,11 @@ class Upkeep:
         rows.append(self._brand_row(found, online.get(BRAND) or {}))
         wanted = [row for row in rows if row['state'] in ('update', 'missing')]
         key = ', '.join(f"{row['name']} {row['target'] or row['state']}" for row in wanted)
-        offered = bool(ahead and not checkout and found and found['installer']
+        offered = bool(not self.suite_managed() and ahead and not checkout and found and found['installer']
                        and found['mode'] == 'managed' and not busy and not waiting)
         return {'rows': rows, 'at': kept.get('at'), 'checkout': checkout,
                 'command': self.command(),
+                'suite': 'marketing-studio' if self.suite_managed() else None,
                 'key': key or None, 'dismissed': bool(key) and kept.get('dismissed') == key,
                 'upgrade': {'offered': offered, 'version': newest['version'] if ahead else None,
                             'from': newest['from'] if ahead else None,
@@ -1216,6 +1232,8 @@ class Upkeep:
         """Training Studio's row."""
         row = {'name': SELF, 'installed': have, 'newest': newest and newest['version'],
                'pinned': None, 'next': None, 'target': None, 'beyond': None, 'reports': None}
+        if self.suite_managed():
+            return {**row, 'newest': have, 'state': 'current', 'says': 'Updates are delivered by the Marketing Studio installer.'}
         if newest is None:
             return {**row, 'state': 'unknown', 'says': (
                 'Whether a newer Training Studio is out is not known yet. It is looked for '

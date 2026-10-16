@@ -115,8 +115,20 @@ class BundleTests(unittest.TestCase):
             source = {
                 line.removeprefix('skills/blog-studio/') for line in tracked.stdout.splitlines()
             }
+            # Shared directory links in the checkout become ordinary files in the archive.
+            expanded = set()
+            for name in source:
+                path = REPO / 'skills/blog-studio' / name
+                if path.is_dir():
+                    expanded.update(
+                        name + '/' + child.relative_to(path).as_posix()
+                        for child in path.rglob('*')
+                        if child.is_file() and '__pycache__' not in child.parts
+                    )
+                else:
+                    expanded.add(name)
             self.assertEqual(
-                source - set(manifest['files']), set(), 'Every tracked skill file ships.'
+                expanded - set(manifest['files']), set(), 'Every tracked skill file ships.'
             )
         self.assertFalse(any('sync_guidance' in n or 'bootstrap' in n for n in names))
 

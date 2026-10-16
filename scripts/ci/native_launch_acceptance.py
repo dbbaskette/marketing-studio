@@ -30,7 +30,7 @@ if identifier != 'blog':
 runpy.run_path({str(repo/'marketing_studio/bridge.py')!r},run_name='__main__')
 '''
     (wrapper/'marketing_studio/bridge.py').write_text(code)
-    paths={identifier:str(repo.parent/(identifier+'-studio')) for identifier in ('blog','presentation','training')}
+    paths={identifier:str(repo/'studios'/identifier) for identifier in ('blog','presentation','training')}
     with mock.patch.dict(os.environ,env),mock.patch('marketing_studio.launcher.ROOT',wrapper):
         launcher=Launcher()
         try:

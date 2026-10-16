@@ -284,12 +284,6 @@
       "note": "the engine-driven team tests, with the claim and take-over cases of tests/test_runner_engine.py"
     },
     {
-      "path": "skills/presentation-studio/scripts/server.py",
-      "from": "skills/training-studio/scripts/desk.py",
-      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "the security base only (Refusal, as_json, Server, Handler, Page, Desk and /api/computer), with announce, show, port and interrupt from scripts/cmd_desk.py; the training reads removed"
-    },
-    {
       "path": "runner/page.py",
       "from": "runner/page.py",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
@@ -312,12 +306,6 @@
       "from": "runner/studio.py",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
       "note": "with the test-only serve --fake; adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): setup.migrate() on start"
-    },
-    {
-      "path": "skills/presentation-studio/scripts/studios_config.py",
-      "from": "runner/studios_config.py",
-      "revision": "01ee5f61c3c460013fd6a3226f112d6c80ec0ee9",
-      "note": "identical to runner/studios_config.py at that revision but for the product name and the runner import (it sits in the core): the lock beside the file, guard, writable"
     },
     {
       "path": "tests/test_studios_config.py",
@@ -354,16 +342,6 @@
       "from": "tests/test_runner_studio.py",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
       "note": "with FakeTests"
-    },
-    {
-      "path": "skills/presentation-studio/scripts/desk/style.css",
-      "from": "skills/training-studio/scripts/desk/style.css",
-      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
-    },
-    {
-      "path": "skills/presentation-studio/scripts/desk/markdown.js",
-      "from": "skills/training-studio/scripts/desk/markdown.js",
-      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {
       "path": "skills/presentation-studio/scripts/desk/index.html",

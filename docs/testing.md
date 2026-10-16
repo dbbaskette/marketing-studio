@@ -1,33 +1,33 @@
 # Verification
 
-`bash scripts/ci/check.sh` checks Python and JavaScript syntax and runs the entire
-Marketing Studio unittest suite. Tests cover setup persistence, shared settings,
-lossless merges, concurrent writers, outdated forms, validation, native workspace
-adapter contracts, process reuse, failed-start cleanup, and HTTP access controls.
-HTTP tests need permission to bind disposable loopback ports.
+`bash scripts/ci/check.sh` is the suite verification entry point. It runs Python
+and JavaScript syntax checks, Marketing Studio's tests, every studio's native
+suite and package validator, standalone setup/launch acceptance, a synthetic
+Blog Studio Hub journey, and shared-studios acceptance. Blog Studio's pinned
+lint tools are installed from its `requirements-dev.txt` in a disposable tools
+virtual environment. Logs are retained per outcome.
+
+Tests cover settings merges and locking, stale forms, HTTP access controls,
+native workspace contracts, private CLI reuse, deterministic full/subset
+archives, source-independent installs, repeat installs, rollback, failed-install
+restoration, active-work refusal, and content retention. Shell bootstrap tests
+replace package managers and assistants with disposable fixtures; they never
+install packages or access an account on the development computer.
 
 On the configured macOS development machine, `scripts/ci/tart-macos.sh` reuses
-`macos-test-suite` and the stopped Golden Gate base. Inspect with `--dry-run`
-first. Its guest copies source to disposable storage, records actual environment
-versions and logs, and writes PASS only after all checks succeed. The shared
-runner stops and deletes its own VM. Do not stop another project's VM to get a
-slot. For another machine, call the reusable runner with that machine's path and
-an appropriate stopped base.
+the shared `macos-test-suite` runner and a stopped base. Inspect with `--dry-run`
+first. The guest copies source to disposable storage and records environment
+versions and logs. PASS is written only after all checks succeed. The runner
+stops and deletes its own clone. Do not stop another project's VM for a slot.
 
-`python3 scripts/ci/native_acceptance.py` optionally verifies real sibling studio
-checkouts. It isolates HOME, Git configuration, shared settings, and each studio's
-data folder. It prepares all three native workspaces, independently reads the
-saved assistant and workspace, and checks that later defaults cannot move them.
-No provider job, real team repository, or real user settings are used.
+`python3 scripts/ci/native_acceptance.py` verifies the bundled studio checkouts.
+It isolates HOME, Git configuration, shared settings, and native data folders.
+It prepares all three workspaces and checks that later defaults cannot move
+existing work. `native_launch_acceptance.py` runs real native HTTP servers with
+test-only replacements disabling background provider and update actions. It
+checks page serving, process reuse, and shutdown of owned processes.
 
-`python3 scripts/ci/native_launch_acceptance.py` additionally launches all three
-native page servers against disposable data. Test-only replacements disable
-background update and research actions in the presentation and training runners.
-It checks that the native pages serve, repeated Open reuses a process, and closing
-the launcher stops every owned process. It requires sibling source checkouts.
-
-Browser acceptance should cover the three-step first run, a reload into the launch
-page, settings edits, remote-to-local switching, missing installations, the
-computer check, and narrow layouts. Use disposable preferences and synthetic
-content only. Signed-in provider and multi-user collaboration tests are outside
-this launcher verification; each studio retains its own acceptance requirements.
+All tests use synthetic content and disposable local repositories. No live
+assistant job, signed-in provider, private team repository, or real user settings
+are needed. Signed-in provider and multi-user acceptance remain separate from
+these offline checks.

@@ -1,0 +1,10 @@
+#!/bin/bash
+installer_dir="$(cd -- "$(dirname -- "$0")" && pwd)" || exit 1
+printf '\nWelcome to Marketing Studio setup.\n\n'
+/bin/bash "$installer_dir/install.sh" "$@"
+installer_exit=$?
+if [ -t 0 ]; then
+  printf '\n'
+  read -r -p 'Press Return to close. ' installer_close
+fi
+exit "$installer_exit"

@@ -1,14 +1,21 @@
 # Source provenance
 
-The MIT license in this repository covers Marketing Studio and retained source
-notices. These files started from Presentation Studio at revision
-`edf565acd3ebc87a7c024d5c59ab17887691017a`:
+The MIT licenses and source notices of all three studios are retained under
+`studios/`. Their committed histories were imported with directory prefixes.
+[Import records](migration/imports.json) identify original revisions and prove
+that the imported main trees matched before behavioral changes; the adjacent
+commit maps relate original and prefixed histories.
 
-| Marketing Studio file | Original file | Adaptation |
+| Shared component | Origin | Adaptation |
 | --- | --- | --- |
-| `marketing_studio/server.py` | `skills/presentation-studio/scripts/server.py` | Product identity, imports, and static file catalog |
-| `marketing_studio/shared.py` | `skills/presentation-studio/scripts/studios_config.py` | Local work-root group, repository validation, restrictive new-file permissions, and imports |
-| `marketing_studio/web/style.css` | `skills/presentation-studio/scripts/desk/style.css` | Retained shared studio stylesheet |
+| `core/studio_core/server.py` | Presentation Studio HTTP server | Isolated product identities, static roots, and exception types |
+| `core/studio_core/studios_config.py` | Training Studio settings store and Blog Studio leaf patcher | Isolated product contexts, local workspace group, strict Marketing Studio form validation |
+| `core/studio_core/companions.py` | Presentation Studio pinned companion installer | Common implementation bound to each native installer's context |
+| `ui-kit/` | Identical assets from all three studios | Single source, resolved into ordinary files in release archives |
 
-Studio runtime code is neither copied nor modified. The compatibility bridge uses
-interfaces in the independently installed studios.
+Marketing Studio's catalog, setup flow, bridge, CLI, bundle builder, and suite
+installer coordinate the native studios. Each native pipeline, its tests, and
+its own launcher remain in its studio directory.
+
+The README header was generated for this project. Its brief is recorded in
+[the asset prompt](assets/header-prompt.md).

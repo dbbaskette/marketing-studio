@@ -1,6 +1,8 @@
 'use strict';
 const $ = selector => document.querySelector(selector);
-const tokenInLink = new URLSearchParams(location.hash.slice(1)).get('token');
+const launchOptions = new URLSearchParams(location.hash.slice(1));
+const requestedView = launchOptions.get('view') === 'settings' ? 'settings' : 'home';
+const tokenInLink = launchOptions.get('token');
 if (tokenInLink) { sessionStorage.setItem('marketing-studio-token', tokenInLink); history.replaceState(null, '', location.pathname); }
 const token = tokenInLink || sessionStorage.getItem('marketing-studio-token') || '';
 let snapshot, setup = false, step = 0, view = 'home';
@@ -177,6 +179,6 @@ $('#paths-form').addEventListener('submit', async event => {
   catch (error) { inform(error.message, true); } finally { button.disabled = false; }
 });
 (async () => {
-  try { snapshot = await api('home'); setup = !snapshot.setup.done; fill(); renderHome(); show(setup ? 'settings' : 'home'); if (snapshot.shared_problem) inform(snapshot.shared_problem, true); }
+  try { snapshot = await api('home'); setup = !snapshot.setup.done; fill(); renderHome(); show(setup ? 'settings' : requestedView); if (snapshot.shared_problem) inform(snapshot.shared_problem, true); }
   catch (error) { $('#loading').hidden = true; inform(error.message, true); }
 })();

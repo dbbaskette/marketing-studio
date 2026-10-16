@@ -54,6 +54,14 @@ COMPUTER_CACHE = 60      # seconds a look at this computer is reused
 READS = ('/api/trainings', '/api/training', '/api/file', '/api/gate', '/api/computer')
 WRITES = ('/api/decide', '/api/approval', '/api/computer')
 
+from studio_core.server import for_product as _server_for_product
+
+_security = _server_for_product('_training_studio_security', 'Training Studio',
+    TOKEN_HEADER, PAGE_DIR, PAGE, computer, workspace.WorkspaceError, READS, WRITES)
+Refusal, describe, as_json = _security.Refusal, _security.describe, _security.as_json
+Server, Handler, allowed = _security.Server, _security.Handler, _security.allowed
+SECURITY_HEADERS = _security.SECURITY_HEADERS
+
 # --- the page's words -----------------------------------------------------------
 # Nothing on the page says "artifact", "stale" or "lineage". These are what it says instead.
 
@@ -80,26 +88,10 @@ SAID = {
 }
 
 
-class Refusal(Exception):
-    """A request the page will not answer, with the HTTP status to refuse it with."""
-
-    def __init__(self, status: int, message: str, allow: str | None = None):
-        super().__init__(message)
-        self.status = status
-        self.allow = allow
 
 
-def describe(failure: Exception) -> str:
-    """An error in the words the command line would use for it."""
-    if isinstance(failure, (workspace.WorkspaceError, Refusal)):
-        return str(failure)
-    return f'{type(failure).__name__}: {failure}'
 
 
-def as_json(status: int, value) -> tuple[int, str, bytes]:
-    # "<" never leaves as itself, so no reader can take an answer for markup.
-    text = json.dumps(value, sort_keys=True).replace('<', '\\u003c')
-    return status, JSON, text.encode('utf-8')
 
 
 def named(name: str) -> str:
@@ -595,12 +587,6 @@ def uses_google() -> bool:
 
 # --- the server -----------------------------------------------------------------
 
-def allowed(target: str, reads=READS, writes=WRITES) -> str:
-    """The methods an address answers, for the `Allow` header of a refusal."""
-    path = target.partition('?')[0]
-    methods = [method for method, paths in (('GET', (*PAGE, *reads)), ('POST', writes))
-               if path in paths]
-    return ', '.join(methods) or 'GET'
 
 
 def text(sent: dict, name: str, needed: bool = True) -> str | None:
@@ -613,86 +599,11 @@ def text(sent: dict, name: str, needed: bool = True) -> str | None:
     return value
 
 
-class Server(ThreadingHTTPServer):
-    daemon_threads = True
-
-    def handle_error(self, request, client_address):
-        """A reader that hangs up early gets no traceback: the command's output stays one line."""
-
-    def server_bind(self):
-        # The base class looks its own name up, which can ask the network. Nothing here does.
-        socketserver.TCPServer.server_bind(self)
-        self.server_name, self.server_port = self.server_address[:2]
 
 
-class Handler(BaseHTTPRequestHandler):
-    timeout = 30  # seconds a connection may sit idle before it is dropped
-
-    def version_string(self):
-        return 'TrainingStudioDesk'
-
-    def respond(self, body: bytes | None = None):
-        allow = None
-        try:
-            reply = self.server.desk.answer(self.path, self.headers, self.command, body)
-        except Refusal as refusal:
-            reply, allow = as_json(refusal.status, {'error': str(refusal)}), refusal.allow
-        except workspace.WorkspaceError as refusal:
-            reply = as_json(HTTPStatus.CONFLICT, {'error': str(refusal)})
-        except Exception as failure:  # answered like any other, never a dropped connection
-            reply = as_json(HTTPStatus.INTERNAL_SERVER_ERROR, {'error': describe(failure)})
-        self.reply(*reply, allow=allow)
-
-    def do_GET(self):
-        self.respond()
-
-    def do_POST(self):
-        """Read the body, up to the limit, and hand it over. A body that is too long, or
-        whose length is not stated, is never read: the request is refused and the line closed."""
-        length = self.headers.get('Content-Length', '')
-        limit = self.server.desk.page.body_limit(self.path, self.headers)
-        if not length.isdigit() or int(length) > limit:
-            self.close_connection = True
-            return self.respond(None)
-        self.respond(self.rfile.read(int(length)))
-
-    def refuse_method(self):
-        allow = self.server.desk.page.allowed(self.path)
-        self.close_connection = True
-        self.reply(*as_json(HTTPStatus.METHOD_NOT_ALLOWED,
-                            {'error': 'The page reads with GET and sends a decision with POST. '
-                                      'Nothing else is answered.'}), allow=allow)
-
-    do_HEAD = do_PUT = do_PATCH = do_DELETE = refuse_method
-    do_OPTIONS = do_TRACE = do_CONNECT = refuse_method
-
-    def reply(self, status: int, kind: str | None, body: bytes, allow: str | None = None):
-        self.send_response(status)
-        if kind:
-            self.send_header('Content-Type', kind)
-        if allow:
-            self.send_header('Allow', allow)
-        self.send_header('Content-Length', str(len(body)))
-        self.end_headers()
-        if self.command != 'HEAD':
-            self.wfile.write(body)
-
-    def end_headers(self):
-        """Every response leaves through here, so every response carries these."""
-        for name, value in SECURITY_HEADERS.items():
-            self.send_header(name, value)
-        super().end_headers()
-
-    def send_error(self, code, message=None, explain=None):
-        """The base class's own refusals, as JSON like the rest rather than as a page."""
-        self.close_connection = True
-        self.reply(*as_json(code, {'error': message or HTTPStatus(code).phrase}))
-
-    def log_message(self, format, *args):
-        """Nothing is logged: the command's output is one line, and stays one line."""
 
 
-class Page:
+class Page(_security.Page):
     """What the page may ask for and what it is refused. It holds the key; it has no socket.
 
     A program that serves the same page with more behind it, as the runner does, makes a
@@ -702,12 +613,6 @@ class Page:
     """
     reads, writes = READS, WRITES
 
-    def __init__(self, port: int):
-        self.token = secrets.token_urlsafe(32)
-        self.port = port
-        self.hosts = {f'{name}:{port}' for name in (HOST, 'localhost')}
-        self._looking = threading.Lock()
-        self._looked: tuple[float, dict] | None = None
 
     def computer(self, look: bool) -> dict | None:
         """The last look at this computer. `look` takes a new one unless one was just taken."""
@@ -718,49 +623,8 @@ class Page:
                     self._looked = (time.monotonic(), computer.check(google=uses_google()))
         return self._looked[1] if self._looked else None
 
-    def answer(self, target: str, headers, method: str = 'GET',
-               body: bytes | None = None) -> tuple[int, str | None, bytes]:
-        """Answer one request, or raise the refusal."""
-        hosts = headers.get_all('Host') or []
-        if len(hosts) != 1 or hosts[0].strip().lower() not in self.hosts:
-            raise Refusal(HTTPStatus.FORBIDDEN, 'The page answers only at its own local address.')
-        try:
-            url = urlsplit(target)
-        except ValueError:
-            raise Refusal(HTTPStatus.BAD_REQUEST, 'That address cannot be read.')
-        if method == 'POST':
-            return self.change(url, hosts[0].strip().lower(), headers, body)
-        if method != 'GET':
-            raise Refusal(HTTPStatus.METHOD_NOT_ALLOWED, 'Nothing else is answered.',
-                          self.allowed(url.path))
-        if url.path in PAGE:
-            name, kind = PAGE[url.path]
-            return HTTPStatus.OK, kind, (PAGE_DIR / name).read_bytes()
-        if url.path == '/favicon.ico':
-            return HTTPStatus.NO_CONTENT, None, b''
-        if url.path not in self.reads:
-            if url.path in self.writes:
-                raise Refusal(HTTPStatus.METHOD_NOT_ALLOWED,
-                              'This is sent with POST, from the page.', self.allowed(url.path))
-            raise Refusal(HTTPStatus.NOT_FOUND, 'Nothing is served here.')
-        self.check_token(headers)
-        query = parse_qs(url.query, keep_blank_values=True)
 
-        def one(name: str) -> str:
-            values = query.get(name, [])
-            if len(values) != 1 or not values[0]:
-                raise Refusal(HTTPStatus.BAD_REQUEST, f'Give one {name}.')
-            return values[0]
 
-        return self.read(url.path, one)
-
-    def allowed(self, target: str) -> str:
-        return allowed(target, self.reads, self.writes)
-
-    def body_limit(self, target: str, headers) -> int:
-        """The most bytes a POST to this address may carry. A subclass may let one address
-        of its own carry more; nothing else about a request depends on this."""
-        return BODY_LIMIT
 
     def trainings(self) -> list[dict]:
         return trainings()
@@ -790,36 +654,7 @@ class Page:
             return as_json(HTTPStatus.OK, gate(one('path'), one('artifact')))
         return as_json(HTTPStatus.OK, {'computer': self.computer(look=False)})
 
-    def check_token(self, headers) -> None:
-        supplied = headers.get(TOKEN_HEADER, '')
-        if not secrets.compare_digest(supplied.encode('utf-8'), self.token.encode('utf-8')):
-            raise Refusal(HTTPStatus.FORBIDDEN, 'This needs the key from the link the page '
-                                                'was opened with.')
 
-    def change(self, url, host: str, headers, body: bytes | None) -> tuple[int, str, bytes]:
-        """Answer one POST: a decision, a move of approval, or a look at this computer."""
-        if url.path not in self.writes:
-            raise Refusal(HTTPStatus.METHOD_NOT_ALLOWED, 'This is read with GET.',
-                          self.allowed(url.path))
-        self.check_token(headers)
-        origins = headers.get_all('Origin') or []
-        if len(origins) != 1 or origins[0].strip().lower() != f'http://{host}':
-            raise Refusal(HTTPStatus.FORBIDDEN, 'A change is accepted only from the page itself.')
-        if url.query:
-            raise Refusal(HTTPStatus.BAD_REQUEST, 'Send what is to change in the body.')
-        if headers.get_content_type() != 'application/json':
-            raise Refusal(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, 'Send the change as JSON.')
-        if body is None:
-            limit = self.body_limit(url.path, headers)
-            raise Refusal(HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
-                          f'A change is at most {limit:,} bytes, with its length stated.')
-        try:
-            sent = json.loads(body.decode('utf-8'))
-        except (ValueError, UnicodeDecodeError):
-            sent = None
-        if not isinstance(sent, dict):
-            raise Refusal(HTTPStatus.BAD_REQUEST, 'Send the change as one JSON object.')
-        return self.write(url.path, sent)
 
     def write(self, path: str, sent: dict) -> tuple[int, str, bytes]:
         """Answer one POST that passed every rule. `sent` is its JSON object."""

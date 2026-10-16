@@ -1,77 +1,99 @@
 # Marketing Studio architecture
 
-Marketing Studio is a small local Python application with a browser UI. It is an
-umbrella for three independent installations, not a repository merger. This scope
-supersedes the earlier monorepo proposal for the current implementation.
+One repository contains Marketing Studio and three independently runnable studios.
+Each studio retains its native commands, pipeline, tests, skill entry, installer,
+and data locations. The suite can install any selection; it also distributes a
+self-contained installer archive for each studio.
 
-## Responsibilities
+## Repository boundaries
 
-`marketing_studio/page.py` exposes the home page, first-run setup, settings,
-installation paths, a computer inventory, and studio launch actions. The page
-uses the studios' existing CSS and adds its own shell and launch cards.
+| Directory | Responsibility |
+| --- | --- |
+| `marketing_studio/` | Home page, shared setup, launch coordination, and user CLI |
+| `studios/blog/` | Blog Studio pipeline and native interfaces |
+| `studios/presentation/` | Presentation Studio pipeline and native interfaces |
+| `studios/training/` | Training Studio pipeline and native interfaces |
+| `core/studio_core/` | Shared settings storage, page-server protections, companion installation, and packaging |
+| `ui-kit/` | Common stylesheet and safe Markdown renderer |
+| `pins/companions.json` | Canonical companion revisions and integrity hashes |
+| `installer/` | Suite/subset install orchestration and restoration |
 
-`shared.py` reads and atomically updates the existing schema-1 studios config.
-Writers serialize on its adjacent `.lock` file. Edits preserve unrelated JSON
-bytes and unknown keys. A form sends its previous values so conflicting edits
-can be refused. `local.root` is an additive group that older studios ignore.
+Original histories are imported under the studio directories. Old branches and
+tags use product-name namespaces. Commit maps and original tree hashes are in
+`docs/migration/`. Unfinished Blog Studio research changes are preserved on
+`migration/blog-studio/preserved-working-tree`, separate from main.
 
-`home.json` under Marketing Studio's data folder contains only setup completion
-and optional installation paths. It never caches shared settings or session keys.
-`STUDIOS_CONFIG` and `MARKETING_STUDIO_DATA` override file locations for tests.
+## Shared infrastructure
 
-`catalog.py` discovers sibling repositories and installed runtime folders, or
-uses explicitly configured paths. `<PRODUCT>_STUDIO_INSTALL` environment variables
-can select installations for tests or development. Each product name is written
-in full, uppercase with underscores, for example `TRAINING_STUDIO_INSTALL`.
+The settings implementation comes from Training Studio's compatible lossless
+writer, including its under-lock callable update API. Product facades supply the
+product name, exception type, and address validation. They retain independently
+patchable module contexts, so importing two products cannot change one another's
+configuration. Blog Studio retains its validation and legacy migration API while
+using the shared leaf-patching implementation. Existing shared settings remain in
+`~/.config/studios-config.json`, with the same adjacent lock and merge semantics.
 
-`launcher.py` starts a child interpreter for each requested studio and reuses
-its in-memory link on later Open actions. Each named browser tab can return to
-the running studio. A failed start is terminated and can be retried. Closing
-Marketing Studio stops only its children and their process groups.
+Marketing Studio and Presentation Studio use the shared loopback server directly.
+Training Studio inherits its protocol checks and retains its domain-specific reads
+and writes. Blog Studio retains its specialized server and stronger existing CSP,
+its workspace lock, timeouts, and content limits. Its protocol is not flattened
+into the other studios' contract.
 
-`bridge.py` adapts existing native Python interfaces in that child interpreter.
-It initializes an unconfigured workspace through the studio's own Git helper and
-stores native preferences, including Blog Studio's private defaults. Preparation
-is idempotent. Existing workspaces and local choices remain in place.
-Presentation Studio and Training Studio retain their existing singleton locks
-and restart-token handoff. Blog Studio uses its native installation lease,
-workspace lock, page server, runner, and cleanup, with a private announcement to
-the parent. The bridge starts no agent during setup.
+The native installers share pinned companion fetching, integrity checks, and
+installation functions. Their compatibility bindings preserve native exception
+classes and existing injection points. The suite invokes one companion pass for
+the selected tools. Installing software remains an explicit installer action.
 
-## Lifecycle
+Code and identical UI files are linked within the checkout. Packaging permits
+only the named suite-owned links, traverses their shared targets, and writes
+ordinary files into every released archive and installed runtime. Unexpected
+links remain refused. No installed studio needs the source checkout, another
+studio, or a shared external core installation.
 
-1. First launch reads existing shared preferences and shows setup.
-2. Each Continue action saves only fields changed in that step.
-3. Finish prepares installed studios, then marks setup complete. Failed
-   preparation leaves completion false; successfully prepared studios are safe to
-   revisit on retry.
-4. Later launches show the three product launchers.
-5. Open initializes a newly installed studio if needed, then serves its native UI.
-6. Each independent launcher can use the native preferences after preparation.
+## Settings and launch lifecycle
 
-A changed workspace default never moves existing work. A remote is optional.
-Local work uses separate Git repositories to avoid concurrent studios competing
-over one index and HEAD. Remote mode keeps each studio's native separate-clone
-behavior and content folder conventions.
+First run reads existing shared choices and opens setup. Continue saves only
+changed fields. Finish prepares installed, unconfigured studios through their
+native workspace helpers and records completion in Marketing Studio's `home.json`.
+Preparation starts no assistant job and never moves an existing workspace.
 
-## Local access
+Local Git is the default. Separate local repositories avoid contention over an
+index and HEAD. Remote mode retains each studio's native clone and content-folder
+conventions. Native data directories and assistant skill locations are unchanged.
 
-The server binds only to IPv4 loopback. Host validation, a per-session token on
-API requests, same-origin JSON POSTs, a 64 KB request limit, CSP, no-referrer,
-no-store, and frame denial use the existing Presentation Studio server contract.
-The browser receives a token in a fragment and stores it only in session storage.
-The CLI shows a full link only in a person's terminal. Nonterminal output contains
-an address without its key, and normally opens the browser for the person.
+Marketing Studio discovers bundled source studios first when run from a checkout.
+A managed suite prefers native installed copies so both launchers run the same
+version. Explicit installation paths remain authoritative. Child links stay in
+memory and travel through private pipes. Closing Marketing Studio stops only
+process groups it started.
 
-Child links travel over a pipe and stay in memory. Standard error goes to
-per-product launch logs in Marketing Studio's data folder. No studio dependency,
-brand skill, or provider is installed by setup. The computer inventory is offline;
-studios perform their own sign-in checks when opened.
+The user CLI offers open, setup, status, doctor, install, update, rollback, and
+uninstall. Repeated open/setup commands contact a same-user Unix socket with mode
+0600 and reuse the running app. Socket messages are bounded and contain no session
+keys. Long custom data paths use a verified private short-path directory. Status
+and doctor neither start the app nor contact providers.
 
-## Compatibility
+## Installation and updates
 
-The shared model and reasoning defaults are supported by Presentation Studio and
-Training Studio. Blog Studio currently supports the shared assistant and author,
-and uses that assistant CLI's model settings. This UI makes that limit explicit.
-The application does not claim per-task model routing that the studios do not
-implement. Existing items keep their own saved input choices.
+The suite installer stages a content-addressed runtime, uses the native installers
+for the requested studios, writes the umbrella launcher and `~/.local/bin` command,
+and records the managed pointers. It snapshots only known installation metadata,
+launchers, and skill links for failure recovery and rollback. Workspace content
+and settings are excluded from these writes. Running studios block installation.
+A repeated install of identical content retains the previous rollback record.
+
+The installed studios remain usable through their own commands and double-click
+launchers. Uninstalling Marketing Studio leaves them in place. Updates use a
+newer downloaded suite or subset installer; suite-managed native update buttons
+defer to that installer to keep shared dependencies consistent.
+
+New guidance comes from this repository at explicit studio manifest paths. Old
+or custom sources retain their existing layout, and old repositories remain
+readable after retirement. Archived release downloads continue to work.
+
+## Verification
+
+One root check runs the home/core/installer suite, every native studio suite and
+validator, Blog Studio's pinned lint/build checks, native setup and launch checks,
+and synthetic Hub journeys. The shared Tart runner owns disposable VM lifecycle
+and retains logs. No test uses real team content or starts paid provider work.

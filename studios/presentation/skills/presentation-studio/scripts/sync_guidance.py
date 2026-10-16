@@ -29,8 +29,8 @@ from pathlib import Path, PurePosixPath
 import home
 
 RUNTIME = Path(__file__).resolve().parent.parent
-DEFAULT_SOURCE = {'repository': 'https://github.com/dbbaskette/presentation-studio.git',
-                  'branch': 'main'}
+DEFAULT_SOURCE = {'repository': 'https://github.com/dbbaskette/marketing-studio.git',
+                  'branch': 'main', 'manifest': 'studios/presentation/guidance/manifest.json'}
 PARTS = ('SKILL.md', 'references', 'assets')
 STATE_DIR = '.presentation-studio'
 COMMIT = re.compile(r'[0-9a-f]{40}')
@@ -66,6 +66,10 @@ def source() -> dict:
     found = {**DEFAULT_SOURCE, **(configured if isinstance(configured, dict) else {})}
     if os.environ.get('PRESENTATION_STUDIO_SOURCE'):
         found['repository'] = os.environ['PRESENTATION_STUDIO_SOURCE']
+    if found['repository'] != DEFAULT_SOURCE['repository']:
+        found['manifest'] = (configured or {}).get('manifest', 'guidance/manifest.json')
+    if os.environ.get('PRESENTATION_STUDIO_SOURCE_MANIFEST'):
+        found['manifest'] = os.environ['PRESENTATION_STUDIO_SOURCE_MANIFEST']
     return found
 
 
@@ -200,7 +204,7 @@ def on_main(commit: str, repo: Path) -> bool:
 def manifest(commit: str, repo: Path | None = None) -> dict:
     """The guidance manifest at a commit, checked against the installed scripts."""
     try:
-        found = json.loads(git('cat-file', 'blob', f'{commit}:guidance/manifest.json',
+        found = json.loads(git('cat-file', 'blob', f"{commit}:{source().get('manifest', 'guidance/manifest.json')}",
                                repo=repo or cache()))
     except ValueError:
         raise SyncError('The guidance manifest is not valid JSON.')

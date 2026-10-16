@@ -21,10 +21,14 @@ def locate(studio, paths):
     slug = STUDIOS[studio][1]
     named = os.environ.get(slug.upper().replace('-', '_') + '_INSTALL') or paths.get(studio)
     candidates = [Path(named).expanduser()] if named else [
+        Path(__file__).resolve().parents[1] / 'studios' / studio,
         Path(__file__).resolve().parents[2] / slug,
         Path.home() / '.local/share' / slug / 'current',
         Path.home() / '.local/share' / slug / 'current' / 'runtime',
     ]
+    suite = Path(__file__).resolve().parents[1]
+    if not named and suite.parent.name == 'versions':
+        candidates = candidates[2:] + candidates[:2]
     for candidate in candidates:
         if entry(studio, candidate).is_file():
             return candidate.resolve()
@@ -45,5 +49,5 @@ def describe(paths, running):
                      'installed': root is not None, 'path': str(root) if root else None,
                      'configured_path': paths.get(identifier, ''), 'version': version,
                      'running': running(identifier),
-                     'repository': 'https://github.com/dbbaskette/' + slug})
+                     'repository': 'https://github.com/dbbaskette/marketing-studio/tree/main/studios/' + identifier})
     return rows
