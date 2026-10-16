@@ -3,7 +3,7 @@
 import argparse
 import base64
 from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import json
 import os
 import signal
@@ -1817,7 +1817,8 @@ def server(root, port=0, bind=True):
 
         do_HEAD = do_PUT = do_PATCH = do_DELETE = do_OPTIONS = do_TRACE = do_CONNECT = unsupported
 
-    class LocalServer(LoopbackServer):
+    class LocalServer(ThreadingHTTPServer):
+        server_bind = LoopbackServer.server_bind
         daemon_threads = True  # A stuck connection never keeps the helper alive.
         request_queue_size = 32
 
