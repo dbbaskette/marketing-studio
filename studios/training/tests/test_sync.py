@@ -431,3 +431,31 @@ class PlantedEnvironmentTests(TrustCase):
         with mock.patch.dict(os.environ, {'TRAINING_STUDIO_SOURCE': command}):
             result = sync_guidance.start(self.project)
         self.assertEqual(result['freshness'], 'installed')
+
+
+class ConsolidatedSourceTests(SyncCase):
+    """New installs read the nested manifest; custom legacy sources keep working."""
+
+    def test_start_reads_the_manifest_and_guidance_under_the_studio_directory(self):
+        nested = self.remote / 'studios' / 'training'
+        nested.mkdir(parents=True)
+        shutil.move(str(self.remote / 'skills'), nested / 'skills')
+        shutil.move(str(self.remote / 'guidance'), nested / 'guidance')
+        manifest = nested / 'guidance/manifest.json'
+        value = json.loads(manifest.read_text())
+        value['content_root'] = 'studios/training/skills/training-studio'
+        manifest.write_text(json.dumps(value))
+        latest = self.commit('move guidance into the consolidated repository')
+        default = {'repository': str(self.remote), 'branch': 'main',
+                   'manifest': 'studios/training/guidance/manifest.json'}
+        with mock.patch.object(sync_guidance, 'DEFAULT_SOURCE', default):
+            result = sync_guidance.start(self.project)
+        self.assertEqual(result['commit'], latest)
+        self.assertEqual(result['freshness'], 'fetched')
+        self.assertEqual(Path(result['entry']).read_text(), (helpers.SKILL / 'SKILL.md').read_text())
+
+    def test_public_source_default_names_the_consolidated_manifest(self):
+        with mock.patch.dict(os.environ, {'TRAINING_STUDIO_SOURCE':
+                                          sync_guidance.DEFAULT_SOURCE['repository']}):
+            self.assertEqual(sync_guidance.source()['manifest'],
+                             'studios/training/guidance/manifest.json')

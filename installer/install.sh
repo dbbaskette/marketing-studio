@@ -77,7 +77,7 @@ if [ "$inspect" = 1 ]; then
       '  --studios blog presentation training    Choose one or more studios' \
       '  --target codex|claude|both              Assistant integration (default: both)' \
       '  --companions ask|install|skip           Shared research/slide tools' \
-      '  --assistants ask|install|skip           Missing assistant CLIs' \
+      '  --assistants ask|install|skip           Missing assistant CLIs (Claude Code needs Node 22+)' \
       '  --prerequisites ask|install|check|skip  System tools (default: ask)' \
       '  --yes                                 Agree to installation without prompts' \
       '  --dry-run                             Plan only; no downloads or changes' \

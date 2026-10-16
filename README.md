@@ -218,7 +218,7 @@ bash scripts/ci/tart-macos.sh --dry-run
 bash scripts/ci/tart-macos.sh
 ```
 
-Read the [architecture](docs/architecture.md), [testing guide](docs/testing.md),
+Read the [architecture](docs/architecture.md), [installation guide](docs/installation.md), [testing guide](docs/testing.md),
 [migration plan](docs/migration-plan.md), and [source provenance](docs/provenance.md).
 The studios' Git histories are preserved under their new directories. Unfinished
 Blog Studio research work is preserved on a separate migration branch.
