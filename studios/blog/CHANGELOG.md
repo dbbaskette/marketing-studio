@@ -3,7 +3,9 @@
 Releases are published from `skills/blog-studio/VERSION`. Each entry says what
 changes for authors first, then what changes for maintainers.
 
-## Unreleased
+## 3.0.0 — 2026-10-15
+
+**For authors**
 
 - Shared Settings conflicts now offer an explicit reload and retry. Reloading
   keeps local writing preferences and shows the current shared values.
@@ -11,6 +13,13 @@ changes for authors first, then what changes for maintainers.
   clone and before activating it. A refusal keeps the previous active workspace
   and the other studio's settings. Local writing saves preserve an unsupported
   shared assistant and its model/effort.
+
+**For maintainers**
+
+- Blog Studio, Training Studio and Presentation Studio now share one release
+  number, and all three are 3.0.0. The major version marks that shared number;
+  nothing authors rely on was removed, and existing blogs, voices and settings
+  carry over unchanged.
 - Refresh the backlog for the current page and shared workspaces; closed
   live-evidence issues are no longer described as implementation gates.
 
