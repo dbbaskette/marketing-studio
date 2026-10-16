@@ -35,30 +35,35 @@ The page is newer. If you are not sure, start with a conversation: it needs the 
 
 You need:
 
-- **Claude Code or Codex**, installed and signed in.
-- **Python 3.11 or newer.** The installer looks for it and, if it is missing, says where to get it. A Mac's own `python3` is older, and that is fine: once a newer Python is installed, Training Studio finds it.
-- **git**, to download Training Studio. The page also uses it to keep your trainings.
+- **Claude Code or Codex.** The guided installer offers missing CLIs; sign in afterward.
+- **Python, Node.js and Git.** The guided installer checks versions and offers missing prerequisites. Git also keeps your trainings.
 - **Two companion skills**: [harness-research](https://github.com/dbbaskette/harness-research-skill), which does the research, and [harness-slides](https://github.com/dbbaskette/harness-slides-skill), which builds the deck. The installer offers to bring both. Without harness-slides you still get everything except the deck.
 
 A slide deck made on the page also needs your organisation's brand skill and a way to turn slides into pictures. The page tells you what is missing. Once you name your brand skill's repository in Settings, the page can install and upgrade the brand skill for you. See [the runner](docs/runner.md#what-you-need).
 
 ## Install
 
-Download Training Studio and run its installer:
+**[Download the Training Studio installer](https://github.com/dbbaskette/marketing-studio/releases/latest/download/training-studio-installer.zip)**
+and unzip it. On macOS, open **installer/Install Marketing Studio.command** inside
+`training-studio-setup`. On Linux, run `bash installer/install.sh` there. The subset
+installs Training Studio with its own independent launcher.
 
-```bash
-git clone https://github.com/dbbaskette/training-studio.git
-cd training-studio
-sh installer/install.sh
+Or install from the consolidated source:
+
+```sh
+git clone https://github.com/dbbaskette/marketing-studio.git
+cd marketing-studio
+bash installer/install.sh --studios training
 ```
 
-On a Mac you can instead double-click `Install Training Studio.command` in the `installer` folder.
+Use `--target codex` or `--target claude` for one assistant. Setup offers missing
+prerequisites, assistant CLIs, and pinned research/slide tools. Compatible existing
+tools and workspaces are reused; sign-in and your brand remain your choices.
+Close running studios before installing an update.
 
-The installer says what it is about to do and asks before changing anything. It adds Training Studio to Claude Code and Codex, whichever you have, then offers each companion skill you are missing. Say yes or no to each.
-
-When it finishes, it tells you how to open the page and lists anything you still need, most important first, each with what to run. That might be a companion skill you said no to, git set up with your name, or an assistant that is signed in.
-
-See [installation](docs/installation.md) for what is checked and why, and for updating, going back a version and removing it.
+See the [guided installation reference](../../docs/installation.md) for offline
+setup, updates, rollback, and removing the Marketing Studio launcher. Native
+studio commands and your content remain independent.
 
 ## Your first training, on the page
 

@@ -4,7 +4,7 @@ Presentation Studio makes slide decks in your brand. You give it an idea, a docu
 
 The work is done by an AI assistant you already have, Claude Code or Codex. Presentation Studio guides it, checks what it makes, and keeps track of what you have approved. The assistant never touches your files or runs commands on its own; only you approve.
 
-It is the third studio beside [Training Studio](https://github.com/dbbaskette/training-studio) and [Blog Studio](https://github.com/dbbaskette/blog-studio), and made for colleagues who are technical or not.
+It is the third studio beside [Training Studio](https://github.com/dbbaskette/marketing-studio/tree/main/studios/training) and [Blog Studio](https://github.com/dbbaskette/marketing-studio/tree/main/studios/blog), and made for colleagues who are technical or not.
 
 ## Three ways in
 
@@ -44,8 +44,8 @@ Your brand comes from your brand skill: the brands and variants it lists are the
 You need:
 
 - **A Mac.**
-- **Claude Code or Codex**, installed and signed in.
-- **Python 3.11 or newer**, **Node 20 or newer** and **git**.
+- **Claude Code or Codex.** The guided installer offers missing CLIs; sign in afterward.
+- **Python, Node.js and Git.** The guided installer checks versions and offers missing prerequisites.
 - **The fonts your brand skill names**, installed on this computer.
 - **A way to see slides**: LibreOffice and Poppler on this computer, or Google Drive previews if you sign in to Google.
 - **Google sign-in** (gcloud), only if you want Google Slides as the output or a Google Doc as the input. Without it you get a PowerPoint file.
@@ -56,29 +56,27 @@ The page checks this computer the first time you open it and says in one sentenc
 
 ## Install
 
-Download Presentation Studio and run its installer:
+**[Download the Presentation Studio installer](https://github.com/dbbaskette/marketing-studio/releases/latest/download/presentation-studio-installer.zip)**
+and unzip it. On macOS, open **installer/Install Marketing Studio.command** inside
+`presentation-studio-setup`. On Linux, run `bash installer/install.sh` there. The subset
+installs Presentation Studio with its own independent launcher.
 
-```bash
-git clone https://github.com/dbbaskette/presentation-studio.git
-cd presentation-studio
-sh installer/install.sh
+Or install from the consolidated source:
+
+```sh
+git clone https://github.com/dbbaskette/marketing-studio.git
+cd marketing-studio
+bash installer/install.sh --studios presentation
 ```
 
-Or double-click `Install Presentation Studio.command` in the `installer` folder.
+Use `--target codex` or `--target claude` for one assistant. Setup offers missing
+prerequisites, assistant CLIs, and pinned research/slide tools. Compatible existing
+tools and workspaces are reused; sign-in and your brand remain your choices.
+Close running studios before installing an update.
 
-The installer says what it is about to do and asks before changing anything. It installs Presentation Studio in `~/.local/share/presentation-studio`, adds it to Claude Code and Codex, whichever you have (`--target claude` or `--target codex` names one), and writes the `studio` command that opens it, with "Open Presentation Studio" in the Applications folder inside your home folder on a Mac. Then it asks about each companion skill in turn: said yes to, it is fetched at the exact revision Presentation Studio was tested with, checked file for file, and installed by its own installer, which needs Node. It ends by saying what this computer still lacks, and how to get it.
-
-The same installer does the rest:
-
-| Command | What it does |
-| --- | --- |
-| `sh installer/install.sh --dry-run` | Says what an install would do, and changes nothing |
-| `sh installer/install.sh --companions install` | Brings the companion skills without asking about each |
-| `sh installer/install.sh check` | Says what is installed and what is missing |
-| `sh installer/install.sh rollback` | Goes back to the version installed before |
-| `sh installer/install.sh uninstall` | Removes what it added; installed versions and the companion skills stay |
-
-It changes nothing while Presentation Studio is open: close it first. Your brand skill is not installed from here; name its repository in Settings, on the page.
+See the [guided installation reference](../../docs/installation.md) for offline
+setup, updates, rollback, and removing the Marketing Studio launcher. Native
+studio commands and your content remain independent.
 
 ## Your first deck
 

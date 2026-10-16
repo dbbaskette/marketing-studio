@@ -13,60 +13,35 @@ You can also work directly in chat.
 
 ## Before you start
 
-You need:
-
-- **A Mac or Linux computer.**
-- **Codex or Claude Code**, installed on that computer and signed in. You only need one.
-- **Python 3.11 or later.** If you need help installing Python, see the
-  [setup guide](docs/installation.md#before-you-start).
+Use a Mac or Linux computer. The guided installer offers missing Python, Git,
+Node.js and assistant CLIs, then installs Blog Studio and shared tools. Sign in
+to your chosen assistant afterward.
 
 GitHub and Google Docs are optional. You can start writing without setting up
 team sharing or a document connection.
 
 ## Install Blog Studio
 
-Choose either method. Both run the same setup.
+**[Download the Blog Studio installer](https://github.com/dbbaskette/marketing-studio/releases/latest/download/blog-studio-installer.zip)**
+and unzip it. On macOS, open **installer/Install Marketing Studio.command** inside
+`blog-studio-setup`. On Linux, run `bash installer/install.sh` there. This subset
+installs Blog Studio and its own launcher; Marketing Studio is an optional home.
 
-### Clone and run
-
-If you have Git, open Terminal and run:
+Or install from the consolidated source:
 
 ```sh
-git clone https://github.com/dbbaskette/blog-studio.git
-cd blog-studio
-sh installer/install.sh
+git clone https://github.com/dbbaskette/marketing-studio.git
+cd marketing-studio
+bash installer/install.sh --studios blog
 ```
 
-This installs the current code from the repository. To install a packaged
-release instead, use the ZIP below.
-
-### Download the ZIP
-
-1. **[Download the installer ZIP](https://github.com/dbbaskette/blog-studio/releases/latest/download/blog-studio-installer.zip).**
-   Choose `blog-studio-installer.zip` if you are browsing the
-   [release page](https://github.com/dbbaskette/blog-studio/releases/latest).
-2. **Expand the ZIP.** Keep the resulting `blog-studio-setup` folder together.
-3. **Run setup.** On macOS, double-click `Install Blog Studio.command` inside its
-   `installer` folder. On Linux, or if the Mac launcher will not open, open
-   Terminal and run the following if you extracted the ZIP into Downloads:
-
-   ```sh
-   cd ~/Downloads/blog-studio-setup
-   sh installer/install.sh
-   ```
-
-   If you extracted it somewhere else, use that folder's path in the first line.
-
-### Finish setup
-
-Choose **Codex**, **Claude Code**, or **Both** and follow the setup prompts.
-Setup prints how to open Blog Studio and checks this computer, with the next
-steps for anything missing. You can then use the UI below.
+Use `--target codex` or `--target claude` for one assistant. Compatible existing
+tools, workspaces, and settings are reused. The installer asks before installing
+missing software. See the [guided installation reference](../../docs/installation.md)
+for offline setup, updates, and rollback.
 
 To write in chat, open your chosen tool in a folder for your writing and start a
 **new chat**. Enter `$blog-studio` in Codex or `/blog-studio` in Claude Code.
-
-[Detailed setup, company laptop help, and repair instructions →](docs/installation.md)
 
 ## Start your first blog
 
