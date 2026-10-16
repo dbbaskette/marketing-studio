@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "studios": [
+    {
+      "studio": "blog-studio",
+      "source_main": "44f59e52d369d6f2cb6b90a2750b5aa98af222f8",
+      "imported_main": "7e2e2e2779ff0c98c0282dbf66572f4f418b4333",
+      "tree": "39dab40ba0826c70674c4c04b0030916f68b5ef0",
+      "tree_identical": true,
+      "preserved_uncommitted_work": true,
+      "preserved_branch": "migration/blog-studio/preserved-working-tree"
+    },
+    {
+      "studio": "presentation-studio",
+      "source_main": "edf565acd3ebc87a7c024d5c59ab17887691017a",
+      "imported_main": "2eb53561aea22160a5d3e5a4199d498e228cbd1d",
+      "tree": "8d27c074bdfa4588284034ec94e1fe4aa0f17fe5",
+      "tree_identical": true,
+      "preserved_uncommitted_work": false,
+      "preserved_branch": null
+    },
+    {
+      "studio": "training-studio",
+      "source_main": "de20a082f361c0505f8c0be5c389b35b76de4828",
+      "imported_main": "f574e978a56965e34a58949c2907251640ccb8fb",
+      "tree": "63d76faab11600f9ab5a07acfd2750a52d03d842",
+      "tree_identical": true,
+      "preserved_uncommitted_work": false,
+      "preserved_branch": null
+    }
+  ]
+}
