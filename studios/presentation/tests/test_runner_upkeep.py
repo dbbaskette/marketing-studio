@@ -573,6 +573,24 @@ class UpgradeTests(InstalledCase):
         git(self.work, 'add', '-A')
         git(self.work, 'commit', '-q', '-m', 'one')
 
+    def test_suite_installation_defers_native_upgrade_to_the_suite_installer(self):
+        record = self.home / '.local/share/marketing-studio/installation.json'
+        record.parent.mkdir(parents=True)
+        record.write_text(json.dumps({'schema': 1, 'studios': ['presentation']}))
+        self.release('v99.0.0')
+        self.keep.look()
+        versions = self.keep.report()['versions']
+        self.assertFalse(versions['upgrade']['offered'])
+        self.assertEqual(versions['suite'], 'marketing-studio')
+        with self.assertRaisesRegex(WorkspaceError, 'Marketing Studio installer'):
+            self.keep.upgrade(False, '99.0.0')
+
+    def test_native_install_from_consolidated_source_uses_suite_updates(self):
+        with mock.patch.dict(os.environ, {'PRESENTATION_STUDIO_SOURCE': ''}):
+            self.assertTrue(self.keep.suite_managed())
+            with self.assertRaisesRegex(WorkspaceError, 'Marketing Studio installer'):
+                self.keep.upgrade(False, '99.0.0')
+
     def release(self, *versions: str) -> None:
         for version in versions:
             git(self.work, 'tag', version)

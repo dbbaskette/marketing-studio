@@ -508,6 +508,24 @@ class UpgradeTests(ReleaseCase):
     """Upgrading Training Studio itself: refused where it must be, and what it runs. The
     whole upgrade, from an older install to a newer one, is the page tests'."""
 
+    def test_suite_installation_defers_native_upgrade_to_the_suite_installer(self):
+        record = self.home / '.local/share/marketing-studio/installation.json'
+        record.parent.mkdir(parents=True)
+        record.write_text(json.dumps({'schema': 1, 'studios': ['training']}))
+        self.release('v99.0.0')
+        self.keep.look()
+        versions = self.keep.report()['versions']
+        self.assertFalse(versions['upgrade']['offered'])
+        self.assertEqual(versions['suite'], 'marketing-studio')
+        with self.assertRaisesRegex(WorkspaceError, 'Marketing Studio installer'):
+            self.keep.upgrade(False, '99.0.0')
+
+    def test_native_install_from_consolidated_source_uses_suite_updates(self):
+        with mock.patch.dict(os.environ, {'TRAINING_STUDIO_SOURCE': ''}):
+            self.assertTrue(self.keep.suite_managed())
+            with self.assertRaisesRegex(WorkspaceError, 'Marketing Studio installer'):
+                self.keep.upgrade(False, '99.0.0')
+
     def test_a_checkout_shows_the_versions_and_says_it_is_upgraded_with_git_pull(self):
         keep = upkeep.Upkeep(home_dir=self.home, root=self.base / 'nothing-installed',
                              installer=helpers.REPO / 'installer' / 'install.py')
