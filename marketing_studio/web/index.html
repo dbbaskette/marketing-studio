@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Marketing Studio</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/home.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<div class="workspace-shell">
+  <aside class="home-sidebar">
+    <a href="#" class="wordmark" id="home-link"><span class="app-symbol" aria-hidden="true">M</span><span>Marketing<br> Studio</span></a>
+    <nav aria-label="Main navigation">
+      <button type="button" data-view="home" class="nav-item">Studios</button>
+      <button type="button" data-view="settings" class="nav-item">Shared settings</button>
+      <button type="button" data-view="computer" class="nav-item">This computer</button>
+    </nav>
+    <p class="sidebar-foot">One place to get ready.<br>Three places to create.</p>
+  </aside>
+  <div class="home-main">
+    <header class="home-toolbar"><span id="view-title">Studios</span><span class="local-badge">On this computer</span></header>
+    <main id="content" tabindex="-1">
+      <div id="message" role="status" aria-live="polite" hidden></div>
+      <div id="problem" role="alert" hidden></div>
+      <section id="loading"><h1>Opening your studios…</h1></section>
+      <section id="home" hidden>
+        <div class="page-heading"><div><h1>What will you make?</h1><p>Your settings are shared. Each studio has its own space to work.</p></div></div>
+        <div id="studio-list" class="studio-list"></div>
+        <section class="settings-summary"><div><h2>Ready when you are</h2><p id="summary-text"></p></div><button type="button" data-view="settings" class="secondary">Change settings</button></section>
+        <p class="launch-note">Leave the Marketing Studio terminal open while you work. You can also open each studio with its own launcher.</p>
+      </section>
+      <section id="settings" hidden>
+        <div class="page-heading"><div><p id="step-label" class="step-label"></p><h1 id="settings-title">Shared settings</h1><p id="settings-intro">New work in every studio starts with these choices.</p></div></div>
+        <ol id="setup-progress" class="setup-progress" aria-label="Setup progress" hidden><li>You and your assistant</li><li>Your workspace</li><li>Brand and delivery</li></ol>
+        <form id="settings-form">
+          <section class="form-section" data-step="0"><h2>You and your assistant</h2><p>Use your signed-in assistant for research, writing, and slide work.</p>
+            <div class="form-grid"><label>Your name<input name="person.name" autocomplete="name" maxlength="100"></label><label>Assistant<select name="assistant.agent"><option value="claude">Claude Code</option><option value="codex">Codex</option></select></label><label>Model ID <span class="optional">(optional)</span><input name="assistant.model" maxlength="100" placeholder="Use the assistant’s default" autocomplete="off"><small>Use an ID available in your account. Blog Studio uses the CLI’s model settings.</small></label><label>Reasoning<select name="assistant.effort"></select></label></div>
+          </section>
+          <section class="form-section" data-step="1"><h2>Where your work lives</h2><p>Keep a Git history on this computer, or share work through a repository.</p>
+            <fieldset class="storage-choice"><legend class="offscreen">Workspace storage</legend><label><input type="radio" name="storage" value="local" checked> Local Git on this computer</label><label><input type="radio" name="storage" value="remote"> Shared repository</label></fieldset>
+            <div id="local-fields"><label>Work folder<input name="local.root" placeholder="~/Studios"><small>Each studio keeps a local repository inside this folder.</small></label></div>
+            <div id="remote-fields" class="form-grid" hidden><label class="full">Repository address<input name="team.repository" placeholder="https://github.com/your-team/studio-work.git" autocomplete="off"><small>Use an existing repository without credentials in its address.</small></label><label>Branch<input name="team.branch" placeholder="main"></label><label>Share changes<select name="share"><option value="decision">After each decision</option><option value="asked">When I ask</option></select></label></div>
+            <p class="field-note">Finishing setup prepares installed studios that have no workspace yet. Existing work stays where it is.</p>
+          </section>
+          <section class="form-section" data-step="2"><h2>Brand and delivery</h2><p>Your brand skill is optional. Install or update it from a studio’s settings.</p>
+            <div class="form-grid"><label class="full">Brand skill repository<input name="brand.repository" placeholder="https://github.com/your-team/brand-skill.git" autocomplete="off"></label><label>Release tag<input name="brand.release" placeholder="Newest release"></label><label>Brand ID<input name="brand.brand" placeholder="Optional"></label><label>Variant<input name="brand.variant" placeholder="Optional"></label><label>Deliver as<select name="output"><option value="pptx">PowerPoint and Word files</option><option value="google">Google Slides and Docs</option></select></label></div>
+          </section>
+          <p id="prepare-note" class="field-note" hidden>Finish setup will prepare installed studios with these choices. Your existing workspaces stay in place. For a shared repository, this creates a separate clone for each studio.</p>
+          <div class="form-actions"><button type="button" id="back" class="secondary" hidden>Back</button><button type="submit" id="save">Save settings</button></div>
+        </form>
+        <section id="installations" class="form-section" hidden><h2>Studio installations</h2><p>Installed studios and sibling checkouts are found automatically. Set a folder if yours is somewhere else.</p><form id="paths-form"><div id="path-fields" class="form-grid"></div><div class="form-actions"><button type="submit" class="secondary">Save installation folders</button></div></form></section>
+      </section>
+      <section id="computer" hidden><div class="page-heading"><div><h1>This computer</h1><p>Check the tools available to your studios. Each studio checks sign-in when you use it.</p></div><button id="check" type="button">Check computer</button></div><div id="computer-results" class="check-list"><p>Run a check to see what is installed.</p></div></section>
+    </main>
+  </div>
+</div>
+</body>
+</html>

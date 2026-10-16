@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.venv/
+.claude/
+.coverage
+test-results/
+*.log
+# Local maintenance records are not part of the application distribution.
+/docs/branch-cleanup-2026-10-15.md
+/scripts/cleanup/
