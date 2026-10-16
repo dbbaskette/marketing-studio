@@ -837,7 +837,8 @@ class Upkeep:
         except (OSError, ValueError, TypeError):
             try:
                 source = json.loads((self.folder / 'source.json').read_text())
-                return source.get('repository', '').removesuffix('.git') == 'https://github.com/dbbaskette/marketing-studio'
+                repository = os.environ.get('PRESENTATION_STUDIO_SOURCE') or source.get('repository', '')
+                return repository.removesuffix('.git') == 'https://github.com/dbbaskette/marketing-studio'
             except (OSError, ValueError, TypeError, AttributeError):
                 return False
 
@@ -1243,7 +1244,8 @@ class Upkeep:
     def command(self) -> str | None:
         """The command that brings a newer Presentation Studio to a checkout this runner runs
         from, when it is a git checkout: Presentation Studio is then upgraded there."""
-        if not self.checkout() or not (self.folder / '.git').exists():
+        if not self.checkout() or not any((folder / '.git').exists()
+                                          for folder in (self.folder, *self.folder.parents)):
             return None
         return f'cd {shlex.quote(str(self.folder))} && git pull'
 

@@ -17,6 +17,10 @@ if [[ -z "$python" ]]; then
   HOMEBREW_NO_AUTO_UPDATE=1 brew install python@3.13 > "$results_dir/provisioning.log" 2>&1
   python="$(command -v python3.13)"
 fi
+# Native package tests inspect tracked files. Keep a disposable Git clone, then
+# overlay the mounted working tree so recorded uncommitted changes are tested too.
+git -c safe.directory="$source_dir" -c safe.directory="$source_dir/.git" \
+  clone --quiet --no-hardlinks "$source_dir" "$work/repo"
 rsync -a --exclude=.git --exclude=.claude --exclude=__pycache__ "$source_dir/" "$work/repo/"
 cd "$work/repo"
 { sw_vers; "$python" --version; node --version; git --version; } > "$results_dir/environment.txt"

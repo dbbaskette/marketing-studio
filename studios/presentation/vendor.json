@@ -429,6 +429,30 @@
       "from": "tests/test_package.py",
       "revision": "01ee5f61c3c460013fd6a3226f112d6c80ec0ee9",
       "note": "on Presentation Studio's required files and loading sets"
+    },
+    {
+      "path": "skills/presentation-studio/scripts/server.py",
+      "from": "skills/training-studio/scripts/desk.py",
+      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
+      "note": "Original port provenance retained. The implementation now comes from the suite shared core or UI kit."
+    },
+    {
+      "path": "skills/presentation-studio/scripts/studios_config.py",
+      "from": "runner/studios_config.py",
+      "revision": "01ee5f61c3c460013fd6a3226f112d6c80ec0ee9",
+      "note": "Original port provenance retained. The implementation now comes from the suite shared core or UI kit."
+    },
+    {
+      "path": "skills/presentation-studio/scripts/desk/style.css",
+      "from": "skills/training-studio/scripts/desk/style.css",
+      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
+      "note": "Original port provenance retained. The implementation now comes from the suite shared core or UI kit."
+    },
+    {
+      "path": "skills/presentation-studio/scripts/desk/markdown.js",
+      "from": "skills/training-studio/scripts/desk/markdown.js",
+      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
+      "note": "Original port provenance retained. The implementation now comes from the suite shared core or UI kit."
     }
   ]
 }
