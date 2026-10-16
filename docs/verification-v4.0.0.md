@@ -47,7 +47,8 @@ the test host.
 
 Tests cover deterministic full/subset ZIPs, source-independent native commands,
 repeat installs, failure restoration, rollback, active-work refusal, and retention
-of native workspaces/settings. Shell bootstrap tests use stand-in package managers
+of native workspaces/settings. A further 41-command journey also passed with
+local paths containing spaces. Shell bootstrap tests use stand-in package managers
 and assistants; no host packages, accounts, or provider jobs are involved.
 
 Original studio checkouts were compared byte for byte against their preserved

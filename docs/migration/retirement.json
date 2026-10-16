@@ -1,0 +1,132 @@
+{
+  "schema": 1,
+  "date": "2026-10-16",
+  "release": "https://github.com/dbbaskette/marketing-studio/releases/tag/v4.0.0",
+  "release_commit": "9e581ef4305f3940d3b8c802a8d5585d72383681",
+  "original_checkouts_preserved": true,
+  "historical_product_tags_preserved": 5,
+  "repositories": [
+    {
+      "product": "Blog Studio",
+      "previous_repository": "https://github.com/dbbaskette/blog-studio",
+      "source_directory": "studios/blog",
+      "archived": true,
+      "historical_release": "https://github.com/dbbaskette/blog-studio/releases/tag/v3.0.0",
+      "open_issues_transferred": 12
+    },
+    {
+      "product": "Presentation Studio",
+      "previous_repository": "https://github.com/dbbaskette/presentation-studio",
+      "source_directory": "studios/presentation",
+      "archived": true,
+      "historical_release": "https://github.com/dbbaskette/presentation-studio/releases/tag/v3.0.0",
+      "open_issues_transferred": 4
+    },
+    {
+      "product": "Training Studio",
+      "previous_repository": "https://github.com/dbbaskette/training-studio",
+      "source_directory": "studios/training",
+      "archived": true,
+      "historical_release": "https://github.com/dbbaskette/training-studio/releases/tag/v3.0.0",
+      "open_issues_transferred": 0
+    }
+  ],
+  "issues": [
+    {
+      "studio": "blog-studio",
+      "original": "https://github.com/dbbaskette/blog-studio/issues/85",
+      "destination": "https://github.com/dbbaskette/marketing-studio/issues/1",
+      "title": "NEXT3: Add advisory planning and upkeep to Blogs and Editorial tools"
+    },
+    {
+      "studio": "blog-studio",
+      "original": "https://github.com/dbbaskette/blog-studio/issues/84",
+      "destination": "https://github.com/dbbaskette/marketing-studio/issues/2",
+      "title": "NEXT2: Scope optional Word, Windows and provider extensions separately"
+    },
+    {
+      "studio": "blog-studio",
+      "original": "https://github.com/dbbaskette/blog-studio/issues/83",
+      "destination": "https://github.com/dbbaskette/marketing-studio/issues/3",
+      "title": "NEXT1: Add a page-driven pre-publish report and publishing handoff"
+    },
+    {
+      "studio": "blog-studio",
+      "original": "https://github.com/dbbaskette/blog-studio/issues/82",
+      "destination": "https://github.com/dbbaskette/marketing-studio/issues/4",
+      "title": "REV7: Keep new-user and skill guidance aligned with the current app"
+    },
+    {
+      "studio": "blog-studio",
+      "original": "https://github.com/dbbaskette/blog-studio/issues/81",
+      "destination": "https://github.com/dbbaskette/marketing-studio/issues/5",
+      "title": "REV6: Make page and skill commands compact and consistent"
+    },
+    {
+      "studio": "blog-studio",
+      "original": "https://github.com/dbbaskette/blog-studio/issues/80",
+      "destination": "https://github.com/dbbaskette/marketing-studio/issues/6",
+      "title": "REV5: Refine the installed app lifecycle after the 2.1 launchers"
+    },
+    {
+      "studio": "blog-studio",
+      "original": "https://github.com/dbbaskette/blog-studio/issues/79",
+      "destination": "https://github.com/dbbaskette/marketing-studio/issues/7",
+      "title": "REV4: Align current privacy guidance with page and integration behavior"
+    },
+    {
+      "studio": "blog-studio",
+      "original": "https://github.com/dbbaskette/blog-studio/issues/78",
+      "destination": "https://github.com/dbbaskette/marketing-studio/issues/8",
+      "title": "REV3: Simplify optional Google review and document supported behavior"
+    },
+    {
+      "studio": "blog-studio",
+      "original": "https://github.com/dbbaskette/blog-studio/issues/77",
+      "destination": "https://github.com/dbbaskette/marketing-studio/issues/9",
+      "title": "REV2: Polish the current page and its editorial tools"
+    },
+    {
+      "studio": "blog-studio",
+      "original": "https://github.com/dbbaskette/blog-studio/issues/76",
+      "destination": "https://github.com/dbbaskette/marketing-studio/issues/10",
+      "title": "REV1: Measure and simplify sync/storage after shared team workspaces"
+    },
+    {
+      "studio": "blog-studio",
+      "original": "https://github.com/dbbaskette/blog-studio/issues/75",
+      "destination": "https://github.com/dbbaskette/marketing-studio/issues/11",
+      "title": "Epic: Add useful editorial capabilities to the page and skill"
+    },
+    {
+      "studio": "blog-studio",
+      "original": "https://github.com/dbbaskette/blog-studio/issues/74",
+      "destination": "https://github.com/dbbaskette/marketing-studio/issues/12",
+      "title": "Epic: Keep the page and skill workflows reliable and consistent"
+    },
+    {
+      "studio": "presentation-studio",
+      "original": "https://github.com/dbbaskette/presentation-studio/issues/12",
+      "destination": "https://github.com/dbbaskette/marketing-studio/issues/13",
+      "title": "Add task-based model profiles and automatic routing for quick, design, and complex work"
+    },
+    {
+      "studio": "presentation-studio",
+      "original": "https://github.com/dbbaskette/presentation-studio/issues/11",
+      "destination": "https://github.com/dbbaskette/marketing-studio/issues/14",
+      "title": "Repair specific slide defects and reuse unchanged review evidence"
+    },
+    {
+      "studio": "presentation-studio",
+      "original": "https://github.com/dbbaskette/presentation-studio/issues/10",
+      "destination": "https://github.com/dbbaskette/marketing-studio/issues/15",
+      "title": "Show completed slide sections and accept feedback while the deck builds"
+    },
+    {
+      "studio": "presentation-studio",
+      "original": "https://github.com/dbbaskette/presentation-studio/issues/9",
+      "destination": "https://github.com/dbbaskette/marketing-studio/issues/16",
+      "title": "Show a visual storyboard before native slide construction"
+    }
+  ]
+}

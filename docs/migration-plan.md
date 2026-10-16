@@ -52,3 +52,10 @@ The shared Tart wrapper owns VM lifecycle and retains environment/test logs.
 - Full native suites and clean-machine verification passed. The complete evidence
   is in `verification-v4.0.0.md`. Publication precedes issue transfer and retirement;
   the final cutover record identifies the transferred issues.
+
+- Cutover completed: Marketing Studio 4.0.0 and all four installer archives are
+  published. All five historical product tags and preserved branches are public.
+  Sixteen issues transferred with product labels and original references retained.
+  All three legacy repositories now have migration notices and are archived;
+  their historical releases remain available. Original checkouts were unchanged.
+  See the [issue map](migration/issues.md) and [retirement record](migration/retirement.json).
