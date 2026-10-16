@@ -449,6 +449,23 @@ class ScreenTests(ScriptedPage, PageCase):
         self.post('decide', body)
         self.assertEqual(self.run_of(path)['gate']['round'], 2)
 
+    def test_what_was_asked_for_is_shown_again_as_the_person_marked_and_wrote_it(self):
+        path = self.started(research=True)
+        self.decided(path, 'gate:research-plan', 'changes',
+                     note='Keep it short.\nAsk about cost too.', extra={
+                         'dropped': ['health-checks'],
+                         'reword': {'instance-min': 'How many instances keep capacity?'}})
+        self.assertEqual(self.run_of(path)['gate']['round'], 2)
+        result = self.deck_screen(path, [{'snapshot': 'again'}])
+        text = result['snapshots']['again']['text']
+        # The marks a line each, by each question's title, then the person's own words with
+        # their lines kept; never the note the runner wrote for the worker.
+        asked = text[text.index('You asked for:'):text.index('It says of its work')]
+        self.assertEqual(asked, 'You asked for:\nReword “Instance min” as: How many instances '
+                         'keep capacity?\nDrop “Health checks”\nKeep it short.\nAsk about '
+                         'cost too.\n')
+        self.assertNotIn('`', text)
+
     def test_no_more_questions_are_added_than_the_runner_takes_at_once(self):
         path = self.started(research=True)
         steps = []

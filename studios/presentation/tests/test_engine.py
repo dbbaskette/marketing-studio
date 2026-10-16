@@ -453,16 +453,18 @@ class ResearchTests(StudioCase):
         self.engine.decide(root, 'gate:research', 'changes', 'Find a second page.',
                            {'again': {'health-checks': ''}})
         gate = self.record(root)['gates']['gate:research']
-        self.assertEqual((gate['again'], gate['free']),
-                         ({'health-checks': ''}, 'Find a second page.'))
+        self.assertEqual((gate['again'], gate['free'], gate['asked']),
+                         ({'health-checks': ''}, 'Find a second page.',
+                          ['Research “Health checks” again']))
         self.assertEqual(gate['note'],
                          '- Research `health-checks` again.\n\nFind a second page.')
         self.assertEqual(self.waiting(root), 'gate:research')
         self.engine.decide(root, 'gate:research', 'changes', 'Look again at health-checks.',
                            None)
         gate = self.record(root)['gates']['gate:research']
-        self.assertEqual((gate['again'], gate['free'], gate['note']),
-                         (None, None, 'Look again at health-checks.'))
+        self.assertEqual((gate['again'], gate['asked'], gate['free'], gate['note']),
+                         (None, None, 'Look again at health-checks.',
+                          'Look again at health-checks.'))
 
     def test_each_finding_s_headline_is_kept_with_the_research(self):
         root = self.start(research=True)
@@ -538,6 +540,31 @@ class PlanMarkTests(StudioCase):
         self.assertNotIn('"id": "health-checks"', task)
         gate = self.record(root)['gates']['gate:research-plan']
         self.assertEqual((gate['state'], gate['round']), ('waiting', 2))
+        # The worker's note names each question by its ID; the person is shown their marks
+        # by each question's title, and their own words.
+        self.assertEqual(gate['note'],
+                         '- Reword `instance-min` as: How many instances keep capacity?\n'
+                         '- Add a question: What does a restart cost?\n'
+                         '- `health-checks` is dropped: leave it out.\n\nKeep it short.')
+        shown = self.view(root)['gate']
+        self.assertEqual(shown['asked'], [
+            'Reword “Instance min” as: How many instances keep capacity?',
+            'Add a question: What does a restart cost?', 'Drop “Health checks”'])
+        self.assertEqual(shown['note'], 'Keep it short.')
+        # Approving keeps no marks for a later round.
+        self.engine.decide(root, 'gate:research-plan', 'approve', None, None)
+        gate = self.record(root)['gates']['gate:research-plan']
+        self.assertEqual((gate['asked'], gate['free']), (None, None))
+
+    def test_marks_alone_are_shown_again_with_no_words_of_the_runner_s(self):
+        root = self.start(research=True)
+        self.engine.decide(root, 'gate:research-plan', 'changes', None,
+                           {'dropped': ['health-checks']})
+        gate = self.record(root)['gates']['gate:research-plan']
+        self.assertEqual(gate['note'], '- `health-checks` is dropped: leave it out.')
+        shown = self.view(root)['gate']
+        self.assertEqual((shown['round'], shown['asked'], shown['note']),
+                         (2, ['Drop “Health checks”'], None))
 
     def test_marks_that_say_nothing_or_need_a_worker_with_approve_are_refused(self):
         root = self.start(research=True)
@@ -572,10 +599,35 @@ class FindingMarkTests(StudioCase):
         root = self.researched()
         report = (root / 'research' / 'report.md').read_text()
         for said in ('1 of 2 questions has an answer the sources support.',
-                     'Not settled (1):', '## Instance min (`instance-min`)',
+                     'Not settled (1):\n- Health checks: What starts the next batch?\n',
+                     '## Instance min (`instance-min`)', 'Status: Answered.',
                      'The page answers instance-min.', 'Not known: Only one page was found.',
                      f'"{runner_support.QUOTE}"'):
             self.assertIn(said, report)
+        self.assertNotIn('insufficient', report)
+
+    def test_the_report_says_what_is_not_settled_in_the_page_s_words(self):
+        root = self.researched()
+        kept = root / '.harness-research' / 'research.json'
+        record = json.loads(kept.read_text())
+        record['results']['instance-min']['status'] = 'contradicted'
+        record['results']['health-checks']['status'] = 'unavailable'
+        kept.write_text(json.dumps(record))
+        self.engine.decide(root, 'gate:research', 'approve', None, {'left_out': []})
+        report = (root / 'research' / 'report.md').read_text()
+        for said in ('Not found (1):\n- Health checks: What starts the next batch?\n',
+                     'Contradicted (1):\n- Instance min: How many instances keep capacity '
+                     'during a restart?\n', 'Status: Contradicted.', 'Status: Not found.'):
+            self.assertIn(said, report)
+        for code in ('unavailable', 'contradicted', 'Not settled'):
+            self.assertNotIn(code, report)
+        # A question with no finding is not answered, and says why where it can.
+        del record['results']['health-checks']
+        kept.write_text(json.dumps(record))
+        report = self.engine._report_text(root, self.record(root))
+        self.assertIn('Not answered (1):\n- Health checks: What starts the next batch? '
+                      '(no reason was kept)\n', report)
+        self.assertNotIn('pending', report)
 
     def test_left_out_findings_go_with_the_approval_and_leave_the_report(self):
         root = self.researched()
@@ -647,6 +699,31 @@ class FindingMarkTests(StudioCase):
         self.assertIn('Left out by you (1):\n- Health checks', report)
         self.assertNotIn('No page says', report)
 
+    def test_what_was_marked_is_shown_again_by_each_title_and_the_worker_s_note_by_id(self):
+        root = self.researched()
+        self.engine.decide(root, 'gate:research', 'changes', 'Be brief.\n\nCite the docs.', {
+            'left_out': ['health-checks'],
+            'again': {'instance-min': 'Look for the platform docs.'},
+            'add': ['What does a restart cost?']})
+        gate = self.record(root)['gates']['gate:research']
+        self.assertEqual(gate['note'], (
+            '- Research `instance-min` again: Look for the platform docs.\n'
+            '- Add a question: What does a restart cost?\n'
+            '- Leave out `health-checks`.\n\nBe brief.\n\nCite the docs.'))
+        shown = self.view(root)['gate']
+        self.assertEqual((shown['round'], shown['note']), (2, 'Be brief.\n\nCite the docs.'))
+        self.assertEqual(shown['asked'], [
+            'Research “Instance min” again: Look for the platform docs.',
+            'Add a question: What does a restart cost?', 'Leave out “Health checks”'])
+        # Of the findings left out, only what moved is said: here one brought back.
+        self.engine.decide(root, 'gate:research', 'changes', None, {
+            'left_out': [], 'again': {'health-checks': ''}})
+        shown = self.view(root)['gate']
+        self.assertEqual((shown['round'], shown['note']), (3, None))
+        self.assertEqual(shown['asked'], ['Research “Health checks” again',
+                                          'Bring back “Health checks”'])
+        self.assertNotIn('`', json.dumps(shown['asked']))
+
     def test_a_left_out_finding_is_not_researched_again_until_it_is_brought_back(self):
         root = self.researched()
         self.engine.decide(root, 'gate:research', 'changes', 'Be brief.',
@@ -706,6 +783,10 @@ class OutlineMarkTests(StudioCase):
         task = self.workers.of('outline')[-1].task
         self.assertIn(f"- Slide `{slides[1]['id']}`: Split it in two.", task)
         self.assertEqual(self.record(root)['gates']['gate:outline']['round'], 2)
+        # The person is shown the slide where they put it, by its title.
+        shown = self.view(root)['gate']
+        self.assertEqual((shown['asked'], shown['note']),
+                         ([f"Slide 3 “{slides[1]['title']}”: Split it in two."], None))
 
     def test_a_slide_the_outline_does_not_have_is_refused(self):
         root = self.start()

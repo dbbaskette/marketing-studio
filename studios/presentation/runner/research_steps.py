@@ -44,6 +44,11 @@ PLAN_MD = Path('research') / 'plan.md'
 REPORT = Path('research') / 'report.md'
 RECORD = Path('.harness-research') / 'research.json'
 UNRESOLVED = ('insufficient', 'unavailable')
+# Each finding's status in the page's words (FINDING_WORDS in desk/app.js), in the order the
+# report lists those still to look at.
+STATUS_WORDS = {'supported': 'Answered', 'insufficient': 'Not settled',
+                'unavailable': 'Not found', 'contradicted': 'Contradicted',
+                'pending': 'Not answered'}
 
 
 class Researching:
@@ -71,8 +76,9 @@ class Researching:
 
     def _report_text(self, root: Path, record: dict) -> str:
         """The report the person reads and the outline is drafted from: what the research
-        settled and did not, what the person left out, then each finding kept, with its
-        answer, what is not known and the passages it quotes."""
+        settled and did not, each by its title and in the page's words, what the person left
+        out, then each finding kept, with its answer, what is not known and the passages it
+        quotes."""
         items = self._findings_shown(root, record)
         left = [item for item in items if item['left_out']]
         kept = [item for item in items if not item['left_out']]
@@ -81,17 +87,16 @@ class Researching:
         lines = ['# Research report', '',
                  f"{supported} of {total} question{'' if total == 1 else 's'} "
                  f"{'has' if supported == 1 else 'have'} an answer the sources support."]
-        unresolved = [item for item in kept if item['status'] in UNRESOLVED]
-        unread = [item for item in kept if item['status'] == 'pending']
-        if unresolved:
-            lines += ['', f'Not settled ({len(unresolved)}):']
-            lines += [f"- {item['id']}: {item['question']} ({item['status']})"
-                      for item in unresolved]
-        if unread:
-            lines += ['', f'Not researched ({len(unread)}):']
-            for item in unread:
-                why = last_error(record, 'research:' + item['id']) or 'no reason was kept'
-                lines.append(f"- {item['id']}: {item['question']} ({why})")
+        for status, words in STATUS_WORDS.items():
+            listed = [item for item in kept if item['status'] == status]
+            if status == 'supported' or not listed:
+                continue
+            lines += ['', f'{words} ({len(listed)}):']
+            for item in listed:
+                why = (last_error(record, 'research:' + item['id']) or 'no reason was kept'
+                       if status == 'pending' else '')
+                lines.append(f"- {item['title']}: {item['question']}"
+                             + (f' ({why})' if why else ''))
         if left:
             lines += ['', f'Left out by you ({len(left)}):']
             lines += [f"- {item['title']}" for item in left]
@@ -99,7 +104,7 @@ class Researching:
             if item['status'] == 'pending':
                 continue
             lines += ['', f"## {item['title']} (`{item['id']}`)", '', item['question'], '',
-                      f"Status: {item['status']}."]
+                      f"Status: {STATUS_WORDS.get(item['status'], item['status'])}."]
             # A headline that is the summary's first sentence is said once, in the summary.
             spaced = ' '.join(item['summary'].split())
             headline = '' if spaced.startswith(item['headline']) else item['headline']

@@ -120,6 +120,10 @@ Approve acts at once, as it does since the one-click change: no second question.
   nothing moves. The page's server (`/api/decide`) applies the same rule about the note.
 - **The note a worker reads** is written by the runner from the marks, then the person's
   free text. Workers' briefs need no change for marks.
+- **What the person reads at the next round** is not that note. The gate keeps their free
+  text (`free`) and the marks said by each item's title (`asked`: "Reword “Licensing
+  cost” as: …", "Drop “Health checks”", "Slide 3 “Pricing”: …"), and "You asked for:"
+  shows those as a short list followed by their own words.
 - **The research views.** `_show_research_plan` gives each item's `id`, `title`, `question`
   and `public_query`. `_show_research` gives, besides the report's text, each
   item's `id`, `title`, `question`, `status`, `headline`, `summary`, `limits`, `unknown`
@@ -129,7 +133,8 @@ Approve acts at once, as it does since the one-click change: no second question.
   refused with the count. The research-question brief says to give it. `Research.record`
   hands it to harness-research with the rest of the finding.
 - **The research report** is written from each question's data, leaves out what the person
-  left out, and lists their titles.
+  left out, and lists their titles. What is still to look at is listed by title under the
+  page's words: "Not settled", "Not found", "Contradicted" and "Not answered".
 - **harness-research is pinned at 0.8.1,** and the tests' stand-in keeps unchanged findings
   across a plan change and takes a headline, as 0.8.1 does.
 

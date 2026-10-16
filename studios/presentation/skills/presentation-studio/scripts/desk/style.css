@@ -939,6 +939,11 @@ code,
   margin-top: 0.45rem;
 }
 
+/* What the person asked for last time round keeps the lines they wrote it in. */
+.asked-words {
+  white-space: pre-line;
+}
+
 .callout {
   padding: 0.85rem 1.05rem;
 }

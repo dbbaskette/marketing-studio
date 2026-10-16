@@ -133,6 +133,29 @@ class NoteTests(unittest.TestCase):
         self.assertEqual(marks.note('gate:outline', {}, 'Shorter.'), 'Shorter.')
 
 
+class RecapTests(unittest.TestCase):
+    def test_the_marks_are_said_to_the_person_by_each_item_s_title(self):
+        self.assertEqual(marks.recap('gate:research-plan', {
+            'reword': {'instance-min': 'How many?'}, 'add': ['Why?'],
+            'dropped': ['health-checks']}), [
+            'Reword “Instance min” as: How many?', 'Add a question: Why?',
+            'Drop “Health checks”'])
+        self.assertEqual(marks.recap('gate:research', {
+            'again': {'instance-min': '', 'other': 'Find more.'},
+            'left_out': ['health-checks', 'other-2']}, before=['other-2', 'licensing-cost']), [
+            'Research “Instance min” again', 'Research “Other” again: Find more.',
+            'Leave out “Health checks”', 'Bring back “Licensing cost”'])
+
+    def test_a_slide_is_said_by_its_number_and_title_where_it_has_them(self):
+        slides = [{'id': 'cover-restarts', 'title': 'Restarts  without\ndowntime'},
+                  {'id': 'what-it-does', 'title': ''}]
+        self.assertEqual(marks.recap('gate:outline', {'slides': {
+            'cover-restarts': 'Shorter.', 'what-it-does': 'Split it.',
+            'gone': 'Keep it.'}}, slides), [
+            'Slide 1 “Restarts without downtime”: Shorter.', 'Slide 2: Split it.',
+            'Slide “Gone”: Keep it.'])
+
+
 class WordsTests(unittest.TestCase):
     def test_a_title_is_read_from_an_id(self):
         self.assertEqual(marks.title('licensing-cost'), 'Licensing cost')

@@ -3250,11 +3250,17 @@ function documentPart(label, text) {
   return add(node, window.TrainingStudioMarkdown.render(String(text), { files: false }));
 }
 
-// What the worker said of its work, and what the person asked for last time round.
+// What the worker said of its work, and what the person asked for last time round: what they
+// marked, each item by its title, then their own words as they wrote them.
 function gateSaid(gate) {
   const parts = [];
-  if (gate.round > 1 && gate.note) {
-    parts.push(add(make('p', ''), make('strong', '', 'You asked for: '), gate.note));
+  const asked = list(gate.asked).filter((line) => typeof line === 'string' && line.trim());
+  const words = typeof gate.note === 'string' && gate.note.trim() ? gate.note : '';
+  if (gate.round > 1 && asked.length) {
+    parts.push(add(make('div', ''), add(make('p', ''), make('strong', '', 'You asked for:')),
+      bullets(asked, 'reasons'), words ? make('p', 'asked-words', words) : null));
+  } else if (gate.round > 1 && words) {
+    parts.push(add(make('p', 'asked-words'), make('strong', '', 'You asked for: '), words));
   }
   if (typeof gate.said === 'string' && gate.said.trim()) {
     parts.push(add(make('p', 'quiet'), make('strong', '', 'It says of its work: '), gate.said));
