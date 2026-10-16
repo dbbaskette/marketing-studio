@@ -300,6 +300,7 @@ done"""
 def opener_text(studio: Path) -> str:
     """The one-line command: finds a Python new enough and starts the runner with it."""
     return f"""#!/bin/sh
+export PATH="$HOME/.local/bin:$PATH:/opt/homebrew/bin:/usr/local/bin"
 # Opens Presentation Studio: starts the runner, which shows its page in your browser.
 {OURS} Run the installer again to renew it.
 runner={shlex.quote(str(studio))}
@@ -321,6 +322,7 @@ def helper_text(scripts: Path, studio: Path, itself: Path,
     `guidance`, run with a Python new enough whatever python3 is. A failure is printed as
     JSON, as the runner prints one, since an assistant reads it."""
     return f"""#!/bin/sh
+export PATH="$HOME/.local/bin:$PATH:/opt/homebrew/bin:/usr/local/bin"
 # Runs the Presentation Studio helper with a Python new enough, whatever python3 is.
 # `presentation <command>` runs the runner's studio.py, as in `presentation status`;
 # `presentation guidance start` runs guidance sync.
@@ -342,6 +344,7 @@ exit 2
 def launcher_text(opener: Path) -> str:
     """The double-click launcher: the same command, in a terminal window of the person's own."""
     return f"""#!/bin/sh
+export PATH="$HOME/.local/bin:$PATH:/opt/homebrew/bin:/usr/local/bin"
 # Double-click to open Presentation Studio. It works for as long as this window is open:
 # press Ctrl-C here, or close the window, to stop it. Nothing is lost by stopping.
 {OURS} Run the installer again to renew it.

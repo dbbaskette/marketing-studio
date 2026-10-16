@@ -218,7 +218,7 @@ def install(source, home, data, studios, target, companions):
             if any(item.get('state') in ('failed', 'refused') for item in outcomes.values()):
                 raise InstallError('A shared companion could not be installed. Existing content was preserved.')
             results['companions'] = outcomes
-        opener = '#!/bin/sh\n# Written by the Marketing Studio installer.\nexec ' + shlex.quote(sys.executable) + ' ' + shlex.quote(str(data / 'current/marketing-studio')) + ' --open "$@"\n'
+        opener = '#!/bin/sh\n# Written by the Marketing Studio installer.\nexport PATH="$HOME/.local/bin:$PATH:/opt/homebrew/bin:/usr/local/bin"\nexec ' + shlex.quote(sys.executable) + ' ' + shlex.quote(str(data / 'current/marketing-studio')) + ' --open "$@"\n'
         atomic(data / 'marketing-studio', opener.replace(' --open', '').encode(), 0o755)
         link(home / '.local/bin/marketing-studio', data / 'marketing-studio')
         atomic(home / 'Applications/Open Marketing Studio.command', opener.encode(), 0o755)
