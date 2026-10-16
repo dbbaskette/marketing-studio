@@ -7,6 +7,11 @@ import sys
 SCRIPTS = Path(__file__).resolve().parents[1] / 'skills/blog-studio/scripts'
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
+# Research runs on the research component's stand-in for harness-research, in this process
+# and in every studio.py a test starts, so no test needs Node or the installed skill. The
+# live test in test_research_harness.py removes it for its own run.
+STAND_IN = SCRIPTS / 'studio_research' / 'stand_in.py'
+os.environ.setdefault('STUDIO_RESEARCH_STAND_IN', str(STAND_IN))
 from hub import Registry  # noqa: F401  (tests import Registry from here)
 import hub_store as store
 

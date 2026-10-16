@@ -13,6 +13,8 @@ from unittest.mock import patch
 
 from test_editorial_tools import Fixture
 import studio
+import deep_research
+from studio_research import tools as tools_module
 import blog_runner as runner
 import blog_worker
 import management
@@ -119,15 +121,83 @@ class BlogRunnerTests(Fixture):
         self.assertIn('Change the thesis', found['stages'][0]['request'])
         self.assertEqual(found['stages'][0]['status'], 'draft')
 
+    PLAN = json.dumps(
+        {
+            'topic': 'Gateway',
+            'items': [
+                {'id': 'gateway-ports', 'question': 'Which ports does it use?', 'public_query': 'x'}
+            ],
+        }
+    )
+
     def test_research_questions_and_findings_each_wait_for_approval(self):
         found = self.create(research='supplied-only', stop='outline')
         self.assertEqual(
             [row['stage'] for row in found['stages']], ['research-plan', 'research', 'outline']
         )
-        for stage in ('research-plan', 'research', 'outline'):
-            self.assertEqual(found['next'], stage)
-            found = self.approve(self.submit(found))
+        directory, _ = studio.item(self.root, 'articles', found['id'])
+        with self.assertRaisesRegex(ValueError, 'must be JSON'):
+            self.submit(found, '# A Markdown plan')
+        found = self.approve(self.submit(found, self.PLAN))
+        plan = studio.read_json(directory / 'research' / 'plan.json')
+        self.assertIsNone(plan['items'][0]['public_query'])  # supplied-only: no public search
+        self.assertEqual(plan['topic'], 'Synthetic gateway guide')
+        self.assertIn('gateway-ports', (directory / 'research' / 'plan.md').read_text())
+        self.assertEqual(found['next'], 'research')
+        with self.assertRaisesRegex(ValueError, 'every research question'):
+            self.submit(found)
+        deep_research.record_result(
+            self.root,
+            found['id'],
+            deep_research.status(self.root, found['id'])['run'],
+            'gateway-ports',
+            {
+                'status': 'insufficient',
+                'summary': 'No supplied source covers ports.',
+                'limits': 'Supplied sources only.',
+                'evidence': [],
+            },
+        )
+        found = self.approve(self.submit(found))
+        report = (directory / 'research' / 'report.md').read_text()
+        self.assertIn('gateway-ports', report)
+        self.assertIn('insufficient', report)
+        self.assertEqual(found['next'], 'outline')
+        self.assertIn(
+            'insufficient', runner.job(self.root, found['id'])[1]['documents']['research']
+        )
+        found = self.approve(self.submit(found))
         self.assertTrue(found['complete'])
+
+    def test_page_research_gives_each_question_a_worker_with_the_research_tools(self):
+        found = self.create(research='supplied-only', stop='outline', page=True)
+        found = self.approve(self.submit(found, self.PLAN, page=True), page=True)
+        calls = []
+
+        def worker(engine, payload, guidance, seconds=600, web=False, stop=None, tools=None):
+            calls.append({'web': web, 'tools': tools, 'task': payload['task']})
+            job = tools_module.ResearchTools(Path(tools[-1]))
+            ok, said = job.submit_finding(
+                'gateway-ports',
+                'insufficient',
+                'Nothing supplied covers the ports.',
+                headline='Not known from the supplied sources.',
+                evidence=[],
+            )
+            self.assertTrue(ok, said)
+            return {'content': 'Done.', 'notes': ''}
+
+        engine = runner.Engine(self.root, worker=worker)
+        survey = runner.survey(self.root, found['id'])
+        directory, _ = studio.item(self.root, 'articles', found['id'])
+        _, payload, _ = runner.job(self.root, found['id'])
+        result = engine.research(found['id'], survey, payload, directory)
+        self.assertEqual(len(calls), 1)
+        self.assertFalse(calls[0]['web'])
+        self.assertEqual(calls[0]['tools'][-2], '--job')
+        self.assertIn('Question ID: gateway-ports', calls[0]['task'])
+        self.assertIn('Not known from the supplied sources', result['content'])
+        self.assertEqual(result['content'], (directory / 'research' / 'report.md').read_text())
 
     def test_skill_to_page_and_back_preserves_writing_and_decisions(self):
         found = self.approve(self.submit(self.create()))

@@ -518,10 +518,18 @@ def artifact_name(name):
         or '..' in path.parts
         or '\\' in name
         or not path.parts
-        or any(not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,150}', p) for p in path.parts)
+        or any(
+            not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,150}', p) and p not in DOT_FOLDERS
+            for p in path.parts
+        )
     ):
         raise HubError('Invalid memory artifact path.')
     return path.as_posix()
+
+
+# The one hidden folder an artifact may be in: harness-research's, for an article's research
+# record and report (hub_workspace.RESEARCH_FILES).
+DOT_FOLDERS = ('.harness-research',)
 
 
 def media_of(content):

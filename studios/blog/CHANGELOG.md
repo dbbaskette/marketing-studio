@@ -3,6 +3,32 @@
 Releases are published from `skills/blog-studio/VERSION`. Each entry says what
 changes for authors first, then what changes for maintainers.
 
+## Unreleased
+
+**For authors**
+
+- Research now runs on harness-research, as it does in Training Studio and Presentation
+  Studio, and keeps the same record and report: `.harness-research/` with `research/plan.md`
+  and `research/report.md` beside the blog. Your research policy, attached references and
+  exact draft claims still decide what may be researched and cited.
+- Guided runs research properly: the questions stage drafts a plan you approve, then each
+  question gets its own worker that reads your references, saves public pages only when
+  the blog allows public research, and hands back one checked finding with exact quotes.
+- Research saved by an earlier Blog Studio shows as stale; plan it again. Its report stays.
+- A reference attached after the research was planned needs the plan saved again before it
+  is cited.
+
+**For maintainers**
+
+- New `scripts/studio_research/`: the shared research component (runtime, research folder,
+  worker tools, flow, stand-in), recorded in its `vendor.json` and specified in Marketing
+  Studio's `docs/research-component-spec.md`. Blog Studio is its source copy.
+- The installer brings harness-research from the same pin as the other studios
+  (`installer/companions.json`, `--companions ask|install|skip`); `check` reports it.
+- Companion versions are read with `--version`, which both harness skills answer.
+- The vendored Deep Research skills text and `deep-research.lock.json` are removed;
+  harness-research credits that upstream in its own NOTICE.
+
 ## 3.0.0 — 2026-10-15
 
 **For authors**

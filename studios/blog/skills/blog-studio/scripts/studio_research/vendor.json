@@ -1,0 +1,63 @@
+{
+  "component": "studio_research",
+  "version": "1.0.0",
+  "spec": "https://github.com/dbbaskette/marketing-studio/blob/main/docs/research-component-spec.md",
+  "source": "https://github.com/dbbaskette/blog-studio (skills/blog-studio/scripts/studio_research)",
+  "note": "Copy this folder unchanged into a studio; every file here must match its sha256. Changes are made in the source copy and carried to every studio, until the Marketing Studio core holds the one copy.",
+  "files": {
+    "__init__.py": {
+      "sha256": "5ebfb281154ca71122927590c5e72a439104811c8ae67b61b29c64a011d69a22"
+    },
+    "runtime.py": {
+      "sha256": "d1468d078d7db91a6330cd81a85e6e2c08396b6a31a66d31a2dbee601fc430fb",
+      "origin": {
+        "repository": "https://github.com/dbbaskette/training-studio",
+        "revision": "de20a082f361c0505f8c0be5c389b35b76de4828",
+        "from": [
+          "runner/research.py",
+          "runner/companion.py"
+        ]
+      }
+    },
+    "project.py": {
+      "sha256": "062fd561ec5b096761f6f178bca1f97215d21bbdacf3857fd20e0fd4be246125",
+      "origin": {
+        "repository": "https://github.com/dbbaskette/blog-studio",
+        "note": "new: the shared layout, snapshots, plan building and status"
+      }
+    },
+    "tools.py": {
+      "sha256": "369266804a904f54a9b99797b0323c1aea7745e924a312fc571405c91333e9ce",
+      "origin": {
+        "repository": "https://github.com/dbbaskette/presentation-studio",
+        "revision": "edf565acd3ebc87a7c024d5c59ab17887691017a",
+        "from": [
+          "runner/worker_tools.py"
+        ],
+        "note": "the research tools, fetching, quote placing and server only; offered documents kept exactly as their snapshot"
+      }
+    },
+    "steps.py": {
+      "sha256": "89bce581454b4aa85161841aa4bfecc9675e31fcf64cffdbbddb0f979451bdd3",
+      "origin": {
+        "repository": "https://github.com/dbbaskette/presentation-studio",
+        "revision": "edf565acd3ebc87a7c024d5c59ab17887691017a",
+        "from": [
+          "runner/research_steps.py",
+          "runner/briefs/research-question.md"
+        ]
+      }
+    },
+    "stand_in.py": {
+      "sha256": "8bd1f093a89f46bf1ff9a57be405ced71f491346ce8c76b43e1a79b8afe8858c",
+      "origin": {
+        "repository": "https://github.com/dbbaskette/training-studio",
+        "revision": "de20a082f361c0505f8c0be5c389b35b76de4828",
+        "from": [
+          "tests/stand_ins/research.py"
+        ],
+        "note": "pins input_files and claim files, escapes its report, runs as a command"
+      }
+    }
+  }
+}

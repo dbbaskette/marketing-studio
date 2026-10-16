@@ -148,8 +148,8 @@ class DeepResearchTests(unittest.TestCase):
         }
 
     def test_complete_report_is_automatic_sources_retained_and_review_separate(self):
+        src, text = self.source()  # references are chosen when the research is planned
         run = self.plan()
-        src, text = self.source()
         self.result(run, [self.cite(src, text)])
         value = research.status(self.root, self.ident)
         self.assertEqual(value['status'], 'complete')
@@ -194,13 +194,18 @@ class DeepResearchTests(unittest.TestCase):
             research.plan(
                 self.root, restricted, {'purpose': 'planning', 'scope': 'public-web', 'items': []}
             )
+        inspiration, inspiration_text = self.source(role='inspiration')
+        src, text = self.source()
         run = self.plan()
         with self.assertRaisesRegex(ValueError, 'traceable passage'):
             self.result(run)
-        src, text = self.source(role='inspiration')
         with self.assertRaisesRegex(ValueError, 'factual reference'):
-            self.result(run, [self.cite(src, text)])
-        src, text = self.source()
+            self.result(run, [self.cite(inspiration, inspiration_text)])
+        late, late_text = self.source(
+            text='Attached after planning.', origin='https://example.org/late'
+        )
+        with self.assertRaisesRegex(ValueError, 'attached after the research was planned'):
+            self.result(run, [self.cite(late, late_text)])
         citation = self.cite(src, text)
         citation['quote'] = 'Invented support.'
         with self.assertRaisesRegex(ValueError, 'exactly'):
@@ -295,19 +300,19 @@ class DeepResearchTests(unittest.TestCase):
         self.cli(
             self.root, 'article', 'research-policy', '--id', self.ident, '--policy', 'web-allowed'
         )
-        run = self.plan()
         src, text = self.source(
             text='Evidence ![tracking](https://example.org/image) <script>bad</script>',
             origin='Notes ![tracking](https://example.org/image) <script>bad</script>',
         )
+        run = self.plan()
         self.result(run, [self.cite(src, text)])
         report = Path(research.status(self.root, self.ident)['report']).read_text()
         self.assertNotIn('![tracking]', report)
         self.assertNotIn('<script>', report)
         self.assertEqual(
-            studio.read_json(self.directory / 'derived/research.json')['results']['availability'][
-                'evidence'
-            ][0]['quote'],
+            studio.read_json(self.directory / '.harness-research' / 'research.json')['results'][
+                'availability'
+            ]['evidence'][0]['quote'],
             text,
         )
 
@@ -379,8 +384,8 @@ class DeepResearchTests(unittest.TestCase):
         self.assertNotEqual(self.plan(scope='supplied-only'), run)
 
     def test_changed_manuscript_and_changed_source_stale_results(self):
-        run = self.plan()
         src, text = self.source()
+        run = self.plan()
         self.result(run, [self.cite(src, text)])
         self.cli(
             self.root,
@@ -397,7 +402,7 @@ class DeepResearchTests(unittest.TestCase):
             self.result(run, status='insufficient')
         new = self.plan()
         self.assertNotEqual(new, run)
-        self.assertTrue(list((self.directory / 'history').glob('editorial-research-*.json')))
+        self.assertEqual(research.status(self.root, self.ident)['run'], new)
 
     def test_short_routes_select_research_fact_check_and_do_not_expand_proofreading(self):
         self.assertEqual(
@@ -421,8 +426,8 @@ class DeepResearchTests(unittest.TestCase):
         self.assertEqual(external['research_scope'], 'public-web')
 
     def test_synthetic_hub_offline_queue_cross_clone_resumes_report_and_sources(self):
-        run = self.plan()
         src, text = self.source()
+        run = self.plan()
         self.result(run, [self.cite(src, text)])
         provider = FakeProvider(self.base / 'remotes')
         ra = Registry(self.base / 'registry-a', provider)

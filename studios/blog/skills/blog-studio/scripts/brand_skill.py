@@ -209,7 +209,11 @@ def _companions():
             if script.is_file():
                 try:
                     code, out, _ = companion.run_command(
-                        ['node', str(script), 'version'], None, 10, name
+                        # `--version` is the form both harness skills answer with one line.
+                        ['node', str(script), '--version'],
+                        None,
+                        10,
+                        name,
                     )
                     version = re.search(r'\b(\d+\.\d+\.\d+)\s*$', out.strip())
                     if code == 0 and version:

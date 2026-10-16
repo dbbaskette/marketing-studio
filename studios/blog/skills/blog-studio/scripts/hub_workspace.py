@@ -34,6 +34,13 @@ LOCAL_HISTORY = re.compile(
     r'|(?:review|editorial)-[A-Za-z0-9_.-]+\.json)'
 )
 SOURCE_ORIGINAL = re.compile(r'original(?:\.[A-Za-z0-9]+)?')
+# The shared research component's files travel with an article: harness-research's record and
+# report, the plan, the gate's report and saved public pages. Its snapshots of the article's
+# references (research/sources/) do not: they are rebuilt from the shared references.
+RESEARCH_FILES = re.compile(
+    r'\.harness-research/(?:research\.json|research-report\.md)'
+    r'|research/(?:plan\.json|plan\.md|report\.md|web/[0-9a-f]{64}\.md)'
+)
 HISTORY_FOLDERS = ('history/', 'revisions/', 'imported-history/')
 IMPORTED_PROFILE_RECORD = re.compile(r'(?:imported-history/)+revisions/[0-9]+/record\.json')
 
@@ -130,23 +137,30 @@ class Workspace:
             if path.is_symlink() or not path.resolve().is_relative_to(directory.resolve()):
                 raise HubError('Workspace artifacts must be regular contained files.')
             name = path.relative_to(directory).as_posix()
-            if name in ('record.json', 'session.json') or any(
-                part.startswith('.') for part in path.relative_to(directory).parts
+            research = group == 'articles' and bool(RESEARCH_FILES.fullmatch(name))
+            if name in ('record.json', 'session.json') or (
+                not research
+                and any(part.startswith('.') for part in path.relative_to(directory).parts)
             ):
                 continue
             # Share concrete writing artifacts, never incidental configuration or arbitrary local files.
             if group == 'articles':
-                allowed = name in (
-                    'DRAFT.md',
-                    'OUTLINE.md',
-                    'BRIEF.md',
-                    'ORIGINAL.md',
-                    'INTERVIEW.md',
-                    'DECISIONS.md',
-                ) or bool(
-                    re.fullmatch(
-                        r'(?:derived/[A-Za-z0-9_.-]+\.(?:md|json)|history/(?:draft|outline|brief|original|derived-[A-Za-z0-9_.-]+)-[A-Za-z0-9_.-]+\.md|history/(?:review|editorial)-[A-Za-z0-9_.-]+\.json)',
-                        name,
+                allowed = (
+                    research
+                    or name
+                    in (
+                        'DRAFT.md',
+                        'OUTLINE.md',
+                        'BRIEF.md',
+                        'ORIGINAL.md',
+                        'INTERVIEW.md',
+                        'DECISIONS.md',
+                    )
+                    or bool(
+                        re.fullmatch(
+                            r'(?:derived/[A-Za-z0-9_.-]+\.(?:md|json)|history/(?:draft|outline|brief|original|derived-[A-Za-z0-9_.-]+)-[A-Za-z0-9_.-]+\.md|history/(?:review|editorial)-[A-Za-z0-9_.-]+\.json)',
+                            name,
+                        )
                     )
                 )
                 allowed = allowed or bool(

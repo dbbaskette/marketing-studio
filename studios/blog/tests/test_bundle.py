@@ -223,7 +223,7 @@ class BundleTests(unittest.TestCase):
             'VERSION',
             'references/entry-flows.md',
             'references/modules/blog-deep-research.md',
-            'references/upstream/deep-research/LICENSE',
+            'scripts/studio_research/tools.py',
             'scripts/hub.py',
             'scripts/google_drive.py',
             'scripts/deep_research.py',

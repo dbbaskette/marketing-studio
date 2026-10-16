@@ -42,11 +42,12 @@ Apply [data boundaries](privacy.md) when borrowing upstream techniques.
 Original service examples are archival instructions, not installed integrations
 or authorization to send private content elsewhere.
 
-## Bundled deep research
+## Research
 
-[deep-research.lock.json](../deep-research.lock.json) pins Weizhena's MIT-licensed
-Deep Research skills. The five original workflows are immutable provenance,
-installed with the [Blog Studio adaptation](modules/blog-deep-research.md). JSON
-plans/results replace YAML and generated Python reports, so no PyYAML, new model
-provider, global agent configuration or additional executable installer is required.
+Research runs on the `harness-research` companion skill, the same runtime and
+evidence contract Training Studio and Presentation Studio use, pinned in
+the installer's `companions.json`. The
+[Blog Studio module](modules/blog-deep-research.md) adds the article's research
+policy, attached references and exact draft claims around it. harness-research
+credits the MIT-licensed Deep Research skills it grew from in its own NOTICE.
 Load only this conditional module for topic research or factual evidence gaps.

@@ -1,16 +1,40 @@
-"""Bounded, resumable blog research records. No network, models, or generated code."""
+"""Blog research through the shared research component, with Blog Studio's own rules.
 
-import json
-import re
-import uuid
+What a caller needs to know
+---------------------------
+    record = plan(root, ident, {'purpose', 'scope', 'items'})
+    record = record_result(root, ident, run, item_id, {'status', 'summary', 'limits', 'evidence'})
+    found = status(root, ident)
+
+- The research itself is studio_research's: harness-research keeps the record and report in
+  the article's .harness-research/ folder, the plan is research/plan.json and plan.md, and
+  the article's references are snapshots in research/sources/, which stay on this computer.
+- Blog Studio's rules are kept here: the article's research policy decides whether public
+  research is allowed; evidence comes only from references attached to the article at their
+  exact revision, which the plan was made with; fact-check claims match DRAFT.md exactly;
+  a planned reference with a newer revision makes the research stale.
+- A finding may carry harness-research's optional one-line `headline`.
+- Research saved by Blog Studio before it used harness-research (derived/research.json with
+  no .harness-research/) is reported stale and is planned again; its report stays where it
+  was. No network, models, or generated code here.
+"""
+
 from pathlib import Path
-import studio
+import re
 
-VERDICTS = ('supported', 'contradicted', 'insufficient', 'unavailable')
-SCOPE_LABELS = {
-    'supplied-only': 'Uploaded sources only',
-    'public-web': 'Uploaded sources plus external research',
-}
+import studio
+from studio_research import project
+
+VERDICTS = project.VERDICTS
+SCOPE_LABELS = project.SCOPES
+INPUTS = ('BRIEF.md', 'OUTLINE.md', 'DRAFT.md')
+LEGACY = ('derived', 'research.json')
+LEGACY_REPORT = ('derived', 'research-report.md')
+LEGACY_NOTE = (
+    'This research was saved before Blog Studio used harness-research. Plan it again to '
+    'continue; the earlier report is still at derived/research-report.md.'
+)
+RESULT_KEYS = {'status', 'summary', 'limits', 'evidence'}
 
 
 def nonempty(value, label, limit=4000):
@@ -19,95 +43,57 @@ def nonempty(value, label, limit=4000):
     return value
 
 
-def basis(directory):
-    return {
-        name: studio.artifact_fingerprint(directory, name)
-        for name in ('DRAFT.md', 'OUTLINE.md', 'BRIEF.md')
-    }
+def tool():
+    """The installed harness-research, found when research first needs it."""
+    return project.tool()
 
 
-def locations(directory):
-    return studio.inside(directory, 'derived', 'research.json'), studio.inside(
-        directory, 'derived', 'research-report.md'
-    )
+def references(root, record):
+    """Each reference attached to the article, at the revision it is pinned to, as the
+    documents the research component takes, keyed by (source_id, revision)."""
+    from hub_workspace import portable_origin
+
+    found = {}
+    for selected in record.get('sources', []):
+        if 'reference' not in selected.get('purposes', []):
+            continue
+        folder, source = studio.item(root, 'sources', selected['source_id'])
+        current = source['revision'] == selected['revision']
+        if not current:
+            folder = studio.inside(folder, 'revisions', str(selected['revision']))
+            source = studio.read_json(folder / 'record.json')
+        path = studio.inside(folder, 'content.md')
+        text = path.read_text() if path.is_file() else ''
+        origin = portable_origin(source['origin'])
+        found[(selected['source_id'], selected['revision'])] = {
+            'title': source['name'],
+            'origin': origin,
+            'text': text,
+            'status': source['status'],
+            'key': project.key(origin, text),
+            'current': current,  # False once the source has a newer revision than the pin
+        }
+    return found
 
 
-def literal(text):
-    return re.sub(r'([\\`*_{}\[\]<>!#|])', r'\\\1', text)
-
-
-def save(directory, record, value):
-    path, report = locations(directory)
-    if path.exists():
-        studio.atomic(
-            studio.inside(directory, 'history', 'editorial-research-' + uuid.uuid4().hex + '.json'),
-            path.read_bytes(),
-        )
-    if report.exists():
-        studio.atomic(
-            studio.inside(
-                directory, 'history', 'derived-research-report-' + uuid.uuid4().hex + '.md'
-            ),
-            report.read_bytes(),
-        )
-    studio.write_json(path, value)
-    pending = [i['id'] for i in value['items'] if i['id'] not in value['results']]
-    unresolved = [
-        i for i, r in value['results'].items() if r['status'] in ('insufficient', 'unavailable')
-    ]
-    lines = [
-        '# Research brief',
-        '',
-        'Scope: ' + SCOPE_LABELS[value['scope']] + '.',
-        '',
-        f'Completed: {len(value["results"])}/{len(value["items"])}.',
-        'Pending: ' + (', '.join(pending) or 'none') + '.',
-        'Unresolved: ' + (', '.join(unresolved) or 'none') + '.',
-        '',
-        'Research gathers evidence; the factual-support review evaluates the blog.',
-        '',
-    ]
-    for item in value['items']:
-        result = value['results'].get(item['id'])
-        lines += [
-            '## ' + item['id'],
-            '',
-            literal(item['question']),
-            '',
-            'Status: ' + (result['status'] if result else 'pending'),
-            '',
-        ]
-        if result:
-            lines += [literal(result['summary']), '', 'Limits: ' + literal(result['limits']), '']
-            for evidence in result['evidence']:
-                lines += [
-                    'Source: '
-                    + literal(evidence['name'])
-                    + ' ('
-                    + evidence['source_id']
-                    + ', revision '
-                    + str(evidence['revision'])
-                    + ')',
-                    'Origin: ' + literal(evidence['origin']),
-                    'Location: ' + literal(evidence['locator']),
-                    '',
-                    '> ' + literal(evidence['quote']).replace('\n', '\n> '),
-                    '',
-                ]
-    studio.atomic(report, ('\n'.join(lines) + '\n').encode())
+def keep(directory, record, answered):
+    """Remember where the research is, in the article's record."""
+    path = directory / project.RECORD
     record['research'] = {
-        'run': value['run'],
-        'path': 'derived/research.json',
-        'report': 'derived/research-report.md',
-        'sha256': studio.digest(path.read_bytes()),
+        'engine': 'harness-research',
+        'run': answered.get('run'),
+        'path': project.RECORD.as_posix(),
+        'plan': project.PLAN.as_posix(),
+        'report': project.HARNESS_REPORT.as_posix(),
+        'sha256': studio.digest(path.read_bytes()) if path.is_file() else None,
         'updated_at': studio.now(),
     }
     studio.persist(directory, 'articles', record)
     return record
 
 
-def plan(root, ident, supplied):
-    directory, record = studio.item(root, 'articles', ident)
+def check_plan(directory, record, supplied):
+    """Blog Studio's rules for a plan; returns the questions as the component takes them."""
     if not isinstance(supplied, dict) or set(supplied) != {'purpose', 'scope', 'items'}:
         raise ValueError('Research plan needs purpose, scope and items.')
     if supplied['purpose'] not in ('planning', 'fact-check') or supplied['scope'] not in (
@@ -128,6 +114,7 @@ def plan(root, ident, supplied):
         raise ValueError('Plan 1–30 focused research questions.')
     seen = set()
     draft = (directory / 'DRAFT.md').read_text() if (directory / 'DRAFT.md').is_file() else ''
+    questions = []
     for item in items:
         if not isinstance(item, dict) or set(item) != {'id', 'question', 'public_query', 'claim'}:
             raise ValueError(
@@ -163,33 +150,65 @@ def plan(root, ident, supplied):
                 raise ValueError(
                     'Claim does not match this draft. Refresh its wording and location.'
                 )
+            claim = {'file': 'DRAFT.md', 'quote': quote, 'start': claim['start']}
         if supplied['purpose'] == 'fact-check' and claim is None:
             raise ValueError('Fact-check questions must map to an exact draft claim.')
-    pin = basis(directory)
-    run = studio.digest(json.dumps([supplied, pin], sort_keys=True, ensure_ascii=False).encode())[
-        :24
+        questions.append(
+            {'id': key, 'question': item['question'], 'public_query': query, 'claim': claim}
+        )
+    return questions
+
+
+def plan(root, ident, supplied):
+    directory, record = studio.item(root, 'articles', ident)
+    questions = check_plan(directory, record, supplied)
+    sources = project.snapshot(directory, references(root, record).values())
+    handed = project.build_plan(
+        record['title'],
+        supplied['purpose'],
+        supplied['scope'],
+        questions,
+        sources,
+        [name for name in INPUTS if (directory / name).is_file()],
+    )
+    answered = project.save_plan(
+        directory, handed, allow_web=supplied['scope'] == 'public-web', research=tool()
+    )
+    return keep(directory, record, answered)
+
+
+def plan_from_draft(root, ident, text):
+    """Save a plan the guided run's worker drafted ({topic, items}), with Blog Studio's rules:
+    planning research, public queries only for a web-allowed article, the article's title as
+    its topic so a redrafted plan keeps the findings of unchanged questions."""
+    from studio_research import steps
+
+    _, record = studio.item(root, 'articles', ident)
+    draft = steps.draft_plan(text)
+    web = record.get('research_policy') == 'web-allowed'
+    items = [
+        {
+            'id': item['id'],
+            'question': item['question'],
+            'public_query': item['public_query'] if web else None,
+            'claim': None,
+        }
+        for item in draft['items']
     ]
-    path, _ = locations(directory)
-    if path.exists():
-        old = studio.read_json(path)
-        if old['run'] == run:
-            return record  # Resume without losing completed or unresolved results.
-    value = {
-        'schema': 1,
-        'run': run,
-        **supplied,
-        'inputs': pin,
-        'results': {},
-        'created_at': studio.now(),
-    }
-    return save(directory, record, value)
+    return plan(
+        root,
+        ident,
+        {'purpose': 'planning', 'scope': 'public-web' if web else 'supplied-only', 'items': items},
+    )
 
 
-def evidence(root, record, citation):
+def evidence(record, citation, attached, planned):
+    """One passage, checked against the attached reference it quotes, in the shape
+    harness-research records. As in every studio, research cites what it was planned with."""
     required = {'source_id', 'revision', 'quote', 'start', 'locator'}
     if not isinstance(citation, dict) or set(citation) != required:
         raise ValueError('Evidence needs source_id, revision, exact quote/start and locator.')
-    attached = next(
+    pinned = next(
         (
             s
             for s in record['sources']
@@ -197,50 +216,56 @@ def evidence(root, record, citation):
         ),
         None,
     )
-    if not attached or attached['revision'] != citation['revision']:
+    if not pinned or pinned['revision'] != citation['revision']:
         raise ValueError('Attach this exact source revision as a factual reference first.')
-    folder, source = studio.item(root, 'sources', citation['source_id'])
-    if source['revision'] != citation['revision']:
-        folder = studio.inside(folder, 'revisions', str(citation['revision']))
-        source = studio.read_json(folder / 'record.json')
-    content = studio.inside(folder, 'content.md').read_text()
+    reference = attached[(citation['source_id'], citation['revision'])]
+    if reference['key'] not in planned:
+        raise ValueError(
+            'This reference was attached after the research was planned. Plan the research again to include it.'
+        )
     quote = nonempty(citation['quote'], 'Evidence quote', 12000)
     start = citation['start']
     if (
         type(start) is not int
         or start < 0
-        or content[start : start + len(quote)] != quote
-        or source['status'] != 'ready'
+        or reference['text'][start : start + len(quote)] != quote
+        or reference['status'] != 'ready'
     ):
         raise ValueError('Evidence must quote an available, pinned reference passage exactly.')
     nonempty(citation['locator'], 'Evidence location', 1000)
-    from hub_workspace import portable_origin
-
     return {
-        **citation,
-        'name': source['name'],
-        'origin': portable_origin(source['origin']),
-        'content_sha256': studio.digest(content.encode()),
+        'file': (project.SOURCES / (reference['key'] + '.md')).as_posix(),
+        'title': reference['title'],
+        'origin': reference['origin'],
+        'quote': quote,
+        'start': start,
+        'locator': citation['locator'],
+        'source_id': reference['key'],
     }
 
 
 def record_result(root, ident, run, item_id, supplied):
     directory, record = studio.item(root, 'articles', ident)
-    path, _ = locations(directory)
-    value = studio.read_json(path)
-    if value['scope'] == 'public-web' and record.get('research_policy') == 'supplied-only':
+    saved = project.read_record(directory)
+    if saved is None:
+        raise ValueError('Plan the research before recording results.')
+    if saved.get('scope') == 'public-web' and record.get('research_policy') == 'supplied-only':
         raise ValueError(
             'This article is now limited to supplied sources. Refresh the plan with that scope.'
         )
-    if value['run'] != run or basis(directory) != value['inputs']:
+    attached = references(root, record)
+    project.snapshot(directory, attached.values())
+    research = tool()
+    current = project.status(directory, research)
+    if current['run'] != run or current['status'] == 'stale':
         raise ValueError(
             'Research plan changed or manuscript is stale. Refresh the plan before recording results.'
         )
-    if item_id not in {i['id'] for i in value['items']}:
+    if item_id not in {i['id'] for i in saved.get('items', [])}:
         raise ValueError('Unknown research item.')
     if (
         not isinstance(supplied, dict)
-        or set(supplied) != {'status', 'summary', 'limits', 'evidence'}
+        or not RESULT_KEYS <= set(supplied) <= RESULT_KEYS | {'headline'}
         or supplied['status'] not in VERDICTS
     ):
         raise ValueError('Result needs status, summary, limits and evidence.')
@@ -248,67 +273,53 @@ def record_result(root, ident, run, item_id, supplied):
     nonempty(supplied['limits'], 'Coverage limits', 4000)
     if not isinstance(supplied['evidence'], list) or len(supplied['evidence']) > 20:
         raise ValueError('Use at most 20 exact passages per item.')
-    citations = [evidence(root, record, c) for c in supplied['evidence']]
+    planned = project.planned(directory)
+    citations = [evidence(record, c, attached, planned) for c in supplied['evidence']]
     if supplied['status'] in ('supported', 'contradicted') and not citations:
         raise ValueError(
             'Supported/contradicted research requires a traceable passage; missing evidence stays unresolved.'
         )
-    value['results'][item_id] = {**supplied, 'evidence': citations, 'checked_at': studio.now()}
-    return save(directory, record, value)
+    answered = project.record(
+        directory, run, item_id, {**supplied, 'evidence': citations}, research
+    )
+    return keep(directory, record, answered)
 
 
 def status(root, ident):
     directory, record = studio.item(root, 'articles', ident)
-    path, report = locations(directory)
-    if not path.exists():
+    saved = project.read_record(directory)
+    if saved is None:
+        if studio.inside(directory, *LEGACY).is_file():
+            return {
+                'id': ident,
+                'status': 'stale',
+                'legacy': True,
+                'report': str(studio.inside(directory, *LEGACY_REPORT)),
+                'note': LEGACY_NOTE,
+            }
         return {'id': ident, 'status': 'not-started'}
-    value = studio.read_json(path)
-    stale = basis(directory) != value['inputs'] or studio.digest(path.read_bytes()) != record.get(
-        'research', {}
-    ).get('sha256')
-    stale |= value['scope'] == 'public-web' and record.get('research_policy') == 'supplied-only'
-    for result in value['results'].values():
-        for selected in result['evidence']:
-            try:
-                # Clone projections use different local IDs/revision numbers. Match the
-                # inspected content + origin against selected pins, never a newer body.
-                references = [v for v in record['sources'] if 'reference' in v['purposes']]
-                exact = [v for v in references if v['source_id'] == selected['source_id']]
-                candidates = exact or references
-                matched = []
-                from hub_workspace import portable_origin
-
-                for pin in candidates:
-                    folder, current = studio.item(root, 'sources', pin['source_id'])
-                    if current['revision'] != pin['revision']:
-                        continue
-                    if exact and pin['revision'] != selected['revision']:
-                        continue
-                    if (
-                        portable_origin(current['origin']) == selected['origin']
-                        and studio.digest(studio.inside(folder, 'content.md').read_bytes())
-                        == selected['content_sha256']
-                    ):
-                        matched.append(pin)
-                stale |= len(matched) != 1
-            except (ValueError, OSError):
-                stale = True
-    pending = [i['id'] for i in value['items'] if i['id'] not in value['results']]
-    unresolved = [
-        i for i, r in value['results'].items() if r['status'] in ('insufficient', 'unavailable')
-    ]
+    planned = project.planned(directory)
+    try:
+        attached = references(root, record)
+        project.snapshot(directory, attached.values())
+    except (ValueError, OSError):
+        attached = None  # a reference that cannot be read is a gap harness-research reports
+    found = project.status(directory, tool())
+    stale = found['status'] == 'stale' or attached is None
+    stale |= saved.get('scope') == 'public-web' and record.get('research_policy') == 'supplied-only'
+    stale |= any(r['key'] in planned and not r['current'] for r in (attached or {}).values())
+    scope = saved.get('scope')
     return {
+        **found,
         'id': ident,
-        'run': value['run'],
-        'status': 'stale' if stale else 'in-progress' if pending else 'complete',
-        'purpose': value['purpose'],
-        'scope': value['scope'],
-        'scope_label': SCOPE_LABELS[value['scope']],
-        'pending': pending,
-        'unresolved': unresolved,
-        'completed': len(value['results']),
-        'report': str(report),
-        'file': str(path),
+        'status': 'stale' if stale else found['status'],
+        'purpose': saved.get('purpose'),
+        'scope': scope,
+        'scope_label': SCOPE_LABELS.get(scope, scope),
+        'report': str(directory / project.HARNESS_REPORT),
+        'file': str(directory / project.RECORD),
+        'plan': str(directory / project.PLAN),
+        'engine': 'harness-research',
         'assessment': 'Research coverage only; does not mark the factual-support review current.',
     }
 

@@ -27,6 +27,9 @@ try:
 except ImportError:  # Windows is not a supported installation target.
     fcntl = None
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import companions  # noqa: E402  harness-research, as every studio installs it
+
 SOURCE_ROOT = Path(__file__).resolve().parents[1] / 'skills/blog-studio'
 MANIFEST = 'install-manifest.json'
 GENERATED = (MANIFEST, 'config.json')
@@ -921,6 +924,47 @@ def inspect(root, selected):
     return result
 
 
+def companion_report(selected):
+    """Each pinned companion and the version found beside each selected skill link."""
+    pins = companions.read_pins()
+    return {
+        name: {'wanted': pin['version'], 'found': companions.found(selected, name)}
+        for name, pin in pins.items()
+    }
+
+
+def bring_companions(args, root, selected):
+    """Bring harness-research at its pinned revision, as Training and Presentation Studio do.
+    Asked about unless --companions says otherwise; with no one to ask, none is brought."""
+    pins = companions.read_pins()
+    if args.companions == 'skip' or args.offline:
+        return {
+            name: {
+                'wanted': pin['version'],
+                'found': companions.found(selected, name),
+                'state': 'skipped',
+            }
+            for name, pin in pins.items()
+        }
+    interactive = sys.stdin.isatty() and not args.json and not args.yes
+
+    def agree(name, pin, found):
+        if args.companions == 'install':
+            return True
+        if not interactive:
+            return False
+        source = pin['repository'].removesuffix('.git')
+        return ask(
+            f'{name} {pin["version"]} does research for Blog Studio. Fetch it from {source} at '
+            'its pinned revision, check it and install it? [Y/n]: ',
+            'install',
+        ).lower() in ('', 'y', 'yes')
+
+    outcomes = companions.bring(args.home, root, selected, pins, agree)
+    args.companion_notes = companions.notes(pins, outcomes)
+    return outcomes
+
+
 def setup_summary(result):
     """Human setup status; placement and executable detection are not discovery."""
     tools = result['tools']
@@ -991,6 +1035,12 @@ def setup_summary(result):
             lines.append(row['label'] + ': ' + row['detail'])
             if row['next_step']:
                 lines.append('  ' + row['next_step'])
+    for name, row in (result.get('companions') or {}).items():
+        versions = ', '.join(
+            LABELS[agent] + ' ' + (version or ('unreadable' if version == '' else 'missing'))
+            for agent, version in row['found'].items()
+        )
+        lines.append(name + ' (pinned ' + row['wanted'] + '): ' + versions)
     if result.get('planned_changes'):
         lines.append(
             'Preview only: no installation changed. Run setup to install at the locations above.'
@@ -1079,6 +1129,12 @@ def main():
         action='store_true',
         help='Accepted for compatibility. Setup never uses the network; with --google-docs it skips Google sign-in.',
     )
+    parser.add_argument(
+        '--companions',
+        choices=('ask', 'install', 'skip'),
+        default='ask',
+        help='The companion skills (harness-research): ask about each (the default; with no one to ask, none is brought), install them, or skip them.',
+    )
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
@@ -1135,6 +1191,7 @@ def run(args):
         result = inspect(root, selected)
         if not args.dry_run:
             result['computer'] = computer_checks(args.source, home=args.home)
+        result['companions'] = companion_report(selected)
         if args.dry_run:
             result['planned_changes'] = {k: str(v) for k, v in selected.items()}
             result['package_verified'] = source_manifest(args.source)['version']
@@ -1251,6 +1308,9 @@ def run(args):
                     'next_step': 'Use sh installer/google-setup.sh --install-cli, then --login you@example.com. Drive read does not verify Docs writes.',
                 }
     if installing:
+        result['companions'] = bring_companions(args, root, selected)
+        result['companion_notes'] = getattr(args, 'companion_notes', [])
+    if installing:
         result['computer'] = computer_checks(args.source, home=args.home)
     if args.json:
         print(json.dumps(result, indent=2))
@@ -1292,6 +1352,8 @@ def run(args):
             print('  ' + row['label'] + ': ' + row['detail'])
             if row['next_step']:
                 print('    ' + row['next_step'])
+    for note in result.get('companion_notes', []):
+        print('Companion: ' + note)
     if result.get('google'):
         print('Google: ' + result['google']['status'])
         if result['google'].get('next_step'):

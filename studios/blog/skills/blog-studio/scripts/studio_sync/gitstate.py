@@ -109,6 +109,7 @@ IGNORED = (
     '**/history/google-*-native.json',
     '**/history/google-*-accepted.json',
     '**/.harness-research/guidance/',
+    '**/research/sources/',  # reference snapshots, written again from shared references
     '**/.harness-slides/guidance/',
     '*.lock',
     '**/.blog-studio/lock',

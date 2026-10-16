@@ -15,14 +15,18 @@ STATE = 'derived/blog-run.json'
 STAGES = {
     'research-plan': (
         'Research questions',
-        'derived/blog-research-plan.md',
-        'Plan focused research questions for the brief. Say what evidence is needed.',
+        'research/plan.md',
+        'Plan 1 to 30 focused research questions for the brief: the evidence the blog needs. '
+        'Return content as JSON only, with no other text: {"topic": "...", "items": [{"id": '
+        '"lowercase-id", "question": "...", "public_query": "generic public search words, or '
+        'null"}]}. Give public_query only when the research policy is web-allowed, and never '
+        'put private text, names or document titles in it.',
     ),
     'research': (
         'Research findings',
-        'derived/blog-research.md',
-        'Research the approved questions. Cite evidence, contradictions and unanswered questions. '
-        'With supplied sources only, use only those sources. Explicitly label missing evidence.',
+        'research/report.md',
+        'Research each approved question with the research tools; see the shared research '
+        'component (studio_research.steps.GUIDANCE).',
     ),
     'outline': (
         'Outline',
@@ -530,10 +534,30 @@ def submit(root, ident, stage, result, expected, page=False):
     if found['next'] != stage:
         raise ValueError('Finish the current stage before submitting another.')
     result = blog_worker.validate(result)
+    if stage == 'research-plan':
+        import deep_research
+
+        # The research component writes research/plan.md; that is the stage's document.
+        deep_research.plan_from_draft(root, ident, result['content'])
     directory, record, run = load(root, ident)
     pin = basis(root, directory, record, run, stage)
     filename = STAGES[stage][1]
-    if stage in ('outline', 'draft'):
+    if stage == 'research-plan':
+        result = {**result, 'content': studio.inside(directory, filename).read_text()}
+    elif stage == 'research':
+        import deep_research
+        from studio_research import project
+
+        # The stage's document is the shared research report, whoever did the research.
+        now = deep_research.status(root, ident)
+        if now['status'] in ('not-started', 'stale') or now.get('pending'):
+            raise ValueError(
+                'Record a current finding for every research question before handing in the '
+                'research stage.'
+            )
+        project.publish_report(directory)
+        result = {**result, 'content': studio.inside(directory, filename).read_text()}
+    elif stage in ('outline', 'draft'):
         studio.save_artifact(directory, stage, result['content'], record, 'guided run')
     else:
         path = studio.inside(directory, filename)
@@ -760,14 +784,17 @@ class Engine:
             directory, _, _ = load(self.root, ident)
             session = (directory / 'session.json').read_bytes()
         try:
-            result = self.worker(
-                found['engine'],
-                payload,
-                guidance,
-                seconds=found['seconds'],
-                web=found['next'] == 'research' and payload['research_policy'] == 'web-allowed',
-                stop=self.stop,
-            )
+            if found['next'] == 'research':
+                result = self.research(ident, found, payload, directory)
+            else:
+                result = self.worker(
+                    found['engine'],
+                    payload,
+                    guidance,
+                    seconds=found['seconds'],
+                    web=False,
+                    stop=self.stop,
+                )
             with studio.locked(self.root):
                 if self.stop.is_set() or self.closed.is_set():
                     return
@@ -795,6 +822,70 @@ class Engine:
                     self.keep_local(ident, state)
         finally:
             self.current = None
+
+    def research(self, ident, found, payload, directory):
+        """The research stage: one job per pending question, through the shared research
+        component, each worker given the research tools. Returns the stage's document."""
+        from studio_research import project, steps
+
+        def run_job(folder, guidance, task, command, web):
+            try:
+                self.worker(
+                    found['engine'],
+                    {'task': task, 'job': folder.name},
+                    guidance,
+                    seconds=found['seconds'],
+                    web=web,
+                    stop=self.stop,
+                    tools=command,
+                )
+            except ValueError:
+                if self.stop.is_set() or self.closed.is_set():
+                    raise steps.Stopped() from None
+                raise
+
+        saved = project.read_record(directory) or {}
+        questions = [item['id'] for item in saved.get('items', [])]
+        request = next(
+            (row['request'] for row in found['stages'] if row['stage'] == 'research'), ''
+        )
+        again = None
+        if request:  # asked for changes: the questions it names, else those left open
+            named = [
+                ident_
+                for ident_ in questions
+                if re.search(r'\b' + re.escape(ident_) + r'\b', request)
+            ]
+            status_now = project.status(directory)
+            again = named or status_now['unresolved'] + status_now['pending'] or questions
+        about = '\n'.join(
+            line
+            for line in (
+                'Title: ' + payload['title'],
+                'Brief: ' + json.dumps(payload['brief'], ensure_ascii=False)[:4000],
+                'Research: ' + payload['research_policy'],
+                ('Changes asked for: ' + request) if request else '',
+            )
+            if line
+        )
+        done = steps.research(
+            directory,
+            run_job,
+            studio.inside(self.root, '.blog-runs', 'research-jobs', studio.identifier(ident)),
+            about=about,
+            kind='blog post',
+            allow_web=payload['research_policy'] == 'web-allowed',
+            again=again,
+        )
+        if done['pending']:
+            raise ValueError(
+                f'Research stopped with {len(done["pending"])} question(s) left. Resume to continue.'
+            )
+        report = (directory / project.REPORT).read_text()
+        notes = f'{len(done["researched"])} question(s) researched'
+        if done['unavailable']:
+            notes += '; no finding for: ' + ', '.join(done['unavailable'])
+        return {'content': report, 'notes': notes + '.'}
 
     def sync_team(self):
         from team_workspace import refresh

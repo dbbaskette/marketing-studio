@@ -33,11 +33,31 @@ from the selected author voice: preserve that voice and its provisional or confi
 Do not infer company tone from a logo, palette or font. Never claim a brand audit was run."""
 
 
-def generate(engine, payload, guidance, seconds=600, web=False, stop=None):
+def tool_flags(engine, tools, web):
+    """How an agent is handed the research tools server (studio_research.tools.command), the
+    same flags every studio uses: nothing else is given, and web search only for public research."""
+    name = 'research'
+    if engine == 'codex':
+        return [
+            '-c',
+            f'mcp_servers.{name}.command=' + json.dumps(tools[0]),
+            '-c',
+            f'mcp_servers.{name}.args=' + json.dumps(list(tools[1:])),
+            '-c',
+            f'mcp_servers.{name}.default_tools_approval_mode="approve"',
+        ]
+    config = json.dumps({'mcpServers': {name: {'command': tools[0], 'args': list(tools[1:])}}})
+    allowed = [f'mcp__{name}'] + (['WebSearch'] if web else [])
+    return ['--mcp-config', config, '--allowedTools', ','.join(allowed)]
+
+
+def generate(engine, payload, guidance, seconds=600, web=False, stop=None, tools=None):
     """One process group, disposable working directory, bounded time and output.
 
     Workers have no shell, file tools or connected apps. Public research alone enables
-    the CLI's web search. Only the parent process can save a returned document.
+    the CLI's web search. Only the parent process can save a returned document. A research
+    job is given `tools`, the command that starts its research tools server, and nothing more:
+    what it hands back is in its job folder, not its last message.
     """
     if engine not in ('codex', 'claude'):
         raise ValueError('Choose Codex or Claude.')
@@ -59,6 +79,7 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None):
                 'web_search=' + json.dumps('live' if web else 'disabled'),
                 '-c',
                 'model_instructions_file=' + json.dumps(str(instructions)),
+                *(tool_flags(engine, tools, web) if tools else []),
                 '--ephemeral',
                 '--skip-git-repo-check',
                 '--sandbox',
@@ -79,8 +100,11 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None):
                 '--tools',
                 'WebSearch' if web else '',
                 '--strict-mcp-config',
-                '--mcp-config',
-                '{"mcpServers":{}}',
+                *(
+                    tool_flags(engine, tools, web)
+                    if tools
+                    else ['--mcp-config', '{"mcpServers":{}}']
+                ),
                 '--disable-slash-commands',
                 '--no-session-persistence',
                 '--output-format',

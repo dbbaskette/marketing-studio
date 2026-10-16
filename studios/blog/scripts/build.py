@@ -26,6 +26,8 @@ TOOLKIT = REPO / 'skills/blog-writing-toolkit'
 TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 INSTALLER_FILES = (
     'installer/Install Blog Studio.command',
+    'installer/companions.json',
+    'installer/companions.py',
     'installer/google-setup.sh',
     'installer/install.py',
     'installer/install.sh',

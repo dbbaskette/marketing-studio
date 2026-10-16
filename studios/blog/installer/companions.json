@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "companions": {
+    "harness-research": {
+      "repository": "https://github.com/dbbaskette/harness-research-skill.git",
+      "version": "0.8.1",
+      "commit": "d58d20dbbd0a51173cd122f223351eea66168cb0",
+      "sha256": "c9d15b03141585f86003ae3fb99b64bddd5b4639f4309a5e357d8cd1ff4db032",
+      "stub": "bootstrap/SKILL.md",
+      "installer": "scripts/install.mjs"
+    }
+  }
+}

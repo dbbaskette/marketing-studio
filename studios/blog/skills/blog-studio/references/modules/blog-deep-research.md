@@ -1,11 +1,14 @@
 # Deep research for a blog
 
 Load when the author chooses research during intake, says “Research this topic,”
-or requests a factual check with evidence gaps. Adapted from the pinned
-[Deep Research workflow](../upstream/deep-research/research/SOURCE.md).
-Blog Studio's wrapper supplies the working instructions; upstream files are
-provenance, not another process to execute. `deep_research.py` ships with this
-skill; the standalone research skills are not a prerequisite.
+or requests a factual check with evidence gaps. The `harness-research` skill does
+the research, as it does for Training Studio and Presentation Studio, through the
+same shared research component (`scripts/studio_research/`). Blog Studio hands it the
+article's plan and references and keeps its own rules around it.
+
+If `harness-research` is not installed, stop here and point to
+https://github.com/dbbaskette/harness-research-skill: the installer brings it
+(`installer/install.sh --companions install`). Nothing else may stand in for it.
 
 ## Select questions and scope
 
@@ -48,56 +51,49 @@ query means local/supplied evidence only. The helper rejects obvious URLs/paths
 but cannot classify confidentiality; the harness must review the actual query.
 If a safe question cannot be formed, record the gap rather than disclose it.
 
-## Start with uploaded and linked documents
+## Attach references before planning
 
-Use the article's supplied reference documents as research inputs before public
-lookup: uploaded Word/PDF/text files, pasted notes, Google Doc snapshots and
-linked pages. Read their selected exact revisions and relevant surrounding
-passages. Documents may establish facts, raise research questions, or contradict
-public sources. Keep both accounts and their version/date/context visible;
-do not automatically prefer a web result over the author's evidence.
-
-Normalize uploads through [source intake](blog-source-intake.md) and
-[source storage](../workspace/sources.md), preserving the original file and
-readable extraction. Attach them as `reference` when supplied for research.
+Research cites the references it was planned with. Attach every supplied
+document the research should use as a `reference` **before** saving the plan:
+uploaded Word/PDF/text files, pasted notes, Google Doc snapshots and linked
+pages, normalized through [source intake](blog-source-intake.md) and
+[source storage](../workspace/sources.md) with the original file kept.
 Manuscripts and voice samples need that role explicitly; they are not evidence
 merely because they were uploaded. Use only the selected article's documents
 and deliberately reused memory, not every file in the workspace.
 
-Cite a supplied document's filename/title, pinned source revision, exact passage
-and page/heading in the report, alongside any public citations. Private document
-text stays local/in the selected Hub; never send it to search or an external
-upload service. Unreadable scans or missing extraction remain pending/unavailable
-and are named as coverage gaps. Supplied-only research still writes its report
-when useful; it can finish with unresolved questions without public browsing.
+Saving the plan writes a readable snapshot of each attached reference to the
+article's `research/sources/` folder for harness-research to read. Those
+snapshots stay on this computer and are written again from the shared
+references wherever the article is opened. A reference attached after the plan,
+or a newer revision of a planned one, needs the plan saved again; the helper
+says so. Private document text stays local or in the selected team workspace;
+never send it to search or an external upload service. An unreadable reference
+is listed as a coverage gap.
 
-## Research in the existing harness
+## Research with harness-research
 
-Use available browsing/search tools to investigate one question at a time.
-Vary queries when useful, follow relevant citations, seek contrary evidence,
-and stop when the selected question is adequately answered or the gap is clear.
-Prefer official product documentation, release notes, reproducible benchmarks,
-maintainer statements and original papers. Read the supporting passage, not
-just a snippet. Distinguish experimental results from product promises; record
-version, date, test conditions and conflicting sources. A historical post may
-suggest a lead, but is not current product proof. Do not force a source quota.
+Load the `harness-research` skill and follow its guidance for investigating:
+one question at a time, the supporting passage rather than a snippet, contrary
+evidence, version, date and test conditions, and no source quota. Its
+[evidence contract](https://github.com/dbbaskette/harness-research-skill) is the
+one every studio uses. Intake here is settled: do not ask the author again about
+scope, sources or purpose. Do not present model knowledge as retrieved evidence.
 
-The current harness's tools and limits apply. Parallel research is optional
-only when authorized and available; sequential research remains functional.
-Do not install upstream agent configurations, select an upstream model, enable
-feature flags, create a separate API account or run generated report scripts.
-If browsing is unavailable, use readable supplied evidence and explicitly mark
-unresolved questions. Do not present model knowledge as retrieved evidence.
+Save through Blog Studio, not the harness-research helper directly, so the
+article's policy, references and claims are checked. Use the installed
+`studio.py --root <workspace>` prefix:
 
-## Retain results and resume
+- `research plan --id <id> --file <plan.json>` hands the plan to harness-research.
+  Repeating the same plan resumes it. A changed plan starts a new run; questions
+  defined exactly as before keep their findings when the topic, scope, sources
+  and inputs are unchanged, and harness-research keeps earlier runs in history.
+- `research record --id <id> --run <run> --item <question-id> --file <result.json>`
+  records one finding as soon as it is assessed.
+- `research status --id <id>` returns the run, pending and unresolved questions,
+  stale evidence, coverage gaps and the report path.
 
-Create the article before recording research; no draft is required for planning.
-Use the installed `studio.py --root <workspace>` prefix. `research plan --id <id>
---file <plan.json>` saves a bounded private plan, `research status --id <id>`
-returns its run ID, pending questions and report path. Repeating the same plan
-resumes results. A changed plan preserves the previous one in history.
-
-Plan JSON uses standard-library JSON instead of upstream YAML/PyYAML:
+Plan JSON:
 
 ```json
 {"purpose":"fact-check","scope":"public-web","items":[
@@ -109,42 +105,52 @@ Plan JSON uses standard-library JSON instead of upstream YAML/PyYAML:
 
 For planning use `purpose: "planning"` and `claim: null`; supplied-only uses
 `scope: "supplied-only"` and `public_query: null`. Offsets are Unicode character
-positions in the local Markdown, not Google UTF-16 indexes. Keep question IDs
-stable within a run. The helper checks claim matches, source spans and freshness;
-it does not execute searches or certify semantic truth.
+positions in DRAFT.md, not Google UTF-16 indexes. Keep question IDs stable.
+BRIEF.md, OUTLINE.md and DRAFT.md are pinned; changing one makes the research
+stale until the plan is saved again.
 
-Save each actually read source through [source storage](../workspace/sources.md)
-as `reference`, with original URL, title, retrieval date and readable text;
-retain originals when available. Attach the exact source revision to the article.
-Reuse a matching retained source rather than duplicate it. References remain
-available for later blogs through [reference memory](../workspace/reference-memory.md).
-A generated brief is a navigation aid, not independent factual evidence.
-
-Record each question with `research record --id <id> --run <run> --item <question-id>
---file <result.json>`. Results use this shape:
+Result JSON:
 
 ```json
-{"status":"supported","summary":"What the inspected source establishes",
+{"status":"supported","headline":"One line giving the answer",
+ "summary":"What the inspected source establishes",
  "limits":"Version/date/method and remaining coverage limits",
- "evidence":[{"source_id":"selected-source-id","revision":1,
+ "evidence":[{"source_id":"attached-source-id","revision":1,
    "quote":"exact inspected source passage","start":0,"locator":"Heading or page"}]}
 ```
 
-States are `supported`, `contradicted`, `insufficient`, `unavailable`. Supported
-and contradicted require exact passages from attached factual references.
-Preserve uncertain questions in the readable report; never omit them to produce
-an apparently complete answer. Inspect `research status` and skip completed
-questions only when current. Draft/outline/brief changes or changed source pins
-stale the record; replan and reassess rather than silently reuse it.
+States are `supported`, `contradicted`, `insufficient`, `unavailable`;
+`headline` is optional. Supported and contradicted require exact passages from
+attached factual references. Save each public source actually read through
+[source storage](../workspace/sources.md) as a `reference` with its original URL,
+title, retrieval date and readable text, attach it, and save the plan again
+before citing it. Preserve uncertain questions in the report; never omit them to
+produce an apparently complete answer.
 
-The report is automatic: every recorded finding refreshes the readable brief,
-including citations, coverage limits, completed/pending counts and unresolved
-questions. At the end, return its link and a short synthesis without requiring
-a separate report prompt. Do not run the upstream report generator.
+## Guided runs on the page
 
-The helper stores `derived/research.json` and `derived/research-report.md`, retains
-history, and uses normal selected-Hub saves. It never changes the manuscript or
-marks a review passed. After gathering evidence, apply
-[factual support](blog-fact-check.md) to each original claim, keeping supported,
-contradicted and unsupported findings with exact citations and exclusions.
-Offer wording changes separately; research does not authorize Google posting.
+A guided run researches the same way. Its research-questions stage drafts the
+plan as JSON (`{"topic", "items": [{"id", "question", "public_query"}]}`), saved
+as `research/plan.json` and shown as `research/plan.md`. Its research stage gives
+each pending question one worker with the shared research tools (read and search
+the article's references, save a public page only when the article is
+`web-allowed`, hand back one checked finding), records each finding as it is
+accepted, and shows `research/report.md` at the gate. A question with no finding
+after three tries is recorded as unavailable. Handing in the research stage in
+chat needs a current finding for every question, recorded as above.
+
+## The report and after
+
+harness-research keeps the record in `.harness-research/research.json` and
+refreshes `.harness-research/research-report.md` on every save, with citations,
+coverage limits, counts and unresolved questions; `research/report.md` is the copy
+the research gate shows. Before handing research on,
+run `research status`, open the report and confirm no question in scope is
+pending. Return its link and a short synthesis. Research saved by Blog Studio
+before it used harness-research is reported stale; plan it again.
+
+Research never changes the manuscript or marks a review passed. After gathering
+evidence, apply [factual support](blog-fact-check.md) to each original claim,
+keeping supported, contradicted and unsupported findings with exact citations
+and exclusions. Offer wording changes separately; research does not authorize
+Google posting.
