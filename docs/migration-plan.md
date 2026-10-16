@@ -49,5 +49,6 @@ The shared Tart wrapper owns VM lifecycle and retains environment/test logs.
   rollback, failed-install restoration, active-work refusal, and content retention.
 - Additional authorized scope: generated README header, first-run documentation,
   and a simple CLI with private reuse of the running application.
-- Full native suites, clean-machine verification, and external cutover remain the
-  final gates before old repository retirement.
+- Full native suites and clean-machine verification passed. The complete evidence
+  is in `verification-v4.0.0.md`. Publication precedes issue transfer and retirement;
+  the final cutover record identifies the transferred issues.
