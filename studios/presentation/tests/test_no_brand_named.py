@@ -17,7 +17,8 @@ import helpers
 NAMED = re.compile(r'(?i)t\x61nzu|vmw\x61re|bro\x61dcom')
 
 
-@unittest.skipUnless(shutil.which('git') and (helpers.REPO / '.git').exists(),
+@unittest.skipUnless(shutil.which('git') and any((folder / '.git').exists()
+                            for folder in (helpers.REPO, *helpers.REPO.parents)),
                      'only a copy of the repository has its files listed by git')
 class NoBrandNamedTests(unittest.TestCase):
     def test_no_tracked_file_names_a_brand(self):
