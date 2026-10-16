@@ -1,0 +1,138 @@
+# Visual teaching in Training Studio decks
+
+Make technical training decks explain concepts through diagrams, approved icons, and useful images. Harness Slides owns design, asset handling, compilation, and creative review. Training Studio supplies teaching requirements, presents decisions, and tracks approved inputs and outputs.
+
+Status: in progress. Harness Slides released the design contract in 0.14.0 and 0.14.1 (its #46 to #51, #59, #64 and #67). Training Studio proposes copy and visuals together at the outline gate, where the installed Harness Slides can take them (#43), and draws each section from the approved design and builds it against it (#44). It records the icons a design names before any section is drawn, takes the person's pictures on the page, gives composers narrow asset tools, and makes what is drawn stale when an asset changes (#45). Where the installed Harness Slides lists `compose-review`, such a deck is reviewed against its design by Harness Slides' own assessment, a drawing finding is repaired, and one that needs other words or another concept goes back to the outline gate (#46). A new deck needs Harness Slides' design, section, asset and review capabilities; a deck begun before carries on as it began, and is drawn again from a design only when the person asks; what 0.14.1 lists beyond 0.14.0 is used where it is listed (#47).
+
+## Evidence and intended outcome
+
+The Kubernetes Operators 101 deck inspected on October 14 has 36 slides, 200 text nodes, 50 boxes, zero icon nodes, and zero image nodes in its saved composition. Its compiled structure has 35 connectors. Database, cloud, and Kubernetes icon searches succeed against the installed brand library. The omission already exists in the authored composition.
+
+Training Studio makes icons optional, freezes every approved point as visible wording, and exposes no image acquisition tool to section composers. Its review asks whether existing images and icons explain something, without requiring consideration of a visual explanation. It passes selected composition guidance to workers rather than invoking the full design workflow.
+
+Harness Slides 0.13.1 already includes design proposals and approvals, asset needs in deck plans, image commands, and creative review records. Reuse those facilities before adding new formats or commands. Check the exact compatibility of these facilities with section composition; their presence does not establish that they work together today.
+
+Success means a learner can see the mechanism being taught. For example, a reconciliation slide shows desired state, observation, and corrective action; an architecture slide shows containment and ownership accurately. A text slide remains appropriate for a question or quotation. Neither icon counts nor layout variety alone establish success.
+
+## Ownership
+
+| Repository | Responsibility |
+| --- | --- |
+| `harness-slides-skill` | Visual proposals, design approval bindings, asset requests and resolution, compiler support, native output, creative review, reusable fixtures and guidance |
+| `training-studio` | Teaching inputs, worker adapters, browser approval, orchestration, dependency checks, staleness, recovery and training coverage |
+| `tanzu-brand` | Approved icon library, templates, brand tokens and brand compliance; change only if a reproducible brand interface defect is found |
+
+Training Studio remains Python 3.11+ with standard library dependencies only. Core status and check commands remain offline. Do not embed slide design algorithms, image generation, or research logic in this repository.
+
+## Milestone 1 Establish the integration contract
+
+- [ ] Work from source checkouts of both repositories; inspect their local working agreements. Keep installed packages unchanged during development.
+- [ ] Trace `deck contract/inspect/compile`, `design propose/status/check/respond/present`, image commands, composition compilation, native icon placement and creative review. Record which path supports each required operation and which combinations are unsupported.
+- [ ] Choose one canonical Harness Slides design record for this integration. Prefer an adapter to the existing design session over a second approval model or an independently interpreted proposal in Training Studio.
+- [ ] Define the boundary between required teaching meaning, approved visible copy, and presenter notes. Copy may be shortened while preparing a proposal, preserving sourced meaning and qualifications; after approval, visible wording remains fixed until the person approves a revision.
+- [ ] Define the versioned handoff: slide ID, objective IDs, claim, visible copy, required qualifications, notes, proposed visual and its teaching purpose, concrete asset candidates, selected treatment, alternative considered, and rationale when direct text is appropriate. Reuse existing fields where possible.
+- [ ] Define the response shape for unresolved assets, missing providers and failed design validation. A missing optional provider can lead to a revised native diagram proposal; it must not silently replace an approved visual with text.
+- [ ] Add a compatibility fixture in each repository for the same handoff and refusal cases. Set the minimum compatible runtime only after the commands and schemas are implemented and released.
+
+Acceptance: an integration test can propose and validate one architecture slide, one reconciliation slide and one justified text slide through public Harness Slides interfaces. This test establishes the chosen route before migrating the whole runner.
+
+## Milestone 2 Plan visuals before approval
+
+- [ ] In Harness Slides, reuse or extend the design proposal to include concrete asset candidates and a supported treatment for each teaching claim. Consider diagrams, approved icons, screenshots, charts with sourced data, supplied images, generated illustrations and direct text according to the subject.
+- [x] In Training Studio, replace the text-only outline review with a combined copy and visual proposal at the existing outline gate. Show proposed visible copy, a wireframe or sufficiently concrete visual description, asset candidates, important caveats and any unresolved needs.
+- [x] Keep one outline decision for the person. Record that decision against the exact copy and design revision in Harness Slides, through an adapter that accepts actual page decisions rather than simulated worker approval.
+- [x] Separate learning requirements from verbatim slide copy during drafting. Preserve objective coverage and source qualifications while moving explanation into notes where the visible diagram remains understandable by itself.
+- [x] Carry the approved design and selected assets into every section brief. Retain the deck direction and shared concept-to-icon mapping across sections.
+- [x] Remove wording that makes visuals an afterthought. Keep relevance requirements and the freedom to choose direct text when it best teaches the claim.
+
+Likely Training Studio files: `runner/briefs/deck-outline.md`, `runner/briefs/deck-section.md`, `runner/deck.py`, `runner/pipeline.py`, `runner/engine.py`, `runner/slides.py`, the outline review controls and their server handlers.
+
+Acceptance: the outline review visibly proposes a Kubernetes architecture treatment and a reconciliation treatment. Approval binds both copy and design. Workers cannot substitute a different teaching concept without returning for revision.
+
+## Milestone 3 Give composers usable assets
+
+- [ ] Add only the Harness Slides capabilities missing from milestone 1. Prefer existing composition primitives when they can realize the approved design; do not migrate to a different compiler merely to obtain a new schema.
+- [x] Resolve and record relevant approved icons before section authoring. Share stable IDs for recurring concepts; retain icon search for refinements. Repeated actors in a diagram may reuse their identifying icon when that improves comprehension.
+- [x] Add narrowly scoped worker tools for listing approved assets and requesting or resolving assets through Harness Slides. Keep provider execution, file handling, provenance and generated-image metadata in Harness Slides.
+- [ ] Make assets usable from compilation and preview directories through stable asset identifiers and managed paths. Preserve alt text, source or generation provenance, hashes and any applicable usage restrictions.
+- [x] Reuse Harness Slides' existing provider configuration and setup reporting. Do not invent a second credential store in Training Studio. Report missing configuration with the affected asset request.
+- [x] Include asset files and their hashes in the section and deck input fingerprints. Fail with a clear missing-asset response when a required approved asset cannot be resolved.
+- [ ] Verify native icon geometry and editable diagram objects survive both PPTX and Google delivery. Raster illustrations remain images; record their provenance and inspect their final rendering.
+
+Likely Training Studio files: `runner/worker_tools.py`, `runner/slides.py`, `runner/brand.py` only if its adapter needs changes, `runner/pipeline.py`, `runner/engine.py` and their targeted tests.
+
+Acceptance: an integration fixture uses an approved icon and a supplied image, compiles them, and verifies them in native output. A separate configured acceptance run exercises generated artwork. Missing providers and missing files produce specific recoverable results.
+
+## Milestone 4 Review whether visuals teach
+
+- [ ] In Harness Slides, extend the creative assessment only where existing checks do not cover it: whether the treatment explains the claim, whether relationships and ownership are accurate, whether a useful asset candidate was considered, and whether the result fulfills the approved design.
+- [ ] Detect a technical explanation delivered entirely as prose cards as a prompt for semantic review. The reviewer must explain the teaching defect; the mere presence of boxes or absence of icons is not a failure.
+- [ ] Add report fields distinguishing asset failures, design deviations, visual teaching problems, fit defects and intentional direct-text treatments.
+- [x] In Training Studio, pass the canonical assessment to reviewers and display its actionable findings. Keep design judgments in Harness Slides and the review response, rather than implementing a second visual scorer in Python.
+- [x] Repair the affected sections when the approved concept can be preserved. A proposed change to copy, factual relationships or visual concept returns to the outline gate.
+- [x] Bind creative review to the rendered deck, approved design revision and resolved assets. Changed inputs invalidate the relevant receipts.
+
+Acceptance: a prose-card rendering of a reconciliation mechanism receives a specific teaching finding. A clear reconciliation diagram passes that criterion. A justified direct-text knowledge check is accepted without decorative graphics.
+
+## Milestone 5 Recovery and release
+
+- [x] Implement the state transitions below and named tests alongside each behavior change. Link these additions from the existing core pipeline plan and update its matrix where artifact inputs change.
+- [x] Existing approved decks stay readable and retain their approvals. Offer an explicit redesign action; do not silently rebuild them after an upgrade.
+- [x] Retain existing runtime and guidance pins for in-progress work. Adopting the new workflow is explicit and invalidates only the decisions and outputs affected by that adoption.
+- [x] Report compatibility at the Status screen before starting a deck, including missing brand export/check commands and required Harness Slides interfaces. Avoid relying on a brand listing or version number alone as proof of compatibility.
+- [x] Release Harness Slides first. Then update Training Studio's minimum Slides version, companion installer revision and wrapper tests to that verified release.
+- [x] If Training Studio guidance requires new helper behavior, bump `skills/training-studio/VERSION` and `guidance/manifest.json` minimum runtime together. Keep guidance within its current disclosure budgets and harness-neutral.
+- [x] For every changed training artifact format, update checker, tests, example and guidance together. Keep slide-specific schemas and canonical examples in Harness Slides.
+
+The minimum is said by capability, not by version. `runner/slides.py` keeps `MINIMUM` at 0.13.1, the oldest runtime a deck already begun keeps working with, and names in `NEEDED` what a new deck needs: `design-schema-2`, `design-batch`, `json-refusals`, `compose-section`, `assets` and `compose-review`. `RELEASE`, 0.14.1, is what a person is told to update to; a test holds it to the installer's pin. Raising `MINIMUM` instead would refuse 0.13.1 outright and strand decks begun there, and Harness Slides' contract says a version number does not say what a build supports. Training Studio's own guidance does not change, so `minimum_runtime` stays where it is.
+
+## State transition matrix
+
+These rows are implementation requirements, not new public status names. Map them to the existing state model and add new names only where necessary.
+
+Implemented: every row, each a test of its name in Training Studio's `tests/test_runner_deck.py` (`DesignTests`). They map to the runner's own outline gate: "awaiting review" is `waiting` in the run record with the design's revision and question, and "approved" is `approved` holding the outline's hash and the design's hash and revision. V05, V06 and V07 are tests of their names in `AssetTests` there: "waits" is the run's problem in state `waiting`, which `waits` for assets, with the approval and the start kept; "resolving" is a picture supplied on the page, or the run tried again, after which it carries on with one reply sent to the tool; and "stale" is a section, round or saved deck whose recorded asset fingerprint no longer matches the file. V04 and V14 map to the deck's start and its sections: "the approval holds" is `approved` and the tool's revision unchanged with nothing sent to the tool, and "stops" is the run's `stopped` problem with the approval kept. V04, V08 and V09 are also tests of their names in `JudgedTests` there, for a deck the slides tool reviews against its design: "the existing repair flow within its limits" is a section drawn again for a grave finding about `drawing`, at most `deck.REPAIRS` rounds, the approval unchanged and the deck rendered and assessed again; and "return to the outline review" is the approval moved into the run record's `returns`, with the findings that need other words or another concept, and the outline put to the person again, once for each start. V10, V11 and V12 are tests of their names in `CompatibleTests` there. A "legacy deck" is one whose outline was written without a design, which the run record says; "pinned in-progress training" is one whose deck began on an older slides tool, whose start keeps how it is drawn, together with the session's own pins. "Person chooses redesign" is `POST /api/redesign` after the page's confirmation: the outline, its approval and the deck saved are moved to the deck's `history` in the run record, the outline's file is copied under `deck/history/`, and the outline is written again with its design and put to the person; the core keeps the deck it replaces when the new one is saved. "Setup reports deck capability missing" is `update` in what the engine says a deck needs, read from what `version` lists, which holds back only a training none of whose decks has begun; "checks again" is `look_again`. The milestone 4 spec says how, for [the outline gate](../specs/2026-10-13-milestone-4-slides.md#the-outline-gate-with-a-design), for [the sections](../specs/2026-10-13-milestone-4-slides.md#sections-built-from-the-approved-design) and for [the review](../specs/2026-10-13-milestone-4-slides.md#the-review-against-the-approved-design).
+
+| Row | Starting condition | Event | Required result and test |
+| --- | --- | --- | --- |
+| V01 | Copy and visual proposal awaiting review | Person approves exact revision | Copy and design approval are recorded together; construction becomes eligible; `test_visual_01_approval_binds_copy_and_design` |
+| V02 | Proposal awaiting review | Worker attempts approval | Refused; only the person's page decision can approve; `test_visual_02_worker_cannot_approve` |
+| V03 | Proposal approved | Visible copy, claim or visual concept changes | Affected approval and downstream outputs become stale; proposal returns for review; `test_visual_03_design_change_requires_review` |
+| V04 | Proposal approved | Layout fit repair preserves approved concept and wording | Existing design approval holds; render and assessment are regenerated; `test_visual_04_fit_repair_preserves_design` |
+| V05 | Required asset unresolved | Provider unavailable or file missing | Construction waits with a specific explanation; saved work and approval remain; `test_visual_05_missing_asset_waits` |
+| V06 | Waiting for asset | Correct asset is resolved | Affected work becomes runnable; no duplicate approval; `test_visual_06_asset_resolution_resumes` |
+| V07 | Deck compiled or reviewed | Resolved asset content changes | Affected build and rendered review become stale; changed visual content requires design review when material; `test_visual_07_asset_change_invalidates_build` |
+| V08 | Deck reviewed | Creative assessment finds a drawing defect | Affected section enters existing repair flow within its limits; `test_visual_08_drawing_finding_repairs_section` |
+| V09 | Deck reviewed | Repair requires changing approved content or concept | Return to the outline review instead of silently changing it; `test_visual_09_content_change_returns_to_outline` |
+| V10 | Legacy deck or pinned in-progress training | New runtime installed | Existing output, approvals and saved runtime pins remain valid; `test_visual_10_upgrade_preserves_existing_work` |
+| V11 | Legacy workflow in progress | Person chooses redesign | Preserve previous artifacts; create proposal in the new workflow and invalidate affected outputs; `test_visual_11_explicit_redesign_migrates` |
+| V12 | Setup reports deck capability missing | Compatible runtime installed and person checks again | Readiness refreshes; eligible waiting work resumes through existing scheduling rules; `test_visual_12_compatibility_refresh` |
+| V13 | Proposal waiting for review | Person submits a decision for an older revision | Refused; current proposal and approvals remain unchanged; `test_visual_13_stale_decision_refused` |
+| V14 | Design approved; installed Harness Slides cannot check a section against it | Deck construction starts | Stops with a request to update; the approval is kept and nothing is built; once the tool can, trying again builds without asking again; `test_visual_14_sections_need_a_tool_that_checks_them_against_the_design` |
+
+## Verification and acceptance
+
+Run targeted tests at each milestone. Harness Slides tests cover proposal records, compilation, assets, review and native preservation. Training Studio tests cover wrappers, worker tool permissions, approval controls, state transitions, coverage, recovery and compatibility. Its automated suite uses temporary directories and stand-ins, without network, live models or external accounts.
+
+Run each repository's full required suite once after implementation is complete. For Training Studio also run `python3 skills/training-studio/scripts/validate_package.py`; use Python 3.11 or newer. A documentation-only edit to this plan needs a diff and link review, not the full suite.
+
+Use disposable acceptance directories outside this repository. Copy selected approved teaching requirements from the Kubernetes Operators training for a before-and-after comparison; do not overwrite the live training. First run a four-slide vertical slice, then the complete deck after the slice succeeds.
+
+| Acceptance example | What must be visible |
+| --- | --- |
+| Operator architecture | Kubernetes and workload actors identified; containment and control relationships accurate; approved icons used where they help recognition |
+| Reconciliation | Desired state, observed state and corrective action visibly connected; direction and qualification supported by the teaching sources |
+| Responsibility boundaries | Ownership or scope visibly separated without invented dependencies or nesting |
+| Knowledge check | Readable question and choices; direct text allowed when it serves the assessment |
+| Supplied screenshot or useful illustration | Correct asset, readable scale, alt text and provenance; required caveat retained |
+
+Inspect every slide in final native PPTX and Google previews. Confirm editable diagrams, icon preservation, no missing assets, no invented claims, and objective coverage. Compare the selected examples with the original treatment and record why the new form makes the concept easier to understand. Asset counts are diagnostic, never a quota. Final visual acceptance belongs to the person reviewing the deck.
+
+## Delivery order
+
+1. Publish the shared interface and the three-slide contract fixture.
+2. Deliver one vertical slice: proposal, page approval, approved icon, native diagram, render and creative review.
+3. Add supplied images and the existing generated-image route, including missing-provider recovery.
+4. Complete staleness, migration, setup compatibility and release checks.
+5. Rebuild the disposable acceptance deck and review it before offering redesign of the live training.
+
+Expected changes are two coordinated releases. Tanzu brand needs another release only if acceptance reveals an actual brand adapter defect.
