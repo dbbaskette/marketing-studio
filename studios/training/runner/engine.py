@@ -193,6 +193,7 @@ from pathlib import Path, PurePosixPath
 import runner  # noqa: F401  puts the core on the import path
 import computer
 import home
+from studio_core import model_profiles, review_policy, research_contract
 import hub
 import workspace
 from workspace import WorkspaceError
@@ -342,10 +343,14 @@ def read_record(root: Path) -> dict | None:
     if not path.is_file():
         return None
     record = home.read_json(path, None)
-    if not isinstance(record, dict) or record.get('schema') != SCHEMA \
+    if not isinstance(record, dict) or record.get('schema') not in (SCHEMA, 2, 3) \
             or not isinstance(record.get('steps'), dict):
         raise WorkspaceError(f'The run record in {root.name} cannot be read, so the runner '
                              'will not drive this training.')
+    if record.get('schema') == 2 and not record.get('review_policy'):
+        raise WorkspaceError('This run is missing its saved review level. Restore its run record.')
+    if record.get('schema') == 3 and (record.get('research_contract') or {}).get('schema') != 2:
+        raise WorkspaceError('This run is missing its saved research contract. Restore its run record.')
     return record
 
 
@@ -354,8 +359,13 @@ def new_record(agent: str, model: str | None, chosen: settings.Settings,
     """A run record for a training that is starting. `scope` is where its research may
     look: anything but the public web alone waits for the person's documents first.
     `effort` is the reasoning level every worker is given; None for the agent's own."""
+    try:
+        profiles = model_profiles.capture(agent, model, effort, settings.check_effort)
+    except ValueError as error:
+        raise WorkspaceError(str(error)) from error
     supplied = None if scope == pipeline.SCOPE else {'scope': scope, 'done': None, 'count': 0}
     return {'schema': SCHEMA, 'agent': agent, 'model': model, 'effort': effort,
+            'model_profiles': profiles, 'review_policy': review_policy.capture(),
             'started_at': home.now(),
             'limits': {'step_seconds': chosen.step_seconds,
                        'training_dollars': chosen.training_dollars},
@@ -486,7 +496,10 @@ class _Run:
         self.workers: dict[str, dict] = {}
 
 
-class Engine:
+from runner.reviews import Reviewing
+
+
+class Engine(Reviewing):
     """Drives every training in this computer's workspace."""
 
     def __init__(self, adapters=None, research=None, background: bool = True,
@@ -911,6 +924,20 @@ class Engine:
             root = pipeline.create(space, form)
             try:
                 record = new_record(agent, model, chosen, form['source_scope'], effort)
+                if review_policy.level(record) != 'step_by_step':
+                    record['schema'] = 2
+                try:
+                    contract = research_contract.snapshot(self.research())
+                except WorkspaceError:
+                    contract = None
+                if contract:
+                    record['research_contract'] = contract
+                    record['schema'] = 3
+                session = workspace.load(root)
+                if contract:
+                    session['research_contract'] = contract
+                session['review_policy'] = record['review_policy']
+                workspace.store(root, session)
                 record['driver'] = team.claim(space)
                 self._tried(record, 'intake', home.now(), 0.0, 'kept')
                 self._store(root, record)
@@ -924,7 +951,8 @@ class Engine:
         needs = self.deck_needs()
         drawn = bool(form['deck_target'] and form['brand']) and not needs['missing'] \
             and not needs['update']
-        return {'path': str(root), 'id': root.name, 'gates': pipeline.gates(form, drawn)}
+        return {'path': str(root), 'id': root.name, 'gates': (pipeline.gates(form, drawn) if review_policy.level(record) == 'step_by_step'
+                                                        else 2 if review_policy.level(record) == 'balanced' else 1)}
 
     def _claimed(self, root: Path, space: gitstate.Workspace) -> None:
         """Share the claim a new training was committed with, before any work is done
@@ -1089,6 +1117,15 @@ class Engine:
                     return  # someone else drives it, or nobody does
                 found = self._survey(root, record)
                 step = found.next
+                if not self._resting(record) and step.kind in ('gate', 'wait', 'outline') \
+                        and review_policy.automatic(record, 'training', step.step.id):
+                    if pipeline.bare(step.step.id) == 'gate:deck-outline':
+                        if step.kind == 'gate':
+                            self._ask(root, run, found, step)
+                        self._policy_outline(root, self._survey(root, self._load(root)))
+                    else:
+                        self._policy_accept(root, step.step)
+                    continue
                 if self._resting(record) or step.kind not in (*WORK, 'deck'):
                     return
                 if self._away(found) and step.step.id != 'package':
@@ -1125,6 +1162,8 @@ class Engine:
 
     def _do(self, root: Path, run: _Run, found: pipeline.Survey,
             step: pipeline.Next) -> None:
+        if step.step.id.startswith('review-sample'):
+            return self._review_sample(root, found, step.step)
         drawing = DECK.get(pipeline.bare(step.step.id)) if step.step.stage == 'deck' else None
         if drawing:
             getattr(self, drawing)(root, run, found, step)
@@ -1173,6 +1212,7 @@ class Engine:
                tokens: int | None = None) -> dict:
         """Note one try at a step in a record. A try that worked clears the count of
         failures; one that failed adds to it."""
+        model_profiles.complete(self, record, step, started_at)
         entry = record['steps'].setdefault(step, {'failed': 0, 'attempts': []})
         entry['attempts'].append({
             'started_at': started_at, 'ended_at': home.now(), 'seconds': round(seconds, 1),
@@ -1793,7 +1833,7 @@ class Engine:
             recorded = pipeline.recorded(root, level)
         # A tool that places a recorded icon by its asset ID has its composers place it so.
         by_asset = recorded is not None and self._has('compose-icon-assets')
-        words = [f"Approved on the page, {approved['at']}."]
+        words = [f"{'Continued under the saved review level' if approved.get('by') == 'review-policy' else 'Approved on the page'}, {approved['at']}."]
         words += [approved['note']] if approved.get('note') else []
         try:
             listed = home.read_json(work / mine.built['brand']['told'] / 'layouts.json', {})
@@ -2406,7 +2446,11 @@ class Engine:
         if root is None:
             raise WorkspaceError('No run is driving this training.')
         session, within = workspace.load(root), root
-        if artifact is not None:
+        if section == 'review-sample' and artifact is not None:
+            if artifact not in workspace.artifact_names(root, session) or workspace.split(artifact)[0] != 'deck' or number != 1:
+                raise WorkspaceError('That is not a sample of this training.')
+            file = pipeline.place(root, workspace.split(artifact)[1], 'work/review-sample/sample.png')
+        elif artifact is not None:
             if artifact not in workspace.artifact_names(root, session) \
                     or workspace.split(artifact)[0] != 'deck':
                 raise WorkspaceError('That is not a slide deck of this training.')
@@ -2487,10 +2531,15 @@ class Engine:
         with self._lock:
             run.workers[step.id] = {'label': step.doing, 'started_at': started_at,
                                     'lines': lines, 'folder': folder}
+        choice = None
         try:
+            choice = model_profiles.route(record, 'Training Studio', step.id,
+                                          purpose='review' if 'review' in work.prepared else None)
+            settings.check_effort(choice['effort'], record['agent'], choice['model'])
+            job = replace(job, model=choice['model'], effort=choice['effort'])
             outcome = self.adapter(record['agent']).run(job, activity=lines.append,
                                                         stop=run.stop)
-        except WorkspaceError as refusal:  # a job that was wrong before it started
+        except (WorkspaceError, ValueError) as refusal:  # refuse invalid saved choices
             outcome = agents.Outcome(False, 'failed', str(refusal))
         finally:
             with self._lock:
@@ -2499,6 +2548,8 @@ class Engine:
             outcome = replace(outcome, finished=False, reason='stopped')
         if not outcome.seconds:
             outcome = replace(outcome, seconds=round(time.monotonic() - clock, 1))
+        if choice is not None:
+            model_profiles.staged(self, choice, number, work.profile, started_at)
         return outcome, worker_tools.collect(folder), started_at, folder
 
     @staticmethod
@@ -2608,7 +2659,10 @@ class Engine:
         clock = time.monotonic()
         with self.files:
             try:
-                status = self.research().plan(root, root / pipeline.PLAN)
+                if self._load(root).get('research_contract'):
+                    status = {'run': 'synthesis'}
+                else:
+                    status = self.research().plan(root, root / pipeline.PLAN)
             except WorkspaceError as refusal:
                 return self._problem(root, step.id, 'stopped', str(refusal),
                                      'The research plan you approved is kept.')
@@ -2623,6 +2677,27 @@ class Engine:
     def _research(self, root: Path, run: _Run, found: pipeline.Survey,
                   step: pipeline.Next) -> None:
         """One try at each question still to answer, several at a time."""
+        record = self._load(root)
+        if record.get('research_contract'):
+            offered = self.documents.sources(root)[1] if record.get('documents') else []
+            scope = (record.get('documents') or {}).get('scope', pipeline.SCOPE)
+            task = {'topic': found.session['title'],
+                    'audience': pipeline.answers(root).get('audience') or 'Learners',
+                    'purpose': 'Inform training at levels ' + ', '.join(found.session['levels'])
+                               + ': ' + (pipeline.answers(root).get('purpose') or 'teach the topic')
+                               + '. Prioritize concept sequence, misconceptions and grounded examples.',
+                    'scope': pipeline._about(root, found.session),
+                    'planning_questions': found.research.questions,
+                    'requested_changes': step.request,
+                    'source_mode': {'supplied-only': 'selected', 'both': 'mixed'}.get(scope, 'public')}
+            research_contract.native(self, root, run, task, offered, 'training')
+            with self.files:
+                record = self._load(root)
+                record['research']['reviewed'] = True
+                record['research']['reviewed_request'] = (step.request or {}).get('at')
+                self._store(root, record)
+                self._commit(root, 'complete independent research review')
+            return
         def one(ident: str) -> None:
             if self._may_go(root):
                 self._question(root, run, found, ident, step.request)
@@ -2688,8 +2763,24 @@ class Engine:
         the core for gate 2. Research that answered nothing stops the training instead."""
         clock = time.monotonic()
         with self.files:
-            self.research().status(root)
             record = self._load(root)
+            if record.get('research_contract'):
+                verified = self.research()._json('synthesis', 'verify', '--project', str(root / research_contract.CASE))
+                if verified.get('status') != 'complete' or verified.get('artifact_integrity') == 'failed':
+                    raise WorkspaceError('Research needs independent review before authoring can continue.')
+                facts, manifest = research_contract.publish(root / research_contract.CASE, root / 'research')
+                workspace.write_atomic(root / pipeline.REPORT, (root / 'research/report.md').read_bytes())
+                workspace.save(root, 'research', built=True)
+                workspace.append_review(root, 'research', 'Independent research review',
+                                        'The report and authored brief were reviewed against saved evidence. '
+                                        'Keep all qualifications and gaps. Digest: ' + manifest['digest'])
+                record['research']['digest'] = manifest['digest']
+                record['research']['reviewed_request'] = None  # save closed the covered request
+                self._tried(record, step.id, home.now(), time.monotonic() - clock, 'kept')
+                self._store(root, record)
+                self._commit(root, 'keep the reviewed research bundle')
+                return
+            self.research().status(root)
             found = self._survey(root, record).research
             reasons = {ident: last_error(record, f'research:{ident}')
                        for ident in found.unread}
@@ -3076,6 +3167,8 @@ class Engine:
                               else 'Paused. Nothing new starts until you resume.')
         if record.get('question'):
             return 'waiting', f"A question is waiting for you: {record['question']['text']}"
+        if step.kind == 'review':
+            return 'waiting', step.step.doing + '.'
         if step.kind == 'wait':
             it = workspace.sentence(workspace.label(step.step.artifact))
             return 'waiting', f'{it} is waiting for your review.'
@@ -3200,8 +3293,11 @@ class Engine:
                 status = 'waiting'
             else:
                 status = 'to-do'
+            automatic = step.kind == 'gate' and review_policy.automatic(record, 'training', step.id)
             listed.append({
-                'id': step.id, 'label': step.label, 'kind': step.kind, 'status': status,
+                'id': step.id, 'label': (step.label.replace('Your review of ', 'Continue ') + ' automatically'
+                                         if automatic else step.label),
+                'kind': 'code' if automatic else step.kind, 'status': status,
                 'attempts': len(tried),
                 'seconds': round(sum(attempt.get('seconds') or 0 for attempt in tried), 1)
                 if tried else None,
@@ -3281,7 +3377,7 @@ class Engine:
         state, sentence = self._state(record, found, self._run(root))
         asked = record.get('question')
         needs = bool(asked or record.get('problem') or found.next.kind == 'stuck'
-                     or (state == 'waiting' and found.next.kind in ('documents', 'outline')))
+                     or (state == 'waiting' and found.next.kind in ('documents', 'outline', 'review')))
         mine, who, state, sentence, last = self._whose(root, record, found, state, sentence)
         return {'state': state, 'sentence': sentence, 'needs': needs and mine,
                 'question': asked['text'] if asked and mine else None, 'mine': mine,
@@ -3352,6 +3448,9 @@ class Engine:
             'last_shared': last, 'kept': self._set_aside(root),
             'clash': root.name in self._clash,
             'model': record.get('model'), 'effort': record.get('effort'),
+            'model_mode': (record.get('model_profiles') or {}).get('mode', 'single'),
+            'review_level': review_policy.level(record),
+            'review': self._review_view(root, record, found),
             'steps': self._steps(record, found, state),
             'workers': self._workers(run),
             'spent': {'dollars': dollars, 'tokens': tokens},
@@ -3378,7 +3477,7 @@ class Engine:
         again from one: {'level', 'artifact', 'label', 'may', 'why'}, `why` saying what this
         computer lacks for it when it `may` not."""
         older = [mine for mine in found.decks.values()
-                 if mine.designed is False and not mine.kept.get('redesign')]
+                 if found.state.get(mine.name) in ('draft', 'approved') and mine.designed is False and not mine.kept.get('redesign')]
         if not older:
             return []
         needs = self.deck_needs()
@@ -3791,12 +3890,20 @@ class Engine:
         scope = next((name for name, label in pipeline.SOURCES.items() if label == said),
                      pipeline.SCOPE)
         record = new_record(chosen.agent, chosen.model, chosen, scope, chosen.effort)
+        record.pop('review_policy', None)  # adopting existing work preserves its manual gates
+        if session.get('research_contract'):
+            record['research_contract'] = session['research_contract']
+            record['schema'] = 3
         if record['documents'] and planned != 'not-started':
             record['documents'].update(done=home.now(), count=0)
         research = workspace.research_record(root)
         if planned == 'approved' and research and research.get('run'):
             record['research'] = {'run': research['run'],
                                   'plan': workspace.sha256_file(root / pipeline.PLAN)}
+        if record.get('research_contract') and research:
+            record['research'] = {'run': research['digest'], 'digest': research['digest'],
+                                  'plan': workspace.sha256_file(root / pipeline.PLAN),
+                                  'reviewed': True, 'reviewed_request': None}
         record['driver'] = team.claim(space)
         self._tried(record, 'intake', home.now(), 0.0, 'kept')
         return record

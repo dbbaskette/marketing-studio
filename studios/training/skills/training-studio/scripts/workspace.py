@@ -428,7 +428,9 @@ def research_fingerprint(root: Path) -> str | None:
     report = sha256_file(root / SHARED['research'][0])
     if report is None:
         return None
-    parts = [report, sha256_file(root / RESEARCH_RECORD), sha256_file(root / RESEARCH_COPY)]
+    if load(root).get('research_contract') and research_record(root) is None:
+        return hashlib.sha256((report + ':research-changed').encode()).hexdigest()
+    parts = [report, sha256_file(root / research_record_file(root)), sha256_file(root / RESEARCH_COPY)]
     return hashlib.sha256('\n'.join(part or '-' for part in parts).encode()).hexdigest()
 
 
@@ -570,8 +572,10 @@ def save(root: Path, name: str, source: Path | None = None, built: bool = False,
 def research_intact(root: Path, session: dict) -> bool:
     """True while the record and the approved copy are what was approved."""
     bundle = session.get('research')
+    if session.get('research_contract') and research_record(root) is None:
+        return False
     return bool(bundle
-                and sha256_file(root / RESEARCH_RECORD) == bundle['record_sha256']
+                and sha256_file(root / research_record_file(root)) == bundle['record_sha256']
                 and sha256_file(root / RESEARCH_COPY) == bundle['report_sha256'])
 
 
@@ -647,6 +651,8 @@ def export_states(root: Path, session: dict) -> dict[str, str]:
 
 def findings_index(record: dict) -> dict[str, str]:
     """The status of every research question in a harness-research record."""
+    if record.get('schema') == 2:
+        return {item['id']: 'supported' for item in record['findings']}
     return {item['id']: record['results'].get(item['id'], {}).get('status', 'pending')
             for item in record['items']}
 
@@ -700,10 +706,42 @@ def status(root: Path) -> dict:
 
 # --- approval -------------------------------------------------------------------
 
+@mutating
+def import_research(root: Path, case: Path) -> dict:
+    from studio_core import research_contract
+    session = load(root)
+    if session['settings']['approval'] == 'page':
+        raise WorkspaceError('This training is driven from its page. Use its research stage there.')
+    if (root / RESEARCH_RECORD).exists():
+        raise WorkspaceError('Existing research keeps its original workflow. Use a fresh training for synthesis research.')
+    contract = research_contract.snapshot()
+    if not contract:
+        raise WorkspaceError('Install the shared Harness Research preview before importing synthesis research.')
+    facts, manifest = research_contract.adopt_case(case, root)
+    session['research_contract'] = contract
+    write_atomic(root / SHARED['research'][0], (root / 'research/report.md').read_bytes())
+    record(root, session, 'research', built=True)
+    store(root, session)
+    return {'status': 'ready-for-review', 'digest': manifest['digest'],
+            'report': 'research/report.md', 'brief': 'research/brief.md'}
+
+
+def research_record_file(root: Path) -> str:
+    session = load(root) if session_path(root).is_file() else {}
+    return 'research/facts.json' if session.get('research_contract') else RESEARCH_RECORD
+
+
 def research_record(root: Path) -> dict | None:
     """The harness-research record, or None if it is missing or not one we recognise."""
+    if research_record_file(root) != RESEARCH_RECORD:
+        from studio_core.research_contract import read_bundle
+        try:
+            value, _ = read_bundle(root / 'research')
+            return {**value, 'run': value['digest']}
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
     try:
-        value = json.loads((root / RESEARCH_RECORD).read_text(encoding='utf-8'))
+        value = json.loads((root / research_record_file(root)).read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return None
     recognised = (isinstance(value, dict) and value.get('schema') == 1
@@ -739,11 +777,12 @@ def close_requests(session: dict, name: str) -> None:
 
 
 def _approve(root: Path, session: dict, name: str, accept_stale: str | None,
-             by: str) -> dict:
+             by: str, policy: bool = False) -> dict:
     """Approve what is on disk in a loaded record. The caller stores it."""
     spec = artifact(root, session, name)
-    check_choice(by, tuple(WHERE), 'Who decided')
-    if name != 'intake':  # intake records the user's own answers, given in the conversation
+    if not policy:
+        check_choice(by, tuple(WHERE), 'Who decided')
+    if name != 'intake' and not policy:  # intake records the user's own answers, given in the conversation
         on_the_page_only(session, by, f'approval of {label(name)}')
     path = managed(root, spec['file'])
     state = statuses(root, session)
@@ -780,7 +819,7 @@ def _approve(root: Path, session: dict, name: str, accept_stale: str | None,
         write_atomic(root / RESEARCH_COPY, path.read_bytes())
         found = research_record(root)
         session['research'] = {'report_sha256': entry['sha256'],
-                               'record_sha256': sha256_file(root / RESEARCH_RECORD),
+                               'record_sha256': sha256_file(root / research_record_file(root)),
                                'run': found.get('run') if found else None}
         if found is None:
             session['findings'] = None
@@ -792,7 +831,8 @@ def _approve(root: Path, session: dict, name: str, accept_stale: str | None,
                              if value == 'pending')
             if pending:
                 warnings.append('Research questions still pending: ' + ', '.join(pending))
-    log(session, 'approve', artifact=name, sha256=entry['sha256'], by=by)
+    log(session, 'continued-automatically' if policy else 'approve',
+        artifact=name, sha256=entry['sha256'], by=by)
     return {'artifact': name, 'approved': entry['approved'], 'warnings': warnings}
 
 
@@ -802,6 +842,28 @@ def approve(root: Path, name: str, accept_stale: str | None = None,
     """Record the user's approval of what is on disk, against what it was built from."""
     session = load(root)
     outcome = _approve(root, session, name, accept_stale, by)
+    store(root, session)
+    return outcome
+
+
+@mutating
+def accept_policy(root: Path, name: str, policy: dict) -> dict:
+    """Accept a current intermediate draft under a run's explicit saved policy.
+
+    This is not exposed as a CLI approval mode. It uses the same dependency and
+    input checks as approval and never accepts an older set of inputs.
+    """
+    from studio_core import review_policy
+    session = load(root)
+    if session.get('review_policy') != policy or review_policy.level(
+            {'review_policy': policy}) == 'step_by_step' or name == 'intake':
+        raise WorkspaceError('This training requires your approval on the page.')
+    entry = session['artifacts'].get(name) or {}
+    spec = artifact(root, session, name)
+    if entry.get('sha256') != sha256_file(managed(root, spec['file'])):
+        raise WorkspaceError('This document changed after its checks. Review it before continuing.')
+    outcome = _approve(root, session, name, None, 'review-policy', policy=True)
+    after_approval(root, session, name, 'Continued automatically under the saved review level.')
     store(root, session)
     return outcome
 

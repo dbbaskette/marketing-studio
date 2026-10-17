@@ -100,6 +100,8 @@ What a caller needs to know
 """
 from __future__ import annotations
 
+from studio_core import review_policy
+
 import contextvars
 import json
 import os
@@ -119,13 +121,13 @@ import hub
 from workspace import WorkspaceError, write_atomic
 
 from runner import agents, companion, decks, documents, gitstate, marks, settings, stages
-from runner import team, worker_tools
+from runner import build_progress, team, worker_tools
 from runner import brand as brand_skill
 from runner import research as research_cli
 from runner import slides as slides_tool
 from runner.jobs import (FED, KEPT_SO_FAR, Gone as _Gone, Halted as _Halted, Jobs,
                          Run as _Run, Slots as _Slots, attempts, first, gate_state,
-                         last_error, spent, text_of, tries)
+                         last_error, spent, text_of, tries, sha256_of)
 from runner.research_steps import PLAN, PLAN_MD, REPORT, Researching
 from runner.steps import build, deliver as delivering, existing, intake
 from runner.steps import look as looks
@@ -146,7 +148,7 @@ PAGE_OPEN = 45          # seconds since a page last asked, while one counts as o
 STOP_WAIT = 30          # seconds a run that is being deleted may take to end
 IN_HAND = 'work/step.lock'      # written when a step starts, removed when it ends
 INCOMING = 'sources/incoming'   # what the form brought, until intake-source takes it
-PICTURE_KINDS = ('build', 'look', 'original')
+PICTURE_KINDS = ('build', 'look', 'original', 'progress')
 SHEET = 'contact-sheet'
 
 # What the engine does for each step of the pipeline: the name of its method. Every gate is
@@ -392,10 +394,14 @@ class Engine(Jobs, Researching):
         except (OSError, ValueError):
             raise WorkspaceError(f'The run record in {Path(root).name} cannot be read, so the '
                                  'runner will not drive this deck.') from None
-        if not isinstance(record, dict) or record.get('schema') != decks.SCHEMA \
+        if not isinstance(record, dict) or record.get('schema') not in (decks.SCHEMA, 2, 3) \
                 or not isinstance(record.get('steps'), dict):
             raise WorkspaceError(f'The run record in {Path(root).name} cannot be read, so the '
                                  'runner will not drive this deck.')
+        if record.get('schema') == 2 and not record.get('review_policy'):
+            raise WorkspaceError('This run is missing its saved review level. Restore its run record.')
+        if record.get('schema') == 3 and (record.get('research_contract') or {}).get('schema') != 2:
+            raise WorkspaceError('This run is missing its saved research contract. Restore its run record.')
         for key, value in (('gates', {}), ('answers', {}), ('said', {}), ('question', None),
                            ('halted', None), ('cleared', 0.0), ('research', None),
                            ('revisions', []), ('limits', {})):
@@ -691,6 +697,11 @@ class Engine(Jobs, Researching):
         model = settings.check_model(form.get('model')) if named else chosen.model
         effort = settings.check_effort(form.get('effort') if named else chosen.effort,
                                        agent, model)
+        from studio_core import model_profiles, review_policy
+        try:
+            profiles = model_profiles.capture(agent, model, effort, settings.check_effort)
+        except ValueError as error:
+            raise WorkspaceError(str(error)) from error
         ready = self.ready(agent)
         if not ready.ready:
             raise WorkspaceError(ready.problem)
@@ -707,9 +718,21 @@ class Engine(Jobs, Researching):
                     target.write_bytes(data)
                 record = self._load(root)
                 record.update(agent=agent, model=model, level_of_effort=effort,
+                              model_profiles=profiles, review_policy=review_policy.capture(),
                               driver=team.claim(space),
                               limits={'step_seconds': chosen.step_seconds,
                                       'dollars': chosen.deck_dollars})
+                from studio_core import research_contract
+                try:
+                    contract = research_contract.snapshot(self.research()) if checked.get('research') else None
+                except WorkspaceError:
+                    contract = None
+                if contract:
+                    record['research_contract'] = contract
+                if review_policy.level(record) != 'step_by_step':
+                    record['schema'] = 2
+                if contract:
+                    record['schema'] = 3
                 self._store(root, record)
                 self._commit(root, 'set up its run' + (
                     f", driven by {record['driver']['name']}" if record['driver'] else ''))
@@ -895,6 +918,9 @@ class Engine(Jobs, Researching):
         try:
             while not self._closing:
                 record = self._load(root)
+                if record.get('research_contract') and (record.get('steps', {}).get('research-report') or {}).get('done'):
+                    from studio_core.research_contract import read_bundle
+                    read_bundle(root / 'research')
                 if run.gone or not team.ours(self.workspace, record):
                     return
                 if self._resting(record):
@@ -907,6 +933,9 @@ class Engine(Jobs, Researching):
                 step = first(record)
                 if step is None:
                     return
+                if step.kind == 'gate' and review_policy.automatic(record, 'presentation', step.name):
+                    self._policy_gate(root, step)
+                    continue
                 if step.kind == 'gate' and gate_state(record, step.name) == 'waiting':
                     return
                 if self.background and not held:
@@ -1034,6 +1063,27 @@ class Engine(Jobs, Researching):
         space = self.workspace
         if space is not None and space.share == gitstate.SHARE[0]:
             self.share_soon()
+
+    def _policy_gate(self, root: Path, step: stages.Step) -> None:
+        """Continue under the saved policy, without claiming a person's approval."""
+        with self.files:
+            record = self._load(root)
+            if not review_policy.automatic(record, 'presentation', step.name):
+                raise WorkspaceError('This step needs your review.')
+            evidence = getattr(self, f"_show_{step.name.partition(':')[2].replace('-', '_')}")(root, record)
+            if step.name == 'gate:look':
+                looks.approve(root, record, 'Continued under the saved review level.',
+                              by='review-policy')
+                record = self._load(root)
+            else:
+                record = self._approve(root, record, step.name, None, {}, {})
+            at = home.now()
+            gate = record['gates'].get(step.name) or {}
+            record['gates'][step.name] = {**gate, 'state': 'approved', 'by': 'review-policy',
+                                          'at': at, 'note': 'Continued automatically.'}
+            review_policy.receipt(record, step.name, evidence, at)
+            self._store(root, record)
+            self._commit(root, f'continue the {WORDS[step.name]} under the saved review level')
 
     def _gate(self, root: Path, run: _Run, step: stages.Step) -> None:
         """Put what the gate decides on in front of the person, and wait."""
@@ -1541,10 +1591,17 @@ class Engine(Jobs, Researching):
         return named or sections
 
     def decide(self, path, gate: str, decision: str, note: str | None = None,
-               extra: dict | None = None) -> dict:
+               extra: dict | None = None, expected: str | None = None) -> dict:
         """A person's decision at a gate: the only way a gate moves. Returns the deck's
         view."""
         root = self._held(path)
+        saved = self._load(root)
+        if decision == 'approve' and saved.get('research_contract') and (saved.get('steps', {}).get('research-report') or {}).get('done'):
+            from studio_core.research_contract import read_bundle
+            try:
+                read_bundle(root / 'research')
+            except (OSError, ValueError) as error:
+                raise WorkspaceError(str(error)) from error
         if gate not in WORDS:
             raise WorkspaceError('A decision is made at one of the gates: '
                                  + ', '.join(WORDS) + '.')
@@ -1553,7 +1610,12 @@ class Engine(Jobs, Researching):
         note, extra = self._note(note), extra or {}
         if not isinstance(extra, dict):
             raise WorkspaceError('What comes with a decision was not understood.')
-        rebrand = gate == 'gate:look' and decision == 'changes'
+        target = extra.get('direction_target')
+        if target is not None and (gate != 'gate:outline' or decision != 'changes'
+                or target not in ('gate:research-plan', 'gate:research', 'gate:look')):
+            raise WorkspaceError('Choose research or brand from the direction review.')
+        extra = {key: value for key, value in extra.items() if key != 'direction_target'}
+        rebrand = (gate == 'gate:look' or target == 'gate:look') and decision == 'changes'
         if rebrand and not (isinstance(extra.get('brand'), str) and extra['brand'].strip()):
             raise WorkspaceError(NO_BRAND_CHOSEN)
         brands = self.brands() if rebrand else None
@@ -1561,6 +1623,15 @@ class Engine(Jobs, Researching):
         by = gitstate.identity(space.repo)
         with self.files:
             record = self._load(root)
+            combined = gate == 'gate:outline' and review_policy.level(record) == 'balanced'
+            if combined and (not expected or expected != self._direction_signature(root, record)):
+                raise WorkspaceError('The direction changed. Read the latest review before deciding.')
+            if target:
+                if not combined or gate_state(record, gate) != 'waiting' or target not in {
+                        step.name for step in stages.steps(record)}:
+                    raise WorkspaceError('That part is not available in this direction review.')
+                gate, it = target, WORDS[target]
+                record['gates'][gate] = {**(record['gates'].get(gate) or {}), 'state': 'waiting'}
             after = gate == 'gate:build' and decision == 'changes' \
                 and decks.delivered(root) is not None
             if not after and gate_state(record, gate) != 'waiting':
@@ -1666,7 +1737,8 @@ class Engine(Jobs, Researching):
         elif gate == 'gate:research' and 'left_out' in marked:
             record['research'] = {**(record.get('research') or {}),
                                   'left_out': marked['left_out']}
-            write_atomic(root / REPORT, self._report_text(root, record))
+            if not record.get('research_contract'):
+                write_atomic(root / REPORT, self._report_text(root, record))
         elif gate == 'gate:look':
             looks.approve(root, record, note)
             record = self._load(root)
@@ -1683,6 +1755,8 @@ class Engine(Jobs, Researching):
     def _marked_ids(self, root: Path, gate: str, extra: dict) -> list[str]:
         """What the marks at a reviewed stop may name: its questions, or its slides as the
         person's edit has them."""
+        if gate == 'gate:research' and self._load(root).get('research_contract'):
+            return [item['id'] for item in self._findings_shown(root, self._load(root))]
         if gate in ('gate:research-plan', 'gate:research'):
             return list(self._questions(root))
         if gate == 'gate:outline':
@@ -1804,6 +1878,8 @@ class Engine(Jobs, Researching):
             raise WorkspaceError('There is no deck there.')
         if kind not in PICTURE_KINDS:
             raise WorkspaceError('A picture is of the build, the brand or the original deck.')
+        if kind == 'progress':
+            return build_progress.image(root, (build.read_state(root).get('start') or {}).get('folder'), ref)
         within, file = (root / 'work').resolve(), None
         if kind == 'build' and ref == SHEET:
             within, file = root.resolve(), root / build.SHEET
@@ -2061,6 +2137,8 @@ class Engine(Jobs, Researching):
         """stages.timeline, with each step's tries, time, cost and last error."""
         rows, failed = stages.timeline(record), (record.get('halted') or {}).get('step')
         for row in rows:
+            if row['name'].startswith('gate:') and review_policy.automatic(record, 'presentation', row['name']):
+                row['label'] = 'Continue the ' + WORDS[row['name']] + ' automatically'
             tried = attempts(record, row['name'])
             dollars = [attempt['dollars'] for attempt in tried
                        if attempt.get('dollars') is not None]
@@ -2084,7 +2162,17 @@ class Engine(Jobs, Researching):
                  'said': record['said'].get(FED_BY.get(nxt.name, ''))}
         view = getattr(self, f"_show_{nxt.name.partition(':')[2].replace('-', '_')}")
         shown.update(view(root, record))
+        if nxt.name == 'gate:outline' and review_policy.level(record) == 'balanced':
+            shown['research'] = self._show_research(root, record)
+            shown['look'] = self._show_look(root, record)
+            shown['label'] = 'Review the direction'
+            shown['expected'] = self._direction_signature(root, record)
         return shown
+
+    def _direction_signature(self, root: Path, record: dict) -> str:
+        return review_policy.fingerprint({'form': record.get('form'), 'files': {
+            str(file): sha256_of(root / file) for file in
+            (PLAN, REPORT, outlines.OUTLINE, looks.SAMPLE, build.CONTRACT)}})
 
     def _show_classify(self, root: Path, record: dict) -> dict:
         if record['route'] == 'document':
@@ -2159,6 +2247,11 @@ class Engine(Jobs, Researching):
         asked, halted = record.get('question'), record.get('halted')
         dollars, tokens = spent(record)
         said = decks.delivered(root)
+        build_gate = (record.get('gates') or {}).get('gate:build') or {}
+        next_step = first(record)
+        progress = None if not next_step or not next_step.name.startswith('build') \
+            or build_gate.get('state') in ('approved', 'waiting') else build_progress.view(
+            root, (build.read_state(root).get('start') or {}).get('folder'))
         return {
             'id': record.get('id') or root.name, 'path': str(root), 'title': record['title'],
             'route': record['route'], 'level': (record.get('form') or {}).get('level'),
@@ -2172,7 +2265,10 @@ class Engine(Jobs, Researching):
             'spent': {'dollars': dollars, 'tokens': tokens},
             'agent': record.get('agent'), 'model': record.get('model'),
             'effort': record.get('level_of_effort'),
+            'model_mode': (record.get('model_profiles') or {}).get('mode', 'single'),
+            'review_level': review_policy.level(record),
             'workers': self._workers(run),
+            'build_progress': progress,
             'question': ({'id': asked['id'], 'text': asked['text'], 'from': asked['from']}
                          if asked and mine else None),
             'problem': ({key: halted.get(key) for key in ('state', 'why', 'kept', 'action')}

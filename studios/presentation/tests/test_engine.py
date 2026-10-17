@@ -778,6 +778,19 @@ class ExistingTests(StudioCase):
 
 
 class PictureTests(StudioCase):
+    def test_progress_images_are_named_by_current_refs_and_do_not_replace_the_gate(self):
+        from runner import build_progress
+        root = self.start()
+        self.to_gate(root, 'gate:build')
+        basis = build.read_state(root)['start']['folder']
+        shown = build_progress.view(root, basis)
+        self.assertTrue(shown['slides'])
+        ref = shown['slides'][0]['ref']
+        self.assertTrue(self.engine.picture(root, 'progress', ref).startswith(b'\x89PNG'))
+        self.assertIsNone(self.engine.view(root)['build_progress'])
+        with self.assertRaises(FileNotFoundError):
+            self.engine.picture(root, 'progress', '../../private')
+
     def test_only_pictures_the_steps_recorded_are_served(self):
         root = self.start()
         self.to_gate(root, 'gate:build')
@@ -851,3 +864,42 @@ class DrivenTests(StudioCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ModelProfileTests(StudioCase):
+    def configure(self, agent='claude'):
+        from studio_core import studios_config
+        studios_config.update({'assistant': {'agent': agent}, 'models': {
+            'schema': 1, 'agent': agent, 'mode': 'by_task', 'profiles': {
+                name: {'selection': 'explicit', 'model': name + '-model', 'effort': effort}
+                for name, effort in [('quick', 'low'), ('main', 'medium'), ('complex', 'high')]}}})
+
+    def test_profiles_reach_real_dispatch_and_are_saved_across_settings_changes(self):
+        from studio_core import studios_config
+        self.configure()
+        from runner import setup
+        self.assertEqual(setup.describe(self.engine)['shared']['models']['mode'], 'by_task')
+        self.workers.found = [grave]
+        root = self.start()
+        self.assertEqual(self.workers.of('outline')[0].model, 'main-model')
+        studios_config.update({'models': {'profiles': {'main': {'model': 'later'}}}})
+        self.to_gate(root, 'gate:build')
+        choices = self.record(root)['model_jobs']
+        self.assertTrue(any(c['profile'] == 'complex' and c['model'] == 'complex-model' for c in choices))
+        self.assertTrue(all(c['model'] != 'later' for c in choices))
+        for choice in choices:
+            self.assertIsNone(choice['actual_model'])
+        for kind, job, spec in self.workers.jobs:
+            if kind == 'review':
+                self.assertEqual((job.model, job.effort), ('main-model', 'medium'))
+            elif kind == 'section':
+                self.assertIn(job.model, ('main-model', 'complex-model'))
+
+    def test_codex_and_explicit_work_override(self):
+        self.configure('codex')
+        root = self.start(title='By task')
+        self.assertEqual(self.record(root)['model_profiles']['mode'], 'by_task')
+        self.assertEqual(self.workers.of('outline')[-1].model, 'main-model')
+        other = self.start(title='Work override', agent='codex', model='own-model', effort='high')
+        self.assertEqual(self.record(other)['model_profiles']['mode'], 'single')
+        self.assertEqual(self.workers.of('outline')[-1].model, 'own-model')

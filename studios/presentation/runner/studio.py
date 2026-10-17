@@ -112,6 +112,9 @@ def serve(args, make=engines.Engine, out=None, opener=server.show, keeper=None,
         gitstate.identity(space.repo)  # nothing can be recorded without one; says the fix
     with only_runner():
         setup.migrate()     # the values every studio shares, into the file they all read
+        from studio_core import workspace_setup, onboarding
+        shared_store = onboarding.config('Presentation Studio')
+        workspace_setup.launch(gitstate, shared_store, 'presentation')
         engine = make()
         engine.upkeep = (keeper or upkeeping.Upkeep)(after=engine.look_again)
         try:
@@ -120,6 +123,15 @@ def serve(args, make=engines.Engine, out=None, opener=server.show, keeper=None,
             if not token:
                 raise
             token, studio = None, page.Studio(engine, 0)   # the port was taken meanwhile
+        def prepare(values):
+            workspace_setup.configure(gitstate, values, 'presentation')
+
+        def configured():
+            engine.saved()
+            engine.resume(wait=False)
+
+        onboarding.attach(studio, 'Presentation Studio', server.TOKEN_HEADER,
+                          prepare, shared_store, after=configured)
         engine.upkeep.leave = studio.leave
         signal.signal(signal.SIGTERM, server.interrupt)
         try:
@@ -131,7 +143,8 @@ def serve(args, make=engines.Engine, out=None, opener=server.show, keeper=None,
                   flush=True)
             if out.isatty() and getattr(args, 'open', False):
                 opener(studio.url)   # the person's own terminal, and their own browser
-            engine.resume(wait=False)   # the page answers while the workspace is fetched
+            if not hasattr(studio, 'answer') or onboarding.preferences.ready(shared_store.read()[0]):
+                engine.resume(wait=False)   # the page answers while the workspace is fetched
             engine.upkeep.start()       # and while the skills are looked at
             studio.serve()
         except KeyboardInterrupt:

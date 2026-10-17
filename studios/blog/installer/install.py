@@ -502,7 +502,12 @@ def launcher_texts(root, home):
     names = ' '.join(
         shlex.quote(name) for name in (str(stable_interpreter(sys.executable)), *PYTHONS)
     )
-    prefix = '#!/bin/sh\n# Written by the Blog Studio installer.\nexport PATH="$HOME/.local/bin:$PATH:/opt/homebrew/bin:/usr/local/bin"\n'
+    from studio_core.runtime import shell_path
+
+    prefix = (
+        '#!/bin/sh\n# Written by the Blog Studio installer.\nexport PATH="$HOME/.local/bin:$PATH:/opt/homebrew/bin:/usr/local/bin"\n'
+        + shell_path()
+    )
     search = f"""for candidate in {names}; do
   if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)' >/dev/null 2>&1; then
     exec "$candidate" "$script" "$@"

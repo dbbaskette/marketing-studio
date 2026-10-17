@@ -37,6 +37,11 @@ def _read():
             raise ValueError('Invalid local brand settings.')
         # checked is an observation about a release, not another preference.
         preferences = shared.get('brand', {})
+        value['skill_before'] = preferences.get('skill')
+        if 'skill' in preferences:
+            value['runtime'] = (
+                str(Path(preferences['skill']).expanduser()) if preferences.get('skill') else ''
+            )
         value['shared_before'] = {key: preferences.get(key) for key in ('repository', 'release')}
         value.update({key: preferences.get(key) or '' for key in ('repository', 'release')})
         checked = value.get('checked') or {}
@@ -54,7 +59,16 @@ def _save(value):
     private = {
         key: member
         for key, member in value.items()
-        if key not in ('repository', 'release', 'problem', 'migration_notice', 'shared_before')
+        if key
+        not in (
+            'repository',
+            'release',
+            'problem',
+            'migration_notice',
+            'shared_before',
+            'skill_before',
+            'runtime',
+        )
     }
     # Failed migration must not lose legacy shared values during a local skill choice.
     previous = studio.read_json(_path()) if _path().is_file() else {}
@@ -155,6 +169,7 @@ def configure(data):
 def _configure(data):
     data = dict(data)
     before = data.pop('shared_before', None)
+    skill_before = data.pop('skill_before', ...)
     if set(data) not in ({'repository', 'release'}, {'runtime'}):
         raise ValueError('Save either the brand repository and release or an installed skill.')
     with locked(_path().with_suffix('.lock')):
@@ -164,6 +179,10 @@ def _configure(data):
             runtime = data['runtime']
             if runtime and runtime not in {row['runtime'] for row in installed(refresh=True)}:
                 raise ValueError('Choose an installed brand skill from the list.')
+            shown = previous.get('skill_before') if skill_before is ... else skill_before
+            studios_config.update(
+                {'brand': {'skill': runtime or None}}, expected={'brand': {'skill': shown}}
+            )
             previous['runtime'] = runtime
         else:
             repository = settings.check_repository(data['repository'])
@@ -295,6 +314,10 @@ def _install(kept, lease):
         with locked(_path().with_suffix('.lock')):
             current = _read()
             if len(matches) == 1 and current.get('runtime') == kept.get('runtime'):
+                studios_config.update(
+                    {'brand': {'skill': matches[0]['runtime']}},
+                    expected={'brand': {'skill': current.get('skill_before')}},
+                )
                 current['runtime'] = matches[0]['runtime']
                 _save(current)
         changed = before != _companions()

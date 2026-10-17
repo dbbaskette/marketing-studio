@@ -694,3 +694,21 @@ class UpgradeTests(InstalledCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class RequirementTests(UpkeepCase):
+    def test_newer_allowed_release_is_offered_without_installing_or_fetching(self):
+        pin = {'version': '1.0.0', 'requirement': '>=1.0.0',
+               'repository': str(self.base / 'research.git'), 'commit': 'a' * 40}
+        known = {'latest': '1.1.0', 'repository': pin['repository']}
+        keep = self.keeper()
+        with mock.patch.object(keep, '_assistant_versions', return_value={'claude': '1.0.0'}), mock.patch.object(keep, '_saved', return_value={'found': {'harness-research': known}}):
+            entry = keep._companion('harness-research', pin, ['claude'])
+        self.assertEqual(entry['state'], 'older')
+        self.assertEqual(entry['wanted'], '1.1.0')
+        self.assertEqual(entry['locked'], '1.0.0')
+        row = keep._companion_row(entry, known, None, None, None)
+        self.assertEqual(row['state'], 'update')
+        self.assertEqual(row['target'], '1.1.0')
+        self.assertEqual(row['pinned'], '1.0.0')
+        self.assertIsNone(row['beyond'])

@@ -48,7 +48,8 @@ What a caller needs to know
 - `report()['versions']` has a row for Training Studio and one for each companion: what is
   installed, the newest, what this version is pinned to and the newest one's pin, a state
   (`current`, `update`, `missing` or `unknown`) and a sentence. A companion released
-  beyond the newest Training Studio's pin is said, and never offered: the pin is the line.
+  beyond an exact pin is reported only. With a >= requirement, allowed cached releases
+  are offered through the same explicit update action; nothing installs during a check.
   Where a companion's tool is found, what it says of itself is said too.
 - `upgrade` installs the newest Training Studio, the one the person confirmed:
   - the revision, a tag or `main`, is fetched by name into a temporary folder with the
@@ -104,6 +105,7 @@ import runner  # noqa: F401  puts the core on the import path
 import home
 import hub
 import sync_guidance
+from studio_core.companions import available_version
 from workspace import WorkspaceError
 
 from runner import brand as brand_skill, brand_source, companion, settings
@@ -473,10 +475,11 @@ class Upkeep:
     def _companion(self, install, name: str, pin: dict, chosen: list[str]) -> dict:
         """One companion, for each assistant Training Studio is installed for."""
         found = install.companion_found(self.home, chosen, name)
-        short = install.wanting(found, pin['version'])
+        wanted = available_version(pin, (self._saved().get('found') or {}).get(name) or {})
+        short = install.wanting(found, wanted)
         unread = [install.HARNESS[harness] for harness, version in found.items()
                   if version == '']
-        wanted, need = pin['version'], install.NEEDS.get(
+        need = install.NEEDS.get(
             name, 'part of a training cannot be made without it')
         who = _who([install.HARNESS[harness] for harness in short])
         if short and all(found[harness] is None for harness in short):
@@ -495,11 +498,14 @@ class Upkeep:
             having = sorted({version for version in found.values() if version}, key=_version)
             state, says = 'ok', f"{name} {', '.join(having)}, for " + _who(
                 [install.HARNESS[harness] for harness in found]) + '.'
+        if short and pin and pin.get('requirement'):
+            says = f"{name} {wanted} meets {pin['requirement']}. Choose Update to install it."
         return {'name': name, 'wanted': wanted, 'state': state, 'says': says,
                 'found': {install.HARNESS[harness]: version
                           for harness, version in found.items()},
                 'repository': pin['repository'].removesuffix('.git'),
-                'commit': pin['commit'][:12], 'note': pin.get('note')}
+                'commit': pin['commit'][:12], 'note': pin.get('note'),
+                **({'requirement': pin['requirement'], 'locked': pin['version']} if pin.get('requirement') else {})}
 
     @classmethod
     def _main_version(cls) -> str | None:
@@ -665,6 +671,11 @@ class Upkeep:
         with self._lock:
             if self._found is not None:
                 self._found = {**self._found, 'newest': fresh}
+                ranged = any(entry.get('requirement') for entry in self._found['companions'])
+            else:
+                ranged = False
+        if ranged:
+            self.check(repair=False)
         return True
 
     # --- the update ----------------------------------------------------------------------
@@ -1259,7 +1270,7 @@ class Upkeep:
                        reports: str | None) -> dict:
         """One companion's row. `newest` is the newer Training Studio, when there is one,
         and `pins` what it is pinned to, when that could be read."""
-        name, pinned = entry['name'], entry['wanted']
+        name, pinned = entry['name'], entry.get('locked', entry['wanted'])
         having = sorted((version for version in entry['found'].values() if version),
                         key=_version)
         installed = having[0] if having else None
@@ -1271,10 +1282,10 @@ class Upkeep:
                'known_at': online.get('known_at'),
                'beyond': (f'{name} {latest} is out, newer than Training Studio supports yet. '
                           'It is offered once a Training Studio made with it is out.')
-               if latest and _version(latest) > _version(line) else None}
+               if not entry.get('requirement') and latest and _version(latest) > _version(line) else None}
         if entry['state'] in ('missing', 'older'):
             return {**row, 'state': 'missing' if entry['state'] == 'missing' else 'update',
-                    'target': pinned, 'says': entry['says']}
+                    'target': entry['wanted'], 'says': entry['says']}
         if entry['state'] == 'unread' or installed is None:
             return {**row, 'state': 'unknown', 'says': entry['says']}
         if following and _version(installed) < _version(following):

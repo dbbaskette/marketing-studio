@@ -7,6 +7,8 @@ description: Turn a topic into researched training in the current directory, wit
 
 One directory is one training: the directory the harness was launched in. The helper is `training.py`. Run it as the bootstrap entry's `helper` command or `~/.local/share/training-studio/training`, never with `python3`. Never read its source.
 
+Page runs use the saved shared review level. Existing conversation checkpoints remain.
+
 ## Start
 
 Run `training.py status`.

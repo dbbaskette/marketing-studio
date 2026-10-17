@@ -749,6 +749,22 @@ class ScreenTests(ScriptedPage, PageCase):
                                          {'see': said}, {'snapshot': 'build'}])
         self.assertIn(said, result['snapshots']['build']['text'])
 
+    def test_live_previews_are_unreviewed_without_another_approval_gate(self):
+        path = self.started()
+        view = self.run_of(path)
+        view.update(state='working', gate=None, build_progress={
+            'incomplete': True, 'slides': [{'number': 3, 'id': 'first', 'title': 'First slide',
+                                          'ref': 'a' * 32, 'revision': 'b' * 64}]})
+        result = self.run_page(self.answers(**{'GET /api/run': [ok(view)]}),
+            [{'click': 'Review Rolling restarts'}, {'snapshot': 'progress'}])
+        shot = result['snapshots']['progress']
+        for text in ('Slides taking shape', 'Unreviewed', 'render stopped',
+                     'Slide 3 · 1 preview available', 'Render ' + 'b' * 12):
+            self.assertIn(text, shot['text'])
+        self.assertTrue(any('kind=progress&name=' + 'a' * 32 in image['of']
+                            for image in shot['pictures']))
+        self.assertFalse(any(endpoint == '/api/decide' for endpoint, _ in self.posts(result)))
+
     def test_a_deck_built_from_an_existing_one_shows_each_slide_before_and_after(self):
         # The stand-in workers cannot rebuild the stand-in deck, so the build gate of a deck
         # from scratch is given the before and after an existing deck's gate has.

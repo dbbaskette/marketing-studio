@@ -1,40 +1,57 @@
 # Research handoff
 
-The `harness-research` skill does the research. Training Studio hands it the approved plan and records what comes back.
+Harness Research owns investigation, synthesis and independent review. If it is
+missing, stop and point to https://github.com/dbbaskette/harness-research-skill.
+Intake is settled: preserve audience, purpose, scope and source permission.
 
-If `harness-research` is not installed, stop here and point to https://github.com/dbbaskette/harness-research-skill. Nothing else may stand in for it.
+## Fresh synthesis research
 
-## Run
+1. Follow the installed helper's synthesis workflow in `.studio-research/`.
+   Pass the actual learner audience and training task in free-text `purpose`,
+   separately from scope and source mode. Prioritize concept sequence,
+   misconceptions and grounded examples. Research supplies evidence, not a course.
+2. Save the connected report and authored brief. A separate invocation reviews
+   their exact digest, evidence, coverage and usefulness. Run `synthesis verify`
+   and inspect the saved report. Drafts and rejected reviews block authoring.
+3. `training.py research-import --case .studio-research` preserves the owned case
+   and copies its checked bundle to `research/`. The command records the report
+   through the core and indexes stable schema-2 finding IDs for citation checks.
+4. Present the normal research gate with source limitations and gaps. Independent
+   helper review is not user approval. `training.py approve research` records the
+   person's actual decision. Read `research/brief.md` and its evidence for the
+   blueprint; retain conditions, counterfacts and unknowns.
 
-1. Load the `harness-research` skill and follow its entrypoint with this directory as the project.
-   - **First time:** start a task. It returns a task ID and a runtime path. Record them: `training.py pin harness-research --task <id> --runtime <path>`.
-   - **Resuming or revising:** continue the pinned task through that skill's resume entrypoint, with the task ID from `training.py status`. Do not start another. A task is that skill's guidance and runtime record; it is not a new chat or session.
-2. Save the approved plan with that skill's helper: `node "<runtime>/scripts/harness-research.mjs" plan --project . --file .training-studio/research-plan.json`. Pin again, adding `--run <the run it returns>`.
-3. Follow that skill's own guidance to investigate each question and record each finding as you go. Intake is settled: do not ask the user again about scope, sources or purpose.
-4. Do that skill's completion checks: refresh its status, open the report, confirm the findings are saved.
+Changed bundle bytes invalidate research and downstream inputs. Hash checks prove
+saved integrity, not truth or live website currency. Refresh through the original
+helper workflow, save a new dossier and obtain a new content-bound review.
 
-A failed guidance fetch or a blocked network is handled by that skill's rules. Report the failure. Never describe research as current when it is not.
+Browser runs perform this handoff and use their saved shared review level. Do not
+modify a page-driven training through conversation commands.
 
-## Gate 2
+## Existing legacy research
 
-`training.py save research --built`, then present the gate as the gates reference describes, taking the numbers from the `harness-research` report and its status output, with document coverage gaps. Name any question still pending. Approving with questions pending is the user's decision. `research` in `training.py status` gives the run and the same counts, with `approved_at` empty until the user approves.
+Keep the original format, runtime and saved guidance. Installing a newer helper
+does not convert an existing run.
 
-`training.py approve research` approves a bundle: the live report, the record `.harness-research/research.json` and the copy it writes to `research-report.md`. It stores the findings index that citations are checked against. If it warns the index could not be read, tell the user that citation checks will report `unavailable`.
+1. Load Harness Research in this training's directory. Start a guidance task only
+   on its first use; record `training.py pin harness-research --task <id>
+   --runtime <path>`. On resume, continue its pinned task.
+2. Hand over the approved plan: `node "<runtime>/scripts/harness-research.mjs"
+   plan --project . --file .training-studio/research-plan.json`. Pin again with
+   `--run <the returned run>`. Follow its guidance and record findings as you go.
+3. Refresh its `status`, open its report and confirm findings were saved.
+   `training.py save research --built` records the report. Present gate 2 using
+   the helper's coverage, pending questions and document gaps.
+4. `training.py approve research` records the live report, legacy record and
+   approved copy. If the findings index is unavailable, report that citation
+   checks are unavailable. Never edit `research-report.md` yourself.
 
-Afterwards a change to any of the three returns research to `draft` and makes everything built from it stale. Never edit `research-report.md`.
+On resume and before later gates, refresh legacy helper `status --project .`.
+Changed evidence returns research to draft and invalidates downstream work.
+For a research top-up, preserve existing question definitions in an extended
+plan, save it through the core, and review the added questions. Let the pinned
+helper carry unchanged findings; investigate the rest. Repeat the research
+review, then rebuild affected blueprints and briefs.
 
-Then read the blueprint reference.
-
-## Keeping research current
-
-On resume, and before each later gate, refresh `harness-research` status through the pinned runtime: `node "<runtime>/scripts/harness-research.mjs" status --project .`. If it reports stale evidence, its report changes and `training.py status` shows research as `draft`. Tell the user; do not carry on as if the findings still held.
-
-## Research top-up
-
-Use this when a gap matters enough to research further, or a new level needs more.
-
-1. Write an extended plan to a scratch file: every existing question copied exactly, every field kept, plus the new ones.
-2. `training.py save research-plan --from <that file>`. Present gate 1 for the added questions only, then `training.py approve research-plan`.
-3. Save the plan with the `harness-research` helper. A changed plan starts a new run; the previous run is kept under `.harness-research/history/`. The questions it lists in `carried` kept their findings.
-4. Record each other earlier finding again from the saved previous run, without browsing again, wherever its evidence snapshots are unchanged. Investigate only the new questions.
-5. Repeat gate 2. Blueprints and briefs then show as stale: rebuild those the new findings affect, and ask the user about accepting the rest as they are.
+Report blocked network or access honestly. Never describe incomplete research
+as current. Then read the blueprint reference.

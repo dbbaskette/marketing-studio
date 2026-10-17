@@ -5,15 +5,15 @@ description: Make a slide deck in your organisation's brand from an idea, a docu
 
 # Presentation Studio
 
-This guidance is for making a deck in a conversation. Most people use the page instead (`studio` opens it); both follow the same steps and stop at the same places.
+Conversation guidance. `studio` opens the page, whose new runs use the shared review level. Existing conversation checkpoints stay in place.
 
 ## Rules that always hold
 
 - **Only the person approves.** Each step ends at a stop: show what was made, then wait. Move on only when the person says they approve, in this conversation. Never approve for them, and never take silence or "looks fine so far" as approval of a later step. Record each decision as [the workspace](references/workspace.md) says.
-- **Slides are made by harness-slides.** Draw, check, preview, render and patch slides only through its own commands, following its own guidance. Never write or edit a slide file yourself.
+- **Slides are made by harness-slides.** Draw, check, preview, render and patch slides through its commands and guidance. Never write or edit a slide file yourself.
 - **Each slide is designed on its own,** from what it says. Never have the person pick a layout for the whole deck.
 - **The brand is the person's brand skill.** Before the first step that needs the brand, export its contract into the deck's `brand/` folder with the brand skill's own `contract export` command, and give that contract to harness-slides with `--brand`. Presentation Studio names no brand: offer the brands and variants the brand skill lists.
-- **Research is done by harness-research,** following its own guidance, and only when the person turned research on.
+- **Research follows harness-research guidance** when the person enables it.
 - **An original is never changed.** A deck being improved is read; the result is always a new file.
 - **Stay inside the deck's folder** under `presentations/`. Never write anywhere else.
 
@@ -38,6 +38,8 @@ Ask how the person is starting and follow [the three routes](references/routes.m
 | Deliver: Google Slides or PowerPoint | No: say where it is |
 
 "Ask for changes" at any stop means doing that step again with their words, then stopping again. A change to a delivered deck reopens Build for the slides named and delivers a new numbered revision.
+
+For fresh synthesis research, read [the research handoff](references/research.md).
 
 ## Checking where a deck stands
 

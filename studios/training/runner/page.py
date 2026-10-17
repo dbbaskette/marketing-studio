@@ -163,7 +163,7 @@ from runner import gitstate, pipeline, setup
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
          '/api/slide', '/api/status', '/api/published', '/api/delete')
 WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
-          '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/drive',
+          '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
           '/api/brand', '/api/brand/install', '/api/shared')
@@ -358,6 +358,11 @@ class RunnerPage(desk.Page):
         item['last_shared'] = found and found['last_shared']
         if found is None or 'error' in item:
             return item
+        session = workspace.load(Path(item['path']))
+        for file in (item.get('view') or {}).get('files') or ():
+            accepted = (session['artifacts'].get(file['artifact']) or {}).get('approved') or {}
+            if file['status'] == 'approved' and accepted.get('by') == 'review-policy':
+                file['words'] = 'Continued automatically'
         if not found['mine']:   # it waits for whoever drives it, not for the person here
             if item.get('state') == 'needs-you' or (item.get('state') == 'in-progress'
                                                     and found['state'] != 'done'):
@@ -474,6 +479,12 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.engine.share())
         if path == ASSET:
             return desk.as_json(HTTPStatus.OK, self.asset(sent))
+        if path == '/api/review':
+            self.run(desk.text(sent, 'path'))
+            return desk.as_json(HTTPStatus.OK, self.engine.review_decide(
+                desk.text(sent, 'path'), desk.text(sent, 'expected'),
+                desk.text(sent, 'decision'), desk.text(sent, 'target', False),
+                desk.text(sent, 'note', False)))
         if path == '/api/outline':
             return desk.as_json(HTTPStatus.OK, self.outline(sent))
         if path == '/api/redesign':

@@ -24,13 +24,18 @@ function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{reso
 function fixture(responder=()=>({items:[],total:0})){
   const nodes=new Map();const get=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};
   const document={getElementById:get,createElement:t=>new Element(t),createElementNS:(_,t)=>new Element(t),createDocumentFragment:()=>new Element('fragment'),createTextNode:text=>{const node=new Element('#text');node.textContent=text;return node;},querySelector:s=>s==='dialog[open]'?[...nodes.values()].find(n=>n.open):null,querySelectorAll:s=>[...nodes.values()].flatMap(n=>n.querySelectorAll(s))};
-  const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:()=>'',setItem:()=>{},removeItem:()=>{}},history:{replaceState:()=>{},pushState:()=>{}},window:{},URLSearchParams,AbortController,Uint8Array,btoa,FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:()=>true,crypto:{randomUUID:()=> 'a'.repeat(32)},setInterval:()=>0,setTimeout:()=>0,fetch:async(url,options)=>{const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
+  const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:()=>'',setItem:()=>{},removeItem:()=>{}},history:{replaceState:()=>{},pushState:()=>{}},window:{},URLSearchParams,AbortController,Uint8Array,btoa,FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:()=>true,crypto:{getRandomValues:values=>require('node:crypto').webcrypto.getRandomValues(values)},setInterval:()=>0,setTimeout:()=>0,fetch:async(url,options)=>{const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
   const source=fs.readFileSync('skills/blog-studio/assets/management/app.js','utf8').split("for(const b of document.querySelectorAll('[data-view]'))")[0];
   vm.runInContext(source,context);
   vm.runInContext("access={status:'local-only',message:'Local only',actions:{edit:true,memory:false,refresh:false}}",context);
   return {get,nodes,run:code=>vm.runInContext(code,context),set:(name,value)=>{context[name]=value;},loadRunner:()=>{vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/markdown.js','utf8'),context);vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/runner.js','utf8').split('// Keep initialization below this marker')[0],context);}};
 }
 async function check(){
+  const lan=fixture();
+  assert.equal(lan.run('typeof crypto.randomUUID'),'undefined');
+  assert.match(lan.run('operationId()'),/^[0-9a-f]{32}$/);
+  assert.notEqual(lan.run('operationId()'),lan.run('operationId()'));
+  assert.equal(lan.run("operationFor('save',{id:'fixture'})"),lan.run("operationFor('save',{id:'fixture'})"));
   const f=fixture();const dialog=f.get('detail-dialog');dialog.open=true;
   f.run("notice('Reload before saving.',true)");
   assert.equal(dialog.querySelector('.dialog-notice').textContent,'Reload before saving.');
@@ -513,6 +518,15 @@ async function guidedRuns(){
   assert.equal(requests[0].url,'/api/run-approve');
   assert.deepEqual(JSON.parse(requests[0].options.body),{id:'synthetic',expected:'version-1'});
   assert.equal(f.get('sheet').hidden,true);assert.equal(f.get('main').inert,false);
+  for(const mode of ['balanced','automatic']){
+    const calls=[];const direct=fixture((url,options)=>{calls.push({url,options});return url==='/api/run-approve'||url.startsWith('/api/run?')?updated:{items:[],total:0};});
+    direct.loadRunner();direct.set('found',{...found,review_level:mode});direct.set('shown',{...shown,bundle:[{stage:'research',label:'Research findings',content:'# Synthetic evidence'}]});
+    direct.run("studio.screen='gate';studio.found=found;sGate(found,shown)");
+    assert.ok(descendants(direct.get('studio-page')).some(e=>e.textContent==='Research findings'));
+    await direct.get('actions').children.find(e=>e.textContent==='Approve').listeners.click();
+    assert.equal(calls[0].url,'/api/run-approve','grouped reviews approve the displayed revision directly');
+    assert.deepEqual(JSON.parse(calls[0].options.body),{id:'synthetic',expected:'version-1'});
+  }
   f.set('found',{...found,approval:'conversation',status:'in-chat'});f.run('renderRun(found)');
   assert.ok(f.get('actions').children.some(e=>e.textContent==='Run this from here'));
   assert.ok(!f.get('actions').children.some(e=>e.textContent==='Approve'));

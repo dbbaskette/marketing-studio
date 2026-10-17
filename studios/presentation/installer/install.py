@@ -290,7 +290,8 @@ def python_search(run: str, pythons: tuple | None = None) -> str:
     """The loop both commands use: `run` with the first Python new enough. The Python that
     ran this installer is tried first, then the places install.sh tries."""
     names = ' '.join(shlex.quote(name) for name in (pythons or (sys.executable, *PYTHONS)))
-    return f"""for candidate in {names}; do
+    from studio_core.runtime import shell_path
+    return shell_path() + f"""for candidate in {names}; do
   if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)' >/dev/null 2>&1; then
     {run}
   fi
@@ -654,7 +655,7 @@ IMPACT = ('assistant', 'git', 'harness-research', 'node', 'harness-slides', 'com
 
 def said_of(name: str, pin: dict, outcome: dict, harnesses: list[str]) -> str | None:
     """What is worth knowing about one companion, or None when it is as it should be."""
-    found, wanted = outcome['found'], pin['version']
+    found, wanted = outcome['found'], outcome.get('wanted', pin['version'])
     need = NEEDS.get(name, NEED)
     source = pin['repository'].removesuffix('.git')
     command = again('--companions', 'install')
@@ -898,6 +899,14 @@ def offer(name: str, pin: dict, found: dict) -> bool:
           + (f'is newer than the {having[0]} on this computer' if having
              else 'is not on this computer')
           + f": {NEEDS.get(name, NEED)}.")
+    if pin.get('requirement'):
+        print(f"  Selected from stable tags satisfying {pin['requirement']}. It would be fetched "
+              f"from {source} at revision {pin['commit'][:12]}, checked against the tag's version, "
+              'and its source checksum recorded before its own installer runs. Its installer '
+              'registers the skill for every assistant it knows.')
+        if pin.get('note'):
+            print(f"  {pin['note']}")
+        return input('Fetch and install it? [y/N]: ').strip().lower() in ('y', 'yes')
     print(f"  It would be fetched from {source} at revision {pin['commit'][:12]} and checked, "
           'file for file,\n  against what this installer expects. Then its own installer '
           'would be run with Node.\n  That installer registers the skill for every assistant '

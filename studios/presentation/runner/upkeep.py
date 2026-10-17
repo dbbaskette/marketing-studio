@@ -61,7 +61,8 @@ What a caller needs to know
 - `report()['versions']` has a row for Presentation Studio and one for each companion: what is
   installed, the newest, what this version is pinned to and the newest one's pin, a state
   (`current`, `update`, `missing` or `unknown`) and a sentence. A companion released
-  beyond the newest Presentation Studio's pin is said, and never offered: the pin is the line.
+  beyond an exact pin is reported only. With a >= requirement, allowed cached releases
+  are offered through the same explicit update action; nothing installs during a check.
   Where a companion's tool is found, what it says of itself is said too.
 - `upgrade` installs the newest Presentation Studio, the one the person confirmed:
   - the revision, a tag or `main`, is fetched by name into a temporary folder with the
@@ -120,6 +121,7 @@ import runner  # noqa: F401  puts the core on the import path
 import home
 import hub
 import sync_guidance
+from studio_core.companions import available_version
 from workspace import WorkspaceError
 
 from runner import brand as brand_skill, brand_source, companion, settings
@@ -541,6 +543,8 @@ class Upkeep:
         at: that is the one its installer places."""
         found = self._assistant_versions(name, chosen)
         wanted, need = (pin or {}).get('version'), NEEDS[name]
+        if pin:
+            wanted = available_version(pin, (self._saved().get('found') or {}).get(name) or {})
         short = [assistant for assistant, version in found.items()
                  if version is None or (wanted and version
                                         and _version(version) < _version(wanted))]
@@ -565,12 +569,15 @@ class Upkeep:
             says = f"{name} {', '.join(having)}, for " + _who(
                 [ASSISTANTS[assistant][0] for assistant in found]) + '.' + (
                 '' if wanted else ' No version is pinned for it yet.')
+        if short and pin and pin.get('requirement'):
+            says = f"{name} {wanted} meets {pin['requirement']}. Choose Update to install it."
         return {'name': name, 'wanted': wanted, 'state': state, 'says': says,
                 'found': {ASSISTANTS[assistant][0]: version
                           for assistant, version in found.items()},
                 'repository': pin['repository'].removesuffix('.git') if pin else None,
                 'commit': pin['commit'][:12] if pin else None,
-                'note': (pin or {}).get('note')}
+                'note': (pin or {}).get('note'),
+                **({'requirement': pin['requirement'], 'locked': pin['version']} if pin and pin.get('requirement') else {})}
 
     @classmethod
     def _main_version(cls) -> str | None:
@@ -730,6 +737,11 @@ class Upkeep:
         with self._lock:
             if self._found is not None:
                 self._found = {**self._found, 'newest': fresh}
+                ranged = any(entry.get('requirement') for entry in self._found['companions'])
+            else:
+                ranged = False
+        if ranged:
+            self.check(repair=False)
         return True
 
     # --- the update ----------------------------------------------------------------------
@@ -1331,7 +1343,7 @@ class Upkeep:
                        reports: str | None) -> dict:
         """One companion's row. `newest` is the newer Presentation Studio, when there is one,
         and `pins` what it is pinned to, when that could be read."""
-        name, pinned = entry['name'], entry['wanted']
+        name, pinned = entry['name'], entry.get('locked', entry['wanted'])
         having = sorted((version for version in entry['found'].values() if version),
                         key=_version)
         installed = having[0] if having else None
@@ -1344,10 +1356,10 @@ class Upkeep:
                'known_at': online.get('known_at'),
                'beyond': (f'{name} {latest} is out, newer than Presentation Studio supports yet. '
                           'It is offered once a Presentation Studio made with it is out.')
-               if latest and line and _version(latest) > _version(line) else None}
+               if not entry.get('requirement') and latest and line and _version(latest) > _version(line) else None}
         if entry['state'] in ('missing', 'older'):
             return {**row, 'state': 'missing' if entry['state'] == 'missing' else 'update',
-                    'target': pinned, 'says': entry['says']}
+                    'target': entry['wanted'], 'says': entry['says']}
         if pinned is None and installed is not None:
             return {**row, 'state': 'current', 'says': entry['says']}
         if entry['state'] == 'unread' or installed is None:

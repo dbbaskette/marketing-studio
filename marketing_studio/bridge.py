@@ -11,17 +11,11 @@ import sys
 from pathlib import Path
 
 
-def configure(gitstate, shared, identifier):
-    """Initialize only a new workspace, after the person explicitly presses Open."""
-    current = gitstate.current()
-    if current is not None:
-        return current
-    team = shared.get('team') or {}
-    if team.get('repository'):
-        return gitstate.join(team['repository'], branch=team.get('branch'), share=shared.get('share'))
-    root = Path((shared.get('local') or {}).get('root') or '~/Studios').expanduser()
-    # Separate local repositories prevent studios from contending over HEAD and index.
-    return gitstate.local(root / (identifier + '-workspace'), branch=team.get('branch') or 'main')
+# This entry point runs by file path, before either product package is imported.
+_CORE = Path(__file__).resolve().parents[1] / 'core'
+if str(_CORE) not in sys.path:
+    sys.path.insert(0, str(_CORE))
+from studio_core.workspace_setup import configure
 
 
 def prepare_blog(root):
@@ -58,7 +52,7 @@ def serve_blog(root):
         runner, httpd = None, None
         try:
             runner = blog_runner.engine(root)
-            httpd, url = management.server(root)
+            httpd, url = management.server(root, shared_setup=True)
             # Blog Studio generates its own key. It travels only over the private pipe.
             print(json.dumps({'link': url}), flush=True)
             runner.start()

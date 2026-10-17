@@ -124,6 +124,21 @@ class Workspace:
 
     def read_artifacts(self, directory, group):
         artifacts = {}
+        research_files = set()
+        if group == 'articles' and (directory / 'research/output.json').is_file():
+            from studio_core.research_contract import read_bundle
+
+            _, manifest = read_bundle(directory / 'research')
+            names = [entry['file'] for entry in manifest['artifacts']]
+            if any(
+                not re.fullmatch(
+                    r'(?:report\.md|brief\.md|evidence\.md|facts\.json|sources/revisions/[a-f0-9]{64}\.[a-z0-9]{1,10})',
+                    name,
+                )
+                for name in names
+            ):
+                raise HubError('The research bundle contains an unexpected file.')
+            research_files = {'research/output.json', *('research/' + name for name in names)}
         for path in sorted(directory.rglob('*')):
             if not path.is_file():
                 continue
@@ -136,17 +151,22 @@ class Workspace:
                 continue
             # Share concrete writing artifacts, never incidental configuration or arbitrary local files.
             if group == 'articles':
-                allowed = name in (
-                    'DRAFT.md',
-                    'OUTLINE.md',
-                    'BRIEF.md',
-                    'ORIGINAL.md',
-                    'INTERVIEW.md',
-                    'DECISIONS.md',
-                ) or bool(
-                    re.fullmatch(
-                        r'(?:derived/[A-Za-z0-9_.-]+\.(?:md|json)|history/(?:draft|outline|brief|original|derived-[A-Za-z0-9_.-]+)-[A-Za-z0-9_.-]+\.md|history/(?:review|editorial)-[A-Za-z0-9_.-]+\.json)',
-                        name,
+                allowed = (
+                    name in research_files
+                    or name
+                    in (
+                        'DRAFT.md',
+                        'OUTLINE.md',
+                        'BRIEF.md',
+                        'ORIGINAL.md',
+                        'INTERVIEW.md',
+                        'DECISIONS.md',
+                    )
+                    or bool(
+                        re.fullmatch(
+                            r'(?:derived/[A-Za-z0-9_.-]+\.(?:md|json)|history/(?:draft|outline|brief|original|derived-[A-Za-z0-9_.-]+)-[A-Za-z0-9_.-]+\.md|history/(?:review|editorial)-[A-Za-z0-9_.-]+\.json)',
+                            name,
+                        )
                     )
                 )
                 allowed = allowed or bool(

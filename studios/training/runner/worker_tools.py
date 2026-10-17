@@ -665,11 +665,14 @@ def check_section(text: str, spec: dict, slides,
     return held(outcomes), outcomes, [], kept
 
 
+from studio_core.research_contract import check_json as check_research_json
+
 VALIDATORS = {'research-plan': check_plan, 'blueprint': check_blueprint,
               'document': check_document, 'brief': check_brief, 'scenario': check_scenario,
               'yoodli': check_yoodli, 'outline': check_outline, 'section': check_section}
+VALIDATORS['research-json'] = check_research_json
 DRAWN = ('outline', 'section')      # the kinds whose check asks the slides tool
-EXTENSIONS = {'research-plan': '.json', 'outline': '.json', 'section': '.json'}
+EXTENSIONS = {'research-json': '.json', 'research-plan': '.json', 'outline': '.json', 'section': '.json'}
 
 
 # --- pictures, and the renderer ----------------------------------------------------------
@@ -860,10 +863,19 @@ def _offered(folder: Path, number: int, source: dict) -> dict:
     if missing:
         raise WorkspaceError('An offered source needs: ' + ', '.join(missing) + '.')
     text, local = tidy(source['text']), f'sources/offered-{number}.txt'
+    original = source.get('original') if source.get('original_path') else None
+    if original:
+        target = folder / original
+        if Path(original).is_absolute() or '..' in Path(original).parts:
+            raise WorkspaceError('A supplied original must stay inside the job folder.')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(Path(source['original_path']).read_bytes())
+
     _write(folder / local, text)
     return {'id': f's{number}', 'url': source['origin'], 'title': source['title'],
-            'chars': len(text), 'file': source['file'], 'local': local, 'original': None,
+            'chars': len(text), 'file': source['file'], 'local': local, 'original': original,
             'sha256': hashlib.sha256(text.encode('utf-8')).hexdigest(), 'offered': True,
+            **({'permission': source['permission']} if source.get('permission') else {}),
             'supplied': source.get('supplied')}
 
 
@@ -1080,7 +1092,7 @@ class WorkerTools:
             count = len(parts(self._input(entry)))
             lines.append(f"- {entry['name']}: {entry['chars']:,} characters"
                          + (f', in {count} parts' if count > 1 else ''))
-        saved = [f"- {entry['id']}: \"{entry['title']}\", {entry['chars']:,} characters"
+        saved = [f"- {entry['id']}: \"{entry['title']}\", {entry['chars']:,} characters; capture: {entry['file']}; origin: {entry['url']}"
                  for entry in self._index()]
         if not lines and not saved:
             return True, 'This job has no inputs. Everything you need is in your task.'
@@ -1670,7 +1682,9 @@ class WorkerTools:
             f'\n\n[{len(text) - WINDOW:,} more characters. Use search_source to find a '
             'passage and read_source to read around it.]')
         return (f"{verb} as {entry['id']}: \"{entry['title']}\", {len(text):,} "
-                f'characters.\n\n{text[:WINDOW]}{more}')
+                f'characters.\n\n{text[:WINDOW]}{more}'
+                + (f"\n\nCapture file: {entry['file']}. Origin: {entry['url']}."
+                   if any(spec.get('kind') == 'research-json' for spec in self.job['artifacts'].values()) else ''))
 
     def _checked(self, url: str) -> list[str]:
         """The public addresses a web address leads to. Refuses any other kind."""

@@ -1247,6 +1247,22 @@ class FlowTests(DeckCase):
 
 
 class RepairTests(DeckCase):
+    def test_repair_uses_complex_but_independent_review_keeps_main(self):
+        from studio_core import studios_config
+        studios_config.update({'assistant': {'agent': 'claude'}, 'models': {
+            'schema': 1, 'agent': 'claude', 'mode': 'by_task', 'profiles': {
+                'main': {'selection': 'explicit', 'model': 'main-model', 'effort': 'medium'},
+                'complex': {'selection': 'explicit', 'model': 'complex-model', 'effort': 'high'}}}})
+        self.workers.found = [[MAJOR]]
+        root = self.begin()
+        self.drawn(root)
+        sections = [job for kind, job, _ in self.workers.jobs if kind == 'section']
+        self.assertEqual((sections[-1].model, sections[-1].effort), ('complex-model', 'high'))
+        reviews = [job for kind, job, _ in self.workers.jobs if kind == 'review']
+        self.assertTrue(all(job.model == 'main-model' for job in reviews))
+        audit = self.record(root)['model_jobs']
+        self.assertTrue(any(c['profile'] == 'complex' for c in audit))
+
     def test_a_major_finding_about_drawing_has_its_section_drawn_again(self):
         self.workers.found = [[MAJOR, SMALL]]
         root = self.begin()

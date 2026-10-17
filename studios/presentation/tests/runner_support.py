@@ -793,6 +793,11 @@ class StudioCase(unittest.TestCase):
     BACKGROUND = False
 
     def setUp(self):
+        from unittest import mock
+        self.review_capture = mock.patch('studio_core.review_policy.capture',
+                                         return_value={'schema': 1, 'level': 'step_by_step'})
+        self.review_capture.start()
+        self.addCleanup(self.review_capture.stop)
         from dataclasses import replace
         from unittest import mock
         from runner import engine as engines, gitstate, settings
@@ -898,7 +903,8 @@ class StudioCase(unittest.TestCase):
                note: str | None = None, extra: dict | None = None, engine=None) -> dict:
         engine = engine or self.engine
         gate = gate or engine.view(root)['gate']['name']
-        return engine.decide(root, gate, decision, note, extra)
+        shown = engine.view(root)['gate'] or {}
+        return engine.decide(root, gate, decision, note, extra, shown.get('expected'))
 
     def to_gate(self, root: Path, gate: str) -> None:
         """Approve what is waiting until `gate` is the one waiting."""

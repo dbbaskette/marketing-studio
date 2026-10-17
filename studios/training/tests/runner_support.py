@@ -1250,6 +1250,11 @@ class StudioCase(unittest.TestCase):
     BACKGROUND = False
 
     def setUp(self):
+        from unittest import mock
+        self.review_capture = mock.patch('studio_core.review_policy.capture',
+                                         return_value={'schema': 1, 'level': 'step_by_step'})
+        self.review_capture.start()
+        self.addCleanup(self.review_capture.stop)
         from runner import engine as engines, gitstate
         from stand_ins import research as research_stand_in
         from runner.agents import Scripted

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from studio_core import review_policy
 from dataclasses import dataclass
 from typing import Literal, Optional
 
@@ -112,7 +113,16 @@ def _has(run: dict, name: str) -> bool:
 
 def steps(run: dict) -> list[Step]:
     """The steps this deck has, in order."""
-    return [s for s in PIPELINE if _has(run, s.name)]
+    listed = [s for s in PIPELINE if _has(run, s.name)]
+    if review_policy.level(run) == 'balanced':
+        # Show the research, outline and rendered brand sample in one decision.
+        direction = next((s for s in listed if s.name == 'gate:outline'), None)
+        if direction:
+            listed.remove(direction)
+            at = next(i for i, s in enumerate(listed) if s.name == 'gate:look')
+            listed.insert(at, Step(direction.name, direction.stage, direction.kind,
+                                   'Review the direction', 'Waiting for your review of the direction'))
+    return listed
 
 
 @dataclass

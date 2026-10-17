@@ -1,0 +1,76 @@
+# Shared synthesis research
+
+New browser runs use Harness Research's synthesis contract when the installed
+helper supports it. Blog Studio, Presentation Studio and Training Studio share
+`studio_core.research_contract`; they keep their own source permissions, worker
+confinement, model profiles, stop controls and review levels.
+
+The current companion lock deliberately selects the unreleased **1.0.0-alpha.1**
+preview at an exact commit and checksum. It is an explicit preview lock, not an
+automatic prerelease channel. Harness Slides retains stable `>=` selection.
+Installing/updating companions remains an explicit action. Merely opening a
+studio never downloads or replaces tools. New runs on an older installed helper
+retain the older adapter; existing runs never change research formats on resume.
+
+## Handoff and execution
+
+The studio passes its actual task as ordinary-language `purpose`, separately from
+`audience`, `scope` and `source_mode`. Presentation research prioritizes messages
+and visual explanation, blog research the argument and objections, and training
+research the concept sequence, misconceptions and grounded examples. Planning
+questions are investigation aids, not a required report outline or answer quota.
+
+The confined author invocation reads the helper's investigation, synthesis and
+studio-handoff guidance. Its dossier includes an authored brief, typed findings,
+supporting facts, counterfacts, conditions and gaps. The parent validates captured
+source identities and permissions, then asks the helper to save it. Another
+invocation independently checks the exact digest's evidence, findings, report and
+brief. Both use the saved Main model profile. Neither can approve a studio gate
+or publish content. A rejected review allows two bounded correction cycles;
+unresolved work stays a saved draft and blocks downstream authoring.
+
+Blog Studio first discovers at most eight public URLs when public research was
+allowed. The parent fetches actual bounded source bytes through the existing
+public-address-pinned HTTPS reader. Search snippets and generated source text
+are never registered as evidence. Supplied-only runs never search or fetch.
+Presentation Studio and Training Studio retain their existing confined source
+capture tools, including selected original document pins.
+
+## Saved files and compatibility
+
+The helper's resumable case lives in `.studio-research/`. The consumer handoff is
+`research/output.json`, `report.md`, `brief.md`, `evidence.md`, `facts.json` and the
+pinned source captures. Artifact paths resolve relative to the manifest directory.
+Native source folders retain their local-only sharing rules. Blog Studio's Team Hub
+shares only the validated bundle's known output files and immutable captures as
+part of its selected article, preserving cross-clone handoffs. Restoring
+or moving a complete case must preserve them. Missing captures block verification
+rather than silently counting as checked research on another computer.
+
+The consumer checks owner `harness-research-synthesis`, schema 2, matching digest,
+complete review state and every artifact hash. It also requires every source
+snapshot in the manifest. Hashes establish saved integrity, not live website
+currency or truth. Qualifications remain available to downstream authors.
+
+Training Studio indexes schema-2 finding IDs directly for blueprint and brief
+citation checks; it does not manufacture a legacy question record. Its traditional
+`research-report.md` is still the approved readable copy. Presentation Studio
+passes the authored brief and evidence relationships into outline authoring.
+Blog Studio supplies the same brief and typed evidence to later writing jobs.
+
+New synthesis-driven browser runs use run schema 3, so older studio runtimes
+refuse them rather than resuming through a legacy research adapter. A missing
+research contract is rejected. Existing manual and queued research continues
+through its old adapter. Fresh
+conversation workflows can explicitly import a complete synthesis case:
+
+- Training Studio: `training.py research-import --case CASE`, then its normal
+  research review. A page-driven training cannot be modified through this command.
+- Blog Studio: `studio.py research import --id ID --case CASE`, then read the
+  returned report and brief. This respects the blog's saved source policy.
+- Presentation Studio: use the shared helper's `research_contract.py --case CASE
+  --project DECK` to preserve the case and copy its reviewed bundle; record the
+  completed research steps in the conversation's `run.json` as usual.
+
+Imports preserve the actual review state and source captures. They refuse legacy
+research conversion and do not grant approval or publication authority.

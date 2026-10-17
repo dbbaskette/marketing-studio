@@ -1006,7 +1006,7 @@ class RegisterTests(JobCase):
         self.assertEqual(list(worker_tools.VALIDATORS)[:3],
                          ['research-plan', 'outline', 'section'])
         self.assertEqual([kind for kind in worker_tools.VALIDATORS
-                          if kind not in ('research-plan', 'outline', 'section')],
+                          if kind not in ('research-plan', 'outline', 'section', 'research-json')],
                          list(worker_tools.REGISTERED))
         self.assertNotIn('plan-copy', worker_tools.VALIDATORS)
         self.copied()

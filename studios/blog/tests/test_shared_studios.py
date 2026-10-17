@@ -30,6 +30,33 @@ class ConfigTests(unittest.TestCase):
         self.patch.start()
         self.addCleanup(self.patch.stop)
 
+    def test_completed_shared_setup_keeps_empty_defaults_over_legacy_private_choices(self):
+        root = self.base / 'writing'
+        studio.initialize(root)
+        studio.write_json(
+            root / '.blog-run-settings.json',
+            {
+                'schema': 1,
+                'defaults': {**blog_runner.DEFAULTS, 'engine': 'claude', 'model': 'legacy-model'},
+            },
+        )
+        studio.write_json(self.base / 'data/brand.json', {'runtime': '/old/private-brand'})
+        values = {
+            'schema': 1,
+            'setup': {'version': 1},
+            'assistant': {'agent': 'codex'},
+            'local': {'root': str(self.base / 'work')},
+            'output': 'pptx',
+        }
+        self.config.write_text(json.dumps(values))
+        before = self.config.read_bytes()
+        found = blog_runner.settings(root)
+        self.assertEqual(found['defaults']['engine'], 'codex')
+        self.assertTrue(found['configured'])
+        self.assertEqual(self.config.read_bytes(), before)
+        self.assertEqual(studio.read_json(self.base / 'data/brand.json'), {})
+        self.assertNotIn('model', studio.read_json(root / '.blog-run-settings.json')['defaults'])
+
     def test_shared_changes_and_invalid_file_use_builtins(self):
         self.assertEqual(studios_config.read(), ({}, None))
         studio.initialize(self.base / 'writing')
@@ -168,7 +195,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(private['tone'], 'A local writing preference')
         self.assertFalse(set(private) & {'engine', 'author', 'model', 'effort', 'output'})
         brand = studio.read_json(data / 'brand.json')
-        self.assertEqual(brand, {'runtime': '/synthetic/installed-brand', 'unrelated': [1, 2]})
+        self.assertEqual(brand, {'unrelated': [1, 2]})
+        self.assertEqual(studios_config.read()[0]['brand']['skill'], '/synthetic/installed-brand')
         self.assertFalse(
             set(studio.read_json(data / 'workspace.json')) & {'address', 'branch', 'share'}
         )

@@ -44,11 +44,11 @@ LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None
 GETS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run')
 POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
          '/api/documents', '/api/copies', '/api/share', '/api/companions', '/api/asset',
-         '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install')
+         '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
 RUN_KEYS = ['agent', 'clash', 'copies', 'deck', 'deck_left', 'documents', 'driver', 'effort',
-            'finished', 'kept', 'last_shared', 'mine', 'model', 'notice', 'outline', 'problem',
-            'question', 'queue', 'redesign', 'sentence', 'spent', 'state', 'steps', 'taken',
+            'finished', 'kept', 'last_shared', 'mine', 'model', 'model_mode', 'notice', 'outline', 'problem',
+            'question', 'queue', 'redesign', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
             'workers']
 STEP_KEYS = ['attempts', 'dollars', 'error', 'id', 'kind', 'label', 'seconds', 'status']
 DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -192,6 +192,7 @@ class RuleTests(PageCase):
                        '/api/documents': {'path': self.path, 'action': 'add',
                                           'name': 'handbook.txt', 'content': 'V29yZHMu'},
                        '/api/copies': {'path': self.path},
+                       '/api/review': {'path': self.path, 'expected': 'old-version', 'decision': 'approve'},
                        '/api/share': {}, '/api/companions': {}, '/api/restart': {},
                        '/api/upgrade': {'version': '99.0.0'},
                        '/api/versions': {'dismiss': 'training-studio 99.0.0'},
@@ -329,8 +330,7 @@ class SetUpTests(FirstTimeCase):
         self.assertEqual(json.loads(Path(os.environ['STUDIOS_CONFIG']).read_text()), {
             'schema': 1, 'assistant': {'agent': 'codex', 'model': 'a-model', 'effort': 'ultra'}})
         self.assertEqual(sorted(json.loads(settings.path().read_text())), [
-            'brand_skill', 'look_for_updates', 'notify', 'parallel', 'previews', 'schema',
-            'step_seconds', 'training_dollars'])
+            'look_for_updates', 'notify', 'parallel', 'schema', 'step_seconds', 'training_dollars'])
         path = self.started()
         self.assertEqual(Path(path), folder / 'courses' / 'rolling-restarts')
         self.assertEqual(self.get('run', path=path)['agent'], 'codex')
@@ -1597,6 +1597,21 @@ class WholeUpgradeTests(PageCase):
         self.assertEqual(restarted['state'], 'restarting')
         self.assertEqual((keep.restarting, left),
                          (['/bin/sh', str(root / 'studio'), 'serve'], ['left']))
+
+
+class CombinedReviewTests(PageCase):
+    def test_grouped_reviews_are_revision_bound_over_the_authenticated_page(self):
+        from studio_core import review_policy
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
+            path = self.started()
+        run = self.get('run', path=path)
+        self.assertEqual(run['review']['phase'], 'direction')
+        self.assertEqual(run['review_level'], 'balanced')
+        self.post('review', {'path': path, 'expected': 'old-version', 'decision': 'approve'}, expect=409)
+        run = self.post('review', {'path': path, 'expected': run['review']['expected'], 'decision': 'approve'})
+        self.assertEqual(run['review']['phase'], 'final')
+        run = self.post('review', {'path': path, 'expected': run['review']['expected'], 'decision': 'approve'})
+        self.assertEqual(run['state'], 'done')
 
 
 class RunTests(PageCase):

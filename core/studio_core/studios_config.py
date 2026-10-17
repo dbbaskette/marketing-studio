@@ -19,7 +19,7 @@ STRICT_GROUPS = globals().get("STRICT_GROUPS", False)
 
 SCHEMA = 1
 PATH = Path.home() / '.config' / 'studios-config.json'
-GROUPS = ('team', 'person', 'assistant', 'brand', 'local')   # keys whose value is an object
+GROUPS = ('team', 'person', 'assistant', 'brand', 'local', 'render', 'models', 'review')   # keys whose value is an object
 WORDS = ('output', 'share')                         # keys whose value is a word
 SECRET = ('That address carries a password or token. Give the address without it; git '
           'signs in with your own credentials.')
@@ -102,6 +102,20 @@ def _check(changes) -> None:
     if not isinstance(changes, dict) or 'schema' in changes:
         raise WorkspaceError('Give the shared values as the studios config names them.')
     for key, value in changes.items():
+        if key == 'review':
+            from studio_core.review_policy import check
+            try:
+                check(value)
+            except ValueError as error:
+                raise WorkspaceError(str(error)) from error
+            continue
+        if key == 'models':
+            from studio_core.model_profiles import check_changes
+            try:
+                check_changes(value)
+            except ValueError as error:
+                raise WorkspaceError(str(error)) from error
+            continue
         whole = isinstance(value, dict) and all(
             isinstance(name, str) and _plain(inner) for name, inner in value.items())
         if not isinstance(key, str) or (key in GROUPS and not whole) or (

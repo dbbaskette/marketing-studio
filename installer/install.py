@@ -2,7 +2,7 @@
 """Install any selection of studios, keep native launchers, and manage the umbrella UI."""
 import argparse
 import base64
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import fcntl
 import hashlib
 import json
@@ -17,6 +17,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'core'))
 from studio_core.bundles import content_key, inventory, materialize
+from studio_core import offline_install
+from studio_core.runtime import assistant_target, shell_path
 
 STUDIOS = ('blog', 'presentation', 'training')
 
@@ -162,7 +164,8 @@ def verify_bundle(source):
 
 
 def run_native(source, identifier, home, action, target, companions='skip'):
-    command = [sys.executable, str(source / 'studios' / identifier / 'installer/install.py'),
+    python = source / 'runtime/python/bin/python3'
+    command = [str(python) if python.is_file() else sys.executable, str(source / 'studios' / identifier / 'installer/install.py'),
                action, '--home', str(home), '--yes', '--json']
     if action == 'install':
         command += ['--target', target]
@@ -171,6 +174,8 @@ def run_native(source, identifier, home, action, target, companions='skip'):
         else:
             command += ['--offline']
     env = {**os.environ, 'HOME': str(home)}
+    if python.is_file():
+        env['PATH'] = str(source / 'runtime/python/bin') + ':' + str(source / 'runtime/node/bin') + ':' + env.get('PATH', '')
     done = subprocess.run(command, env=env, stdin=subprocess.DEVNULL,
                           capture_output=True, text=True, timeout=300)
     if done.returncode:
@@ -183,6 +188,12 @@ def run_native(source, identifier, home, action, target, companions='skip'):
 
 def install(source, home, data, studios, target, companions):
     verify_bundle(source)
+    distribution = offline_install.record(source)
+    with offline_install.locked(home, studios) if distribution and companions != 'skip' else nullcontext():
+        return install_locked(source, home, data, studios, target, companions, distribution)
+
+
+def install_locked(source, home, data, studios, target, companions, distribution):
     old = read_state(data)
     selected = sorted(set(studios) | set((old or {}).get('studios', [])))
     available = [identifier for identifier in selected if (source / 'studios' / identifier / 'installer/install.py').is_file()]
@@ -191,7 +202,8 @@ def install(source, home, data, studios, target, companions):
     cli = home / '.local/bin/marketing-studio'
     if (cli.exists() or cli.is_symlink()) and not (cli.is_symlink() and cli.resolve() == (data / 'marketing-studio').resolve()):
         raise InstallError('An existing marketing-studio command is unmanaged. Move it aside before installing.')
-    saved = snapshot(managed_paths(home, available, data))
+    companion_paths = offline_install.managed_paths(home, studios, target) if distribution and companions != 'skip' else []
+    saved = snapshot([*managed_paths(home, available, data), *companion_paths])
     key = content_key(source, studios)
     versions = data / 'versions'
     versions.mkdir(parents=True, exist_ok=True)
@@ -203,11 +215,14 @@ def install(source, home, data, studios, target, companions):
             pending.rename(destination)
         if content_key(destination, studios) != key:
             raise InstallError('The saved suite version has changed. Keep it for diagnosis and restore a verified copy.')
+        prepared = offline_install.plan(destination, home, studios, target) if distribution and companions != 'skip' else []
         results = {}
         for identifier in studios:
             results[identifier] = run_native(destination, identifier, home, 'install', target)
         # One explicitly agreed companion step uses the canonical pin set once.
-        if companions == 'install':
+        if prepared:
+            results['companions'] = offline_install.install(prepared, link)
+        elif companions == 'install' and not distribution:
             from studio_core.companions import bring_companions, read_pins
             pins = read_pins(destination / 'pins/companions.json')
             if studios == ['blog']:
@@ -218,7 +233,9 @@ def install(source, home, data, studios, target, companions):
             if any(item.get('state') in ('failed', 'refused') for item in outcomes.values()):
                 raise InstallError('A shared companion could not be installed. Existing content was preserved.')
             results['companions'] = outcomes
-        opener = '#!/bin/sh\n# Written by the Marketing Studio installer.\nexport PATH="$HOME/.local/bin:$PATH:/opt/homebrew/bin:/usr/local/bin"\nexec ' + shlex.quote(sys.executable) + ' ' + shlex.quote(str(data / 'current/marketing-studio')) + ' --open "$@"\n'
+        python = destination / 'runtime/python/bin/python3'
+        environment = ('export PATH=' + shlex.quote(str(destination / 'runtime/python/bin') + ':' + str(destination / 'runtime/node/bin')) + ':"$PATH"\n') if distribution else shell_path()
+        opener = '#!/bin/sh\n# Written by the Marketing Studio installer.\nexport PATH="$HOME/.local/bin:$PATH:/opt/homebrew/bin:/usr/local/bin"\n' + environment + 'exec ' + shlex.quote(str(python) if distribution else sys.executable) + ' ' + shlex.quote(str(data / 'current/marketing-studio')) + ' --open "$@"\n'
         atomic(data / 'marketing-studio', opener.replace(' --open', '').encode(), 0o755)
         link(home / '.local/bin/marketing-studio', data / 'marketing-studio')
         atomic(home / 'Applications/Open Marketing Studio.command', opener.encode(), 0o755)
@@ -227,12 +244,13 @@ def install(source, home, data, studios, target, companions):
         same = old and old.get('current') == key and old.get('studios') == selected
         record = {'schema': 1, 'version': (source / 'VERSION').read_text().strip(),
                   'current': key, 'studios': selected, 'target': target,
-                  'previous': old.get('previous') if same else {'paths': saved, 'studios': available}}
+                  'previous': old.get('previous') if same else {'paths': saved, 'studios': available,
+                                                              'companions': [str(p) for p in companion_paths]}}
         atomic(data / 'installation.json', (json.dumps(record, indent=2) + '\n').encode())
         return {'action': 'install', 'version': record['version'], 'studios': selected,
                 'launcher': str(data / 'marketing-studio'), 'results': results}
     except BaseException:
-        restore(saved, managed_paths(home, available, data))
+        restore(saved, [*managed_paths(home, available, data), *companion_paths])
         raise
     finally:
         shutil.rmtree(pending, ignore_errors=True)
@@ -242,7 +260,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', nargs='?', default='install', choices=('install', 'check', 'rollback', 'uninstall'))
     parser.add_argument('--studios', nargs='+', choices=STUDIOS)
-    parser.add_argument('--target', choices=('codex', 'claude', 'both'), default='both')
+    parser.add_argument('--target', choices=('auto', 'codex', 'claude', 'both'), default='auto')
     parser.add_argument('--companions', choices=('ask', 'install', 'skip'), default='ask')
     parser.add_argument('--home', type=Path, default=Path.home())
     parser.add_argument('--source', type=Path, default=ROOT)
@@ -251,6 +269,8 @@ def main(argv=None):
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args(argv)
     home, source = args.home.expanduser().resolve(), args.source.expanduser().resolve()
+    if args.target == 'auto':
+        args.target = assistant_target(home)
     data = home / '.local/share/marketing-studio'
     available = [s for s in STUDIOS if (source / 'studios' / s / 'installer/install.py').is_file()]
     studios = args.studios or available
@@ -269,8 +289,10 @@ def main(argv=None):
                 if not sys.stdin.isatty() or input('Proceed with ' + args.action + '? [y/N]: ').lower() not in ('y', 'yes'):
                     raise InstallError('Nothing changed. Add --yes to authorize this operation without a prompt.')
             companions = args.companions
-            if companions == 'ask':
-                companions = 'install' if sys.stdin.isatty() and input('Install the pinned shared research and slide tools? [y/N]: ').lower() in ('y', 'yes') else 'skip'
+            if companions == 'ask' and (source / 'distribution.json').is_file():
+                companions = 'install'
+            elif companions == 'ask':
+                companions = 'install' if sys.stdin.isatty() and input('Install the shared research and slide tools? [y/N]: ').lower() in ('y', 'yes') else 'skip'
             with locked(data):
                 if args.action == 'install':
                     result = install(source, home, data, studios, args.target, companions)
@@ -283,7 +305,12 @@ def main(argv=None):
                         previous = state.get('previous')
                         if not previous:
                             raise InstallError('No previous installation is recorded.')
-                        restore(previous['paths'], managed_paths(home, previous['studios'], data))
+                        permitted = offline_install.managed_paths(home, previous['studios'], 'both')
+                        # Older records have no companion entries; derive the allowlist
+                        # from fixed installation locations, never from saved path text.
+                        has_companions = any(str(path) in previous['paths'] for path in permitted)
+                        with offline_install.locked(home, previous['studios']) if has_companions else nullcontext():
+                            restore(previous['paths'], [*managed_paths(home, previous['studios'], data), *permitted])
                         result = {'action': 'rollback', 'restored': True}
                     else:
                         # Independent studio installations, work, settings and versions stay available.

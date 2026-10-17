@@ -1323,3 +1323,37 @@ class OutcomeTests(StudioCase):
 if __name__ == '__main__':
     import unittest
     unittest.main()
+
+
+class ModelProfileTests(StudioCase):
+    def configure(self, agent='claude'):
+        from studio_core import studios_config
+        studios_config.update({'assistant': {'agent': agent}, 'models': {
+            'schema': 1, 'agent': agent, 'mode': 'by_task', 'profiles': {
+                'main': {'selection': 'explicit', 'model': 'main-model', 'effort': 'medium'},
+                'complex': {'selection': 'explicit', 'model': 'complex-model', 'effort': 'high'}}}})
+
+    def test_new_training_saves_profiles_and_research_uses_saved_main(self):
+        from studio_core import studios_config
+        self.configure()
+        from runner import setup
+        self.assertEqual(setup.describe(self.engine)['shared']['models']['mode'], 'by_task')
+        root = self.start()
+        saved = self.record(root)['model_profiles']
+        studios_config.update({'models': {'profiles': {'main': {'model': 'later'}}}})
+        self.decide(root, 'research-plan')
+        self.assertEqual(self.record(root)['model_profiles'], saved)
+        choices = self.record(root)['model_jobs']
+        self.assertTrue(any(c['step'].startswith('research:') for c in choices))
+        self.assertTrue(all(c['model'] == 'main-model' for c in choices))
+        for kind, job, spec in self.workers.jobs:
+            self.assertEqual((job.model, job.effort), ('main-model', 'medium'))
+            self.assertEqual(job.profile, 'research' if kind.startswith('question:') else 'write')
+
+    def test_codex_and_explicit_work_override(self):
+        self.configure('codex')
+        root = self.start(title='By task')
+        self.assertEqual(self.record(root)['model_profiles']['mode'], 'by_task')
+        other = self.start(title='Work override', agent='codex', model='own-model', effort='high')
+        self.assertEqual(self.record(other)['model_profiles']['mode'], 'single')
+        self.assertEqual(self.workers.jobs[-1][1].model, 'own-model')

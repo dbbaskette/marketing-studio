@@ -1850,6 +1850,9 @@ function drawSettings(fresh) {
     training.approval, Boolean(training.error), watched(training), Boolean(training.run),
     elsewhere(training)]);
   placeParts({ title: 'Settings', mark: ['Settings'] }, [
+    ['shared-settings', [Boolean(view.runner)], () => view.runner ? add(card('Shared settings'),
+      make('p', '', 'Your assistant, work folder, brand and delivery choices apply across all studios.'),
+      capsule('Change shared settings', 'quiet', () => { location.href = '/onboarding/#token=' + view.token; }, 'shared-settings')) : null],
     ['workspace', around(), workspaceCard], ['left', around(), leftCard],
     ['alerts', [alerts()], alertsCard], ['notify', around(), notifyCard],
     ['look', [view.setup && view.setup.updates, view.lookRefused], lookCard],
@@ -2108,8 +2111,9 @@ function standing(found) {
     });
   }
   if (found.status === 'approved' && found.approved) {
-    return callout('', add(make('p', ''), 'You approved this '
-      + (found.approved.by === 'page' ? 'on this page ' : 'in the conversation '),
+    return callout('', add(make('p', ''), found.approved.by === 'review-policy'
+      ? 'Continued automatically under the saved review level '
+      : 'You approved this ' + (found.approved.by === 'page' ? 'on this page ' : 'in the conversation '),
     when(found.approved.at), '.'));
   }
   if (found.status === 'skipped') {
@@ -3124,7 +3128,7 @@ function workspaceCard() {
     ['Shared', space.repository ? lower(SHARE_SAYS[space.share_when === 'when-asked' ? 1 : 0])
       : ''],
     ['Drafting is done by', (AGENT_NAMES[agent.default] || agent.default || 'no agent yet')
-      + modelWords(agent.model, agent.effort, true)],
+      + (held.shared?.models?.mode === 'by_task' ? ', using Quick, Main, and Complex model profiles' : modelWords(agent.model, agent.effort, true))],
     ['Limits', limitsSays(held.limits || {})],
     ['Slide previews', held.previews ? previewsSays(held.previews) : '']]),
     sharingLine(), fetchLine(),
@@ -3405,6 +3409,14 @@ function levelName(level) {
 
 // The model and the reasoning level, in words that follow an agent's name. With `own`, a
 // model left to the agent is said so.
+function draftModelWords(draft) {
+  const held = view.setup?.agent || {};
+  return view.setup?.shared?.models?.mode === 'by_task' && draft.agent === held.default
+    && draft.model.trim() === (held.model || '') && draft.effort === (held.effort || '')
+    ? ', using Quick, Main, and Complex model profiles'
+    : modelWords(draft.model.trim(), draft.effort, true);
+}
+
 function modelWords(model, effort, own) {
   const level = effort ? 'reasoning set to ' + lower(levelName(effort)) : '';
   if (model || own) {
@@ -4085,7 +4097,7 @@ function startStep(draft) {
   const drafted = make('p', '');
   const told = () => {
     drafted.textContent = 'It is drafted by ' + AGENT_NAMES[draft.agent]
-      + modelWords(draft.model.trim(), draft.effort, true) + '.';
+      + draftModelWords(draft) + '.';
   };
   const levels = draft.levels.length;
   const asks = gatesFor(draft);
@@ -4481,7 +4493,7 @@ function costCard(run) {
       : 'It stops and asks you at ' + money(limits.training_dollars) + '.');
   }
   return add(node, make('p', 'quiet', says.join(' ')),
-    make('p', 'quiet', 'Drafted by ' + agent + modelWords(run.model, run.effort) + '.'));
+    make('p', 'quiet', 'Drafted by ' + agent + (run.model_mode === 'by_task' ? ', using Quick, Main, and Complex model profiles' : modelWords(run.model, run.effort)) + '.'));
 }
 
 // --- a run: your own documents ---------------------------------------------------------
@@ -5044,6 +5056,61 @@ function deckCard(run) {
   'read-outline')) : null);
 }
 
+function combinedReview(run) {
+  const review = run.review;
+  const node = card(review.label);
+  add(node, make('p', 'lede', review.phase === 'direction'
+    ? 'Read the research, training plan and deck directions together. Approve once to build the remaining materials.'
+    : 'Review the completed materials together. Approval finishes this draft; publishing is a separate action.'));
+  const problem = problemLine();
+  const decide = async (decision, target, note) => {
+    if (view.busy) return;
+    view.busy = true;
+    try {
+      view.run = await send('review', {path: view.path, expected: review.expected,
+        decision, target: target || null, note: note || null});
+      await refresh();
+      paintRun(false);
+    } catch (failure) { say(problem, failure.message); }
+    finally { view.busy = false; }
+  };
+  if (run.mine !== false) add(node, add(make('div', 'bar'),
+    capsule('Approve ' + (review.phase === 'direction' ? 'the direction' : 'the finished materials'),
+      'filled', () => decide('approve'), 'approve-combined')));
+  add(node, problem);
+  for (const item of review.items) {
+    const detail = add(make('details', 'review-bundle'), make('summary', 'row-title', item.label));
+    detail.dataset.key = 'combined-' + review.phase + '-' + item.target;
+    const part = make('div', 'review-bundle-body'); add(detail, part);
+    detail.open = Boolean(item.sample || item.deck_view || item.target === 'research');
+    if (item.text) add(part, window.TrainingStudioMarkdown.render(item.text));
+    if (item.sample) add(part, pictureAt({path: view.path, ...item.sample},
+      'Sample slide for ' + item.label, review.expected));
+    if (item.deck_view) {
+      for (const slide of list(item.deck_view.slides)) add(part,
+        pictureAt({path: view.path, artifact: item.target, number: slide.number},
+          slide.title || 'Slide ' + slide.number, review.expected));
+      for (const finding of list(item.deck_view.review?.findings)) add(part, make('p', 'fix',
+        (finding.number ? 'Slide ' + finding.number + ': ' : '') + (finding.note || finding.question || 'Review finding')
+        + (finding.fix ? ' Suggested: ' + finding.fix : '')));
+      if (!list(item.deck_view.slides).length) add(part, make('p', 'fix', 'Slide pictures are unavailable on this computer. Read the saved deck before approving.'));
+      add(part, capsule('Open the saved deck and its review', '', () => show('gate', {path: view.path, artifact: item.target}), 'read-' + item.target));
+    }
+    if (item.notes) add(part, window.TrainingStudioMarkdown.render(item.notes));
+    if (run.mine !== false) {
+      const changes = add(make('details'), make('summary', '', 'Request changes'));
+      changes.dataset.key = 'request-' + review.phase + '-' + item.target;
+      const request = make('textarea'); request.maxLength = 4000;
+      request.setAttribute('aria-label', 'What should change in ' + item.label);
+      add(changes, request, capsule('Ask for changes to ' + item.label, '',
+        () => decide('revise', item.target, request.value), 'revise-' + item.target));
+      add(part, changes);
+    }
+    add(node, detail);
+  }
+  return node;
+}
+
 function paintRun(fresh) {
   const run = view.run;
   const training = view.training
@@ -5069,7 +5136,7 @@ function paintRun(fresh) {
   const limits = (view.setup && view.setup.limits) || {};
   const runs = !theirs ? 'Runs on this page' : driver ? 'Run by ' + nameOf(driver)
     : run.finished ? 'Finished' : 'Nobody is running it';
-  const above = [make('span', '', [levelsText(training.levels), runs]
+  const above = [make('span', '', [levelsText(training.levels), runs, ({balanced: 'Balanced review', automatic: 'Automatic draft review', step_by_step: 'Step by step review'})[run.review_level]]
     .filter(Boolean).join(' · '))];
   const published = view.issued && view.issued.path === view.path ? view.issued : null;
   const brought = view.adopted && view.adopted.path === view.path ? view.adopted : null;
@@ -5089,6 +5156,7 @@ function paintRun(fresh) {
     run.problem ? ['problem', [run.problem, lead, theirs],
       () => problemPart(run, lead === 'problem')] : null,
     run.question && theirs ? ['asked', [run.question, driver], () => askedPart(run)] : null,
+    run.review ? ['combined-review', [run.review, theirs], () => combinedReview(run)] : null,
     run.question && !theirs ? ['question', [run.question, title],
       () => questionPart(run, title)] : null,
     supplying ? ['documents', [run.documents, lead],

@@ -31,6 +31,9 @@ class BlogRunnerTests(Fixture):
         )
         environment.start()
         self.addCleanup(environment.stop)
+        import studios_config
+
+        studios_config.update({'review': {'level': 'step_by_step'}})
         self.addCleanup(lambda: runner.ENGINES.pop(str(self.root), None))
 
     def create(self, page=False, **extra):
@@ -61,6 +64,79 @@ class BlogRunnerTests(Fixture):
 
     def approve(self, found, page=False):
         return runner.decide(self.root, found['id'], found['expected'], 'approve', page=page)
+
+    def profiles(self, agent='codex'):
+        from studio_core import studios_config
+
+        studios_config.update(
+            {
+                'assistant': {'agent': agent},
+                'models': {
+                    'schema': 1,
+                    'agent': agent,
+                    'mode': 'by_task',
+                    'profiles': {
+                        name: {'selection': 'explicit', 'model': name + '-model', 'effort': effort}
+                        for name, effort in [
+                            ('quick', 'low'),
+                            ('main', 'medium'),
+                            ('complex', 'high'),
+                        ]
+                    },
+                },
+            }
+        )
+
+    def test_profiles_are_saved_and_background_worker_gets_the_saved_main(self):
+        from studio_core import studios_config
+
+        self.profiles()
+        found = self.create(page=True)
+        studios_config.update({'models': {'profiles': {'main': {'model': 'later'}}}})
+        calls = []
+
+        def worker(*args, **kwargs):
+            calls.append(kwargs)
+            return {'content': '# Synthetic outline', 'notes': 'Fake worker only.'}
+
+        engine = runner.Engine(self.root, worker=worker)
+        self.addCleanup(engine.close)
+        engine.keep_local(found['id'], {'enabled': True})
+        engine.once(found['id'])
+        self.assertEqual(calls[0]['model_selection']['model'], 'main-model')
+        _, _, run = runner.load(self.root, found['id'])
+        self.assertEqual(run['model_jobs'][0]['profile'], 'main')
+        self.assertIsNone(run['model_jobs'][0]['actual_model'])
+        self.assertEqual(engine.describe(found['id'])['status'], 'waiting-for-approval')
+
+    def test_review_return_to_draft_uses_complex_without_routing_from_request_text(self):
+        self.profiles()
+        found = self.create()
+        for _ in range(2):
+            found = self.approve(self.submit(found))
+        self.assertEqual(found['next'], 'review')
+        found = self.submit(found)
+        found = runner.decide(
+            self.root,
+            found['id'],
+            found['expected'],
+            'changes',
+            'Synthetic review correction',
+            target='draft',
+        )
+        choice = runner.job(self.root, found['id'])[0]['model_selection']
+        self.assertEqual((choice['profile'], choice['model']), ('complex', 'complex-model'))
+        self.profiles('claude')
+        # The existing Codex run still owns its saved profiles.
+        self.assertEqual(runner.job(self.root, found['id'])[0]['model_selection'], choice)
+
+    def test_source_classification_uses_quick_for_both_assistants(self):
+        import source_curator
+
+        for agent in ('codex', 'claude'):
+            self.profiles(agent)
+            options = source_curator.shared_options(agent, task='source-classification')
+            self.assertEqual(options[options.index('--model') + 1], 'quick-model')
 
     def test_conversation_pipeline_enforces_gates_and_stop(self):
         found = self.create(stop='draft')
@@ -171,6 +247,52 @@ class BlogRunnerTests(Fixture):
         two = runner.dispatch(self.root, 'create', data)
         self.assertEqual(one['id'], two['id'])
         self.assertEqual(len(list((self.root / 'articles').iterdir())), 1)
+
+    def test_balanced_combines_research_and_outline_then_final_package(self):
+        import studios_config
+
+        studios_config.update({'review': {'level': 'balanced'}})
+        found = self.create(page=True, research='supplied-only')
+        ident = found['id']
+        while found['next'] != 'outline':
+            found = self.submit(found, page=True)
+        found = self.submit(found, page=True)
+        self.assertEqual(found['next'], 'outline')
+        self.assertEqual(found['review_level'], 'balanced')
+        shown = runner.document(self.root, ident, 'outline')
+        self.assertEqual([item['stage'] for item in shown['bundle']], ['research-plan', 'research'])
+        found = self.approve(found, page=True)
+        while found['next'] != 'package':
+            found = self.submit(found, page=True)
+        found = self.submit(found, page=True)
+        self.assertEqual(found['next'], 'package')
+        self.assertIn(
+            'draft',
+            [item['stage'] for item in runner.document(self.root, ident, 'package')['bundle']],
+        )
+        self.assertTrue(self.approve(found, page=True)['complete'])
+        _, _, saved = runner.load(self.root, ident)
+        self.assertEqual(saved['stages']['draft']['accepted_by'], 'review-policy')
+
+    def test_automatic_worker_continues_until_final_review(self):
+        import studios_config
+
+        studios_config.update({'review': {'level': 'automatic'}})
+        found = self.create(page=True)
+        engine = runner.Engine(
+            self.root, lambda *args, **kwargs: {'content': '# Synthetic stage', 'notes': 'Checked.'}
+        )
+        engine.control(found['id'], 'resume')
+        for _ in range(6):
+            engine.once(found['id'])
+        found = engine.describe(found['id'])
+        self.assertEqual(found['status'], 'waiting-for-approval')
+        self.assertEqual(found['next'], 'package')
+        self.assertEqual(
+            [row['status'] for row in found['stages']],
+            ['approved', 'approved', 'approved', 'draft'],
+        )
+        self.assertTrue(self.approve(found, page=True)['complete'])
 
     def test_worker_saves_one_stage_and_never_crosses_gate(self):
         calls = []
@@ -532,6 +654,9 @@ class WorkerProcessTests(unittest.TestCase):
         self.base = Path(self.temp.name)
         self.binary = self.base / 'fixture-agent'
         self.capture = self.base / 'command.json'
+        environment = patch.dict(os.environ, {'STUDIOS_CONFIG': str(self.base / 'shared.json')})
+        environment.start()
+        self.addCleanup(environment.stop)
 
     def executable(self, body):
         self.binary.write_text(
@@ -576,6 +701,69 @@ else:
                 else:
                     self.assertEqual(args[args.index('--tools') + 1], '')
                     self.assertIn('--strict-mcp-config', args)
+
+    def test_saved_profile_selection_reaches_both_cli_commands(self):
+        self.executable(
+            'args=sys.argv[1:]\nPath('
+            + repr(str(self.capture))
+            + ').write_text(json.dumps(args))\n'
+            "value={'content':'Synthetic output','notes':'Fixture CLI; no account.'}\n"
+            "if '--output-last-message' in args:\n Path(args[args.index('--output-last-message')+1]).write_text(json.dumps(value))\n"
+            "else:\n print(json.dumps({'structured_output':value}))\n"
+        )
+        for agent in ('codex', 'claude'):
+            with (
+                patch.object(
+                    blog_worker.source_curator, 'executable', return_value=str(self.binary)
+                ),
+                patch.object(blog_worker.source_curator, 'codex_options', return_value=[]),
+            ):
+                blog_worker.generate(
+                    agent,
+                    {},
+                    'Synthetic',
+                    seconds=5,
+                    model_selection={'model': 'saved-profile', 'effort': 'high'},
+                )
+            args = json.loads(self.capture.read_text())
+            self.assertEqual(args[args.index('--model') + 1], 'saved-profile')
+            if agent == 'codex':
+                self.assertIn('model_reasoning_effort="high"', args)
+            else:
+                self.assertEqual(args[args.index('--effort') + 1], 'high')
+
+    def test_shared_model_and_reasoning_reach_both_worker_clis(self):
+        self.executable(
+            'args=sys.argv[1:]\nPath('
+            + repr(str(self.capture))
+            + ').write_text(json.dumps(args))\n'
+            "value={'content':'Synthetic output','notes':'Fixture CLI; no account.'}\n"
+            "if '--output-last-message' in args:\n Path(args[args.index('--output-last-message')+1]).write_text(json.dumps(value))\n"
+            "else:\n print(json.dumps({'structured_output':value}))\n"
+        )
+        for agent in ('codex', 'claude'):
+            config = Path(os.environ['STUDIOS_CONFIG'])
+            config.write_text(
+                json.dumps(
+                    {
+                        'schema': 1,
+                        'assistant': {'agent': agent, 'model': 'fixture-model', 'effort': 'high'},
+                    }
+                )
+            )
+            with (
+                patch.object(
+                    blog_worker.source_curator, 'executable', return_value=str(self.binary)
+                ),
+                patch.object(blog_worker.source_curator, 'codex_options', return_value=[]),
+            ):
+                blog_worker.generate(agent, {}, 'Synthetic job', seconds=5)
+            args = json.loads(self.capture.read_text())
+            self.assertEqual(args[args.index('--model') + 1], 'fixture-model')
+            if agent == 'codex':
+                self.assertIn('model_reasoning_effort="high"', args)
+            else:
+                self.assertEqual(args[args.index('--effort') + 1], 'high')
 
     def test_timeout_ends_the_cli_process(self):
         self.executable('time.sleep(30)\n')

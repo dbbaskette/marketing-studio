@@ -116,6 +116,10 @@ def parser() -> argparse.ArgumentParser:
     init.add_argument('--approval', choices=workspace.APPROVAL, default='chat',
                       help='where gates are decided: in the conversation, or on the page')
 
+    handoff = commands.add_parser('research-import', help='import an independently reviewed synthesis case')
+    handoff.add_argument('--case', required=True, type=Path,
+                         help='the complete reviewed Harness Research case folder')
+
     commands.add_parser('status', help='stage, next step and the status of every artifact')
 
     save = commands.add_parser('save', help='record an artifact')
@@ -206,6 +210,8 @@ def dispatch(args: argparse.Namespace, root: Path) -> dict:
         return summarise(root)
     if args.command == 'status':
         return summarise(root)
+    if args.command == 'research-import':
+        return workspace.import_research(root, args.case.resolve())
     if args.command == 'save':
         coverage = None
         if args.coverage:

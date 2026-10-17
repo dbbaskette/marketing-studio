@@ -35,6 +35,7 @@ from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, documents, marks, stages, worker_tools
 from runner import research as research_cli
+from studio_core import research_contract
 from runner.jobs import Halted, Run, given_up, last_error, sha256_of, text_of, tries
 from runner.steps import Work
 
@@ -53,6 +54,18 @@ class Researching:
         """Ask harness-research where the research stands and write the report for the
         gate. Research that answered nothing stops the deck."""
         clock = time.monotonic()
+        if self._load(root).get('research_contract'):
+            tool = self.research()
+            verified = tool._json('synthesis', 'verify', '--project', str(root / research_contract.CASE))
+            if verified.get('status') != 'complete' or verified.get('artifact_integrity') == 'failed':
+                raise WorkspaceError('Research needs independent review before authoring can continue.')
+            with self.files:
+                facts, manifest = research_contract.publish(root / research_contract.CASE, root / 'research')
+                record = self._load(root)
+                record['research'] = {**(record.get('research') or {}),
+                                      'contract': 2, 'digest': manifest['digest']}
+                self._done(root, step, clock, 'keep the reviewed research bundle', record)
+            return
         with self.files:
             self.research().status(root)
             record = self._load(root)
@@ -124,6 +137,12 @@ class Researching:
 
     def _verdicts(self, root: Path) -> dict:
         """Each question of the approved plan, with its verdict or 'pending'."""
+        if self._load(root).get('research_contract'):
+            try:
+                facts, _ = research_contract.read_bundle(root / research_contract.CASE / 'research')
+                return {f['id']: 'supported' for f in facts['findings']}
+            except (OSError, ValueError):
+                return {'synthesis': 'pending'}
         record = home.read_json(root / RECORD, None)
         results = (record or {}).get('results') if isinstance(record, dict) else None
         results = results if isinstance(results, dict) else {}
@@ -139,6 +158,21 @@ class Researching:
         """Each question of the plan with what the research found, for the page: its title,
         status, one-sentence answer, what is not known and the passages quoted. A finding
         kept before headlines were asked for is given its summary's first sentence."""
+        if record.get('research_contract'):
+            try:
+                facts, _ = research_contract.read_bundle(root / 'research')
+            except (OSError, ValueError):
+                return []
+            return [{'id': f['id'], 'title': f['title'], 'question': '', 'status': 'supported',
+                     'headline': f['summary']['text'], 'summary': f['summary']['text'],
+                     'limits': '\n'.join(b['text'] for b in f['conditions'] + f['gaps']),
+                     'unknown': '\n'.join(b['text'] for b in f['gaps']),
+                     'left_out': f['id'] in ((record.get('research') or {}).get('left_out') or []),
+                     'sources': [{'title': next(s['title'] for s in facts['sources'] if s['id'] == c['source']),
+                                  'origin': next(s['origin'] for s in facts['sources'] if s['id'] == c['source']),
+                                  'quote': c['quote']} for fact in facts['facts']
+                                 if fact['id'] in f['support'] + f['counter']
+                                 for c in fact['citations']]} for f in facts['findings']]
         found = home.read_json(root / RECORD, None)
         results = found.get('results') if isinstance(found, dict) else None
         results = results if isinstance(results, dict) else {}
@@ -202,6 +236,26 @@ class Researching:
         """Hand the approved plan to harness-research, then research each question still
         to answer, several at a time. A question that fails three times is left for the
         report to name."""
+        record = self._load(root)
+        if record.get('research_contract'):
+            plan = home.read_json(root / PLAN, {})
+            form = record.get('form') or {}
+            offered = documents.sources(root)[1] if documents.listed(root) else []
+            task = {'topic': record.get('title') or form.get('title') or plan['topic'],
+                    'audience': form.get('audience') or 'Presentation audience',
+                    'purpose': 'Inform a presentation: ' + (form.get('goal') or 'explain this topic')
+                               + '. Prioritize key messages, evidence worth explaining visually, and counterarguments.',
+                    'scope': 'Evidence, limitations and alternatives for the presentation goal: '
+                             + (form.get('goal') or record.get('title') or 'explain the topic'),
+                    'planning_questions': plan.get('items', []),
+                    'notes': form.get('notes') or '',
+                    'requested_changes': record.get('gates', {}).get('gate:research', {}),
+                    'source_mode': ('selected' if plan.get('scope') == 'supplied-only'
+                                    else 'mixed' if offered else 'public')}
+            research_contract.native(self, root, run, task, offered, 'presentation')
+            with self.files:
+                self._done(root, step, time.monotonic(), 'complete independent research review')
+            return
         with self.files:
             record = self._load(root)
             handed, lost = record.get('research') or {}, []

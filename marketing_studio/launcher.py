@@ -29,7 +29,8 @@ def local_link(link):
 
 
 class Launcher:
-    def __init__(self):
+    def __init__(self, network=None):
+        self.network = network
         self.children = {}
         self.lock = threading.RLock()
         self.closed = False
@@ -45,7 +46,7 @@ class Launcher:
             if not isinstance(identifier, str) or identifier not in catalog.STUDIOS:
                 raise WorkspaceError('Choose one of the studios shown on the home page.')
             if self.running(identifier):
-                return self.children[identifier][1]
+                return self.link(identifier, self.children[identifier][1])
             root = catalog.locate(identifier, preferences.get('paths', {}))
             if root is None:
                 raise WorkspaceError('This studio was not found. Install it or set its folder in Settings.')
@@ -92,7 +93,10 @@ class Launcher:
                     raise WorkspaceError('The studio took too long to open. Check its launch log and try again.') from failure
                 raise
             self.children[identifier] = (process, link)
-            return link
+            return self.link(identifier, link)
+
+    def link(self, identifier, link):
+        return self.network.share(identifier, link) if self.network else link
 
     def prepare(self, preferences, shared):
         """Persist first-run setup for installed studios, without starting their servers."""

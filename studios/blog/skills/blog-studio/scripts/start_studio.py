@@ -79,6 +79,13 @@ def main(argv=None):
         from studio_sync.gitstate import current
 
         joined = current()
+        from studio_core import workspace_setup, onboarding
+
+        shared_store = onboarding.config('Blog Studio')
+        if args.root is None and joined is None and not kept.get('workspace'):
+            joined = workspace_setup.launch(
+                __import__('studio_sync.gitstate', fromlist=['current']), shared_store, 'blog'
+            )
         workspace = (
             args.root
             or (joined.root if joined else None)
@@ -110,6 +117,7 @@ def main(argv=None):
                 data_root=data,
                 leased=True,
                 human=not args.json,
+                keep_workspace=bool(args.root or joined or kept.get('workspace')),
             )
     except (OSError, ValueError, TypeError) as exc:
         print('Blog Studio: ' + str(exc), file=sys.stderr)

@@ -1,0 +1,138 @@
+import json
+import os
+import threading
+import unittest
+from unittest.mock import patch
+
+from test_editorial_tools import Fixture
+import blog_runner
+import synthesis_research
+from studio_core import research_contract
+from synthesis_fixture import TEXT, dossier, review
+
+RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
+
+
+@unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME for helper integration.')
+class SynthesisIntegrationTests(Fixture):
+    def setUp(self):
+        super().setUp()
+        env = patch.dict(os.environ, {'HARNESS_RESEARCH_RUNTIME': RUNTIME})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def test_browser_research_handoff_and_downstream_bundle_use(self):
+        source = self.source(TEXT)
+        shown = blog_runner.create(
+            self.root,
+            {
+                'title': 'Synthetic explanation',
+                'audience': 'New learners',
+                'goal': 'Explain bounded examples',
+                'sources': [source['id']],
+                'research': 'supplied-only',
+            },
+            'page',
+        )
+        ident = shown['id']
+        directory, record, run = blog_runner.load(self.root, ident)
+        self.assertEqual(run['research_contract']['schema'], 2)
+        self.assertEqual(run['schema'], 3)
+        shown = blog_runner.submit(
+            self.root,
+            ident,
+            'research-plan',
+            {'content': '# Research plan\nExplain the synthetic concept.', 'notes': ''},
+            shown['expected'],
+            page=True,
+        )
+        # Default Balanced review continues the research plan automatically.
+        self.assertEqual(shown['next'], 'research')
+        _, payload, _ = blog_runner.job(self.root, ident)
+        calls = []
+
+        def worker(engine, data, guidance, **options):
+            calls.append((data['worker'], options))
+            if 'review_template' in data:
+                value = review(data['review_template'])
+            else:
+                capture = data['sources'][0]
+                value = dossier(data['worker'], capture['file'], capture['origin'], 'selected')
+            return {'content': json.dumps(value), 'notes': 'Synthetic only'}
+
+        result = synthesis_research.generate(
+            directory, run, payload, worker, seconds=60, stop=threading.Event()
+        )
+        shown = blog_runner.submit(
+            self.root, ident, 'research', result, shown['expected'], page=True
+        )
+        self.assertEqual(shown['next'], 'outline')
+        self.assertEqual(len(calls), 2)
+        self.assertNotEqual(calls[0][0], calls[1][0])
+        self.assertFalse(any(c[1]['web'] for c in calls))
+        _, data, _ = blog_runner.job(self.root, ident)
+        self.assertIn('blog', data['research_bundle']['brief'].lower())
+        self.assertIn('What to explain first', data['research_bundle']['brief'])
+        from hub_workspace import Workspace
+
+        included = Workspace.read_artifacts(None, directory, 'articles')
+        self.assertIn('research/output.json', included)
+        self.assertIn('research/brief.md', included)
+        self.assertTrue(any(name.startswith('research/sources/revisions/') for name in included))
+        import deep_research
+        from types import SimpleNamespace
+
+        fresh = self.article()
+        imported = deep_research.command(
+            self.root,
+            SimpleNamespace(action='import', id=fresh, case=directory / research_contract.CASE),
+        )
+        self.assertEqual(imported['status'], 'complete')
+        self.assertEqual(deep_research.status(self.root, fresh)['status'], 'complete')
+        (directory / 'research/evidence.md').write_text('Changed')
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            blog_runner.job(self.root, ident)
+
+    def test_rejected_research_never_becomes_an_approved_blog_stage(self):
+        from studio_core.research_contract import check_json
+
+        self.assertTrue(check_json('{"schema":1}', {})[0])
+        self.assertTrue(check_json('not JSON', {})[0])
+
+    def test_actual_browser_worker_path_commits_only_after_the_session_guard(self):
+        source = self.source(TEXT)
+        shown = blog_runner.create(
+            self.root,
+            {
+                'title': 'Synthetic explanation',
+                'goal': 'Explain the bounded example',
+                'audience': 'New learners',
+                'sources': [source['id']],
+                'research': 'supplied-only',
+            },
+            'page',
+        )
+        ident = shown['id']
+        blog_runner.submit(
+            self.root,
+            ident,
+            'research-plan',
+            {'content': '# Plan\nExplain this synthetic example.', 'notes': ''},
+            shown['expected'],
+            page=True,
+        )
+
+        def worker(engine, data, guidance, **options):
+            if 'review_template' in data:
+                value = review(data['review_template'])
+            else:
+                captured = data['sources'][0]
+                value = dossier(data['worker'], captured['file'], captured['origin'], 'selected')
+            return {'content': json.dumps(value), 'notes': ''}
+
+        engine = blog_runner.Engine(self.root, worker)
+        engine.control(ident, 'resume')
+        engine._once(ident)
+        self.assertEqual(engine.describe(ident)['next'], 'outline', engine.local(ident))
+        directory, _, _ = blog_runner.load(self.root, ident)
+        research_contract.read_bundle(directory / 'research')

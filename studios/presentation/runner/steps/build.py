@@ -86,7 +86,7 @@ import runner  # noqa: F401  puts the core on the import path
 import home
 from workspace import WorkspaceError, write_atomic
 
-from runner import briefs, decks, slides as slides_tool
+from runner import briefs, build_progress, decks, slides as slides_tool
 from runner.steps import Work
 
 PREVIEWS = 4            # times one composer may render its section
@@ -845,6 +845,9 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
             **({'pictures': str((root / began['folder'] / PICTURES).resolve())}
                if (root / began['folder'] / PICTURES).is_dir() else {}),
             'previews': PREVIEWS, **how(root, run, renderer)}
+    spec['progress'] = build_progress.begin(root, began['folder'], section,
+        [{'id': slide['id'], 'title': slide.get('title') or '', 'number': number}
+         for number, slide in enumerate(slides_of(whole), 1) if slide['id'] in ids])
     return Work(guidance=briefs.guidance('section', repair=bool(found)),
                 task='\n\n'.join(lines), profile='write', name='section',
                 prepared={'inputs': inputs, 'ask': False, 'look': look,
@@ -923,8 +926,12 @@ def draw_whole(root, run: dict, slides, renderer) -> dict:
         slides.merge(folder / 'parts.json', folder / 'composition.json')
         slides.compile(folder / 'composition.json', Path(began['brand']),
                        folder=folder / 'compiled')
-        shown = _tools().render(slides, folder / 'compiled', folder / 'preview',
-                                    how(root, run, renderer))
+        previewing = how(root, run, renderer)
+        outline = home.read_json(start_folder / 'given/outline.json', {})
+        previewing['progress'] = build_progress.begin(root, began['folder'], 'whole',
+            [{'id': slide['id'], 'title': slide.get('title') or '', 'number': number}
+             for number, slide in enumerate(slides_of(outline), 1)])
+        shown = _tools().render(slides, folder / 'compiled', folder / 'preview', previewing)
         file = Path(str(shown['deck'])).resolve()
         if (folder / 'preview').resolve() not in file.parents \
                 or file.read_bytes()[:4] != PPTX:
