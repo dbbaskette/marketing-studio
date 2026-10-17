@@ -28,6 +28,7 @@ run() {
   fi
 }
 run native-setup "$python" scripts/ci/native_acceptance.py
+run shared-setup "$python" scripts/ci/shared_setup_acceptance.py
 run native-launch "$python" scripts/ci/native_launch_acceptance.py
 run blog-hub-journey "$python" studios/blog/scripts/acceptance/hub-journey.py --local-fixture --run-directory "$fixtures/hub-fixture"
 run shared-studios-journey "$python" studios/blog/scripts/acceptance/studios-journey.py --run-directory "$fixtures/studios-journey" --training-checkout "$PWD/studios/training"

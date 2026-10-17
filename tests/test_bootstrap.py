@@ -1,5 +1,7 @@
 """Exercise shell provisioning with fake tools; never install packages on the host."""
 from pathlib import Path
+import shlex
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -28,7 +30,7 @@ class BootstrapTests(unittest.TestCase):
         self.env = {'PATH': str(self.bin), 'HOME': str(self.root), 'CALLS': str(self.log),
                     'READY': str(self.root / 'ready')}
         self.tool('dirname', '#!/bin/bash\n[ "$1" != -- ] || shift\necho "${1%/*}"\n')
-        self.tool('uname', '#!/bin/bash\necho Darwin\n')
+        self.tool('uname', '#!/bin/bash\nif [ "${1:-}" = -m ]; then echo arm64; else echo Darwin; fi\n')
         for name in ('python3', 'git', 'node', 'npm'):
             self.tool(name, '''#!/bin/bash
 name="${0##*/}"
@@ -80,12 +82,27 @@ printf 'brew:%s\\n' "$*" >> "$CALLS"
         (self.root / 'ready').touch()
         (self.bin / 'codex').unlink()
         (self.bin / 'claude').unlink()
-        done = self.run_setup('--yes', '--target', 'codex', '--companions', 'skip')
+        done = self.run_setup('--yes', '--target', 'codex', '--companions', 'skip', '--assistants', 'install')
         self.assertEqual(done.returncode, 0, done.stderr)
         calls = self.calls()
         self.assertNotIn('brew:', calls)
         self.assertIn('@openai/codex', calls)
         self.assertNotIn('@anthropic-ai/claude-code', calls)
+
+    def test_real_supported_node_does_not_trigger_a_package_install(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Node is not installed on this test machine')
+        version = subprocess.run([node, '--version'], capture_output=True, text=True, check=True)
+        if int(version.stdout.strip().lstrip('v').split('.')[0]) < 20:
+            self.skipTest('This regression requires Node 20 or newer')
+        (self.root / 'ready').touch()
+        self.tool('node', '#!/bin/bash\nexec ' + shlex.quote(node) + ' "$@"\n')
+        done = self.run_setup('--yes', '--target', 'codex', '--assistants', 'skip')
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn('<--companions><install>', self.calls())
+        self.assertNotIn('brew:', self.calls())
+        self.assertNotIn('npm:', self.calls())
 
     def test_skip_and_inspection_never_run_package_managers(self):
         (self.root / 'ready').touch()
@@ -97,6 +114,39 @@ printf 'brew:%s\\n' "$*" >> "$CALLS"
                 self.assertEqual(done.returncode, 0, done.stderr)
                 self.assertNotIn('brew:', self.calls())
                 self.assertNotIn('npm:', self.calls())
+
+    def test_default_reuses_one_assistant_without_installing_clis(self):
+        (self.root / 'ready').touch()
+        (self.bin / 'codex').unlink()
+        done = self.run_setup('--yes', '--companions', 'skip')
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn('<--target><claude>', self.calls())
+        self.assertNotIn('npm:', self.calls())
+        self.assertNotIn('brew:', self.calls())
+
+    def test_bundled_setup_does_not_need_system_python_node_or_npm(self):
+        # Match the real archive layout: installer beside runtime.
+        folder = self.root / 'installer'
+        folder.mkdir()
+        self.script.rename(folder / 'install.sh')
+        self.script = folder / 'install.sh'
+        (self.root / 'distribution.json').write_text('{}')
+        for name, original in (('python', 'python3'), ('node', 'node')):
+            binary = self.root / 'runtime' / name / 'bin' / original
+            binary.parent.mkdir(parents=True)
+            binary.write_text((self.bin / original).read_text())
+            binary.chmod(0o755)
+        (self.root / 'runtime/platform').write_text('macos-arm64\n')
+        for binary in ('python3', 'node', 'npm'):
+            (self.bin / binary).unlink()
+        self.tool('cat', '#!/bin/bash\nwhile IFS= read -r line; do echo "$line"; done < "$1"\n')
+        self.tool('chmod', '#!/bin/bash\nexit 0\n')
+        (self.root / 'ready').touch()
+        done = self.run_setup('--yes')
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn('<--companions><install>', self.calls())
+        self.assertNotIn('brew:', self.calls())
+        self.assertNotIn('npm:', self.calls())
 
     def test_linux_package_manager_uses_native_package_names(self):
         (self.bin / 'brew').unlink()

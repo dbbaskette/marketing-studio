@@ -1,8 +1,8 @@
 # Presentation Studio
 
-Presentation Studio makes slide decks in your brand. You give it an idea, a document or a deck you already have, and it builds the deck with you one step at a time. Nothing moves forward until you approve it, and at each stop you see the real slides, not a description of them.
+Presentation Studio makes slide decks in your brand. You give it an idea, a document or a deck you already have, and it builds the deck with you one step at a time. New browser runs use your shared review level: Balanced brings research, outline and a sample slide together for one review, then shows the finished deck. Automatic draft stops at the finished deck; Step by step reviews every stage. Existing runs keep their saved flow.
 
-The work is done by an AI assistant you already have, Claude Code or Codex. Presentation Studio guides it, checks what it makes, and keeps track of what you have approved. The assistant never touches your files or runs commands on its own; only you approve.
+The work is done by an AI assistant you already have, Claude Code or Codex. Presentation Studio guides it, checks what it makes, and keeps track of what you have approved. The runner works within your selected permissions and limits. Automatic continuation is recorded separately from your own approvals; publishing remains a separate action.
 
 It is the third studio beside [Training Studio](https://github.com/dbbaskette/marketing-studio/tree/main/studios/training) and [Blog Studio](https://github.com/dbbaskette/marketing-studio/tree/main/studios/blog), and made for colleagues who are technical or not.
 
@@ -138,3 +138,17 @@ If the file cannot be read, Presentation Studio works on its built-in defaults, 
 ## Licence
 
 [MIT](LICENSE).
+
+### See slides while the deck is being built
+
+The deck page shows **Slides taking shape** as preview images become available.
+These pictures are marked **Unreviewed**. Inspecting them does not approve the deck;
+the whole-deck review and your final decision still apply. Available images remain
+on this computer after an interrupted render or reconnect. A new attempt replaces
+its earlier preview, and old worker events cannot overwrite that attempt.
+
+With a Harness Slides runtime advertising `progress-events` (introduced in 0.15.0),
+each ready slide appears while rendering continues. The pinned public 0.14.1 runtime
+shows completed sections before the final review. Updating or installing a companion
+remains an explicit action. Comments during construction are tracked separately in
+[the live-preview issue](https://github.com/dbbaskette/marketing-studio/issues/15).

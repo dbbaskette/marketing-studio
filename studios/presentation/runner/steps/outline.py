@@ -311,6 +311,16 @@ def outline_work(root, run: dict, request: dict | None, error: str | None, brand
     report = root / REPORT
     if report.exists():
         inputs['Research report'] = report.read_text(encoding='utf-8')
+    if run.get('research_contract'):
+        from studio_core.research_contract import read_bundle
+        facts, manifest = read_bundle(root / 'research')
+        inputs['Reviewed research brief'] = (root / 'research/brief.md').read_text()
+        excluded = set((run.get('research') or {}).get('left_out') or [])
+        inputs['Research evidence relationships'] = json.dumps({'digest': manifest['digest'],
+            'findings': [f for f in facts['findings'] if f['id'] not in excluded], 'facts': facts['facts']})
+        inputs['Research selection'] = ('Use only retained findings to shape this presentation. '
+            'The report and brief preserve the full reviewed research; do not reintroduce excluded '
+            'finding claims through paraphrase. Excluded finding IDs: ' + ', '.join(sorted(excluded)))
     return _job(root, run, request, error, brand, slides, kind, None, inputs, [], intro, True)
 
 

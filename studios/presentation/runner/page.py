@@ -390,10 +390,12 @@ class RunnerPage(server.Page):
         if extra is not None and not isinstance(extra, dict):
             raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Send what comes with a decision as '
                                  'one JSON object.')
-        if decision == 'changes' and gate != 'gate:look' and not (note or '').strip() \
+        brand_change = gate == 'gate:look' or (extra or {}).get('direction_target') == 'gate:look'
+        if decision == 'changes' and not brand_change and not (note or '').strip() \
                 and not (gate in marks.REVIEWED and marks.asks(extra or {})):
             raise server.Refusal(HTTPStatus.BAD_REQUEST, engines.NO_NOTE)
-        return self.engine.decide(self.deck(path), gate, decision, note, extra)
+        return self.engine.decide(self.deck(path), gate, decision, note, extra,
+                                  server.text(sent, 'expected', False))
 
     def answered(self, sent: dict) -> dict:
         path, ident = server.text(sent, 'path'), server.text(sent, 'id')

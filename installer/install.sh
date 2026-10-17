@@ -4,14 +4,16 @@ set -euo pipefail
 installer_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 prerequisites=ask
-assistants=ask
+assistants=skip
 companions=ask
-target=both
+target=auto
 action=install
 noninteractive=0
 inspect=0
 help=0
 alternate_home=0
+selected_home="$HOME"
+bundled=0
 args=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -29,8 +31,9 @@ while [ "$#" -gt 0 ]; do
       [ "$#" -gt 0 ] || { echo "Missing value for $option" >&2; exit 2; }
       case "$option" in
         --companions) companions="$1"; case "$1" in ask|install|skip) ;; *) exit 2;; esac ;;
-        --target) target="$1"; case "$1" in codex|claude|both) ;; *) exit 2;; esac ;;
+        --target) target="$1"; case "$1" in auto|codex|claude|both) ;; *) exit 2;; esac ;;
         --home)
+          selected_home="$1"
           if [ "$1" != "$HOME" ]; then
             # Alternate homes are for offline packaging/tests, never host provisioning.
             alternate_home=1
@@ -48,6 +51,20 @@ while [ "$#" -gt 0 ]; do
 done
 find_python() {
   python=''
+  if [ -f "$installer_dir/../distribution.json" ]; then
+    local expected actual
+    expected="$(cat "$installer_dir/../runtime/platform")"
+    actual="$(uname -s)-$(uname -m)"
+    case "$actual" in Darwin-arm64) actual=macos-arm64;; Darwin-x86_64) actual=macos-x64;; Linux-aarch64|Linux-arm64) actual=linux-arm64;; Linux-x86_64) actual=linux-x64;; esac
+    [ "$actual" = "$expected" ] || { echo "This download is for $expected; this computer is $actual. Download the matching bundle." >&2; exit 1; }
+    python="$installer_dir/../runtime/python/bin/python3"
+    chmod u+x "$python" "$installer_dir/../runtime/node/bin/node"
+    export PATH="$installer_dir/../runtime/python/bin:$installer_dir/../runtime/node/bin:$PATH"
+    "$python" -c 'import sys; assert sys.version_info >= (3,11)' >/dev/null 2>&1 || { echo 'The private Python runtime could not start. Download a fresh bundle for this computer.' >&2; exit 1; }
+    "$installer_dir/../runtime/node/bin/node" --version >/dev/null 2>&1 || { echo 'The private Node runtime could not start. Download a compatible bundle for this computer.' >&2; exit 1; }
+    bundled=1
+    return 0
+  fi
   for candidate in python3 python3.14 python3.13 python3.12 python3.11 \
       /opt/homebrew/bin/python3 /usr/local/bin/python3 \
       /Library/Frameworks/Python.framework/Versions/Current/bin/python3; do
@@ -58,7 +75,7 @@ find_python() {
   return 1
 }
 node_minimum=20
-node_ready() { command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1 && node -e 'process.exit(Number(process.versions.node.split(".")[0]) < Number(process.argv[1]))' "$node_minimum" >/dev/null 2>&1; }
+node_ready() { command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1 && node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= Number(process.argv[1]) ? 0 : 1)' "$node_minimum" >/dev/null 2>&1; }
 confirm() {
   if [ "$noninteractive" = 1 ]; then return 0; fi
   if [ ! -t 0 ]; then echo "$1 Add --yes to agree without prompts, or --prerequisites skip for offline setup." >&2; return 1; fi
@@ -67,17 +84,35 @@ confirm() {
   case "$reply" in ''|y|Y|yes|YES) return 0;; *) return 1;; esac
 }
 find_python || true
+if [ "$target" = auto ]; then
+  configured=''
+  if [ -n "$python" ]; then
+    configured="$("$python" -c 'import sys; sys.path.insert(0, sys.argv[1]); from studio_core.runtime import assistant_target; print(assistant_target(sys.argv[2]))' "$installer_dir/../core" "$selected_home" 2>/dev/null || true)"
+  fi
+  if [ "$configured" = codex ] || [ "$configured" = claude ]; then target="$configured"
+  elif command -v codex >/dev/null 2>&1; then target=codex
+  elif command -v claude >/dev/null 2>&1; then target=claude
+  else target=codex; fi
+  args+=(--target "$target")
+fi
+if [ "$bundled" = 1 ]; then
+  if [ "$assistants" = install ]; then
+    echo 'Bundled setup reuses your assistant. Install and sign into Codex or Claude Code separately, then rerun setup.' >&2; exit 2
+  fi
+  assistants=skip
+  if [ "$companions" = ask ]; then companions=install; args+=(--companions install); fi
+fi
 if [ "$alternate_home" = 1 ]; then prerequisites=skip; assistants=skip; fi
 if [ "$inspect" = 1 ]; then
   if [ "$help" = 1 ]; then
     printf '%s\n' 'Marketing Studio setup' '' \
-      'Checks and offers to install Python 3.11+, Git, Node.js 20+, selected assistant CLIs,' \
-      'the selected studios, and their pinned research/slide tools.' '' \
+      'Platform downloads include Python, Node, and prepared research/slide tools.' \
+      'Setup reuses your selected assistant. Git is required; Google tools are optional.' '' \
       '  bash installer/install.sh [install|check|rollback|uninstall] [options]' \
       '  --studios blog presentation training    Choose one or more studios' \
-      '  --target codex|claude|both              Assistant integration (default: both)' \
+      '  --target auto|codex|claude|both         Assistant integration (default: detect one)' \
       '  --companions ask|install|skip           Shared research/slide tools' \
-      '  --assistants ask|install|skip           Missing assistant CLIs (Claude Code needs Node 22+)' \
+      '  --assistants ask|install|skip           Source installer only (default: skip)' \
       '  --prerequisites ask|install|check|skip  System tools (default: ask)' \
       '  --yes                                 Agree to installation without prompts' \
       '  --dry-run                             Plan only; no downloads or changes' \
@@ -100,13 +135,13 @@ if [ "$prerequisites" != skip ]; then
     case " ${missing_assistants[*]:-} " in *' claude '*) node_minimum=22;; esac
   fi
   if [ "$companions" = ask ] && [ "$prerequisites" != check ]; then
-    if confirm 'Install the pinned shared research and slide tools?'; then companions=install; else companions=skip; fi
+    if confirm 'Install the shared research and slide tools?'; then companions=install; else companions=skip; fi
     args+=(--companions "$companions")
   fi
   missing=()
   [ -n "$python" ] || missing+=(python3)
   git --version >/dev/null 2>&1 || missing+=(git)
-  if [ "$companions" != skip ] || { [ "$assistants" = install ] && [ "${#missing_assistants[@]}" -gt 0 ]; }; then
+  if [ "$bundled" = 0 ] && { [ "$companions" != skip ] || { [ "$assistants" = install ] && [ "${#missing_assistants[@]}" -gt 0 ]; }; }; then
     node_ready || missing+=(node)
   fi
   if [ "${#missing[@]}" -gt 0 ]; then
@@ -147,7 +182,7 @@ if [ "$prerequisites" != skip ]; then
     hash -r
     find_python || { echo 'Your package repository did not provide Python 3.11+. Install a supported Python version, then rerun setup.' >&2; exit 1; }
     git --version >/dev/null 2>&1 || { echo 'Git installation did not finish.' >&2; exit 1; }
-    if [ "$companions" != skip ] || [ "$assistants" = install ]; then
+    if [ "$bundled" = 0 ] && { [ "$companions" != skip ] || [ "$assistants" = install ]; }; then
       node_ready || { echo "Your package repository did not provide Node.js $node_minimum+ and npm. Install a current Node.js LTS release, then rerun setup." >&2; exit 1; }
     fi
   fi
@@ -160,6 +195,9 @@ if [ "$prerequisites" != skip ]; then
       printf 'Installed %s. Run `%s` in your terminal to sign in before starting assistant work.\n' "$assistant" "$assistant" >&2
     done
   fi
+fi
+if [ "$action" = install ] && [ "$inspect" = 0 ] && ! command -v "$target" >/dev/null 2>&1 && [ "$target" != both ]; then
+  printf '%s is not installed. Setup can finish; install and sign into your chosen assistant before starting work.\n' "$target" >&2
 fi
 [ -n "$python" ] || { echo 'Python 3.11+ is unavailable. Rerun setup with --prerequisites install.' >&2; exit 1; }
 if [ "${#args[@]}" -gt 0 ]; then

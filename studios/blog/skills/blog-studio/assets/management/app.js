@@ -9,7 +9,9 @@ let loadGeneration = 0, loadController = null, renderedState = null;
 let access = {status:'checking',message:'Checking Hub access…',actions:{edit:false,memory:false,refresh:false}};
 let accessGeneration = 0;
 const operationCache = new Map();
-function operationFor(kind,data){const key=kind+JSON.stringify(data);if(!operationCache.has(key))operationCache.set(key,crypto.randomUUID().replaceAll('-',''));return operationCache.get(key);}
+// getRandomValues is available on trusted-LAN HTTP as well as secure origins.
+function operationId(){return Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join('');}
+function operationFor(kind,data){const key=kind+JSON.stringify(data);if(!operationCache.has(key))operationCache.set(key,operationId());return operationCache.get(key);}
 const views = {runs:['Writing runs','Start a blog, review each stage, and pick up where you left off.','Your writing runs'],board:['Blogs in progress','Plan the next handoff. Open a Doc. Keep writing.','Writing pipeline'],inbox:['Needs attention','Find waiting decisions, review findings and stale companions.','Review inbox'],library:['Reference library','Find earlier work and curate the material your team uses.','Sources and historical posts'],memory:['Team memory','Keep useful knowledge and writing guidance easy to find.','Shared notes, context and rules']};
 function element(tag, text, cls) {const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function notice(message, error=false) {

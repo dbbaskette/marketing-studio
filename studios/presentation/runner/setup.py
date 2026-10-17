@@ -220,9 +220,12 @@ def shared() -> tuple[dict, str | None]:
         'person': {'name': usable['name']},
         'assistant': {name: usable[name] for name in ('agent', 'model', 'effort')},
         'brand': {'repository': usable['brand_repository'],
-                  'release': usable['brand_release'],
+                  'release': usable['brand_release'], 'skill': usable['brand_skill'],
                   'brand': usable['brand'], 'variant': usable['variant']},
         'output': usable['output'],
+        'render': {'previews': settings.shared_now(found)['previews']},
+        'models': {'mode': _group(found, 'models').get('mode')
+                   if _group(found, 'models').get('mode') in ('single', 'by_task') else None},
         'share': found.get('share') if found.get('share') in gitstate.SHARE else None}
     kept = {}
     for key, value in values.items():
@@ -271,7 +274,8 @@ def moved(space, values: dict) -> dict | None:
 LABELS = {'agent': 'the agent', 'model': 'the model', 'effort': 'the reasoning level',
           'name': 'your name', 'brand': 'the brand', 'variant': 'the variant',
           'output': 'the output', 'brand_repository': "the brand skill's repository",
-          'brand_release': "the brand skill's release", 'share': 'when to share'}
+          'brand_release': "the brand skill's release", 'share': 'when to share',
+          'previews': 'slide previews', 'brand_skill': 'the installed brand skill'}
 
 
 def notice_path() -> Path:
@@ -302,6 +306,12 @@ def migrate() -> list[str]:
     written: this computer's own copies then wait for the next start."""
     found, problem = studios_config.read()
     if problem:
+        return []
+    from studio_core.preferences import ready
+    if ready(found):
+        # A completed shared setup owns even empty choices (automatic previews/brand).
+        settings.forget_own()
+        gitstate.forget_own_share()
         return []
     kept = settings.own()
     mine = [(*settings.SHARED[name], name, value) for name, value in kept.items()]

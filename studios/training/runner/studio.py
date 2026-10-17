@@ -102,6 +102,9 @@ def serve(args, make=engines.Engine, out=None, opener=cmd_desk.show, keeper=None
         gitstate.identity(space.repo)  # nothing can be recorded without one; says the fix
     with only_runner():
         setup.migrate()     # the values every studio shares, into the file they all read
+        from studio_core import workspace_setup, onboarding
+        shared_store = onboarding.config('Training Studio')
+        workspace_setup.launch(gitstate, shared_store, 'training')
         engine = make()
         engine.upkeep = (keeper or upkeeping.Upkeep)(after=engine.look_again)
         try:
@@ -110,6 +113,15 @@ def serve(args, make=engines.Engine, out=None, opener=cmd_desk.show, keeper=None
             if not token:
                 raise
             token, server = None, page.Studio(engine, 0)   # the port was taken meanwhile
+        def prepare(values):
+            workspace_setup.configure(gitstate, values, 'training')
+
+        def configured():
+            engine.saved()
+            engine.resume(wait=False)
+
+        onboarding.attach(server, 'Training Studio', page.desk.TOKEN_HEADER,
+                          prepare, shared_store, after=configured)
         engine.upkeep.leave = server.leave
         signal.signal(signal.SIGTERM, cmd_desk.interrupt)
         try:
@@ -119,7 +131,8 @@ def serve(args, make=engines.Engine, out=None, opener=cmd_desk.show, keeper=None
             print(json.dumps(shown), file=out, flush=True)
             if out.isatty() and getattr(args, 'open', False):
                 opener(server.url)   # the person's own terminal, and their own browser
-            engine.resume(wait=False)   # the page answers while the workspace is fetched
+            if not hasattr(server, 'answer') or onboarding.preferences.ready(shared_store.read()[0]):
+                engine.resume(wait=False)   # the page answers while the workspace is fetched
             engine.upkeep.start()       # and while the skills are looked at
             server.serve()
         except KeyboardInterrupt:

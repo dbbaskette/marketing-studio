@@ -33,6 +33,7 @@ class Fixture(unittest.TestCase):
             os.environ,
             {
                 'BLOG_STUDIO_DATA': str(self.base / 'studio-data'),
+                'HARNESS_RESEARCH_RUNTIME': str(self.base / 'no-research-runtime'),
                 'STUDIOS_CONFIG': str(self.base / 'studios-config.json'),
                 'BRAND_SKILL_RUNTIME': str(self.base / 'no-brand'),
             },

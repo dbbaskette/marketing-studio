@@ -8,7 +8,7 @@ import subprocess
 import sys
 from contextlib import contextmanager
 
-from . import catalog, computer, control, server, shared, state
+from . import catalog, computer, control, network, server, shared, state
 from .errors import WorkspaceError
 from .launcher import Launcher
 from .page import Home
@@ -17,14 +17,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @contextmanager
-def singleton():
+def singleton(network_requested=False):
     target = state.data_root() / 'home.lock'
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open('a') as stream:
         try:
             fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise WorkspaceError('Marketing Studio is starting or already running. Try the open command again shortly.') from exc
+            message = ('Marketing Studio is already running. Stop its terminal with Ctrl-C, then run marketing-studio serve --lan.'
+                       if network_requested else
+                       'Marketing Studio is starting or already running. Try the open command again shortly.')
+            raise WorkspaceError(message) from exc
         yield
 
 
@@ -32,7 +35,7 @@ def parser():
     top = argparse.ArgumentParser(prog='marketing-studio', description=__doc__)
     top.add_argument('--version', action='version', version='Marketing Studio ' + (ROOT / 'VERSION').read_text().strip())
     top.set_defaults(studio=None, port=0, no_open=False, json=False, source=None,
-                     studios=None, target='both', companions='ask', yes=False)
+                     studios=None, target='auto', companions='ask', yes=False)
     commands = top.add_subparsers(dest='command', metavar='command')
     opening = commands.add_parser('open', help='Open the home page or one studio.')
     opening.add_argument('studio', nargs='?', choices=tuple(catalog.STUDIOS))
@@ -40,6 +43,8 @@ def parser():
     serving = commands.add_parser('serve', help='Run the local home server in this terminal.')
     for command in (opening, setup, serving):
         command.add_argument('--port', type=server.port, default=0)
+        command.add_argument('--lan', nargs='?', const='auto', metavar='ADDRESS',
+                             help='Allow access on your trusted local network; optionally choose a private IPv4 address.')
         command.add_argument('--no-open', action='store_true', help='Keep the browser closed.')
         command.add_argument('--json', action='store_true')
     status = commands.add_parser('status', help='See installed studios and setup status.')
@@ -55,7 +60,7 @@ def parser():
         if action in ('install', 'update'):
             command.add_argument('--from', dest='source', type=Path, help='Folder containing the release installer.')
             command.add_argument('--studios', nargs='+', choices=tuple(catalog.STUDIOS))
-            command.add_argument('--target', choices=('codex', 'claude', 'both'), default='both')
+            command.add_argument('--target', choices=('auto', 'codex', 'claude', 'both'), default='auto')
             command.add_argument('--companions', choices=('ask', 'install', 'skip'), default='ask')
     return top
 
@@ -74,7 +79,7 @@ def offline(args):
         return 0 if report['ready'] else 1
     preferences = state.read()
     studios = catalog.describe(preferences.get('paths', {}), lambda _: False)
-    result = {'setup_complete': preferences.get('done', False), 'studios': studios}
+    result = {'setup_complete': Home.configured(shared.read()[0]), 'studios': studios}
     if args.json:
         print(json.dumps(result, indent=2))
     else:
@@ -89,7 +94,7 @@ def main(argv=None):
     top = parser()
     arguments = list(sys.argv[1:] if argv is None else argv)
     arguments = [value for value in arguments if value != '--open']
-    if not arguments or arguments[0] in ('--no-open', '--port', '--json'):
+    if not arguments or arguments[0] in ('--no-open', '--port', '--json', '--lan') or arguments[0].startswith(('--port=', '--lan=')):
         arguments.insert(0, 'open')
     args = top.parse_args(arguments)
     if args.studio and args.command != 'open':
@@ -112,21 +117,22 @@ def main(argv=None):
         if args.command in ('doctor', 'check', 'status'):
             return offline(args)
         action = {'command': 'setup' if args.command == 'setup' else 'open', 'studio': args.studio}
-        if not args.no_open:
+        if not args.no_open and not args.lan:
             result = control.request(state.data_root(), action)
             if result is not None:
                 if result.get('error'):
                     raise WorkspaceError(result['error'])
                 print('Opened ' + (args.studio.title() + ' Studio' if args.studio else 'Marketing Studio') + '.')
                 return 0
-        with singleton():
-            launcher = Launcher()
-            desk = server.Desk(args.port, page=lambda port: Home(port, launcher))
+        with singleton(network_requested=bool(args.lan)):
+            lan = network.Network(network.discover_address() if args.lan == 'auto' else args.lan) if args.lan else None
+            launcher = Launcher(lan)
+            desk = None
             ipc = None
             def open_action(wanted):
                 if wanted['command'] == 'setup':
                     url = desk.url + '&view=settings'
-                elif wanted.get('studio') and state.read().get('done'):
+                elif wanted.get('studio') and Home.configured(shared.read()[0]):
                     values, problem = shared.read()
                     if problem:
                         raise WorkspaceError(problem)
@@ -138,13 +144,22 @@ def main(argv=None):
             signal.signal(signal.SIGTERM, server.interrupt)
             signal.signal(signal.SIGINT, server.interrupt)
             try:
+                desk = server.Desk(args.port, page=lambda port: Home(port, launcher))
+                if lan:
+                    # A separate interface can use the same chosen port as loopback.
+                    lan.share('marketing', desk.url, port=desk.port)
                 ipc = control.Control(state.data_root(), open_action)
                 shown = server.announce(desk, sys.stdout.isatty(),
                     (lambda _: False) if args.no_open else (lambda _: (open_action(action) or True)))
                 if args.json or not sys.stdout.isatty():
+                    if lan:
+                        shown['network'] = lan.snapshot(private=sys.stdout.isatty())
                     print(json.dumps(shown), flush=True)
                 else:
                     print('Marketing Studio is ready.\n' + desk.url + '\n\nLeave this terminal open while you work. Press Ctrl-C to stop.', flush=True)
+                    if lan:
+                        print('Open on your phone (same trusted Wi-Fi):\n' + lan.snapshot()['url'] +
+                              '\nKeep this link private. HTTP is unencrypted; it grants full studio access.', flush=True)
                     if not args.no_open:
                         open_action(action)
                 desk.serve()
@@ -153,7 +168,10 @@ def main(argv=None):
             finally:
                 if ipc:
                     ipc.close()
-                desk.stop()
+                if lan:
+                    lan.close()
+                if desk:
+                    desk.stop()
                 launcher.close()
         return 0
     except (WorkspaceError, OSError, ValueError) as failure:

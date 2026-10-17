@@ -34,27 +34,42 @@ own launcher and can be installed on its own.
 | Teach a topic at the right level | **[Training Studio](studios/training)** | Research, teaching plans, learner materials, decks, and practice |
 
 **Your choices carry across the studios:** your name, assistant, work location,
-brand, delivery format, and sharing preference. Presentation Studio and Training
-Studio also read the shared model and reasoning settings. Blog Studio uses the
-model configured in your assistant CLI.
+brand, delivery format, and sharing preference. All three studios read the shared
+assistant, model and reasoning settings.
+Slide previews and an optional installed brand skill folder are shared too.
+Research and slide tools use minimum-version requirements (`>=0.9.5` for Harness
+Research and `>=0.14.1` for Harness Slides). Explicit source installs and companion
+updates select the newest stable tag that meets those requirements. Downloadable
+bundles include exact, verified versions and install offline; opening a studio
+never updates its tools automatically.
+
+Quick, Main, and Complex model profiles can be configured once in Shared settings. Every studio saves the resolved choices with new work. [See model routing](docs/shared-setup.md#models-by-task).
 
 ## Get started
 
 ### 1. Get the installer
 
-**[Download the latest installer](https://github.com/dbbaskette/marketing-studio/releases/latest/download/marketing-studio-installer.zip)**,
-unzip it, and open **installer/Install Marketing Studio.command** on macOS.
+**[Choose a download for your computer](https://github.com/dbbaskette/marketing-studio/releases/latest)**.
+Look for a versioned platform bundle such as `marketing-studio-4.1.0-macos-arm64.zip`.
+Choose `macos-arm64` for Apple Silicon, `macos-x64` for an Intel Mac, or the matching
+`linux-arm64` / `linux-x64` build for a Linux computer using glibc.
+
+Unzip it and open **installer/Install Marketing Studio.command** on macOS.
 On Linux, run `bash installer/install.sh` from the unpacked folder.
 
-**One installer handles the setup.** It checks your computer, offers to install
-missing Python, Git, Node.js, and assistant CLIs, then installs your studios and
-their shared research and slide tools. Existing compatible tools are reused.
-Choose Codex, Claude Code, or both; sign in to your chosen assistant afterward.
+**The platform bundle brings its own Python, Node, research tools, and slide engine.**
+There is no npm install or compiler setup. The runtimes stay inside the installed
+version, so you can delete the downloaded folder afterward.
 
-On macOS, setup uses Homebrew and offers to install it if needed. On Linux, it
-uses an existing Homebrew, `apt-get`, or `dnf`; your package repositories must
-provide Python 3.11+ and Node.js 20+. System installs may request your administrator
-password. Google delivery is optional; local files work without a Google account.
+Bring **Git and one signed-in assistant: Codex or Claude Code**. Setup reuses what
+is installed and offers to install Git if missing. It detects one assistant; use
+`--target codex` or `--target claude` to choose explicitly. Assistant software and
+sign-in stay under your control. Google delivery and slide preview tools are optional;
+see the [installation guide](docs/installation.md) for their requirements.
+
+If a release lists only the smaller `*-installer.zip` downloads, those are source
+installers: they offer to install Python/Node and fetch shared tools during setup.
+The platform bundles are built separately for each operating system and processor.
 
 <details>
 <summary><strong>Prefer to install from source?</strong></summary>
@@ -74,7 +89,7 @@ bash installer/install.sh --studios training --yes
 ```
 
 Use `--target codex` or `--target claude` to choose one assistant. Add `--yes`
-for unattended setup, `--assistants skip` to keep assistant CLIs untouched, or
+for unattended setup. Assistant CLIs are left untouched by default. Use
 `--companions skip` to skip shared tools. `--prerequisites skip` provides an
 offline path with no package-manager or assistant installs. Existing work and
 settings stay in their current locations.
@@ -107,11 +122,15 @@ The first visit opens a short setup:
 
 1. **You and your assistant.** Your name, assistant, and optional model settings.
 2. **Your workspace.** Local Git on this computer, or an existing shared repository.
-3. **Brand and delivery.** An optional brand skill and your preferred file format.
+3. **Brand and delivery.** An optional brand skill, slide previews, and your preferred file format.
 
 Each step saves as you go. Finishing setup prepares installed studios without
 starting an assistant job. Later visits take you straight to the studio launch
 page. Open a studio and start your first piece of work there.
+
+Complete setup in Marketing Studio **or any individual studio**. The same setup form
+is available in each. Once finished, opening another studio takes you straight to
+its home page, including a studio installed later. Existing workspaces stay in place.
 
 ## A command for everyday work
 
@@ -125,6 +144,7 @@ marketing-studio open training
 | :--- | :--- |
 | `marketing-studio` | Opens the home page |
 | `marketing-studio open presentation` | Opens Presentation Studio; reuses it if already open through Marketing Studio |
+| `marketing-studio serve --lan` | Enables private phone access on your trusted local network |
 | `marketing-studio setup` | Opens shared settings, or first-run setup |
 | `marketing-studio status` | Shows which studios are installed and whether shared setup is complete |
 | `marketing-studio doctor` | Checks the tools on this computer without contacting providers |
@@ -132,6 +152,30 @@ marketing-studio open training
 | `marketing-studio --version` | Shows the installed suite version |
 
 For scripts, add `--json` to `status` or `doctor`.
+
+## Open it on your phone
+
+Connect your phone and computer to the same **trusted Wi-Fi**, then start:
+
+```sh
+marketing-studio serve --lan
+```
+
+Open the **private phone link** printed in the terminal. Once setup is complete,
+Marketing Studio also shows it under **Continue on your phone**. Launch Blog Studio,
+Presentation Studio, or Training Studio there; their links work on your phone too.
+The layouts adapt to a narrow screen, with touch controls and readable forms.
+Your work, Git repositories, and signed-in assistant stay on the computer.
+
+Network access is off by default. If Marketing Studio is already open, stop its
+terminal with **Ctrl-C** first. Leave the new terminal open while you work;
+stopping it closes its network listeners and studios. A new session gets new links.
+Use only a trusted network: HTTP is unencrypted, and anyone with a private link can
+use that studio with your local account's permissions. Do not forward these ports
+to the internet.
+
+For address selection, firewall help, and troubleshooting, see
+[local-network access](docs/local-network.md).
 
 ## Keep your work local. Share when you choose.
 
@@ -156,8 +200,8 @@ are used for new work; existing items retain their saved choices.
 
 ## Install, update, or step back
 
-All studios ship from this repository with one shared companion pin set. The
-release includes the full installer and a separate installer for each studio.
+All studios ship from this repository with one shared companion pin set. Platform
+bundles include the full suite or a selection for an individual studio.
 You can install a single studio and use its own launcher without opening Marketing
 Studio first.
 
@@ -188,6 +232,13 @@ installed studios, project content, and settings.
 | A tool is missing | Run `marketing-studio doctor`, then rerun the downloaded setup script to install missing prerequisites. |
 | An assistant cannot start | Open that CLI in your own terminal and complete its sign-in. |
 | Another studio changed a setting | Reload the settings page so you can review the current value before saving. |
+
+Content choices such as a blog’s tone, a deck’s audience, or a training’s level
+belong to the work you create. Time and spending limits, notifications, and update
+preferences have built-in defaults and remain optional studio settings. Missing
+programs, assistant sign-in, or brand skills appear in the studio’s computer check;
+finishing setup does not install software or sign you into services. See the
+[shared setup guide](docs/shared-setup.md) for the settings shared across studios.
 
 Shared preferences live in `~/.config/studios-config.json`. Sign-in stays with
 your assistant, Git, and Google. Marketing Studio does not store authentication
@@ -228,3 +279,6 @@ Blog Studio research work is preserved on a separate migration branch.
 ---
 
 <p align="center"><strong>Pick a studio. Make something useful.</strong></p>
+
+Research uses a shared purpose-led report and brief, independently reviewed before
+writing or slide work continues. See [research compatibility and the preview helper](docs/research-synthesis.md).

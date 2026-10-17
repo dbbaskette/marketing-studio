@@ -1,3 +1,6 @@
+> Historical adapter proposal. The implemented synthesis contract is described in
+> [Shared synthesis research](research-synthesis.md). Existing research remains compatible.
+
 # Shared research component: spec
 
 > Historical proposal. See [the implemented architecture](architecture.md) for the current Marketing Studio scope.

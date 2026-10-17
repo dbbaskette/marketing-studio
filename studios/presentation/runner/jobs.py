@@ -35,6 +35,7 @@ from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import home
+from studio_core import model_profiles
 from workspace import WorkspaceError
 
 from runner import agents, briefs, settings, stages, worker_tools
@@ -208,6 +209,7 @@ class Jobs:
                error: str | None = None, dollars: float | None = None,
                tokens: int | None = None) -> dict:
         """Note one try at a step. A try that worked clears the count of failures."""
+        model_profiles.complete(self, record, step, started_at)
         entry = record['steps'].setdefault(step, {'failed': 0, 'tries': [], 'done': False})
         entry.setdefault('tries', [])
         entry['tries'].append({
@@ -356,10 +358,17 @@ class Jobs:
         with self._lock:
             run.workers[name] = {'label': doing, 'started_at': started_at, 'lines': lines,
                                  'folder': folder}
+        choice = None
         try:
+            choice = model_profiles.route(record, 'Presentation Studio', name,
+                                          effort_key='level_of_effort',
+                                          purpose='review' if 'review' in work.prepared else None)
+            settings.check_effort(choice['effort'], record.get('agent') or settings.load().agent,
+                                  choice['model'])
+            job = replace(job, model=choice['model'], effort=choice['effort'])
             outcome = self.adapter(record.get('agent') or settings.load().agent).run(
                 job, activity=lines.append, stop=run.stop)
-        except WorkspaceError as refusal:  # a job that was wrong before it started
+        except (WorkspaceError, ValueError) as refusal:  # refuse invalid saved choices
             outcome = agents.Outcome(False, 'failed', str(refusal))
         finally:
             with self._lock:
@@ -368,6 +377,8 @@ class Jobs:
             outcome = replace(outcome, finished=False, reason='stopped')
         if not outcome.seconds:
             outcome = replace(outcome, seconds=round(time.monotonic() - clock, 1))
+        if choice is not None:
+            model_profiles.staged(self, choice, number, work.profile, started_at)
         return outcome, worker_tools.collect(folder), started_at, folder
 
     @staticmethod

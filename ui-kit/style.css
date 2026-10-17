@@ -1,24 +1,17 @@
-/* The page, in the manner of a Mac app.
-   Glass for the things you steer with: the sidebar, the toolbar, sheets, toasts and controls.
-   Solid paper for the things you read: a document, a comparison, a review note.
-   A soft backdrop lies behind it all so the glass has something to bend. It stays still, so
-   what the glass blurs is worked out once and not again on every frame.
-
-   Only four layers blur what is behind them: the sidebar, the toolbar, a sheet and a toast.
-   Cards sit straight on the backdrop, which is already smooth, so they need no blur.
-   Every colour is a token. tests/test_desk.py reads them and checks that text stays
-   readable on glass over the strongest colour the backdrop can put behind it, in both
-   appearances. Each fallback at the foot of this file swaps the glass for solid surfaces. */
+/* Golden Gate-inspired web UI, shared by all four studios.
+   Material is reserved for navigation, toolbars, sheets and toasts. Content and
+   forms use opaque surfaces. The existing token contrast and fallback checks
+   cover both appearances; no native OS material or refraction is implied. */
 
 :root {
   color-scheme: light dark;
 
-  --ground: #eef1f8;
-  --wash-1: #b8d3ff;
-  --wash-2: #ffd0e2;
-  --wash-3: #ffe2bd;
-  --wash-4: #c6f0e0;
-  --wash-5: #dccfff;
+  --ground: #f2f4f7;
+  --wash-1: #e0e8f2;
+  --wash-2: #e8edf3;
+  --wash-3: #e4eaf0;
+  --wash-4: #e5edeb;
+  --wash-5: #e7e7ef;
 
   --ink: #1c1d22;
   --quiet: #565a69;
@@ -35,37 +28,37 @@
   --focus: #0a55c2;
   --focus-halo: rgb(255 255 255 / 0.9);
 
-  --glass: rgb(255 255 255 / 0.62);
-  --card: rgb(255 255 255 / 0.78);
-  --sheet-fill: rgb(255 255 255 / 0.88);
-  --solid: #f6f7fb;
+  --glass: rgb(246 248 252 / 0.88);
+  --card: #ffffff;
+  --sheet-fill: rgb(250 251 253 / 0.96);
+  --solid: #f5f7fa;
   --paper: #ffffff;
   --paper-line: rgb(20 24 40 / 0.12);
-  --glass-line: rgb(255 255 255 / 0.55);
+  --glass-line: rgb(56 70 90 / 0.16);
   --hair: rgb(20 24 40 / 0.1);
   --well: rgb(20 24 40 / 0.07);
   --thumb: rgb(255 255 255 / 0.95);
   --shine: rgb(255 255 255 / 0.6);
-  --edge: inset 1px 1px 0 rgb(255 255 255 / 0.85), inset -1px -1px 0 rgb(255 255 255 / 0.2);
-  --lift: 0 12px 32px rgb(40 50 90 / 0.14), 0 2px 6px rgb(40 50 90 / 0.06);
-  --rest: 0 4px 14px rgb(40 50 90 / 0.08);
+  --edge: inset 0 1px 0 rgb(255 255 255 / 0.55);
+  --lift: 0 8px 24px rgb(40 50 70 / 0.12), 0 1px 4px rgb(40 50 70 / 0.06);
+  --rest: none;
 
   --plain: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   --typed: ui-monospace, "SF Mono", monospace;
 
   --gutter: clamp(0.75rem, 3vw, 2rem);
-  --card-round: 22px;
-  --ease: cubic-bezier(0.3, 1.25, 0.5, 1);
+  --card-round: 14px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --ground: #0c0e17;
-    --wash-1: #1c3f96;
-    --wash-2: #6a2375;
-    --wash-3: #0f5560;
-    --wash-4: #802c45;
-    --wash-5: #2a2a7a;
+    --ground: #11151c;
+    --wash-1: #1b2636;
+    --wash-2: #292432;
+    --wash-3: #1a2a2b;
+    --wash-4: #30262d;
+    --wash-5: #22293b;
 
     --ink: #f3f4f8;
     --quiet: #abb0c0;
@@ -82,20 +75,20 @@
     --focus: #9cc4ff;
     --focus-halo: rgb(0 0 0 / 0.75);
 
-    --glass: rgb(36 38 50 / 0.6);
-    --card: rgb(30 32 44 / 0.74);
-    --sheet-fill: rgb(34 36 48 / 0.9);
-    --solid: #1b1d27;
-    --paper: #1a1b23;
+    --glass: rgb(30 36 46 / 0.92);
+    --card: #1c222d;
+    --sheet-fill: rgb(32 39 50 / 0.97);
+    --solid: #202732;
+    --paper: #191f29;
     --paper-line: rgb(255 255 255 / 0.12);
-    --glass-line: rgb(255 255 255 / 0.1);
+    --glass-line: rgb(206 221 244 / 0.16);
     --hair: rgb(255 255 255 / 0.1);
     --well: rgb(0 0 0 / 0.3);
     --thumb: rgb(104 108 128 / 0.75);
     --shine: rgb(255 255 255 / 0.09);
-    --edge: inset 1px 1px 0 rgb(255 255 255 / 0.17), inset -1px -1px 0 rgb(0 0 0 / 0.25);
-    --lift: 0 16px 40px rgb(0 0 0 / 0.45), 0 2px 8px rgb(0 0 0 / 0.3);
-    --rest: 0 6px 18px rgb(0 0 0 / 0.3);
+    --edge: inset 0 1px 0 rgb(255 255 255 / 0.12);
+    --lift: 0 10px 28px rgb(0 0 0 / 0.35), 0 1px 5px rgb(0 0 0 / 0.2);
+    --rest: none;
   }
 }
 
@@ -196,19 +189,14 @@ textarea {
   stroke-linejoin: round;
 }
 
-/* --- the backdrop: washes of colour, lying still ------------------------------------ */
+/* --- a neutral canvas behind the integrated shell ---------------------------------- */
 
 .backdrop {
   position: fixed;
-  inset: -30vmax;
+  inset: 0;
   z-index: 0;
   pointer-events: none;
-  background:
-    radial-gradient(42vmax 38vmax at 28% 30%, var(--wash-1), transparent 70%),
-    radial-gradient(40vmax 36vmax at 72% 26%, var(--wash-2), transparent 70%),
-    radial-gradient(44vmax 40vmax at 78% 74%, var(--wash-3), transparent 70%),
-    radial-gradient(40vmax 40vmax at 26% 76%, var(--wash-4), transparent 70%),
-    radial-gradient(34vmax 30vmax at 52% 52%, var(--wash-5), transparent 70%);
+  background: var(--ground);
 }
 
 /* --- the materials ------------------------------------------------------------------ */
@@ -217,8 +205,8 @@ textarea {
   background: var(--glass);
   border: 1px solid var(--glass-line);
   box-shadow: var(--edge), var(--lift);
-  -webkit-backdrop-filter: blur(26px) saturate(1.8);
-  backdrop-filter: blur(26px) saturate(1.8);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  backdrop-filter: blur(16px) saturate(1.15);
 }
 
 .card {
@@ -228,7 +216,7 @@ textarea {
   background: var(--card);
   border: 1px solid var(--glass-line);
   border-radius: var(--card-round);
-  box-shadow: var(--edge), var(--rest);
+  box-shadow: none;
 }
 
 .card > * + * {
@@ -238,26 +226,13 @@ textarea {
 .paper {
   background: var(--paper);
   border: 1px solid var(--paper-line);
-  border-radius: 18px;
-  box-shadow: var(--rest);
+  border-radius: 10px;
+  box-shadow: none;
 }
 
-/* A highlight that follows the pointer across glass. app.js moves --mx and --my. */
+/* Pointer-following highlights are intentionally disabled on reading surfaces. */
 .shine::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  pointer-events: none;
-  background: radial-gradient(16rem circle at var(--mx, 50%) var(--my, -30%), var(--shine),
-    transparent 70%);
-  opacity: 0;
-  transition: opacity 260ms ease;
-}
-
-.shine:hover::after {
-  opacity: 1;
+  display: none;
 }
 
 /* --- the window: a sidebar and a content area ------------------------------------- */
@@ -272,15 +247,18 @@ textarea {
 
 .sidebar {
   position: sticky;
-  top: 0.75rem;
+  top: 0;
   align-self: start;
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  height: calc(100vh - 1.5rem);
-  margin: 0.75rem 0 0.75rem 0.75rem;
-  padding: 1rem 0.65rem;
-  border-radius: 26px;
+  height: 100vh;
+  margin: 0;
+  padding: 1.2rem 0.65rem;
+  border: 0;
+  border-right: 1px solid var(--hair);
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .brand {
@@ -296,11 +274,11 @@ textarea {
   align-items: center;
   gap: 0.7rem;
   width: 100%;
-  min-height: 2.6rem;
+  min-height: 2.75rem;
   padding: 0.4rem 0.75rem;
   background: none;
   border: 0;
-  border-radius: 14px;
+  border-radius: 9px;
   text-align: left;
   font-weight: 500;
   cursor: pointer;
@@ -316,8 +294,9 @@ textarea {
 }
 
 .nav-item[aria-current="page"] {
-  background: var(--thumb);
-  box-shadow: var(--edge), 0 2px 8px rgb(0 0 0 / 0.1);
+  background: var(--well);
+  color: var(--link);
+  box-shadow: none;
   font-weight: 650;
 }
 
@@ -342,15 +321,16 @@ textarea {
 
 .content {
   min-width: 0;
-  padding: 0.75rem var(--gutter) 5rem;
+  padding: 0 var(--gutter) 5rem;
+  background: var(--solid);
 }
 
 .toolbar-wrap {
   position: sticky;
-  top: 0.75rem;
+  top: 0;
   z-index: 5;
-  max-width: 76rem;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0 calc(-1 * var(--gutter));
 }
 
 .toolbar {
@@ -358,9 +338,12 @@ textarea {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 0.75rem;
-  min-height: 3.6rem;
-  padding: 0.5rem 0.6rem 0.5rem 0.85rem;
-  border-radius: 24px;
+  min-height: 4.2rem;
+  padding: 0.65rem var(--gutter);
+  border: 0;
+  border-bottom: 1px solid var(--hair);
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .toolbar-lead:empty {
@@ -441,7 +424,7 @@ textarea {
   }
 }
 
-/* --- controls: capsules that give a little when pressed ------------------------------ */
+/* --- controls: coordinated edges and restrained interaction states ------------------- */
 
 .button {
   position: relative;
@@ -450,14 +433,14 @@ textarea {
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
-  min-height: 2.6rem;
+  min-height: 2.75rem;
   padding: 0.45rem 1.1rem;
   overflow: hidden;
   background: var(--thumb);
   color: var(--ink);
   border: 1px solid var(--glass-line);
-  border-radius: 999px;
-  box-shadow: var(--edge), 0 2px 8px rgb(0 0 0 / 0.1);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 0 var(--shine), 0 1px 2px rgb(0 0 0 / 0.06);
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
@@ -486,7 +469,7 @@ textarea {
   background: var(--accent);
   color: var(--on-accent);
   border-color: transparent;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35), 0 6px 16px rgb(10 80 200 / 0.28);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 1px 3px rgb(10 80 200 / 0.16);
 }
 
 .button-quiet {
@@ -504,8 +487,9 @@ textarea {
 }
 
 .button-round {
-  width: 2.6rem;
+  width: 2.75rem;
   padding: 0;
+  border-radius: 50%;
 }
 
 .link {
@@ -535,8 +519,8 @@ textarea {
   grid-template-columns: 1fr 1fr;
   padding: 3px;
   background: var(--well);
-  border-radius: 999px;
-  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.14);
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--hair);
 }
 
 .seg-thumb {
@@ -546,8 +530,8 @@ textarea {
   left: 3px;
   width: calc((100% - 6px) / 2);
   background: var(--thumb);
-  border-radius: 999px;
-  box-shadow: var(--edge), 0 2px 6px rgb(0 0 0 / 0.16);
+  border-radius: 8px;
+  box-shadow: var(--edge), 0 1px 3px rgb(0 0 0 / 0.1);
   transition: transform 300ms var(--ease);
 }
 
@@ -574,7 +558,7 @@ textarea {
   padding: 0.3rem 1rem;
   background: none;
   border: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   color: var(--quiet);
   font-weight: 600;
   white-space: nowrap;
@@ -763,7 +747,7 @@ textarea {
 .large-title {
   padding: 0.6rem 0.25rem 0.2rem;
   font-size: clamp(1.9rem, 1.3rem + 2.6vw, 2.9rem);
-  font-weight: 750;
+  font-weight: 680;
   letter-spacing: -0.022em;
   line-height: 1.1;
   text-wrap: balance;
@@ -850,26 +834,9 @@ textarea {
   white-space: pre-wrap;
 }
 
-/* A training that changed in the last few minutes: a slow sheen passes over its row. */
-.working {
-  overflow: hidden;
-}
-
+/* Activity is already communicated by the step and its state; rows stay still. */
 .working::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(100deg, transparent 30%, var(--shine) 50%, transparent 70%);
-  transform: translateX(-100%);
-  animation: sheen 4.5s ease-in-out infinite;
-}
-
-@keyframes sheen {
-  60%,
-  100% {
-    transform: translateX(100%);
-  }
+  display: none;
 }
 
 .invite {
@@ -1303,6 +1270,10 @@ p.fact > .bead {
 /* Before anything is set up there is one screen and no sidebar to leave it by. */
 .alone .window {
   display: block;
+}
+
+.alone .toolbar-wrap {
+  margin-inline: auto;
 }
 
 .alone .toolbar-wrap,
@@ -2082,14 +2053,16 @@ summary {
 
   .sidebar {
     position: fixed;
-    inset: auto 0.6rem calc(0.6rem + env(safe-area-inset-bottom)) 0.6rem;
+    inset: auto 0 0;
     z-index: 6;
     flex-direction: row;
     gap: 0.2rem;
     height: auto;
     margin: 0;
-    padding: 0.3rem;
-    border-radius: 26px;
+    padding: 0.35rem 0.4rem calc(0.35rem + env(safe-area-inset-bottom));
+    border: 0;
+    border-top: 1px solid var(--hair);
+    border-radius: 0;
   }
 
   .brand {
@@ -2104,7 +2077,7 @@ summary {
     gap: 0.1rem;
     min-height: 3.1rem;
     padding: 0.3rem 0.2rem;
-    border-radius: 22px;
+    border-radius: 9px;
     font-size: 0.72rem;
     text-align: center;
   }
@@ -2120,15 +2093,23 @@ summary {
   }
 
   .content {
-    padding-bottom: 7rem;
+    padding-bottom: calc(7rem + env(safe-area-inset-bottom));
+    padding-left: max(var(--gutter), env(safe-area-inset-left));
+    padding-right: max(var(--gutter), env(safe-area-inset-right));
+  }
+
+  .input, select.input, textarea.input {
+    font-size: 1rem;
   }
 
   .toolbar-wrap {
-    top: 0.5rem;
+    top: 0;
   }
 
   .sheet {
     max-height: calc(100vh - 14rem);
+    max-height: calc(100dvh - 10rem - env(safe-area-inset-bottom));
+    overscroll-behavior: contain;
   }
 
   .beads:not(.beads-small) .bead-name {
@@ -2299,3 +2280,11 @@ summary {
     display: block;
   }
 }
+
+/* Grouped reviews keep long documents behind quiet, accessible disclosures. */
+.review-bundle { border-top: 1px solid var(--paper-line); }
+.review-bundle > summary { display: list-item; padding: 0.9rem 0; min-height: 44px; }
+.review-bundle-body { padding: 0 0 1.25rem; overflow-wrap: anywhere; }
+.review-bundle-body > * + * { margin-top: 0.8rem; }
+.review-bundle-body textarea { width: 100%; min-height: 6rem; margin: 0.6rem 0; font: inherit; }
+.review-bundle summary:focus-visible { outline: 2px solid var(--link); outline-offset: 3px; }

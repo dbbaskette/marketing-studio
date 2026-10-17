@@ -1,6 +1,6 @@
-/* What a deck's screens add to style.css, which is kept exactly as it was vendored: cards to
-   pick from, a slide's before and after, and the stage that is coming later. Every colour is
-   one of style.css's own. */
+/* Presentation Studio controls on the shared Golden Gate-inspired materials.
+   Discrete slide choices keep their boundary; review findings use quiet dividers.
+   Every colour comes from style.css. */
 
 /* A card that is a button: one of several to pick from. The tick and its words say it is
    picked, not colour alone. */
@@ -18,19 +18,19 @@
   gap: 0.35rem;
   width: 100%;
   padding: 0.9rem 1rem;
-  background: var(--well);
+  background: var(--paper);
   color: var(--ink);
   font: inherit;
   text-align: left;
   border: 1px solid var(--hair);
-  border-radius: 16px;
+  border-radius: 10px;
   cursor: pointer;
 }
 
 .pick-card[aria-pressed="true"] {
   background: var(--thumb);
   border-color: var(--focus);
-  box-shadow: var(--edge), 0 0 0 2px var(--focus);
+  box-shadow: inset 0 0 0 1px var(--focus);
 }
 
 .pick-top {
@@ -113,13 +113,14 @@
 }
 
 .review-list > li + li {
-  margin-top: 0.6rem;
+  margin-top: 0;
 }
 
 .review-row {
-  padding: 0.7rem 0.9rem;
-  border: 1px solid var(--hair);
-  border-radius: 12px;
+  padding: 0.9rem 0;
+  border: 0;
+  border-top: 1px solid var(--hair);
+  border-radius: 0;
 }
 
 .review-row > * + * {

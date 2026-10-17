@@ -260,6 +260,19 @@ def record_result(root, ident, run, item_id, supplied):
 def status(root, ident):
     directory, record = studio.item(root, 'articles', ident)
     path, report = locations(directory)
+    if (record.get('research') or {}).get('contract') == 2:
+        from studio_core.research_contract import read_bundle
+
+        facts, manifest = read_bundle(directory / 'research')
+        return {
+            'id': ident,
+            'status': manifest['status'],
+            'digest': manifest['digest'],
+            'report': str(directory / 'research/report.md'),
+            'brief': str(directory / 'research/brief.md'),
+            'file': str(directory / 'research/output.json'),
+            'completed': len(facts['findings']),
+        }
     if not path.exists():
         return {'id': ident, 'status': 'not-started'}
     value = studio.read_json(path)
@@ -315,6 +328,9 @@ def status(root, ident):
 
 def add_parser(groups):
     actions = groups.add_parser('research').add_subparsers(dest='action', required=True)
+    handoff = actions.add_parser('import')
+    handoff.add_argument('--id', required=True)
+    handoff.add_argument('--case', required=True, type=Path)
     for action in ('plan', 'record', 'status'):
         p = actions.add_parser(action)
         p.add_argument('--id', required=True)
@@ -326,6 +342,29 @@ def add_parser(groups):
 
 
 def command(root, args):
+    if args.action == 'import':
+        from studio_core import research_contract
+
+        directory, record = studio.item(root, 'articles', args.id)
+        if locations(directory)[0].exists():
+            raise ValueError(
+                'Existing research keeps its original workflow. Use a fresh blog for synthesis research.'
+            )
+        if (directory / 'derived/blog-run.json').exists():
+            raise ValueError('This blog has a guided run. Use its research stage there.')
+        facts, _ = research_contract.read_bundle(args.case / 'research')
+        if record.get('research_policy') != 'web-allowed' and facts['source_mode'] != 'selected':
+            raise ValueError(
+                'This blog permits supplied sources only; public research cannot be imported.'
+            )
+        research_contract.adopt_case(args.case, directory)
+        record['research'] = {
+            'contract': 2,
+            'digest': facts['digest'],
+            'report': 'research/report.md',
+        }
+        studio.persist(directory, 'articles', record)
+        return status(root, args.id)
     if args.action == 'status':
         return status(root, args.id)
     value = studio.read_json(Path(args.file))

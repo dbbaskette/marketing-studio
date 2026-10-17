@@ -7,9 +7,10 @@ import zipfile
 
 from .packaging import files
 
-ROOT_FILES = ('VERSION', 'LICENSE', 'README.md', 'SUITE.json', 'marketing-studio',
+ROOT_FILES = ('VERSION', 'LICENSE', 'README.md', 'SUITE.json', 'distribution.json', 'marketing-studio',
               'Open Marketing Studio.command', 'docs/architecture.md', 'docs/testing.md',
               'docs/provenance.md', 'docs/installation.md', 'docs/core-status.md', 'docs/migration-plan.md',
+              'docs/shared-setup.md', 'docs/local-network.md',
               'docs/migration/imports.json')
 NATIVE_DIRS = {'skills', 'runner', 'installer', 'bootstrap', 'guidance', 'docs'}
 NATIVE_FILES = {'README.md', 'LICENSE', 'VERSION'}
@@ -21,6 +22,14 @@ def inventory(root, studios):
     paths = [root / name for name in ROOT_FILES if (root / name).is_file()]
     for folder in ('core', 'ui-kit', 'pins', 'installer', 'marketing_studio', 'docs/assets'):
         paths += files(root / folder)
+    # Runtime licenses and package metadata can have leading dots. Keep those;
+    # interpreter caches generated while setup is running are never payload.
+    extras = {}
+    from .offline_install import names
+    for folder in ('runtime', *(str(Path('companions') / name) for name in names(studios))):
+        for path in files(root / folder):
+            if path.is_file() and path.suffix not in ('.pyc', '.pyo') and '__pycache__' not in path.parts:
+                extras[path.relative_to(root).as_posix()] = path
     for studio in studios:
         base = root / 'studios' / studio
         if not (base / 'installer/install.py').is_file():
@@ -29,9 +38,9 @@ def inventory(root, studios):
         for folder in NATIVE_DIRS:
             if (base / folder).is_dir():
                 paths += files(base / folder)
-    return {path.relative_to(root).as_posix(): path for path in paths
+    return {**{path.relative_to(root).as_posix(): path for path in paths
             if path.is_file() and not any(part in SKIP or part.startswith('.') for part in path.relative_to(root).parts)
-            and path.suffix not in ('.pyc', '.pyo')}
+            and path.suffix not in ('.pyc', '.pyo')}, **extras}
 
 
 def content_key(root, studios):
@@ -61,10 +70,19 @@ def build(root, output, selection=None):
         groups.update({name + '-studio': [name] for name in available})
     result = {}
     for product, studios in groups.items():
-        target = output / (product + '-installer.zip')
+        distribution = root / 'distribution.json'
+        suffix = ('-' + (root / 'VERSION').read_text().strip() + '-'
+                  + json.loads(distribution.read_text())['platform']) if distribution.is_file() else '-installer'
+        target = output / (product + suffix + '.zip')
         prefix = product + '-setup/'
         entries = inventory(root, studios)
         payload = {name: (source.read_bytes(), source.stat().st_mode) for name, source in entries.items()}
+        if 'distribution.json' in payload:
+            data, mode = payload['distribution.json']
+            record = json.loads(data)
+            from .offline_install import names
+            record['companions'] = {name: value for name, value in record['companions'].items() if name in names(studios)}
+            payload['distribution.json'] = ((json.dumps(record, indent=2) + '\n').encode(), mode)
         manifest = {'schema': 1, 'studios': studios,
                     'files': {name: hashlib.sha256(data).hexdigest() for name, (data, _) in sorted(payload.items())}}
         payload['bundle-manifest.json'] = ((json.dumps(manifest, indent=2) + '\n').encode(), 0o644)

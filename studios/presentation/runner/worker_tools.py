@@ -578,10 +578,13 @@ def rules_of(spec: dict) -> list:
     return found
 
 
+from studio_core.research_contract import check_json as check_research_json
+
 VALIDATORS = {'research-plan': check_plan, 'outline': check_outline,
               'section': check_section}
+VALIDATORS['research-json'] = check_research_json
 DRAWN = ('outline', 'section')      # the kinds whose check asks the slides tool
-EXTENSIONS = {'research-plan': '.json', 'outline': '.json', 'section': '.json'}
+EXTENSIONS = {'research-json': '.json', 'research-plan': '.json', 'outline': '.json', 'section': '.json'}
 REGISTERED: dict[str, dict] = {}    # a kind added by register: {'call', 'extension'}
 
 
@@ -702,12 +705,25 @@ def render(slides, compiled: Path, folder: Path, how: dict) -> dict:
             if kept and ident and ident != known.get('id'):
                 home.write_json(kept, {**(how.get('named') or {}), 'id': ident, 'url': url})
 
+        from contextlib import nullcontext
+        from runner import build_progress
+        progress = build_progress.Preview(how['progress'], folder) if how.get('progress') else None
+        observing = slides.progress(progress.event) if progress and hasattr(slides, 'progress') else nullcontext()
         try:
-            found = slides.preview(compiled, folder, how['renderer'],
-                                   file_id=known.get('id'))
+            with observing:
+                found = slides.preview(compiled, folder, how['renderer'],
+                                       file_id=known.get('id'))
+            if progress:
+                progress.finish(found)
         except WorkspaceError as refusal:  # a preview that failed may have made its file
+            if progress:
+                progress.failed()
             left = getattr(refusal, 'left', None) or {}
             remember(left.get('fileId'), left.get('url'))
+            raise
+        except BaseException:
+            if progress:
+                progress.failed()
             raise
         remember(found.get('fileId'), found.get('url'))
     return found
@@ -804,10 +820,19 @@ def _offered(folder: Path, number: int, source: dict) -> dict:
     if missing:
         raise WorkspaceError('An offered source needs: ' + ', '.join(missing) + '.')
     text, local = tidy(source['text']), f'sources/offered-{number}.txt'
+    original = source.get('original') if source.get('original_path') else None
+    if original:
+        target = folder / original
+        if Path(original).is_absolute() or '..' in Path(original).parts:
+            raise WorkspaceError('A supplied original must stay inside the job folder.')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(Path(source['original_path']).read_bytes())
+
     _write(folder / local, text)
     return {'id': f's{number}', 'url': source['origin'], 'title': source['title'],
-            'chars': len(text), 'file': source['file'], 'local': local, 'original': None,
+            'chars': len(text), 'file': source['file'], 'local': local, 'original': original,
             'sha256': hashlib.sha256(text.encode('utf-8')).hexdigest(), 'offered': True,
+            **({'permission': source['permission']} if source.get('permission') else {}),
             'supplied': source.get('supplied')}
 
 
@@ -1016,7 +1041,7 @@ class WorkerTools:
             count = len(parts(self._input(entry)))
             lines.append(f"- {entry['name']}: {entry['chars']:,} characters"
                          + (f', in {count} parts' if count > 1 else ''))
-        saved = [f"- {entry['id']}: \"{entry['title']}\", {entry['chars']:,} characters"
+        saved = [f"- {entry['id']}: \"{entry['title']}\", {entry['chars']:,} characters; capture: {entry['file']}; origin: {entry['url']}"
                  for entry in self._index()]
         if not lines and not saved:
             return True, 'This job has no inputs. Everything you need is in your task.'
@@ -1364,7 +1389,9 @@ class WorkerTools:
             f'\n\n[{len(text) - WINDOW:,} more characters. Use search_source to find a '
             'passage and read_source to read around it.]')
         return (f"{verb} as {entry['id']}: \"{entry['title']}\", {len(text):,} "
-                f'characters.\n\n{text[:WINDOW]}{more}')
+                f'characters.\n\n{text[:WINDOW]}{more}'
+                + (f"\n\nCapture file: {entry['file']}. Origin: {entry['url']}."
+                   if any(spec.get('kind') == 'research-json' for spec in self.job['artifacts'].values()) else ''))
 
     def _checked(self, url: str) -> list[str]:
         """The public addresses a web address leads to. Refuses any other kind."""

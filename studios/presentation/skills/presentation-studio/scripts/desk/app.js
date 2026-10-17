@@ -9,7 +9,7 @@
 const TOKEN_HEADER = 'X-Presentation-Studio-Token';
 const POLL_SHOWN = 5000;
 const POLL_HIDDEN = 20000;
-const POLL_RUN = 2000; // while a deck is working and its own screen is open
+const POLL_RUN = 1000; // show new slide previews while a deck is working
 // Where set-up is read each time. It carries what was found of the skills, for home and status.
 const SET_UP_SHOWN = ['home', 'status', 'settings', 'setup', 'new'];
 const DRAWING = 'http://www.w3.org/2000/svg'; // the name of the SVG language; nothing is fetched
@@ -1596,6 +1596,9 @@ function defaultsCard() {
 
 function drawSettings(fresh) {
   placeParts({ title: 'Settings', mark: ['Settings'] }, [
+    ['shared-settings', [], () => add(card('Shared settings'),
+      make('p', '', 'Your assistant, work folder, brand and delivery choices apply across all studios.'),
+      capsule('Change shared settings', 'quiet', () => { location.href = '/onboarding/#token=' + view.token; }, 'shared-settings'))],
     ['workspace', around(), workspaceCard], ['studios', studiosMark(), studiosCard],
     ['defaults', [view.setup], defaultsCard],
     ['alerts', [alerts()], alertsCard], ['notify', around(), notifyCard],
@@ -1744,7 +1747,7 @@ function workspaceCard() {
     ['Shared', space.repository ? lower(SHARE_SAYS[space.share_when === 'when-asked' ? 1 : 0])
       : ''],
     ['Drafting is done by', (AGENT_NAMES[agent.default] || agent.default || 'no agent yet')
-      + modelWords(agent.model, agent.effort, true)],
+      + (held.shared?.models?.mode === 'by_task' ? ', using Quick, Main, and Complex model profiles' : modelWords(agent.model, agent.effort, true))],
     ['Limits', limitsSays(held.limits || {})],
     ['Slide previews', held.previews ? previewsSays(held.previews) : '']]),
     sharingLine(), fetchLine(),
@@ -2031,6 +2034,14 @@ function levelName(level) {
 
 // The model and the reasoning level, in words that follow an agent's name. With `own`, a
 // model left to the agent is said so.
+function draftModelWords(draft) {
+  const held = view.setup?.agent || {};
+  return view.setup?.shared?.models?.mode === 'by_task' && draft.agent === held.default
+    && draft.model.trim() === (held.model || '') && draft.effort === (held.effort || '')
+    ? ', using Quick, Main, and Complex model profiles'
+    : modelWords(draft.model.trim(), draft.effort, true);
+}
+
 function modelWords(model, effort, own) {
   const level = effort ? 'reasoning set to ' + lower(levelName(effort)) : '';
   if (model || own) {
@@ -2766,7 +2777,7 @@ function startStep(draft) {
   const drafted = make('p', '');
   const told = () => {
     drafted.textContent = 'It is drafted by ' + AGENT_NAMES[draft.agent]
-      + modelWords(draft.model.trim(), draft.effort, true) + '.';
+      + draftModelWords(draft) + '.';
   };
   const limits = (view.setup && view.setup.limits) || {};
   return [add(card('How it looks'), brandFields(draft, 'new'),
@@ -3205,7 +3216,9 @@ function pager(slides, about) {
       { first: true, again: true }));
     said.replaceChildren(...(about ? about(shown) : []).filter(Boolean));
     if (within) stage.focus({ preventScroll: true });
-    now.textContent = 'Slide ' + shown.number + ' of ' + slides.length
+    now.textContent = 'Slide ' + shown.number + (shown.partial
+      ? ' · ' + count(slides.length, 'preview available', 'previews available')
+      : ' of ' + slides.length)
       + (shown.title ? ': ' + shown.title : '') + (shown.changed ? ' (changed)' : '');
     // At either end the control stays where the keyboard can find it, and says it is off.
     earlier.setAttribute('aria-disabled', String(index === 0));
@@ -3635,7 +3648,24 @@ function paintOutline(gate, holder, said) {
 }
 
 function outlinePanel(gate, readonly) {
-  const node = card('The outline');
+  const node = card(gate.look ? 'Review the direction' : 'The outline');
+  if (gate.research?.text) add(node, documentPart('Research findings', gate.research.text));
+  if (gate.look) add(node, lookPanel(gate.look, true));
+  if (gate.look && !readonly) {
+    add(node, capsule('Choose another brand', '', openSheet('rebrand', 'direction-brand'), 'direction-brand'));
+    if (gate.research?.text) {
+      const form = make('form', 'note');
+      const request = make('textarea'); request.maxLength = 4000;
+      request.setAttribute('aria-label', 'What should change in the research?');
+      const problem = problemLine();
+      const submit = submitButton('Research again', 'direction-research');
+      form.addEventListener('submit', event => { event.preventDefault(); decide('changes', request.value, problem, submit, {direction_target: 'gate:research'}); });
+      add(form, request, problem, submit);
+      const detail = add(make('details'), make('summary', '', 'Request changes to the research'), form);
+      detail.dataset.key = 'direction-research-request';
+      add(node, detail);
+    }
+  }
   const slides = list(gate.slides);
   add(node, make('p', '', count(slides.length, 'slide', 'slides') + ', each with its title '
     + 'and what it must make clear; its points and notes open under it.' + (readonly ? ''
@@ -3747,6 +3777,20 @@ function auditPart(gate) {
     warnings ? count(warnings, 'warning', 'warnings') : ''].filter(Boolean).join(' and ')));
   add(node, bullets(list(audit.messages).map(String), 'look'));
   return add(node, make('p', 'quiet', 'Approving is still yours to decide. Weigh these first.'));
+}
+
+function buildProgressCard(progress) {
+  const node = card('Slides taking shape');
+  add(node, state('late', 'Unreviewed'), make('p', 'quiet', progress.incomplete
+    ? 'The render stopped before it finished. These previews are kept so you can inspect them.'
+    : 'Previews appear as each slide is drawn. The deck still needs its review and your decision.'));
+  const slides = list(progress.slides).map((one) => ({ ...one, partial: true,
+    where: pictureOf(view.path, { kind: 'progress', ref: one.ref }),
+    mark: one.ref }));
+  if (slides.length) add(node, pager(slides, (one) => [
+    make('p', '', 'Rendered preview · Unreviewed'),
+    make('p', 'quiet', 'Render ' + String(one.revision).slice(0, 12))]));
+  return node;
 }
 
 function buildPanel(gate, readonly) {
@@ -3994,7 +4038,7 @@ function costCard(run) {
       : 'It stops and asks you at ' + money(limits.deck_dollars) + '.');
   }
   return add(node, make('p', 'quiet', says.join(' ')),
-    make('p', 'quiet', 'Drafted by ' + agent + modelWords(run.model, run.effort) + '.'));
+    make('p', 'quiet', (run.review_level ? ({balanced: 'Balanced', automatic: 'Automatic draft', step_by_step: 'Step by step'}[run.review_level] + ' review · ') : '') + 'Drafted by ' + agent + (run.model_mode === 'by_task' ? ', using Quick, Main, and Complex model profiles' : modelWords(run.model, run.effort)) + '.'));
 }
 
 // --- one deck: a stop reviewed item by item -------------------------------------------------
@@ -4284,7 +4328,8 @@ function extraFor(gate, decision) {
 // Another brand, or another variant of it, chosen at the brand's gate. The cover is drawn
 // again in it and comes back here.
 function rebrandSheet() {
-  const gate = view.run.gate;
+  const current = view.run.gate;
+  const gate = current?.look ? {...current.look, name: 'gate:look', round: current.round} : current;
   const cancel = capsule('Cancel', 'quiet', closeSheet, 'cancel');
   const title = sheetTitle('Choose another brand');
   if (!gate || gate.name !== 'gate:look') {
@@ -4307,7 +4352,8 @@ function rebrandSheet() {
         + 'another brand or variant.');
       return;
     }
-    decide('changes', '', problem, submit);
+    decide('changes', '', problem, submit, {brand: held.brand, variant: held.variant || null,
+      ...(current?.look ? {direction_target: 'gate:look'} : {})});
   });
   add(form, brandFields(held, 'rebrand'), make('p', 'quiet', 'Your cover is drawn again in '
     + 'the one you choose and comes back here for your decision.'), problem,
@@ -4333,6 +4379,7 @@ async function decide(decision, note, problem, pressed, extra) {
   const gate = run.gate;
   const noted = noteKey(decision);
   const body = { path: view.path, gate: gate ? gate.name : 'gate:build', decision };
+  if (gate?.expected) body.expected = gate.expected;
   if (note) body.note = note;
   const more = extra !== undefined ? extra : gate ? extraFor(gate, decision) : null;
   if (more) body.extra = more;
@@ -4480,6 +4527,8 @@ function paintDeck(fresh) {
     gate ? ['gate', [gate, read], () => gatePanel(run)] : null,
     run.deliver ? ['deliver', [run.deliver, run.contactSheet, read, view.downloading],
       () => deliverPart(run)] : null,
+    run.build_progress ? ['build-progress', run.build_progress,
+      () => buildProgressCard(run.build_progress)] : null,
     list(run.workers).length ? ['workers', run.workers, () => workersCard(run)] : null,
     finished && (!read || !driver) ? ['publish', [published, teamSpace()],
       () => publishCard(run, published)] : null,

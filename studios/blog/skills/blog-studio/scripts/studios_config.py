@@ -10,9 +10,10 @@ KEYS = {
     'team': {'repository', 'branch'},
     'person': {'name'},
     'assistant': {'agent', 'model', 'effort'},
-    'brand': {'repository', 'release', 'brand', 'variant'},
+    'brand': {'repository', 'release', 'brand', 'variant', 'skill'},
     'output': None,
     'share': None,
+    'review': {'level'},
 }
 
 
@@ -116,6 +117,10 @@ def update(changes, missing_only=False, expected=None):
         raise ValueError('Only shared settings belong in studios config.')
     leaves = []
     for section, value in changes.items():
+        if section == 'review':
+            from studio_core.review_policy import check
+
+            check(value)
         if KEYS[section] is None:
             if section == 'share' and value not in ('decision', 'asked', None):
                 raise ValueError('Choose sharing after each decision or when asked.')
@@ -221,7 +226,12 @@ def migrate(root=None):
             (
                 data_root() / 'brand.json',
                 None,
-                {key: ('brand', key) for key in ('repository', 'release', 'brand', 'variant')},
+                {
+                    **{
+                        key: ('brand', key) for key in ('repository', 'release', 'brand', 'variant')
+                    },
+                    'runtime': ('brand', 'skill'),
+                },
             ),
             (
                 data_root() / 'workspace.json',
@@ -251,8 +261,15 @@ def migrate(root=None):
                 selected = {key: value for key, value in values.items() if key in mapping}
                 if not selected:
                     continue
+                from studio_core.preferences import ready
+
                 for key, value in selected.items():
                     destination = mapping[key]
+                    if ready(current):
+                        # Empty shared choices are intentional after completed setup.
+                        values.pop(key)
+                        kept.append('.'.join(destination))
+                        continue
                     existing = current
                     for member in destination[:-1]:
                         existing = existing.get(member, {})

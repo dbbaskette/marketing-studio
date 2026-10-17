@@ -136,13 +136,13 @@ class SharedTests(SettingsCase):
             'person': {'name': 'Alex Example'},
             'brand': {'brand': 'acme', 'variant': 'light',
                       'repository': 'https://github.com/acme/b.git', 'release': 'v2.0.0'},
-            'output': 'pptx'})
+            'output': 'pptx', 'render': {'previews': 'local'}})
         self.assertEqual(settings.load().agent, 'codex')
         own = self.own()
         for name in ('agent', 'model', 'effort', 'name', 'brand', 'variant', 'output',
-                     'brand_repository', 'brand_release'):
+                     'brand_repository', 'brand_release', 'previews', 'brand_skill'):
             self.assertNotIn(name, own, 'no copy of a shared value is kept here')
-        self.assertEqual((own['parallel'], own['previews']), (4, 'local'))
+        self.assertEqual(own['parallel'], 4)
 
     def test_only_what_changed_is_written_and_every_other_byte_stays(self):
         self.write_config(THEIRS)
@@ -154,11 +154,11 @@ class SharedTests(SettingsCase):
 
     def test_per_studio_settings_stay_in_runner_json(self):
         settings.save(replace(settings.load(), deck_dollars=7.5, notify=True,
-                              look_for_updates=False, brand_skill='/some/skill'))
+                              look_for_updates=False))
         self.assertFalse(self.config.exists(), 'nothing shared changed, so nothing is written')
         loaded = settings.load()
         self.assertEqual((loaded.deck_dollars, loaded.notify, loaded.look_for_updates,
-                          loaded.brand_skill), (7.5, True, False, '/some/skill'))
+                          loaded.brand_skill), (7.5, True, False, None))
 
     def test_a_value_in_the_file_that_cannot_be_used_is_the_default_and_never_written_over(self):
         text = THEIRS.replace('"codex"', '"gemini"').replace('"pptx"', '"keynote"')

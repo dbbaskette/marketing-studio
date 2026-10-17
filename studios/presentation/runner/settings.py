@@ -11,7 +11,8 @@ What a caller needs to know
   the studios config (`studios_config`), and read from it each time: the agent, its model
   and its level (`assistant.agent`, `.model`, `.effort`), the person's name (`person.name`),
   the brand skill's repository and release, the brand and its variant (`brand.repository`,
-  `.release`, `.brand`, `.variant`) and the output (`output`). SHARED names them. A value
+  `.release`, `.brand`, `.variant`, `.skill`), the output (`output`) and slide
+  previews (`render.previews`). SHARED names them. A value
   there that would be refused here is the default, and so is every one of them while the
   file cannot be read. The rest belong to Presentation Studio on this computer alone, and
   are kept in the per-user data folder as `runner.json`, beside the workspace `gitstate`
@@ -33,9 +34,10 @@ What a caller needs to know
   may spend, where the agent reports spending, before it stops and asks. `parallel` is how
   many decks work at once.
 - `previews` is how a deck's slides are rendered to look at: `local`, with LibreOffice on
-  this computer, or `drive`, through Google Drive. None until the person chooses.
+  this computer, or `drive`, through Google Drive. Shared as `render.previews`;
+  after shared setup, an empty choice follows the delivery format.
 - `brand_skill` is where the brand skill to use is, when the person named one of those
-  found. None for the first that is found.
+  found, shared as `brand.skill`. None for the first that is found.
 - `notify` is whether the runner tells the person, through the computer's own
   notifications, that a deck needs a decision while no page is open. Off until they
   turn it on.
@@ -94,7 +96,8 @@ SHARED = {'agent': ('assistant', 'agent'), 'model': ('assistant', 'model'),
           'effort': ('assistant', 'effort'), 'name': ('person', 'name'),
           'brand': ('brand', 'brand'), 'variant': ('brand', 'variant'),
           'output': (None, 'output'), 'brand_repository': ('brand', 'repository'),
-          'brand_release': ('brand', 'release')}
+          'brand_release': ('brand', 'release'),
+          'previews': ('render', 'previews'), 'brand_skill': ('brand', 'skill')}
 
 
 @dataclass(frozen=True)
@@ -378,7 +381,10 @@ def from_shared(found: dict) -> dict:
             'brand': passes(check_word, brand.get('brand'), 'brand'),
             'variant': passes(check_word, brand.get('variant'), 'variant'),
             'output': found.get('output') if found.get('output') in OUTPUTS else None,
-            'brand_repository': repository, 'brand_release': release}
+            'brand_repository': repository, 'brand_release': release,
+            'previews': passes(check_previews, _group(found, 'render').get('previews')),
+            'brand_skill': (str(Path(brand['skill']).expanduser())
+                            if passes(check_place, brand.get('skill')) else None)}
 
 
 def _kept() -> dict:
@@ -404,6 +410,9 @@ def shared_now(found: dict) -> dict:
     """The shared settings as Presentation Studio uses them, from what the studios config
     holds: those it can use, and the default for the rest."""
     shared = from_shared(found)
+    from studio_core.preferences import ready
+    if shared['previews'] is None and ready(found):
+        shared['previews'] = 'drive' if found.get('output') == 'google' else 'local'
     return {**shared, 'agent': shared['agent'] or Settings().agent,
             'output': shared['output'] or Settings().output}
 
@@ -439,7 +448,8 @@ def changes(before: Settings, after: Settings) -> dict:
 NAMED = {'agent': 'The agent', 'model': 'The model', 'effort': 'The reasoning level',
          'name': 'Your name', 'brand': 'The brand', 'variant': 'The variant',
          'output': 'The output', 'brand_repository': "The brand skill's repository",
-         'brand_release': "The brand skill's release"}
+         'brand_release': "The brand skill's release",
+         'previews': 'Slide previews', 'brand_skill': 'The installed brand skill'}
 STALE = ('{} was changed in another studio while this was open, so nothing was saved. Look '
          'again, then save.')
 
@@ -479,7 +489,9 @@ def own() -> dict:
         'person': {'name': kept.get('name')},
         'brand': {'repository': kept.get('brand_repository'),
                   'release': kept.get('brand_release'),
-                  'brand': kept.get('brand'), 'variant': kept.get('variant')},
+                  'brand': kept.get('brand'), 'variant': kept.get('variant'),
+                  'skill': kept.get('brand_skill')},
+        'render': {'previews': kept.get('previews')},
         'output': kept.get('output')})
     return {name: value for name, value in found.items() if value is not None}
 

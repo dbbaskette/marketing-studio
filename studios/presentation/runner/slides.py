@@ -166,6 +166,7 @@ Added to the above
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import json
 import os
 import re
@@ -177,7 +178,7 @@ from pathlib import Path
 import runner  # noqa: F401  puts the core on the import path
 from workspace import WorkspaceError
 
-from runner import companion
+from runner import companion, slide_events
 
 VARIABLE = 'HARNESS_SLIDES_RUNTIME'
 MINIMUM = '0.13.1'
@@ -192,6 +193,7 @@ COUNTED = re.compile(r'^\d+ problems to fix:$')
 NOISE = re.compile(r'^\((?:node:\d+\)|Use `node )')   # Node's own warnings, not the tool's
 LEFT = re.compile(r'The preview deck is in Drive \((\S+)\); retry with --file-id (\S+?)\.$')
 PREVIEWING = threading.Lock()   # one preview at a time, whoever asks
+PROGRESS = contextvars.ContextVar('slide_progress', default=None)
 GUIDES = {'design guidance': 'design.md', 'composition guidance': 'compositions.md',
           'drafting guidance': 'draft.md', 'gallery': 'gallery.md'}   # under REFERENCES
 REFERENCES = Path('references')
@@ -266,6 +268,16 @@ def _blocked(out: str) -> dict | None:
 def _problems(err: str, code: int) -> list[str]:
     """The tool's own lines: one problem alone, or each one listed under a count."""
     lines = [line.strip() for line in err.splitlines() if line.strip()]
+    def event(line):
+        try:
+            found = json.loads(line)
+        except ValueError:
+            return False
+        return isinstance(found, dict) and found.get('schema') == 1 \
+            and found.get('type') in ('slide-ready', 'preview-ready', 'compiled',
+                                      'storyboard-ready', 'failed') \
+            and isinstance(found.get('runId'), str) and type(found.get('sequence')) is int
+    lines = [line for line in lines if not event(line)]
     lines = [line for line in lines if not NOISE.match(line)]
     for index, line in enumerate(lines):
         if COUNTED.match(line):
@@ -369,6 +381,15 @@ class Slides:
         """The runtime's version, as it states it."""
         return self._call('--version').strip().rpartition(' ')[2]
 
+    @contextlib.contextmanager
+    def progress(self, each):
+        """Observe unreviewed preview events in this thread, when the runtime supports them."""
+        token = PROGRESS.set(each)
+        try:
+            yield
+        finally:
+            PROGRESS.reset(token)
+
     # --- the outline ---
 
     def outline_contract(self, brand: Path) -> str:
@@ -433,7 +454,12 @@ class Slides:
         if slide:
             args += ['--slide', slide]
         args += _bound(design, section)
-        with PREVIEWING, _new(folder):
+        each = PROGRESS.get()
+        events = each is not None and 'progress-events' in (self.capabilities() or ())
+        if events:
+            args += ['--events']
+        observing = slide_events.watching(folder, each) if events else contextlib.nullcontext()
+        with PREVIEWING, _new(folder), observing:
             shown = self._json(*args)
             if not shown.get('deck') or not isinstance(shown.get('slides'), list):
                 raise WorkspaceError('The slides tool rendered a preview and did not say '

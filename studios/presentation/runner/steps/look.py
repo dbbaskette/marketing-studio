@@ -149,7 +149,7 @@ def rebrand(root, run: dict, brand, variant, brands) -> dict:
     return run['form']
 
 
-def approve(root, run: dict, note: str | None = None) -> None:
+def approve(root, run: dict, note: str | None = None, by: str = 'page') -> None:
     """Approve the brand: the person's words of approval go into outline.json, without a
     direction of an earlier look, and the gate is approved."""
     root = Path(root)
@@ -157,11 +157,11 @@ def approve(root, run: dict, note: str | None = None) -> None:
     note = (note or '').strip() or None
     outline = _outline(root)
     said = (((run.get('gates') or {}).get('gate:outline') or {}).get('note'))
-    words = [f'Approved on the page, {at}, in {decks.brand_words(run.get("form") or {})}.']
+    words = [f'{"Continued automatically" if by == "review-policy" else "Approved on the page"}, {at}, in {decks.brand_words(run.get("form") or {})}.']
     words += [line for line in (said, note) if line]
     outline.pop('direction', None)
     outline['approval'] = words
     write_atomic(root / OUTLINE, json.dumps(outline, indent=2, ensure_ascii=False) + '\n')
     gate = (run.setdefault('gates', {})).get(GATE) or {}
-    run['gates'][GATE] = {**gate, 'state': 'approved', 'at': at, 'by': 'page', 'note': note}
+    run['gates'][GATE] = {**gate, 'state': 'approved', 'at': at, 'by': by, 'note': note}
     decks.write_run(root, run)

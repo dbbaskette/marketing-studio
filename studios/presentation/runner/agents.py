@@ -664,40 +664,12 @@ class Codex(_Agent):
 
 
 def codex_models(printed: str) -> list[dict]:
-    """The models in Codex's catalog that it lists for choosing, each with the levels it
-    takes that `settings` knows, and the one it uses when none is given."""
-    unreadable = WorkspaceError('Codex listed its models in a form this runner cannot read.')
+    """Use the shared catalog parser without changing this adapter's error type."""
+    from studio_core.model_catalog import codex_models as parse
     try:
-        catalog = json.loads(printed)
-    except ValueError:
-        raise unreadable
-    entries = catalog.get('models') if isinstance(catalog, dict) else None
-    if not isinstance(entries, list):
-        raise unreadable
-    known, found = settings.EFFORTS['codex'], []
-    for entry in entries:
-        if not isinstance(entry, dict) or entry.get('visibility', 'list') != 'list':
-            continue
-        name = entry.get('slug')
-        try:
-            if not settings.check_model(name):
-                continue
-        except WorkspaceError:
-            continue
-        levels = []
-        for level in entry.get('supported_reasoning_levels') or ():
-            word = level.get('effort') if isinstance(level, dict) else level
-            if isinstance(word, str) and word in known and word not in levels:
-                levels.append(word)
-        shown, about = entry.get('display_name'), entry.get('description')
-        shown = clip(shown, 80) if isinstance(shown, str) and shown.strip() else name
-        usual = entry.get('default_reasoning_level')
-        found.append({'name': name, 'label': name if shown == name else f'{shown} ({name})',
-                      'family': None,
-                      'about': clip(about, 120) if isinstance(about, str) and about.strip()
-                      else None,
-                      'default_level': usual if usual in levels else None, 'levels': levels})
-    return found
+        return parse(printed)
+    except ValueError as error:
+        raise WorkspaceError(str(error)) from error
 
 
 def offered(models: list[dict], levels: list[str] | None = None,

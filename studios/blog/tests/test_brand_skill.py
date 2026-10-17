@@ -283,17 +283,28 @@ class BrandSkillTests(unittest.TestCase):
             )
         self.assertEqual(studios_config.read()[0]['brand']['release'], 'v1.1.0')
 
-    def test_local_skill_choice_preserves_unmigrated_values_when_shared_file_is_invalid(self):
+    def test_shared_skill_choice_refuses_invalid_config_and_preserves_legacy_values(self):
         folder = self.skill()
         legacy = {'repository': 'https://example.invalid/legacy-brand.git', 'release': 'v1.4.0'}
         studio.write_json(brands._path(), legacy)
         self.config.write_text('{invalid')
-        brands.configure({'runtime': str(folder)})
+        with self.assertRaisesRegex(ValueError, 'Shared settings could not be updated'):
+            brands.configure({'runtime': str(folder)})
         saved = studio.read_json(brands._path())
         self.assertEqual(saved['repository'], legacy['repository'])
         self.assertEqual(saved['release'], legacy['release'])
-        self.assertEqual(saved['runtime'], str(folder))
+        self.assertNotIn('runtime', saved)
         self.assertEqual(self.config.read_text(), '{invalid')
+
+    def test_installed_brand_selection_is_shared_and_refuses_an_outdated_form(self):
+        first = self.skill()
+        second = self.skill(self.home / '.claude/skills/another-brand')
+        shown = brands.status()
+        brands.configure({'runtime': str(first), 'skill_before': shown.get('skill_before')})
+        self.assertEqual(json.loads(self.config.read_text())['brand']['skill'], str(first))
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            brands.configure({'runtime': str(second), 'skill_before': shown.get('skill_before')})
+        self.assertEqual(brands.status()['runtime'], str(first))
 
     def test_confirmed_install_runs_real_release_installer_in_synthetic_home(self):
         _, found = self.checked()

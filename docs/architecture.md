@@ -40,7 +40,7 @@ its specialized server and stronger existing CSP,
 its workspace lock, timeouts, and content limits. Its protocol is not flattened
 into the other studios' contract.
 
-The native installers share pinned companion fetching, integrity checks, and
+The native installers share companion requirement resolution, exact-lock fetching, integrity checks, and
 installation functions. Their compatibility bindings preserve native exception
 classes and existing injection points. The suite invokes one companion pass for
 the selected tools. Installing software remains an explicit installer action.
@@ -55,7 +55,22 @@ studio, or a shared external core installation.
 
 First run reads existing shared choices and opens setup. Continue saves only
 changed fields. Finish prepares installed, unconfigured studios through their
-native workspace helpers and records completion in Marketing Studio's `home.json`.
+native workspace helpers and records `setup.version: 1` in the shared
+`studios-config.json`. Independent launches use the same completion record and
+setup UI, bundled in `studio_core`; Marketing Studio need not be running or
+installed. A partial or invalid file always requires setup. Earlier completed
+Marketing Studio setup is promoted on opening it.
+
+A studio launched after setup adopts the shared workspace choice only if it has
+none. Standalone setup prepares the current studio; later launches prepare the
+others. Every shared write holds the adjacent config lock and preserves unrelated
+values. Finishing refuses a conflicting change made while workspace preparation
+was in progress. Model and reasoning choices reach all three studio workers.
+`render.previews` and `brand.skill` are also shared; absent previews follow the
+delivery format after setup (local for PowerPoint, Google Drive for Google output).
+Existing private preview and brand-path choices migrate without replacing shared
+choices. Content-specific defaults, limits, notifications and update preferences
+remain optional native controls.
 Preparation starts no assistant job and never moves an existing workspace.
 
 Local Git is the default. Separate local repositories avoid contention over an
@@ -98,3 +113,35 @@ One root check runs the home/core/installer suite, every native studio suite and
 validator, Blog Studio's pinned lint/build checks, native setup and launch checks,
 and synthetic Hub journeys. The shared Tart runner owns disposable VM lifecycle
 and retains logs. No test uses real team content or starts paid provider work.
+
+## Private release runtimes
+
+Platform bundles add `runtime/`, prepared `companions/`, and `distribution.json` to
+the ordinary suite inventory. `pins/runtimes.json` pins runtime downloads and Python
+dependency notices by SHA-256; the ordinary bundle manifest also covers their extracted
+files. Release preparation runs in a disposable HOME with user npm configuration
+excluded and lifecycle scripts disabled. Application code remains standard-library
+Python with no frontend build step.
+
+Installation runs each native installer with Python from the retained suite version.
+Generated native launchers prepend that version's private Python/Node paths. Prepared
+companions are copied to upstream version folders and linked through upstream discovery
+paths under their existing install locks. No npm command or companion download is needed
+on the user's computer. Workspaces, assistant sign-ins and gcloud remain external.
+
+## Optional local-network access
+
+`marketing-studio serve --lan` adds fixed-destination bridges on one private IPv4
+interface. Native servers continue to bind loopback and validate their original
+session keys and origins. Each studio keeps its own browser origin, assets, API
+routes, and session storage. Marketing Studio returns the bridge's private link
+when a phone launches a studio. Bridges validate incoming Host/Origin and session
+headers before translating the origin to the fixed loopback destination; they
+never accept arbitrary proxy destinations. The listeners are owned by the umbrella
+process and close on shutdown. The default CLI mode remains loopback-only.
+Network mode is HTTP on a trusted LAN; see [the access boundary](local-network.md).
+
+## Shared research contract
+
+All three studios explicitly integrate the purpose-led, independently reviewed
+Harness Research schema-2 bundle. See [the handoff and compatibility contract](research-synthesis.md).

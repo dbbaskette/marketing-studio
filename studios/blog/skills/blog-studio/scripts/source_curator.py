@@ -102,6 +102,13 @@ def harness(root):
     value = studio.read_json(path).get('harness') if path.exists() else None
     if value not in (None, 'codex', 'claude'):
         raise ValueError('Invalid curation harness configuration.')
+    if value is None:
+        import studios_config
+        from studio_core.preferences import ready
+
+        shared, problem = studios_config.read()
+        if not problem and ready(shared):
+            value = (shared.get('assistant') or {}).get('agent')
     return value
 
 
@@ -161,6 +168,44 @@ def codex_options():
             'web_search="disabled"',
         ]
     )
+    return options
+
+
+def shared_options(engine, selection=None, *, task=None):
+    """Explicit shared defaults override the CLI's model only for the selected assistant."""
+    from studio_core import model_profiles
+
+    if selection is None:
+        import studios_config
+        from studio_core.preferences import check
+
+        shared, problem = studios_config.read()
+        if problem:
+            raise ValueError(problem)
+        check({}, shared)
+        assistant = shared.get('assistant') or {}
+        if assistant.get('agent') != engine:
+            return []
+        if task:
+            saved = model_profiles.snapshot(
+                shared, engine, assistant.get('model'), assistant.get('effort')
+            )
+            selection = model_profiles.route(
+                {'engine': engine, 'model_profiles': saved}, 'Blog Studio', task
+            )
+        else:
+            selection = assistant
+    model_profiles.check_choice(selection.get('model'), selection.get('effort'), engine)
+    assistant = selection
+    options = []
+    if assistant.get('model'):
+        options += ['--model', assistant['model']]
+    if assistant.get('effort'):
+        options += (
+            ['-c', 'model_reasoning_effort=' + json.dumps(assistant['effort'])]
+            if engine == 'codex'
+            else ['--effort', assistant['effort']]
+        )
     return options
 
 
@@ -225,6 +270,9 @@ def analyze(engine, payload):
                 '--system-prompt',
                 PROMPT,
             ]
+        command[2 if engine == 'codex' else 1 : 2 if engine == 'codex' else 1] = shared_options(
+            engine, task='source-classification'
+        )
         try:
             result = subprocess.run(
                 command,

@@ -1637,7 +1637,7 @@ def view(root, name, query):
     return None
 
 
-def server(root, port=0, bind=True):
+def server(root, port=0, bind=True, shared_setup=False, keep_workspace=True):
     """The local desk server and its session URL.
 
     Connections are handled on daemon threads, so a silent or slow connection never holds
@@ -1656,6 +1656,48 @@ def server(root, port=0, bind=True):
             yield
         finally:
             api_lock.release()
+
+    controller = None
+    if shared_setup:
+        from studio_core import workspace_setup, onboarding
+        from studio_sync import gitstate
+
+        def prepare(values):
+            nonlocal root
+            target = (
+                (gitstate.current().root if gitstate.current() else root)
+                if keep_workspace
+                else workspace_setup.configure(gitstate, values, 'blog').root
+            )
+            studio.initialize(target)
+            if target != root:
+                import blog_runner
+                from hub_store import acquire_lock, release_lock
+
+                lease = acquire_lock(target / '.blog-runner.lock', wait=0)
+                if lease is None:
+                    raise ValueError('A page is already running for that workspace. Use that page.')
+                blog_runner.engine(root).close()
+                if getattr(httpd, 'team_runner_lock', None) is not None:
+                    release_lock(httpd.team_runner_lock)
+                httpd.team_runner_lock = lease
+                root = target
+                httpd.active_root = root
+            # The installed launcher must remember this workspace for the next launch.
+            data = Path(
+                os.environ.get('BLOG_STUDIO_DATA', '~/.local/share/blog-studio')
+            ).expanduser()
+            data.mkdir(parents=True, exist_ok=True)
+            preferences = data / 'page.json'
+            if preferences.is_symlink():
+                raise ValueError('Page preferences must be a regular file.')
+            pending = data / ('.page-' + secrets.token_hex(6))
+            try:
+                pending.write_text(json.dumps({'workspace': str(root)}))
+                os.chmod(pending, 0o600)
+                os.replace(pending, preferences)
+            finally:
+                pending.unlink(missing_ok=True)
 
     class Handler(BaseHTTPRequestHandler):
         timeout = HEADER_TIMEOUT  # Applied to each new connection until its headers are read.
@@ -1744,6 +1786,9 @@ def server(root, port=0, bind=True):
                 self.check(self.path.startswith('/api/'))
                 self.connection.settimeout(BODY_TIMEOUT)
                 parsed = urlsplit(self.path)
+                if controller and controller.accepts(self.path):
+                    status, media, body = controller.answer(self.path, self.headers)
+                    return self.reply(status, body, media)
                 if parsed.path in STATIC:
                     name, media = STATIC[parsed.path]
                     return self.reply(200, (ASSETS / name).read_bytes(), media)
@@ -1772,7 +1817,9 @@ def server(root, port=0, bind=True):
                     raise ValueError('Use a bounded JSON request.') from None
                 if not 0 < size <= MAX_BODY:
                     raise ValueError('Request exceeds the management limit.')
-                if not self.path.startswith('/api/'):
+                if not self.path.startswith('/api/') and not (
+                    controller and controller.accepts(self.path)
+                ):
                     raise ValueError('Unknown management action.')
                 self.connection.settimeout(BODY_TIMEOUT)
                 try:
@@ -1781,6 +1828,12 @@ def server(root, port=0, bind=True):
                     raise ValueError('Incomplete request.') from None
                 if len(content) != size:
                     raise ValueError('Incomplete request.')
+                if controller and controller.accepts(self.path):
+                    with serialized():
+                        status, media, body = controller.answer(
+                            self.path, self.headers, 'POST', content if size <= 64000 else None
+                        )
+                    return self.reply(status, body, media)
                 try:
                     data = json.loads(content)
                 except ValueError:
@@ -1828,6 +1881,23 @@ def server(root, port=0, bind=True):
     httpd = LocalServer(('127.0.0.1', port), Handler, bind_and_activate=bind)
     if not bind:
         httpd.server_port = port
+    if shared_setup:
+
+        def configured():
+            import blog_runner
+
+            active = blog_runner.engine(root)
+            if not active.thread or not active.thread.is_alive():
+                active.start()
+
+        controller = onboarding.Controller(
+            httpd.server_port,
+            token,
+            'Blog Studio',
+            'X-Blog-Studio-Token',
+            prepare,
+            after=configured,
+        )
     return httpd, 'http://127.0.0.1:' + str(httpd.server_port) + '/#' + token
 
 
@@ -1854,7 +1924,16 @@ def launch_note(root, harness):
     return {'harness': analysis['harness'], 'saved_by_this_launch': bool(harness), 'note': note}
 
 
-def main(root, port=0, open_browser=False, harness=None, data_root=None, leased=False, human=False):
+def main(
+    root,
+    port=0,
+    open_browser=False,
+    harness=None,
+    data_root=None,
+    leased=False,
+    human=False,
+    keep_workspace=True,
+):
     from start_studio import running
 
     version = Path(__file__).resolve().parents[1]
@@ -1875,15 +1954,19 @@ def main(root, port=0, open_browser=False, harness=None, data_root=None, leased=
                 old[number] = signal.signal(number, interrupt)
     try:
         if leased:
-            return serve(root, port, open_browser, harness, human=human)
+            return serve(
+                root, port, open_browser, harness, human=human, keep_workspace=keep_workspace
+            )
         with running(Path(data), root):
-            return serve(root, port, open_browser, harness, human=human)
+            return serve(
+                root, port, open_browser, harness, human=human, keep_workspace=keep_workspace
+            )
     finally:
         for number, handler in old.items():
             signal.signal(number, handler)
 
 
-def serve(root, port=0, open_browser=False, harness=None, human=False):
+def serve(root, port=0, open_browser=False, harness=None, human=False, keep_workspace=True):
     studio.initialize(root)
     # Only an explicit --harness changes the saved analysis choice; opening the desk alone never does.
     if harness:
@@ -1898,12 +1981,15 @@ def serve(root, port=0, open_browser=False, harness=None, human=False):
         raise ValueError('A Blog Studio page is already running for this workspace. Use that page.')
     runner = blog_runner.engine(root)
     try:
-        httpd, url = server(root, port)
+        httpd, url = server(root, port, shared_setup=True, keep_workspace=keep_workspace)
     except BaseException:
         release_lock(runner_lock)
         raise
     try:
-        runner.start()
+        from studio_core import onboarding
+
+        if onboarding.preferences.ready(onboarding.config('Blog Studio').read()[0]):
+            runner.start()
         shown_url = url if sys.stdout.isatty() else url.split('#')[0]
         if human:
             print('Workspace: ' + str(root) + '\nOpen Blog Studio: ' + shown_url, flush=True)

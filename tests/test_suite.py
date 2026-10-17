@@ -33,6 +33,16 @@ class CoreTests(unittest.TestCase):
         self.assertNotEqual(first_config.WAIT, second_config.WAIT)
         self.assertIn('Second Studio', second_config.USING)
 
+    def test_shared_setup_guide_and_ui_are_in_every_subset_bundle(self):
+        for identifier in ('blog', 'presentation', 'training'):
+            with self.subTest(studio=identifier):
+                payload = bundles.inventory(ROOT, [identifier])
+                self.assertIn('docs/shared-setup.md', payload)
+                for asset in ('index.html', 'app.js', 'home.css', 'style.css'):
+                    self.assertIn('core/studio_core/setup_web/' + asset, payload)
+                    self.assertIn('studios/' + identifier + '/skills/' + identifier
+                                  + '-studio/scripts/studio_core/setup_web/' + asset, payload)
+
     def test_one_pin_set_and_one_asset_source(self):
         for identifier in ('blog', 'presentation', 'training'):
             self.assertEqual((ROOT / 'studios' / identifier / 'installer/companions.json').resolve(),
@@ -95,6 +105,8 @@ class SuiteTests(unittest.TestCase):
                 self.assertIn(identifier, result['studios'])
                 current = self.home / '.local/share' / (identifier + '-studio') / 'current'
                 self.assertTrue((current / 'scripts/studio_core/server.py').is_file())
+                for asset in ('index.html', 'app.js', 'home.css', 'style.css'):
+                    self.assertTrue((current / 'scripts/studio_core/setup_web' / asset).is_file())
                 self.assertFalse(any(path.is_symlink() for path in current.resolve().rglob('*')))
                 shutil.rmtree(source)
                 native = current / ('scripts/start_studio.py' if identifier == 'blog' else 'runner/studio.py')

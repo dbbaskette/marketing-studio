@@ -5,11 +5,14 @@ import difflib
 from pathlib import Path
 import re
 import threading
+import tempfile
 from types import SimpleNamespace
 import uuid
 
 import studio
 import blog_worker
+from studio_core import model_profiles, review_policy, research_contract
+from studio_core.preferences import ready as shared_ready
 
 STATE = 'derived/blog-run.json'
 STAGES = {
@@ -139,7 +142,7 @@ def settings(root, data=None):
         }
         saved = {'defaults': private}
     return {
-        'configured': bool(saved),
+        'configured': bool(saved) or shared_ready(shared),
         'defaults': base,
         'shared_before': {
             'engine': shared.get('assistant', {}).get('agent'),
@@ -163,8 +166,12 @@ def load(root, ident):
     if not path.is_file():
         raise ValueError('This blog has no guided run. Choose Run this blog on the page.')
     run = studio.read_json(path)
-    if run.get('schema') != 1 or run.get('approval') not in ('page', 'conversation'):
+    if run.get('schema') not in (1, 2, 3) or run.get('approval') not in ('page', 'conversation'):
         raise ValueError('This run needs a newer Blog Studio runtime.')
+    if run.get('schema') == 2 and not run.get('review_policy'):
+        raise ValueError('This run is missing its saved review level. Restore its run record.')
+    if run.get('schema') == 3 and (run.get('research_contract') or {}).get('schema') != 2:
+        raise ValueError('This run is missing its saved research contract. Restore its run record.')
     return directory, record, run
 
 
@@ -250,6 +257,9 @@ def basis(root, directory, record, run, stage):
         if name == stage:
             break
         previous[name] = studio.artifact_fingerprint(directory, STAGES[name][1])
+    if run.get('research_contract') and 'research' in previous and run['stages'].get('research'):
+        _, manifest = research_contract.read_bundle(directory / 'research')
+        previous['research_digest'] = manifest['digest']
     original = studio.artifact_fingerprint(directory, 'ORIGINAL.md')
     if run['existing'] and stage != 'draft':
         previous['manuscript'] = studio.artifact_fingerprint(directory, 'DRAFT.md') or original
@@ -258,6 +268,8 @@ def basis(root, directory, record, run, stage):
 
 def survey(root, ident):
     directory, record, run = load(root, ident)
+    if run.get('research_contract') and run['stages'].get('research'):
+        research_contract.read_bundle(directory / 'research')
     rows, next_stage, upstream = [], None, False
     for name in run['pipeline']:
         saved = run['stages'].get(name, {})
@@ -284,6 +296,7 @@ def survey(root, ident):
                 'status': status,
                 'path': STAGES[name][1],
                 'notes': saved.get('notes', ''),
+                'accepted_by': saved.get('accepted_by'),
                 'request': saved.get('request', ''),
             }
         )
@@ -313,6 +326,8 @@ def survey(root, ident):
         'title': record['title'],
         'approval': run['approval'],
         'engine': run['engine'],
+        'model_mode': (run.get('model_profiles') or {}).get('mode', 'single'),
+        'review_level': review_policy.level(run),
         'seconds': run['seconds'],
         'stages': rows,
         'next': next_stage,
@@ -499,6 +514,27 @@ def create(root, data, approval='conversation'):
         'pipeline': pipeline,
         'stages': {},
     }
+    import studios_config
+
+    shared, problem = studios_config.read()
+    if problem:
+        raise ValueError(problem)
+    assistant = shared.get('assistant') or {}
+    same_agent = assistant.get('agent') == engine
+    contract = research_contract.snapshot() if research != 'none' else None
+    if contract:
+        run['research_contract'] = contract
+    run['review_policy'] = review_policy.snapshot(shared)
+    if review_policy.level(run) != 'step_by_step':
+        run['schema'] = 2
+    if contract:
+        run['schema'] = 3
+    run['model_profiles'] = model_profiles.snapshot(
+        shared,
+        engine,
+        assistant.get('model') if same_agent else None,
+        assistant.get('effort') if same_agent else None,
+    )
     if selected_brand:
         run['brand'] = selected_brand
     inputs(root, record, run)  # Refuse unusable context before creating a partial blog.
@@ -531,6 +567,10 @@ def submit(root, ident, stage, result, expected, page=False):
         raise ValueError('Finish the current stage before submitting another.')
     result = blog_worker.validate(result)
     directory, record, run = load(root, ident)
+    if stage == 'research' and run.get('research_contract'):
+        research_contract.read_bundle(directory / 'research')
+        if result['content'] != (directory / 'research/report.md').read_text():
+            raise ValueError('Submit the saved, independently reviewed research report.')
     pin = basis(root, directory, record, run, stage)
     filename = STAGES[stage][1]
     if stage in ('outline', 'draft'):
@@ -552,9 +592,25 @@ def submit(root, ident, stage, result, expected, page=False):
         'basis': pin,
         'notes': result['notes'],
         'request': previous.get('request', ''),
+        'model_purpose': previous.get('model_purpose', stage),
     }
+    if review_policy.automatic(run, 'blog', stage, run['pipeline'][-1]):
+        _accept(directory, run, stage, 'review-policy')
+        review_policy.receipt(run, stage, run['stages'][stage], studio.now())
     save(root, directory, record, run, 'Submitted ' + stage)
     return survey(root, ident)
+
+
+def _accept(directory, run, stage, by):
+    run['stages'][stage].update(status='approved', accepted_by=by)
+    approved_hash = run['stages'][stage]['hash']
+    studio.atomic(
+        studio.inside(
+            directory, 'history', 'derived-blog-approved-' + stage + '-' + approved_hash + '.md'
+        ),
+        studio.inside(directory, STAGES[stage][1]).read_bytes(),
+    )
+    run.setdefault('approved', {})[stage] = approved_hash
 
 
 def decide(root, ident, expected, action, request='', page=False, target=None):
@@ -581,21 +637,16 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
             or next(row['status'] for row in found['stages'] if row['stage'] == stage) != 'draft'
         ):
             raise ValueError('Only a current submitted draft can be approved.')
-        run['stages'][stage]['status'] = 'approved'
-        approved_hash = run['stages'][stage]['hash']
-        studio.atomic(
-            studio.inside(
-                directory, 'history', 'derived-blog-approved-' + stage + '-' + approved_hash + '.md'
-            ),
-            studio.inside(directory, STAGES[stage][1]).read_bytes(),
-        )
-        run.setdefault('approved', {})[stage] = approved_hash
+        _accept(directory, run, stage, 'page' if page else 'conversation')
     elif action == 'changes':
         if not stage:
             raise ValueError('This run is complete. Start a new revision in chat.')
         request = text(request, 'change request', 8000, required=True)
         run['stages'].setdefault(stage, {})['status'] = 'pending'
         run['stages'][stage]['request'] = request
+        run['stages'][stage]['model_purpose'] = (
+            'repair' if stage == 'draft' and found['next'] == 'review' else stage
+        )
         # Downstream decisions are kept in history, never silently renewed.
         for name in run['pipeline'][run['pipeline'].index(stage) + 1 :]:
             run['stages'].pop(name, None)
@@ -612,6 +663,20 @@ def job(root, ident):
         raise ValueError('This run is complete.')
     directory, record, run = load(root, ident)
     payload = inputs(root, record, run)
+    if (
+        run.get('research_contract')
+        and stage not in ('research-plan', 'research')
+        and run['stages'].get('research')
+    ):
+        directory, _ = studio.item(root, 'articles', record['id'])
+        facts, manifest = research_contract.read_bundle(directory / 'research')
+        payload['research_bundle'] = {
+            'digest': manifest['digest'],
+            'brief': (directory / 'research/brief.md').read_text(),
+            'findings': facts['findings'],
+            'facts': facts['facts'],
+            'sources': facts['sources'],
+        }
     payload['documents'] = {}
     for name in run['pipeline']:
         path = studio.inside(directory, STAGES[name][1])
@@ -630,6 +695,13 @@ def job(root, ident):
     if stage == 'draft' and run['existing']:
         guidance += '\nRevise the supplied manuscript in the scope of its brief. Preserve its stance, meaningful qualifiers and author voice; retain unsupported claims as questions rather than inventing support.'
     guidance += '\n\n' + (references / 'style/house.md').read_text()
+    if run.get('model_profiles'):
+        found['model_selection'] = model_profiles.route(
+            run,
+            'Blog Studio',
+            stage,
+            purpose=run['stages'].get(stage, {}).get('model_purpose', stage),
+        )
     return found, payload, guidance
 
 
@@ -748,26 +820,51 @@ class Engine:
                 )
                 self.keep_local(ident, local)
                 return
-            from team_workspace import guard
+            from team_workspace import guard as team_guard
 
-            guard(self.root, ident)
+            team_guard(self.root, ident)
             found, payload, guidance = job(self.root, ident)
+            choice = found.get('model_selection')
+            if choice:
+                directory, record, run = load(self.root, ident)
+                attempt = sum(job['step'] == found['next'] for job in run.get('model_jobs', [])) + 1
+                model_profiles.audit(
+                    run, choice, attempt, 'research' if found['next'] == 'research' else 'write'
+                )
+                save(self.root, directory, record, run, 'Selected model for ' + found['next'])
+                # Audit metadata changes the optimistic token, so use the freshly saved version.
+                found['expected'] = survey(self.root, ident)['expected']
             local.update(status='working', error='')
             self.keep_local(ident, local)
             self.current = ident
             self.stop.clear()
             # Includes session metadata as well as run/documents: a parallel edit wins.
-            directory, _, _ = load(self.root, ident)
+            directory, _, run = load(self.root, ident)
             session = (directory / 'session.json').read_bytes()
+        pending = None
         try:
-            result = self.worker(
-                found['engine'],
-                payload,
-                guidance,
-                seconds=found['seconds'],
-                web=found['next'] == 'research' and payload['research_policy'] == 'web-allowed',
-                stop=self.stop,
-            )
+            if found['next'] == 'research' and run.get('research_contract'):
+                import synthesis_research
+
+                pending = tempfile.TemporaryDirectory(prefix='blog-research-draft-')
+                target = Path(pending.name)
+                if (directory / research_contract.CASE).is_dir():
+                    research_contract.copy_case(
+                        directory / research_contract.CASE, target / research_contract.CASE
+                    )
+                result = synthesis_research.generate(
+                    target, run, payload, self.worker, seconds=found['seconds'], stop=self.stop
+                )
+            else:
+                result = self.worker(
+                    found['engine'],
+                    payload,
+                    guidance,
+                    seconds=found['seconds'],
+                    web=found['next'] == 'research' and payload['research_policy'] == 'web-allowed',
+                    stop=self.stop,
+                    model_selection=found.get('model_selection'),
+                )
             with studio.locked(self.root):
                 if self.stop.is_set() or self.closed.is_set():
                     return
@@ -778,6 +875,14 @@ class Engine:
                 from team_workspace import before
 
                 before(self.root, ident)
+                if pending:
+                    guard(self.root, ident, found['expected'], page=True)
+                    research_contract.copy_case(
+                        target / research_contract.CASE, directory / research_contract.CASE
+                    )
+                    research_contract.publish(
+                        target / research_contract.CASE, directory / 'research'
+                    )
                 submit(self.root, ident, found['next'], result, found['expected'], page=True)
                 state = self.local(ident)
                 state.update(status='waiting-for-approval', error='')
@@ -794,6 +899,8 @@ class Engine:
                     state.update(enabled=False, status='failed', error=message[:500])
                     self.keep_local(ident, state)
         finally:
+            if pending:
+                pending.cleanup()
             self.current = None
 
     def sync_team(self):
@@ -961,6 +1068,19 @@ def document(root, ident, stage):
         'diff': differences[:4000],
         'diff_truncated': len(differences) > 4000,
         'stage': stage,
+        'review_level': found['review_level'],
+        'bundle': [
+            {
+                'stage': item['stage'],
+                'label': item['label'],
+                'content': studio.inside(directory, item['path']).read_text(),
+            }
+            for item in found['stages']
+            if found['review_level'] != 'step_by_step'
+            and stage == found['next']
+            and item['stage'] != stage
+            and item['status'] == 'approved'
+        ],
         'label': row['label'],
         'status': row['status'],
         'notes': row['notes'],

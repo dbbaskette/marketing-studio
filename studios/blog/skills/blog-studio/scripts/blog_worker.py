@@ -33,7 +33,7 @@ from the selected author voice: preserve that voice and its provisional or confi
 Do not infer company tone from a logo, palette or font. Never claim a brand audit was run."""
 
 
-def generate(engine, payload, guidance, seconds=600, web=False, stop=None):
+def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model_selection=None):
     """One process group, disposable working directory, bounded time and output.
 
     Workers have no shell, file tools or connected apps. Public research alone enables
@@ -90,6 +90,8 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None):
                 '--system-prompt',
                 prompt,
             ]
+        at = 2 if engine == 'codex' else 1
+        command[at:at] = source_curator.shared_options(engine, model_selection)
         env = {k: v for k, v in os.environ.items() if not k.startswith(('CLAUDE', 'ANTHROPIC'))}
         # Regular files avoid a full stdout pipe blocking the child while we watch stop/time.
         with (folder / 'stdout').open('w+') as stdout, (folder / 'stdin').open('w+') as stdin:

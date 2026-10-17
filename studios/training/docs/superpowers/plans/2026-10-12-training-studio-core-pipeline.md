@@ -364,6 +364,20 @@ Each row is one test in `tests/test_workspace.py` or, where it names `check`, `t
 | 110 | Word copies wanted | `export A` with no pandoc, a pandoc that fails or never finishes, or one without `--sandbox` and a source that names a picture | export `unavailable`, with a plain reason; no `.docx` left behind. A `.docx` made another way is recorded instead, unless it is the copy already recorded against an older source |
 | 111 | The home folder; a folder holding `skills/training-studio/SKILL.md`, or inside one | `init` | refused, each in words of its own; no record written |
 | 112 | A stale artifact; a missing reason; an upstream not approved | `approve A`; `approve A --accept-stale` or `skip S` with no `--reason`; `approve A` | refused, naming what changed and `--accept-stale --reason`, then `--reason`, then the artifact to approve first. On the page the same refusals name no flag |
+| 113 | No shared setup, or only partially saved choices | Launch Training Studio independently | Complete shared setup is shown; no provider job starts |
+| 114 | Shared setup completed in any studio | Launch Training Studio | Existing workspace retained or shared location adopted; normal home opens without another setup |
+| 115 | Companion at its minimum; a newer stable release is cached for its repository and meets its `>=` requirement | Check available versions, then explicitly update | Check offers the newer target without installing; update resolves and records its exact commit and checksum. Newer installed versions are preserved. Covered by `RequirementTests.test_newer_allowed_release_is_offered_without_installing_or_fetching` in `test_runner_upkeep.py` and the suite's `test_companion_versions.py`. |
+| 116 | Shared Quick, Main and Complex model profiles | Start training, research, repair a deck, then change shared defaults | New work saves resolved profiles; research and ordinary review use Main, dedicated repair uses Complex, explicit work overrides remain single model, and settings changes leave the saved run unchanged. Covered by `ModelProfileTests` in `test_runner_engine.py`, `RepairTests.test_repair_uses_complex_but_independent_review_keeps_main`, and suite `test_model_profiles.py`. |
+| 117 | Shared review level saved on new browser runs; legacy runs have none | Research, generate all levels, review direction, request changes, resume, review final materials | Balanced groups all levels at two revision-bound reviews; Automatic draft retains final review only; Step by step and legacy keep existing gates. Automatic acceptance preserves input checks and records review-policy provenance. Changed inputs reject old combined decisions. Covered by `test_review_levels.py` and suite `test_review_policy.py`. |
+
+| 118 | New schema-2 research or explicit conversation import; original runs retain schema 1 | Investigate, independently review, approve research, consume stable finding IDs, then alter a capture | The purpose-led bundle must be complete with matching digest and file hashes. Drafts block authoring; changed evidence invalidates approval and downstream inputs. Stop preserves the draft without recording a failure. Covered by `test_synthesis_integration.py` and suite `test_research_contract.py`. |
+
+Shared setup readiness adds the independently verified transitions in
+[the suite setup matrix](../../../../../docs/shared-setup.md): no/partial settings
+→ shared setup; successful finish → normal home; completed setup elsewhere →
+workspace adoption and normal home; failure or conflicting changes → setup with
+an explanation. These are covered by `scripts/ci/shared_setup_acceptance.py` and
+`tests/test_shared_setup.py` in the suite root.
 
 A deck the runner makes has rows of its own for its design, its assets, its review and its upgrade: V01 to V14 in the [visual teaching plan's matrix](2026-10-14-visual-teaching-in-decks.md#state-transition-matrix), each a test of its name in `tests/test_runner_deck.py`. Rows 11, 20 and 21 above still hold for such a deck: what the runner saves is the core's `deck`, and a deck drawn again from a design (V11) is saved through `save`, so its history keeps the deck it replaces.
 

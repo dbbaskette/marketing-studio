@@ -9,7 +9,8 @@ What a caller needs to know
 - Two places hold them. The values every studio on this computer shares are kept only in
   the studios config (`studios_config`), and read from it each time: the agent, its model
   and its level (`assistant.agent`, `.model`, `.effort`) and the brand skill's repository and
-  release (`brand.repository`, `.release`). SHARED names them. A value there that would be
+  release and installed folder (`brand.repository`, `.release`, `.skill`), plus
+  slide previews (`render.previews`). SHARED names them. A value there that would be
   refused here is the default, and so is every one of them while the file cannot be read.
   The rest belong to Training Studio on this computer alone, and are kept in the per-user
   data folder as `runner.json`, beside the workspace `gitstate` remembers there. Nothing
@@ -37,9 +38,10 @@ What a caller needs to know
   may spend, where the agent reports spending, before it stops and asks. `parallel` is how
   many trainings work at once.
 - `previews` is how a deck's slides are rendered to look at: `local`, with LibreOffice on
-  this computer, or `drive`, through Google Drive. None until the person chooses.
+  this computer, or `drive`, through Google Drive. Shared as `render.previews`;
+  after shared setup, an empty choice follows the delivery format.
 - `brand_skill` is where the brand skill to use is, when the person named one of those
-  found. None for the first that is found.
+  found, shared as `brand.skill`. None for the first that is found.
 - `notify` is whether the runner tells the person, through the computer's own
   notifications, that a training needs a decision while no page is open. Off until they
   turn it on.
@@ -86,7 +88,8 @@ RELEASE = re.compile(r'^[\w][\w.+-]{0,99}$')   # a release tag's name, as git ta
 # The settings every studio shares, each with where the studios config keeps it.
 SHARED = {'agent': ('assistant', 'agent'), 'model': ('assistant', 'model'),
           'effort': ('assistant', 'effort'), 'brand_repository': ('brand', 'repository'),
-          'brand_release': ('brand', 'release')}
+          'brand_release': ('brand', 'release'),
+          'previews': ('render', 'previews'), 'brand_skill': ('brand', 'skill')}
 
 
 @dataclass(frozen=True)
@@ -302,6 +305,11 @@ def passes(check, *args):
         return None
 
 
+def _group(found, name):
+    value = found.get(name)
+    return value if isinstance(value, dict) else {}
+
+
 def from_shared(found: dict) -> dict:
     """The shared settings the studios config holds, by name, each as Training Studio can
     use it and None where it cannot. A model or a level named for an agent Training Studio
@@ -320,7 +328,10 @@ def from_shared(found: dict) -> dict:
     release = passes(check_release, release, repository) \
         if isinstance(release, str) and repository else None
     return {'agent': agent, 'model': model, 'effort': effort,
-            'brand_repository': repository, 'brand_release': release}
+            'brand_repository': repository, 'brand_release': release,
+            'previews': passes(check_previews, _group(found, 'render').get('previews')),
+            'brand_skill': (str(Path(brand['skill']).expanduser())
+                            if passes(check_place, brand.get('skill')) else None)}
 
 
 def _kept() -> dict:
@@ -346,6 +357,9 @@ def shared_now(found: dict) -> dict:
     """The shared settings as Training Studio uses them, from what the studios config holds:
     those it can use, and the default for the rest."""
     shared = from_shared(found)
+    from studio_core.preferences import ready
+    if shared['previews'] is None and ready(found):
+        shared['previews'] = 'drive' if found.get('output') == 'google' else 'local'
     return {**shared, 'agent': shared['agent'] or Settings().agent}
 
 
@@ -373,7 +387,8 @@ OWNS = {'agent': ('model', 'effort'), 'brand_repository': ('brand_release',)}
 # Each shared setting as a sentence names it.
 NAMED = {'agent': 'The agent', 'model': 'The model', 'effort': 'The reasoning level',
          'brand_repository': "The brand skill's repository",
-         'brand_release': "The brand skill's release"}
+         'brand_release': "The brand skill's release",
+         'previews': 'Slide previews', 'brand_skill': 'The installed brand skill'}
 STALE = ('{} was changed in another studio while this was open, so nothing was saved. Look '
          'again, then save.')
 
@@ -436,7 +451,8 @@ def own() -> dict:
         'assistant': {'agent': kept.get('agent'), 'model': kept.get('model'),
                       'effort': kept.get('effort')},
         'brand': {'repository': kept.get('brand_repository'),
-                  'release': kept.get('brand_release')}})
+                  'release': kept.get('brand_release'), 'skill': kept.get('brand_skill')},
+        'render': {'previews': kept.get('previews')}})
     return {name: value for name, value in found.items() if value is not None}
 
 

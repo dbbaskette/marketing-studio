@@ -59,6 +59,7 @@ What a caller needs to know
 from __future__ import annotations
 
 import json
+from studio_core import review_policy, research_contract
 import re
 import shutil
 from dataclasses import dataclass, field, replace
@@ -650,6 +651,19 @@ def again(root: Path, run: dict | None, request: dict) -> list[str]:
 
 def research(root: Path, session: dict, run: dict | None, request: dict | None) -> Research:
     """Where the research stands. Nothing is run: the record is read as it lies."""
+    if (run or {}).get('research_contract'):
+        handover = (run or {}).get('research') or {}
+        handed = handover.get('plan') == workspace.sha256_file(root / PLAN)
+        try:
+            facts, manifest = research_contract.read_bundle(root / research_contract.CASE / 'research')
+            current = handed and handover.get('reviewed') and handover.get('reviewed_request') == (request or {}).get('at')
+        except (OSError, ValueError):
+            facts, manifest, current = {}, {}, False
+        entry = session['artifacts'].get('research') or {}
+        saved = bool(entry.get('sha256')) and entry['sha256'] == workspace.sha256_file(root / REPORT)
+        return Research(handed, manifest.get('digest'), {'synthesis': 'Purpose-led investigation'},
+                        {}, {'synthesis': 'supported' if current else 'pending'},
+                        () if current else ('synthesis',), saved)
     plan = home.read_json(root / PLAN, None)
     record = workspace.research_record(root)
     items = [item for item in (plan.get('items') if isinstance(plan, dict) else None) or []
@@ -997,6 +1011,9 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
     needed = any(not _done(step, seen) for step in listed if step.id in RESEARCHED)
     seen = replace(seen, supplied=_supplied(root, given, supplied, needed))
     done = frozenset(step.id for step in listed if _done(step, seen))
+    if review_policy.level(run) != 'step_by_step':
+        from runner import reviews
+        listed, done = reviews.group(root, session, run, listed, done)
     first = next((step for step in listed if step.id not in done), None)
     return Survey(session, state, listed, done,
                   _next(first, session, state, asked, found, decks), found, asked, named,
@@ -1007,6 +1024,10 @@ def _next(first: Step | None, session: dict, state: dict, asked: dict,
           found: Research, decks: dict | None = None) -> Next:
     if first is None:
         return Next('done')
+    if first.kind == 'review':
+        return Next('review', first)
+    if first.id.startswith('review-sample'):
+        return Next('code', first)
     if first.stage == 'deck' and first.id != 'deck' and bare(first.id) != DECK_STEPS[-1]:
         mine = decks[workspace.split(first.artifact)[1]]
         if first.kind == 'gate':  # the runner's own gate: the core has none for it
@@ -1217,6 +1238,12 @@ def question_work(root: Path, found: Survey, ident: str, request: dict | None,
 def findings_text(root: Path) -> str:
     """The research as a worker reads it: each question's ID, verdict, summary and quotes."""
     record = workspace.research_record(root) or {'items': [], 'results': {}}
+    if record.get('schema') == 2:
+        return ('# Reviewed research handoff\n\nCite stable finding IDs and retain conditions, '
+                'counterevidence and gaps. Facts, interpretations and recommendations differ.\n\n'
+                + (root / 'research/brief.md').read_text() + '\n\n'
+                + json.dumps({'digest': record['digest'], 'findings': record['findings'],
+                              'facts': record['facts'], 'sources': record['sources']}))
     lines = ['# Research findings', '',
              'Cite a finding by its ID. Only a supported finding can back a key point.', '']
     for item in record['items']:
@@ -1881,6 +1908,8 @@ def _practice_note(text: str, session: dict) -> list[str]:
     if not planned:
         return ['It plans no practice scenario. A training that wants practice is not ready '
                 'without one: ask for changes if it should have some.']
+    if review_policy.level(session) != 'step_by_step':
+        return [f'It plans {len(planned)} practice scenarios. They are included in the combined final review.']
     count, twice = len(planned), 'yoodli' in stages
     named = ', '.join(planned)
     asks = count * (2 if twice else 1)

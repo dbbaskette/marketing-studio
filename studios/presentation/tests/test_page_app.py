@@ -71,10 +71,10 @@ class LinkTests(unittest.TestCase):
 
     def test_a_link_out_is_only_a_web_address_the_server_returned(self):
         script = read('app.js')
-        # Two places set where a link goes: a link the server sent, once it is a web address,
-        # and the deck downloaded into memory.
+        # Navigation also opens the fixed local setup page, keeping its token in the
+        # fragment. External links still come only from the server or a downloaded deck.
         targets = re.findall(r'\.href = ([^;]+);', script)
-        self.assertEqual(sorted(targets), ['address', 'held'])
+        self.assertEqual(sorted(targets), ["'/onboarding/#token=' + view.token", 'address', 'held'])
         out = script[script.index('function outLink('):]
         out = out[:out.index('\n}\n')]
         self.assertIn("WEB_LINK.test(String(address || ''))", out)
