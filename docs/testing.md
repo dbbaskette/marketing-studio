@@ -113,7 +113,7 @@ implementations are unchanged.
 
 ## Synthesis research integration
 
-`test_research_contract.py` runs against the exact locked preview helper, with
+`test_research_contract.py` runs against the exact locked release helper, with
 synthetic dossiers and independent scripted invocations. Native integration suites
 cover research handoff, new versus legacy selection, source hashes, revision
 requests, the browser worker path, stable Training Studio citations and controlled

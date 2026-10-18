@@ -3,12 +3,13 @@
   "companions": {
     "harness-research": {
       "repository": "https://github.com/dbbaskette/harness-research-skill.git",
-      "version": "1.0.0-alpha.1",
-      "commit": "4cdc209e338673ec7dbf6323e787bbb012ba1414",
-      "sha256": "5fb17766f6734f01a57a466127ba885e6ae238c85eed7b43cc93a55a478d0f4b",
+      "version": "1.0.0",
+      "commit": "0d7092db423329939c59c565060758bff3fb9b1b",
+      "sha256": "c39e556b0ba1f8df6bf4904840c9600ad89a093a522dc94ddf86dbebb1a41099",
       "stub": "bootstrap/SKILL.md",
       "installer": "scripts/install.mjs",
-      "note": "Synthesis-first preview explicitly pinned for schema-2 studio integrations. Stable automatic selection resumes after a stable synthesis release is adopted."
+      "note": "Stable synthesis research with schema-2 studio integration. Newer stable releases are resolved to an exact commit and verified source checksum before installation.",
+      "requirement": ">=1.0.0"
     },
     "harness-slides": {
       "repository": "https://github.com/dbbaskette/harness-slides-skill.git",

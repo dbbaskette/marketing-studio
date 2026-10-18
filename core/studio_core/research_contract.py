@@ -75,7 +75,7 @@ def find_runtime():
     for root in roots:
         if (root / 'scripts/harness-research.mjs').is_file():
             return root.resolve()
-    raise ValueError('Install the shared Harness Research preview before starting synthesis research.')
+    raise ValueError('Install the shared Harness Research 1.0 or newer before starting synthesis research.')
 
 
 def read_bundle(root, complete=True):

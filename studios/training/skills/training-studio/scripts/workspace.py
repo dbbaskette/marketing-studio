@@ -716,7 +716,7 @@ def import_research(root: Path, case: Path) -> dict:
         raise WorkspaceError('Existing research keeps its original workflow. Use a fresh training for synthesis research.')
     contract = research_contract.snapshot()
     if not contract:
-        raise WorkspaceError('Install the shared Harness Research preview before importing synthesis research.')
+        raise WorkspaceError('Install the shared Harness Research 1.0 or newer before importing synthesis research.')
     facts, manifest = research_contract.adopt_case(case, root)
     session['research_contract'] = contract
     write_atomic(root / SHARED['research'][0], (root / 'research/report.md').read_bytes())
