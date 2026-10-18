@@ -281,4 +281,4 @@ Blog Studio research work is preserved on a separate migration branch.
 <p align="center"><strong>Pick a studio. Make something useful.</strong></p>
 
 Research uses a shared purpose-led report and brief, independently reviewed before
-writing or slide work continues. See [research compatibility and the preview helper](docs/research-synthesis.md).
+writing or slide work continues. See [research compatibility and the shared helper](docs/research-synthesis.md).
