@@ -71,7 +71,8 @@ class BundleTests(unittest.TestCase):
             self.assertEqual(names, sorted(names))
             self.assertTrue(all(item.date_time == build.TIMESTAMP for item in archive.infolist()))
             self.assertEqual(
-                {name.split('/')[1] for name in names}, {'installer', 'skills', 'docs'}
+                {name.split('/')[1] for name in names},
+                {'installer', 'skills', 'docs', 'install.sh'},
             )
             self.assertEqual(
                 sorted(n for n in names if '/docs/' in n),
@@ -90,6 +91,9 @@ class BundleTests(unittest.TestCase):
             for name in ('Install Blog Studio.command', 'install.sh', 'google-setup.sh'):
                 launcher = archive.getinfo('blog-studio-setup/installer/' + name)
                 self.assertTrue((launcher.external_attr >> 16) & 0o111, name)
+            self.assertTrue(
+                archive.getinfo('blog-studio-setup/install.sh').external_attr >> 16 & 0o111
+            )
             for item in archive.infolist():
                 relative = item.filename.removeprefix('blog-studio-setup/')
                 if relative != 'skills/blog-studio/install-manifest.json':

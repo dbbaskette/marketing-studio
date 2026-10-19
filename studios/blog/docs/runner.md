@@ -48,6 +48,34 @@ references in the wizard too. The assistant receives only selected source and
 voice context plus this blog's saved writing preferences, memories and explicitly
 selected team context. Oversized context is refused rather than silently cut.
 
+## Start from a Google Doc
+
+Choose **Open Google Doc** on **Home**, **Blogs**, or in the new-blog wizard.
+Paste the manuscript's Google Doc link or ID, then choose **Preview Google Doc**.
+The page uses the workspace's remembered Google account, or the active Google
+Cloud CLI account. Google Cloud CLI must already be installed and signed in with
+Drive access; see [Google setup](google-docs.md#local-codex-and-claude-gcloud-setup).
+Preview reads only the selected Doc and saves a private capture on this computer.
+
+Read the text and structure summary and compare them with the original Doc.
+Pending suggestions stay in Google and are excluded from the imported text.
+Confirm the preview and choose **Import and continue**. Blog Studio saves the
+original, draft and formatted history and links that same Doc as the working copy.
+With a selected team workspace or Team Hub, the imported blog follows its normal
+sharing settings; raw Google data and unconfirmed previews stay on this computer.
+
+Import opens the writing wizard with **Review a draft** selected. Choose review
+or revision and supply the purpose and audience before starting an assistant.
+If the Doc is already linked here, Blog Studio opens its existing run or saved
+blog without replacing local edits or its Google baseline. The working Doc link
+remains visible in the wizard and writing run.
+
+The page imports a single-tab Doc. Access failures, multiple tabs or an unreadable
+capture leave saved blogs intact. You can retry, or upload a downloaded manuscript.
+Reviewing and revising on the page saves local work. To send edits, suggestions
+or comments to Google, continue in your assistant conversation and request that
+operation explicitly.
+
 ## Your brand skill
 
 Open **Settings → Brand skill**, as in Training Studio. A brand skill belongs to

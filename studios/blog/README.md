@@ -23,8 +23,8 @@ team sharing or a document connection.
 ## Install Blog Studio
 
 **[Download the Blog Studio installer](https://github.com/dbbaskette/marketing-studio/releases/latest/download/blog-studio-installer.zip)**
-and unzip it. On macOS, open **installer/Install Marketing Studio.command** inside
-`blog-studio-setup`. On Linux, run `bash installer/install.sh` there. This subset
+and unzip it. Open Terminal in `blog-studio-setup` and run `bash install.sh` on
+macOS or Linux. No `.command` launcher is needed. This subset
 installs Blog Studio and its own launcher; Marketing Studio is an optional home.
 
 Or install from the consolidated source:
@@ -32,7 +32,7 @@ Or install from the consolidated source:
 ```sh
 git clone https://github.com/dbbaskette/marketing-studio.git
 cd marketing-studio
-bash installer/install.sh --studios blog
+bash install.sh --studios blog
 ```
 
 Use `--target codex` or `--target claude` for one assistant. Compatible existing
@@ -68,6 +68,9 @@ Once the page is open, use its controls to drive the work:
    audience; choose **Write a blog**, **Outline only**, **Revise a draft**, or
    **Review a draft**, a voice and an optional brand; then select or upload sources, choose Codex or
    Claude Code, and set limits. To revise or review, supply the manuscript.
+   For a blog already in Google Docs, choose **Open Google Doc** on Home or Blogs,
+   preview its link and confirm the manuscript before importing. The same Doc
+   stays linked; importing does not start an assistant or change Google.
 3. **Press Start the blog.** Blog Studio starts the selected assistant and runs
    the next stage. The progress view shows its steps and the files made so far.
    A new blog can go through research, outline, draft, review, and export package.

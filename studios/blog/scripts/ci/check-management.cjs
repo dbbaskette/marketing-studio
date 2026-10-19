@@ -58,6 +58,7 @@ async function check(){
   await busyAnalysis();
   await refreshWithNewSelection();
   await guidedRuns();
+  await googleIntake();
   await brandInputs();
   await sharedSettings();
   await staleSharedForms();
@@ -65,7 +66,7 @@ async function check(){
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','brand skill inputs and confirmation','shared settings refusal/reload/retry','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','brand skill inputs and confirmation','shared settings refusal/reload/retry','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -75,6 +76,67 @@ function controlled(){
     const pending=deferred();requests.push({url,options,...pending});return pending.promise;
   });
   return {...f,requests};
+}
+async function googleIntake(){
+  const defaults={engine:'codex',seconds:600,research:'none',stop:'review',tone:'Clear',author:''};
+  const preview={status:'preview',preview:'b'.repeat(32),expected:'capture-version',title:'Synthetic Google draft',linked_document:'https://docs.google.com/document/d/fixture-doc/edit',content:'# Synthetic manuscript\n\n<script>not executable</script>',summary:{pending_suggestions:1,projection:'blog-studio/1',structure:{paragraphs:2,headings:1}}};
+  const requests=[];
+  const f=fixture((url,options)=>{
+    requests.push({url,options});
+    if(url==='/api/google-preview')return preview;
+    if(url==='/api/google-start')return {id:'imported',status:'started-from-google',title:preview.title,linked_document:preview.linked_document};
+    if(url==='/api/run-options')return {settings:{defaults},brand:{default:{brand:'default-brand',variant:'default-variant'}},sources:[],profiles:[],agents:{codex:true}};
+    if(url.startsWith('/api/article?'))return {title:preview.title,view:{google:{url:preview.linked_document}},record:{}};
+    return {items:[],total:0};
+  });
+  f.loadRunner();
+  const find=id=>descendants(f.get('studio-page')).find(e=>e.id===id);
+  await f.run('sGoogleButton().listeners.click()');
+  assert.equal(f.get('title').textContent,'Open Google Doc');
+  find('google-url').value=preview.linked_document;find('google-url').listeners.input();
+  let form=f.get('studio-page').children[0];await form.listeners.submit({preventDefault(){}});
+  assert.equal(requests.filter(r=>r.url==='/api/google-preview').length,1);
+  assert.equal(requests.some(r=>r.url==='/api/google-start'),false);
+  form=f.get('studio-page').children[0];let nodes=descendants(form);
+  assert.equal(nodes.find(e=>e.type==='submit').disabled,true);
+  assert.equal(nodes.some(e=>e.tagName==='script'),false);
+  assert.ok(nodes.some(e=>e.textContent.includes('1 pending Google suggestions')));
+  await form.listeners.submit({preventDefault(){}});
+  assert.equal(requests.some(r=>r.url==='/api/google-start'),false,'unconfirmed import is refused');
+  const check=nodes.find(e=>e.type==='checkbox');check.checked=true;check.listeners.change();
+  assert.equal(nodes.find(e=>e.type==='submit').disabled,false);
+  await form.listeners.submit({preventDefault(){}});
+  assert.equal(f.run('studio.screen'),'new');
+  assert.equal(f.run('studio.draft.id'),'imported');
+  assert.equal(f.run('studio.draft.mode'),'review');
+  assert.equal(f.run('studio.draft.google.url'),preview.linked_document);
+  assert.equal(requests.some(r=>r.url==='/api/run-create'),false,'intake does not start an assistant');
+  assert.deepEqual(JSON.parse(requests.find(r=>r.url==='/api/google-start').options.body),{preview:preview.preview,expected:preview.expected,title:preview.title,confirmed:true});
+  assert.ok(descendants(f.get('studio-page')).some(e=>e.tagName==='a'&&e.href===preview.linked_document));
+  await f.run("newBlog('imported',{goal:'Keep my purpose',audience:'Operators',brand:'',variant:'',author:'',mode:'revise',stop:'draft'})");
+  assert.equal(f.run('studio.draft.goal'),'Keep my purpose');assert.equal(f.run('studio.draft.audience'),'Operators');
+  assert.equal(f.run('studio.draft.brand'),'');assert.equal(f.run('studio.draft.mode'),'revise');assert.equal(f.run('studio.draft.stop'),'draft');
+  // Access failures keep the entered link, show an inline error, and permit retry.
+  const denied=fixture(()=>({__http:400,error:'Google sign-in is unavailable.'}));denied.loadRunner();
+  await denied.run('sGoogleButton().listeners.click()');denied.run("studio.google.url='fixture-doc'");
+  await denied.get('studio-page').children[0].listeners.submit({preventDefault(){}});
+  assert.equal(denied.run('studio.google.url'),'fixture-doc');
+  assert.ok(descendants(denied.get('studio-page')).some(e=>e.textContent.includes('Google sign-in is unavailable.')));
+  assert.equal(descendants(denied.get('studio-page')).find(e=>e.type==='submit').disabled,false);
+  // A late preview response cannot replace the screen the person navigated to.
+  const pending=deferred(),late=fixture(()=>pending.promise);late.loadRunner();
+  await late.run('sGoogleButton().listeners.click()');late.run("studio.google.url='fixture-doc'");
+  const reading=late.get('studio-page').children[0].listeners.submit({preventDefault(){}});
+  late.run("studio.turn++;studio.screen='blogs'");pending.resolve(preview);await reading;
+  assert.equal(late.run('studio.screen'),'blogs');
+  // A repeated link opens its existing guided run without a new import.
+  const existing={id:'imported',title:preview.title,google:{url:preview.linked_document},status:'complete',complete:true,next:null,stages:[],brief:{goal:'Synthetic review',audience:'Authors'},decisions:[],engine:'codex',seconds:600,approval:'page',directory:'/synthetic/articles/imported'};
+  const reopened=[];const again=fixture((url)=>{reopened.push(url);if(url==='/api/google-preview')return {status:'already-linked',id:existing.id};if(url==='/api/runs')return {items:[existing]};if(url.startsWith('/api/run?'))return existing;return {items:[]};});again.loadRunner();
+  await again.run('sGoogleButton().listeners.click()');again.run("studio.google.url='fixture-doc'");
+  await again.get('studio-page').children[0].listeners.submit({preventDefault(){}});
+  assert.equal(again.run('studio.screen'),'run');assert.equal(again.run('studio.id'),'imported');
+  assert.equal(reopened.includes('/api/google-start'),false);
+  assert.ok(descendants(again.get('studio-page')).some(e=>e.tagName==='a'&&e.href===preview.linked_document));
 }
 const empty=(total=0)=>({items:[],total});
 async function requestOrdering(){

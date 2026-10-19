@@ -55,8 +55,9 @@ Look for a versioned platform bundle such as `marketing-studio-4.1.0-macos-arm64
 Choose `macos-arm64` for Apple Silicon, `macos-x64` for an Intel Mac, or the matching
 `linux-arm64` / `linux-x64` build for a Linux computer using glibc.
 
-Unzip it and open **installer/Install Marketing Studio.command** on macOS.
-On Linux, run `bash installer/install.sh` from the unpacked folder.
+Unzip it, open Terminal, and run `bash install.sh` from the unpacked folder.
+This works on macOS and Linux without opening a `.command` file. The macOS
+Finder launcher, **installer/Install Marketing Studio.command**, is also available.
 
 **The platform bundle brings its own Python, Node, research tools, and slide engine.**
 There is no npm install or compiler setup. The runtimes stay inside the installed

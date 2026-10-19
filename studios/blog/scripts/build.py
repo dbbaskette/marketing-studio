@@ -25,12 +25,14 @@ SKILL = REPO / 'skills/blog-studio'
 TOOLKIT = REPO / 'skills/blog-writing-toolkit'
 TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 INSTALLER_FILES = (
+    'install.sh',
     'installer/Install Blog Studio.command',
     'installer/google-setup.sh',
     'installer/install.py',
     'installer/install.sh',
 )
 EXECUTABLE = {
+    'install.sh',
     'installer/Install Blog Studio.command',
     'installer/google-setup.sh',
     'installer/install.sh',

@@ -190,13 +190,16 @@ def install(home, base, env, target, manifest, config, agent):
     atomic(base / 'installation.json', json.dumps(record, indent=2) + '\n', 0o600)
     shutil.copy2(ROOT / 'verify-installed.py', version / 'verify-installed.py')
     verify_command = '#!/bin/bash\nset -euo pipefail\nexec ' + shlex.quote(str(suite / 'runtime/python/bin/python3')) + ' ' + shlex.quote(str(version / 'verify-installed.py')) + '\n'
-    atomic(home / 'Applications/Verify Presentation Studio.command', verify_command)
+    for suffix in ('sh', 'command'):
+        atomic(home / ('Applications/Verify Presentation Studio.' + suffix), verify_command)
     shell_rc = '. ' + shlex.quote(str(version / 'environment.sh')) + '\n'
     shell_rc += 'echo "Use your existing assistant. Google sign-in: gcloud auth login --enable-gdrive-access --force"\n'
     atomic(version / 'tools-shell.sh', shell_rc, 0o644)
     tools_command = '#!/bin/bash\nexec /bin/bash --rcfile ' + shlex.quote(str(version / 'tools-shell.sh')) + ' -i\n'
-    atomic(home / 'Applications/Open Presentation Studio Tools.command', tools_command)
-    print('Installed. Open ' + str(home / 'Applications/Open Presentation Studio.command'))
+    for suffix in ('sh', 'command'):
+        atomic(home / ('Applications/Open Presentation Studio Tools.' + suffix), tools_command)
+    print('Installed. Open Presentation Studio from Terminal:')
+    print('  bash ' + shlex.quote(str(home / '.local/share/presentation-studio/studio')))
     print('Complete assistant sign-in in your own terminal before starting a job.')
     print('Assistant: ' + ('Claude Code' if agent == 'claude' else 'Codex') + ' (existing installation)')
     print('Existing workspaces and saved choices were preserved. Setup remains explicit.')

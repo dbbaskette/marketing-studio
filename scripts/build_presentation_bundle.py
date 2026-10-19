@@ -256,11 +256,12 @@ def build(brand, output, cache, lock, sources=None, mode='online'):
             prepare_tools(lock, cache, stage / 'payload')
         else:
             print('Recording pinned tools for download during installation…', flush=True)
-        for name in ('install-local.py', 'install-brand.mjs', 'verify-installed.py', 'tool_payload.py', 'Install Presentation Studio.command'):
+        for name in ('install.sh', 'install-local.py', 'install-brand.mjs', 'verify-installed.py', 'tool_payload.py', 'Install Presentation Studio.command'):
             shutil.copy2(TEMPLATES / name, stage / name)
         for name in ('install-local.py', 'verify-installed.py', 'tool_payload.py'):
             ast.parse((stage / name).read_text())
         (stage / 'Install Presentation Studio.command').chmod(0o755)
+        (stage / 'install.sh').chmod(0o755)
         values = {'BUNDLE_MODE': mode,
                   'SETUP_DOWNLOADS': ('Setup downloads pinned preview and Google tools.\nAn internet connection is required for the first installation; verified downloads\nare cached for retries.' if mode == 'online' else
                                      'Setup installs tools from this archive without downloading dependencies.'),

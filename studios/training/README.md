@@ -44,8 +44,8 @@ A slide deck made on the page also needs your organisation's brand skill and a w
 ## Install
 
 **[Download the Training Studio installer](https://github.com/dbbaskette/marketing-studio/releases/latest/download/training-studio-installer.zip)**
-and unzip it. On macOS, open **installer/Install Marketing Studio.command** inside
-`training-studio-setup`. On Linux, run `bash installer/install.sh` there. The subset
+and unzip it. Open Terminal in `training-studio-setup` and run `bash install.sh`
+on macOS or Linux. No `.command` launcher is needed. The subset
 installs Training Studio with its own independent launcher.
 
 Or install from the consolidated source:
@@ -53,7 +53,7 @@ Or install from the consolidated source:
 ```sh
 git clone https://github.com/dbbaskette/marketing-studio.git
 cd marketing-studio
-bash installer/install.sh --studios training
+bash install.sh --studios training
 ```
 
 Use `--target codex` or `--target claude` for one assistant. Setup offers missing

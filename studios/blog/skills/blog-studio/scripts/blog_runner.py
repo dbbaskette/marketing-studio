@@ -11,6 +11,7 @@ import uuid
 
 import studio
 import blog_worker
+import editorial
 from studio_core import model_profiles, review_policy, research_contract
 from studio_core.preferences import ready as shared_ready
 
@@ -324,6 +325,7 @@ def survey(root, ident):
     return {
         'id': ident,
         'title': record['title'],
+        'google': editorial.doc_link(record),
         'approval': run['approval'],
         'engine': run['engine'],
         'model_mode': (run.get('model_profiles') or {}).get('mode', 'single'),

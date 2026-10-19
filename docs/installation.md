@@ -8,8 +8,22 @@ Its filename includes the suite version and platform, for example
 and Intel/AMD64 builds. Linux bundles target glibc distributions, not Alpine/musl.
 Only publish a platform download after its native acceptance checks pass.
 
-Unpack the ZIP. On macOS, open `installer/Install Marketing Studio.command`.
-On Linux, run `bash installer/install.sh` inside the unpacked folder.
+Unpack the ZIP, open Terminal, and run this inside the unpacked folder on macOS
+or Linux:
+
+```sh
+bash install.sh
+```
+
+Every Marketing Studio and studio subset installer includes this top-level shell
+entry point. It forwards options to the same installer as
+`bash installer/install.sh`, without opening a `.command` file. The macOS Finder
+launcher `installer/Install Marketing Studio.command` remains available.
+
+From a consolidated checkout, install a particular studio with
+`bash install.sh --studios blog`, `bash install.sh --studios presentation`, or
+`bash install.sh --studios training`. Each independent `studios/<name>/`
+directory also has its own `install.sh` for its native installer.
 
 Platform downloads include private Python and Node runtimes, pinned Harness Research
 and Harness Slides, and the slide engine's production JavaScript dependencies. Setup

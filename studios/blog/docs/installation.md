@@ -23,6 +23,9 @@ model API key to install or to write. A Team Hub also needs the GitHub CLI.
 ## Install
 
 Choose either method. Both use the same installer and managed skill locations.
+Current installer packages include a top-level `install.sh`: run `bash install.sh`
+from the extracted setup folder. The `installer/install.sh` path below also works
+with older downloads and source checkouts.
 
 ### Clone and run
 
