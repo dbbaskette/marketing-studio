@@ -46,6 +46,12 @@ synthetic Hub/CLI journeys; it leaves the default full gate unchanged.
 
 ## Self-contained release bundles
 
+The [local Presentation Studio packaging guide](local-presentation-bundle.md)
+describes the extended Apple Silicon bundle and its regeneration command.
+`tests/test_presentation_bundle.py` covers deterministic archives, executable
+permissions, checksum failures, preservation of earlier builds, source/output
+boundaries, dependency locks and disposable build environments.
+
 `tests/test_distribution.py` checks runtime archive boundaries, checksums, ordinary
 file materialization, platform selection, offline companion installation, refusal of
 unrelated skills, and restoration after a failed pointer switch. Bootstrap tests use
