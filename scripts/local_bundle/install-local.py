@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local offline Presentation Studio bundle installer; no provider jobs or sign-in."""
+"""Local Presentation Studio bundle installer; no provider jobs or sign-in."""
 import argparse
 import fcntl
 import hashlib
@@ -42,6 +42,17 @@ def atomic(path, text, mode=0o755):
         temporary.unlink(missing_ok=True)
 
 
+def existing_assistant(current, target, env):
+    saved = (current.get('assistant') or {}).get('agent')
+    candidates = (saved,) if saved in ('codex', 'claude') else \
+        (target,) if target != 'both' else ('codex', 'claude')
+    for agent in candidates:
+        if shutil.which(agent, path=env.get('PATH')):
+            return agent
+    raise RuntimeError('An existing Codex or Claude Code installation is required. '
+                       'Make the selected assistant available on PATH, then rerun setup.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--home', type=Path, default=Path.home())
@@ -72,20 +83,46 @@ def main():
            'CLAUDE_CONFIG_DIR': str(home / '.claude'),
            'MARKETING_STUDIO_DATA': str(home / '.local/share/marketing-studio'),
            'PRESENTATION_STUDIO_DATA': str(home / '.local/share/presentation-studio')}
+    env['PATH'] = ':'.join([str(home / '.local/bin'), '/opt/homebrew/bin', '/usr/local/bin',
+                            env.get('PATH', '/usr/bin:/bin')])
     os.environ.update(env)
     sys.path.insert(0, str(ROOT / 'studio/core'))
     from studio_core import studios_config
     existing, problem = studios_config.read()
     if problem:
         raise RuntimeError(problem)
+    agent = existing_assistant(existing, args.target, env)
     base = home / '.local/share/presentation-studio-local-bundle'
     base.mkdir(parents=True, exist_ok=True)
     with (base / 'install.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        install(home, base, env, args.target, manifest, studios_config)
+        install(home, base, env, args.target, manifest, studios_config, agent)
 
 
-def install(home, base, env, target, manifest, config):
+def install_tools(payload, version, env):
+    print('Installing private Git and preview dependencies…', flush=True)
+    packages = json.loads((payload / 'packages.json').read_text())
+    with tempfile.TemporaryDirectory(prefix='presentation-offline-') as scratch:
+        scratch = Path(scratch)
+        spec = scratch / 'packages.txt'
+        spec.write_text('@EXPLICIT\n' + '\n'.join(
+            (payload / 'packages' / item['filename']).as_uri() + '#' + item['sha256']
+            for item in packages) + '\n')
+        run([payload / 'micromamba', '--no-rc', '-r', scratch / 'cache',
+             'create', '-y', '--offline', '--always-copy', '-p', version / 'tools', '-f', spec], env)
+    print('Installing the private LibreOffice application…', flush=True)
+    with tempfile.TemporaryDirectory(prefix='presentation-office-') as scratch:
+        mount = Path(scratch) / 'volume'
+        run(['/usr/bin/hdiutil', 'attach', '-readonly', '-nobrowse', '-mountpoint', mount,
+             payload / 'LibreOffice.dmg'], env)
+        try:
+            run(['/usr/bin/ditto', mount / 'LibreOffice.app', version / 'LibreOffice.app'], env)
+        finally:
+            run(['/usr/bin/hdiutil', 'detach', mount], env)
+    shutil.copytree(payload / 'google-cloud-sdk', version / 'google-cloud-sdk')
+
+
+def install(home, base, env, target, manifest, config, agent):
     node = ROOT / 'studio/runtime/node/bin/node'
     python = ROOT / 'studio/runtime/python/bin/python3'
     brand_script = ROOT / 'install-brand.mjs'
@@ -98,28 +135,11 @@ def install(home, base, env, target, manifest, config):
             raise RuntimeError('An incomplete local tools installation remains at ' + str(version)
                                + '. Preserve it for diagnosis before retrying.')
         version.mkdir(parents=True)
-        print('Installing offline Git and preview dependencies…', flush=True)
         try:
-            packages = json.loads((ROOT / 'payload/packages.json').read_text())
-            with tempfile.TemporaryDirectory(prefix='presentation-offline-') as scratch:
-                scratch = Path(scratch)
-                spec = scratch / 'packages.txt'
-                spec.write_text('@EXPLICIT\n' + '\n'.join(
-                    (ROOT / 'payload/packages' / item['filename']).as_uri() + '#' + item['sha256']
-                    for item in packages) + '\n')
-                run([ROOT / 'payload/micromamba', '--no-rc', '-r', scratch / 'cache',
-                     'create', '-y', '--offline', '--always-copy', '-p', version / 'tools', '-f', spec], env)
-            print('Installing the private LibreOffice application…', flush=True)
-            with tempfile.TemporaryDirectory(prefix='presentation-office-') as scratch:
-                mount = Path(scratch) / 'volume'
-                run(['/usr/bin/hdiutil', 'attach', '-readonly', '-nobrowse', '-mountpoint', mount,
-                     ROOT / 'payload/LibreOffice.dmg'], env)
-                try:
-                    run(['/usr/bin/ditto', mount / 'LibreOffice.app', version / 'LibreOffice.app'], env)
-                finally:
-                    run(['/usr/bin/hdiutil', 'detach', mount], env)
-            shutil.copytree(ROOT / 'payload/assistant', version / 'assistant')
-            shutil.copytree(ROOT / 'payload/google-cloud-sdk', version / 'google-cloud-sdk')
+            sys.path.insert(0, str(ROOT))
+            from tool_payload import installer_payload
+            with installer_payload(ROOT, manifest, base / 'cache') as payload:
+                install_tools(payload, version, env)
             ready.write_text(json.dumps({'id': manifest['id']}))
         except BaseException:
             # Only this attempt's new private tools folder is removed; existing versions stay.
@@ -136,8 +156,6 @@ def install(home, base, env, target, manifest, config):
                '--companions', 'install', '--yes'], env), flush=True)
     suite = (home / '.local/share/marketing-studio/current').resolve()
     installed_node = suite / 'runtime/node/bin/node'
-    atomic(binaries / 'codex', '#!/bin/sh\nexec ' + shlex.quote(str(installed_node)) + ' '
-           + shlex.quote(str(version / 'assistant/node_modules/@openai/codex/bin/codex.js')) + ' "$@"\n')
     atomic(binaries / 'gcloud', '#!/bin/sh\nexport CLOUDSDK_PYTHON=' + shlex.quote(str(suite / 'runtime/python/bin/python3')) + '\nexec ' + shlex.quote(str(version / 'google-cloud-sdk/bin/gcloud')) + ' "$@"\n')
     brand = json.loads(run([installed_node, brand_script, ROOT / 'brand', home, target, 'install'], env))
     paths = [binaries, version / 'tools/bin', suite / 'runtime/python/bin', installed_node.parent]
@@ -162,25 +180,25 @@ def install(home, base, env, target, manifest, config):
         if not (current.get('brand') or {}).get('skill') and not (current.get('brand') or {}).get('repository'):
             changes['brand'] = {'skill': brand['current']}
         if not (current.get('assistant') or {}).get('agent'):
-            changes['assistant'] = {'agent': 'claude' if target == 'claude' else 'codex'}
+            changes['assistant'] = {'agent': agent}
         if not current.get('output'):
             changes['output'] = 'pptx'
         return changes
     config.update(defaults)
     record = {'bundle': manifest['id'], 'tools': str(version), 'suite': str(suite),
-              'brand': brand['current'], 'environment': str(version / 'environment.sh')}
+              'brand': brand['current'], 'environment': str(version / 'environment.sh'), 'assistant': agent}
     atomic(base / 'installation.json', json.dumps(record, indent=2) + '\n', 0o600)
     shutil.copy2(ROOT / 'verify-installed.py', version / 'verify-installed.py')
     verify_command = '#!/bin/bash\nset -euo pipefail\nexec ' + shlex.quote(str(suite / 'runtime/python/bin/python3')) + ' ' + shlex.quote(str(version / 'verify-installed.py')) + '\n'
     atomic(home / 'Applications/Verify Presentation Studio.command', verify_command)
     shell_rc = '. ' + shlex.quote(str(version / 'environment.sh')) + '\n'
-    shell_rc += 'echo "Presentation Studio tools: codex login; gcloud auth login --enable-gdrive-access --force"\n'
+    shell_rc += 'echo "Use your existing assistant. Google sign-in: gcloud auth login --enable-gdrive-access --force"\n'
     atomic(version / 'tools-shell.sh', shell_rc, 0o644)
     tools_command = '#!/bin/bash\nexec /bin/bash --rcfile ' + shlex.quote(str(version / 'tools-shell.sh')) + ' -i\n'
     atomic(home / 'Applications/Open Presentation Studio Tools.command', tools_command)
     print('Installed. Open ' + str(home / 'Applications/Open Presentation Studio.command'))
     print('Complete assistant sign-in in your own terminal before starting a job.')
-    print('Bundled Codex: ' + str(binaries / 'codex'))
+    print('Assistant: ' + ('Claude Code' if agent == 'claude' else 'Codex') + ' (existing installation)')
     print('Existing workspaces and saved choices were preserved. Setup remains explicit.')
 
 

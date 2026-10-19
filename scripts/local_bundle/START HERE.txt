@@ -1,4 +1,4 @@
-PRESENTATION STUDIO — APPLE SILICON MAC LOCAL BUNDLE
+PRESENTATION STUDIO — APPLE SILICON MAC LOCAL BUNDLE (@BUNDLE_MODE@)
 
 Requires an Apple Silicon Mac running macOS @MINIMUM_MACOS@ or newer. Open
 Terminal natively, without Rosetta. Generated archives are local and untracked.
@@ -7,9 +7,11 @@ Terminal natively, without Rosetta. Generated archives are local and untracked.
 2. Open Install Presentation Studio.command.
 3. Open ~/Applications/Open Presentation Studio.command and finish setup.
 
-Setup installs from this archive without downloading dependencies or signing in.
+@SETUP_DOWNLOADS@
+Setup does not sign in or start provider jobs.
 It registers Presentation Studio, Harness Slides, Harness Research and Tanzu Brand
 for Codex and Claude Code. It preserves existing workspaces and saved settings.
+Install Codex or Claude Code before setup and make it available on PATH.
 Close running studios before installation. No administrator install is required.
 
 INCLUDED
@@ -17,17 +19,21 @@ Presentation Studio @STUDIO_VERSION@; shared Marketing Studio launcher/setup;
 Harness Slides @SLIDES_VERSION@ with production Node packages;
 Harness Research @RESEARCH_VERSION@; Tanzu Brand @BRAND_VERSION@ with its templates,
 contracts, logos, icons and guidance; Python @PYTHON_VERSION@; Node @NODE_VERSION@;
-Codex CLI @CODEX_VERSION@; LibreOffice @LIBREOFFICE_VERSION@;
-Poppler, Git and their native dependencies; Google Cloud CLI @GOOGLE_CLOUD_CLI_VERSION@;
 Harness Slides Gemini API image tools, using the bundled Node runtime.
+
+@TOOLS_DELIVERY@
+LibreOffice @LIBREOFFICE_VERSION@;
+Poppler, Git and their native dependencies; Google Cloud CLI @GOOGLE_CLOUD_CLI_VERSION@;
+Micromamba @MICROMAMBA_VERSION@ for the private Git and preview tool environment.
 Arial must be present in macOS or a licensed font installation; fonts are not redistributed.
 
 SIGN-IN ON THE DESTINATION MAC
 After installation, open ~/Applications/Open Presentation Studio Tools.command.
 It opens a terminal with private tools on PATH. Run these commands there:
 
-  codex login
   gcloud auth login --enable-gdrive-access --force
+
+Use your existing Codex or Claude Code installation and its own sign-in process.
 
 Google Drive access does not guarantee native Slides API permission. Follow the
 installed Harness Slides references/google-slides.md to check a presentation.
@@ -40,7 +46,7 @@ and a paid remote service. The upstream Gemini provider is not live-verified;
 the first authenticated check remains a destination task.
 The standard Gemini API route is included. The legacy unofficial Gemini browser
 session route and browser-based brand development audits are not configured.
-Claude Code uses an existing installation if selected; Codex is included.
+Codex and Claude Code both use existing installations and are not bundled.
 Credentials, browser profiles, personal content and workspaces are not bundled.
 
 VERIFY
@@ -58,6 +64,10 @@ Private tools: ~/.local/share/presentation-studio-local-bundle/versions/
 Brand: ~/Library/Application Support/Tanzu Brand/
 Rerun this installer to restore private-tool launcher paths after a standard suite
 update. No automatic update is enabled. The ZIP can be deleted after installation.
+Online setup caches verified downloads in the private tools folder's cache/
+directory. An interrupted setup preserves completed downloads and existing
+installations; rerun this installer to retry. Corrupt cached files are rejected;
+remove the specific file named in the error and rerun to download it again.
 
 INTEGRITY AND LICENSES
 local-manifest.json records file checksums, component versions and source pins.

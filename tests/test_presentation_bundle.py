@@ -1,5 +1,6 @@
 """Local bundle generation checks: no downloads, installed state, or provider jobs."""
 import importlib.util
+import hashlib
 import io
 import json
 import os
@@ -12,11 +13,16 @@ import tempfile
 import unittest
 from unittest import mock
 import zipfile
+from urllib.error import URLError
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('presentation_bundle', ROOT / 'scripts/build_presentation_bundle.py')
 builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
+import tool_payload
+installer_spec = importlib.util.spec_from_file_location('local_bundle_installer', ROOT / 'scripts/local_bundle/install-local.py')
+local_installer = importlib.util.module_from_spec(installer_spec)
+installer_spec.loader.exec_module(local_installer)
 
 
 class PresentationBundleTests(unittest.TestCase):
@@ -24,6 +30,27 @@ class PresentationBundleTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory(prefix='presentation-bundle-test-')
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
+
+    def test_setup_uses_an_installed_assistant_and_preserves_saved_selection(self):
+        scenarios = [({}, 'both', {'claude'}, 'claude'),
+                     ({}, 'both', {'codex', 'claude'}, 'codex'),
+                     ({'assistant': {'agent': 'claude'}}, 'both', {'codex', 'claude'}, 'claude'),
+                     ({}, 'claude', {'codex', 'claude'}, 'claude')]
+        for current, target, installed, expected in scenarios:
+            with self.subTest(current=current, target=target, installed=installed), \
+                    mock.patch.object(local_installer.shutil, 'which',
+                                      side_effect=lambda name, **kwargs: '/fixture/' + name if name in installed else None):
+                self.assertEqual(local_installer.existing_assistant(current, target, {'PATH': '/fixture'}), expected)
+
+    def test_missing_selected_assistant_fails_without_installing_or_switching_clients(self):
+        for current, target, installed in [({}, 'both', set()), ({}, 'codex', {'claude'}),
+                                            ({'assistant': {'agent': 'codex'}}, 'both', {'claude'})]:
+            with self.subTest(current=current, target=target), \
+                    mock.patch.object(local_installer.shutil, 'which',
+                                      side_effect=lambda name, **kwargs: '/fixture/' + name if name in installed else None), \
+                    mock.patch.object(local_installer, 'run', side_effect=AssertionError('Ran an installer')):
+                with self.assertRaisesRegex(RuntimeError, 'existing Codex or Claude Code'):
+                    local_installer.existing_assistant(current, target, {'PATH': '/fixture'})
 
     def test_cli_installs_a_source_link_and_repeated_install_preserves_it(self):
         target = builder.install_cli(self.root)
@@ -65,6 +92,7 @@ class PresentationBundleTests(unittest.TestCase):
         self.assertEqual(plan['brand_source'], str(brand))
         self.assertEqual(plan['output'], str(output))
         self.assertEqual(plan['brand_version'], '1.2.3')
+        self.assertEqual(plan['mode'], 'online')
         self.assertFalse(output.exists())
         self.assertFalse((self.root / 'disposable-settings.json').exists())
 
@@ -213,6 +241,131 @@ class PresentationBundleTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'bad hash'):
                 builder.prepare_tools(lock, self.root / 'cache', payload)
         self.assertFalse(payload.exists())
+
+    def test_online_downloads_verify_bytes_and_reuse_only_complete_cache_entries(self):
+        data = b'pinned tool archive'
+        pin = {'url': 'https://example.test/tool.tar.gz',
+               'sha256': hashlib.sha256(data).hexdigest()}
+        cache = self.root / 'downloads'
+        with mock.patch.object(builder.distribution.urllib.request, 'urlopen',
+                               return_value=io.BytesIO(data)) as fetch:
+            path = tool_payload.download(pin, cache)
+            self.assertEqual(path.read_bytes(), data)
+            self.assertEqual(tool_payload.download(pin, cache), path)
+            fetch.assert_called_once()
+        path.write_bytes(b'corrupt cache')
+        with mock.patch.object(builder.distribution.urllib.request, 'urlopen') as fetch, \
+                self.assertRaisesRegex(ValueError, 'Cached runtime failed its checksum'):
+            tool_payload.download(pin, cache)
+        fetch.assert_not_called()
+
+    def test_download_retries_network_errors_but_never_accepts_bad_checksums(self):
+        data = b'complete download'
+        pin = {'url': 'https://example.test/tool.tar.gz',
+               'sha256': hashlib.sha256(data).hexdigest()}
+        cache = self.root / 'downloads'
+        with mock.patch.object(builder.distribution.urllib.request, 'urlopen',
+                               side_effect=[URLError('interrupted'), io.BytesIO(data)]) as fetch, \
+                mock.patch.object(tool_payload.time, 'sleep'):
+            self.assertEqual(tool_payload.download(pin, cache).read_bytes(), data)
+        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(len(list(cache.iterdir())), 1)
+        cache = self.root / 'bad-download'
+        with mock.patch.object(builder.distribution.urllib.request, 'urlopen',
+                               return_value=io.BytesIO(b'wrong bytes')) as fetch, \
+                self.assertRaisesRegex(ValueError, 'checksum'):
+            tool_payload.download(pin, cache)
+        fetch.assert_called_once()
+        self.assertEqual(list(cache.iterdir()), [])
+
+    def test_exhausted_network_retries_keep_completed_downloads_and_remove_partial_files(self):
+        cache = self.root / 'downloads'
+        cache.mkdir()
+        completed = cache / 'existing-complete-download'
+        completed.write_bytes(b'preserved')
+        pin = {'url': 'https://example.test/tool.tar.gz', 'sha256': 'a' * 64}
+        with mock.patch.object(builder.distribution.urllib.request, 'urlopen',
+                               side_effect=URLError('offline')) as fetch, \
+                mock.patch.object(tool_payload.time, 'sleep'), \
+                self.assertRaises(URLError):
+            tool_payload.download(pin, cache)
+        self.assertEqual(fetch.call_count, 3)
+        self.assertEqual(list(cache.iterdir()), [completed])
+        self.assertEqual(completed.read_bytes(), b'preserved')
+
+    def test_offline_payload_never_downloads_and_old_manifests_remain_supported(self):
+        for manifest in ({}, {'mode': 'offline'}):
+            with mock.patch.object(tool_payload, 'prepare_tools') as prepare:
+                with tool_payload.installer_payload(self.root, manifest, self.root / 'cache') as payload:
+                    self.assertEqual(payload, self.root / 'payload')
+                prepare.assert_not_called()
+                self.assertFalse((self.root / 'cache').exists())
+
+    def test_online_payload_uses_pins_and_cleans_extracted_files_after_install_or_failure(self):
+        lock = builder.load_lock(ROOT / 'pins/presentation-bundle.json')
+        cache = self.root / 'cache'
+        cache.mkdir()
+        completed = cache / 'downloads'
+        completed.mkdir()
+        (completed / 'cached').write_text('keep')
+        def prepare(pins, destination_cache, payload):
+            self.assertEqual(pins, lock)
+            self.assertEqual(destination_cache, cache)
+            payload.mkdir()
+            (payload / 'tool').write_text('extracted')
+        for failed in (False, True):
+            with mock.patch.object(tool_payload, 'prepare_tools', side_effect=prepare) as fetch:
+                try:
+                    with tool_payload.installer_payload(self.root, {'mode': 'online', 'tools': lock}, cache) as payload:
+                        self.assertEqual((payload / 'tool').read_text(), 'extracted')
+                        if failed:
+                            raise RuntimeError('native installation failed')
+                except RuntimeError:
+                    self.assertTrue(failed)
+                fetch.assert_called_once()
+            self.assertFalse(payload.exists())
+            self.assertEqual(list(cache.iterdir()), [completed])
+        with self.assertRaisesRegex(ValueError, 'Unknown'):
+            with tool_payload.installer_payload(self.root, {'mode': 'unknown'}, cache):
+                self.fail('Unknown mode was accepted')
+
+    def test_failed_online_install_preserves_installed_version_settings_and_cached_downloads(self):
+        base = self.root / 'private-tools'
+        previous = base / 'versions/previous/ready.json'
+        previous.parent.mkdir(parents=True)
+        previous.write_text('previous installation')
+        cache = base / 'cache/downloads'
+        cache.mkdir(parents=True)
+        cached = cache / 'completed'
+        cached.write_text('verified earlier')
+        config = mock.Mock()
+        manifest = {'id': 'new-attempt', 'mode': 'online', 'tools': {}}
+        with mock.patch.object(local_installer, 'ROOT', self.root), \
+                mock.patch.object(local_installer, 'run', return_value='') as run, \
+                mock.patch.object(tool_payload, 'prepare_tools', side_effect=URLError('offline')), \
+                mock.patch.object(local_installer, 'install_tools') as native:
+            with self.assertRaises(URLError):
+                local_installer.install(self.root / 'home', base, {}, 'both', manifest, config, 'codex')
+        self.assertEqual(run.call_count, 1)  # Brand conflict preflight only.
+        native.assert_not_called()
+        config.update.assert_not_called()
+        self.assertFalse((base / 'versions/new-attempt').exists())
+        self.assertEqual(previous.read_text(), 'previous installation')
+        self.assertEqual(cached.read_text(), 'verified earlier')
+
+    def test_offline_plan_does_not_build_or_fetch_tools(self):
+        config = self.root / 'sources.json'
+        config.write_text('{"schema":1,"sources":{}}')
+        with mock.patch.object(builder, 'build') as build, \
+                mock.patch.object(tool_payload, 'download') as fetch, \
+                mock.patch('sys.stdout', new_callable=io.StringIO) as output:
+            self.assertEqual(builder.main(['--plan', '--mode', 'offline',
+                                           '--config', str(config),
+                                           '--output', str(self.root / 'output')]), 0)
+        self.assertEqual(json.loads(output.getvalue())['mode'], 'offline')
+        self.assertFalse((self.root / 'output').exists())
+        build.assert_not_called()
+        fetch.assert_not_called()
 
     def test_linked_packaging_guide_is_in_each_studio_archive_inventory(self):
         for studio in ('blog', 'presentation', 'training'):
