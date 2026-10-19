@@ -96,7 +96,8 @@ def check(changes, current):
         raise WorkspaceError('Choose local or Google Drive slide previews.')
     skill = (merged.get('brand') or {}).get('skill')
     if skill and not Path(skill).expanduser().is_absolute():
-        raise WorkspaceError('Choose an absolute installed brand skill folder, or one beginning with ~/.')
+        raise WorkspaceError('Use Git repository for a brand skill URL. Installed skill folder '
+                             'needs an absolute path or one beginning with ~/.')
     name = (merged.get('team') or {}).get('branch')
     if name:
         branch(name)

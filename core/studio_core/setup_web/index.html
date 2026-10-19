@@ -68,13 +68,15 @@
             <p class="field-note">Finishing setup prepares installed studios that have no workspace yet. Existing work stays where it is.</p>
           </section>
           <section class="form-section" data-step="2"><h2>Brand and delivery</h2><p>Choose the brand new work starts with. You can change it for each blog, presentation, or training. Existing work keeps its saved choice.</p>
+            <h3 class="brand-source-heading">Where is your brand skill?</h3>
+            <p class="brand-source-note">Give a Git repository address, or choose an installed skill folder. Both are optional. A repository does not need a folder path.</p>
             <div class="form-grid">
-              <label class="full">Brand skill repository<input name="brand.repository" placeholder="https://github.com/your-team/brand-skill.git" autocomplete="off"><small>Provides your brand templates and guidelines. Saving this address does not install the skill; install or update it from a studio’s settings.</small></label>
+              <label><span>Git repository <span class="optional">(optional)</span></span><input name="brand.repository" placeholder="https://github.com/your-team/brand-skill.git" autocomplete="off"><small>Use an HTTPS or SSH Git address. Save it here, then install or update the brand skill from a studio’s settings.</small></label>
+              <label><span>Installed skill folder <span class="optional">(optional)</span></span><input name="brand.skill" placeholder="~/path/to/installed-brand-skill" autocomplete="off"><small>For a skill already on this computer. Use an absolute folder path or one beginning with ~/. Leave blank to find installed skills automatically.</small></label>
               <label><span>Default brand <span class="optional">(optional)</span></span><input name="brand.brand" placeholder="For example, tanzu" aria-describedby="brand-default-help"><small id="brand-default-help">Use a brand name offered by your installed skill. For example, tanzu starts new work with Tanzu branding.</small></label>
               <label><span>Default variant <span class="optional">(optional)</span></span><input name="brand.variant" placeholder="For example, light"><small>Use a variant offered by that brand, such as light or dark. Leave blank to use the brand’s first variant.</small></label>
             </div>
-            <details class="brand-options"><summary>Brand skill installation options</summary><div class="form-grid">
-              <label class="full"><span>Installed brand skill folder <span class="optional">(optional)</span></span><input name="brand.skill" placeholder="Automatically find an installed brand skill"><small>Use an absolute folder path when you have more than one brand skill installed.</small></label>
+            <details class="brand-options"><summary>Brand skill release options</summary><div class="form-grid">
               <label class="full"><span>Brand skill release <span class="optional">(optional)</span></span><input name="brand.release" placeholder="Newest release"><small>Pin a release tag from the repository, such as v1.4.0, or leave blank for the newest release.</small></label>
             </div></details>
             <div class="delivery-options"><h3>Delivery and previews</h3><div class="form-grid">

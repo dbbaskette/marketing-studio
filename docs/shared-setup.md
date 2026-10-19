@@ -27,8 +27,11 @@ light branding when starting new work in each studio. These are starting choices
 not a requirement for every project. Existing blogs, presentations and trainings
 keep their saved brand. The brand skill repository supplies templates and guidelines;
 saving its address does not install or update the skill. Installation remains an
-explicit action in a studio's settings. The optional installed folder and release
-tag are grouped under Brand skill installation options.
+explicit action in a studio's settings. **Where is your brand skill?** offers
+**Git repository** and **Installed skill folder** as separate, optional inputs.
+A repository address does not require an installed folder. Leave the folder
+blank for automatic discovery, or use it to select an existing installation.
+The optional release tag is under **Brand skill release options**.
 
 Optional studio controls retain built-in defaults: writing tone, time/spending
 limits, parallel work, notifications and update checks. Research scope, author

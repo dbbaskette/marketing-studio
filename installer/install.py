@@ -16,6 +16,10 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'core'))
+from studio_core.runtime import ensure_python
+
+ensure_python(ROOT)
+
 from studio_core.bundles import content_key, inventory, materialize
 from studio_core import offline_install
 from studio_core.runtime import assistant_target, shell_path

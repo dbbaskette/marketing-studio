@@ -36,7 +36,8 @@ own launcher and can be installed on its own.
 **Your choices carry across the studios:** your name, assistant, work location,
 brand, delivery format, and sharing preference. All three studios read the shared
 assistant, model and reasoning settings.
-Slide previews and an optional installed brand skill folder are shared too.
+Slide previews and your brand skill source are shared too: give a Git repository
+address or choose an installed folder. A repository does not require a folder path.
 Research and slide tools use minimum-version requirements (`>=0.9.5` for Harness
 Research and `>=0.14.1` for Harness Slides). Explicit source installs and companion
 updates select the newest stable tag that meets those requirements. Downloadable

@@ -15,6 +15,10 @@ from pathlib import Path
 _CORE = Path(__file__).resolve().parents[1] / 'core'
 if str(_CORE) not in sys.path:
     sys.path.insert(0, str(_CORE))
+from studio_core.runtime import ensure_python
+
+ensure_python(Path(__file__).resolve().parents[1])
+
 from studio_core.workspace_setup import configure
 
 

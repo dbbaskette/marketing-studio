@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+import sys
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(_ROOT / 'core'))
+from studio_core.runtime import ensure_python
+
+ensure_python(_ROOT)
+
 from marketing_studio.cli import main
 
 raise SystemExit(main())

@@ -71,6 +71,8 @@ small,.optional{font-weight:400;color:var(--quiet);font-size:.8rem}
 .check-state{font-size:.85rem;color:var(--done)}
 .check-state.missing{color:var(--yours)}
 .brand-options{margin-top:24px;padding-top:20px;border-top:1px solid var(--hair)}
+.brand-source-heading{font-size:1.05rem;margin-top:4px}
+.form-section>.brand-source-note{margin-top:8px;margin-bottom:20px}
 .brand-options summary{cursor:pointer;font-size:.9rem;font-weight:550}
 .brand-options summary:focus-visible{outline:3px solid var(--focus);outline-offset:4px}
 .brand-options[open] summary{margin-bottom:20px}
