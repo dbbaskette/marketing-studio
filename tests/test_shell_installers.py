@@ -21,7 +21,7 @@ class ShellInstallerTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix='studio-shell-install-')
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        self.root = Path(temporary.name).resolve()
         home = self.root / 'disposable home'
         home.mkdir()
         self.env = {'HOME': str(home), 'STUDIOS_CONFIG': str(home / 'settings.json'),
@@ -66,6 +66,8 @@ class ShellInstallerTests(unittest.TestCase):
         folder = self.root / 'Presentation Studio setup'
         folder.mkdir()
         shutil.copy2(ROOT / 'scripts/local_bundle/install.sh', folder / 'install.sh')
+        (folder / 'installer').mkdir()
+        shutil.copy2(ROOT / 'scripts/local_bundle/bootstrap.sh', folder / 'installer/install.sh')
         self.recorder(folder / 'studio/runtime/python/bin/python3')
         fakebin = self.root / 'fakebin'
         fakebin.mkdir()
@@ -92,6 +94,85 @@ class ShellInstallerTests(unittest.TestCase):
                 for key in ('install.sh', 'studios/' + name + '/install.sh'):
                     self.assertIn(key, entries)
                     self.assertTrue(entries[key].stat().st_mode & 0o111)
+
+    def packaged_suite(self, folder, studios):
+        for name in ('install.sh', 'installer/install.sh',
+                     *(str(Path('studios') / studio / entry) for studio in studios
+                       for entry in ('install.sh', 'installer/install.sh'))):
+            target = folder / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / name, target)
+        (folder / 'distribution.json').write_text('{}')
+
+    def no_system_python(self):
+        fakebin = self.root / 'fake tools'
+        fakebin.mkdir()
+        for name, script in {
+            'uname': '#!/bin/sh\nif [ "$1" = -m ]; then echo arm64; else echo Darwin; fi\n',
+            'python3': '#!/bin/sh\necho "System Python was called" >&2\nexit 91\n',
+        }.items():
+            target = fakebin / name
+            target.write_text(script)
+            target.chmod(0o755)
+        return {**self.env, 'PATH': str(fakebin) + ':/usr/bin:/bin'}
+
+    def test_every_local_bundle_entry_uses_full_setup_and_private_python(self):
+        folder = self.root / 'Presentation Studio bundle'
+        folder.mkdir()
+        self.packaged_suite(folder / 'studio', ['presentation'])
+        shutil.copy2(ROOT / 'scripts/local_bundle/install.sh', folder / 'install.sh')
+        (folder / 'installer').mkdir()
+        shutil.copy2(ROOT / 'scripts/local_bundle/bootstrap.sh', folder / 'installer/install.sh')
+        (folder / 'local-manifest.json').write_text('{}')
+        (folder / 'install-local.py').write_text('# synthetic installer\n')
+        self.recorder(folder / 'studio/runtime/python/bin/python3')
+        env = self.no_system_python()
+        arguments = ['--home', str(self.root / 'destination home'), '--verify-only']
+        for entry in ('install.sh', 'studio/install.sh', 'studio/installer/install.sh',
+                      'studio/studios/presentation/install.sh',
+                      'studio/studios/presentation/installer/install.sh'):
+            with self.subTest(entry=entry):
+                script = folder / entry
+                done = subprocess.run(['./install.sh', *arguments], cwd=script.parent,
+                                      env=env, capture_output=True, text=True, timeout=20)
+                self.assertEqual(done.returncode, 37, done.stdout + done.stderr)
+                selected = ['--studios', 'presentation'] if entry.startswith('studio/studios/') else []
+                self.assertEqual(json.loads(done.stdout),
+                                 [str(folder / 'install-local.py'), *arguments, *selected])
+                self.assertNotIn('System Python', done.stderr)
+        self.assertEqual(list(Path(self.env['HOME']).iterdir()), [])
+
+    def test_nested_platform_installers_use_suite_private_runtimes(self):
+        folder = self.root / 'Platform bundle'
+        folder.mkdir()
+        names = ('blog', 'presentation', 'training')
+        self.packaged_suite(folder, names)
+        python = folder / 'runtime/python/bin/python3'
+        self.recorder(python)
+        python.write_text(python.read_text().replace(
+            'print(json.dumps(sys.argv[1:]))',
+            'if sys.argv[1:2] == ["-c"]: raise SystemExit(0)\n'
+            'print(json.dumps(sys.argv[1:]))'))
+        node = folder / 'runtime/node/bin/node'
+        node.parent.mkdir(parents=True)
+        node.write_text('#!/bin/sh\nexit 0\n')
+        node.chmod(0o755)
+        (folder / 'runtime/platform').write_text('macos-arm64\n')
+        env = self.no_system_python()
+        arguments = ['install', '--target', 'codex', '--companions', 'skip',
+                     '--home', self.env['HOME'], '--yes']
+        for name in names:
+            for entry in ('install.sh', 'installer/install.sh'):
+                with self.subTest(studio=name, entry=entry):
+                    script = folder / 'studios' / name / entry
+                    done = subprocess.run(['./install.sh', *arguments], cwd=script.parent,
+                                          env=env, capture_output=True, text=True, timeout=20)
+                    self.assertEqual(done.returncode, 37, done.stdout + done.stderr)
+                    forwarded = json.loads(done.stdout)
+                    self.assertEqual(Path(forwarded[0]).resolve(), folder / 'installer/install.py')
+                    self.assertEqual(forwarded[1:], [*arguments, '--studios', name])
+                    self.assertNotIn('System Python', done.stderr)
+        self.assertEqual(list(Path(self.env['HOME']).iterdir()), [])
 
 
 if __name__ == '__main__':

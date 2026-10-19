@@ -28,6 +28,11 @@ previews. Working folders (`work/`, `sources/`), harness guidance caches
 Each studio maintains ignore rules inside its own folder. Blog Studio keeps
 reusable reference text, voices and memory in `blogs/.shared/`.
 
+Blog Studio records its generated `studio.json` and `.shared/README.md` during
+workspace initialization. Older launches that left these exact setup files
+untracked are repaired on the next shared action. Edited metadata, staged files
+and unrecorded writing are preserved; sharing still refuses unrelated local edits.
+
 A shared item has one driver. A computer shares its claim before starting work.
 Taking over is explicit; another computer keeps its unshared commits under a
 local recovery reference when it learns that its claim was replaced. Handing

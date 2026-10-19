@@ -25,6 +25,7 @@ PURPOSES = (
 MODES = ('existing', 'first-draft', 'outline-only', 'from-outline', 'interview', 'discover')
 CHECKS = ('proofread', 'factual-support', 'shape', 'humanization', 'geo')
 SOURCE_CHECKS = ('factual-support', 'geo')
+SHARED_README = b'# Shared Blog Studio material\n\nreferences/ holds selected sources; voices/ holds author profiles; memory/ holds rules and context.\n'
 
 
 def now():
@@ -148,6 +149,17 @@ def locked(root):
 
 
 def initialize(root):
+    from team_workspace import space
+    from studio_sync.support import locked as team_locked
+
+    found = space(root)
+    if found:
+        with team_locked(found.repo / '.git/blog-studio.lock'):
+            return _initialize(root)
+    return _initialize(root)
+
+
+def _initialize(root):
     package = Path(__file__).resolve().parents[1]
     if root == package or root.is_relative_to(package):
         raise ValueError('Save author/article data outside the installed skill folder.')
@@ -164,8 +176,11 @@ def initialize(root):
         if not shared_readme.exists():
             atomic(
                 shared_readme,
-                b'# Shared Blog Studio material\n\nreferences/ holds selected sources; voices/ holds author profiles; memory/ holds rules and context.\n',
+                SHARED_README,
             )
+        from team_workspace import keep_setup
+
+        keep_setup(root)
     return {'root': str(root), 'schema_version': 1}
 
 

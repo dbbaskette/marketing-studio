@@ -8,7 +8,8 @@ import zipfile
 from .packaging import files
 
 ROOT_FILES = ('VERSION', 'LICENSE', 'README.md', 'SUITE.json', 'distribution.json', 'marketing-studio', 'install.sh',
-              'Open Marketing Studio.command', 'docs/architecture.md', 'docs/testing.md',
+              'studio-package.example.json',
+              'Open Marketing Studio.command', 'docs/architecture.md', 'docs/testing.md', 'docs/packaging.md',
               'docs/provenance.md', 'docs/installation.md', 'docs/core-status.md', 'docs/migration-plan.md',
               'docs/shared-setup.md', 'docs/local-network.md', 'docs/local-presentation-bundle.md',
               'docs/migration/imports.json')

@@ -79,7 +79,7 @@ function controlled(){
 }
 async function googleIntake(){
   const defaults={engine:'codex',seconds:600,research:'none',stop:'review',tone:'Clear',author:''};
-  const preview={status:'preview',preview:'b'.repeat(32),expected:'capture-version',title:'Synthetic Google draft',linked_document:'https://docs.google.com/document/d/fixture-doc/edit',content:'# Synthetic manuscript\n\n<script>not executable</script>',summary:{pending_suggestions:1,projection:'blog-studio/1',structure:{paragraphs:2,headings:1}}};
+  const preview={status:'preview',preview:'b'.repeat(32),expected:'capture-version',title:'Synthetic Google draft',linked_document:'https://docs.google.com/document/d/fixture-doc/edit',content:'# Synthetic manuscript\n\n<script>not executable</script>',images_omitted:true,summary:{pending_suggestions:1,projection:'blog-studio/1',structure:{paragraphs:2,headings:1}}};
   const requests=[];
   const f=fixture((url,options)=>{
     requests.push({url,options});
@@ -101,6 +101,7 @@ async function googleIntake(){
   assert.equal(nodes.find(e=>e.type==='submit').disabled,true);
   assert.equal(nodes.some(e=>e.tagName==='script'),false);
   assert.ok(nodes.some(e=>e.textContent.includes('1 pending Google suggestions')));
+  assert.ok(nodes.some(e=>e.textContent.includes('Images are omitted from this preview.')));
   await form.listeners.submit({preventDefault(){}});
   assert.equal(requests.some(r=>r.url==='/api/google-start'),false,'unconfirmed import is refused');
   const check=nodes.find(e=>e.type==='checkbox');check.checked=true;check.listeners.change();

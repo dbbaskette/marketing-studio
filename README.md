@@ -56,6 +56,10 @@ Choose `macos-arm64` for Apple Silicon, `macos-x64` for an Intel Mac, or the mat
 `linux-arm64` / `linux-x64` build for a Linux computer using glibc.
 
 Unzip it, open Terminal, and run `bash install.sh` from the unpacked folder.
+This installs Blog Studio, Presentation Studio and Training Studio together.
+Each individual studio download has the same root `install.sh` and installs
+only that studio. To build your own downloads, use the matching root `package.sh`;
+see [package and install the studios](docs/packaging.md).
 This works on macOS and Linux without opening a `.command` file. The macOS
 Finder launcher, **installer/Install Marketing Studio.command**, is also available.
 
@@ -79,15 +83,15 @@ The platform bundles are built separately for each operating system and processo
 ```sh
 git clone https://github.com/dbbaskette/marketing-studio.git
 cd marketing-studio
-bash installer/install.sh
+bash install.sh
 ```
 
 Install just the studio you want:
 
 ```sh
-bash installer/install.sh --studios blog --yes
-bash installer/install.sh --studios presentation --yes
-bash installer/install.sh --studios training --yes
+bash install.sh --studios blog --yes
+bash install.sh --studios presentation --yes
+bash install.sh --studios training --yes
 ```
 
 Use `--target codex` or `--target claude` to choose one assistant. Add `--yes`

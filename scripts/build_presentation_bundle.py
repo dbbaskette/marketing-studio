@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate the local Apple Silicon Presentation Studio bundle (Python 3.11+)."""
+"""Build local Apple Silicon studio bundles with private runtimes, skills and brand."""
 import argparse
 import ast
 import hashlib
@@ -24,11 +24,14 @@ from tool_payload import prepare_tools, require_arm64
 
 ARCHIVES = {'libreoffice', 'micromamba', 'google_cloud_cli'}
 DEFAULT_CONFIG = ROOT / 'presentation-studio-package.local.json'
+SHARED_CONFIG = ROOT / 'studio-package.local.json'
+PRODUCTS = {'marketing': ['blog', 'presentation', 'training'],
+            'blog': ['blog'], 'presentation': ['presentation'], 'training': ['training']}
 
 
-def install_cli(home=None):
+def install_cli(home=None, command='presentation-studio-package'):
     """Link this checkout's CLI into local bin without replacing another command."""
-    source = ROOT / 'presentation-studio-package'
+    source = ROOT / command
     if not source.is_file():
         raise ValueError('The Presentation Studio packaging command is missing from this checkout.')
     target = (Path.home() if home is None else Path(home)) / '.local/bin' / source.name
@@ -202,10 +205,16 @@ def write_archive(root, output, manifest):
         pending.unlink(missing_ok=True)
 
 
-def build(brand, output, cache, lock, sources=None, mode='online'):
+def build(brand, output, cache, lock, sources=None, mode='online', product='presentation'):
+    if product not in PRODUCTS:
+        raise ValueError('Choose Marketing Studio, Blog Studio, Presentation Studio or Training Studio.')
+    selected = PRODUCTS[product]
+    title = product.title() + ' Studio'
     if mode not in ('online', 'offline'):
         raise ValueError('Unknown Presentation Studio bundle mode: ' + str(mode))
     sources = dict(sources or {})
+    if selected == ['blog']:
+        sources.pop('harness-slides', None)
     sources.setdefault('brand', {'path': str(brand)})
     output, cache = build_path(output), build_path(cache)
     for spec in sources.values():
@@ -232,12 +241,12 @@ def build(brand, output, cache, lock, sources=None, mode='online'):
         brand_version = brand_record['version']
         if not all(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[\w.-]+)?', v) for v in (version, brand_version)):
             raise ValueError('Expected safe semantic studio and brand versions.')
-        stage = work / f'Presentation-Studio-{version}-Tanzu-{brand_version}-macos-arm64-{mode}'
+        stage = work / f'{title.replace(" ", "-")}-{version}-Tanzu-{brand_version}-macos-arm64-{mode}'
         stage.mkdir()
         unpack_zip(brand_zip, stage / 'brand')
-        print('Preparing Presentation Studio and its pinned runtimes/companions…', flush=True)
+        print('Preparing ' + title + ' and its pinned runtimes/companions…', flush=True)
         studio = stage / 'studio'
-        bundles.materialize(ROOT, studio, ['presentation'])
+        bundles.materialize(ROOT, studio, selected)
         companion_locks = json.loads((studio / 'pins/companions.json').read_text())
         for name, source in snapshots.items():
             companion_locks['companions'][name] = bundle_sources.companion_pin(
@@ -245,11 +254,11 @@ def build(brand, output, cache, lock, sources=None, mode='online'):
             shutil.rmtree(source / '.git')
         for path in studio.rglob('companions.json'):
             path.write_text(json.dumps(companion_locks, indent=2) + '\n')
-        record = distribution.prepare(ROOT, studio, 'macos-arm64', cache, ['presentation'],
+        record = distribution.prepare(ROOT, studio, 'macos-arm64', cache, selected,
                                       companion_sources=snapshots)
-        entries = bundles.inventory(studio, ['presentation'])
+        entries = bundles.inventory(studio, selected)
         (studio / 'bundle-manifest.json').write_text(json.dumps({
-            'schema': 1, 'studios': ['presentation'],
+            'schema': 1, 'studios': selected,
             'files': {name: distribution.digest(path) for name, path in sorted(entries.items())}}, indent=2) + '\n')
         if mode == 'offline':
             print('Preparing locked offline tools…', flush=True)
@@ -258,11 +267,20 @@ def build(brand, output, cache, lock, sources=None, mode='online'):
             print('Recording pinned tools for download during installation…', flush=True)
         for name in ('install.sh', 'install-local.py', 'install-brand.mjs', 'verify-installed.py', 'tool_payload.py', 'Install Presentation Studio.command'):
             shutil.copy2(TEMPLATES / name, stage / name)
+        if product != 'presentation':
+            (stage / 'Install Presentation Studio.command').rename(stage / ('Install ' + title + '.command'))
+        (stage / 'installer').mkdir()
+        shutil.copy2(TEMPLATES / 'bootstrap.sh', stage / 'installer/install.sh')
+        (stage / 'installer/install.sh').chmod(0o755)
         for name in ('install-local.py', 'verify-installed.py', 'tool_payload.py'):
             ast.parse((stage / name).read_text())
-        (stage / 'Install Presentation Studio.command').chmod(0o755)
+        (stage / ('Install ' + title + '.command')).chmod(0o755)
         (stage / 'install.sh').chmod(0o755)
-        values = {'BUNDLE_MODE': mode,
+        values = {'PRODUCT_NAME': title, 'PRODUCT_SLUG': product + '-studio',
+                  'PRODUCT_START': '.local/share/marketing-studio/marketing-studio' if product == 'marketing' else '.local/share/' + product + '-studio/studio',
+                  'SELECTED_STUDIOS': ', '.join(name.title() + ' Studio' for name in selected),
+                  'SLIDES_CONTENT': ('Harness Slides ' + record['companions']['harness-slides']['version'] + ' with production Node packages and Gemini API image tools;\n' if 'harness-slides' in record['companions'] else ''),
+                  'BUNDLE_MODE': mode,
                   'SETUP_DOWNLOADS': ('Setup downloads pinned preview and Google tools.\nAn internet connection is required for the first installation; verified downloads\nare cached for retries.' if mode == 'online' else
                                      'Setup installs tools from this archive without downloading dependencies.'),
                   'TOOLS_DELIVERY': ('DOWNLOADED DURING SETUP' if mode == 'online' else 'ALSO INCLUDED'),
@@ -270,7 +288,7 @@ def build(brand, output, cache, lock, sources=None, mode='online'):
                   'MINIMUM_MACOS': str(lock['minimum_macos']),
                   'PYTHON_VERSION': record['runtimes']['python']['version'],
                   'NODE_VERSION': record['runtimes']['node']['version'],
-                  'SLIDES_VERSION': record['companions']['harness-slides']['version'],
+                  'SLIDES_VERSION': record['companions'].get('harness-slides', {}).get('version', 'not included'),
                   'RESEARCH_VERSION': record['companions']['harness-research']['version'],
                   **{name.upper() + '_VERSION': pin['version'] for name, pin in lock['archives'].items()}}
         instructions = (TEMPLATES / 'START HERE.txt').read_text()
@@ -283,6 +301,7 @@ def build(brand, output, cache, lock, sources=None, mode='online'):
         # Include permissions in the identity; the ZIP preserves executable bits too.
         modes = {name: bool((stage / name).stat().st_mode & 0o111) for name in files}
         manifest = {'schema': 1, 'platform': 'macos-arm64', 'minimum_macos': lock['minimum_macos'],
+                    'product': product, 'studios': selected,
                     'mode': mode, 'files': files, 'source_commit': run(['git', '-C', ROOT, 'rev-parse', 'HEAD'], env).strip(),
                     'source_modified': bool(run(['git', '-C', ROOT, 'status', '--porcelain', '--untracked-files=normal'], env).strip()),
                     'brand_commit': brand_record['sourceCommit'], 'brand_version': brand_version,
@@ -296,13 +315,16 @@ def build(brand, output, cache, lock, sources=None, mode='online'):
         return write_archive(stage, output, manifest)
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(prog='presentation-studio-package', description=__doc__)
+def main(argv=None, product='presentation', prog='presentation-studio-package'):
+    if product not in PRODUCTS:
+        raise ValueError('Unknown studio product.')
+    selected = PRODUCTS[product]
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__)
     parser.add_argument('--mode', choices=('online', 'offline'), default='online',
                         help='Online (default) includes Python/Node and downloads tools at setup; offline includes all tools.')
     parser.add_argument('--brand', type=Path, help='Override the configured brand with a local checkout.')
-    parser.add_argument('--config', type=Path, help='Source config (default: checkout’s ignored presentation-studio-package.local.json).')
-    parser.add_argument('--output', type=Path, default=Path.home() / 'LocalBundles/presentation-studio')
+    parser.add_argument('--config', type=Path, help='Source config (default: ignored studio-package.local.json, with legacy config fallback).')
+    parser.add_argument('--output', type=Path, default=Path.home() / 'LocalBundles' / (product + '-studio'))
     parser.add_argument('--cache', type=Path, help='Verified downloads; defaults to OUTPUT/cache.')
     parser.add_argument('--tools-lock', type=Path, default=ROOT / 'pins/presentation-bundle.json')
     actions = parser.add_mutually_exclusive_group()
@@ -313,15 +335,15 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.init_config:
-            path = bundle_sources.init_config(args.config or DEFAULT_CONFIG,
-                                              ROOT / 'presentation-studio-package.example.json')
+            path = bundle_sources.init_config(args.config or SHARED_CONFIG,
+                                              ROOT / 'studio-package.example.json')
             print('Created ' + str(path))
-            print('Edit sources, then run: presentation-studio-package')
+            print('Edit sources, then run: ' + prog)
             return 0
         if args.install_cli:
-            target = install_cli()
+            target = install_cli(command='presentation-studio-package' if prog == 'presentation-studio-package' else 'studio-package')
             print('Installed ' + str(target))
-            print('Build a bundle: presentation-studio-package')
+            print('Build a bundle: ' + prog)
             if str(target.parent) not in os.environ.get('PATH', '').split(os.pathsep):
                 print('Add ~/.local/bin to your terminal PATH: export PATH="$HOME/.local/bin:$PATH"')
             return 0
@@ -332,8 +354,10 @@ def main(argv=None):
         lock = load_lock(args.tools_lock)
         output = build_path(args.output)
         cache = build_path(args.cache or output / 'cache')
-        config = args.config.expanduser().resolve() if args.config else DEFAULT_CONFIG
+        config = args.config.expanduser().resolve() if args.config else SHARED_CONFIG if SHARED_CONFIG.exists() else DEFAULT_CONFIG
         sources = bundle_sources.load_config(config) if args.config or config.exists() else {}
+        if selected == ['blog']:
+            sources.pop('harness-slides', None)
         if args.brand:
             sources['brand'] = bundle_sources.source_spec({'path': str(args.brand)}, Path.cwd())
         brand = Path(sources.get('brand', {}).get('path', ROOT.parent / 'tanzu-brand'))
@@ -341,12 +365,15 @@ def main(argv=None):
             brand_spec = sources.get('brand', {'path': str(brand)})
             package = brand / 'package.json'
             companions = json.loads((ROOT / 'pins/companions.json').read_text())['companions']
+            if selected == ['blog']:
+                companions.pop('harness-slides', None)
             for name, spec in sources.items():
                 if name != 'brand':
                     package_path = Path(spec['path']) / 'package.json' if 'path' in spec else None
                     companions[name] = {'source': spec, 'version': json.loads(package_path.read_text()).get('version')
                                         if package_path and package_path.is_file() else None}
-            print(json.dumps({'platform': lock['platform'], 'mode': args.mode, 'brand_source': brand_spec.get('git', str(brand)),
+            print(json.dumps({'product': product, 'studios': selected,
+                              'platform': lock['platform'], 'mode': args.mode, 'brand_source': brand_spec.get('git', str(brand)),
                               'brand_version': json.loads(package.read_text())['version'] if 'path' in brand_spec and package.is_file() else None,
                               'sources': {**sources, 'brand': brand_spec},
                               'studio_version': (ROOT / 'VERSION').read_text().strip(),
@@ -354,11 +381,11 @@ def main(argv=None):
                               'tools': {name: pin['version'] for name, pin in lock['archives'].items()},
                               'output': str(output), 'cache': str(cache)}, indent=2))
             return 0
-        target, checksum = build(brand, output, cache, lock, sources, mode=args.mode)
+        target, checksum = build(brand, output, cache, lock, sources, mode=args.mode, product=product)
         print(json.dumps({'bundle': str(target), 'sha256': checksum}, indent=2))
         return 0
     except (OSError, ValueError, KeyError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile) as error:
-        print('Presentation Studio packaging failed: ' + str(error), file=sys.stderr)
+        print(product.title() + ' Studio packaging failed: ' + str(error), file=sys.stderr)
         return 1
 
 

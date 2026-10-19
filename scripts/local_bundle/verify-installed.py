@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check installed tools offline; all generated files use a disposable home."""
 import json
+import argparse
 import os
 from pathlib import Path
 import shutil
@@ -9,8 +10,11 @@ import tempfile
 
 
 def main():
-    base = Path.home() / '.local/share/presentation-studio-local-bundle'
-    record = json.loads((base / 'installation.json').read_text())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--record', type=Path, default=Path.home() / '.local/share/presentation-studio-local-bundle/installation.json')
+    args = parser.parse_args()
+    record = json.loads(args.record.read_text())
+    has_slides = any(name in ('presentation', 'training') for name in record.get('studios', ['presentation']))
     suite, extra, brand = (Path(record[key]) for key in ('suite', 'tools', 'brand'))
     slides = Path.home() / 'Library/Application Support/Harness Slides/current'
     search = ':'.join([str(Path.home() / '.local/bin'), '/opt/homebrew/bin', '/usr/local/bin',
@@ -40,10 +44,13 @@ def main():
             if result.returncode:
                 raise SystemExit('FAILED: ' + str(args[0]))
 
-        for args in ([assistant, '--version'], ['gcloud', '--version'], ['git', '--version'],
-                     ['pdfinfo', '-v'], ['node', brand / 'scripts/audit-brand.mjs', '--self'],
-                     ['node', slides / 'scripts/harness-slides.mjs', 'images', 'status', '--json']):
-            run(args)
+        for command in ([assistant, '--version'], ['gcloud', '--version'], ['git', '--version'],
+                        ['pdfinfo', '-v'], ['node', brand / 'scripts/audit-brand.mjs', '--self']):
+            run(command)
+        if not has_slides:
+            print('PASS: tools and brand. No provider calls were made.')
+            return
+        run(['node', slides / 'scripts/harness-slides.mjs', 'images', 'status', '--json'])
         javascript = (
             'const P=require(' + json.dumps(str(slides / 'node_modules/pptxgenjs')) + ');'
             'const p=new P();p.addSlide().addText("Presentation Studio offline verification",'

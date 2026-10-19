@@ -56,6 +56,10 @@ The page checks this computer the first time you open it and says in one sentenc
 
 ## Install
 
+This source folder has `package.sh` to build an independent Presentation Studio
+bundle and `install.sh` to install Presentation Studio. The Marketing Studio root
+has the same filenames for the complete suite. See [package and install the studios](../../docs/packaging.md).
+
 **[Download the Presentation Studio installer](https://github.com/dbbaskette/marketing-studio/releases/latest/download/presentation-studio-installer.zip)**
 and unzip it. Open Terminal in `presentation-studio-setup` and run `bash install.sh`
 on macOS or Linux. No `.command` launcher is needed. The subset

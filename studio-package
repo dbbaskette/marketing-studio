@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+"""Package Marketing Studio or one independently installable studio."""
+import argparse
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT / 'core'))
+from studio_core.runtime import ensure_python
+
+ensure_python(ROOT)
+sys.path.insert(0, str(ROOT / 'scripts'))
+from build_presentation_bundle import main
+
+products = ('marketing', 'blog', 'presentation', 'training')
+if len(sys.argv) > 1 and sys.argv[1] in products:
+    raise SystemExit(main(sys.argv[2:], product=sys.argv[1], prog='studio-package ' + sys.argv[1]))
+parser = argparse.ArgumentParser(description=__doc__, epilog='Each product accepts --plan, --config, --mode online|offline, --output and --verify. Use PRODUCT --help for all options.')
+parser.add_argument('product', choices=products, help='Marketing Studio includes all three studios.')
+parser.parse_args()

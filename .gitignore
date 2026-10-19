@@ -12,3 +12,4 @@ test-results/
 /dist/
 /build/
 /presentation-studio-package.local.json
+/studio-package.local.json
