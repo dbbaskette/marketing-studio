@@ -5,7 +5,7 @@
 .blog-search{max-width:28rem}
 .mode-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7rem}
 .mode-choice{padding:1rem;border:1px solid var(--hair);border-radius:10px;background:var(--paper);color:var(--ink);text-align:left;font:inherit;cursor:pointer}
-.mode-choice[aria-pressed=true]{border:2px solid var(--accent);padding:calc(1rem - 1px);background:var(--yours-wash)}
+.mode-choice[aria-pressed=true]{border:2px solid var(--accent);padding:calc(1rem - 1px);background:var(--selection)}
 .mode-choice strong,.mode-choice span{display:block}.mode-choice span{font-size:.9rem;margin-top:.3rem;color:var(--quiet)}
 .wizard-foot{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap}
 .source-choices{display:grid;gap:.5rem;max-height:20rem;overflow:auto}
@@ -37,8 +37,10 @@
 #editorial-screen th,#editorial-screen td{padding:1rem;border-bottom:1px solid var(--hair);vertical-align:top}
 #editorial-screen th{font-size:.85rem;color:var(--quiet)}#editorial-screen td p{font-size:.9rem;color:var(--quiet);margin-top:.3rem}
 .title-button{background:none;border:0;color:var(--link);font:inherit;font-weight:650;text-align:left;cursor:pointer;padding:.3rem 0}
-.primary,.secondary{min-height:2.6rem;padding:.45rem 1.1rem;border-radius:10px;border:1px solid var(--hair);background:var(--thumb);color:var(--ink);font:inherit;font-weight:600;cursor:pointer}
+.primary,.secondary{min-height:44px;padding:.45rem 1.1rem;border-radius:10px;border:1px solid var(--hair);background:var(--paper);color:var(--ink);font:inherit;font-weight:600;cursor:pointer;transition:filter 160ms ease,transform 160ms var(--ease)}
 .primary{background:var(--accent);color:var(--on-accent);border-color:transparent}
+.primary:not(:disabled):hover,.secondary:not(:disabled):hover{filter:brightness(1.04)}
+.primary:not(:disabled):active,.secondary:not(:disabled):active{transform:scale(.98)}
 button:disabled{opacity:.55}a{color:var(--link)}
 .help,.footnote{font-size:.9rem;color:var(--quiet)}.empty{padding:2.5rem;text-align:center}
 .context-note,.dialog-notice,.sync-status{padding:1rem;border:1px solid var(--hair);background:var(--solid);border-radius:10px;margin:.7rem 0}

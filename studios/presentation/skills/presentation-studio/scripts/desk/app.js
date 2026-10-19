@@ -24,6 +24,7 @@ const NOTICES = {
 };
 // Every icon is drawn here, on a 24 by 24 grid, in one weight of line.
 const ICONS = {
+  studio: ['M3 4.5h18v13H3z', 'M12 17.5V22', 'M7.5 22h9', 'M6.5 13l4-4 3.5 3 3.5-4'],
   home: ['M4 11.5 12 4.5l8 7', 'M6.5 10.5V19.5h11V10.5'],
   decks: ['M4 6.5h16v10H4z', 'M9 20h6', 'M12 16.5V20'],
   status: ['M3 12.5h4l2.5-6.5 4.5 12 2.5-5.5H21'],
@@ -5863,6 +5864,8 @@ function linkToken() {
 }
 
 function begin() {
+  const symbol = byId('studio-symbol');
+  if (symbol) symbol.append(icon('studio'));
   view.token = linkToken();
   // A new link pasted into a tab that is already open changes only the fragment.
   window.addEventListener('hashchange', () => {
