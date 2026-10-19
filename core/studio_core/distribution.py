@@ -75,6 +75,10 @@ def unpack(archive, destination, node=False, exclude=()):
             if member.isdir():
                 continue
             relative = PurePosixPath(member.name).parts[1:]
+            # Bytecode caches depend on source timestamps, which ZIP extraction changes.
+            # Ship Python sources; mutable caches must not enter integrity manifests.
+            if '__pycache__' in relative or PurePosixPath(member.name).suffix in ('.pyc', '.pyo'):
+                continue
             if '/'.join(relative) in exclude:
                 continue
             # Browser-based studios never use a private terminal database. Linux's

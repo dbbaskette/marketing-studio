@@ -107,3 +107,11 @@ the source checkout and are not required on the destination computer.
 
 The [local bundle guide](local-presentation-bundle.md) explains component pins,
 cache integrity, tool downloads, sign-in and offline verification in more detail.
+
+If an older bundle reports an integrity failure under Python's `__pycache__`
+folder, extract a fresh copy of the ZIP into a new folder and run
+`PYTHONDONTWRITEBYTECODE=1 bash install.sh` from its outermost folder. A failed
+attempt may already have rewritten caches, so retrying in that same folder is
+not sufficient. Regenerated bundles omit runtime bytecode caches and disable
+cache writes during installation. Integrity checks still verify every packaged
+file; use a fresh download for other checksum failures.
