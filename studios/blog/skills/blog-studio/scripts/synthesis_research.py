@@ -77,6 +77,7 @@ def generate(directory, run, payload, worker, *, seconds, stop):
             'scope': 'Evidence, objections and qualifications for the blog goal: '
             + (brief.get('goal') or 'explain the topic'),
             'brief': brief,
+            'manuscript': payload['documents'].get('manuscript'),
             'planning_document': payload['documents'].get('research-plan'),
             'requested_changes': payload.get('changes'),
             'source_mode': ('mixed' if sources else 'public') if allowed else 'selected',
@@ -128,7 +129,11 @@ def generate(directory, run, payload, worker, *, seconds, stop):
         def invoke(phase, guidance, data, offered, fetch):
             # Only the parent fetches and pins bytes; generated source text is never evidence.
             data['sources'] = [
-                {k: s[k] for k in ('file', 'origin', 'title', 'text')} for s in sources
+                {
+                    **{k: s[k] for k in ('file', 'origin', 'title', 'text')},
+                    'permission': 'selected' if s['offered'] else 'public',
+                }
+                for s in sources
             ]
             data['source_limits'] = gaps
             answer = call(
@@ -140,6 +145,32 @@ def generate(directory, run, payload, worker, *, seconds, stop):
                 'Selected source permission is selected; public captures are public. '
                 'Do not invent sources or claim live currency from a hash.',
             )
+            if phase == 'author':
+                allowed = {s['file']: s for s in data['sources']}
+                for attempt in range(2):
+                    try:
+                        value = json.loads(answer['content'])
+                        entries = value['sources']
+                        if not isinstance(entries, list):
+                            raise ValueError('Invalid source list')
+                        for entry in entries:
+                            captured = allowed.get(entry.get('file'))
+                            if not captured or any(
+                                entry.get(k) != captured[k] for k in ('permission', 'origin')
+                            ):
+                                raise ValueError('Invalid captured source metadata')
+                        break
+                    except (ValueError, KeyError, TypeError, AttributeError):
+                        if attempt:
+                            raise ValueError(
+                                'Research returned invalid source metadata after retrying. Your manuscript and source access are unchanged. Retry research or continue editing locally.'
+                            ) from None
+                        answer = call(
+                            phase,
+                            data,
+                            guidance
+                            + '\nReturn the complete dossier again. Copy file, origin and permission exactly from each supplied capture; do not invent or reclassify sources.',
+                        )
             return answer['content'], sources
 
         saved = research_contract.snapshot()

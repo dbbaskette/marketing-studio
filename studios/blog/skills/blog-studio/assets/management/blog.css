@@ -63,3 +63,7 @@ dialog::backdrop{background:rgb(15 20 40/.35);backdrop-filter:blur(4px)}
 @media(prefers-reduced-transparency:reduce),(prefers-contrast:more){dialog::backdrop{backdrop-filter:none}dialog,.dialog-header{background:var(--solid)}}
 
 @media(max-width:600px){#editorial-screen input,#editorial-screen select,dialog input,dialog select,dialog textarea,.continuation textarea{font-size:1rem}.pagination{flex-wrap:wrap}.close{min-width:44px;min-height:44px}}
+
+.manuscript-input { width:100%; min-height:22rem; resize:vertical; font:inherit; line-height:1.6; box-sizing:border-box; }
+.manuscript-original { white-space:pre-wrap; overflow-wrap:anywhere; max-height:24rem; overflow:auto; }
+.editor-suggestions { display:grid; gap:1rem; }

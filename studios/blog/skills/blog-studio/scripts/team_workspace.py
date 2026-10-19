@@ -59,7 +59,7 @@ def driver(root, ident):
 
 def guard(root, ident):
     found = space(root)
-    if found:
+    if found and found.address:
         why = team.elsewhere(found, record(root, ident))
         if why:
             raise ValueError(why)
@@ -335,18 +335,28 @@ def status(root):
         'shared_problem': problem or migration_problem,
         'migration_notice': migration_notice,
         'shared_before': team_before(shared),
+        'remembered_repositories': [
+            entry['url']
+            for entry in support.read_json(support.data_root() / 'hubs/registry.json', {})
+            .get('hubs', {})
+            .values()
+            if isinstance(entry, dict) and isinstance(entry.get('url'), str)
+        ],
     }
     if found:
         return {
             **preferences,
-            'joined': True,
+            'joined': bool(found.address),
             'workspace': str(root),
             'active_repository': found.address,
             'active_branch': found.branch,
             'configuration_notice': 'Shared team settings changed. Join the configured repository to use it here; this workspace and its writing are kept.'
-            if (preferences['repository'], preferences['branch']) != (found.address, found.branch)
+            if (preferences['repository'], preferences['branch'])
+            != (found.address or '', found.branch)
             else None,
-            'report': support.read_json(root / '.team-sync.json', {}).get('report', {}),
+            'report': support.read_json(root / '.team-sync.json', {}).get('report', {})
+            if found.address
+            else {},
             'published': team.published(found),
         }
     return {

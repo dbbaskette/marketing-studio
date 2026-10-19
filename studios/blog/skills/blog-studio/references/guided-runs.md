@@ -33,7 +33,9 @@ default. Select an installed brand with `--brand ID --variant VARIANT`, or
 keep its naming rules separate from the author voice. `--mode write` is the default; `outline` stops at outline. Use
 `--mode revise --manuscript <source-id>` to revise a saved readable source, or
 `--mode review --manuscript <source-id>` to review it without rewriting.
-The original and working manuscript are retained. `--stop` can be `outline`,
+The original and working manuscript are retained. Revision and review omit new research
+unless requested. Use `--mode from-outline --outline-text "..."` to draft from
+a supplied outline, or `--mode ideas` to explore angles and stop before drafting. `--stop` can be `outline`,
 `draft`, `review` or `package`. For an existing article, use `--id <article-id>`;
 a saved manuscript starts at review, or use `--mode revise --id <article-id>` to
 start with revision.
@@ -83,3 +85,11 @@ started it. After another clone checks it out, press Resume explicitly. Avoid
 running the same blog simultaneously on multiple computers; the Hub retains
 competing revisions for reconciliation. Google transfers remain explicit via
 [Google Docs](google/workflow.md). Export packages never publish anything.
+
+## Manuscript editing on the page
+
+**Edit manuscript** supports local Markdown edits, scoped checks, selected findings,
+and explicit Google suggestions/comments delivery. Opening a Google Doc goes there
+after preview. Preserve the original author voice; selected replacements can be
+applied locally before delivery. Each send is previewed and revision-checked through
+the same Google review helpers as the CLI. Conflicts remain local until reconciled.

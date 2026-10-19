@@ -1,5 +1,8 @@
 # Write on the page or in a conversation
 
+See [the manuscript workflow](manuscript-workflow.md) for focused editing, supplied
+outlines, idea development, and selected Google suggestions or comments.
+
 Blog Studio supports both. On the page it starts your selected Codex or Claude
 CLI for each piece of writing, saves the result and waits for you. In a
 conversation your assistant writes it with you. Both use the same blog folder,
@@ -66,17 +69,17 @@ original, draft and formatted history and links that same Doc as the working cop
 With a selected team workspace or Team Hub, the imported blog follows its normal
 sharing settings; raw Google data and unconfirmed previews stay on this computer.
 
-Import opens the writing wizard with **Review a draft** selected. Choose review
-or revision and supply the purpose and audience before starting an assistant.
+Import opens **Edit manuscript**. Make local edits or select a focused check without
+starting a new-blog wizard. No assistant starts until you request an editing action.
 If the Doc is already linked here, Blog Studio opens its existing run or saved
 blog without replacing local edits or its Google baseline. The working Doc link
 remains visible in the wizard and writing run.
 
 The page imports a single-tab Doc. Access failures, multiple tabs or an unreadable
 capture leave saved blogs intact. You can retry, or upload a downloaded manuscript.
-Reviewing and revising on the page saves local work. To send edits, suggestions
-or comments to Google, continue in your assistant conversation and request that
-operation explicitly.
+Reviewing and revising on the page saves local work. Select suggestions or comments,
+preview the target document, and explicitly confirm delivery from **Edit manuscript**.
+The CLI remains available for Google reconciliation and advanced operations.
 
 ## Your brand skill
 
@@ -206,8 +209,8 @@ person resumes it. There is no cross-computer runner ownership lease: run a
 given blog on one computer at a time and reconcile competing revisions in chat.
 Read-only Hub users can browse runs; page mutations recheck write access.
 
-Google Docs imports, pushes, pulls and suggestions retain their existing explicit
-chat commands. The package is a Markdown publication handoff, not a Google
+Google Docs imports and selected suggestions/comments are available on the page;
+advanced pushes, pulls and reconciliation retain their existing explicit chat commands. The package is a Markdown publication handoff, not a Google
 transfer or a publishing action. The page does not change Google sharing.
 
 ## Verification

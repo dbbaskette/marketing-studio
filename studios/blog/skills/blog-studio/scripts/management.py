@@ -1250,6 +1250,10 @@ def _dispatch(root, route, data):
             return (google_intake.preview if route == 'google-preview' else google_intake.start)(
                 root, data
             )
+        if route.startswith('editor-'):
+            import manuscript_editor
+
+            return manuscript_editor.dispatch(root, route[7:], data)
         if route.startswith('run-'):
             from blog_runner import dispatch as run_dispatch
 
@@ -1427,6 +1431,8 @@ def _dispatch(root, route, data):
 def dispatch(root, route, data):
     from team_workspace import space, before, saved, status, refresh, action, join
 
+    if route in ('editor-google-plan', 'editor-google-send'):
+        return _dispatch(root, route, data)
     if route == 'google-preview':
         # A preview stages only the selected Doc on this computer; it does not
         # publish unrelated pending team work or start a writing job.
@@ -1479,14 +1485,16 @@ def dispatch(root, route, data):
         before(
             root,
             data.get('id')
-            if route.startswith('run-') and route != 'run-create' or route in ('schedule',)
+            if route.startswith(('run-', 'editor-'))
+            and route != 'run-create'
+            or route in ('schedule',)
             else None,
         )
     result = _dispatch(root, route, data)
     if space(root) and route != 'run-settings':
         ident = (
             result.get('id')
-            if route.startswith('run-') or route in ('schedule', 'google-start')
+            if route.startswith(('run-', 'editor-')) or route in ('schedule', 'google-start')
             else None
         )
         result['team_sync'] = saved(root, ident)
@@ -1595,6 +1603,11 @@ def view(root, name, query):
             }
         )
         return result
+    if name == 'manuscript':
+        import manuscript_editor
+
+        with studio.locked(root):
+            return manuscript_editor.read(root, arg('id'))
     if name in ('runs', 'run', 'run-options', 'run-file', 'run-settings'):
         import blog_runner
 

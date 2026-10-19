@@ -59,6 +59,7 @@ async function check(){
   await refreshWithNewSelection();
   await guidedRuns();
   await googleIntake();
+  await manuscriptEditing();
   await brandInputs();
   await sharedSettings();
   await staleSharedForms();
@@ -77,12 +78,40 @@ function controlled(){
   });
   return {...f,requests};
 }
+async function manuscriptEditing(){
+  let state={id:'fixture',title:'Synthetic author draft',content:'The delay matters.',expected:'v1',google:{url:'https://docs.google.com/document/d/fixture/edit'},proposals:[],findings:[],baseline:'The delay matters.',diff:[],checks:{proofread:{status:'not-run'}},working:false};
+  const writes=[];const f=fixture((url,options)=>{
+    if(url.startsWith('/api/manuscript?'))return state;
+    if(url==='/api/run-options')return {sources:[]};
+    if(options?.body){const data=JSON.parse(options.body);writes.push({url,data});
+      if(url==='/api/editor-save'){assert.equal(data.expected,state.expected);state={...state,content:data.content,expected:'v2'};return {...state,preservation:{needs_review:false}};}
+      if(url==='/api/editor-proposals'){state={...state,proposals:data.proposals,expected:'v3'};return state;}
+      if(url==='/api/editor-google-plan')return {plan:'a'.repeat(32),target:state.google.url,count:state.proposals.length,mode:'auto',expected:state.expected,proposals:state.proposals};
+      if(url==='/api/editor-google-send')return {status:'verified-pending'};
+    }return {items:[]};
+  });f.loadRunner();await f.run("sRoute('editor','fixture')");
+  const byId=id=>descendants(f.get('studio-page')).find(e=>e.id===id);
+  let nodes=descendants(f.get('studio-page'));const input=nodes.find(e=>e.attributes['aria-label']==='Manuscript Markdown');input.value='The wait matters.';input.listeners.input();
+  await nodes.find(e=>e.textContent==='Save local edits').listeners.click();
+  assert.equal(state.content,'The wait matters.');
+  for(const [id,value] of [['proposal-before','delay'],['proposal-after','wait'],['proposal-reason','Plainer wording']]){byId(id).value=value;byId(id).listeners.input();}
+  const add=descendants(f.get('studio-page')).find(e=>e.textContent==='Keep suggestion locally');await add.parent.listeners.submit({preventDefault(){}});
+  assert.equal(state.proposals.length,1);assert.equal(writes.some(r=>r.url==='/api/editor-google-send'),false);
+  await descendants(f.get('studio-page')).find(e=>e.textContent==='Preview Google delivery').listeners.click();
+  assert.equal(writes.some(r=>r.url==='/api/editor-google-send'),false);
+  await descendants(f.get('sheet')).find(e=>e.textContent==='Send this feedback').listeners.click();
+  assert.equal(writes.find(r=>r.url==='/api/editor-google-send').data.confirmed,true);
+  assert.ok(descendants(f.get('sheet')).some(e=>e.textContent.includes('author can accept or reject')));
+}
+
 async function googleIntake(){
   const defaults={engine:'codex',seconds:600,research:'none',stop:'review',tone:'Clear',author:''};
   const preview={status:'preview',preview:'b'.repeat(32),expected:'capture-version',title:'Synthetic Google draft',linked_document:'https://docs.google.com/document/d/fixture-doc/edit',content:'# Synthetic manuscript\n\n<script>not executable</script>',images_omitted:true,summary:{pending_suggestions:1,projection:'blog-studio/1',structure:{paragraphs:2,headings:1}}};
+  const manuscript={id:'imported',title:preview.title,content:'Synthetic text',expected:'v1',google:{url:preview.linked_document},proposals:[],findings:[],baseline:'Synthetic text',diff:[],checks:{},working:false};
   const requests=[];
   const f=fixture((url,options)=>{
     requests.push({url,options});
+    if(url.startsWith('/api/manuscript?'))return manuscript;
     if(url==='/api/google-preview')return preview;
     if(url==='/api/google-start')return {id:'imported',status:'started-from-google',title:preview.title,linked_document:preview.linked_document};
     if(url==='/api/run-options')return {settings:{defaults},brand:{default:{brand:'default-brand',variant:'default-variant'}},sources:[],profiles:[],agents:{codex:true}};
@@ -107,10 +136,9 @@ async function googleIntake(){
   const check=nodes.find(e=>e.type==='checkbox');check.checked=true;check.listeners.change();
   assert.equal(nodes.find(e=>e.type==='submit').disabled,false);
   await form.listeners.submit({preventDefault(){}});
-  assert.equal(f.run('studio.screen'),'new');
-  assert.equal(f.run('studio.draft.id'),'imported');
-  assert.equal(f.run('studio.draft.mode'),'review');
-  assert.equal(f.run('studio.draft.google.url'),preview.linked_document);
+  assert.equal(f.run('studio.screen'),'editor');
+  assert.equal(f.run('studio.editorDraft.id'),'imported');
+  assert.equal(f.run('studio.editorDraft.content'),'Synthetic text');
   assert.equal(requests.some(r=>r.url==='/api/run-create'),false,'intake does not start an assistant');
   assert.deepEqual(JSON.parse(requests.find(r=>r.url==='/api/google-start').options.body),{preview:preview.preview,expected:preview.expected,title:preview.title,confirmed:true});
   assert.ok(descendants(f.get('studio-page')).some(e=>e.tagName==='a'&&e.href===preview.linked_document));
@@ -132,10 +160,10 @@ async function googleIntake(){
   assert.equal(late.run('studio.screen'),'blogs');
   // A repeated link opens its existing guided run without a new import.
   const existing={id:'imported',title:preview.title,google:{url:preview.linked_document},status:'complete',complete:true,next:null,stages:[],brief:{goal:'Synthetic review',audience:'Authors'},decisions:[],engine:'codex',seconds:600,approval:'page',directory:'/synthetic/articles/imported'};
-  const reopened=[];const again=fixture((url)=>{reopened.push(url);if(url==='/api/google-preview')return {status:'already-linked',id:existing.id};if(url==='/api/runs')return {items:[existing]};if(url.startsWith('/api/run?'))return existing;return {items:[]};});again.loadRunner();
+  const reopened=[];const again=fixture((url)=>{reopened.push(url);if(url==='/api/google-preview')return {status:'already-linked',id:existing.id};if(url==='/api/runs')return {items:[existing]};if(url.startsWith('/api/run?'))return existing;if(url.startsWith('/api/manuscript?'))return manuscript;if(url==='/api/run-options')return {sources:[]};return {items:[]};});again.loadRunner();
   await again.run('sGoogleButton().listeners.click()');again.run("studio.google.url='fixture-doc'");
   await again.get('studio-page').children[0].listeners.submit({preventDefault(){}});
-  assert.equal(again.run('studio.screen'),'run');assert.equal(again.run('studio.id'),'imported');
+  assert.equal(again.run('studio.screen'),'editor');assert.equal(again.run('studio.id'),'imported');
   assert.equal(reopened.includes('/api/google-start'),false);
   assert.ok(descendants(again.get('studio-page')).some(e=>e.tagName==='a'&&e.href===preview.linked_document));
 }
@@ -559,6 +587,7 @@ function pageDefinesEveryElement(){
   for(const prefix of ['upload','import'])for(const m of script.matchAll(/\$\(prefix\+'(-[a-z-]+)'\)/g))wanted.add(prefix+m[1]);
   for(const name of ['folder','export','url','links','scope','collection','name'])wanted.add('import-'+name+'-field');
   const created=new Set([...script.matchAll(/\.id='([a-z0-9-]+)'/g)].map(m=>m[1]));
+  for(const match of script.matchAll(/sField\('([a-z0-9-]+)'/g))created.add(match[1]);
   const missing=[...wanted].filter(id=>!defined.has(id)&&!created.has(id));
   assert.deepEqual(missing,[],'app.js uses ids that index.html does not define');
 }
