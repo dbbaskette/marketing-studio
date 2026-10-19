@@ -197,6 +197,7 @@ function renderHome() {
   const list = $('#studio-list'); list.replaceChildren();
   for (const studio of snapshot.studios) {
     const card = element('article', '', 'studio-card');
+    card.dataset.studio = studio.id;
     const icon = element('div', '', 'studio-icon'); icon.setAttribute('aria-hidden', 'true');
     // Drawings are static application assets; user and repository text use textContent.
     icon.innerHTML = `<svg viewBox="0 0 26 28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${drawings[studio.id]}</svg>`;

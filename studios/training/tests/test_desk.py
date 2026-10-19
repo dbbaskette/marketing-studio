@@ -1591,6 +1591,19 @@ class PageFileTests(unittest.TestCase):
                     self.assertGreaterEqual(min(self.contrast(text, shade) for shade in shades),
                                             least)
 
+    def test_studio_identities_keep_actions_selection_and_focus_readable(self):
+        for appearance, colours in zip(('light', 'dark'), self.tokens()):
+            for product, name in (('Blog Studio', 'blog'),
+                                  ('Presentation Studio', 'presentation'),
+                                  ('Training Studio', 'training')):
+                with self.subTest(appearance=appearance, product=product):
+                    accent, selected = colours[name], colours[name + '-wash']
+                    self.assertGreaterEqual(self.contrast(colours['on-studio'], accent), 4.5)
+                    for text in (accent, colours['ink'], colours['quiet']):
+                        self.assertGreaterEqual(self.contrast(text, selected), 4.5)
+                    for surface in ('paper', 'card', 'solid'):
+                        self.assertGreaterEqual(self.contrast(accent, colours[surface]), 3)
+
     def test_the_two_appearances_are_not_one_inverted(self):
         light, dark = self.tokens()
         self.assertGreater(self.contrast(light['ground'], (0, 0, 0, 1)), 15)

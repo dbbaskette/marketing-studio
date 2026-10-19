@@ -10,13 +10,13 @@
   <script src="markdown.js" defer></script>
   <script src="app.js" defer></script>
 </head>
-<body>
+<body data-product="Presentation Studio">
   <a class="skip" href="#main">Skip to the page</a>
   <div class="backdrop" aria-hidden="true"></div>
 
   <div class="window">
     <nav id="sidebar" class="sidebar glass" aria-label="Screens">
-      <p class="brand">Presentation Studio</p>
+      <p class="brand"><span id="studio-symbol" class="studio-symbol" aria-hidden="true"></span><span>Presentation Studio</span></p>
       <button type="button" id="go-home" class="nav-item" aria-current="page"><span class="nav-label">Home</span> <span id="needs-count" class="badge" hidden></span></button>
       <button type="button" id="go-decks" class="nav-item"><span class="nav-label">Decks</span></button>
       <button type="button" id="go-status" class="nav-item"><span class="nav-label">Status</span></button>

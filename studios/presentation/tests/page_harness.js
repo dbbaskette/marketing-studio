@@ -543,7 +543,10 @@ function control(label) {
 // The page's own shell, read from index.html. It is the one piece of markup there is, it is
 // ours, and it is read here only to stand the document up: the scripts never parse any.
 function build(shell) {
-  const body = /<body>([\s\S]*)<\/body>/.exec(shell)[1];
+  const [, bodyAttributes, body] = /<body\b([^>]*)>([\s\S]*)<\/body>/.exec(shell);
+  for (const [, key, value] of bodyAttributes.matchAll(/([\w-]+)(?:="([^"]*)")?/g)) {
+    document.body.setAttribute(key, value || '');
+  }
   const open = [document.body];
   const token = /<!--[\s\S]*?-->|<\/(\w+)>|<(\w+)((?:\s+[\w-]+(?:="[^"]*")?)*)\s*>|([^<]+)/g;
   for (const [, closing, tag, attributes, text] of body.matchAll(token)) {

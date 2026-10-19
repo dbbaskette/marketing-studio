@@ -28,7 +28,17 @@
   --focus: #0a55c2;
   --focus-halo: rgb(255 255 255 / 0.9);
 
-  --glass: rgb(246 248 252 / 0.88);
+  --selection: #dce9fb;
+  --selection-line: #bdcff0;
+  --blog: #175fba;
+  --blog-wash: #e8f1ff;
+  --presentation: #ac421d;
+  --presentation-wash: #fff0e8;
+  --training: #7140b4;
+  --training-wash: #f2eaff;
+  --on-studio: #ffffff;
+
+  --glass: rgb(242 246 252 / 0.82);
   --card: #ffffff;
   --sheet-fill: rgb(250 251 253 / 0.96);
   --solid: #f5f7fa;
@@ -42,12 +52,14 @@
   --edge: inset 0 1px 0 rgb(255 255 255 / 0.55);
   --lift: 0 8px 24px rgb(40 50 70 / 0.12), 0 1px 4px rgb(40 50 70 / 0.06);
   --rest: none;
+  --material-light: rgb(255 255 255 / 0.72);
+  --material-tint: rgb(103 147 213 / 0.08);
 
   --plain: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   --typed: ui-monospace, "SF Mono", monospace;
 
   --gutter: clamp(0.75rem, 3vw, 2rem);
-  --card-round: 14px;
+  --card-round: 18px;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
@@ -75,7 +87,17 @@
     --focus: #9cc4ff;
     --focus-halo: rgb(0 0 0 / 0.75);
 
-    --glass: rgb(30 36 46 / 0.92);
+    --selection: #253e60;
+    --selection-line: #3b5a81;
+    --blog: #9cc4ff;
+    --blog-wash: #213653;
+    --presentation: #ffb493;
+    --presentation-wash: #452c24;
+    --training: #d2b1ff;
+    --training-wash: #342947;
+    --on-studio: #151c29;
+
+    --glass: rgb(30 36 46 / 0.86);
     --card: #1c222d;
     --sheet-fill: rgb(32 39 50 / 0.97);
     --solid: #202732;
@@ -89,6 +111,8 @@
     --edge: inset 0 1px 0 rgb(255 255 255 / 0.12);
     --lift: 0 10px 28px rgb(0 0 0 / 0.35), 0 1px 5px rgb(0 0 0 / 0.2);
     --rest: none;
+    --material-light: rgb(255 255 255 / 0.07);
+    --material-tint: rgb(103 147 213 / 0.06);
   }
 }
 
@@ -98,6 +122,32 @@
     --accent: AccentColor;
     --on-accent: AccentColorText;
   }
+}
+
+/* Independent studios inherit one identity throughout their linked UI assets. */
+body[data-product="Blog Studio"] {
+  --studio-color: var(--blog);
+  --studio-wash: var(--blog-wash);
+}
+
+body[data-product="Presentation Studio"] {
+  --studio-color: var(--presentation);
+  --studio-wash: var(--presentation-wash);
+}
+
+body[data-product="Training Studio"] {
+  --studio-color: var(--training);
+  --studio-wash: var(--training-wash);
+}
+
+body:is([data-product="Blog Studio"], [data-product="Presentation Studio"],
+    [data-product="Training Studio"]) {
+  --accent: var(--studio-color);
+  --on-accent: var(--on-studio);
+  --link: var(--studio-color);
+  --focus: var(--studio-color);
+  --selection: var(--studio-wash);
+  --selection-line: color-mix(in srgb, var(--studio-color) 32%, var(--paper));
 }
 
 *,
@@ -202,11 +252,12 @@ textarea {
 /* --- the materials ------------------------------------------------------------------ */
 
 .glass {
-  background: var(--glass);
+  background: linear-gradient(155deg, var(--material-light), transparent 45%),
+    linear-gradient(0deg, var(--material-tint), transparent), var(--glass);
   border: 1px solid var(--glass-line);
   box-shadow: var(--edge), var(--lift);
-  -webkit-backdrop-filter: blur(16px) saturate(1.15);
-  backdrop-filter: blur(16px) saturate(1.15);
+  -webkit-backdrop-filter: blur(28px) saturate(1.4);
+  backdrop-filter: blur(28px) saturate(1.4);
 }
 
 .card {
@@ -214,7 +265,7 @@ textarea {
   isolation: isolate;
   padding: 1.15rem clamp(0.95rem, 2.5vw, 1.4rem);
   background: var(--card);
-  border: 1px solid var(--glass-line);
+  border: 1px solid var(--paper-line);
   border-radius: var(--card-round);
   box-shadow: none;
 }
@@ -226,7 +277,7 @@ textarea {
 .paper {
   background: var(--paper);
   border: 1px solid var(--paper-line);
-  border-radius: 10px;
+  border-radius: 14px;
   box-shadow: none;
 }
 
@@ -251,22 +302,43 @@ textarea {
   align-self: start;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.35rem;
   height: 100vh;
   margin: 0;
-  padding: 1.2rem 0.65rem;
+  padding: 30px 18px;
   border: 0;
-  border-right: 1px solid var(--hair);
+  border-right: 1px solid var(--glass-line);
   border-radius: 0;
-  box-shadow: none;
+  box-shadow: inset -1px 0 0 var(--shine);
 }
 
 .brand {
-  padding: 0.2rem 0.75rem 0.9rem;
-  color: var(--quiet);
-  font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px 28px;
+  color: var(--ink);
+  font-size: 1rem;
   font-weight: 650;
-  letter-spacing: 0.01em;
+  line-height: 1.25;
+}
+
+.studio-symbol {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  background: linear-gradient(145deg, rgb(255 255 255 / 0.2), transparent 65%),
+    var(--accent);
+  color: var(--on-accent);
+  border-radius: 12px;
+  box-shadow: var(--edge), 0 3px 8px rgb(0 0 0 / 0.12);
+}
+
+.studio-symbol .icon {
+  width: 25px;
+  height: 25px;
 }
 
 .nav-item {
@@ -278,7 +350,7 @@ textarea {
   padding: 0.4rem 0.75rem;
   background: none;
   border: 0;
-  border-radius: 9px;
+  border-radius: 10px;
   text-align: left;
   font-weight: 500;
   cursor: pointer;
@@ -294,9 +366,9 @@ textarea {
 }
 
 .nav-item[aria-current="page"] {
-  background: var(--well);
+  background: var(--selection);
   color: var(--link);
-  box-shadow: none;
+  box-shadow: inset 0 0 0 1px var(--selection-line), var(--edge);
   font-weight: 650;
 }
 
@@ -341,9 +413,9 @@ textarea {
   min-height: 4.2rem;
   padding: 0.65rem var(--gutter);
   border: 0;
-  border-bottom: 1px solid var(--hair);
+  border-bottom: 1px solid var(--glass-line);
   border-radius: 0;
-  box-shadow: none;
+  box-shadow: var(--edge);
 }
 
 .toolbar-lead:empty {
@@ -401,7 +473,8 @@ textarea {
 .page {
   max-width: 76rem;
   margin: 0 auto;
-  padding-top: 1.4rem;
+  padding-top: 2rem;
+  scroll-margin-top: 5rem;
 }
 
 .page:focus {
@@ -469,7 +542,7 @@ textarea {
   background: var(--accent);
   color: var(--on-accent);
   border-color: transparent;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 1px 3px rgb(10 80 200 / 0.16);
+  box-shadow: inset 0 1px 0 var(--shine), 0 1px 3px rgb(0 0 0 / 0.12);
 }
 
 .button-quiet {
@@ -529,7 +602,7 @@ textarea {
   bottom: 3px;
   left: 3px;
   width: calc((100% - 6px) / 2);
-  background: var(--thumb);
+  background: var(--selection);
   border-radius: 8px;
   box-shadow: var(--edge), 0 1px 3px rgb(0 0 0 / 0.1);
   transition: transform 300ms var(--ease);
@@ -566,7 +639,7 @@ textarea {
 }
 
 .seg-option[aria-pressed="true"] {
-  color: var(--ink);
+  color: var(--link);
 }
 
 .seg-option:disabled {
@@ -746,10 +819,10 @@ textarea {
 
 .large-title {
   padding: 0.6rem 0.25rem 0.2rem;
-  font-size: clamp(1.9rem, 1.3rem + 2.6vw, 2.9rem);
+  font-size: clamp(1.8rem, 3vw, 2.4rem);
   font-weight: 680;
-  letter-spacing: -0.022em;
-  line-height: 1.1;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
   text-wrap: balance;
 }
 
@@ -1707,13 +1780,13 @@ summary {
    colour. The edge is a border, so the ring that shows where the keyboard is stays its own. */
 .strip-item[aria-current="true"] {
   padding: calc(0.35rem - 1px);
-  background: var(--thumb);
-  border: 2px solid var(--ink);
+  background: var(--selection);
+  border: 2px solid var(--link);
 }
 
 .strip-item[aria-current="true"] > .strip-number {
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 /* What the review still finds, and what the brand's own check says. */
@@ -2063,6 +2136,7 @@ summary {
     border: 0;
     border-top: 1px solid var(--hair);
     border-radius: 0;
+    box-shadow: var(--edge);
   }
 
   .brand {
@@ -2096,6 +2170,10 @@ summary {
     padding-bottom: calc(7rem + env(safe-area-inset-bottom));
     padding-left: max(var(--gutter), env(safe-area-inset-left));
     padding-right: max(var(--gutter), env(safe-area-inset-right));
+  }
+
+  .page {
+    padding-top: 1.4rem;
   }
 
   .input, select.input, textarea.input {
@@ -2221,6 +2299,8 @@ summary {
   :root {
     --glass: var(--solid);
     --sheet-fill: var(--solid);
+    --material-light: transparent;
+    --material-tint: transparent;
   }
 }
 
@@ -2234,6 +2314,8 @@ summary {
     --paper-line: var(--quiet);
     --hair: var(--quiet);
     --shine: transparent;
+    --material-light: transparent;
+    --material-tint: transparent;
   }
 
   .backdrop {
@@ -2243,6 +2325,11 @@ summary {
   .glass {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
+  }
+
+  body:is([data-product="Blog Studio"], [data-product="Presentation Studio"],
+      [data-product="Training Studio"]) {
+    --selection-line: var(--quiet);
   }
 }
 
