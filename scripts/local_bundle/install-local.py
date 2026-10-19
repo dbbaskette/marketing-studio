@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local Presentation Studio bundle installer; no provider jobs or sign-in."""
+"""Install a local studio bundle with private tools; no provider jobs or sign-in."""
 import argparse
 import fcntl
 import hashlib
@@ -14,6 +14,21 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parent
+PRODUCTS = {'marketing': ['blog', 'presentation', 'training'], 'blog': ['blog'],
+            'presentation': ['presentation'], 'training': ['training']}
+
+
+def selection(manifest, requested=None):
+    product = manifest.get('product', 'presentation')
+    if product not in PRODUCTS:
+        raise RuntimeError('Unknown studio bundle product.')
+    available = manifest.get('studios', PRODUCTS[product])
+    if not isinstance(available, list) or available != PRODUCTS[product]:
+        raise RuntimeError('The bundle has an invalid studio selection.')
+    selected = requested or available
+    if not selected or set(selected) - set(available):
+        raise RuntimeError('This bundle does not include the requested studios.')
+    return product, list(dict.fromkeys(selected))
 
 
 def run(command, env, timeout=600):
@@ -54,12 +69,15 @@ def existing_assistant(current, target, env):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(prog='install.sh', description=__doc__)
     parser.add_argument('--home', type=Path, default=Path.home())
     parser.add_argument('--target', choices=('codex', 'claude', 'both'), default='both')
     parser.add_argument('--verify-only', action='store_true')
+    parser.add_argument('--studios', nargs='+', choices=('blog', 'presentation', 'training'),
+                        help='Install a subset from a Marketing Studio bundle.')
     args = parser.parse_args()
     manifest = json.loads((ROOT / 'local-manifest.json').read_text())
+    product, selected = selection(manifest, args.studios)
     print('Checking bundle integrity…', flush=True)
     for name, expected in manifest['files'].items():
         path = ROOT / name
@@ -81,8 +99,9 @@ def main():
     env = {**os.environ, 'HOME': str(home), 'USERPROFILE': str(home),
            'STUDIOS_CONFIG': config, 'CODEX_HOME': str(home / '.codex'),
            'CLAUDE_CONFIG_DIR': str(home / '.claude'),
-           'MARKETING_STUDIO_DATA': str(home / '.local/share/marketing-studio'),
-           'PRESENTATION_STUDIO_DATA': str(home / '.local/share/presentation-studio')}
+           'MARKETING_STUDIO_DATA': str(home / '.local/share/marketing-studio')}
+    for name in selected:
+        env[name.upper() + '_STUDIO_DATA'] = str(home / '.local/share' / (name + '-studio'))
     env['PATH'] = ':'.join([str(home / '.local/bin'), '/opt/homebrew/bin', '/usr/local/bin',
                             env.get('PATH', '/usr/bin:/bin')])
     os.environ.update(env)
@@ -92,11 +111,11 @@ def main():
     if problem:
         raise RuntimeError(problem)
     agent = existing_assistant(existing, args.target, env)
-    base = home / '.local/share/presentation-studio-local-bundle'
+    base = home / '.local/share' / (product + '-studio-local-bundle')
     base.mkdir(parents=True, exist_ok=True)
     with (base / 'install.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        install(home, base, env, args.target, manifest, studios_config, agent)
+        install(home, base, env, args.target, manifest, studios_config, agent, selected)
 
 
 def install_tools(payload, version, env):
@@ -122,7 +141,9 @@ def install_tools(payload, version, env):
     shutil.copytree(payload / 'google-cloud-sdk', version / 'google-cloud-sdk')
 
 
-def install(home, base, env, target, manifest, config, agent):
+def install(home, base, env, target, manifest, config, agent, selected=None):
+    product, selected = selection(manifest, selected)
+    title = product.title() + ' Studio'
     node = ROOT / 'studio/runtime/node/bin/node'
     python = ROOT / 'studio/runtime/python/bin/python3'
     brand_script = ROOT / 'install-brand.mjs'
@@ -150,9 +171,9 @@ def install(home, base, env, target, manifest, config, agent):
     atomic(binaries / 'soffice', '#!/bin/sh\nexec ' + shlex.quote(str(version / 'LibreOffice.app/Contents/MacOS/soffice')) + ' "$@"\n')
     # The native installer embeds the private Python/Node paths into its launchers.
     env['PATH'] = ':'.join(map(str, [binaries, version / 'tools/bin', python.parent, node.parent])) + ':' + env.get('PATH', '/usr/bin:/bin')
-    print('Installing Presentation Studio and its bundled skills…', flush=True)
+    print('Installing ' + title + ' and its bundled skills…', flush=True)
     print(run([python, ROOT / 'studio/installer/install.py', 'install', '--source', ROOT / 'studio',
-               '--home', home, '--studios', 'presentation', '--target', target,
+               '--home', home, '--studios', *selected, '--target', target,
                '--companions', 'install', '--yes'], env), flush=True)
     suite = (home / '.local/share/marketing-studio/current').resolve()
     installed_node = suite / 'runtime/node/bin/node'
@@ -164,11 +185,13 @@ def install(home, base, env, target, manifest, config, agent):
     environment += 'export HARNESS_PDFTOPPM=' + shlex.quote(str(version / 'tools/bin/pdftoppm')) + '\n'
     environment += 'export HARNESS_PDFINFO=' + shlex.quote(str(version / 'tools/bin/pdfinfo')) + '\n'
     atomic(version / 'environment.sh', environment, 0o644)
-    for path in (home / '.local/share/presentation-studio/studio',
-                 home / '.local/share/presentation-studio/presentation',
-                 home / '.local/share/marketing-studio/marketing-studio',
-                 home / 'Applications/Open Presentation Studio.command',
-                 home / 'Applications/Open Marketing Studio.command'):
+    launchers = [home / '.local/share/marketing-studio/marketing-studio',
+                 home / 'Applications/Open Marketing Studio.command']
+    for name in selected:
+        launchers.extend([home / '.local/share' / (name + '-studio') / 'studio',
+                          home / '.local/share' / (name + '-studio') / name,
+                          home / 'Applications' / ('Open ' + name.title() + ' Studio.command')])
+    for path in launchers:
         if path.is_file():
             text = path.read_text()
             marker = '. ' + shlex.quote(str(version / 'environment.sh')) + '\n'
@@ -186,20 +209,22 @@ def install(home, base, env, target, manifest, config, agent):
         return changes
     config.update(defaults)
     record = {'bundle': manifest['id'], 'tools': str(version), 'suite': str(suite),
+              'product': product, 'studios': selected,
               'brand': brand['current'], 'environment': str(version / 'environment.sh'), 'assistant': agent}
     atomic(base / 'installation.json', json.dumps(record, indent=2) + '\n', 0o600)
     shutil.copy2(ROOT / 'verify-installed.py', version / 'verify-installed.py')
-    verify_command = '#!/bin/bash\nset -euo pipefail\nexec ' + shlex.quote(str(suite / 'runtime/python/bin/python3')) + ' ' + shlex.quote(str(version / 'verify-installed.py')) + '\n'
+    verify_command = '#!/bin/bash\nset -euo pipefail\nexec ' + shlex.quote(str(suite / 'runtime/python/bin/python3')) + ' ' + shlex.quote(str(version / 'verify-installed.py')) + ' --record ' + shlex.quote(str(base / 'installation.json')) + '\n'
     for suffix in ('sh', 'command'):
-        atomic(home / ('Applications/Verify Presentation Studio.' + suffix), verify_command)
+        atomic(home / ('Applications/Verify ' + title + '.' + suffix), verify_command)
     shell_rc = '. ' + shlex.quote(str(version / 'environment.sh')) + '\n'
     shell_rc += 'echo "Use your existing assistant. Google sign-in: gcloud auth login --enable-gdrive-access --force"\n'
     atomic(version / 'tools-shell.sh', shell_rc, 0o644)
     tools_command = '#!/bin/bash\nexec /bin/bash --rcfile ' + shlex.quote(str(version / 'tools-shell.sh')) + ' -i\n'
     for suffix in ('sh', 'command'):
-        atomic(home / ('Applications/Open Presentation Studio Tools.' + suffix), tools_command)
-    print('Installed. Open Presentation Studio from Terminal:')
-    print('  bash ' + shlex.quote(str(home / '.local/share/presentation-studio/studio')))
+        atomic(home / ('Applications/Open ' + title + ' Tools.' + suffix), tools_command)
+    print('Installed. Open ' + title + ' from Terminal:')
+    launcher = '.local/share/marketing-studio/marketing-studio' if product == 'marketing' else '.local/share/' + product + '-studio/studio'
+    print('  bash ' + shlex.quote(str(home / launcher)))
     print('Complete assistant sign-in in your own terminal before starting a job.')
     print('Assistant: ' + ('Claude Code' if agent == 'claude' else 'Codex') + ' (existing installation)')
     print('Existing workspaces and saved choices were preserved. Setup remains explicit.')

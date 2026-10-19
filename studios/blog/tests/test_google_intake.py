@@ -17,6 +17,8 @@ import management
 import google_drive as drive
 import google_suggestions as suggestions
 import blog_runner
+import team_workspace as teams
+from studio_sync import gitstate, support
 from test_google_suggestions import ReviewProvider
 
 
@@ -32,6 +34,12 @@ class GoogleIntakeTests(unittest.TestCase):
                 'STUDIOS_CONFIG': str(self.base / 'settings.json'),
                 'BLOG_STUDIO_DATA': str(self.base / 'data'),
                 'BRAND_SKILL_RUNTIME': str(self.base / 'no-brand'),
+                'GIT_CONFIG_GLOBAL': os.devnull,
+                'GIT_CONFIG_NOSYSTEM': '1',
+                'GIT_AUTHOR_NAME': 'Synthetic Author',
+                'GIT_AUTHOR_EMAIL': 'author@example.invalid',
+                'GIT_COMMITTER_NAME': 'Synthetic Author',
+                'GIT_COMMITTER_EMAIL': 'author@example.invalid',
             },
         )
         environment.start()
@@ -71,6 +79,122 @@ class GoogleIntakeTests(unittest.TestCase):
 
     def snapshot(self, preview):
         return drive.staging_root(self.root) / ('desk-' + preview['preview']) / 'snapshot'
+
+    def shared_launch(self, legacy=False):
+        found = gitstate.local(self.base / 'managed-workspace', folder='blogs', branch='main')
+        self.root = found.root
+        if legacy:
+            with patch.object(teams, 'keep_setup'):
+                studio.initialize(self.root)
+        else:
+            studio.initialize(self.root)
+        return found
+
+    def test_shared_launch_records_setup_and_import_continues_without_an_assistant(self):
+        found = self.shared_launch()
+        self.assertEqual(gitstate.changed(found), [])
+        result = self.start(self.preview())
+        folder, _ = studio.item(self.root, 'articles', result['id'])
+        self.assertTrue((folder / 'ORIGINAL.md').is_file())
+        self.assertEqual(gitstate.changed(found), [])
+        self.assertEqual(self.client.writes, 0)
+
+    def test_import_recovers_old_generated_setup_files_but_refuses_author_edits(self):
+        found = self.shared_launch(legacy=True)
+        self.assertEqual(gitstate.changed(found), ['blogs/.shared/README.md', 'blogs/studio.json'])
+        before = support.git(found.repo, 'rev-parse', 'HEAD')
+        preview = self.preview()
+        self.assertEqual(support.git(found.repo, 'rev-parse', 'HEAD'), before)
+        unrelated = found.repo / 'unrelated.txt'
+        unrelated.write_text('Synthetic unrelated staged edit.\n')
+        support.git(found.repo, 'add', 'unrelated.txt')
+        changed = self.root / 'notes.md'
+        changed.write_text('Keep this unrecorded writing.\n')
+        with self.assertRaisesRegex(ValueError, 'blogs/notes.md'):
+            self.start(preview)
+        self.assertEqual(changed.read_text(), 'Keep this unrecorded writing.\n')
+        self.assertEqual(
+            support.git(found.repo, 'diff', '--cached', '--name-only').strip(), 'unrelated.txt'
+        )
+        self.assertEqual(list(studio.inside(self.root, 'articles').glob('*/session.json')), [])
+        changed.unlink()  # Only this synthetic fixture's unrecorded note.
+        result = self.start(preview)
+        self.assertTrue(studio.item(self.root, 'articles', result['id'])[0].is_dir())
+        self.assertEqual(gitstate.changed(found), [])
+        self.assertEqual(
+            support.git(found.repo, 'diff', '--cached', '--name-only').strip(), 'unrelated.txt'
+        )
+
+    def test_modified_setup_metadata_is_never_adopted_as_generated(self):
+        found = self.shared_launch(legacy=True)
+        studio.write_json(
+            self.root / 'studio.json',
+            {
+                'schema_version': 1,
+                'created_at': studio.now(),
+                'author_note': 'Keep this synthetic note.',
+            },
+        )
+        (self.root / '.shared/README.md').write_text('Custom synthetic workspace instructions.\n')
+        before = {
+            name: (self.root / name).read_bytes() for name in ('studio.json', '.shared/README.md')
+        }
+        with self.assertRaisesRegex(ValueError, 'Local files changed outside'):
+            self.start(self.preview())
+        self.assertEqual(gitstate.changed(found), ['blogs/.shared/README.md', 'blogs/studio.json'])
+        for name, content in before.items():
+            self.assertEqual((self.root / name).read_bytes(), content)
+
+    def test_image_payloads_are_hidden_in_preview_but_preserved_in_import_and_downloads(self):
+        body = (
+            '# Synthetic manuscript\n\nKeep the readable paragraph.\n\n![Synthetic chart][image1]\n\n[image1]: <data:image/png;base64,'
+            + 'A' * 250_000
+            + '>\n'
+        )
+        original_export = self.client.export
+        with (
+            patch(
+                'google_suggestions.accepted_markdown',
+                side_effect=drive.GoogleError('Synthetic image structure'),
+            ),
+            patch.object(
+                self.client,
+                'export',
+                side_effect=lambda file_id, kind: (
+                    body.encode() if kind == 'md' else original_export(file_id, kind)
+                ),
+            ),
+        ):
+            preview = self.preview()
+        self.assertTrue(preview['images_omitted'])
+        self.assertIn('Keep the readable paragraph.', preview['content'])
+        self.assertNotIn('data:image', preview['content'])
+        self.assertNotIn('image1', preview['content'])
+        self.assertLess(len(preview['content']), 100)
+        result = self.start(preview)
+        folder, record = studio.item(self.root, 'articles', result['id'])
+        self.assertEqual((folder / 'ORIGINAL.md').read_text(), body)
+        self.assertEqual((folder / 'DRAFT.md').read_text(), body)
+        self.assertEqual(self.client.writes, 0)
+        # A small supplied draft exercises the same preview on the review screen.
+        small = body.replace('A' * 250_000, 'AAAA')
+        studio.save_artifact(folder, 'draft', small, record)
+        studio.persist(folder, 'articles', record)
+        blog_runner.create(
+            self.root,
+            {
+                'id': result['id'],
+                'mode': 'revise',
+                'goal': 'Clarify this synthetic draft',
+                'audience': 'Authors',
+                'research': 'none',
+                'stop': 'draft',
+            },
+        )
+        shown = blog_runner.document(self.root, result['id'], 'draft')
+        self.assertEqual(shown['content'], small)  # Download remains complete.
+        self.assertTrue(shown['images_omitted'])
+        self.assertNotIn('data:image', shown['preview_content'])
 
     def test_preview_is_private_and_confirmation_imports_the_original_link_and_formatting(self):
         drive.remember_account(self.root, 'author@example.invalid')

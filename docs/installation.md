@@ -1,5 +1,10 @@
 # Install Marketing Studio
 
+Use `install.sh` in the product's root folder. Marketing Studio installs all
+three studios; each individual download installs only that studio. Builders use
+`package.sh` in the same source folder. See the [four-product command table](packaging.md)
+for the complete, consistent layout and local bundles with brand and private tools.
+
 ## Versioned platform downloads
 
 Choose a platform bundle on the [release page](https://github.com/dbbaskette/marketing-studio/releases).
@@ -51,7 +56,7 @@ retained version folders remain available.
 You can check prerequisites without installing system software:
 
 ```sh
-bash installer/install.sh --prerequisites check --target codex --yes
+bash install.sh --prerequisites check --target codex --yes
 ```
 
 Use `--companions skip` to leave installed companion pointers unchanged.
@@ -79,9 +84,9 @@ prepared companions. Contributors can also clone the repository. These paths ret
 the prerequisite bootstrap and explicitly requested companion downloads:
 
 ```sh
-bash installer/install.sh --studios blog --target codex
-bash installer/install.sh --studios presentation training --target claude
-bash installer/install.sh --prerequisites skip --companions skip --yes
+bash install.sh --studios blog --target codex
+bash install.sh --studios presentation training --target claude
+bash install.sh --prerequisites skip --companions skip --yes
 ```
 
 Source setup requires Python 3.11+, Git, Node 20+ for companions, and npm for preparing

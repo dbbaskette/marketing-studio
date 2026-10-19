@@ -2,6 +2,11 @@
 # Bootstrap before Python is available; application code remains standard-library Python.
 set -euo pipefail
 installer_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+# The local Presentation Studio bundle owns brand and extra-tool installation.
+# Entering its nested suite installer must use that setup and its private Python.
+if [ -f "$installer_dir/../../local-manifest.json" ] && [ -f "$installer_dir/../../install-local.py" ]; then
+  exec /bin/sh "$installer_dir/../../install.sh" "$@"
+fi
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 prerequisites=ask
 assistants=skip
@@ -45,7 +50,7 @@ while [ "$#" -gt 0 ]; do
     --dry-run) inspect=1; args+=("$1") ;;
     check|rollback|uninstall) action="$1"; args+=("$1") ;;
     install|--json|--studios|blog|presentation|training) args+=("$1") ;;
-    *) echo "Unknown setup argument: $1. Run bash installer/install.sh --help." >&2; exit 2 ;;
+    *) echo "Unknown setup argument: $1. Run bash install.sh --help." >&2; exit 2 ;;
   esac
   shift
 done
@@ -108,7 +113,7 @@ if [ "$inspect" = 1 ]; then
     printf '%s\n' 'Marketing Studio setup' '' \
       'Platform downloads include Python, Node, and prepared research/slide tools.' \
       'Setup reuses your selected assistant. Git is required; Google tools are optional.' '' \
-      '  bash installer/install.sh [install|check|rollback|uninstall] [options]' \
+      '  bash install.sh [install|check|rollback|uninstall] [options]' \
       '  --studios blog presentation training    Choose one or more studios' \
       '  --target auto|codex|claude|both         Assistant integration (default: detect one)' \
       '  --companions ask|install|skip           Shared research/slide tools' \

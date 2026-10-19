@@ -1,30 +1,33 @@
-PRESENTATION STUDIO — APPLE SILICON MAC LOCAL BUNDLE (@BUNDLE_MODE@)
+@PRODUCT_NAME@ — APPLE SILICON MAC LOCAL BUNDLE (@BUNDLE_MODE@)
 
 Requires an Apple Silicon Mac running macOS @MINIMUM_MACOS@ or newer. Open
 Terminal natively, without Rosetta. Generated archives are local and untracked.
 
 1. Extract the ZIP completely.
-2. Open Terminal in the extracted folder and run:
+2. Open Terminal in the outermost extracted folder (beside START HERE.txt and
+   local-manifest.json, not inside studio/ or installer/) and run:
      bash install.sh
 3. Start the UI from Terminal and finish setup:
-     bash "$HOME/.local/share/presentation-studio/studio"
+     bash "$HOME/@PRODUCT_START@"
 
 No .command launcher is needed. The Finder launcher remains available as an
 alternative and uses the same installer. Keep the extracted folder together.
+Python and Node are bundled; no system Python installation is needed. Nested
+install.sh entry points also forward to this full setup.
 
 @SETUP_DOWNLOADS@
 Setup does not sign in or start provider jobs.
-It registers Presentation Studio, Harness Slides, Harness Research and Tanzu Brand
-for Codex and Claude Code. It preserves existing workspaces and saved settings.
+It installs @SELECTED_STUDIOS@ and the bundled skills for Codex and Claude Code.
+It preserves existing workspaces and saved settings.
 Install Codex or Claude Code before setup and make it available on PATH.
 Close running studios before installation. No administrator install is required.
 
 INCLUDED
-Presentation Studio @STUDIO_VERSION@; shared Marketing Studio launcher/setup;
-Harness Slides @SLIDES_VERSION@ with production Node packages;
+Bundle release @STUDIO_VERSION@: @SELECTED_STUDIOS@; shared Marketing Studio launcher/setup;
+@SLIDES_CONTENT@
 Harness Research @RESEARCH_VERSION@; Tanzu Brand @BRAND_VERSION@ with its templates,
 contracts, logos, icons and guidance; Python @PYTHON_VERSION@; Node @NODE_VERSION@;
-Harness Slides Gemini API image tools, using the bundled Node runtime.
+Slide-enabled packages include Gemini API image tools using the bundled Node runtime.
 
 @TOOLS_DELIVERY@
 LibreOffice @LIBREOFFICE_VERSION@;
@@ -34,19 +37,20 @@ Arial must be present in macOS or a licensed font installation; fonts are not re
 
 SIGN-IN ON THE DESTINATION MAC
 After installation, run this in Terminal:
-  bash "$HOME/Applications/Open Presentation Studio Tools.sh"
+  bash "$HOME/Applications/Open @PRODUCT_NAME@ Tools.sh"
 It opens a shell with private tools on PATH. Run these commands there:
 
   gcloud auth login --enable-gdrive-access --force
 
 Use your existing Codex or Claude Code installation and its own sign-in process.
 
-Google Drive access does not guarantee native Slides API permission. Follow the
-installed Harness Slides references/google-slides.md to check a presentation.
+Follow the installed studio's Google references to check document access.
+For packages with Harness Slides, Drive access does not guarantee native Slides
+API permission; use its references/google-slides.md to check a presentation.
 Google account policy, enabled APIs and OAuth scopes may require account setup.
 
-Configure GEMINI_API_KEY privately in your environment before launching the
-assistant. Never paste a key into chat. Harness Slides references/images.md
+For packages with Harness Slides, configure GEMINI_API_KEY privately in your
+environment before image generation. Never paste a key into chat. Its references/images.md
 explains status/check and per-image approval. Generation requires internet access
 and a paid remote service. The upstream Gemini provider is not live-verified;
 the first authenticated check remains a destination task.
@@ -58,16 +62,16 @@ Credentials, browser profiles, personal content and workspaces are not bundled.
 VERIFY
   bash install.sh --verify-only
 After installation, run the following for
-offline tool, skill and PowerPoint-to-PDF-to-PNG checks. Generated files use a
+offline tool, skill and applicable PowerPoint-to-PDF-to-PNG checks. Generated files use a
 disposable HOME and no provider calls are made. Architecture and file checksums
 are checked during packaging; native ARM execution and authenticated service
 checks must be verified on the destination Mac.
-  bash "$HOME/Applications/Verify Presentation Studio.sh"
+  bash "$HOME/Applications/Verify @PRODUCT_NAME@.sh"
 
 ADVANCED
   bash install.sh --target codex
   bash install.sh --home /absolute/disposable/home
-Private tools: ~/.local/share/presentation-studio-local-bundle/versions/
+Private tools: ~/.local/share/@PRODUCT_SLUG@-local-bundle/versions/
 Brand: ~/Library/Application Support/Tanzu Brand/
 Rerun this installer to restore private-tool launcher paths after a standard suite
 update. No automatic update is enabled. The ZIP can be deleted after installation.

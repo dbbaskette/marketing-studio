@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 from contextvars import ContextVar
+from datetime import datetime
 import json
 from pathlib import Path
 import shutil
@@ -117,12 +118,60 @@ def _learn(root, found, at):
             team.keep('taken', state)
 
 
+def keep_setup(root):
+    """Record only recognizable, untracked setup files; never adopt author edits."""
+    found = space(root)
+    if not found:
+        return
+    with support.locked(found.repo / '.git/blog-studio.lock'):
+        names = ('studio.json', '.shared/README.md')
+        untracked = set(
+            support.names(
+                support.git(
+                    found.repo,
+                    'ls-files',
+                    '--others',
+                    '--exclude-standard',
+                    '-z',
+                    '--',
+                    *(found.folder + '/' + name for name in names),
+                )
+            )
+        )
+        paths = []
+        for name in names:
+            path = studio.inside(root, name)
+            if found.folder + '/' + name not in untracked or path.is_symlink():
+                continue
+            if name == 'studio.json':
+                try:
+                    value = studio.read_json(path)
+                    if (
+                        not isinstance(value, dict)
+                        or set(value) != {'schema_version', 'created_at'}
+                        or type(value['schema_version']) is not int
+                        or value['schema_version'] != 1
+                        or not isinstance(value['created_at'], str)
+                        or datetime.fromisoformat(value['created_at']).tzinfo is None
+                    ):
+                        continue
+                except (ValueError, OSError):
+                    continue
+            elif path.read_bytes() != studio.SHARED_README:
+                continue
+            paths.append(name)
+        if paths:
+            gitstate.commit(found, 'Set up Blog Studio writing folders', paths)
+
+
 def refresh(root, push=False):
     found = space(root)
     if not found:
         return {'shared': False, 'notice': 'This is a local writing workspace.'}
     held = support.Held(found.repo / '.git/blog-studio.lock')
     with held:
+        # Older shared launches created these files after the setup commit.
+        keep_setup(root)
         changed = gitstate.changed(found)
         if changed:
             raise ValueError(

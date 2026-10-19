@@ -1,5 +1,11 @@
 # Rebuild the local Presentation Studio bundle
 
+All four products now use the same root `package.sh` and `install.sh` names.
+See [package and install the studios](packaging.md) for the command table.
+From the Marketing Studio checkout, `bash studios/presentation/package.sh` builds
+Presentation Studio; `bash package.sh` builds Marketing Studio with all studios.
+The older `presentation-studio-package` command below remains a compatible alias.
+
 The build recipe lives in the repository. Generated ZIPs, download caches and
 Tanzu Brand assets stay local. The first target is **Apple Silicon, macOS 13+**;
 you can build and verify its archive on an Intel Mac. Native execution and
@@ -54,8 +60,8 @@ Create your local config once:
 presentation-studio-package --init-config
 ```
 
-Edit `presentation-studio-package.local.json` in the Marketing Studio checkout.
-That file is ignored by Git; `presentation-studio-package.example.json` is the
+Edit `studio-package.local.json` in the Marketing Studio checkout.
+That file is ignored by Git; `studio-package.example.json` is the
 tracked template. Each component accepts a local Git checkout or a Git URL:
 
 ```json
@@ -85,6 +91,8 @@ account data are excluded. Remote sources use exactly the selected Git ref.
 Source checkouts are never reset, cleaned, installed into or updated by packaging.
 
 The default config is discovered beside the packaging CLI in this checkout.
+The old `presentation-studio-package.local.json` filename is used only when the
+shared config is absent.
 Choose a different file with `--config /path/to/sources.json`; its paths remain
 relative to that file. An explicitly requested missing or invalid config fails
 instead of falling back. `--plan` reports configured sources without fetching
@@ -181,9 +189,11 @@ links, duplicate names, missing entries and unexpected files. ZIP permissions
 preserve the installation launcher. Packaging does not certify native ARM
 execution or live services.
 
-On the destination Mac, extract the ZIP, open Terminal in the extracted folder,
-and run `bash install.sh`. It uses the bundled Python and does not open a
-`.command` file. The Finder launcher remains available as an alternative.
+On the destination Mac, extract the ZIP and open Terminal in the outermost
+extracted folder, beside `START HERE.txt` and `local-manifest.json`. Run
+`bash install.sh`. It uses the bundled Python; no system Python installation is
+needed. Nested `install.sh` entry points forward to the same full setup, including
+brand and extra tools. The Finder launcher remains available as an alternative.
 Start the UI from Terminal after installation:
 
 ```sh

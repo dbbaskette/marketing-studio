@@ -9,6 +9,7 @@ import google_roundtrip as roundtrip
 import google_workflow as workflow
 from editorial import mapping
 import studio
+from manuscript_preview import text_only
 
 
 def document_id(value):
@@ -74,7 +75,8 @@ def preview(root, data):
     try:
         result = roundtrip.capture(drive.Client(drive.account_for(root)), file_id, None, snapshot)
         body = (snapshot / 'document.md').read_text()
-        if not body.strip() or len(body) > 200_000:
+        content = text_only(body)
+        if not content.strip() or len(content) > 200_000:
             raise ValueError('Choose a readable Google manuscript up to 200,000 characters.')
         native = studio.read_json(snapshot / 'native.json')
         title = str(native.get('title') or 'Google Doc')[:500]
@@ -87,7 +89,7 @@ def preview(root, data):
             'expected': fingerprint(snapshot),
         }
         studio.write_json(folder / 'preview.json', value)
-        return {**value, 'content': body}
+        return {**value, 'content': content, 'images_omitted': content != body}
     except BaseException:
         drive.discard(root, folder)
         raise

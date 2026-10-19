@@ -1035,6 +1035,12 @@ def options(root):
 
 
 def document(root, ident, stage):
+    from manuscript_preview import fields
+
+    def preview_file(path):
+        body = path.read_text()
+        return {'content': body, **fields(body)}
+
     directory, _, run = load(root, ident)
     if stage not in run['pipeline']:
         raise ValueError('Choose a stage in this blog’s run.')
@@ -1066,6 +1072,7 @@ def document(root, ident, stage):
     return {
         'name': path.name,
         'content': content,
+        **fields(content),
         'previous': previous,
         'diff': differences[:4000],
         'diff_truncated': len(differences) > 4000,
@@ -1075,7 +1082,7 @@ def document(root, ident, stage):
             {
                 'stage': item['stage'],
                 'label': item['label'],
-                'content': studio.inside(directory, item['path']).read_text(),
+                **preview_file(studio.inside(directory, item['path'])),
             }
             for item in found['stages']
             if found['review_level'] != 'step_by_step'

@@ -58,6 +58,8 @@ Drive access; see [Google setup](google-docs.md#local-codex-and-claude-gcloud-se
 Preview reads only the selected Doc and saves a private capture on this computer.
 
 Read the text and structure summary and compare them with the original Doc.
+Images and their encoded data are omitted from previews; inspect them in the
+original Doc. Saved originals, drafts, formatting history and downloads retain them.
 Pending suggestions stay in Google and are excluded from the imported text.
 Confirm the preview and choose **Import and continue**. Blog Studio saves the
 original, draft and formatted history and links that same Doc as the working copy.

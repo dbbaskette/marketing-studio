@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "sources": {
+    "harness-slides": {"path": "../harness-slides-skill"},
+    "harness-research": {"path": "../harness-research-skill"},
+    "brand": {"path": "../tanzu-brand"}
+  }
+}
