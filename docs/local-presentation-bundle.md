@@ -17,6 +17,25 @@ Then build from any directory:
 presentation-studio-package
 ```
 
+The default **online** bundle includes Presentation Studio, its skills and brand,
+private Python and Node, and prepared slide dependencies. It is about **138 MB**
+with the current Tanzu Brand assets. On the destination Mac, explicit installation
+downloads the pinned LibreOffice, Poppler/Git dependency closure, Micromamba and
+Google Cloud CLI: about **427 MB** on a fresh Mac. No Python, Node, npm, skill or
+assistant installation is downloaded during setup. Google and image tools are
+included; account sign-in and API credentials remain destination tasks.
+
+For a destination without internet access, include all tools in the ZIP:
+
+```sh
+presentation-studio-package --mode offline
+```
+
+The offline bundle is about **585 MB** with the current components. Both modes
+use the same exact tool versions, checksum checks and private installation paths.
+The smaller online ZIP mainly reduces the file you distribute; it does not
+remove the eventual tool downloads. Sizes vary with component updates.
+
 The command selects an existing Python 3.11+ automatically, including an
 interpreter already managed by uv. It does not download Python. Node.js 22+,
 npm and Git are still build prerequisites. You can also run
@@ -89,10 +108,12 @@ directory retains verified downloads. `--cache /path/to/cache` changes that
 location. Generated paths inside the checkout are permitted only under the
 existing ignored `build/` and `dist/` directories. Building never installs a
 studio, changes shared settings, starts a studio, or runs a provider job. Building
-may download dependencies; installing the completed bundle uses its local files.
+may download dependencies. Online builds do not fetch preview or Google tool
+archives; those downloads happen during installation. Offline installation uses
+only the archive's local dependencies.
 
 A successful build writes a versioned ZIP and a SHA-256 sidecar. The filename
-includes the Presentation Studio version, Tanzu Brand version, platform and
+includes the Presentation Studio version, Tanzu Brand version, platform, mode and
 content ID. Existing builds are retained; the same inputs reproduce the same
 archive. Failed downloads or verification leave earlier archives intact.
 
@@ -123,20 +144,29 @@ archive. Failed downloads or verification leave earlier archives intact.
 - **Private Python and Node:** update the exact URLs, versions and SHA-256 values
   in `pins/runtimes.json`, then rerun. Cross-platform slide dependencies must
   remain pure JavaScript, as enforced by the existing release preparation code.
-- **LibreOffice, Google Cloud CLI, Codex and preview tools:** update
+- **LibreOffice, Google Cloud CLI and preview tools:** update
   `pins/presentation-bundle.json`, then rerun. Every archive and conda package has
-  an immutable HTTPS URL and SHA-256. Keep the Codex wrapper/native versions
-  aligned. When updating Poppler or Git, replace the complete resolved
-  `osx-arm64`/`noarch` dependency closure, not only the top-level package. For a
-  private trial lock, use `--tools-lock /path/to/lock.json`.
+  an immutable HTTPS URL and SHA-256. When updating Poppler or Git, replace the
+  complete resolved `osx-arm64`/`noarch` dependency closure, not only the top-level
+  package. For a private trial lock, use `--tools-lock /path/to/lock.json`.
 
 The Google Cloud CLI lock explicitly omits two dangling certificate links in
 gsutil's upstream test fixtures. Runtime files and licenses are retained; other
-broken or escaping archive links still fail the build.
+broken or escaping archive links still fail preparation, during installation for
+online bundles or during packaging for offline bundles.
 
 The builder does not silently upgrade components. Review and test changes to
 locks before distributing a new bundle. A cached download is rechecked on every
 build; remove a corrupt cached file and rerun to download it again.
+
+Online installation stores verified tool downloads under
+`~/.local/share/presentation-studio-local-bundle/cache/downloads/`. It checks their
+SHA-256 on every reuse, retries network failures up to three times, and only
+extracts tools after all download checksums pass. Interrupted installation removes
+its new incomplete tools directory while preserving earlier installations and
+completed downloads. Rerun the installer to retry. If a cached file is corrupt,
+remove only the file identified in the error and retry. Installation never uses
+Homebrew, installs an assistant or changes system Python and Node.
 
 ## Inspect and verify
 
@@ -145,8 +175,8 @@ presentation-studio-package --plan
 presentation-studio-package --verify /path/to/bundle.zip
 ```
 
-`--plan` prints versions, sources and paths without downloads or writes. Archive
-verification streams every file through its SHA-256 and rejects unsafe paths,
+`--plan` prints the mode, versions, sources and paths without downloads or writes.
+Archive verification streams every file through its SHA-256 and rejects unsafe paths,
 links, duplicate names, missing entries and unexpected files. ZIP permissions
 preserve the installation launcher. Packaging does not certify native ARM
 execution or live services.
@@ -157,12 +187,17 @@ brand, PowerPoint, PDF and PNG checks. The verification uses disposable output
 and account directories. **Open Presentation Studio Tools.command** opens a
 terminal with the private tools for destination sign-in.
 
-The bundle includes Presentation Studio, the Marketing Studio launcher/setup,
-Harness Slides, Harness Research, Tanzu Brand, private Python/Node/Codex,
+Both modes install Presentation Studio, the Marketing Studio launcher/setup,
+Harness Slides, Harness Research, Tanzu Brand, private Python/Node,
 LibreOffice, Poppler/Git and their native dependencies, Google Cloud CLI, and
-Harness Slides' standard Gemini API image tools. Arial comes from macOS or your
-licensed installation. Claude Code, the legacy unofficial Gemini browser route,
-and browser-based brand development audits use separate optional setup.
+Harness Slides' standard Gemini API image tools. The online ZIP contains the
+application, skills, brand and runtimes; the remaining tools download during
+setup. Arial comes from macOS or your licensed installation.
+Codex or Claude Code must already be installed and on PATH;
+the bundle reuses the saved assistant choice or detects an available assistant.
+Assistant applications are not bundled or installed. The legacy unofficial
+Gemini browser route and browser-based brand development audits use separate
+optional setup.
 Google permissions, assistant sign-in, image API keys and billing belong to the
 destination account. No credentials or personal content are packaged.
 

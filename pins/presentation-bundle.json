@@ -21,16 +21,6 @@
         "platform/gsutil/third_party/requests/tests/certs/mtls/client/ca",
         "platform/gsutil/third_party/requests/tests/certs/valid/ca"
       ]
-    },
-    "codex": {
-      "version": "0.163.0",
-      "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.163.0.tgz",
-      "sha256": "1a71db36560bb446d2c2e63ae675c4a3018c38ace38ca533f8d1b25d3e6555b4"
-    },
-    "codex_native": {
-      "version": "0.163.0-darwin-arm64",
-      "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.163.0-darwin-arm64.tgz",
-      "sha256": "1193ff4ce72387a5d6c34820b54a9dc57d007c67a958e8acb4715924facd3c31"
     }
   },
   "packages": [

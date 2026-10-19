@@ -2,14 +2,12 @@
 """Regenerate the local Apple Silicon Presentation Studio bundle (Python 3.11+)."""
 import argparse
 import ast
-from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
-import struct
 import subprocess
 import sys
 import tarfile
@@ -21,7 +19,10 @@ sys.path.insert(0, str(ROOT / 'core'))
 from studio_core import bundles, distribution, bundle_sources
 
 TEMPLATES = ROOT / 'scripts/local_bundle'
-ARCHIVES = {'libreoffice', 'micromamba', 'google_cloud_cli', 'codex', 'codex_native'}
+sys.path.insert(0, str(TEMPLATES))
+from tool_payload import prepare_tools, require_arm64
+
+ARCHIVES = {'libreoffice', 'micromamba', 'google_cloud_cli'}
 DEFAULT_CONFIG = ROOT / 'presentation-studio-package.local.json'
 
 
@@ -127,64 +128,6 @@ def unpack_zip(archive, destination):
             target.chmod(0o755 if item.external_attr >> 16 & 0o111 else 0o644)
 
 
-def extract_micromamba(archive, payload):
-    with tarfile.open(archive, 'r:bz2') as source:
-        binary = source.getmember('bin/micromamba')
-        if not binary.isfile():
-            raise ValueError('Micromamba executable must be a regular file.')
-        with source.extractfile(binary) as src, (payload / 'micromamba').open('xb') as dst:
-            shutil.copyfileobj(src, dst)
-        (payload / 'micromamba').chmod(0o755)
-        notices = [item for item in source.getmembers()
-                   if item.name.startswith('info/licenses/') and item.isfile()]
-        if not notices:
-            raise ValueError('Micromamba dependency notices are missing.')
-        for item in notices:
-            relative = safe_name(item.name)
-            path = payload / 'micromamba-licenses' / Path(*relative.parts[2:])
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(source.extractfile(item).read())
-
-
-def require_arm64(path):
-    with Path(path).open('rb') as stream:
-        header = stream.read(8)
-    if len(header) != 8 or header[:4] != b'\xcf\xfa\xed\xfe' or struct.unpack('<I', header[4:])[0] != 0x0100000c:
-        raise ValueError('Expected a native ARM64 Mach-O executable: ' + str(path))
-
-
-def prepare_tools(lock, cache, payload):
-    downloads = cache / 'downloads'
-    pins = [*lock['archives'].values(), *lock['packages']]
-    with ThreadPoolExecutor(max_workers=6) as executor:
-        # Waiting on every future propagates a failed checksum before anything is packaged.
-        paths = list(executor.map(lambda pin: distribution.download(pin, downloads), pins))
-    archives = dict(zip(lock['archives'], paths[:len(ARCHIVES)]))
-    payload.mkdir()
-    shutil.copy2(archives['libreoffice'], payload / 'LibreOffice.dmg')
-    extract_micromamba(archives['micromamba'], payload)
-    unpack_tar(archives['google_cloud_cli'], payload / 'google-cloud-sdk',
-               exclude=lock['archives']['google_cloud_cli'].get('exclude', ()))
-    modules = payload / 'assistant/node_modules/@openai'
-    modules.mkdir(parents=True)
-    unpack_tar(archives['codex'], modules / 'codex')
-    unpack_tar(archives['codex_native'], modules / 'codex-darwin-arm64')
-    for item in ('codex', 'codex_native'):
-        folder = 'codex' if item == 'codex' else 'codex-darwin-arm64'
-        version = json.loads((modules / folder / 'package.json').read_text())['version']
-        if version != lock['archives'][item]['version']:
-            raise ValueError('Codex version differs from its lock.')
-    if (payload / 'google-cloud-sdk/VERSION').read_text().strip() != lock['archives']['google_cloud_cli']['version']:
-        raise ValueError('Google Cloud CLI version differs from its lock.')
-    packages = payload / 'packages'
-    packages.mkdir()
-    for pin, source in zip(lock['packages'], paths[len(ARCHIVES):]):
-        shutil.copy2(source, packages / pin['filename'])
-    (payload / 'packages.json').write_text(json.dumps(lock['packages'], indent=2) + '\n')
-    require_arm64(payload / 'micromamba')
-    require_arm64(modules / 'codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex')
-
-
 def inventory(root):
     result = {}
     for path in sorted(root.rglob('*')):
@@ -259,7 +202,9 @@ def write_archive(root, output, manifest):
         pending.unlink(missing_ok=True)
 
 
-def build(brand, output, cache, lock, sources=None):
+def build(brand, output, cache, lock, sources=None, mode='online'):
+    if mode not in ('online', 'offline'):
+        raise ValueError('Unknown Presentation Studio bundle mode: ' + str(mode))
     sources = dict(sources or {})
     sources.setdefault('brand', {'path': str(brand)})
     output, cache = build_path(output), build_path(cache)
@@ -287,7 +232,7 @@ def build(brand, output, cache, lock, sources=None):
         brand_version = brand_record['version']
         if not all(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[\w.-]+)?', v) for v in (version, brand_version)):
             raise ValueError('Expected safe semantic studio and brand versions.')
-        stage = work / f'Presentation-Studio-{version}-Tanzu-{brand_version}-macos-arm64'
+        stage = work / f'Presentation-Studio-{version}-Tanzu-{brand_version}-macos-arm64-{mode}'
         stage.mkdir()
         unpack_zip(brand_zip, stage / 'brand')
         print('Preparing Presentation Studio and its pinned runtimes/companions…', flush=True)
@@ -306,14 +251,21 @@ def build(brand, output, cache, lock, sources=None):
         (studio / 'bundle-manifest.json').write_text(json.dumps({
             'schema': 1, 'studios': ['presentation'],
             'files': {name: distribution.digest(path) for name, path in sorted(entries.items())}}, indent=2) + '\n')
-        print('Preparing locked offline tools…', flush=True)
-        prepare_tools(lock, cache, stage / 'payload')
-        for name in ('install-local.py', 'install-brand.mjs', 'verify-installed.py', 'Install Presentation Studio.command'):
+        if mode == 'offline':
+            print('Preparing locked offline tools…', flush=True)
+            prepare_tools(lock, cache, stage / 'payload')
+        else:
+            print('Recording pinned tools for download during installation…', flush=True)
+        for name in ('install-local.py', 'install-brand.mjs', 'verify-installed.py', 'tool_payload.py', 'Install Presentation Studio.command'):
             shutil.copy2(TEMPLATES / name, stage / name)
-        for name in ('install-local.py', 'verify-installed.py'):
+        for name in ('install-local.py', 'verify-installed.py', 'tool_payload.py'):
             ast.parse((stage / name).read_text())
         (stage / 'Install Presentation Studio.command').chmod(0o755)
-        values = {'STUDIO_VERSION': version, 'BRAND_VERSION': brand_version,
+        values = {'BUNDLE_MODE': mode,
+                  'SETUP_DOWNLOADS': ('Setup downloads pinned preview and Google tools.\nAn internet connection is required for the first installation; verified downloads\nare cached for retries.' if mode == 'online' else
+                                     'Setup installs tools from this archive without downloading dependencies.'),
+                  'TOOLS_DELIVERY': ('DOWNLOADED DURING SETUP' if mode == 'online' else 'ALSO INCLUDED'),
+                  'STUDIO_VERSION': version, 'BRAND_VERSION': brand_version,
                   'MINIMUM_MACOS': str(lock['minimum_macos']),
                   'PYTHON_VERSION': record['runtimes']['python']['version'],
                   'NODE_VERSION': record['runtimes']['node']['version'],
@@ -330,14 +282,14 @@ def build(brand, output, cache, lock, sources=None):
         # Include permissions in the identity; the ZIP preserves executable bits too.
         modes = {name: bool((stage / name).stat().st_mode & 0o111) for name in files}
         manifest = {'schema': 1, 'platform': 'macos-arm64', 'minimum_macos': lock['minimum_macos'],
-                    'files': files, 'source_commit': run(['git', '-C', ROOT, 'rev-parse', 'HEAD'], env).strip(),
+                    'mode': mode, 'files': files, 'source_commit': run(['git', '-C', ROOT, 'rev-parse', 'HEAD'], env).strip(),
                     'source_modified': bool(run(['git', '-C', ROOT, 'status', '--porcelain', '--untracked-files=normal'], env).strip()),
                     'brand_commit': brand_record['sourceCommit'], 'brand_version': brand_version,
                     'sources': provenance,
                     'tools': lock, 'distribution': record,
                     'validation': {'native_arm_execution': False, 'live_provider_calls': False}}
         content = hashlib.sha256(json.dumps([manifest, modes], sort_keys=True).encode()).hexdigest()[:12]
-        manifest['id'] = f'{version}-tanzu-{brand_version}-macos-arm64-{content}'
+        manifest['id'] = f'{version}-tanzu-{brand_version}-macos-arm64-{mode}-{content}'
         (stage / 'local-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
         print(f'Packaging {len(files):,} verified files…', flush=True)
         return write_archive(stage, output, manifest)
@@ -345,6 +297,8 @@ def build(brand, output, cache, lock, sources=None):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='presentation-studio-package', description=__doc__)
+    parser.add_argument('--mode', choices=('online', 'offline'), default='online',
+                        help='Online (default) includes Python/Node and downloads tools at setup; offline includes all tools.')
     parser.add_argument('--brand', type=Path, help='Override the configured brand with a local checkout.')
     parser.add_argument('--config', type=Path, help='Source config (default: checkout’s ignored presentation-studio-package.local.json).')
     parser.add_argument('--output', type=Path, default=Path.home() / 'LocalBundles/presentation-studio')
@@ -391,7 +345,7 @@ def main(argv=None):
                     package_path = Path(spec['path']) / 'package.json' if 'path' in spec else None
                     companions[name] = {'source': spec, 'version': json.loads(package_path.read_text()).get('version')
                                         if package_path and package_path.is_file() else None}
-            print(json.dumps({'platform': lock['platform'], 'brand_source': brand_spec.get('git', str(brand)),
+            print(json.dumps({'platform': lock['platform'], 'mode': args.mode, 'brand_source': brand_spec.get('git', str(brand)),
                               'brand_version': json.loads(package.read_text())['version'] if 'path' in brand_spec and package.is_file() else None,
                               'sources': {**sources, 'brand': brand_spec},
                               'studio_version': (ROOT / 'VERSION').read_text().strip(),
@@ -399,7 +353,7 @@ def main(argv=None):
                               'tools': {name: pin['version'] for name, pin in lock['archives'].items()},
                               'output': str(output), 'cache': str(cache)}, indent=2))
             return 0
-        target, checksum = build(brand, output, cache, lock, sources)
+        target, checksum = build(brand, output, cache, lock, sources, mode=args.mode)
         print(json.dumps({'bundle': str(target), 'sha256': checksum}, indent=2))
         return 0
     except (OSError, ValueError, KeyError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile) as error:

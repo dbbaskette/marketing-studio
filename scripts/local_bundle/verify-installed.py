@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Check installed tools offline; all generated files use a disposable home."""
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 
@@ -11,12 +13,21 @@ def main():
     record = json.loads((base / 'installation.json').read_text())
     suite, extra, brand = (Path(record[key]) for key in ('suite', 'tools', 'brand'))
     slides = Path.home() / 'Library/Application Support/Harness Slides/current'
+    search = ':'.join([str(Path.home() / '.local/bin'), '/opt/homebrew/bin', '/usr/local/bin',
+                       os.environ.get('PATH', '/usr/bin:/bin')])
+    agent = record.get('assistant')
+    candidates = (agent,) if agent in ('codex', 'claude') else ('codex', 'claude')
+    assistant = next((path for name in candidates if (path := shutil.which(name, path=search))), None)
+    if assistant is None:
+        raise SystemExit('FAILED: existing Codex or Claude Code installation is not on PATH.')
     with tempfile.TemporaryDirectory(prefix='presentation-bundle-verify-') as temporary:
         home = Path(temporary)
-        paths = [extra / 'bin', extra / 'tools/bin', suite / 'runtime/python/bin', suite / 'runtime/node/bin']
+        paths = [extra / 'bin', extra / 'tools/bin', suite / 'runtime/python/bin',
+                 suite / 'runtime/node/bin', Path(assistant).parent]
         env = {'HOME': temporary, 'USERPROFILE': temporary, 'TMPDIR': temporary,
                'PATH': ':'.join(map(str, paths)) + ':/usr/bin:/bin',
                'CODEX_HOME': str(home / '.codex'), 'CLOUDSDK_CONFIG': str(home / 'gcloud'),
+               'CLAUDE_CONFIG_DIR': str(home / '.claude'),
                'CLOUDSDK_CORE_DISABLE_USAGE_REPORTING': 'true', 'GIT_CONFIG_NOSYSTEM': '1',
                'GIT_CONFIG_GLOBAL': '/dev/null', 'XDG_CACHE_HOME': str(home / 'cache')}
         (home / '.codex').mkdir()
@@ -29,7 +40,7 @@ def main():
             if result.returncode:
                 raise SystemExit('FAILED: ' + str(args[0]))
 
-        for args in (['codex', '--version'], ['gcloud', '--version'], ['git', '--version'],
+        for args in ([assistant, '--version'], ['gcloud', '--version'], ['git', '--version'],
                      ['pdfinfo', '-v'], ['node', brand / 'scripts/audit-brand.mjs', '--self'],
                      ['node', slides / 'scripts/harness-slides.mjs', 'images', 'status', '--json']):
             run(args)
