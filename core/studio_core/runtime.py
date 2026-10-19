@@ -4,7 +4,65 @@ import json
 import os
 import shlex
 import shutil
+import subprocess
 import sys
+
+
+MINIMUM_PYTHON = (3, 11)
+PYTHON_PROBE = 'import sys, tomllib; raise SystemExit(sys.version_info < (3, 11))'
+PYTHONS = ('python3.14', 'python3.13', 'python3.12', 'python3.11', 'python3',
+           '/opt/homebrew/bin/python3', '/usr/local/bin/python3',
+           '/Library/Frameworks/Python.framework/Versions/Current/bin/python3')
+
+
+def supported_python(root):
+    """Find an existing interpreter; never download, install or change shell settings."""
+    def usable(path):
+        try:
+            result = subprocess.run([str(path), '-c', PYTHON_PROBE],
+                                    stdin=subprocess.DEVNULL, capture_output=True,
+                                    timeout=5)
+            return result.returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+
+    private = Path(root) / 'runtime/python/bin/python3'
+    if private.is_file():
+        return str(private) if usable(private) else None
+    tried = set()
+    for candidate in PYTHONS:
+        path = shutil.which(candidate)
+        if path and path not in tried:
+            tried.add(path)
+            if usable(path):
+                return path
+    uv = shutil.which('uv')
+    if uv:
+        try:
+            result = subprocess.run([uv, 'python', 'find', '--offline',
+                                     '--no-python-downloads', '--no-project', '--no-config',
+                                     '>=3.11'], stdin=subprocess.DEVNULL,
+                                    capture_output=True, text=True, timeout=5)
+            path = result.stdout.strip()
+            if result.returncode == 0 and Path(path).is_absolute() and usable(path):
+                return path
+        except (OSError, subprocess.TimeoutExpired, UnicodeError):
+            pass
+    return None
+
+
+def ensure_python(root, module=None):
+    """Bootstrap before application imports, including under macOS's older Python."""
+    if sys.version_info >= MINIMUM_PYTHON:
+        return
+    python = supported_python(root)
+    if python is None:
+        print('Marketing Studio requires Python 3.11 or newer. Open it with a supported '
+              'Python interpreter, or use the matching Marketing Studio download with '
+              'its private runtime.', file=sys.stderr)
+        raise SystemExit(2)
+    entry = ['-m', module] if module else [str(Path(sys.argv[0]).absolute())]
+    os.execv(python, [python, *entry, *sys.argv[1:]])
 
 
 def assistant_target(home):

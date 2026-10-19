@@ -12,6 +12,27 @@ from studio_core import workspace_setup, onboarding, preferences
 
 
 class SharedSetupTests(IsolatedHome):
+    def test_repository_only_brand_save_is_shared_without_installing(self):
+        for repository in ('https://example.com/team/brand-skill.git', 'git@example.com:team/brand-skill.git'):
+            with self.subTest(repository=repository):
+                shared.path().write_text('{"schema": 1, "unrelated": {"keep": true}}')
+                with mock.patch('subprocess.Popen') as start, mock.patch('subprocess.run') as run:
+                    self.write('/api/shared', {'changes': {'brand': {'repository': repository}}, 'seen': {}})
+                    for product in ('Blog Studio', 'Presentation Studio', 'Training Studio'):
+                        page = onboarding.Controller(8000, 'a' * 40, product, 'X-Test-Token', lambda _: None, shared)
+                        brand = page.snapshot()['shared']['brand']
+                        self.assertEqual(brand['repository'], repository)
+                        self.assertFalse(brand.get('skill'))
+                    start.assert_not_called()
+                    run.assert_not_called()
+                self.assertEqual(json.loads(shared.path().read_text())['unrelated'], {'keep': True})
+                seen = shared.read()[0]
+                shared.update({'brand': {'repository': 'https://example.com/new/brand.git'}})
+                status, _ = self.request(self.controller(), 'shared', {
+                    'changes': {'brand': {'repository': repository}}, 'seen': seen})
+                self.assertEqual(status, 409)
+                self.assertEqual(shared.read()[0]['brand']['repository'], 'https://example.com/new/brand.git')
+
     def headers(self, token='a' * 40):
         headers = Message()
         for key, value in {'Host': '127.0.0.1:8000', 'Origin': 'http://127.0.0.1:8000',
