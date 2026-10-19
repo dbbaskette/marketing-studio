@@ -54,7 +54,7 @@ def download(pin, cache):
     return target
 
 
-def unpack(archive, destination, node=False):
+def unpack(archive, destination, node=False, exclude=()):
     """Flatten only internal tar links into regular files; never extract paths verbatim."""
     destination.mkdir(parents=True, exist_ok=False)
     with tarfile.open(archive, 'r:gz') as tar:
@@ -75,6 +75,8 @@ def unpack(archive, destination, node=False):
             if member.isdir():
                 continue
             relative = PurePosixPath(member.name).parts[1:]
+            if '/'.join(relative) in exclude:
+                continue
             # Browser-based studios never use a private terminal database. Linux's
             # terminfo filenames differ only by case and cannot be staged on the
             # usual case-insensitive macOS filesystem. System curses keeps using

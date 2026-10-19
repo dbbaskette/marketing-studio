@@ -1,0 +1,69 @@
+PRESENTATION STUDIO — APPLE SILICON MAC LOCAL BUNDLE
+
+Requires an Apple Silicon Mac running macOS @MINIMUM_MACOS@ or newer. Open
+Terminal natively, without Rosetta. Generated archives are local and untracked.
+
+1. Extract the ZIP completely.
+2. Open Install Presentation Studio.command.
+3. Open ~/Applications/Open Presentation Studio.command and finish setup.
+
+Setup installs from this archive without downloading dependencies or signing in.
+It registers Presentation Studio, Harness Slides, Harness Research and Tanzu Brand
+for Codex and Claude Code. It preserves existing workspaces and saved settings.
+Close running studios before installation. No administrator install is required.
+
+INCLUDED
+Presentation Studio @STUDIO_VERSION@; shared Marketing Studio launcher/setup;
+Harness Slides @SLIDES_VERSION@ with production Node packages;
+Harness Research @RESEARCH_VERSION@; Tanzu Brand @BRAND_VERSION@ with its templates,
+contracts, logos, icons and guidance; Python @PYTHON_VERSION@; Node @NODE_VERSION@;
+Codex CLI @CODEX_VERSION@; LibreOffice @LIBREOFFICE_VERSION@;
+Poppler, Git and their native dependencies; Google Cloud CLI @GOOGLE_CLOUD_CLI_VERSION@;
+Harness Slides Gemini API image tools, using the bundled Node runtime.
+Arial must be present in macOS or a licensed font installation; fonts are not redistributed.
+
+SIGN-IN ON THE DESTINATION MAC
+After installation, open ~/Applications/Open Presentation Studio Tools.command.
+It opens a terminal with private tools on PATH. Run these commands there:
+
+  codex login
+  gcloud auth login --enable-gdrive-access --force
+
+Google Drive access does not guarantee native Slides API permission. Follow the
+installed Harness Slides references/google-slides.md to check a presentation.
+Google account policy, enabled APIs and OAuth scopes may require account setup.
+
+Configure GEMINI_API_KEY privately in your environment before launching the
+assistant. Never paste a key into chat. Harness Slides references/images.md
+explains status/check and per-image approval. Generation requires internet access
+and a paid remote service. The upstream Gemini provider is not live-verified;
+the first authenticated check remains a destination task.
+The standard Gemini API route is included. The legacy unofficial Gemini browser
+session route and browser-based brand development audits are not configured.
+Claude Code uses an existing installation if selected; Codex is included.
+Credentials, browser profiles, personal content and workspaces are not bundled.
+
+VERIFY
+  bash "Install Presentation Studio.command" --verify-only
+After installation, open ~/Applications/Verify Presentation Studio.command for
+offline tool, skill and PowerPoint-to-PDF-to-PNG checks. Generated files use a
+disposable HOME and no provider calls are made. Architecture and file checksums
+are checked during packaging; native ARM execution and authenticated service
+checks must be verified on the destination Mac.
+
+ADVANCED
+  bash "Install Presentation Studio.command" --target codex
+  bash "Install Presentation Studio.command" --home /absolute/disposable/home
+Private tools: ~/.local/share/presentation-studio-local-bundle/versions/
+Brand: ~/Library/Application Support/Tanzu Brand/
+Rerun this installer to restore private-tool launcher paths after a standard suite
+update. No automatic update is enabled. The ZIP can be deleted after installation.
+
+INTEGRITY AND LICENSES
+local-manifest.json records file checksums, component versions and source pins.
+The ZIP has a SHA-256 sidecar. Licenses are retained in source, apps and packages.
+Source: Marketing Studio runtime/companion pins and the Tanzu Brand release packer.
+LibreOffice: https://www.libreoffice.org/
+Google Cloud CLI: https://docs.cloud.google.com/sdk/docs/install-sdk
+Poppler/Git: https://conda.anaconda.org/conda-forge/
+Micromamba: https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html
