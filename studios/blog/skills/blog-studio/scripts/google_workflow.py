@@ -868,7 +868,7 @@ def start(root, args):
     # A repeated start selects the existing blog; never replace local edits or its baseline.
     matches = []
     for folder in sorted(studio.inside(root, 'articles').iterdir()):
-        if not folder.is_dir():
+        if not folder.is_dir() or folder.name.startswith('.'):
             continue
         _, existing = studio.item(root, 'articles', folder.name)
         for base in existing.get('google', {}).get('baselines', {}).values():

@@ -24,6 +24,7 @@ import editorial
 from experience import page
 import blog_library
 import source_curator
+from google_drive import GoogleError
 from studio_core.server import Server as LoopbackServer
 from hub_store import HubError, TransportError, AuthenticationError, encoded, sha
 
@@ -1243,6 +1244,12 @@ def _dispatch(root, route, data):
 
             return settings(root, data)
         adapter = authorize_write(root)
+        if route in ('google-preview', 'google-start'):
+            import google_intake
+
+            return (google_intake.preview if route == 'google-preview' else google_intake.start)(
+                root, data
+            )
         if route.startswith('run-'):
             from blog_runner import dispatch as run_dispatch
 
@@ -1420,6 +1427,10 @@ def _dispatch(root, route, data):
 def dispatch(root, route, data):
     from team_workspace import space, before, saved, status, refresh, action, join
 
+    if route == 'google-preview':
+        # A preview stages only the selected Doc on this computer; it does not
+        # publish unrelated pending team work or start a writing job.
+        return _dispatch(root, route, data)
     if route in ('brand-configure', 'brand-install'):
         import brand_skill
 
@@ -1473,7 +1484,11 @@ def dispatch(root, route, data):
         )
     result = _dispatch(root, route, data)
     if space(root) and route != 'run-settings':
-        ident = result.get('id') if route.startswith('run-') or route == 'schedule' else None
+        ident = (
+            result.get('id')
+            if route.startswith('run-') or route in ('schedule', 'google-start')
+            else None
+        )
         result['team_sync'] = saved(root, ident)
     return result
 
@@ -1526,7 +1541,7 @@ def failure(exc, writing=False):
         return 400, {
             'error': 'This request was missing expected information. Reload the desk and try again, or continue in chat.'
         }
-    if isinstance(exc, (ValueError, HubError)):
+    if isinstance(exc, (ValueError, HubError, GoogleError)):
         return 400, {'error': str(exc)[:500]}
     if isinstance(exc, OSError):
         after = 'Inspect retained work before retrying.' if writing else 'Saved work is preserved.'

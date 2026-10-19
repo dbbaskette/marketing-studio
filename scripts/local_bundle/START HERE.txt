@@ -4,8 +4,13 @@ Requires an Apple Silicon Mac running macOS @MINIMUM_MACOS@ or newer. Open
 Terminal natively, without Rosetta. Generated archives are local and untracked.
 
 1. Extract the ZIP completely.
-2. Open Install Presentation Studio.command.
-3. Open ~/Applications/Open Presentation Studio.command and finish setup.
+2. Open Terminal in the extracted folder and run:
+     bash install.sh
+3. Start the UI from Terminal and finish setup:
+     bash "$HOME/.local/share/presentation-studio/studio"
+
+No .command launcher is needed. The Finder launcher remains available as an
+alternative and uses the same installer. Keep the extracted folder together.
 
 @SETUP_DOWNLOADS@
 Setup does not sign in or start provider jobs.
@@ -28,8 +33,9 @@ Micromamba @MICROMAMBA_VERSION@ for the private Git and preview tool environment
 Arial must be present in macOS or a licensed font installation; fonts are not redistributed.
 
 SIGN-IN ON THE DESTINATION MAC
-After installation, open ~/Applications/Open Presentation Studio Tools.command.
-It opens a terminal with private tools on PATH. Run these commands there:
+After installation, run this in Terminal:
+  bash "$HOME/Applications/Open Presentation Studio Tools.sh"
+It opens a shell with private tools on PATH. Run these commands there:
 
   gcloud auth login --enable-gdrive-access --force
 
@@ -50,16 +56,17 @@ Codex and Claude Code both use existing installations and are not bundled.
 Credentials, browser profiles, personal content and workspaces are not bundled.
 
 VERIFY
-  bash "Install Presentation Studio.command" --verify-only
-After installation, open ~/Applications/Verify Presentation Studio.command for
+  bash install.sh --verify-only
+After installation, run the following for
 offline tool, skill and PowerPoint-to-PDF-to-PNG checks. Generated files use a
 disposable HOME and no provider calls are made. Architecture and file checksums
 are checked during packaging; native ARM execution and authenticated service
 checks must be verified on the destination Mac.
+  bash "$HOME/Applications/Verify Presentation Studio.sh"
 
 ADVANCED
-  bash "Install Presentation Studio.command" --target codex
-  bash "Install Presentation Studio.command" --home /absolute/disposable/home
+  bash install.sh --target codex
+  bash install.sh --home /absolute/disposable/home
 Private tools: ~/.local/share/presentation-studio-local-bundle/versions/
 Brand: ~/Library/Application Support/Tanzu Brand/
 Rerun this installer to restore private-tool launcher paths after a standard suite

@@ -7,13 +7,13 @@ import zipfile
 
 from .packaging import files
 
-ROOT_FILES = ('VERSION', 'LICENSE', 'README.md', 'SUITE.json', 'distribution.json', 'marketing-studio',
+ROOT_FILES = ('VERSION', 'LICENSE', 'README.md', 'SUITE.json', 'distribution.json', 'marketing-studio', 'install.sh',
               'Open Marketing Studio.command', 'docs/architecture.md', 'docs/testing.md',
               'docs/provenance.md', 'docs/installation.md', 'docs/core-status.md', 'docs/migration-plan.md',
               'docs/shared-setup.md', 'docs/local-network.md', 'docs/local-presentation-bundle.md',
               'docs/migration/imports.json')
 NATIVE_DIRS = {'skills', 'runner', 'installer', 'bootstrap', 'guidance', 'docs'}
-NATIVE_FILES = {'README.md', 'LICENSE', 'VERSION'}
+NATIVE_FILES = {'README.md', 'LICENSE', 'VERSION', 'install.sh'}
 SKIP = {'__pycache__', '.git', '.DS_Store', '.pytest_cache'}
 
 

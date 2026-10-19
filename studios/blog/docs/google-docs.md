@@ -4,6 +4,12 @@ Blog Studio can guide Google Docs work inside your existing harness. Its Google
 workflows load only when you supply a Google Doc or request a Google operation.
 Your normal writing workflow needs no Google account or extra CLI.
 
+On the page, choose **Open Google Doc** on Home or Blogs to preview and import an
+existing manuscript. Confirm the text and structure before importing; then choose
+review or revision. The original Doc stays linked, and reopening it preserves
+local edits. Import sends no Google edits, comments or sharing changes and starts
+no assistant job. See [the page workflow](runner.md#start-from-a-google-doc).
+
 | Ask Blog Studio | What happens |
 | --- | --- |
 | “Start from this Google Doc: [link].” | Saves the original, draft and formatted snapshot; links that same Doc for future edits and suggestions. |

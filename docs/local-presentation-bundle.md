@@ -181,11 +181,19 @@ links, duplicate names, missing entries and unexpected files. ZIP permissions
 preserve the installation launcher. Packaging does not certify native ARM
 execution or live services.
 
-On the destination Mac, extract the ZIP and open **Install Presentation Studio.command**.
-Then use `~/Applications/Verify Presentation Studio.command` for offline tool,
-brand, PowerPoint, PDF and PNG checks. The verification uses disposable output
-and account directories. **Open Presentation Studio Tools.command** opens a
-terminal with the private tools for destination sign-in.
+On the destination Mac, extract the ZIP, open Terminal in the extracted folder,
+and run `bash install.sh`. It uses the bundled Python and does not open a
+`.command` file. The Finder launcher remains available as an alternative.
+Start the UI from Terminal after installation:
+
+```sh
+bash "$HOME/.local/share/presentation-studio/studio"
+```
+
+Use `bash "$HOME/Applications/Verify Presentation Studio.sh"` for offline tool,
+brand, PowerPoint, PDF and PNG checks. Verification uses disposable output and
+account directories. `bash "$HOME/Applications/Open Presentation Studio Tools.sh"`
+opens a terminal session with the private tools for destination sign-in.
 
 Both modes install Presentation Studio, the Marketing Studio launcher/setup,
 Harness Slides, Harness Research, Tanzu Brand, private Python/Node,
