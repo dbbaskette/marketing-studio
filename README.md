@@ -272,8 +272,10 @@ bash scripts/ci/tart-macos.sh
 
 Read the [architecture](docs/architecture.md), [installation guide](docs/installation.md), [testing guide](docs/testing.md),
 [migration plan](docs/migration-plan.md), and [source provenance](docs/provenance.md).
-To regenerate the local Apple Silicon Presentation Studio bundle with Tanzu Brand
-and its tools, see the [local packaging guide](docs/local-presentation-bundle.md).
+Use `presentation-studio-package` to regenerate the local Apple Silicon
+Presentation Studio bundle with Tanzu Brand and its tools; the
+[local packaging guide](docs/local-presentation-bundle.md) covers CLI setup and
+local or Git repository configuration for the companion skills and brand.
 The studios' Git histories are preserved under their new directories. Unfinished
 Blog Studio research work is preserved on a separate migration branch.
 

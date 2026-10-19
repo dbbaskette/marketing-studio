@@ -121,6 +121,7 @@ class PythonBootstrapTests(unittest.TestCase):
                'STUDIOS_CONFIG': str(home / 'shared.json'),
                'MARKETING_STUDIO_DATA': str(home / 'data'), 'PYTHONDONTWRITEBYTECODE': '1'}
         entries = ([str(ROOT / 'marketing-studio'), '--version'],
+                   [str(ROOT / 'presentation-studio-package'), '--help'],
                    ['-m', 'marketing_studio', '--version'],
                    [str(ROOT / 'marketing_studio/bridge.py'), '--help'],
                    [str(ROOT / 'installer/install.py'), '--help'])

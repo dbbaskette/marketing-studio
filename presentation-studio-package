@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""Build the local Presentation Studio bundle using an existing supported Python."""
+import sys
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(_ROOT / 'core'))
+from studio_core.runtime import ensure_python
+
+ensure_python(_ROOT)
+
+sys.path.insert(0, str(_ROOT / 'scripts'))
+from build_presentation_bundle import main
+
+raise SystemExit(main())

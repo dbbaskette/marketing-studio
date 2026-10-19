@@ -11,3 +11,4 @@ test-results/
 /scripts/cleanup/
 /dist/
 /build/
+/presentation-studio-package.local.json

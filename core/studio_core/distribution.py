@@ -15,7 +15,7 @@ import tarfile
 import tempfile
 import urllib.request
 
-from .companions import fetch_companion, read_pins
+from .companions import fetch_companion, read_pins, tree_digest
 
 PLATFORMS = ('macos-arm64', 'macos-x64', 'linux-arm64', 'linux-x64')
 
@@ -147,9 +147,16 @@ def python_notices(pin, cache, destination):
             raise ValueError('The Python build source did not contain its dependency notices.')
 
 
-def prepare(root, destination, target, cache, studios):
+def prepare(root, destination, target, cache, studios, companion_sources=None):
     """A developer build; never uses installed skills, credentials, or a real HOME."""
     root, destination, cache = Path(root).resolve(), Path(destination).resolve(), Path(cache).resolve()
+    companions = read_pins((destination if companion_sources is not None else root) / 'pins/companions.json')
+    sources = companion_sources or {}
+    if set(sources) - set(companions):
+        raise ValueError('Unknown configured companion source.')
+    for name, source in sources.items():
+        if tree_digest(Path(source)) != companions[name]['sha256']:
+            raise ValueError('Configured companion source failed its checksum: ' + name)
     pins = json.loads((root / 'pins/runtimes.json').read_text())
     selected = pins['platforms'][target]
     runtime = destination / 'runtime'
@@ -158,7 +165,6 @@ def prepare(root, destination, target, cache, studios):
         unpack(download(selected[name], cache / 'downloads'), runtime / name, node=name == 'node')
     python_notices(pins['python_notices'], cache, runtime / 'python/licenses')
     (runtime / 'platform').write_text(target + '\n')
-    companions = read_pins(root / 'pins/companions.json')
     if studios == ['blog']:
         companions = {name: pin for name, pin in companions.items() if name == 'harness-research'}
     record = {'schema': 1, 'platform': target,
@@ -176,7 +182,7 @@ def prepare(root, destination, target, cache, studios):
                    NPM_CONFIG_CACHE=str(cache / 'npm'), NPM_CONFIG_GLOBALCONFIG=str(home / 'npm-global.conf'),
                    GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
         for name, pin in companions.items():
-            checkout = fetch_companion(name, pin, cache)
+            checkout = Path(sources[name]) if name in sources else fetch_companion(name, pin, cache)
             shared = work / name
             command = ['node', str(checkout / pin['installer']), '--home', str(home), '--shared', str(shared)]
             if name == 'harness-slides':
@@ -193,5 +199,7 @@ def prepare(root, destination, target, cache, studios):
             copy_regular(prepared, output)
             record['companions'][name] = {'version': pin['version'], 'id': prepared.name,
                                          'commit': pin['commit'], 'source_sha256': pin['sha256']}
+            if 'source' in pin:
+                record['companions'][name]['source'] = pin['source']
     (destination / 'distribution.json').write_text(json.dumps(record, indent=2) + '\n')
     return record
