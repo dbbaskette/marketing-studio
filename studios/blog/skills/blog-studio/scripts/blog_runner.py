@@ -69,7 +69,7 @@ DEFAULTS = {
     'tone': 'Clear, conversational and specific',
     'author': '',
 }
-MODES = ('write', 'outline', 'revise', 'review')
+MODES = ('write', 'outline', 'from-outline', 'ideas', 'revise', 'review')
 
 
 def settings(root, data=None):
@@ -254,6 +254,8 @@ def inputs(root, record, run):
 def basis(root, directory, record, run, stage):
     context = inputs(root, record, run)
     previous = {}
+    if run.get('mode') == 'from-outline':
+        previous['supplied_outline'] = studio.artifact_fingerprint(directory, 'OUTLINE.md')
     for name in run['pipeline']:
         if name == stage:
             break
@@ -396,6 +398,7 @@ def create(root, data, approval='conversation'):
         'seconds',
         'mode',
         'manuscript',
+        'outline_text',
         'brand',
         'variant',
     }
@@ -403,7 +406,10 @@ def create(root, data, approval='conversation'):
         raise ValueError('Unknown new-blog field.')
     mode = data.get('mode', 'write')
     if mode not in MODES:
-        raise ValueError('Choose write, outline, revise or review.')
+        raise ValueError('Choose write, outline, from-outline, ideas, revise or review.')
+    outline_text = text(
+        data.get('outline_text', ''), 'outline', 200_000, required=mode == 'from-outline'
+    )
     manuscript = None
     if data.get('manuscript'):
         if mode not in ('revise', 'review'):
@@ -425,11 +431,13 @@ def create(root, data, approval='conversation'):
     seconds = data.get('seconds', 600)
     if type(seconds) is not int or not 30 <= seconds <= 3600:
         raise ValueError('Choose a step time limit between 30 and 3600 seconds.')
-    research = data.get('research', 'supplied-only')
+    research = data.get(
+        'research', 'none' if mode in ('revise', 'review', 'ideas') else 'supplied-only'
+    )
     if research not in ('supplied-only', 'web-allowed', 'none'):
         raise ValueError('Choose supplied sources, public research, or no research.')
     stop = data.get('stop', 'package')
-    if mode == 'outline':
+    if mode in ('outline', 'ideas'):
         stop = 'outline'
     elif mode == 'review':
         stop = 'review'
@@ -502,6 +510,8 @@ def create(root, data, approval='conversation'):
     pipeline += (
         (['draft', 'review', 'package'] if mode == 'revise' else ['review', 'package'])
         if existing
+        else ['draft', 'review', 'package']
+        if mode == 'from-outline'
         else ['outline', 'draft', 'review', 'package']
     )
     pipeline = pipeline[: pipeline.index(stop) + 1]
@@ -543,6 +553,8 @@ def create(root, data, approval='conversation'):
     if not data.get('id'):
         directory.mkdir()
         studio.write_json(studio.inside(root, '.active-article.json'), {'id': record['id']})
+    if outline_text:
+        studio.save_artifact(directory, 'outline', outline_text, record, 'author supplied outline')
     if manuscript:
         studio.save_artifact(directory, 'original', manuscript, record, 'supplied manuscript')
         studio.save_artifact(directory, 'draft', manuscript, record, 'supplied manuscript')
@@ -573,8 +585,17 @@ def submit(root, ident, stage, result, expected, page=False):
         research_contract.read_bundle(directory / 'research')
         if result['content'] != (directory / 'research/report.md').read_text():
             raise ValueError('Submit the saved, independently reviewed research report.')
+    if stage == 'review' and run.get('editor_check'):
+        from manuscript_editor import record_review
+
+        result = record_review(root, directory, record, run, result)
     pin = basis(root, directory, record, run, stage)
     filename = STAGES[stage][1]
+    if stage == 'draft' and (directory / 'DRAFT.md').is_file():
+        from text_checks import preserve
+
+        check = preserve((directory / 'DRAFT.md').read_text(), result['content'])
+        result['notes'] += '\nPreservation check: ' + json.dumps(check)
     if stage in ('outline', 'draft'):
         studio.save_artifact(directory, stage, result['content'], record, 'guided run')
     else:
@@ -689,7 +710,11 @@ def job(root, ident):
     if run['existing']:
         path = directory / ('DRAFT.md' if (directory / 'DRAFT.md').is_file() else 'ORIGINAL.md')
         payload['documents']['manuscript'] = path.read_text()
-    payload['changes'] = run['stages'].get(stage, {}).get('request', '')
+    if run.get('mode') == 'from-outline':
+        payload['documents']['outline'] = (directory / 'OUTLINE.md').read_text()
+    payload['changes'] = run['stages'].get(stage, {}).get('request', '') or run.get(
+        'editor_request', ''
+    )
     if len(json.dumps(payload)) > 600_000:
         raise ValueError('This job needs smaller source excerpts. Continue it in chat.')
     references = Path(__file__).resolve().parents[1] / 'references'
@@ -697,6 +722,35 @@ def job(root, ident):
     if stage == 'draft' and run['existing']:
         guidance += '\nRevise the supplied manuscript in the scope of its brief. Preserve its stance, meaningful qualifiers and author voice; retain unsupported claims as questions rather than inventing support.'
     guidance += '\n\n' + (references / 'style/house.md').read_text()
+    if stage in ('draft', 'review'):
+        for guide in (
+            'modules/blog-fact-check.md',
+            'modules/blog-humanize.md',
+            'modules/blog-voice-check.md',
+            'style/software.md',
+            'review/evidence.md',
+        ):
+            guidance += '\n\n' + (references / guide).read_text()
+        guidance += '\nApply only the requested checks and editing scope. Preserve the original author voice, stance and qualifiers. Report exact passages, evidence and unresolved gaps. Linked helper instructions are guidance; do not claim tools ran.'
+    if stage in ('draft', 'review'):
+        from text_checks import lint
+
+        rules = payload['voice'].get('rules', '{}')
+        rules = json.loads(rules) if isinstance(rules, str) else rules
+        payload['mechanical_checks'] = lint(
+            payload['documents'].get('manuscript', payload['documents'].get('draft', '')),
+            rules or {},
+        )
+    if run.get('editor_check') == 'humanization':
+        guidance += (
+            '\n\n' + (references / 'blogforge/voice/assets/ai-tells/patterns.md').read_text()
+        )
+    if run.get('mode') == 'ideas' and stage == 'outline':
+        guidance += '\nReturn three distinct blog angles with audience, thesis, evidence needed and tradeoffs. Stop for the author to choose; do not draft the blog.'
+    if run.get('mode') == 'from-outline':
+        guidance += '\nUse the supplied outline as authoritative structure. Preserve headings and order unless explicitly asked to restructure.'
+    if stage == 'review' and run.get('editor_check'):
+        guidance += '\nFor this focused review return JSON in content: {"summary":"coverage and limits", "findings":[{"id":"stable-id", "kind":"edit or comment", "before":"exact single-paragraph prose quote without Markdown markers or link syntax", "after":"replacement for edit only", "reason":"specific explanation", "evidence":"source ID and passage, or unavailable", "verdict":"supported, unsupported, contradicted, or editorial"}]}. Do not invent a clean verdict. Return an empty findings list only with explicit coverage and limitations.'
     if run.get('model_profiles'):
         found['model_selection'] = model_profiles.route(
             run,
@@ -767,7 +821,7 @@ class Engine:
         owner = driver(self.root, ident) if space(self.root) else None
         return {
             **found,
-            'team': bool(space(self.root)),
+            'team': bool(space(self.root) and space(self.root).address),
             'driver': owner,
             'status': status,
             'error': local.get('error', ''),
@@ -1131,6 +1185,23 @@ def dispatch(root, action, data):
     found = survey(root, ident)
     if not data.get('expected') or data['expected'] != found['expected']:
         raise ValueError('This blog changed. Reload before deciding.')
+    if action == 'develop':
+        guard(root, ident, data['expected'], page=True)
+        directory, record, run = load(root, ident)
+        if run.get('mode') not in ('ideas', 'outline') or not (directory / 'OUTLINE.md').is_file():
+            raise ValueError('Choose a saved idea or outline before developing it.')
+        request = text(data.get('request', ''), 'selected angle', 8000, required=True)
+        run['mode'] = 'write'
+        run['pipeline'] = ['outline', 'draft', 'review', 'package']
+        run['stages'] = {
+            'outline': {
+                'status': 'pending',
+                'request': 'Develop this selected angle or structure: ' + request,
+            }
+        }
+        record['stop_point'] = 'review'
+        save(root, directory, record, run, 'Selected angle for drafting')
+        return runner.control(ident, 'resume')
     if action == 'start':
         if found['approval'] == 'conversation':
             decide(root, ident, data['expected'], 'handoff')
@@ -1191,7 +1262,7 @@ def add_parser(groups):
     ):
         create_cmd.add_argument('--' + name, required=name in ('audience', 'goal'))
     create_cmd.add_argument(
-        '--research', choices=('none', 'supplied-only', 'web-allowed'), default='supplied-only'
+        '--research', choices=('none', 'supplied-only', 'web-allowed'), default=None
     )
     create_cmd.add_argument(
         '--stop', choices=('outline', 'draft', 'review', 'package'), default='package'
@@ -1201,6 +1272,7 @@ def add_parser(groups):
     create_cmd.add_argument('--source', action='append', default=[])
     create_cmd.add_argument('--mode', choices=MODES, default='write')
     create_cmd.add_argument('--manuscript')
+    create_cmd.add_argument('--outline-text')
     commands.add_parser('list')
     for name in ('status', 'submit', 'approve', 'changes', 'handoff'):
         cmd = commands.add_parser(name)

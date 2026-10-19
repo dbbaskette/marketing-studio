@@ -512,8 +512,22 @@ def freshness(root, directory, record):
         if any(saved['inputs'].get(key) != current[key] for key in keys):
             shown['status'] = 'stale'
             shown['previous_status'] = saved['status']
-        if check == 'factual-support' and not any(
-            e['status'] == 'ready' and e['readable'] for e in evidence
+        research_current = False
+        if check == 'factual-support' and saved.get('result', {}).get('research_digest'):
+            from studio_core import research_contract
+
+            try:
+                _, manifest = research_contract.read_bundle(directory / 'research')
+                research_current = manifest['digest'] == saved['result']['research_digest']
+            except (ValueError, OSError):
+                pass
+            if not research_current:
+                shown['status'] = 'stale'
+                shown['detail'] = 'The reviewed research changed or is unavailable.'
+        if (
+            check == 'factual-support'
+            and not research_current
+            and not any(e['status'] == 'ready' and e['readable'] for e in evidence)
         ):
             shown['status'] = 'unavailable'
             shown['detail'] = 'No readable factual references are selected.'
