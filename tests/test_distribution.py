@@ -192,6 +192,29 @@ class OfflineInstallTests(unittest.TestCase):
         self.assertEqual(current.resolve(), newer)
         self.assertEqual((self.home / '.agents/skills/harness-slides').resolve(), newer)
 
+    def prerelease(self):
+        name, version = 'harness-research', '1.0.1-alpha.1'
+        self.record['companions'][name] = {'version': version, 'id': version + '-' + 'b' * 20}
+        (self.source / 'companions' / name / 'package.json').write_text(json.dumps({'version': version}))
+        (self.source / 'distribution.json').write_text(json.dumps(self.record))
+        return name, version
+
+    def test_configured_prerelease_installs_offline(self):
+        name, version = self.prerelease()
+        self.install()
+        current = self.home / '.agents/skills' / name
+        self.assertEqual(json.loads((current / 'package.json').read_text())['version'], version)
+
+    def test_stable_install_is_preserved_over_a_prerelease_of_the_same_version(self):
+        name, _ = self.prerelease()
+        current = offline_install.shared_root(self.home, name) / 'current'
+        stable = current.parent / 'versions/1.0.1-stable'
+        stable.mkdir(parents=True)
+        (stable / 'package.json').write_text('{"version":"1.0.1"}')
+        current.symlink_to('versions/' + stable.name)
+        self.install()
+        self.assertEqual(current.resolve(), stable)
+
     def test_existing_upstream_lock_refuses_changes_and_is_preserved(self):
         root = offline_install.shared_root(self.home, 'harness-research')
         root.mkdir(parents=True)

@@ -2,8 +2,11 @@
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import struct
+import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -21,6 +24,59 @@ class PresentationBundleTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory(prefix='presentation-bundle-test-')
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
+
+    def test_cli_installs_a_source_link_and_repeated_install_preserves_it(self):
+        target = builder.install_cli(self.root)
+        self.assertEqual(target, self.root / '.local/bin/presentation-studio-package')
+        self.assertEqual(target.resolve(), ROOT / 'presentation-studio-package')
+        before = target.lstat().st_ino
+        self.assertEqual(builder.install_cli(self.root), target)
+        self.assertEqual(before, target.lstat().st_ino)
+
+    def test_cli_install_preserves_unrelated_commands_and_broken_links(self):
+        target = self.root / '.local/bin/presentation-studio-package'
+        target.parent.mkdir(parents=True)
+        target.write_text('existing command')
+        with self.assertRaisesRegex(ValueError, 'unrelated command'):
+            builder.install_cli(self.root)
+        self.assertEqual(target.read_text(), 'existing command')
+        target.unlink()
+        target.symlink_to(self.root / 'other-checkout/missing-command')
+        before = target.readlink()
+        with self.assertRaisesRegex(ValueError, 'unrelated command'):
+            builder.install_cli(self.root)
+        self.assertEqual(target.readlink(), before)
+
+    def test_installed_cli_forwards_options_from_another_working_directory(self):
+        target = builder.install_cli(self.root)
+        brand = self.root / 'sample brand'
+        brand.mkdir()
+        (brand / 'package.json').write_text('{"version":"1.2.3"}')
+        output = self.root / 'local output'
+        config = self.root / 'sources.json'
+        config.write_text('{"schema":1,"sources":{}}')
+        env = {'HOME': str(self.root), 'PATH': str(Path(sys.executable).parent),
+               'STUDIOS_CONFIG': str(self.root / 'disposable-settings.json')}
+        result = subprocess.run([sys.executable, str(target), '--plan', '--brand', str(brand),
+                                 '--output', str(output), '--config', str(config)], cwd=self.root, env=env,
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertEqual(plan['brand_source'], str(brand))
+        self.assertEqual(plan['output'], str(output))
+        self.assertEqual(plan['brand_version'], '1.2.3')
+        self.assertFalse(output.exists())
+        self.assertFalse((self.root / 'disposable-settings.json').exists())
+
+    def test_cli_discovery_does_not_depend_on_the_source_working_directory(self):
+        target = builder.install_cli(self.root)
+        self.assertTrue(os.access(target, os.X_OK))
+        result = subprocess.run([sys.executable, str(target), '--help'], cwd=self.root,
+                                env={'HOME': str(self.root)}, capture_output=True,
+                                text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('usage: presentation-studio-package', result.stdout)
+        self.assertIn('--install-cli', result.stdout)
 
     def stage(self):
         root = self.root / 'Presentation-Studio-test-macos-arm64'

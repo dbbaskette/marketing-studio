@@ -78,6 +78,14 @@ def as_tuple(version: str) -> tuple:
     return tuple(int(part) for part in version.split('-', 1)[0].split('.'))
 
 
+def version_key(version: str) -> tuple:
+    """Order stable and prerelease versions, including numeric prerelease identifiers."""
+    core, separator, prerelease = version.partition('-')
+    identifiers = tuple((0, int(part)) if part.isdigit() else (1, part)
+                        for part in prerelease.split('.')) if separator else ()
+    return as_tuple(core), not separator, identifiers
+
+
 def minimum_version(pin: dict) -> str:
     """Exact locks remain readable; a requirement opts into newer stable tags."""
     requirement = pin.get('requirement')

@@ -9,7 +9,7 @@ import tempfile
 from contextlib import contextmanager
 
 from .distribution import digest, host_platform
-from .companions import tree_digest
+from .companions import tree_digest, VERSION, version_key
 
 
 def record(source):
@@ -82,8 +82,8 @@ def plan(source, home, studios, target):
     for name in names(studios):
         item = distribution['companions'].get(name)
         if not isinstance(item, dict) or not isinstance(item.get('id'), str) or not isinstance(item.get('version'), str) \
-                or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+-[a-f0-9]{20}', item['id']) \
-                or not item['id'].startswith(item['version'] + '-'):
+                or not VERSION.fullmatch(item['version']) \
+                or not re.fullmatch(re.escape(item['version']) + r'-[a-f0-9]{20}', item['id']):
             raise ValueError('Invalid prepared companion version.')
         package = source / 'companions' / name
         if not (package / 'package.json').is_file() or not (package / 'SKILL.md').is_file():
@@ -104,7 +104,7 @@ def plan(source, home, studios, target):
         previous = current / 'package.json'
         if previous.is_file():
             version = json.loads(previous.read_text()).get('version', '')
-            if re.fullmatch(r'\d+\.\d+\.\d+', version) and tuple(map(int, version.split('.'))) > tuple(map(int, item['version'].split('.'))):
+            if VERSION.fullmatch(version) and version_key(version) > version_key(item['version']):
                 result.append({'name': name, 'keep': True, 'current': current, 'links': links})
                 continue
         # An upstream install at the same source revision can have no npm packages

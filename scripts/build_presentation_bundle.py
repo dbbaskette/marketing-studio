@@ -18,10 +18,26 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'core'))
-from studio_core import bundles, distribution
+from studio_core import bundles, distribution, bundle_sources
 
 TEMPLATES = ROOT / 'scripts/local_bundle'
 ARCHIVES = {'libreoffice', 'micromamba', 'google_cloud_cli', 'codex', 'codex_native'}
+DEFAULT_CONFIG = ROOT / 'presentation-studio-package.local.json'
+
+
+def install_cli(home=None):
+    """Link this checkout's CLI into local bin without replacing another command."""
+    source = ROOT / 'presentation-studio-package'
+    if not source.is_file():
+        raise ValueError('The Presentation Studio packaging command is missing from this checkout.')
+    target = (Path.home() if home is None else Path(home)) / '.local/bin' / source.name
+    if target.is_symlink() and target.resolve() == source.resolve():
+        return target
+    if target.exists() or target.is_symlink():
+        raise ValueError('An unrelated command already exists at ' + str(target))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.symlink_to(source)
+    return target
 
 
 def safe_name(name):
@@ -243,12 +259,13 @@ def write_archive(root, output, manifest):
         pending.unlink(missing_ok=True)
 
 
-def build(brand, output, cache, lock):
-    if not (brand / 'scripts/pack-skill.mjs').is_file():
-        raise ValueError('--brand must point to the Tanzu Brand source project.')
+def build(brand, output, cache, lock, sources=None):
+    sources = dict(sources or {})
+    sources.setdefault('brand', {'path': str(brand)})
     output, cache = build_path(output), build_path(cache)
-    if output.is_relative_to(brand) or cache.is_relative_to(brand):
-        raise ValueError('Build output and cache must be outside the brand source.')
+    for spec in sources.values():
+        if 'path' in spec and (output.is_relative_to(spec['path']) or cache.is_relative_to(spec['path'])):
+            raise ValueError('Build output and cache must be outside component source checkouts.')
     for command in ('node', 'npm', 'git'):
         if not shutil.which(command):
             raise ValueError('Install the build prerequisite: ' + command)
@@ -257,6 +274,13 @@ def build(brand, output, cache, lock):
     with tempfile.TemporaryDirectory(prefix='presentation-build-', dir=cache) as temporary:
         work = Path(temporary)
         env = clean_environment(work / 'home', cache)
+        print('Snapshotting configured component repositories…', flush=True)
+        snapshots, provenance = {}, {}
+        for name, spec in sources.items():
+            snapshots[name], provenance[name] = bundle_sources.snapshot(spec, work / 'sources' / name, env)
+        brand = snapshots.pop('brand')
+        if not (brand / 'scripts/pack-skill.mjs').is_file():
+            raise ValueError('The brand repository must provide the Tanzu Brand release packer.')
         print('Packing the current Tanzu Brand source…', flush=True)
         brand_zip = work / 'brand.zip'
         brand_record = json.loads(run(['node', brand / 'scripts/pack-skill.mjs', '--output', brand_zip], env))
@@ -269,7 +293,15 @@ def build(brand, output, cache, lock):
         print('Preparing Presentation Studio and its pinned runtimes/companions…', flush=True)
         studio = stage / 'studio'
         bundles.materialize(ROOT, studio, ['presentation'])
-        record = distribution.prepare(ROOT, studio, 'macos-arm64', cache, ['presentation'])
+        companion_locks = json.loads((studio / 'pins/companions.json').read_text())
+        for name, source in snapshots.items():
+            companion_locks['companions'][name] = bundle_sources.companion_pin(
+                name, source, provenance[name], companion_locks['companions'][name])
+            shutil.rmtree(source / '.git')
+        for path in studio.rglob('companions.json'):
+            path.write_text(json.dumps(companion_locks, indent=2) + '\n')
+        record = distribution.prepare(ROOT, studio, 'macos-arm64', cache, ['presentation'],
+                                      companion_sources=snapshots)
         entries = bundles.inventory(studio, ['presentation'])
         (studio / 'bundle-manifest.json').write_text(json.dumps({
             'schema': 1, 'studios': ['presentation'],
@@ -301,6 +333,7 @@ def build(brand, output, cache, lock):
                     'files': files, 'source_commit': run(['git', '-C', ROOT, 'rev-parse', 'HEAD'], env).strip(),
                     'source_modified': bool(run(['git', '-C', ROOT, 'status', '--porcelain', '--untracked-files=normal'], env).strip()),
                     'brand_commit': brand_record['sourceCommit'], 'brand_version': brand_version,
+                    'sources': provenance,
                     'tools': lock, 'distribution': record,
                     'validation': {'native_arm_execution': False, 'live_provider_calls': False}}
         content = hashlib.sha256(json.dumps([manifest, modes], sort_keys=True).encode()).hexdigest()[:12]
@@ -311,15 +344,32 @@ def build(brand, output, cache, lock):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--brand', type=Path, default=ROOT.parent / 'tanzu-brand', help='Tanzu Brand source checkout (default: sibling tanzu-brand).')
+    parser = argparse.ArgumentParser(prog='presentation-studio-package', description=__doc__)
+    parser.add_argument('--brand', type=Path, help='Override the configured brand with a local checkout.')
+    parser.add_argument('--config', type=Path, help='Source config (default: checkout’s ignored presentation-studio-package.local.json).')
     parser.add_argument('--output', type=Path, default=Path.home() / 'LocalBundles/presentation-studio')
     parser.add_argument('--cache', type=Path, help='Verified downloads; defaults to OUTPUT/cache.')
     parser.add_argument('--tools-lock', type=Path, default=ROOT / 'pins/presentation-bundle.json')
-    parser.add_argument('--plan', action='store_true', help='Show component versions and paths without downloads or writes.')
-    parser.add_argument('--verify', type=Path, metavar='ZIP', help='Verify an existing bundle; works on Intel too.')
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument('--install-cli', action='store_true', help='Make this checkout’s packaging command available in ~/.local/bin.')
+    actions.add_argument('--init-config', action='store_true', help='Create a local source config from the tracked example.')
+    actions.add_argument('--plan', action='store_true', help='Show component versions and paths without downloads or writes.')
+    actions.add_argument('--verify', type=Path, metavar='ZIP', help='Verify an existing bundle; works on Intel too.')
     args = parser.parse_args(argv)
     try:
+        if args.init_config:
+            path = bundle_sources.init_config(args.config or DEFAULT_CONFIG,
+                                              ROOT / 'presentation-studio-package.example.json')
+            print('Created ' + str(path))
+            print('Edit sources, then run: presentation-studio-package')
+            return 0
+        if args.install_cli:
+            target = install_cli()
+            print('Installed ' + str(target))
+            print('Build a bundle: presentation-studio-package')
+            if str(target.parent) not in os.environ.get('PATH', '').split(os.pathsep):
+                print('Add ~/.local/bin to your terminal PATH: export PATH="$HOME/.local/bin:$PATH"')
+            return 0
         if args.verify:
             manifest = verify_archive(args.verify)
             print('PASS: ' + manifest['id'])
@@ -327,16 +377,29 @@ def main(argv=None):
         lock = load_lock(args.tools_lock)
         output = build_path(args.output)
         cache = build_path(args.cache or output / 'cache')
-        brand = args.brand.expanduser().resolve()
+        config = args.config.expanduser().resolve() if args.config else DEFAULT_CONFIG
+        sources = bundle_sources.load_config(config) if args.config or config.exists() else {}
+        if args.brand:
+            sources['brand'] = bundle_sources.source_spec({'path': str(args.brand)}, Path.cwd())
+        brand = Path(sources.get('brand', {}).get('path', ROOT.parent / 'tanzu-brand'))
         if args.plan:
-            print(json.dumps({'platform': lock['platform'], 'brand_source': str(brand),
-                              'brand_version': json.loads((brand / 'package.json').read_text())['version'],
+            brand_spec = sources.get('brand', {'path': str(brand)})
+            package = brand / 'package.json'
+            companions = json.loads((ROOT / 'pins/companions.json').read_text())['companions']
+            for name, spec in sources.items():
+                if name != 'brand':
+                    package_path = Path(spec['path']) / 'package.json' if 'path' in spec else None
+                    companions[name] = {'source': spec, 'version': json.loads(package_path.read_text()).get('version')
+                                        if package_path and package_path.is_file() else None}
+            print(json.dumps({'platform': lock['platform'], 'brand_source': brand_spec.get('git', str(brand)),
+                              'brand_version': json.loads(package.read_text())['version'] if 'path' in brand_spec and package.is_file() else None,
+                              'sources': {**sources, 'brand': brand_spec},
                               'studio_version': (ROOT / 'VERSION').read_text().strip(),
-                              'companions': json.loads((ROOT / 'pins/companions.json').read_text())['companions'],
+                              'companions': companions,
                               'tools': {name: pin['version'] for name, pin in lock['archives'].items()},
                               'output': str(output), 'cache': str(cache)}, indent=2))
             return 0
-        target, checksum = build(brand, output, cache, lock)
+        target, checksum = build(brand, output, cache, lock, sources)
         print(json.dumps({'bundle': str(target), 'sha256': checksum}, indent=2))
         return 0
     except (OSError, ValueError, KeyError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile) as error:

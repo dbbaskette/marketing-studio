@@ -51,6 +51,9 @@ describes the extended Apple Silicon bundle and its regeneration command.
 `tests/test_presentation_bundle.py` covers deterministic archives, executable
 permissions, checksum failures, preservation of earlier builds, source/output
 boundaries, dependency locks and disposable build environments.
+`tests/test_bundle_sources.py` checks local configuration, tracked working-file
+snapshots, Git refs, omitted private files and source integrity using disposable
+Git repositories and identities.
 
 `tests/test_distribution.py` checks runtime archive boundaries, checksums, ordinary
 file materialization, platform selection, offline companion installation, refusal of

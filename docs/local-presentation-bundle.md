@@ -5,24 +5,81 @@ Tanzu Brand assets stay local. The first target is **Apple Silicon, macOS 13+**;
 you can build and verify its archive on an Intel Mac. Native execution and
 account access still need testing on the destination Mac.
 
-From the Marketing Studio checkout, using Python 3.11+ and Node.js 22+ with npm
-and Git available:
+From the Marketing Studio checkout, install the packaging command once:
 
 ```sh
-python3 scripts/build_presentation_bundle.py
+./presentation-studio-package --install-cli
 ```
 
-If your system Python is older, an existing uv installation can select Python:
+Then build from any directory:
 
 ```sh
-uv run --python 3.14 python scripts/build_presentation_bundle.py
+presentation-studio-package
 ```
 
-The default brand source is the sibling `../tanzu-brand` project. Override it
-or the output location explicitly when needed:
+The command selects an existing Python 3.11+ automatically, including an
+interpreter already managed by uv. It does not download Python. Node.js 22+,
+npm and Git are still build prerequisites. You can also run
+`./presentation-studio-package` directly from the checkout without installing it.
+
+Installation creates a link in `~/.local/bin` to this checkout, so subsequent
+source updates are used automatically. Keep the checkout in place. Existing
+unrelated commands are preserved. If `~/.local/bin` is not already on your PATH,
+add it to your current terminal with `export PATH="$HOME/.local/bin:$PATH"`.
+
+## Choose the component repositories
+
+Create your local config once:
 
 ```sh
-python3 scripts/build_presentation_bundle.py \
+presentation-studio-package --init-config
+```
+
+Edit `presentation-studio-package.local.json` in the Marketing Studio checkout.
+That file is ignored by Git; `presentation-studio-package.example.json` is the
+tracked template. Each component accepts a local Git checkout or a Git URL:
+
+```json
+{
+  "schema": 1,
+  "sources": {
+    "harness-slides": {"path": "../harness-slides-skill"},
+    "harness-research": {
+      "git": "https://github.com/dbbaskette/harness-research-skill.git",
+      "ref": "v1.0.0"
+    },
+    "brand": {"path": "../tanzu-brand"}
+  }
+}
+```
+
+Paths are relative to the config file, including when running the command from
+another directory. `~` and absolute paths work too. Git sources accept HTTPS,
+SSH or file URLs; `ref` can be a branch, tag or commit, and defaults to `HEAD`.
+Use a tag or commit for a stable selection. Private repositories use your
+existing Git authentication; credentials must not be embedded in URLs.
+
+Local sources must be Git checkout roots. Builds snapshot tracked working files,
+including local edits, staged additions and deletions. Add new source files to
+the Git index before building. Untracked files, ignored dependencies and Git
+account data are excluded. Remote sources use exactly the selected Git ref.
+Source checkouts are never reset, cleaned, installed into or updated by packaging.
+
+The default config is discovered beside the packaging CLI in this checkout.
+Choose a different file with `--config /path/to/sources.json`; its paths remain
+relative to that file. An explicitly requested missing or invalid config fails
+instead of falling back. `--plan` reports configured sources without fetching
+them; remote versions are resolved only during a build.
+
+Components omitted from the config retain the repository's companion pins and
+the sibling `../tanzu-brand` fallback. `--brand` overrides the configured brand
+with a local checkout. The brand repository must provide the Tanzu Brand release
+packer and installer interfaces. Runtime and extra-tool pins remain separate.
+
+Override the brand or output location explicitly when needed:
+
+```sh
+presentation-studio-package \
   --brand /path/to/tanzu-brand \
   --output "$HOME/LocalBundles/presentation-studio"
 ```
@@ -30,8 +87,8 @@ python3 scripts/build_presentation_bundle.py \
 The output defaults to `~/LocalBundles/presentation-studio/`; its `cache/`
 directory retains verified downloads. `--cache /path/to/cache` changes that
 location. Generated paths inside the checkout are permitted only under the
-existing ignored `build/` and `dist/` directories. The builder never installs
-anything into your real HOME, starts a studio, or runs a provider job. Building
+existing ignored `build/` and `dist/` directories. Building never installs a
+studio, changes shared settings, starts a studio, or runs a provider job. Building
 may download dependencies; installing the completed bundle uses its local files.
 
 A successful build writes a versioned ZIP and a SHA-256 sidecar. The filename
@@ -47,13 +104,20 @@ archive. Failed downloads or verification leave earlier archives intact.
 - **Tanzu Brand:** update the source project and rerun. Its official release
   packer selects and verifies the distributable assets; no installed skill,
   credentials, workspace or arbitrary project files are copied.
-- **Harness Slides and Harness Research:** update `pins/companions.json`, then
-  rerun. To resolve the newest stable releases allowed by the existing requirements:
+- **Configured Harness Slides and Harness Research sources:** update their local
+  checkouts or change their Git refs in your local config, then rerun. Builds
+  record the exact resolved commits, working-file checksums and modification
+  status. Snapshot locks are written only into the bundle, and installation uses
+  those bundled files without fetching a moving repository. Config paths and
+  credentials are not copied into the bundle.
+- **Unconfigured Harness Slides and Harness Research:** update
+  `pins/companions.json`, then rerun. To resolve the newest stable releases allowed
+  by the existing requirements:
 
   ```sh
   python3 scripts/update_companions.py --check
   python3 scripts/update_companions.py
-  python3 scripts/build_presentation_bundle.py
+  presentation-studio-package
   ```
 
 - **Private Python and Node:** update the exact URLs, versions and SHA-256 values
@@ -77,8 +141,8 @@ build; remove a corrupt cached file and rerun to download it again.
 ## Inspect and verify
 
 ```sh
-python3 scripts/build_presentation_bundle.py --plan
-python3 scripts/build_presentation_bundle.py --verify /path/to/bundle.zip
+presentation-studio-package --plan
+presentation-studio-package --verify /path/to/bundle.zip
 ```
 
 `--plan` prints versions, sources and paths without downloads or writes. Archive
@@ -106,6 +170,7 @@ destination account. No credentials or personal content are packaged.
 
 ```sh
 python3 -m unittest discover -s tests -p test_presentation_bundle.py -v
+python3 -m unittest discover -s tests -p test_bundle_sources.py -v
 python3 -m unittest discover -s tests -p test_distribution.py -v
 ```
 
