@@ -58,6 +58,18 @@ class ReleaseTests(unittest.TestCase):
         self.assertTrue(os.access(output / 'bin/python3', os.X_OK))
         self.assertEqual((output / 'LICENSE').read_bytes(), b'license')
 
+    def test_python_sources_ship_without_mutable_bytecode_caches(self):
+        archive = self.archive([
+            ('python/lib/python3.13/encodings/__init__.py', b'# source', None),
+            ('python/lib/python3.13/encodings/__pycache__/__init__.cpython-313.pyc', b'cache', None),
+            ('python/lib/python3.13/legacy.pyc', b'cache', None),
+            ('python/lib/python3.13/legacy.pyo', b'cache', None),
+        ])
+        output = self.root / 'python'
+        distribution.unpack(archive, output)
+        self.assertEqual([p.relative_to(output).as_posix() for p in output.rglob('*') if p.is_file()],
+                         ['lib/python3.13/encodings/__init__.py'])
+
     def test_archive_escape_and_cyclic_links_are_refused(self):
         for index, entries in enumerate([
             [('python/../../outside', b'bad', None)],

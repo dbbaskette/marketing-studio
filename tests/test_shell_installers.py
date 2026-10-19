@@ -87,6 +87,36 @@ class ShellInstallerTests(unittest.TestCase):
         self.assertEqual(refused.returncode, 1)
         self.assertIn('Apple Silicon', refused.stderr)
 
+    def test_bundle_bootstrap_preserves_stale_bytecode_during_imports_and_retries(self):
+        import py_compile
+        folder = self.root / 'bundle'
+        folder.mkdir()
+        shutil.copy2(ROOT / 'scripts/local_bundle/install.sh', folder / 'install.sh')
+        (folder / 'installer').mkdir()
+        shutil.copy2(ROOT / 'scripts/local_bundle/bootstrap.sh', folder / 'installer/install.sh')
+        python = folder / 'studio/runtime/python/bin/python3'
+        python.parent.mkdir(parents=True)
+        python.symlink_to(sys.executable)
+        module = folder / 'synthetic_module.py'
+        module.write_text('value = 1\n')
+        cache = Path(py_compile.compile(str(module), doraise=True))
+        original = cache.read_bytes()
+        module.write_text('value = 200\n')
+        (folder / 'install-local.py').write_text(
+            'import subprocess, sys, synthetic_module\n'
+            'assert sys.dont_write_bytecode\n'
+            'assert synthetic_module.value == 200\n'
+            'subprocess.run([sys.executable, "-c", '
+            '\'import sys, synthetic_module; assert sys.dont_write_bytecode; '
+            'assert synthetic_module.value == 200\'], check=True)\n')
+        env = {**self.no_system_python(), 'PYTHONDONTWRITEBYTECODE': ''}
+        for _ in range(2):
+            done = subprocess.run(['bash', str(folder / 'install.sh')], cwd=folder,
+                                  env=env, capture_output=True, text=True, timeout=20)
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertEqual(cache.read_bytes(), original)
+        self.assertEqual(list(Path(self.env['HOME']).iterdir()), [])
+
     def test_all_subset_inventories_contain_suite_and_native_shell_entries(self):
         for name in ('blog', 'presentation', 'training'):
             with self.subTest(studio=name):
