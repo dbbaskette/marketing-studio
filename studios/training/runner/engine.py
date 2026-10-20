@@ -921,9 +921,13 @@ class Engine(Reviewing):
         if not ready.ready:
             raise WorkspaceError(ready.problem)
         with self.files:
+            record = new_record(agent, model, chosen, form['source_scope'], effort)
+            if form.get('review_level', review_policy.level(record)) != review_policy.level(record):
+                raise WorkspaceError('The shared review preference changed while this form '
+                                     'was open. Review the updated preference before '
+                                     'starting. Nothing was started.')
             root = pipeline.create(space, form)
             try:
-                record = new_record(agent, model, chosen, form['source_scope'], effort)
                 if review_policy.level(record) != 'step_by_step':
                     record['schema'] = 2
                 try:
@@ -2681,11 +2685,15 @@ class Engine(Reviewing):
         if record.get('research_contract'):
             offered = self.documents.sources(root)[1] if record.get('documents') else []
             scope = (record.get('documents') or {}).get('scope', pipeline.SCOPE)
-            task = {'topic': found.session['title'],
-                    'audience': pipeline.answers(root).get('audience') or 'Learners',
-                    'purpose': 'Inform training at levels ' + ', '.join(found.session['levels'])
-                               + ': ' + (pipeline.answers(root).get('purpose') or 'teach the topic')
-                               + '. Prioritize concept sequence, misconceptions and grounded examples.',
+            intake = pipeline.answers(root)
+            depth = (' at levels ' + ', '.join(found.session['levels'])) if found.session['levels'] else ''
+            task = {'topic': intake.get('topic') or found.session['title'],
+                    'audience': intake.get('audience') or 'Learners',
+                    'purpose': 'Inform training' + depth + ': '
+                               + (intake.get('purpose') or 'teach the topic')
+                               + '. Prioritize learner tasks, prerequisites, misconceptions, '
+                                 'grounded worked examples and limits. Research supplies evidence; '
+                                 'the teaching plan and materials are authored afterward.',
                     'scope': pipeline._about(root, found.session),
                     'planning_questions': found.research.questions,
                     'requested_changes': step.request,

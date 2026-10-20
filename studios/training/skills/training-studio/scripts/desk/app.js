@@ -157,7 +157,9 @@ const PURPOSES = ['Field enablement', 'Technical upskilling', 'General knowledge
 const LEVELS = ['101', '201', '301', '401'];
 const DECKS = [['pptx', 'PowerPoint'], ['google', 'Google Slides'], [null, 'No deck']];
 const COPIES = [['google', 'Google Docs'], ['word', 'Word']];
-const STEPS = ['The topic and who it is for', 'Its shape', 'The sources, the agent and the limits'];
+const STEPS = ['Learning goal', 'Materials', 'Review and start'];
+const MATERIALS = [['document', 'Learner guide'], ['brief', 'Reference brief'],
+  ['scenario', 'Practice scenarios']];
 // Where the research looks. What each answer means is said under the choice.
 const SOURCES = [['public-web', 'The public web'], ['supplied-only', 'Your documents only'],
   ['both', 'Both']];
@@ -1340,8 +1342,9 @@ async function decide(decision, note, problem, pressed) {
   const body = { path: view.path, artifact: view.deciding || view.artifact, decision };
   if (note) body.note = note;
   if (view.gate && view.gate.sha256) body.seen = view.gate.sha256;
+  let done;
   try {
-    view.after = await send('decide', body);
+    done = await send('decide', body);
   } catch (failure) {
     problem.textContent = failure.message;
     problem.hidden = false;
@@ -1353,6 +1356,15 @@ async function decide(decision, note, problem, pressed) {
   delete view.notes[noted];
   view.busy = false;
   if (turn !== view.turn) return;
+  // Keep a runner approval in this training. The explicit confirmation was the decision;
+  // a second dialog should not make the person choose where to go afterward.
+  if (decision === 'approve' && runOf(view.path)) {
+    toast(done.said);
+    show('run', { path: view.path }, true);
+    refresh();
+    return;
+  }
+  view.after = done;
   view.sheet = '';
   view.deciding = null;
   try {
@@ -3954,7 +3966,7 @@ function newDraft() {
   return settleDeck({ step: 0, title: '', topic: '', audience: '', purpose: 0,
     levels: ['101'], brief: 0, time: '', deck: shared.output === 'google' ? 1 : 0,
     brand: brand.brand || '', variant: brand.variant || '', copies: [],
-    yoodli: false, sources: 0, agent: agent.default === 'codex' ? 'codex' : 'claude',
+    yoodli: false, materials: MATERIALS.map(([id]) => id), sources: 0, agent: agent.default === 'codex' ? 'codex' : 'claude',
     model: agent.model || '', other: false, effort: agent.effort || '', starting: false });
 }
 
@@ -3982,7 +3994,8 @@ function settleDeck(draft) {
 // and how many there are is not known until a blueprint names them. The runner says the same
 // number back once it has started.
 function gatesFor(draft) {
-  return 2 + 3 * Math.max(1, draft.levels.length);
+  return 2 + (1 + ['document', 'brief'].filter((id) => draft.materials.includes(id)).length)
+    * Math.max(1, draft.levels.length);
 }
 
 function times(number) {
@@ -4005,7 +4018,7 @@ function topicStep(draft) {
     field('new-title', 'A short title', draft, 'title',
       { hint: 'What it is called in every list, for example “Rolling restarts”.' }),
     field('new-topic', 'What should it teach?', draft, 'topic', { long: true,
-      hint: 'A sentence or two is enough. The research questions are drafted from this.' }),
+      hint: 'Describe a task they should perform or a decision they should make afterward. A sentence or two is enough.' }),
     field('new-audience', 'Who is it for?', draft, 'audience', { long: true,
       hint: 'Their role, and what they already know.' }),
     choice('What it is for', PURPOSES, draft.purpose, (index) => {
@@ -4048,6 +4061,39 @@ function brandFields(draft) {
   return node;
 }
 
+// Secondary choices stay in the same form without competing with its main task.
+function trainingOptions(label, key, ...children) {
+  const node = make('details', 'training-options');
+  node.dataset.key = key;
+  node.open = Boolean(view.draft && list(view.draft.opened).includes(key));
+  return add(node, make('summary', '', label), ...children);
+}
+
+function materialChoices(draft) {
+  const node = make('div', 'material-choices');
+  node.setAttribute('role', 'group');
+  node.setAttribute('aria-label', 'Materials to make');
+  for (const [id, label] of MATERIALS) {
+    const control = button(label, 'button capsule material-choice', () => {
+      const selected = !draft.materials.includes(id);
+      draft.materials = MATERIALS.map(([key]) => key)
+        .filter((key) => key === id ? selected : draft.materials.includes(key));
+      control.setAttribute('aria-pressed', String(selected));
+      // Yoodli's knowledge and scenario dependencies are explicit selections.
+      if (!selected && ['brief', 'scenario'].includes(id)) {
+        draft.yoodli = false;
+        const yoodli = Array.from(main().querySelectorAll('.chip')).find((node) => node.dataset.key === 'practice yoodli');
+        if (yoodli) yoodli.setAttribute('aria-pressed', 'false');
+      }
+      say(byId('new-problem'), '');
+    }, 'material ' + id);
+    control.setAttribute('aria-pressed', String(draft.materials.includes(id)));
+    control.setAttribute('aria-label', label);
+    node.append(control);
+  }
+  return node;
+}
+
 function shapeStep(draft) {
   const toggle = (held) => (value, on) => {
     draft[held] = draft[held].filter((other) => other !== value);
@@ -4056,96 +4102,111 @@ function shapeStep(draft) {
   settleDeck(draft);
   const able = brandsFound().length > 0;
   const found = (view.setup && view.setup.brand) || {};
-  const brand = able ? brandFields(draft) : make('p', 'fix', 'A slide deck cannot be made on '
-    + 'this computer. ' + (found.problem || 'No brand skill was found on it, and a deck is '
-    + 'always made in a brand.') + ' Everything else is made as usual, and the Status screen '
-    + 'says what a deck needs.');
+  const brand = able ? trainingOptions('Deck brand', 'deck-brand', brandFields(draft))
+    : make('p', 'quiet', 'A deck needs a brand skill. You can make the other materials now; '
+      + 'Status explains what this computer needs for slides.');
   brand.hidden = able && DECKS[draft.deck][0] === null;
   const deck = choice('The slide deck', DECKS.map((kind) => kind[1]), draft.deck, (index) => {
     draft.deck = index;
     brand.hidden = DECKS[index][0] === null;
   }, 'deck');
-  // With no brand to make one in, "No deck" is what is chosen, and the others cannot be.
   for (const option of able ? [] : deck.querySelectorAll('.seg-option[aria-pressed="false"]')) {
     option.disabled = true;
     option.classList.add('seg-absent');
   }
-  return [add(card('The choices'),
-    make('p', '', 'Every choice here has an answer already. Change only what you want to.'),
-    chips('Levels', LEVELS.map((level) => [level, level]),
-      (level) => draft.levels.includes(level), toggle('levels'), 'level',
-      'Each level is a depth of the same subject: 101 is the introduction, 401 the deepest. '
-        + 'Each gets a blueprint of its own. Choose none for one training without levels; '
-        + 'levels cannot be added to that later.'),
-    choice('What the brief is about', ['One product or technology', 'A comparison'],
-      draft.brief, (index) => {
-        draft.brief = index;
-      }, 'brief'),
+  return [add(card('What would you like to make?'),
+    make('p', 'quiet', 'Choose only what you need. Research and a teaching plan connect every selected material.'),
+    materialChoices(draft), deck, brand,
     field('new-time', 'How long it should take (optional)', draft, 'time',
-      { hint: 'In your own words: “30 minutes”, “one lesson”, “a full course”.' }),
-    deck, brand,
-    chips('Keep a copy of each guide and brief', COPIES,
-      (kind) => draft.copies.includes(kind), toggle('copies'), 'copy',
-      'Neither is needed. The training keeps its own files either way.'),
-    chips('Practice', [['yoodli', 'Make scenarios for Yoodli']], () => draft.yoodli,
-      (value, on) => {
-        draft.yoodli = on;
-      }, 'practice', 'Off unless your team practises in Yoodli.'))];
+      { hint: 'The learner’s time, including examples and practice: “30 minutes” or “a half-day workshop”.' }),
+    trainingOptions('Depth and reference brief', 'training-depth',
+      chips('Levels', LEVELS.map((level) => [level, level]),
+        (level) => draft.levels.includes(level), toggle('levels'), 'level',
+        '101 introduces the subject; 201 applies it; 301 handles trade-offs; 401 explores advanced cases. '
+          + 'Each selected level gets its own materials. Choose none for one training without levels.'),
+      choice('What the brief is about', ['One product or technology', 'A comparison'],
+        draft.brief, (index) => { draft.brief = index; }, 'brief')),
+    trainingOptions('Extra copies and Yoodli', 'training-copies',
+      chips('Keep a copy of each selected guide and brief', COPIES,
+        (kind) => draft.copies.includes(kind), toggle('copies'), 'copy',
+        'Optional. Original files are kept locally. Google copies require Google access.'),
+      chips('Practice', [['yoodli', 'Make scenarios for Yoodli']], () => draft.yoodli,
+        (value, on) => {
+          if (on && !['brief', 'scenario'].every((id) => draft.materials.includes(id))) {
+            const control = Array.from(main().querySelectorAll('.chip')).find((node) => node.dataset.key === 'practice yoodli');
+            if (control) control.setAttribute('aria-pressed', 'false');
+            say(byId('new-problem'), 'Select Reference brief and Practice scenarios first. Yoodli uses both.');
+            draft.yoodli = false;
+            return;
+          }
+          draft.yoodli = on;
+          say(byId('new-problem'), '');
+        }, 'practice', 'Prepares fields to copy into Yoodli and a knowledge brief to upload. Nothing is posted to Yoodli.')))];
 }
 
 function startStep(draft) {
   const limits = (view.setup && view.setup.limits) || {};
-  const drafted = make('p', '');
+  const drafted = make('p', 'quiet');
   const told = () => {
     drafted.textContent = 'It is drafted by ' + AGENT_NAMES[draft.agent]
       + draftModelWords(draft) + '.';
   };
-  const levels = draft.levels.length;
-  const asks = gatesFor(draft);
-  // With documents of your own, the first thing it does is wait for them.
-  const first = make('p', '', 'First it waits for your documents. You add them on the next '
-    + 'screen, and nothing is researched until you say that is all of them.');
+  told();
+  const first = make('p', '');
   const then = make('p', '');
+  const policy = (view.setup && view.setup.review_level) || 'step_by_step';
+  draft.review_seen = view.setup && view.setup.review_level;
+  const selected = MATERIALS.filter(([id]) => draft.materials.includes(id)).map(([, label]) => label);
+  if (DECKS[draft.deck][0]) selected.push(DECKS[draft.deck][1] + ' deck');
+  if (draft.yoodli) selected.push('Yoodli field layouts');
   const tell = () => {
     const supplied = SOURCES[draft.sources][0] !== 'public-web';
-    first.hidden = !supplied;
-    then.textContent = (supplied ? 'Then it works' : 'It starts at once and works')
-      + ' on its own. It stops and asks for your decision at least ' + times(asks)
-      + ': at the research questions, at the research, and at the blueprint, the learner '
-      + 'guide and the brief' + (levels > 1 ? ' of each of the ' + levels + ' levels.' : '.');
+    first.textContent = supplied ? 'First, add your documents on the next screen. Research waits until you say they are all added.'
+      : 'Research starts after you start the training.';
+    then.textContent = policy === 'balanced'
+      ? 'Balanced review: review the teaching plan, then the finished materials together. Intermediate drafts continue automatically; a deck also has its own review.'
+      : policy === 'automatic'
+        ? 'Automatic draft review: intermediate drafts continue automatically. Review the finished materials together before using them; a deck also has its own review.'
+        : 'Step by step review: at least ' + gatesFor(draft) + ' decisions for research and the selected teaching materials'
+          + (draft.materials.includes('scenario') ? ', plus each practice scenario' : '')
+          + (draft.yoodli ? ' and each Yoodli layout' : '')
+          + (DECKS[draft.deck][0] ? '. A deck adds two reviews per level when this computer can build it' : '') + '.';
   };
   tell();
-  return [add(card('Sources'), ...explained('Where the research looks',
+  return [add(card('Ready to start'), make('p', 'lede', series(selected)),
+    make('p', 'quiet', (draft.levels.length ? 'Levels: ' + draft.levels.join(', ') : 'One training without levels')
+      + (draft.time ? ' · ' + draft.time : ' · Sized from the teaching plan')),
+    first, then, make('p', 'quiet', 'You can close this page while it works. Saved materials stay available.')),
+  add(card('Sources'), ...explained('Where the research looks',
     SOURCES.map((source) => source[1]), SOURCE_SAYS, draft.sources, (index) => {
       draft.sources = index;
       tell();
     }, 'sources')),
-  add(card('The agent that does the drafting'),
-    ...agentFields(draft, 'new', 'For this training', told)),
-  add(card('Limits'), make('p', '', limitsSays(limits)
-    || 'No limits are set for this computer.'),
-  make('p', 'quiet', 'A training that reaches a limit stops and asks you. The limits are '
-    + 'changed in Settings.')),
-  add(make('div', 'paper callout'),
-    make('h2', 'aside-title', 'What happens when you start'), first, then,
-    make('p', '', 'It asks once more for each practice scenario' + (draft.yoodli
-      ? ', and again for each one laid out for Yoodli' : '') + '. How many there are is not '
-      + 'known until a blueprint names them.'),
-    // A deck has two decisions of its own: what it says, and then the slides themselves.
-    DECKS[draft.deck][0] ? make('p', '', 'For the slide deck' + (levels > 1 ? ' of each level'
-      : '') + ' it asks twice more: once for what the deck says, before any slide is drawn, '
-      + 'and once for the deck itself.') : null,
-    drafted,
-    make('p', 'quiet', 'This page tells you each time. In between, you can close it.'))];
+  trainingOptions('Assistant and limits', 'training-assistant',
+    ...agentFields(draft, 'new', 'For this training', told), drafted,
+    make('p', 'quiet', limitsSays(limits) || 'No limits are set for this computer.'),
+    make('p', 'quiet', 'Limits are changed in Settings. The review preference is shared with Marketing Studio and is saved when this training starts.'))];
 }
 
 function paintNew(fresh) {
   const draft = view.draft;
+  if (view.drawn === 'new') {
+    const shown = Array.from(main().querySelectorAll('details'));
+    const keys = shown.map((node) => node.dataset.key);
+    draft.opened = [...list(draft.opened).filter((key) => !keys.includes(key)),
+      ...shown.filter((node) => node.open).map((node) => node.dataset.key)];
+  }
   view.drawn = 'new';
   const builders = [topicStep, shapeStep, startStep];
   const problem = alertLine('new-problem');
+  if (draft.start_problem) say(problem, draft.start_problem);
   const last = draft.step === STEPS.length - 1;
-  const go = submitButton(last ? 'Start the training' : 'Continue', 'continue');
+  const go = capsule(last ? 'Start the training' : 'Continue', 'filled',
+    () => (last ? startTraining(go) : nextStep()), 'continue');
+  // A native submit inside the form preserves Enter while the visible action stays
+  // reachable in the existing toolbar on a phone.
+  const submit = submitButton(last ? 'Start the training' : 'Continue', 'form-submit');
+  submit.hidden = true;
   const earlier = draft.step ? capsule('Back a step', 'quiet', () => {
     draft.step -= 1;
     paintNew(true);
@@ -4153,8 +4214,9 @@ function paintNew(fresh) {
   // Each step is a form, so Enter in a box goes on as the filled button does.
   const body = add(pageForm(() => (last ? startTraining(go) : nextStep())),
     ...builders[draft.step](draft),
-    add(make('div', 'form-foot'), problem, add(make('div', 'bar'), earlier, go)));
+    add(make('div', 'form-foot'), problem, add(make('div', 'bar'), earlier, submit)));
   place({ title: STEPS[draft.step], name: 'New training', back: true,
+    actions: [go],
     above: [make('span', '', 'New training · Step ' + (draft.step + 1) + ' of ' + STEPS.length)] },
   [body], fresh);
   if (last) paintAgents();
@@ -4172,6 +4234,7 @@ function drawNew(fresh) {
 
 function nextStep() {
   const draft = view.draft;
+  draft.start_problem = '';
   if (draft.step === 0) {
     const missing = [['new-title', draft.title, 'Give it a title first.'],
       ['new-topic', draft.topic, 'Say what it should teach first.'],
@@ -4184,6 +4247,11 @@ function nextStep() {
       return;
     }
   }
+  if (draft.step === 1 && !draft.materials.length && !DECKS[draft.deck][0]) {
+    say(byId('new-problem'), 'Choose at least one material to make, or a slide deck.');
+    focusKey('material document');
+    return;
+  }
   draft.step += 1;
   paintNew(true);
   if (draft.step === STEPS.length - 1) {
@@ -4195,6 +4263,7 @@ function nextStep() {
 async function startTraining(pressed) {
   const draft = view.draft;
   if (draft.starting) return;
+  const turn = view.turn;
   const problem = byId('new-problem');
   const deck = DECKS[settleDeck(draft).deck][0];
   const body = {
@@ -4207,24 +4276,34 @@ async function startTraining(pressed) {
     deck_target: deck,
     brand: deck ? { brand: draft.brand, variant: draft.variant || null } : null,
     copies: COPIES.map((kind) => kind[0]).filter((kind) => draft.copies.includes(kind)),
-    yoodli: draft.yoodli,
+    yoodli: draft.yoodli, materials: draft.materials,
     agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null,
   };
+  if (draft.review_seen) body.review_level = draft.review_seen;
   draft.starting = true;
   pressed.disabled = true;
+  const form = main().querySelector('form');
+  if (form) form.inert = true;
   say(problem, '');
   let started;
   try {
     started = await send('trainings', body);
   } catch (failure) {
     draft.starting = false;
-    pressed.disabled = false;
-    say(problem, failure.message + (failure.kind === 'stopped' ? ''
-      : ' Nothing was started.') + ' Your answers are still here.');
-    pressed.focus();
+    if (turn !== view.turn || view.draft !== draft) return;
+    draft.start_problem = failure.message + (failure.kind === 'stopped' ? ''
+      : ' Nothing was started.') + ' Your answers are still here.';
+    // A shared preference may have changed. Reload it before another start, keeping
+    // every answer and making the updated review policy visible in the summary.
+    const setup = await ask('setup').catch(() => null);
+    if (turn !== view.turn || view.draft !== draft) return;
+    if (setup) view.setup = setup;
+    paintNew(false);
+    focusKey('continue');
     return;
   }
-  view.draft = null;
+  if (view.draft === draft) view.draft = null;
+  if (turn !== view.turn) { refresh(); return; }
   view.promised = { path: started.path, gates: Number(started.gates) || 0 };
   toast(body.source_scope === 'public-web' ? 'Started. It is working on its own now.'
     : 'Started. It waits for your documents first.');
@@ -4276,14 +4355,14 @@ function placeParts(spec, parts, fresh) {
   const holder = main();
   const active = document.activeElement;
   const focused = !fresh && active && active.dataset ? active.dataset.key : '';
-  const opened = fresh ? [] : Array.from(holder.querySelectorAll('details'))
-    .filter((node) => node.open).map((node) => node.dataset.key);
+  const disclosed = new Map((fresh ? [] : Array.from(holder.querySelectorAll('details')))
+    .filter((node) => node.dataset.key).map((node) => [node.dataset.key, node.open]));
   const bar = JSON.stringify(spec.mark);
   if (fresh || bar !== view.barred) toolbar(spec);
   view.barred = bar;
   fit(holder, parts, fresh);
   for (const node of holder.querySelectorAll('details')) {
-    if (opened.includes(node.dataset.key)) node.open = true;
+    if (disclosed.has(node.dataset.key)) node.open = disclosed.get(node.dataset.key);
   }
   if (fresh) {
     window.scrollTo(0, 0);
@@ -4408,7 +4487,8 @@ function stepItem(step) {
 }
 
 function stepsCard(run) {
-  const node = card('Steps');
+  const node = add(make('details', 'paper training-options'), make('summary', '', 'All production steps'));
+  node.dataset.key = 'production-steps';
   const steps = list(run.steps);
   if (!steps.length) return add(node, make('p', 'quiet', 'It is working out what to do first.'));
   const items = make('ol', 'rows');
@@ -4822,7 +4902,7 @@ function finishedPart(run, lead) {
   const found = run.finished;
   const limits = list(found.limitations);
   // The index is one more file of the training, read on a screen of its own.
-  const open = found.index ? capsule('Open the index', lead && found.ready ? 'filled' : '',
+  const open = found.index && !found.ready ? capsule('Open the index', '',
     () => show('index', { path: view.path, artifact: found.index }), 'index') : null;
   const limited = limits.length ? [make('p', '', count(limits.length, 'thing was',
     'things were') + ' left out or limited:'), bullets(limits, 'reasons')] : [];
@@ -4831,7 +4911,8 @@ function finishedPart(run, lead) {
   if (found.ready) {
     return callout('', make('h2', 'aside-title', 'Ready to use'),
       ...(limited.length ? limited : [make('p', '', 'Nothing was left out or limited.')]),
-      indexed, add(make('div', 'bar'), open));
+      found.index ? make('p', 'quiet', 'Open the index for the materials and how to use them, '
+        + 'or open an individual material below.') : null);
   }
   const blocking = list(found.blocking);
   const go = capsule('See what is in the way', lead ? 'filled' : '',
@@ -4875,6 +4956,15 @@ async function steer(action, pressed) {
 // is needed first.
 function runActions(run, waiting, lead) {
   const actions = [];
+  if (run.review && !run.question && !run.problem) {
+    const approve = capsule(combinedLabel(run.review), lead === 'combined' ? 'filled' : '',
+      () => decideCombined(run.review, 'approve', null, null, approve), 'approve-combined');
+    actions.push(approve);
+  }
+  if (run.finished?.ready && run.finished.index) {
+    actions.push(capsule('Open the index', lead === 'finished' ? 'filled' : '',
+      () => show('index', { path: view.path, artifact: run.finished.index }), 'index'));
+  }
   const press = (label, kind, action) => {
     const node = capsule(label, kind, () => steer(action, node), action);
     actions.push(node);
@@ -4887,12 +4977,12 @@ function runActions(run, waiting, lead) {
   }
   // A run that failed and says nothing more is still not a dead end.
   if (lead === 'retry') press('Try again', 'filled', 'retry');
-  if (waiting && !run.question) {
+  if (waiting && !run.question && !run.review) {
     actions.push(capsule('Review ' + waiting.label, lead === 'review' ? 'filled' : '',
       () => show('gate', { path: view.path, artifact: waiting.artifact }), 'lead'));
   }
   // What a deck says is reviewed on a screen of its own, reached like any gate.
-  if (outlining(run) && !run.question) {
+  if (outlining(run) && !run.question && !run.review) {
     actions.push(capsule('Review ' + outlineLabel(run.outline),
       lead === 'outline' ? 'filled' : '', () => show('outline', { path: view.path }),
       'lead-outline'));
@@ -5057,33 +5147,61 @@ function deckCard(run) {
   'read-outline')) : null);
 }
 
+function combinedLabel(review) {
+  return 'Approve ' + (review.phase === 'direction' ? 'the direction' : 'the finished materials');
+}
+
+async function decideCombined(review, decision, target, note, pressed,
+  problem = byId('combined-problem')) {
+  if (view.busy) return;
+  const turn = view.turn;
+  const path = view.path;
+  if (decision === 'revise' && !String(note || '').trim()) {
+    say(problem, 'Say what should change first.');
+    return;
+  }
+  view.busy = true;
+  if (pressed) pressed.disabled = true;
+  say(problem, '');
+  try {
+    const run = await send('review', {path, expected: review.expected,
+      decision, target: target || null, note: note || null});
+    if (turn !== view.turn) return;
+    if (target) delete view.notes[[path, review.phase, target].join('\n')];
+    view.run = run;
+    view.busy = false;
+    paintRun(false);
+    toast(decision === 'approve' ? 'Approved. ' + run.sentence
+      : 'Changes requested. ' + run.sentence);
+    byId('title').focus({preventScroll: true});
+    refresh();
+  } catch (failure) {
+    if (turn === view.turn) {
+      say(problem, failure.message);
+      if (pressed) pressed.disabled = false;
+    }
+  } finally { view.busy = false; }
+}
+
 function combinedReview(run) {
   const review = run.review;
   const node = card(review.label);
   add(node, make('p', 'lede', review.phase === 'direction'
-    ? 'Read the research, training plan and deck directions together. Approve once to build the remaining materials.'
+    ? 'Review the research and teaching direction below. Approve the direction to build your selected materials.'
     : 'Review the completed materials together. Approval finishes this draft; publishing is a separate action.'));
   const problem = problemLine();
-  const decide = async (decision, target, note) => {
-    if (view.busy) return;
-    view.busy = true;
-    try {
-      view.run = await send('review', {path: view.path, expected: review.expected,
-        decision, target: target || null, note: note || null});
-      await refresh();
-      paintRun(false);
-    } catch (failure) { say(problem, failure.message); }
-    finally { view.busy = false; }
-  };
-  if (run.mine !== false) add(node, add(make('div', 'bar'),
-    capsule('Approve ' + (review.phase === 'direction' ? 'the direction' : 'the finished materials'),
-      'filled', () => decide('approve'), 'approve-combined')));
+  problem.id = 'combined-problem';
   add(node, problem);
-  for (const item of review.items) {
+  const material = (item) => /^(document|brief|deck)(@|$)|^scenario:/.test(item.target);
+  const items = [...review.items];
+  if (review.phase === 'final') items.sort((a, b) => Number(material(b)) - Number(material(a)));
+  const firstMaterial = items.find(material);
+  for (const item of items) {
     const detail = add(make('details', 'review-bundle'), make('summary', 'row-title', item.label));
     detail.dataset.key = 'combined-' + review.phase + '-' + item.target;
     const part = make('div', 'review-bundle-body'); add(detail, part);
-    detail.open = Boolean(item.sample || item.deck_view || item.target === 'research');
+    detail.open = Boolean(item.sample || item.deck_view
+      || (review.phase === 'direction' ? item.target === 'research' : item === firstMaterial));
     if (item.text) add(part, window.TrainingStudioMarkdown.render(item.text));
     if (item.sample) add(part, pictureAt({path: view.path, ...item.sample},
       'Sample slide for ' + item.label, review.expected));
@@ -5102,9 +5220,21 @@ function combinedReview(run) {
       const changes = add(make('details'), make('summary', '', 'Request changes'));
       changes.dataset.key = 'request-' + review.phase + '-' + item.target;
       const request = make('textarea'); request.maxLength = 4000;
+      request.id = 'change-' + item.target;
+      request.dataset.key = 'change-' + review.phase + '-' + item.target;
+      const label = make('label', 'note-label', 'What should change in ' + item.label);
+      label.htmlFor = request.id;
       request.setAttribute('aria-label', 'What should change in ' + item.label);
-      add(changes, request, capsule('Ask for changes to ' + item.label, '',
-        () => decide('revise', item.target, request.value), 'revise-' + item.target));
+      const key = [view.path, review.phase, item.target].join('\n');
+      request.value = view.notes[key] || '';
+      if (request.value) changes.open = true;
+      request.addEventListener('input', () => { view.notes[key] = request.value; });
+      const refusal = alertLine('change-problem-' + item.target);
+      const revise = capsule('Ask for changes to ' + item.label, '',
+        () => decideCombined(review, 'revise', item.target, request.value, revise, refusal),
+        'revise-' + item.target);
+      request.setAttribute('aria-describedby', refusal.id);
+      add(changes, label, request, refusal, revise);
       add(part, changes);
     }
     add(node, detail);
@@ -5131,7 +5261,7 @@ function paintRun(fresh) {
   const lead = view.sheet || view.after ? '' : theirs ? (run.finished ? 'finished'
     : free ? 'take' : '')
     : run.question ? 'answer' : offered ? 'problem'
-      : supplying ? 'documents' : waiting ? 'review' : outline ? 'outline'
+      : supplying ? 'documents' : run.review ? 'combined' : waiting ? 'review' : outline ? 'outline'
         : run.finished ? 'finished' : ['paused', 'stopped'].includes(run.state) ? 'resume'
           : run.state === 'failed' && !run.problem ? 'retry' : '';
   const limits = (view.setup && view.setup.limits) || {};
@@ -5144,7 +5274,8 @@ function paintRun(fresh) {
   placeParts({ title, above, back: true, actions: theirs ? readActions(run, waiting)
     : runActions(run, waiting, lead),
   mark: [title, training.levels, run.state, lead, offered, waiting, outline
-    && run.outline.level, theirs, driver, Boolean(run.outline)] }, [
+    && run.outline.level, theirs, driver, Boolean(run.outline), run.review,
+    run.finished] }, [
     ['intro', [run.state, run.sentence, training.stages, promised, view.steered,
       nextGate(run), Boolean(run.problem), runStanding(run), supplying, outline, theirs,
       run.queue],
@@ -5162,25 +5293,23 @@ function paintRun(fresh) {
       () => questionPart(run, title)] : null,
     supplying ? ['documents', [run.documents, lead],
       () => documentsCard(run, lead === 'documents')] : null,
-    waiting && !run.question && !theirs ? ['gate', [waiting, training.sentence],
+    waiting && !run.question && !run.review && !theirs ? ['gate', [waiting, training.sentence],
       () => gatePart(training, waiting, run.sentence)] : null,
-    outline && !run.question ? ['outline', [run.outline.level, run.sentence],
+    outline && !run.question && !run.review ? ['outline', [run.outline.level, run.sentence],
       () => outlinePart(run)] : null,
     run.deck_left ? ['deck-left', [run.deck_left, run.sentence, theirs],
       () => deckLeftPart(run)] : null,
     run.finished ? ['finished', [run.finished, lead],
       () => finishedPart(run, lead === 'finished')] : null,
-    run.finished ? ['publish', [run.finished.ready, published, teamSpace()],
-      () => publishCard(run, published)] : null,
     theirs && !driver && run.finished ? ['free', [title], () => finishedFreePart()] : null,
     // While a deck is drawn, its sections and their latest previews are what there is to see.
     run.deck ? ['deck', [run.deck, run.outline && run.outline.level],
       () => deckCard(run)] : null,
-    ['steps', list(run.steps).map((step) => [step.id, step.label, step.kind, step.status,
-      step.attempts > 1, step.error]), () => stepsCard(run)],
-    list(run.workers).length ? ['workers', run.workers, () => workersCard(run)] : null,
     ['made', [training.path, training.view && training.view.files, theirs],
       () => madeCard(training, theirs)],
+    list(run.workers).length ? ['workers', run.workers, () => workersCard(run)] : null,
+    ['steps', list(run.steps).map((step) => [step.id, step.label, step.kind, step.status,
+      step.attempts > 1, step.error]), () => stepsCard(run)],
     list(run.copies).length ? ['copies', [run.copies, view.copying, view.uncopied, theirs],
       () => copiesCard(run)] : null,
     // Once that is all of them, what was added is kept on the screen, with nothing to press.
@@ -5188,6 +5317,8 @@ function paintRun(fresh) {
       () => documentsCard(run, false)] : null,
     ['cost', [run.spent, run.agent, run.model, run.effort, limits.training_dollars],
       () => costCard(run)],
+    run.finished ? ['publish', [run.finished.ready, published, teamSpace()],
+      () => publishCard(run, published)] : null,
     // What this computer runs for a team can be handed over, for anyone to take.
     !theirs && driver && driver.here ? ['mine', [driver, title, run.kept],
       () => minePart(driver, run.kept)] : null,
@@ -5498,6 +5629,12 @@ async function decideOutline(decision, note, problem, pressed) {
   const halted = ['paused', 'stopped', 'failed'].includes(run.state);
   const said = OUTLINE_SAID[decision] + ' ' + (halted ? HALTED
     : run.sentence + (run.state === 'working' ? ' ' + CLOSE : ''));
+  if (decision === 'approve') {
+    toast(said);
+    show('run', { path: view.path }, true);
+    refresh();
+    return;
+  }
   let next = null;
   try {
     took(await ask('trainings'));
@@ -5678,6 +5815,10 @@ function askTeam(kind, opener) {
 // The toolbar's side of a run that is only read: the ways to what there is to read.
 function readActions(run, waiting) {
   const actions = [];
+  if (run.finished?.ready && run.finished.index) {
+    actions.push(capsule('Open the index', view.sheet ? '' : 'filled',
+      () => show('index', { path: view.path, artifact: run.finished.index }), 'index'));
+  }
   if (waiting) {
     actions.push(capsule('Read ' + waiting.label, '',
       () => show('gate', { path: view.path, artifact: waiting.artifact }), 'lead'));

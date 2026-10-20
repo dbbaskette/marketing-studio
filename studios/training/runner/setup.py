@@ -94,6 +94,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
+from studio_core import review_policy
 import home
 import hub
 import workspace
@@ -122,6 +123,7 @@ def describe(engine) -> dict:
     can, problem = engine.notifier.can()
     values, unread = shared()
     return {'configured': space is not None, 'workspace': found,
+            'review_level': review_policy.level({'review_policy': review_policy.capture()}),
             'shared': values, 'shared_problem': unread,
             'team_moved': moved(space, values), 'shared_notice': notice(),
             'notify': {'on': chosen.notify, 'can': can, 'problem': problem},

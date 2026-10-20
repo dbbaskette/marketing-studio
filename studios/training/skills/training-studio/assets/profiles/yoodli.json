@@ -38,19 +38,19 @@
       "for": "Custom goals",
       "needs": "An organisation on an Enterprise plan",
       "source": "https://support.yoodli.ai/en/articles/11556965-creating-custom-goals",
-      "retrieved": "2026-10-12"
+      "retrieved": "2026-10-20"
     },
     {
       "for": "AI Assets",
       "needs": "A content creator or organisation admin, editing an organisation roleplay in the Builder",
       "source": "https://support.yoodli.ai/en/articles/16054213-add-ai-assets-to-a-roleplay",
-      "retrieved": "2026-10-12"
+      "retrieved": "2026-10-20"
     },
     {
       "for": "Roleplay Agent",
       "needs": "An organisation owner or admin, in an organisation with the Conversational Roleplay feature enabled",
       "source": "https://support.yoodli.ai/en/articles/15960287-create-roleplays-with-roleplay-agent",
-      "retrieved": "2026-10-12"
+      "retrieved": "2026-10-20"
     }
   ],
   "roleplay_agent": {
@@ -67,7 +67,7 @@
     "files_max": 5,
     "urls_max": 1,
     "source": "https://support.yoodli.ai/en/articles/15960287-create-roleplays-with-roleplay-agent",
-    "retrieved": "2026-10-12"
+    "retrieved": "2026-10-20"
   },
   "ai_assets": {
     "strict_mode_uses_more_capacity": true,
@@ -81,7 +81,7 @@
     "links_can_be_added": true,
     "markdown_listed": false,
     "source": "https://support.yoodli.ai/en/articles/16054213-add-ai-assets-to-a-roleplay",
-    "retrieved": "2026-10-13"
+    "retrieved": "2026-10-20"
   },
   "limits": {
     "context_chars": {

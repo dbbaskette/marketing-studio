@@ -32,7 +32,7 @@ The outline is checked each time you hand it in, and with `check_outline` whenev
 
 These are yours to get right. The person who approves the outline reads for them.
 
-- **Size the deck to the time it has.** A presenter needs about two minutes a slide. A 15-minute lesson is about 8 slides, a 30-minute one about 14, counting the cover and the closing slide. Each slide is drawn, looked at and reviewed, which costs the person time and money, so a deck that is too long is paid for twice. Combine what belongs together, and say in your notes what you left for the learner guide.
+- **Size the deck to the teaching time.** Use the blueprint's module timing, including demonstrations, learner responses, practice and debrief. Do not turn the whole duration into a fixed slide count. Choose the fewest slides that teach the objectives clearly; say what stays in the guide. Put an answer and its rationale in the notes for each check, and give a presenter the time and action to use it.
 - **Say only what the sources say.** Take every claim, name and number from the blueprint and the research findings. Add nothing of your own.
 - **The title is the claim.** Write the title of each content slide as the one thing the audience should take from it. Everything else on the slide supports that title. Leave out what the title does not announce.
 - **The focal point is what the title singles out.** It is never one of several peers. A slide that lists equals, such as the objectives or the steps of a process, has a focal that is not one of them: the idea that joins them.

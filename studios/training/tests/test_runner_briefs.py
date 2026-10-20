@@ -166,7 +166,9 @@ class BriefTests(JobCase):
             self.assertIn(f'`## {heading}`', text)
         for told in ('A scenario with no such section is taken to be a `roleplay`',
                      'Never make up an opening line', 'Keep their wording',
-                     'whose answer is not in the brief', 'Leave objective IDs out'):
+                     "otherwise only from the blueprint's supported key points",
+                     'Never grade knowledge absent from those references',
+                     'Leave objective IDs out'):
             self.assertIn(told, text)
         tools = self.tools(artifacts={'scenario': {'kind': 'scenario'}})
         self.ok(tools.submit_artifact('scenario', EXAMPLES['scenario']))

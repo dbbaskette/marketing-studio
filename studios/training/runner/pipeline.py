@@ -212,6 +212,7 @@ LAST = ('deck', 'package')
 DECK_STEPS = tuple(row[1] for row in TRAINING if row[0] == 'deck' and row[1] != 'deck')
 SIDE_BY_SIDE = ('deck-sections', 'deck-repair')     # one worker for each section
 STAGES = tuple(stage for stage in workspace.SKIPPABLE if stage not in workspace.OPTIONAL)
+MATERIALS = ('document', 'brief', 'scenario')
 # A scenario the person wrote: taken in as it is, and laid out only when they ask.
 OWN = ('Take in {it}, as you wrote it', 'Taking in {it}, as you wrote it')
 LAID = ('Lay out {it}, in your own words', 'Laying out {it}, in your own words')
@@ -428,9 +429,23 @@ def check_form(sent: dict, brands=None) -> dict:
     if not isinstance(sent.get('yoodli', False), bool):
         raise WorkspaceError('Say whether Yoodli scenarios are wanted with true or false.')
     form['yoodli'] = sent.get('yoodli', False)
+    materials = _listed(sent, 'materials') if 'materials' in sent else list(MATERIALS)
+    if any(stage not in MATERIALS for stage in materials):
+        raise WorkspaceError('Choose materials from the learner guide, reference brief and '
+                             'practice scenarios.')
+    form['materials'] = [stage for stage in MATERIALS if stage in materials]
+    if not materials and form['deck_target'] is None:
+        raise WorkspaceError('Choose at least one material to make, or a slide deck.')
+    if form['yoodli'] and not {'brief', 'scenario'} <= set(materials):
+        raise WorkspaceError('Yoodli needs a reference brief and practice scenarios. '
+                             'Select both, or turn Yoodli off.')
     form['agent'] = None if sent.get('agent') is None else settings.check_agent(sent['agent'])
     form['model'] = settings.check_model(sent.get('model'))
     form['effort'] = settings.check_effort(sent.get('effort'), form['agent'], form['model'])
+    if 'review_level' in sent:
+        if sent['review_level'] not in review_policy.LEVELS:
+            raise WorkspaceError('Choose a supported review preference before starting.')
+        form['review_level'] = sent['review_level']
     return form
 
 
@@ -440,7 +455,9 @@ def gates(form: dict, deck: bool = False) -> int:
     says a deck will be made here, which adds two for each level: what it says, and the
     deck. Each practice scenario adds one, and nobody knows how many there are until a
     blueprint names them."""
-    return 2 + (5 if deck else 3) * max(1, len(form['levels']))
+    materials = form.get('materials', MATERIALS)
+    per_level = 1 + sum(stage in materials for stage in ('document', 'brief'))
+    return 2 + (per_level + (2 if deck else 0)) * max(1, len(form['levels']))
 
 
 def intake_text(form: dict) -> str:
@@ -490,6 +507,10 @@ def create(space: gitstate.Workspace, form: dict) -> Path:
         sync_guidance.adopt(root)
         if form['deck_target'] is None:
             workspace.skip(root, 'deck', reason=NO_DECK, by='page')
+        for stage in MATERIALS:
+            if stage not in form.get('materials', MATERIALS):
+                workspace.skip(root, stage, reason='Not selected in the new training form.',
+                               by='page')
         workspace.write_atomic(root / 'intake.md', intake_text(form).encode('utf-8'))
         workspace.save(root, 'intake', built=True)
         workspace.approve(root, 'intake', by='page')
@@ -1126,6 +1147,10 @@ def _about(root: Path, session: dict) -> str:
                                   if session['settings']['brief_kind'] == 'competitive'
                                   else 'product'),
              f"Time limit: {said.get('time limit') or 'none given'}"]
+    names = {'document': 'learner guide', 'brief': 'reference brief', 'deck': 'slide deck',
+             'scenario': 'practice scenarios', 'yoodli': 'Yoodli field layouts'}
+    lines.append('Selected materials: ' + ', '.join(names[stage]
+                 for stage in session['settings']['stages'] if stage in names))
     return '\n'.join(lines)
 
 
@@ -1287,16 +1312,20 @@ def blueprint_work(root: Path, found: Survey, step: Step, request: dict | None,
                     + '. List them in the practice plan.')
     else:
         practice = 'Practice scenarios are wanted: plan them.'
+    inputs = {'intake': _read(root / 'intake.md') or '',
+              'research findings': findings_text(root)}
+    earlier = _earlier(root, session, level)
+    if earlier:
+        inputs['earlier levels'] = earlier
     task = (f'Draft {workspace.label(step.artifact)} for this training.\n\n'
             f'{_about(root, session)}\n'
             + (f'This blueprint is for level {level}.\n' if level else '')
             + f'{practice}\n\n'
-            'Your inputs are "intake" and "research findings".\n'
+            f'Your inputs are {_inputs(inputs)}.\n'
             f'Hand the blueprint back with submit_artifact under the name "{name}".'
             + _again(request, _text(root, session, step.artifact), error, answered,
                      'the blueprint', found.state.get(step.artifact) == 'stale'))
-    prepared = {'inputs': {'intake': _read(root / 'intake.md') or '',
-                           'research findings': findings_text(root)},
+    prepared = {'inputs': inputs,
                 'artifacts': {name: {'kind': 'blueprint', 'level': level,
                                      'findings': session.get('findings')}},
                 'ask': _can_ask(answered)}

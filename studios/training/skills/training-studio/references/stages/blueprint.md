@@ -1,6 +1,6 @@
 # Blueprint
 
-The blueprint turns research into a teaching plan. Design it backward: what the learner must be able to do, how you would know they can, then the content that gets them there.
+Design backward: what the learner can do, how to observe it, then the teaching that gets them there.
 
 Follow the shape of the example blueprint exactly. `training.py check` reads its headings, IDs and line prefixes.
 
@@ -48,6 +48,8 @@ Under each module heading, one item per line:
 One line per objective: `- O1: Check: <knowledge-check question> | Observe: <what a practice session should show>`
 
 The check goes into the document; the observation guides the scenarios. Each must ask for the behaviour its objective names: explaining a procedure is not evidence of being able to perform it.
+
+Assess transfer with a fresh case. Budget teaching, practice and debrief within module time. Name the learner's output and observable success; label hypothetical cases and invent no product facts.
 
 ## Practice plan
 

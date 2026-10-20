@@ -16,7 +16,7 @@ A scenario is a practice situation: who the learner is, who the AI plays, how it
 
 Required: `# Scenario: <name>`, `## Situation`, `## Learner role`, `## AI role`, `## Opening`, `## Success criteria`. Optional: `## Mode` (`roleplay` unless stated), `## Concerns and pushback`, `## Questions`, `## Constraints`, `## Session settings`.
 
-Success criteria are a list, one thing the learner should do per item. Their order numbers them from 1. The user never needs objective IDs. The situation is fiction about the practice setting; product facts the AI may use come only from the brief.
+Success criteria are a list, one observable behaviour per item. Their order numbers them from 1. The user never needs objective IDs. Label the setting hypothetical. Product facts come from the brief, or the blueprint's supported key points when the brief is skipped. Grade only what those references support.
 
 ## Check
 

@@ -211,6 +211,15 @@ def handoff(title: str, level: str | None, blueprint: str, said: dict, target: s
               made + (f', in the brand {brand[0]}' + (f' ({brand[1]}).' if brand[1] else '.')
                       if brand else
                       ', with no brand chosen.'), '']
+    assessment = parsed.get('assessment') or {}
+    lines += ['## Teaching and assessment', '',
+              'Use the module timing for explanation, demonstration, learner practice and '
+              'debrief. A slide count is not a duration plan. Each check needs an answer '
+              'and rationale in the presenter notes. Keep learner-facing meaning visible.', '']
+    # Carry the author's actual check/observation wording, not an invented replacement.
+    if isinstance(assessment, dict):
+        lines += [f'- {ident}: {value}' for ident, value in assessment.items()]
+    lines += ['']
     return '\n'.join(lines)
 
 

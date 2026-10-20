@@ -2375,3 +2375,48 @@ summary {
 .review-bundle-body > * + * { margin-top: 0.8rem; }
 .review-bundle-body textarea { width: 100%; min-height: 6rem; margin: 0.6rem 0; font: inherit; }
 .review-bundle summary:focus-visible { outline: 2px solid var(--link); outline-offset: 3px; }
+
+/* Training choices stay opaque; material is reserved for the shared shell. */
+body[data-product="Training Studio"] .training-options {
+  margin-block: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--paper-line);
+  border-radius: 12px;
+}
+body[data-product="Training Studio"] .training-options > summary {
+  min-height: 44px;
+  display: list-item;
+  font-weight: 600;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+body[data-product="Training Studio"] .training-options > summary:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 3px;
+}
+body[data-product="Training Studio"] .card > .training-options {
+  border: 0;
+  border-top: 1px solid var(--paper-line);
+  border-radius: 0;
+  padding: 0.75rem 0;
+  margin-block: 0.5rem;
+}
+body[data-product="Training Studio"] .material-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-block: 1rem 1.5rem;
+}
+body[data-product="Training Studio"] .material-choice {
+  min-height: 44px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+body[data-product="Training Studio"] .material-choice[aria-pressed="true"]::before {
+  content: "✓";
+  margin-inline-end: 0.4rem;
+}
+body[data-product="Training Studio"] .material-choice[aria-pressed="true"] {
+  border-color: var(--link);
+  background: var(--selection);
+}
