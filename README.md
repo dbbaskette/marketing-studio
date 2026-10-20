@@ -239,6 +239,7 @@ installed studios, project content, and settings.
 | A tool is missing | Run `marketing-studio doctor`, then rerun the downloaded setup script to install missing prerequisites. |
 | A browser cannot open, for example over SSH | Marketing Studio keeps running and prints why with its private link. Open that link in a browser, or start with `marketing-studio serve`. |
 | An assistant cannot start | Open that CLI in your own terminal and complete its sign-in. |
+| A studio does not open | The message names its launch log, `~/.local/share/marketing-studio/logs/<studio>.log`, and shows its last lines. The launch before it is kept as `<studio>.previous.log`. |
 | Another studio changed a setting | Reload the settings page so you can review the current value before saving. |
 
 Content choices such as a blog’s tone, a deck’s audience, or a training’s level

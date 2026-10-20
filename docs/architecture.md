@@ -81,7 +81,10 @@ Marketing Studio discovers bundled source studios first when run from a checkout
 A managed suite prefers native installed copies so both launchers run the same
 version. Explicit installation paths remain authoritative. Child links stay in
 memory and travel through private pipes. Closing Marketing Studio stops only
-process groups it started.
+process groups it started. Each launch writes the studio's standard error to
+`logs/<studio>.log` in the Marketing Studio data folder and keeps the launch before
+it as `<studio>.previous.log`. A studio that stops or times out before opening is
+reported with that log's path and its last 12 lines.
 
 The user CLI offers open, setup, status, doctor, install, update, rollback, and
 uninstall. Repeated open/setup commands contact a same-user Unix socket with mode

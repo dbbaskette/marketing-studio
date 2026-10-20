@@ -81,6 +81,39 @@ time.sleep(60)
                 self.launcher.open('training', self.preferences, {})
         self.assertFalse(self.launcher.children)
 
+    def test_stopped_studio_names_its_log_and_last_lines(self):
+        with self.fixture("import sys\nfor n in range(1, 21):\n    print('fixture line', n, file=sys.stderr)\n"):
+            with self.assertRaises(WorkspaceError) as raised:
+                self.launcher.open('training', self.preferences, {})
+        message = str(raised.exception)
+        log = self.root / 'data/logs/training.log'
+        self.assertIn('Training Studio stopped before opening', message)
+        self.assertIn(str(log), message)
+        for n in range(9, 21):
+            self.assertIn(f'fixture line {n}\n' if n < 20 else 'fixture line 20', message)
+        self.assertNotIn('fixture line 8\n', message)
+        self.assertFalse(self.launcher.children)
+
+    def test_slow_studio_names_its_log(self):
+        content = "import sys, time\nprint('fixture is waiting', file=sys.stderr)\ntime.sleep(60)\n"
+        with self.fixture(content), mock.patch('marketing_studio.launcher.TIMEOUT', 2):
+            with self.assertRaises(WorkspaceError) as raised:
+                self.launcher.open('training', self.preferences, {})
+        message = str(raised.exception)
+        self.assertIn('took too long', message)
+        self.assertIn(str(self.root / 'data/logs/training.log'), message)
+        self.assertIn('fixture is waiting', message)
+
+    def test_previous_launch_log_is_kept(self):
+        logs = self.root / 'data/logs'
+        for run in ('first run', 'second run'):
+            with self.fixture(f"import sys\nprint({run!r}, file=sys.stderr)\n"):
+                with self.assertRaises(WorkspaceError):
+                    self.launcher.open('training', self.preferences, {})
+        self.assertEqual((logs / 'training.log').read_text(), 'second run\n')
+        self.assertEqual((logs / 'training.previous.log').read_text(), 'first run\n')
+        self.assertEqual((logs / 'training.previous.log').stat().st_mode & 0o777, 0o600)
+
     def test_external_link_is_refused_and_browser_not_started(self):
         with self.fixture("import json\nprint(json.dumps({'link':'https://evil.example/'}), flush=True)\n"):
             with self.assertRaisesRegex(WorkspaceError, 'invalid local address'):
