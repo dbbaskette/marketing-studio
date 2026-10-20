@@ -13,3 +13,4 @@ test-results/
 /build/
 /presentation-studio-package.local.json
 /studio-package.local.json
+/sync.cfg

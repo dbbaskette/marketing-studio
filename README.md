@@ -295,8 +295,8 @@ writing or slide work continues. See [research compatibility and the shared help
 
 ## Update the source checkouts
 
-Run `bash sync.sh` from Marketing Studio to pull it and the related repositories.
-Missing components are cloned beside Marketing Studio, and other existing sibling
-`harness-*` checkouts are included. Local work is preserved; failures are reported
-without stopping the other updates. See [repository sync](docs/repository-sync.md)
-for the layout, preview mode, source config, and timeout options.
+Copy `sync.cfg.sample` to the ignored `sync.cfg`, then run `bash sync.sh`.
+The config chooses the repository URLs and destination directory; the sample puts
+Marketing Studio and its related checkouts under `~/Projects/`. Missing checkouts
+are cloned, local work is preserved, and failures are reported while the other
+updates continue. See [repository sync](docs/repository-sync.md) for all options.

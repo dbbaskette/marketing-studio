@@ -1,0 +1,11 @@
+# Copy this file to sync.cfg and edit the folder and repository URLs as needed.
+# Repository keys become folder names under directory. No shell code is executed.
+[sync]
+directory = ~/Projects
+discover_harness = true
+
+[repositories]
+marketing-studio = https://github.com/dbbaskette/marketing-studio.git
+harness-research-skill = https://github.com/dbbaskette/harness-research-skill.git
+harness-slides-skill = https://github.com/dbbaskette/harness-slides-skill.git
+tanzu-brand = https://github.com/dbbaskette/tanzu-brand.git
