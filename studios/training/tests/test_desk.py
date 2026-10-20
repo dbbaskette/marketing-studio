@@ -107,6 +107,15 @@ class Registry(test_cli.Flow):
         return workspace.sha256_file(self.root / relative)
 
 
+    def seen(self, when: dict) -> None:
+        """Rewrite when the registry last saw each training."""
+        registry = Path(os.environ['TRAINING_STUDIO_DATA']) / 'registry.json'
+        record = json.loads(registry.read_text(encoding='utf-8'))
+        for root, stamp in when.items():
+            record['trainings'][str(root)]['seen_at'] = stamp
+        registry.write_text(json.dumps(record), encoding='utf-8')
+
+
 class DeskCase(Registry):
     """A page serving on a port the system chose."""
 
@@ -151,14 +160,6 @@ class DeskCase(Registry):
     def listed(self) -> dict:
         return {item['path']: item for item in self.api('trainings')['trainings']}
 
-    def seen(self, when: dict) -> None:
-        """Rewrite when the registry last saw each training."""
-        registry = Path(os.environ['TRAINING_STUDIO_DATA']) / 'registry.json'
-        record = json.loads(registry.read_text(encoding='utf-8'))
-        for root, stamp in when.items():
-            record['trainings'][str(root)]['seen_at'] = stamp
-        registry.write_text(json.dumps(record), encoding='utf-8')
-
 
 
 class ListTests(DeskCase):
@@ -183,6 +184,8 @@ class ListTests(DeskCase):
         self.assertEqual(second['counts']['not-started'], 11)
         self.assertEqual((second['ready'], second['blocking']),
                          (False, len(assess.run_checks(other)['blocking'])))
+        # What is simply not made yet is counted apart from what is in the way.
+        self.assertEqual((first['to_make'], second['to_make']), (0, 11))
 
     def test_counts_follow_what_is_on_disk_now(self):
         self.research()
@@ -631,6 +634,43 @@ class PageCase(Registry):
 
     def listed(self) -> dict:
         return {item['path']: item for item in self.get('trainings')['trainings']}
+
+
+class ListRuleTests(PageCase):
+    """What the list says of each training, asked without a socket."""
+
+    def test_what_is_not_made_yet_is_counted_apart_from_what_is_in_the_way(self):
+        self.research()
+        self.content()
+        other = self.another('second', '--levels', '101,301')
+        first, second = self.listed()[str(self.root)], self.listed()[str(other)]
+        # A file not made, or made and not approved, is still to make; it blocks readiness
+        # like anything else, so what is in the way is never fewer.
+        unmade = sum(first['counts'][state] for state in ('draft', 'stale', 'not-started'))
+        self.assertEqual((first['to_make'], unmade > 0, first['blocking'] >= unmade),
+                         (unmade, True, True))
+        self.assertEqual((second['to_make'], second['counts']['not-started']), (11, 11))
+
+    def test_the_last_activity_counts_the_runs_tries_as_well_as_touches(self):
+        self.cli('init', '--title', 'First')
+        self.seen({self.root: '2990-01-01T00:00:00Z'})
+        listed = self.get('trainings')['trainings']
+        # With no run, the last activity is the last touch.
+        self.assertEqual(listed[0]['activity_at'], '2990-01-01T00:00:00Z')
+        # A run's newest try, begun or ended, counts as activity: the touch is unchanged.
+        record = {'schema': 1, 'steps': {'research-plan': {'failed': 0, 'attempts': [
+            {'started_at': '2990-01-01T00:10:00Z', 'ended_at': '2990-01-01T00:20:00Z',
+             'outcome': 'kept'},
+            {'started_at': '2990-01-02T00:00:00Z', 'ended_at': '2990-01-02T00:05:00Z',
+             'outcome': 'kept'}]}}}
+        (self.root / '.training-studio' / 'run.json').write_text(json.dumps(record))
+        listed = self.get('trainings')['trainings']
+        self.assertEqual((listed[0]['activity_at'], listed[0]['touched_at']),
+                         ('2990-01-02T00:05:00Z', '2990-01-01T00:00:00Z'))
+        # A record that cannot be read leaves the touch as the last activity.
+        (self.root / '.training-studio' / 'run.json').write_text('{not json')
+        self.assertEqual(self.get('trainings')['trainings'][0]['activity_at'],
+                         '2990-01-01T00:00:00Z')
 
 
 class WriteRuleTests(PageCase):

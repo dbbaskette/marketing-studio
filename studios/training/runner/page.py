@@ -358,6 +358,9 @@ class RunnerPage(desk.Page):
         item['last_shared'] = found and found['last_shared']
         if found is None or 'error' in item:
             return item
+        # A worker in hand is activity too, from the moment it began.
+        if found.get('busy_since') and item.get('activity_at'):
+            item['activity_at'] = max(item['activity_at'], found['busy_since'])
         session = workspace.load(Path(item['path']))
         for file in (item.get('view') or {}).get('files') or ():
             accepted = (session['artifacts'].get(file['artifact']) or {}).get('approved') or {}

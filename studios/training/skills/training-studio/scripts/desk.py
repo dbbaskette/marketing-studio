@@ -164,6 +164,22 @@ def touched(root: Path, seen: str) -> str:
     return max([seen, *stamps])
 
 
+def activity(root: Path, touched_at: str) -> str:
+    """When a training last moved: when it was last touched, or when the newest try at a
+    step of its run began or ended, whichever is later. The run record is the runner's;
+    one that is missing or cannot be read adds nothing."""
+    stamps = [touched_at]
+    try:
+        record = json.loads((root / workspace.STATE_DIR / 'run.json').read_text(encoding='utf-8'))
+        for entry in (record.get('steps') or {}).values():
+            for attempt in entry.get('attempts') or ():
+                stamps += [attempt[key] for key in ('started_at', 'ended_at')
+                           if isinstance(attempt.get(key), str)]
+    except (OSError, ValueError, AttributeError):
+        pass
+    return max(stamps)
+
+
 def known(entry: dict) -> dict:
     """What the registry says about a training, which is all there is if its record is broken."""
     seen = entry.get('seen_at')
@@ -267,9 +283,11 @@ def trainings() -> list[dict]:
             counts = dict.fromkeys(STATUSES, 0)
             for state in report['artifacts'].values():
                 counts[state] = counts.get(state, 0) + 1
+            touched_at = touched(root, item['touched_at'])
             item.update(title=report['title'], levels=report['levels'], stage=report['stage'],
-                        touched_at=touched(root, item['touched_at']), counts=counts,
-                        ready=result['ready'], blocking=len(result['blocking']),
+                        touched_at=touched_at, activity_at=activity(root, touched_at),
+                        counts=counts, ready=result['ready'],
+                        blocking=len(result['blocking']), to_make=len(result['to_make']),
                         **summary(report, result))
         except Exception as failure:  # one record that cannot be read must not hide the rest
             item['error'] = describe(failure)

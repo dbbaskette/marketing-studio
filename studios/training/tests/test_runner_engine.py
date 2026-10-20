@@ -1184,9 +1184,15 @@ class LiveTests(StudioCase):
                                            'Writing its own notes on the draft'])
         self.assertEqual(self.steps(root)['research-plan']['status'], 'working')
         self.assertEqual(self.engine.brief(root)['needs'], False)
+        # The worker's start is the run's last activity, until a try begins or ends later.
+        self.assertEqual(self.engine.brief(root)['busy_since'], worker['started_at'])
+        from runner import page
+        listed = {item['path']: item for item in page.RunnerPage(8765, self.engine).trainings()}
+        self.assertEqual(listed[str(root)]['activity_at'], worker['started_at'])
         go.set()
         self.until(lambda: self.state(root) == 'waiting')
         self.assertEqual(self.view(root)['workers'], [])
+        self.assertIsNone(self.engine.brief(root)['busy_since'])
 
     def test_only_so_many_trainings_work_at_once(self):
         settings.save(replace(settings.load(), parallel=1))

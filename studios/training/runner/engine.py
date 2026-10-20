@@ -3376,7 +3376,8 @@ class Engine(Reviewing):
     def _unread(failure: Exception) -> dict:
         """A run in brief whose record or files could not be read."""
         return {'state': 'failed', 'sentence': str(failure), 'needs': True, 'question': None,
-                'mine': True, 'driver': None, 'last_shared': None, 'notice': None}
+                'mine': True, 'driver': None, 'last_shared': None, 'notice': None,
+                'busy_since': None}
 
     def _brief(self, root: Path, record: dict, found: pipeline.Survey | None = None) -> dict:
         """`brief`, from a record already read and, where there is one, a survey already
@@ -3385,14 +3386,19 @@ class Engine(Reviewing):
             found = self._survey(root, record) if found is None else found
         except (WorkspaceError, OSError) as failure:
             return self._unread(failure)
-        state, sentence = self._state(record, found, self._run(root))
+        run = self._run(root)
+        state, sentence = self._state(record, found, run)
         asked = record.get('question')
         needs = bool(asked or record.get('problem') or found.next.kind == 'stuck'
                      or (state == 'waiting' and found.next.kind in ('documents', 'outline', 'review')))
         mine, who, state, sentence, last = self._whose(root, record, found, state, sentence)
+        # When the worker now in hand began: the run's last activity, while it works.
+        with self._lock:
+            began = [worker['started_at'] for worker in run.workers.values()]
         return {'state': state, 'sentence': sentence, 'needs': needs and mine,
                 'question': asked['text'] if asked and mine else None, 'mine': mine,
-                'driver': who, 'last_shared': last, 'notice': self._notice(root, record)}
+                'driver': who, 'last_shared': last, 'notice': self._notice(root, record),
+                'busy_since': max(began) if began and mine else None}
 
     @staticmethod
     def _asking(scope: str) -> str:
