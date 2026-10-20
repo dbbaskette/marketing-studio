@@ -51,170 +51,26 @@ Do not rename `index.html`, `app.js`, `home.css`, `style.css`, `blog.css` or `de
 
 ---
 
-### Task 1: Guard test
+### Task 1: Guard test (done)
 
 **Files:**
 - Create: `tests/test_ui_consistency.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing guard.** Done in `641398e`. After code review, `ea6c742` made it precise:
+  - failures name each selector and property;
+  - `:is()`/`:where()`, statement at-rules, custom properties on shared classes, and `:root`/`body`/`*` can no longer slip through;
+  - colours are read from declarations only;
+  - shell markers are matched as class sets;
+  - static pages must link the kit inside the folder they are served from.
 
-```python
-"""One look across every page: page stylesheets lay out their own parts and nothing else.
-
-`ui-kit/style.css` owns the tokens, the shell and the controls. A page's stylesheet may
-place a shared control (its size, gaps, grid cell) but never redraw it, may not style bare
-controls or headings for the whole page, and takes every colour from a token.
-"""
-import re
-import unittest
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-KIT = ROOT / 'ui-kit/style.css'
-PAGE_STYLES = (
-    ROOT / 'core/studio_core/setup_web/home.css',
-    ROOT / 'studios/blog/skills/blog-studio/assets/management/blog.css',
-    ROOT / 'studios/presentation/skills/presentation-studio/scripts/desk/deck.css',
-)
-APP_PAGES = (
-    ROOT / 'core/studio_core/setup_web/index.html',
-    ROOT / 'studios/blog/skills/blog-studio/assets/management/index.html',
-    ROOT / 'studios/presentation/skills/presentation-studio/scripts/desk/index.html',
-    ROOT / 'studios/training/skills/training-studio/scripts/desk/index.html',
-)
-STATIC_PAGES = (
-    ROOT / 'studios/blog/preview/blog-studio.html',
-    ROOT / 'docs/design/unified-settings-preview.html',
-)
-SHARED = frozenset({
-    'window', 'sidebar', 'toolbar', 'nav-item', 'glass', 'sheet', 'card', 'paper', 'button',
-    'button-filled', 'button-quiet', 'button-danger', 'button-round', 'input', 'segmented',
-    'seg-option', 'chip', 'pick-card', 'dialog', 'toast', 'notice', 'workflow-step'})
-ELEMENTS = frozenset({'a', 'button', 'dialog', 'h1', 'h2', 'h3', 'h4', 'input', 'label',
-                      'select', 'summary', 'textarea'})
-LAYOUT = re.compile(
-    r'(display|flex(-[a-z]+)?|grid(-[a-z]+)*|gap|row-gap|column-gap|order|align-[a-z]+|'
-    r'justify-[a-z]+|place-[a-z]+|(min-|max-)?(width|height)|(margin|padding)(-[a-z]+)*|'
-    r'position|inset|top|right|bottom|left|z-index|overflow(-[a-z]+)?|white-space|'
-    r'text-align|overflow-wrap|word-break|box-sizing|touch-action|aspect-ratio)')
-COLOUR = re.compile(r'#[0-9a-fA-F]{3,8}\b|\b(rgba?|hsla?|hwb|lab|lch|oklch|oklab)\(')
-COMPONENTS = ('.pick-card', '.pick-cards', '.workflow-steps', '.workflow-step', '.dialog',
-              '.dialog-header', '.dialog-content', '.dialog-form', 'label.field',
-              'label.seg-option', '.input-typed')
-
-
-def rules(css: str):
-    """Each style rule as (selector list, declarations), at any depth, in order."""
-    css = re.sub(r'/\*.*?\*/', '', css, flags=re.S)
-    for match in re.finditer(r'([^{}]+)\{([^{}]*)\}', css):
-        selector = match.group(1).strip()
-        if selector.startswith('@') or re.fullmatch(r'(from|to|[\d.]+%)(\s*,\s*(from|to|[\d.]+%))*', selector):
-            continue
-        yield selector, match.group(2)
-
-
-def selectors(listed: str):
-    """Each selector in a list, and the compound it actually styles (its last one)."""
-    flat = re.sub(r'\([^()]*\)', '()', re.sub(r'\[[^\]]*\]', '[]', listed))
-    for one in flat.split(','):
-        one = one.strip()
-        yield one, re.split(r'\s*[>+~]\s*|\s+', one)[-1]
-
-
-def properties(block: str):
-    return [part.split(':', 1)[0].strip().lower() for part in block.split(';') if ':' in part]
-
-
-def tag(compound: str):
-    found = re.match(r'([a-z][a-z0-9]*)', compound)
-    return found.group(1) if found else None
-
-
-def problems(css: str) -> list[str]:
-    found = []
-    if COLOUR.search(re.sub(r'/\*.*?\*/', '', css, flags=re.S)):
-        found.append('a literal colour: use a token from ui-kit/style.css')
-    for listed, block in rules(css):
-        for whole, last in selectors(listed):
-            if tag(whole) in ELEMENTS:
-                found.append(f'{whole}: styles every {tag(whole)} on the page')
-                continue
-            if set(re.findall(r'\.([A-Za-z0-9_-]+)', last)) & SHARED or tag(last) in ELEMENTS:
-                drawn = [name for name in properties(block)
-                         if not name.startswith('--') and not LAYOUT.fullmatch(name)]
-                if drawn:
-                    found.append(f'{whole}: redraws a shared control ({", ".join(drawn)})')
-    return found
-
-
-def inline_styles(html: str) -> str:
-    return '\n'.join(re.findall(r'<style>(.*?)</style>', html, flags=re.S))
-
-
-class SharedLookTests(unittest.TestCase):
-    def test_kit_defines_every_shared_component(self):
-        kit = KIT.read_text()
-        for component in COMPONENTS:
-            with self.subTest(component=component):
-                self.assertRegex(kit, re.escape(component) + r'\s*[{,:\[]')
-
-    def test_page_stylesheets_only_lay_out(self):
-        for sheet in PAGE_STYLES:
-            with self.subTest(sheet=sheet.relative_to(ROOT).as_posix()):
-                self.assertEqual(problems(sheet.read_text()), [])
-
-    def test_app_pages_share_the_shell(self):
-        for page in APP_PAGES:
-            html = page.read_text()
-            with self.subTest(page=page.relative_to(ROOT).as_posix()):
-                self.assertRegex(html, r'<link rel="stylesheet" href="/?style\.css">')
-                for shell in ('class="window"', 'sidebar glass', 'toolbar glass', 'class="page"',
-                              'class="backdrop"'):
-                    self.assertIn(shell, html)
-
-    def test_static_pages_use_the_kit(self):
-        for page in STATIC_PAGES:
-            html = page.read_text()
-            with self.subTest(page=page.relative_to(ROOT).as_posix()):
-                linked = re.findall(r'<link rel="stylesheet" href="([^"]+)">', html)
-                self.assertIn(KIT.resolve(), [(page.parent / href).resolve() for href in linked])
-                self.assertIn('toolbar glass', html)
-                self.assertEqual(problems(inline_styles(html)), [])
-
-    def test_blog_dialogs_take_the_shared_look(self):
-        html = APP_PAGES[1].read_text()
-        tags = re.findall(r'<dialog\b[^>]*>', html)
-        self.assertTrue(tags)
-        for found in tags:
-            self.assertIn('class="dialog"', found)
-
-
-if __name__ == '__main__':
-    unittest.main()
-```
-
-- [ ] **Step 2: Run it and confirm it fails for the expected reasons**
-
-Run: `python3 -m unittest tests.test_ui_consistency -v`
-
-Expected failures:
-- `test_kit_defines_every_shared_component`: `.workflow-steps`, `.dialog`, `label.field`, `label.seg-option` and `.input-typed` are missing (`.pick-card` is still in `deck.css`).
-- `test_page_stylesheets_only_lay_out`:
-  - `home.css`: bare `button`/`input`/`label`/`h1`, and a literal colour.
-  - `blog.css`: `dialog`, `button:disabled`, `a`, `#editorial-screen .toolbar`, and a literal colour.
-  - `deck.css`: `.pick-card` drawn.
-- `test_app_pages_share_the_shell`: `core/studio_core/setup_web/index.html`.
-- `test_static_pages_use_the_kit`: both static pages.
-- `test_blog_dialogs_take_the_shared_look`: four dialogs without `class="dialog"`.
-
-- [ ] **Step 3: Commit the failing guard**
-
-```bash
-git add tests/test_ui_consistency.py
-git commit -m "Add a guard for one shared look across the studio pages
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
-```
+  `SHARED` also covers tables, titles, tags, states and the other shared components, and `ELEMENTS` covers table elements. The committed file is the reference.
+- [x] **Step 2: Confirm it fails for real reasons.** `python3 -m unittest tests.test_ui_consistency -v` reports 8 failures:
+  - the missing kit components;
+  - the `home.css`, `blog.css` and `deck.css` redraws and literal colours;
+  - the setup page without the shell;
+  - both static pages;
+  - four Blog Studio dialogs without `class="dialog"`.
+- [x] **Step 3: Commit.**
 
 ---
 
@@ -1463,7 +1319,6 @@ Update the two home assertions in `studios/blog/scripts/ci/check-management.cjs`
    steps, choice cards, tables and every colour come from style.css. */
 .studio-hidden-controls{display:none}
 .studio-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem}
-.studio-summary .large-title{font-size:2rem}
 .blog-search{max-width:28rem}
 .wizard-foot{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap}
 .source-choices{display:grid;gap:.5rem;max-height:20rem;overflow:auto}
@@ -1502,7 +1357,7 @@ Update the two home assertions in `studios/blog/scripts/ci/check-management.cjs`
 .import-post-list label{display:flex;align-items:start;gap:.7rem}.import-post-list input{width:auto}.import-post-list a{display:block}
 .import-selection-tools,.import-actions{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:1rem 0}
 @media(min-width:1100px){.gate{grid-template-columns:minmax(0,1fr) 18rem}}
-@media(max-width:600px){#editorial-screen>header{flex-wrap:wrap}#editorial-screen .actions{width:100%}#editorial-screen table,#editorial-screen tbody{display:block}#editorial-screen thead{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden}#editorial-screen tr{display:block;border-bottom:1px solid var(--hair);padding:.8rem}#editorial-screen td{display:block;border:0;padding:.3rem}#editorial-screen td::before{content:attr(data-label);display:block;color:var(--quiet);font-size:.8rem}.wizard-foot>*{flex:1}.pagination{flex-wrap:wrap}}
+@media(max-width:600px){#editorial-screen>header{flex-wrap:wrap}#editorial-screen .actions{width:100%}.wizard-foot>*{flex:1}.pagination{flex-wrap:wrap}}
 
 .manuscript-input { width:100%; min-height:22rem; resize:vertical; font:inherit; line-height:1.6; box-sizing:border-box; }
 .manuscript-original { white-space:pre-wrap; overflow-wrap:anywhere; max-height:24rem; overflow:auto; }
@@ -1547,6 +1402,8 @@ Update the two home assertions in `studios/blog/scripts/ci/check-management.cjs`
 .sheet-heading .sheet-title{margin:0;min-width:0;overflow-wrap:anywhere}
 .sheet-heading .button{flex-shrink:0}
 ```
+
+The narrow-screen table rules are gone. With `class="table"`, the editorial table takes the kit's own phone layout: cells stack with their `data-label`, at 52rem like every other table. Blog Studio's summary keeps the shared large-title size.
 
 The old `blog.css` still has rules this replacement drops; copy any that apply. The dropped sets are:
 - **Dead or unused:** `.mode-grid`/`.mode-choice*` (unused) and `.chat-tip`.
@@ -1685,6 +1542,225 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
+### Task 7A: A way back to Marketing Studio
+
+**Files:**
+- Create: `tests/test_suite_link.py`
+- Modify: `core/studio_core/setup_web/app.js`
+- Modify: `ui-kit/style.css`
+- Modify: `studios/blog/skills/blog-studio/assets/management/index.html`, `app.js`, `runner.js`
+- Modify: `studios/presentation/skills/presentation-studio/scripts/desk/index.html`, `app.js`
+- Modify: `studios/training/skills/training-studio/scripts/desk/index.html`, `app.js`
+
+Marketing Studio opens each studio in a tab of its own (`window.open('about:blank', 'marketing-<id>')`), so the studio tab's opener is the Marketing Studio tab. None of the servers sends `Cross-Origin-Opener-Policy`, so a link in the studio that targets the window named `marketing-studio` brings that tab forward. It reloads at its own address, and its key is already in its `sessionStorage`.
+
+- [ ] **Step 1: Write the failing test** `tests/test_suite_link.py`:
+
+```python
+"""Each studio offers a way back to the Marketing Studio tab that opened it.
+
+Marketing Studio adds its own address to the link of a studio it opens. The studio accepts
+it only for the same scheme and host on another port, and then shows a link that targets
+the Marketing Studio tab by name.
+"""
+import json
+import re
+import shutil
+import subprocess
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+HOME = ROOT / 'core/studio_core/setup_web/app.js'
+STUDIOS = (
+    ROOT / 'studios/blog/skills/blog-studio/assets/management',
+    ROOT / 'studios/presentation/skills/presentation-studio/scripts/desk',
+    ROOT / 'studios/training/skills/training-studio/scripts/desk',
+)
+HERE = {'protocol': 'http:', 'hostname': '127.0.0.1', 'port': '8791'}
+CASES = [
+    ('#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790', 'http://127.0.0.1:8790'),
+    ('#abc&home=http%3A%2F%2F127.0.0.1%3A8790', 'http://127.0.0.1:8790'),
+    ('#token=abc', ''),
+    ('', ''),
+    ('#token=abc&home=http%3A%2F%2Felsewhere.example%3A8790', ''),
+    ('#token=abc&home=https%3A%2F%2F127.0.0.1%3A8790', ''),
+    ('#token=abc&home=http%3A%2F%2F127.0.0.1%3A8791', ''),
+    ('#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790%2Fapi', ''),
+    ('#token=abc&home=javascript%3Aalert(1)', ''),
+]
+LINK = ('<a id="go-suite" class="nav-item suite-link" target="marketing-studio" hidden>'
+        '<span class="nav-label">Marketing Studio</span></a>')
+
+
+def function(source: str, name: str) -> str:
+    found = re.search(r'function ' + name + r'\([^)]*\) \{[\s\S]*?\n\}', source)
+    if not found:
+        raise AssertionError(name + ' is not defined as a top-level function')
+    return found.group(0)
+
+
+@unittest.skipUnless(shutil.which('node'), 'needs Node.js')
+class SuiteLinkTests(unittest.TestCase):
+    def evaluate(self, source: str, expression: str):
+        done = subprocess.run(['node', '-e', source + '\nprocess.stdout.write(JSON.stringify('
+                               + expression + '));'], capture_output=True, text=True, timeout=10)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return json.loads(done.stdout)
+
+    def test_studios_accept_only_marketing_studio_on_the_same_host(self):
+        for folder in STUDIOS:
+            with self.subTest(studio=folder.relative_to(ROOT).as_posix()):
+                source = function((folder / 'app.js').read_text(), 'suiteHome')
+                found = self.evaluate(source, json.dumps([hash for hash, _ in CASES])
+                                      + '.map((hash) => suiteHome(hash, ' + json.dumps(HERE) + '))')
+                self.assertEqual(found, [wanted for _, wanted in CASES])
+
+    def test_marketing_studio_names_itself_in_studio_links(self):
+        text = HOME.read_text()
+        self.assertIn("if (!standalone) window.name = 'marketing-studio';", text)
+        source = 'const location = {origin: "http://127.0.0.1:8790"};\n' + function(text, 'withHome')
+        found = self.evaluate(source, '[withHome("http://127.0.0.1:8791/#token=abc"), '
+                                      'withHome("http://127.0.0.1:8792/#abc")]')
+        self.assertEqual(found, ['http://127.0.0.1:8791/#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790',
+                                 'http://127.0.0.1:8792/#abc&home=http%3A%2F%2F127.0.0.1%3A8790'])
+
+    def test_studio_pages_hold_a_hidden_link_back(self):
+        for folder in STUDIOS:
+            with self.subTest(studio=folder.relative_to(ROOT).as_posix()):
+                self.assertIn(LINK, (folder / 'index.html').read_text())
+
+
+if __name__ == '__main__':
+    unittest.main()
+```
+
+- [ ] **Step 2: Run it and confirm it fails.** `python3 -m unittest tests.test_suite_link -v` fails because `suiteHome`, `withHome`, `window.name` and the link are missing.
+
+- [ ] **Step 3: Marketing Studio names itself** (`core/studio_core/setup_web/app.js`).
+  - After the line `const token = tokenInLink || sessionStorage.getItem(sessionKey) || '';`, add:
+
+```js
+// Studios opened from here link back to this tab by its name.
+if (!standalone) window.name = 'marketing-studio';
+function withHome(link) {
+  return link + (link.includes('#') ? '&' : '#') + 'home=' + encodeURIComponent(location.origin);
+}
+```
+
+  - In the studio button's click handler, `if (tab) tab.location.href = result.link;` becomes `if (tab) tab.location.href = withHome(result.link);`. In the blocked-tab fallback, `link.href = result.link;` becomes `link.href = withHome(result.link);`.
+  - In the startup function at the end of the file, before `snapshot = await api('home')`, add a check for a tab opened without its key:
+
+```js
+  if (!token) { $('#loading').hidden = true; inform(`This page needs its private link. Run ${standalone ? 'the studio command' : 'marketing-studio'} in your terminal to open it again.`, true); return; }
+```
+
+- [ ] **Step 4: The link's place in the shell** (`ui-kit/style.css`). Add to the shared components section:
+
+```css
+/* The way back to Marketing Studio, shown only when Marketing Studio opened this studio. */
+.suite-link {
+  margin-top: auto;
+  color: inherit;
+  text-decoration: none;
+}
+
+@media (max-width: 52rem) {
+  .suite-link {
+    margin-top: 0;
+  }
+}
+```
+
+- [ ] **Step 5: The link in each studio page.** In each of the three `index.html` files, add this as the last child of the sidebar `<nav>`, after the `go-settings` button:
+
+```html
+<a id="go-suite" class="nav-item suite-link" target="marketing-studio" hidden><span class="nav-label">Marketing Studio</span></a>
+```
+
+- [ ] **Step 6: Presentation Studio and Training Studio** (`scripts/desk/app.js` in each).
+  - Add the same entry to `ICONS`, after `settings`: `suite: ['M4 4h6v6H4z', 'M14 4h6v6h-6z', 'M4 14h6v6H4z', 'M14 14h6v6h-6z'],`. This is the Marketing Studio "Studios" drawing.
+  - Add this function just above `function linkToken()`:
+
+```js
+// Marketing Studio names its own address when it opens this studio, so the page can link back
+// to that tab. Only the same scheme and host on another port is accepted.
+function suiteHome(hash, here) {
+  const named = new URLSearchParams(String(hash).replace(/^#/, '')).get('home') || '';
+  const found = /^(https?:)\/\/([^/:?#@\s]+):(\d{1,5})\/?$/.exec(named);
+  return found && found[1] === here.protocol && found[2] === here.hostname && found[3] !== here.port
+    ? found[1] + '//' + found[2] + ':' + found[3] : '';
+}
+```
+
+  - In `begin()`, after the `for (const [id, screen, drawing] of NAV) { … }` loop, add:
+
+```js
+  const suite = byId('go-suite');
+  const home = suiteHome(window.location.hash, window.location);
+  if (suite && home) {
+    suite.href = home + '/';
+    suite.prepend(icon('suite'));
+    suite.hidden = false;
+  }
+```
+
+  These desks keep their link's fragment in the address, so a reload still has `home`.
+
+- [ ] **Step 7: Blog Studio.** Blog Studio removes the fragment after reading it, so it keeps the address for the tab in `sessionStorage`.
+  - In `assets/management/app.js`, replace lines 3-4:
+
+```js
+const token = location.hash.slice(1) || sessionStorage.getItem('blog-studio-session') || '';
+if(token)sessionStorage.setItem('blog-studio-session',token);
+```
+
+    with:
+
+```js
+// Marketing Studio names its own address when it opens this studio, so the page can link back
+// to that tab. Only the same scheme and host on another port is accepted.
+function suiteHome(hash, here) {
+  const named = new URLSearchParams(String(hash).replace(/^#/, '')).get('home') || '';
+  const found = /^(https?:)\/\/([^/:?#@\s]+):(\d{1,5})\/?$/.exec(named);
+  return found && found[1] === here.protocol && found[2] === here.hostname && found[3] !== here.port
+    ? found[1] + '//' + found[2] + ':' + found[3] : '';
+}
+const token = location.hash.slice(1).split('&')[0] || sessionStorage.getItem('blog-studio-session') || '';
+const suite = suiteHome(location.hash, location) || sessionStorage.getItem('marketing-studio-home') || '';
+if(token)sessionStorage.setItem('blog-studio-session',token);
+if(suite)sessionStorage.setItem('marketing-studio-home',suite);
+```
+
+  - In `assets/management/runner.js`, after the line `STUDIO_ICONS.studio=['M5 3h10l4 4v14H5z','M14 3v5h5','M8 12h8','M8 16h6'];`, add:
+
+```js
+STUDIO_ICONS.suite=['M4 4h6v6H4z','M14 4h6v6h-6z','M4 14h6v6H4z','M14 14h6v6h-6z'];
+{const back=$('go-suite');if(back&&suite){back.href=suite+'/';back.prepend(sIcon('suite'));back.hidden=false;}}
+```
+
+- [ ] **Step 8: Run the checks**
+
+Run: `python3 -m unittest tests.test_suite_link tests.test_shared_setup tests.test_ui_consistency -v 2>&1 | grep -E "ok$|FAIL|ERROR|^Ran"`
+Expected: `test_suite_link` passes. `test_shared_setup` passes; `openNative` is unchanged.
+
+Run: `for f in core/studio_core/setup_web/app.js studios/*/skills/*/assets/management/*.js studios/*/skills/*/scripts/desk/app.js; do node --check "$f" || echo "FAILED $f"; done`
+Expected: no `FAILED`.
+
+Run: `(cd studios/blog && node scripts/ci/check-management.cjs >/dev/null && echo blog-ok); (cd studios/presentation && python3 scripts/ci/run_tests.py test_desk test_page_app) 2>&1 | tail -2; (cd studios/training && python3 scripts/ci/run_tests.py test_desk) 2>&1 | tail -2`
+Expected: `blog-ok` and OK, apart from socket tests that the sandbox cannot run.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add tests/test_suite_link.py core/studio_core/setup_web/app.js ui-kit/style.css studios/blog/skills/blog-studio/assets/management studios/presentation/skills/presentation-studio/scripts/desk studios/training/skills/training-studio/scripts/desk
+git commit -m "Offer a way back to Marketing Studio from each studio it opens
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
 ### Task 8: Design documents
 
 **Files:**
@@ -1776,8 +1852,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Guard and root suite**
 
-Run: `python3 -m unittest tests.test_ui_consistency -v`
-Expected: all five tests PASS.
+Run: `python3 -m unittest tests.test_ui_consistency tests.test_suite_link -v`
+Expected: all tests PASS.
 
 Run: `python3 -m unittest discover -s tests -t . 2>&1 | tail -15`
 Expected: OK. If a test fails or errors, check whether it failed the same way at the base commit (`git stash` is not used; check out the base in a scratch worktree). Record only those as sandbox limits.
@@ -1792,6 +1868,7 @@ Expected: OK in each, apart from limits recorded in Step 1.
 - [ ] **Step 3: Visual check of every page.** Use synthetic data at 1440×900 and 390×844, in light and dark appearance. Cover:
 - Marketing Studio home, first-run setup (each step) and "This computer";
 - standalone setup for one studio, which shows that studio's symbol and colour;
+- a studio opened from Marketing Studio, whose "Marketing Studio" item brings the home tab forward, and the same studio opened on its own, which shows no such item;
 - Blog Studio Home, a run's review step, the editorial board and the upload dialog;
 - Presentation Studio Home and a deck at its review gate, including the storyboard;
 - Training Studio Home, the new-training form with material chips, and a gate;

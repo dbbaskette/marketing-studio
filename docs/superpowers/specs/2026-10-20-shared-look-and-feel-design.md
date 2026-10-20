@@ -114,6 +114,26 @@ page. The duplicates in `home.css` and `blog.css` are removed.
   shared shell and controls, and regenerate its screenshots. `docs/design/golden-gate.md`
   gains the component inventory and the rule that page stylesheets add layout only.
 
+## A way back to Marketing Studio
+
+Each studio keeps its own address. When Marketing Studio opens a studio, the studio
+offers a way back:
+
+- Marketing Studio names its own browser tab and adds its address to the studio link it
+  opens (`&home=<address>` in the link's fragment).
+- The studio accepts that address only for the same scheme and host on another port.
+  It then shows a "Marketing Studio" item at the foot of its sidebar, or at the end of
+  the bottom bar on a phone.
+- The item brings the existing Marketing Studio tab forward, which reloads with the key
+  it already holds.
+- A studio started on its own shows no such item.
+- If the Marketing Studio tab is gone, the new tab says to run `marketing-studio` again
+  instead of reporting a missing key.
+
+A single address for every studio was considered and declined. It would remove the
+separate browser origins that keep one studio's page from reading another's key, and
+every studio would need a second, path-prefixed mode.
+
 ## Unchanged
 
 Workflows, routes, API calls, authentication, session keys, data and information
