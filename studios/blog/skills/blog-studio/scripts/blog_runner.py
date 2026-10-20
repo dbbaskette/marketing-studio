@@ -252,8 +252,10 @@ def inputs(root, record, run):
     return payload
 
 
-def basis(root, directory, record, run, stage):
-    context = inputs(root, record, run)
+def basis(root, directory, record, run, stage, context=None, research=None):
+    """A stage's input pin. Pass the serialised inputs() and research manifest to reuse them."""
+    if context is None:
+        context = json.dumps(inputs(root, record, run), sort_keys=True)
     previous = {}
     if run.get('mode') == 'from-outline':
         previous['supplied_outline'] = studio.artifact_fingerprint(directory, 'OUTLINE.md')
@@ -262,26 +264,37 @@ def basis(root, directory, record, run, stage):
             break
         previous[name] = studio.artifact_fingerprint(directory, STAGES[name][1])
     if run.get('research_contract') and 'research' in previous and run['stages'].get('research'):
-        _, manifest = research_contract.read_bundle(directory / 'research')
-        previous['research_digest'] = manifest['digest']
+        if research is None:
+            _, research = research_contract.read_bundle(directory / 'research')
+        previous['research_digest'] = research['digest']
     original = studio.artifact_fingerprint(directory, 'ORIGINAL.md')
     if run['existing'] and stage != 'draft':
         previous['manuscript'] = studio.artifact_fingerprint(directory, 'DRAFT.md') or original
-    return studio.digest(json.dumps([context, previous, original], sort_keys=True).encode())
+    # Byte-for-byte json.dumps([inputs, previous, original], sort_keys=True), so saved pins hold.
+    pinned = '[' + context + ', ' + json.dumps(previous, sort_keys=True) + ', '
+    return studio.digest((pinned + json.dumps(original) + ']').encode())
 
 
-def survey(root, ident):
+def survey(root, ident, listing=False):
+    """Stage states. A listing skips the version token and next document a decision needs."""
     directory, record, run = load(root, ident)
+    research = None
     if run.get('research_contract') and run['stages'].get('research'):
-        research_contract.read_bundle(directory / 'research')
+        _, research = research_contract.read_bundle(directory / 'research')
+    # Selected context is read and serialised once; every stage pin reuses it.
+    context = json.dumps(inputs(root, record, run), sort_keys=True)
+    bases = {}
+
+    def pin(name):
+        if name not in bases:
+            bases[name] = basis(root, directory, record, run, name, context, research)
+        return bases[name]
+
     rows, next_stage, upstream = [], None, False
     for name in run['pipeline']:
         saved = run['stages'].get(name, {})
         current = studio.artifact_fingerprint(directory, STAGES[name][1])
-        changed = bool(saved) and (
-            saved.get('hash') != current
-            or saved.get('basis') != basis(root, directory, record, run, name)
-        )
+        changed = bool(saved) and (saved.get('hash') != current or saved.get('basis') != pin(name))
         status = (
             'pending'
             if saved.get('status') == 'pending'
@@ -304,27 +317,32 @@ def survey(root, ident):
                 'request': saved.get('request', ''),
             }
         )
-    content = ''
-    if next_stage:
+    content, revision = '', None
+    if next_stage and not listing:
         path = studio.inside(directory, STAGES[next_stage][1])
         content = path.read_text() if path.is_file() else ''
-    revision = studio.digest(
-        (
-            studio.inside(directory, STATE).read_bytes()
-            + ((directory / 'run.json').read_bytes() if (directory / 'run.json').is_file() else b'')
-            + json.dumps(
-                [
+    if not listing:
+        revision = studio.digest(
+            (
+                studio.inside(directory, STATE).read_bytes()
+                + (
+                    (directory / 'run.json').read_bytes()
+                    if (directory / 'run.json').is_file()
+                    else b''
+                )
+                + json.dumps(
                     [
-                        row,
-                        studio.artifact_fingerprint(directory, row['path']),
-                        basis(root, directory, record, run, row['stage']),
-                    ]
-                    for row in rows
-                ],
-                sort_keys=True,
-            ).encode()
+                        [
+                            row,
+                            studio.artifact_fingerprint(directory, row['path']),
+                            pin(row['stage']),
+                        ]
+                        for row in rows
+                    ],
+                    sort_keys=True,
+                ).encode()
+            )
         )
-    )
     return {
         'id': ident,
         'title': record['title'],
@@ -863,8 +881,8 @@ class Engine:
         self.wake.set()
         return self.describe(ident)
 
-    def describe(self, ident):
-        found = survey(self.root, ident)
+    def describe(self, ident, listing=False):
+        found = survey(self.root, ident, listing)
         local = self.local(ident)
         status = local.get('status', 'paused')
         if found['complete']:
@@ -1157,7 +1175,7 @@ def catalog(root):
         ident = path.parent.name
         try:
             if studio.inside(path.parent, STATE).is_file():
-                found = engine(root).describe(ident)
+                found = engine(root).describe(ident, listing=True)
                 rows.append(
                     {
                         k: found[k]

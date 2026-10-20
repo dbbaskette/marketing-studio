@@ -335,6 +335,52 @@ class BlogRunnerTests(Fixture):
                 self.assertNotIn('research_contract', run)
                 self.assertEqual(record['research_policy'], 'supplied-only')
 
+    def test_polling_reads_selected_context_once_per_run(self):
+        source = self.source('A fictional gateway routes synthetic requests.')
+        ids = []
+        for _ in range(3):
+            found = self.approve(self.submit(self.create(sources=[source['id']])))
+            found = self.approve(self.submit(found))
+            ids.append(self.submit(found)['id'])
+        with patch.object(runner, 'inputs', wraps=runner.inputs) as counted:
+            detail = runner.survey(self.root, ids[0])
+        self.assertEqual(counted.call_count, 1)
+        self.assertTrue(detail['expected'])
+        with patch.object(runner, 'inputs', wraps=runner.inputs) as counted:
+            listed = runner.catalog(self.root)
+        self.assertEqual(counted.call_count, len(ids))
+        self.assertEqual(
+            [row['stages'] for row in listed['items'] if row['id'] == ids[0]], [detail['stages']]
+        )
+        # List views skip the version token; decisions still need the exact one.
+        self.assertIsNone(runner.survey(self.root, ids[0], listing=True)['expected'])
+
+    def test_list_and_detail_views_agree_when_inputs_change(self):
+        found = self.approve(self.submit(self.create()))
+        directory, record = studio.item(self.root, 'articles', found['id'])
+        record['title'] = 'A changed synthetic title'
+        studio.persist(directory, 'articles', record)
+        detail = runner.survey(self.root, found['id'])
+        self.assertEqual(detail['stages'][0]['status'], 'stale')
+        self.assertNotEqual(detail['expected'], found['expected'])
+        listed = next(row for row in runner.catalog(self.root)['items'] if row['id'] == found['id'])
+        self.assertEqual(listed['stages'], detail['stages'])
+
+    def test_input_pins_keep_their_saved_format(self):
+        found = self.approve(self.submit(self.create()))
+        directory, record, run = runner.load(self.root, found['id'])
+        context = runner.inputs(self.root, record, run)
+        original = studio.artifact_fingerprint(directory, 'ORIGINAL.md')
+
+        def pin(previous):
+            return studio.digest(json.dumps([context, previous, original], sort_keys=True).encode())
+
+        self.assertEqual(run['stages']['outline']['basis'], pin({}))
+        outline = studio.artifact_fingerprint(directory, 'OUTLINE.md')
+        self.assertEqual(
+            runner.basis(self.root, directory, record, run, 'draft'), pin({'outline': outline})
+        )
+
     def test_page_creation_retry_is_idempotent(self):
         data = {
             'operation': 'a' * 32,
