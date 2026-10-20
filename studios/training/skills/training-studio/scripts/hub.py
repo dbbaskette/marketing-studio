@@ -77,10 +77,13 @@ def run(repo: Path, *args: str, input: str | None = None,
     if subcommand(args) in REMOTE and not own_ssh(repo, env):
         env['GIT_SSH_COMMAND'] = BATCH_SSH
     try:
-        return subprocess.run(['git', *args], cwd=repo, env=env, capture_output=True,
+        done = subprocess.run(['git', *args], cwd=repo, env=env, capture_output=True,
                               stdin=subprocess.DEVNULL if input is None else None,
                               input=input, encoding='utf-8', errors='replace',
                               timeout=timeout, start_new_session=True)
+        done.studio_git = shutil.which('git')
+        done.studio_cwd = str(repo)
+        return done
     except subprocess.TimeoutExpired:
         problem = f'git {subcommand(args)} did not finish in {timeout:g} seconds'
     except OSError as failure:
@@ -106,7 +109,13 @@ def reason(done: subprocess.CompletedProcess) -> str:
         for line in lines:
             if line.startswith(prefix) and not line.startswith('remote: '):
                 return (line[len(prefix):] + (f': {said}' if said else '')).rstrip('.')
-    return said.rstrip('.') or 'git failed'
+    if said:
+        return said.rstrip('.')
+    from studio_core.git_diagnostics import silent_failure
+    arguments = list(done.args) if not isinstance(done.args, str) else []
+    if arguments and Path(arguments[0]).name == 'git':
+        arguments = arguments[1:]
+    return silent_failure(done, subcommand(tuple(arguments)), 'training')
 
 
 def git(repo: Path, *args: str) -> str:

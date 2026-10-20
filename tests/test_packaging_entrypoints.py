@@ -100,6 +100,7 @@ class PackagingEntryTests(unittest.TestCase):
                 source = self.root / product / 'source'
                 source.mkdir(parents=True)
                 (source / 'verify-installed.py').write_text('# synthetic verifier\n')
+                (source / 'diagnose-git.sh').write_text('# synthetic diagnostic\n')
                 suite = home / '.local/share/marketing-studio/versions/synthetic'
                 suite.mkdir(parents=True)
                 (suite.parent.parent / 'current').symlink_to(suite)
@@ -127,6 +128,7 @@ class PackagingEntryTests(unittest.TestCase):
                 self.assertEqual(record['product'], product)
                 title = product.title() + ' Studio'
                 self.assertTrue((home / ('Applications/Verify ' + title + '.sh')).is_file())
+                self.assertTrue((home / ('Applications/Diagnose ' + title + ' Git.sh')).is_file())
                 for path, prior in saved.items():
                     if not any(str(path).startswith(str(home / '.local/share' / (name + '-studio')) + '/') for name in ('marketing', *selected)):
                         self.assertEqual(path.read_bytes(), prior)

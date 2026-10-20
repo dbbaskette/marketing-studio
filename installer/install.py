@@ -339,4 +339,6 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    from studio_core.install_log import session
+    with session('Marketing Studio'):
+        raise SystemExit(main())

@@ -1011,4 +1011,6 @@ from studio_core.companions import bind as _bind_companions
 _bind_companions(globals())
 
 if __name__ == '__main__':
-    sys.exit(main())
+    from studio_core.install_log import session
+    with session('Presentation Studio'):
+        raise SystemExit(main())

@@ -1319,4 +1319,7 @@ def run(args):
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    from studio_core.install_log import session
+
+    with session('Blog Studio'):
+        raise SystemExit(main())

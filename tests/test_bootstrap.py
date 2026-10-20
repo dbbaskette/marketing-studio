@@ -26,6 +26,8 @@ class BootstrapTests(unittest.TestCase):
                      '/Library/Frameworks/Python.framework/Versions/Current/bin/python3'):
             source = source.replace(path, 'unavailable-python')
         self.script = self.root / 'install.sh'
+        source = source.replace('$installer_dir/../core/studio_core/install-log.sh',
+                                str(ROOT / 'core/studio_core/install-log.sh'))
         self.script.write_text(source)
         self.env = {'PATH': str(self.bin), 'HOME': str(self.root), 'CALLS': str(self.log),
                     'READY': str(self.root / 'ready')}
@@ -107,7 +109,7 @@ printf 'brew:%s\\n' "$*" >> "$CALLS"
     def test_skip_and_inspection_never_run_package_managers(self):
         (self.root / 'ready').touch()
         for args in (('--prerequisites', 'skip', '--yes'), ('--dry-run',), ('check', '--yes'),
-                     ('rollback', '--yes'), ('--home', '/tmp/disposable-home', '--yes')):
+                     ('rollback', '--yes'), ('--home', str(self.root / 'alternate home'), '--yes')):
             with self.subTest(args=args):
                 self.log.unlink(missing_ok=True)
                 done = self.run_setup(*args)
@@ -166,6 +168,10 @@ printf 'apt-get:%s\\n' "$*" >> "$CALLS"
         done = self.run_setup('--yes')
         self.assertEqual(done.returncode, 9)
         self.assertNotIn('python:', self.calls())
+        log, = self.root.glob('.local/state/marketing-studio/logs/install-*')
+        self.assertIn('Run:', log.read_text())
+        self.assertIn('Command finished: exit 9', log.read_text())
+        self.assertIn('Installer finished: exit 9', log.read_text())
 
     def test_help_does_not_require_python_or_install_anything(self):
         done = self.run_setup('--target', 'codex', '--help')

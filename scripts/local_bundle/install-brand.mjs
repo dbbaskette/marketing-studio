@@ -1,6 +1,6 @@
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { readFile, appendFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 const [source, home, target, action] = process.argv.slice(2);
@@ -21,7 +21,20 @@ if (installed && numbers(installed).some((n,i) => n > numbers(incoming)[i] && nu
   if(action === 'install') {
     const exec = promisify(execFile);
     await activateShared(plan,{log:()=>{},verify:async root => {
-      await exec(process.execPath,[join(root,'scripts/audit-brand.mjs'),'--self'],{timeout:60000});
+      const args = [join(root,'scripts/audit-brand.mjs'),'--self'];
+      const log = async text => {
+        if(process.env.STUDIO_INSTALL_LOG) {
+          await appendFile(process.env.STUDIO_INSTALL_LOG, `\n${new Date().toISOString()} [pid ${process.pid}] ${text}\n`);
+        }
+      };
+      await log('Run: ' + JSON.stringify([process.execPath,...args]));
+      try {
+        const result = await exec(process.execPath,args,{timeout:60000});
+        await log(result.stdout + result.stderr + '\nCommand finished: exit 0');
+      } catch(error) {
+        await log((error.stdout || '') + (error.stderr || '') + '\nCommand failed: ' + (error.signal || error.code));
+        throw error;
+      }
     }});
   }
   console.log(JSON.stringify({current,status:action === 'install' ? 'installed' : 'planned'}));
