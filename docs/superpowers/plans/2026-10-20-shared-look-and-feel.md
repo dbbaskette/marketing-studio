@@ -1243,7 +1243,7 @@ Line 231: replace the loop
 with
 
 ```js
-  for(const [title,description,action] of tasks){const button=sChoice(title,description,action);button.disabled=!access.actions.edit;list.append(button);}return sCard('What would you like to do?',list);
+  for(const [title,description,action] of tasks){const button=sPickCard(title,description,action);button.disabled=!access.actions.edit;list.append(button);}return sCard('What would you like to do?',list);
 ```
 
 Line 416: replace
@@ -1255,7 +1255,7 @@ Line 416: replace
 with
 
 ```js
-    const task=(title,detail,action,ready=true)=>{const button=sChoice(title,detail,action);button.disabled=!ready;return button;};
+    const task=(title,detail,action,ready=true)=>{const button=sPickCard(title,detail,action);button.disabled=!ready;return button;};
 ```
 
 The tasks at line 416 are direct children of the "More tools" sheet, with no list container. As choice cards they stack at full width, spaced by the sheet's own rule.
@@ -1266,7 +1266,7 @@ Expected: `0`
 Add the helper right after the `sButton` definition (line 11):
 
 ```js
-function sChoice(title,says,action){const node=sNode('button','pick-card',title);node.type='button';node.append(sNode('span','pick-says',says));node.addEventListener('click',async()=>{try{await action(node);}catch(error){notice(error.message,true);}});return node;}
+function sPickCard(title,says,action){const node=sNode('button','pick-card',title);node.type='button';node.append(sNode('span','pick-says',says));node.addEventListener('click',async()=>{try{await action(node);}catch(error){notice(error.message,true);}});return node;}
 ```
 
 The title is the button's own text, as with Blog Studio's other buttons. `scripts/ci/check-management.cjs` finds a start task by its button text and clicks it. `.pick-card` sets the title weight and `.pick-says` resets its own.
