@@ -7,6 +7,7 @@ import gzip
 import io
 import json
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -1605,6 +1606,30 @@ class ResearchCitationTests(JobCase):
         self.assertIn('research/sources/restarts.md', said)
         self.assertIn(saved['file'], said)
         self.ok(tools.submit_artifact('research-result', self.dossier(saved['file'], saved['url'])))
+
+    def test_what_the_helper_refuses_is_said_before_the_job_ends(self):
+        runtime = self.job.parent / 'runtime'
+        (runtime / 'scripts').mkdir(parents=True)
+        (runtime / 'scripts' / 'harness-research.mjs').write_text(
+            "import fs from 'node:fs';\nimport path from 'node:path';\n"
+            "const a = process.argv.slice(2), get = n => a[a.indexOf(n) + 1];\n"
+            "const d = JSON.parse(fs.readFileSync(path.join(get('--project'), get('--file')), 'utf8'));\n"
+            "for (const s of d.sources) if (!fs.existsSync(path.join(get('--project'), s.file))) "
+            "{ console.error('Missing ' + s.file); process.exit(1); }\n"
+            "if (!Array.isArray(d.sections)) { console.error('sections must be an array.'); process.exit(1); }\n"
+            "console.log('{}');\n")
+        tools = self.tools(fetch=True, ask=False, artifacts={'research-result': {
+            'kind': 'research-json', 'runtime': str(runtime), 'node': shutil.which('node'),
+            'worker': 'author-1', 'task': {'topic': 'Rolling restarts'}}})
+        self.web.page(DOCS, PAGE)
+        self.ok(tools.save_source(DOCS))
+        saved = worker_tools.collect(self.job)['sources'][0]
+        value = json.loads(self.dossier(saved['file'], saved['url']))
+        value['sections'] = {}
+        said = self.refused(tools.submit_artifact('research-result', json.dumps(value)))
+        self.assertIn('sections must be an array', said)
+        value['sections'] = []
+        self.ok(tools.submit_artifact('research-result', json.dumps(value)))
 
 
 if __name__ == '__main__':

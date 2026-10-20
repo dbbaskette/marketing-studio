@@ -1148,7 +1148,7 @@ class WorkerTools:
         if spec['kind'] not in DRAWN:
             if spec['kind'] == 'research-json':
                 # A dossier may cite only what this job saved; the author can correct it here.
-                spec = {**spec, 'captures': self._index()}
+                spec = {**spec, 'captures': self._index(), 'folder': str(self.folder)}
             return VALIDATORS[spec['kind']](text, spec)
         problems, ran, warnings, kept = VALIDATORS[spec['kind']](
             text, spec, self.slides(), self.folder / 'drafts')

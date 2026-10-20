@@ -12,6 +12,7 @@ from pathlib import Path
 import secrets
 import shutil
 import subprocess
+import tempfile
 
 OWNER = 'harness-research-synthesis'
 # Where the Harness Research installer keeps `current` and versions/<version>-<digest>.
@@ -251,6 +252,10 @@ def copy_case(source, destination):
     shutil.copytree(source, destination, dirs_exist_ok=True)
 
 
+# The task's own fields. The caller owns them, so generated prose cannot change them.
+TASK_FIELDS = ('topic', 'audience', 'purpose', 'scope', 'source_mode')
+
+
 class Workflow:
     def __init__(self, runtime=None, call=None):
         self.runtime = Path(runtime) if runtime else find_runtime()
@@ -291,6 +296,8 @@ class Workflow:
                                      'Use only saved source file paths supplied by the tools: copy each '
                                      "source's file and origin exactly from the capture the tools showed, "
                                      'and never invent paths such as research/sources/. '
+                                     'Dossier format: sources, facts, findings, sections and brief are arrays; '
+                                     'sections and brief hold {id, title, blocks: [{text, kind, refs}]}. '
                                      'Set every fact author to this worker ID. Do not write finished studio content.'}
                 previous = case / '.harness-research/synthesis.json'
                 if previous.is_file():
@@ -300,7 +307,7 @@ class Workflow:
                 result, captures = invoke(phase, guide, payload, sources, task['source_mode'] != 'selected')
                 dossier = json.loads(result)
                 # The caller owns intent and permissions. Generated prose cannot broaden them.
-                for key in ('topic', 'audience', 'purpose', 'scope', 'source_mode'):
+                for key in TASK_FIELDS:
                     dossier[key] = task[key]
                 if any(f.get('author') != worker for f in dossier.get('facts', [])):
                     raise ValueError('Research facts must identify their actual author invocation.')
@@ -361,6 +368,8 @@ def check_json(text, spec):
             problems.append('Return a schema-2 JSON object.')
         elif 'captures' in spec and isinstance(value.get('sources'), list):
             problems += uncaptured(value['sources'], spec['captures'])
+            if not problems and spec.get('runtime'):
+                problems += refused(value, spec)
     except (TypeError, ValueError):
         problems.append('Return valid JSON, without Markdown fences.')
     return problems, [{'check': 'research.json', 'status': 'failed' if problems else 'passed',
@@ -390,6 +399,44 @@ def uncaptured(sources, captures):
     return problems
 
 
+def refused(value, spec):
+    """What the pinned helper says of a dossier, saved in a disposable case with this job's own
+    captures and the task's own fields, as the parent will save it after the job. The author
+    can still correct it then; afterwards a refusal would end the whole research step."""
+    dossier = {**copy.deepcopy(value), **(spec.get('task') or {})}
+    worker = spec.get('worker')
+    if any(not isinstance(fact, dict) or fact.get('author') != worker
+           for fact in dossier.get('facts') or []):
+        return [f'Set every fact author to {worker}.']
+    folder = Path(spec['folder'])
+    saved = {entry['file']: entry for entry in spec['captures'] if entry.get('file')}
+    with tempfile.TemporaryDirectory(prefix='research-check-') as temp:
+        case = Path(temp)
+        for source in dossier['sources']:
+            entry = saved[source['file']]
+            for name, local in ((entry.get('file'), entry.get('local')),
+                                (entry.get('original'), entry.get('original'))):
+                if name and local and (folder / local).is_file():
+                    write(case, name, (folder / local).read_bytes())
+            permission = entry.get('permission') or ('selected' if entry.get('offered', True) else 'public')
+            if entry.get('original') and permission == 'selected':
+                source['original_file'] = entry['original']
+        write(case, 'dossier.json', json.dumps(dossier))
+        try:
+            done = subprocess.run(
+                [spec.get('node') or 'node', str(Path(spec['runtime']) / 'scripts/harness-research.mjs'),
+                 'synthesis', 'save', '--project', str(case), '--file', 'dossier.json',
+                 '--worker', str(worker)],
+                capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.TimeoutExpired):
+            return []  # The parent saves it again after the job and reports any failure there.
+    if done.returncode:
+        said = (done.stderr.strip().splitlines() or ['it gave no reason.'])[-1]
+        return [f'Harness Research refused this dossier: {said} Correct it and hand the whole '
+                'dossier back.']
+    return []
+
+
 def native(engine, root, run, task, sources, product):
     """Bridge the common workflow to each studio's existing confined worker transport."""
     from runner import worker_tools, documents, companion
@@ -413,6 +460,12 @@ def native(engine, root, run, task, sources, product):
         if run.stop.is_set() or not engine._may_go(root):
             raise companion.Stopped()
         name = 'research-' + phase
+        result = {'kind': 'research-json'}
+        if phase == 'author':
+            # The job saves the dossier with the same helper the parent will, so the author
+            # learns of a refusal while it can still correct it.
+            result.update(runtime=str(tool.runtime), node=shutil.which('node'),
+                          worker=payload['worker'], task={key: task[key] for key in TASK_FIELDS})
         doing = ('Investigating sources and writing the report' if phase == 'author'
                  else 'Independently checking the research and brief')
         work = Work(guidance + '\n\nUse only the studio tools; the parent runs helper commands. '
@@ -421,7 +474,7 @@ def native(engine, root, run, task, sources, product):
                     json.dumps(payload), 'research' if fetch else 'write',
                     {'inputs': {'research-task': json.dumps(payload)}, 'sources': offered,
                      'fetch': fetch, 'ask': False,
-                     'artifacts': {'research-result': {'kind': 'research-json'}}}, 'research-result')
+                     'artifacts': {'research-result': result}}, 'research-result')
         if product == 'presentation':
             outcome, handed, started, folder = engine._job(root, run, name, doing, work, deck=False)
         else:
