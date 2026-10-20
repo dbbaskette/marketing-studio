@@ -20,7 +20,7 @@
     <p class="sidebar-foot">One place to get ready.<br>Three places to create.</p>
   </nav>
   <div class="content">
-    <div class="toolbar-wrap"><header class="toolbar glass"><div class="toolbar-title"><h1 id="view-title" class="title" tabindex="-1">Studios</h1></div><div class="toolbar-actions"><span id="where" class="tag">On this computer</span></div></header></div>
+    <div class="toolbar-wrap"><header class="toolbar glass"><div class="toolbar-title"><h1 id="view-title" class="title" tabindex="-1">Studios</h1></div><div class="toolbar-actions"><button type="button" id="back-to-studio" class="button button-quiet" hidden>Back</button><span id="where" class="tag">On this computer</span></div></header></div>
     <p id="problem" class="notice" role="alert" hidden></p>
     <main id="content" class="page" tabindex="-1">
       <p id="announce" class="offscreen" role="status" aria-live="polite"></p>
@@ -34,8 +34,8 @@
           <h3 id="network-heading" class="card-title">Continue on your phone</h3>
           <p>Connect to the same trusted Wi-Fi and open this private link. Your work and assistant stay on this computer.</p>
           <div class="field"><label class="field-label" for="network-link">Private session link</label>
-            <div class="copy-row"><input id="network-link" class="input input-typed" type="text" readonly autocomplete="off" spellcheck="false"><button type="button" id="copy-network" class="button">Copy link</button></div></div>
-          <p class="field-hint quiet">Anyone with this link has full studio access. HTTP is unencrypted. Keep it on a trusted network; stop Marketing Studio to disconnect.</p>
+            <div class="copy-row"><input id="network-link" class="input input-typed" type="text" readonly autocomplete="off" spellcheck="false" aria-describedby="network-link-hint"><button type="button" id="copy-network" class="button">Copy link</button></div></div>
+          <p id="network-link-hint" class="field-hint quiet">Anyone with this link has full studio access. HTTP is unencrypted. Keep it on a trusted network; stop Marketing Studio to disconnect.</p>
         </section>
         <p class="quiet launch-note">Leave the Marketing Studio terminal open while you work. You can also open each studio with its own launcher.</p>
       </section>
@@ -47,7 +47,7 @@
             <div class="field-grid">
               <div class="field"><label class="field-label" for="person-name">Your name</label><input id="person-name" class="input" name="person.name" autocomplete="name" maxlength="100"></div>
               <div class="field"><label class="field-label" for="assistant-agent">Assistant</label><select id="assistant-agent" class="input" name="assistant.agent"><option value="claude">Claude Code</option><option value="codex">Codex</option></select></div>
-              <div class="field"><label class="field-label" for="assistant-model">Model <span class="quiet">(optional)</span></label><input id="assistant-model" class="input" name="assistant.model" maxlength="100" placeholder="Use the assistant’s default" autocomplete="off"><p class="field-hint quiet">Use an ID available in your account. All three studios use these choices for the selected assistant.</p></div>
+              <div class="field"><label class="field-label" for="assistant-model">Model <span class="quiet">(optional)</span></label><input id="assistant-model" class="input" name="assistant.model" maxlength="100" placeholder="Use the assistant’s default" autocomplete="off" aria-describedby="assistant-model-hint"><p id="assistant-model-hint" class="field-hint quiet">Use an ID available in your account. All three studios use these choices for the selected assistant.</p></div>
               <div class="field"><label class="field-label" for="assistant-effort">Reasoning</label><select id="assistant-effort" class="input" name="assistant.effort"></select></div>
             </div>
             <div class="model-catalog-bar"><p id="model-catalog-status" class="field-hint quiet" role="status">Loading model choices…</p><button type="button" id="refresh-models" class="button">Refresh models</button></div>
@@ -68,9 +68,9 @@
           </section>
           <section class="card" data-step="1"><h3 class="card-title">Where your work lives</h3><p class="quiet">Keep a Git history on this computer, or share work through a repository.</p>
             <div class="field"><p class="field-label" id="storage-label">Workspace storage</p><div class="segmented" data-count="2" data-at="0" role="radiogroup" aria-labelledby="storage-label"><span class="seg-thumb" aria-hidden="true"></span><label class="seg-option"><input type="radio" name="storage" value="local" checked>Local Git on this computer</label><label class="seg-option"><input type="radio" name="storage" value="remote">Shared repository</label></div></div>
-            <div id="local-fields" class="field"><label class="field-label" for="local-root">Work folder</label><input id="local-root" class="input" name="local.root" placeholder="~/Studios"><p class="field-hint quiet">Each studio keeps a local repository inside this folder.</p></div>
+            <div id="local-fields" class="field"><label class="field-label" for="local-root">Work folder</label><input id="local-root" class="input" name="local.root" placeholder="~/Studios" aria-describedby="local-root-hint"><p id="local-root-hint" class="field-hint quiet">Each studio keeps a local repository inside this folder.</p></div>
             <div id="remote-fields" class="field-grid" hidden>
-              <div class="field full"><label class="field-label" for="team-repository">Repository address</label><input id="team-repository" class="input" name="team.repository" placeholder="https://github.com/your-team/studio-work.git" autocomplete="off"><p class="field-hint quiet">Use an existing repository without credentials in its address.</p></div>
+              <div class="field full"><label class="field-label" for="team-repository">Repository address</label><input id="team-repository" class="input" name="team.repository" placeholder="https://github.com/your-team/studio-work.git" autocomplete="off" aria-describedby="team-repository-hint"><p id="team-repository-hint" class="field-hint quiet">Use an existing repository without credentials in its address.</p></div>
               <div class="field"><label class="field-label" for="team-branch">Branch</label><input id="team-branch" class="input" name="team.branch" placeholder="main"></div>
               <div class="field"><label class="field-label" for="share">Share changes</label><select id="share" class="input" name="share"><option value="decision">After each decision</option><option value="asked">When I ask</option></select></div>
             </div>
@@ -83,18 +83,18 @@
             <div id="brand-choices" hidden></div>
             <p class="field-hint quiet">Give a Git repository address, or choose an installed skill folder. Both are optional. A repository does not need a folder path.</p>
             <div class="field-grid">
-              <div class="field"><label class="field-label" for="brand-repository">Git repository <span class="quiet">(optional)</span></label><input id="brand-repository" class="input" name="brand.repository" placeholder="https://github.com/your-team/brand-skill.git" autocomplete="off"><p class="field-hint quiet">Use an HTTPS or SSH Git address. Save it here, then install or update the brand skill from a studio’s settings.</p></div>
-              <div class="field"><label class="field-label" for="brand-skill">Installed skill folder <span class="quiet">(optional)</span></label><input id="brand-skill" class="input" name="brand.skill" placeholder="~/path/to/installed-brand-skill" autocomplete="off"><p class="field-hint quiet">For a skill already on this computer. Use an absolute folder path or one beginning with ~/. Leave blank to find installed skills automatically.</p></div>
+              <div class="field"><label class="field-label" for="brand-repository">Git repository <span class="quiet">(optional)</span></label><input id="brand-repository" class="input" name="brand.repository" placeholder="https://github.com/your-team/brand-skill.git" autocomplete="off" aria-describedby="brand-repository-hint"><p id="brand-repository-hint" class="field-hint quiet">Use an HTTPS or SSH Git address. Save it here, then install or update the brand skill from a studio’s settings.</p></div>
+              <div class="field"><label class="field-label" for="brand-skill">Installed skill folder <span class="quiet">(optional)</span></label><input id="brand-skill" class="input" name="brand.skill" placeholder="~/path/to/installed-brand-skill" autocomplete="off" aria-describedby="brand-skill-hint"><p id="brand-skill-hint" class="field-hint quiet">For a skill already on this computer. Use an absolute folder path or one beginning with ~/. Leave blank to find installed skills automatically.</p></div>
               <div class="field"><label class="field-label" for="brand-brand">Default brand <span class="quiet">(optional)</span></label><input id="brand-brand" class="input" name="brand.brand" placeholder="For example, tanzu" aria-describedby="brand-default-help"><p id="brand-default-help" class="field-hint quiet">Use a brand name offered by your installed skill. For example, tanzu starts new work with Tanzu branding.</p></div>
-              <div class="field"><label class="field-label" for="brand-variant">Default variant <span class="quiet">(optional)</span></label><input id="brand-variant" class="input" name="brand.variant" placeholder="For example, light"><p class="field-hint quiet">Use a variant offered by that brand, such as light or dark. Leave blank to use the brand’s first variant.</p></div>
+              <div class="field"><label class="field-label" for="brand-variant">Default variant <span class="quiet">(optional)</span></label><input id="brand-variant" class="input" name="brand.variant" placeholder="For example, light" aria-describedby="brand-variant-hint"><p id="brand-variant-hint" class="field-hint quiet">Use a variant offered by that brand, such as light or dark. Leave blank to use the brand’s first variant.</p></div>
             </div>
             <details class="setup-more"><summary class="setup-more-label">Brand skill release options</summary>
-              <div class="field"><label class="field-label" for="brand-release">Brand skill release <span class="quiet">(optional)</span></label><input id="brand-release" class="input" name="brand.release" placeholder="Newest release"><p class="field-hint quiet">Pin a release tag from the repository, such as v1.4.0, or leave blank for the newest release.</p></div>
+              <div class="field"><label class="field-label" for="brand-release">Brand skill release <span class="quiet">(optional)</span></label><input id="brand-release" class="input" name="brand.release" placeholder="Newest release" aria-describedby="brand-release-hint"><p id="brand-release-hint" class="field-hint quiet">Pin a release tag from the repository, such as v1.4.0, or leave blank for the newest release.</p></div>
             </details>
             <div class="setup-part"><h4 class="sheet-part">Delivery and previews</h4>
               <div class="field-grid">
                 <div class="field"><label class="field-label" for="output">Deliver as</label><select id="output" class="input" name="output"><option value="pptx">PowerPoint and Word files</option><option value="google">Google Slides and Docs</option></select></div>
-                <div class="field"><label class="field-label" for="render-previews">Slide previews</label><select id="render-previews" class="input" name="render.previews"><option value="">Match delivery format</option><option value="local">Local rendering (LibreOffice)</option><option value="drive">Google Drive</option></select><p class="field-hint quiet">Local rendering needs LibreOffice and image tools; Google Drive needs sign-in. Each studio checks availability.</p></div>
+                <div class="field"><label class="field-label" for="render-previews">Slide previews</label><select id="render-previews" class="input" name="render.previews" aria-describedby="render-previews-hint"><option value="">Match delivery format</option><option value="local">Local rendering (LibreOffice)</option><option value="drive">Google Drive</option></select><p id="render-previews-hint" class="field-hint quiet">Local rendering needs LibreOffice and image tools; Google Drive needs sign-in. Each studio checks availability.</p></div>
               </div>
             </div>
           </section>

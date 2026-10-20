@@ -10,7 +10,7 @@
   line-height: 1.6;
 }
 
-/* --- studios: one card each, in the colour that studio uses for itself ---------------- */
+/* --- studios: one card each; ui-kit gives each card its studio's colour ---------------- */
 
 .studio-list {
   display: grid;
@@ -19,31 +19,10 @@
 }
 
 .studio-card {
-  --studio-color: var(--blog);
-  --studio-wash: var(--blog-wash);
-  --accent: var(--studio-color);
-  --on-accent: var(--on-studio);
-  --link: var(--studio-color);
-  --focus: var(--studio-color);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   min-height: 19rem;
-  transition: border-color 180ms ease;
-}
-
-.studio-card[data-studio="presentation"] {
-  --studio-color: var(--presentation);
-  --studio-wash: var(--presentation-wash);
-}
-
-.studio-card[data-studio="training"] {
-  --studio-color: var(--training);
-  --studio-wash: var(--training-wash);
-}
-
-.studio-card:hover {
-  border-color: var(--studio-color);
 }
 
 .studio-icon {
@@ -99,6 +78,8 @@
 .studio-card > .button {
   width: 100%;
   margin-top: auto;
+  white-space: normal;
+  text-align: center;
 }
 
 .settings-summary {
@@ -155,11 +136,17 @@
   border-top: 1px solid var(--hair);
 }
 
+.setup-part > * + *,
+#model-profiles > * + *,
+.setup-more > * + *,
+#brand-choices > * + * {
+  margin-top: 0.8rem;
+}
+
 .setup-more-label {
   display: list-item;
   min-height: 2.75rem;
   font-weight: 600;
-  cursor: pointer;
 }
 
 .model-heading {
@@ -202,7 +189,12 @@
   margin-top: 0.8rem;
 }
 
+.profile-card > .sheet-part {
+  margin: 0;
+}
+
 .brand-choice {
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
 }
 

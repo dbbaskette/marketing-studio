@@ -152,6 +152,34 @@ body:is([data-product="Blog Studio"], [data-product="Presentation Studio"],
   --selection-line: color-mix(in srgb, var(--studio-color) 32%, var(--paper));
 }
 
+/* Marketing Studio shows all three studios on one page: each card wears its own colour. */
+[data-studio="blog"] {
+  --studio-color: var(--blog);
+  --studio-wash: var(--blog-wash);
+}
+
+[data-studio="presentation"] {
+  --studio-color: var(--presentation);
+  --studio-wash: var(--presentation-wash);
+}
+
+[data-studio="training"] {
+  --studio-color: var(--training);
+  --studio-wash: var(--training-wash);
+}
+
+.card[data-studio] {
+  --accent: var(--studio-color);
+  --on-accent: var(--on-studio);
+  --link: var(--studio-color);
+  --focus: var(--studio-color);
+  transition: border-color 180ms ease;
+}
+
+.card[data-studio]:hover {
+  border-color: var(--studio-color);
+}
+
 *,
 *::before,
 *::after {
@@ -349,6 +377,8 @@ summary {
   color: var(--on-accent);
   border-radius: 12px;
   box-shadow: var(--edge), 0 3px 8px rgb(0 0 0 / 0.12);
+  font-size: 1.5rem;
+  font-weight: 700;
 }
 
 .studio-symbol .icon {
@@ -2455,6 +2485,11 @@ label.seg-option {
 
 /* The brand in the sidebar can also be the way home. */
 a.brand {
+  text-decoration: none;
+}
+
+/* A link that looks like a button, such as Install studio. */
+a.button {
   text-decoration: none;
 }
 
