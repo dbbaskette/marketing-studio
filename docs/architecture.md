@@ -82,17 +82,26 @@ Local Git is the default. Separate local repositories avoid contention over an
 index and HEAD. Remote mode retains each studio's native clone and content-folder
 conventions. Native data directories and assistant skill locations are unchanged.
 
-Marketing Studio discovers bundled source studios first when run from a checkout.
+Marketing Studio discovers bundled source studios first when run from a checkout;
+`status` names each studio's folder and version and marks Git checkout copies.
 A managed suite prefers native installed copies so both launchers run the same
 version. Explicit installation paths remain authoritative. Child links stay in
 memory and travel through private pipes. Closing Marketing Studio stops only
-process groups it started.
+process groups it started. Each launch writes the studio's standard error to
+`logs/<studio>.log` in the Marketing Studio data folder and keeps the launch before
+it as `<studio>.previous.log`. A studio that stops or times out before opening is
+reported with that log's path and its last 12 lines.
 
 The user CLI offers open, setup, status, doctor, install, update, rollback, and
 uninstall. Repeated open/setup commands contact a same-user Unix socket with mode
 0600 and reuse the running app. Socket messages are bounded and contain no session
 keys. Long custom data paths use a verified private short-path directory. Status
 and doctor neither start the app nor contact providers.
+
+`serve` runs the home server without opening a browser. When the first browser or
+studio open fails, including on a computer without a screen, the server keeps
+running: a terminal is shown the reason with the private link, and a pipe is
+given the reason in its JSON line without the session key.
 
 ## Installation and updates
 

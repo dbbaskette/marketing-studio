@@ -21,6 +21,13 @@ repository/branch/sharing, brand repository/release/identity/variant/installed s
 delivery format, and slide preview method. Work already created retains its own
 choices. Native workspace migration never moves existing content.
 
+When no assistant is saved, setup uses the one Marketing Studio was installed for
+(`target` in its `installation.json`). Without a single target it uses an installed
+assistant, preferring Codex as the installer does, and otherwise Claude Code. The
+setup snapshot offers this choice as `assistant_default`; finishing setup saves it.
+`marketing-studio doctor` reports a problem when neither assistant is installed or
+when the saved or default assistant is missing.
+
 Default brand chooses a brand offered by the installed brand skill; default variant
 chooses one of that brand's variants. For example, `tanzu` and `light` offer Tanzu
 light branding when starting new work in each studio. These are starting choices,
@@ -53,7 +60,9 @@ unlisted IDs. Saved IDs remain selectable when a catalog changes or cannot load.
 Codex choices come from its read-only CLI model list. Claude Code uses the studios’
 existing bundled model reference, with its source and date shown; that list does
 not establish availability in your account. **Refresh models** retries a failed
-listing without changing saved settings or starting a provider job.
+listing without changing saved settings or starting a provider job. A failed listing
+says why when the reason is known, such as Codex not being found or not finishing;
+the CLI's own output is not shown.
 Changing assistants requires reviewing the profiles before saving them.
 
 | Profile | Tasks |

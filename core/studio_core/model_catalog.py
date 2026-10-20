@@ -17,6 +17,10 @@ LIMIT = 2 * 1024 * 1024
 BUNDLED_CODEX = Path('/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex')
 
 
+class Unavailable(ValueError):
+    """Why a model list is unavailable, in words for the person choosing a model."""
+
+
 def clip(text, length=140):
     text = ' '.join(str(text).split())
     return text if len(text) <= length else text[:length - 1] + '…'
@@ -25,7 +29,7 @@ def clip(text, length=140):
 def codex_models(printed: str) -> list[dict]:
     """The models in Codex's catalog that it lists for choosing, each with the levels it
     takes that `settings` knows, and the one it uses when none is given."""
-    unreadable = ValueError('Codex listed its models in a form this runner cannot read.')
+    unreadable = Unavailable('Codex listed its models in a form this runner cannot read.')
     try:
         catalog = json.loads(printed)
     except ValueError:
@@ -80,7 +84,7 @@ def claude_models():
 def codex_output():
     binary = shutil.which('codex') or (str(BUNDLED_CODEX) if BUNDLED_CODEX.is_file() else None)
     if not binary:
-        raise ValueError('Codex was not found. Install it and sign in, or enter a model ID.')
+        raise Unavailable('Codex was not found. Install it and sign in, or enter a model ID.')
     # No prompt, workspace, provider job, shell, installation or user-config writes.
     # Regular temporary files bound the amount read and avoid a blocked output pipe.
     with tempfile.TemporaryDirectory(prefix='studio-model-list-') as temporary:
@@ -92,10 +96,10 @@ def codex_output():
                 deadline = time.monotonic() + SECONDS
                 while process.poll() is None:
                     if time.monotonic() >= deadline or output.tell() > LIMIT:
-                        raise ValueError('The model list did not finish. Enter a model ID or try Refresh models.')
+                        raise Unavailable('The model list did not finish. Enter a model ID or try Refresh models.')
                     time.sleep(.05)
                 if process.returncode or output.tell() > LIMIT:
-                    raise ValueError('Codex could not list models. Check its sign-in, enter a model ID, or try Refresh models.')
+                    raise Unavailable('Codex could not list models. Check its sign-in, enter a model ID, or try Refresh models.')
                 output.seek(0)
                 return output.read(LIMIT).decode('utf-8')
             finally:
@@ -131,9 +135,12 @@ class Catalog:
             try:
                 result = {**self.loader(agent), 'agent': agent, 'problem': None}
                 if not result['models']:
-                    raise ValueError('No models were listed. Enter a model ID or try Refresh models.')
-            except (OSError, ValueError, KeyError, TypeError, UnicodeError):
+                    raise Unavailable('No models were listed. Enter a model ID or try Refresh models.')
+            except (OSError, ValueError, KeyError, TypeError, UnicodeError) as failure:
+                # Only a reason written for people is shown; a provider's own output is not.
+                problem = (f'{failure} Your choices are kept.' if isinstance(failure, Unavailable) else
+                           'The model list is unavailable. Your choices are kept. Enter a model ID or try Refresh models.')
                 result = {'agent': agent, 'models': [], 'levels': list(EFFORTS[agent]),
-                          'source': None, 'problem': 'The model list is unavailable. Your choices are kept. Enter a model ID or try Refresh models.'}
+                          'source': None, 'problem': problem}
             self.saved[agent] = (time.monotonic() + (30 if result['problem'] else 3600), result)
             return deepcopy(result)

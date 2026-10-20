@@ -81,6 +81,39 @@ time.sleep(60)
                 self.launcher.open('training', self.preferences, {})
         self.assertFalse(self.launcher.children)
 
+    def test_stopped_studio_names_its_log_and_last_lines(self):
+        with self.fixture("import sys\nfor n in range(1, 21):\n    print('fixture line', n, file=sys.stderr)\n"):
+            with self.assertRaises(WorkspaceError) as raised:
+                self.launcher.open('training', self.preferences, {})
+        message = str(raised.exception)
+        log = self.root / 'data/logs/training.log'
+        self.assertIn('Training Studio stopped before opening', message)
+        self.assertIn(str(log), message)
+        for n in range(9, 21):
+            self.assertIn(f'fixture line {n}\n' if n < 20 else 'fixture line 20', message)
+        self.assertNotIn('fixture line 8\n', message)
+        self.assertFalse(self.launcher.children)
+
+    def test_slow_studio_names_its_log(self):
+        content = "import sys, time\nprint('fixture is waiting', file=sys.stderr)\ntime.sleep(60)\n"
+        with self.fixture(content), mock.patch('marketing_studio.launcher.TIMEOUT', 2):
+            with self.assertRaises(WorkspaceError) as raised:
+                self.launcher.open('training', self.preferences, {})
+        message = str(raised.exception)
+        self.assertIn('took too long', message)
+        self.assertIn(str(self.root / 'data/logs/training.log'), message)
+        self.assertIn('fixture is waiting', message)
+
+    def test_previous_launch_log_is_kept(self):
+        logs = self.root / 'data/logs'
+        for run in ('first run', 'second run'):
+            with self.fixture(f"import sys\nprint({run!r}, file=sys.stderr)\n"):
+                with self.assertRaises(WorkspaceError):
+                    self.launcher.open('training', self.preferences, {})
+        self.assertEqual((logs / 'training.log').read_text(), 'second run\n')
+        self.assertEqual((logs / 'training.previous.log').read_text(), 'first run\n')
+        self.assertEqual((logs / 'training.previous.log').stat().st_mode & 0o777, 0o600)
+
     def test_external_link_is_refused_and_browser_not_started(self):
         with self.fixture("import json\nprint(json.dumps({'link':'https://evil.example/'}), flush=True)\n"):
             with self.assertRaisesRegex(WorkspaceError, 'invalid local address'):
@@ -99,6 +132,37 @@ time.sleep(60)
         (installed / 'scripts').mkdir(parents=True)
         (installed / 'scripts/start_studio.py').write_text('# fixture')
         self.assertEqual(catalog.locate('blog', {'blog': str(installed)}), installed.resolve())
+
+    def test_blog_version_is_read_from_its_skill_in_a_checkout(self):
+        checkout = self.root / 'blog-checkout'
+        skill = checkout / 'skills/blog-studio'
+        (skill / 'scripts').mkdir(parents=True)
+        (skill / 'scripts/start_studio.py').write_text('# fixture')
+        (skill / 'VERSION').write_text('9.8.7\n')
+        installed = self.root / 'installed-blog'
+        (installed / 'scripts').mkdir(parents=True)
+        (installed / 'scripts/start_studio.py').write_text('# fixture')
+        (installed / 'VERSION').write_text('1.2.3\n')
+        for root, expected in ((checkout, '9.8.7'), (installed, '1.2.3')):
+            with self.subTest(root=root.name):
+                rows = catalog.describe({'blog': str(root)}, lambda _: False)
+                self.assertEqual(rows[0]['version'], expected)
+
+    def test_checkout_copies_are_told_apart_from_installed_releases(self):
+        home = self.root / 'home'
+        installed = home / '.local/share/training-studio/current'
+        (installed / 'runner').mkdir(parents=True)
+        (installed / 'runner/studio.py').write_text('# fixture')
+        (home / '.git').mkdir()  # a home folder kept in Git is still not a checkout copy
+        (self.root / 'repository/.git').mkdir(parents=True)
+        checkout = self.root / 'repository/studios/training'
+        (checkout / 'runner').mkdir(parents=True)
+        (checkout / 'runner/studio.py').write_text('# fixture')
+        with mock.patch.dict(os.environ, {'HOME': str(home)}):
+            for root, expected in ((installed, False), (checkout, True), (self.install, False)):
+                with self.subTest(root=str(root)):
+                    row = catalog.describe({'training': str(root)}, lambda _: False)[2]
+                    self.assertEqual(row['checkout'], expected)
 
     def test_configured_path_is_authoritative(self):
         self.assertEqual(catalog.locate('training', self.preferences['paths']), self.install.resolve())

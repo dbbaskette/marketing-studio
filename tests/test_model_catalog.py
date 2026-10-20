@@ -66,6 +66,17 @@ class CatalogTests(IsolatedHome):
         with self.assertRaises(ValueError):
             catalog.get('unknown')
 
+    def test_specific_reason_is_kept_when_the_list_is_unavailable(self):
+        with mock.patch.object(model_catalog.shutil, 'which', return_value=None), \
+                mock.patch.object(model_catalog, 'BUNDLED_CODEX', self.root / 'no-chatgpt-app'):
+            problem = model_catalog.Catalog().get('codex')['problem']
+        self.assertIn('Codex was not found', problem)
+        self.assertIn('Your choices are kept', problem)
+        unreadable = model_catalog.Catalog(lambda _: {'models': model_catalog.codex_models('not json')})
+        self.assertIn('cannot read', unreadable.get('codex')['problem'])
+        empty = model_catalog.Catalog(lambda _: {**LISTED, 'models': []})
+        self.assertIn('No models were listed', empty.get('codex')['problem'])
+
     def test_codex_command_is_catalog_only_in_disposable_directory(self):
         binary = self.root/'fixture-cli'
         capture = self.root/'capture.json'

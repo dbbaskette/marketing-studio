@@ -16,6 +16,21 @@ from .errors import WorkspaceError
 
 ROOT = Path(__file__).resolve().parent.parent
 TIMEOUT = 90
+LOG_LINES = 12     # lines of a launch log shown with a failure
+LOG_TAIL = 64_000  # bytes read from its end to find them
+
+
+def launch_problem(message, log):
+    """A launch failure with where its log is and how the log ends."""
+    try:
+        with log.open('rb') as stream:
+            stream.seek(max(0, log.stat().st_size - LOG_TAIL))
+            lines = stream.read().decode('utf-8', 'replace').splitlines()[-LOG_LINES:]
+    except OSError:
+        lines = []
+    lines = [line if len(line) <= 300 else line[:299] + '…' for line in lines]
+    ending = ('Last lines:\n' + '\n'.join(lines)) if any(lines) else 'The launch log is empty.'
+    return f'{message} Launch log: {log}\n{ending}'
 
 
 def local_link(link):
@@ -53,8 +68,12 @@ class Launcher:
             token = secrets.token_urlsafe(32)
             env = {**os.environ, 'MARKETING_STUDIO_HANDOFF': json.dumps({'token': token, 'shared': shared}),
                    'PYTHONUNBUFFERED': '1'}
+            name = catalog.STUDIOS[identifier][0]
             log = state.data_root() / 'logs' / (identifier + '.log')
             log.parent.mkdir(parents=True, exist_ok=True)
+            if log.exists():
+                # One earlier launch is kept to compare with.
+                os.replace(log, log.with_name(identifier + '.previous.log'))
             with log.open('w') as errors:
                 os.chmod(log, 0o600)
                 process = subprocess.Popen([sys.executable, str(ROOT / 'marketing_studio/bridge.py'),
@@ -74,13 +93,15 @@ class Launcher:
                             continue
                         if isinstance(found, dict) and any(key in found for key in ('address', 'link', 'error')):
                             announced.put(found)
-                    announced.put({'error': 'The studio stopped before opening. Check its launch log.'})
+                    announced.put({'stopped': True})
                 finally:
                     process.stdout.close()
             reader = threading.Thread(target=collect, daemon=True)
             reader.start()
             try:
                 result = announced.get(timeout=TIMEOUT)
+                if result.get('stopped'):
+                    raise WorkspaceError(launch_problem(name + ' stopped before opening.', log))
                 if result.get('error'):
                     raise WorkspaceError(result['error'])
                 link = result.get('link') or (result.get('address', '') + '#token=' + token)
@@ -90,7 +111,7 @@ class Launcher:
                 self.stop_process(process)
                 reader.join(timeout=2)
                 if isinstance(failure, queue.Empty):
-                    raise WorkspaceError('The studio took too long to open. Check its launch log and try again.') from failure
+                    raise WorkspaceError(launch_problem(name + ' took too long to open. Try again.', log)) from failure
                 raise
             self.children[identifier] = (process, link)
             return self.link(identifier, link)

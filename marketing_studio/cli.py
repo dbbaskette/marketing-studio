@@ -40,7 +40,7 @@ def parser():
     opening = commands.add_parser('open', help='Open the home page or one studio.')
     opening.add_argument('studio', nargs='?', choices=tuple(catalog.STUDIOS))
     setup = commands.add_parser('setup', help='Open shared settings or finish first-run setup.')
-    serving = commands.add_parser('serve', help='Run the local home server in this terminal.')
+    serving = commands.add_parser('serve', help='Run the local home server in this terminal without opening a browser.')
     for command in (opening, setup, serving):
         command.add_argument('--port', type=server.port, default=0)
         command.add_argument('--lan', nargs='?', const='auto', metavar='ADDRESS',
@@ -79,13 +79,25 @@ def offline(args):
         return 0 if report['ready'] else 1
     preferences = state.read()
     studios = catalog.describe(preferences.get('paths', {}), lambda _: False)
-    result = {'setup_complete': Home.configured(shared.read()[0]), 'studios': studios}
+    result = {'version': (ROOT / 'VERSION').read_text().strip(), 'path': str(ROOT),
+              'checkout': catalog.checkout(ROOT),
+              'setup_complete': Home.configured(shared.read()[0]), 'studios': studios}
     if args.json:
         print(json.dumps(result, indent=2))
     else:
-        print('Marketing Studio · ' + ('Ready' if result['setup_complete'] else 'Setup needed'))
+        print(f"Marketing Studio {result['version']} · " + ('Ready' if result['setup_complete'] else 'Setup needed'))
+        if result['checkout']:
+            print('Running from the Git checkout at ' + result['path'])
         for studio in studios:
-            print(f"  {studio['name']}: {'installed' if studio['installed'] else 'not installed'}")
+            if not studio['installed']:
+                print(f"  {studio['name']}: not installed")
+                continue
+            label = ' '.join(filter(None, (studio['name'], studio['version'])))
+            print(f"  {label}: {studio['path']}" + (' (Git checkout)' if studio['checkout'] else ''))
+        copies = [studio['name'] for studio in studios if studio['checkout']]
+        if copies:
+            print('\nRunning Git checkout copies, not installed releases: ' + ', '.join(copies) + '.'
+                  '\nTo run installed releases, use the installed marketing-studio command or set each folder in Settings.')
         print('\nOpen a studio: marketing-studio open blog')
     return 0
 
@@ -99,6 +111,9 @@ def main(argv=None):
     args = top.parse_args(arguments)
     if args.studio and args.command != 'open':
         top.error('A studio name follows open, for example: marketing-studio open presentation.')
+    if args.command == 'serve':
+        # A server for this terminal, a headless computer or the network opens no browser.
+        args.no_open = True
     if args.command in ('install', 'update', 'rollback', 'uninstall'):
         if args.command == 'update' and args.source is None:
             top.error('Download and unpack the new release, then use: marketing-studio update --from /path/to/release --yes')
@@ -141,6 +156,13 @@ def main(argv=None):
                     url = desk.url
                 if not server.show(url):
                     raise WorkspaceError('A browser could not be opened. Use the private link in your terminal.')
+            def first_open(wanted):
+                """The first open may fail; the home page stays available either way."""
+                try:
+                    open_action(wanted)
+                    return None
+                except (WorkspaceError, OSError, ValueError) as failure:
+                    return str(failure)
             signal.signal(signal.SIGTERM, server.interrupt)
             signal.signal(signal.SIGINT, server.interrupt)
             try:
@@ -149,19 +171,29 @@ def main(argv=None):
                     # A separate interface can use the same chosen port as loopback.
                     lan.share('marketing', desk.url, port=desk.port)
                 ipc = control.Control(state.data_root(), open_action)
+                problems = []
+
+                def opener(_):
+                    problems.append(first_open(action))
+                    return problems[-1] is None
                 shown = server.announce(desk, sys.stdout.isatty(),
-                    (lambda _: False) if args.no_open else (lambda _: (open_action(action) or True)))
+                    (lambda _: False) if args.no_open else opener)
                 if args.json or not sys.stdout.isatty():
                     if lan:
                         shown['network'] = lan.snapshot(private=sys.stdout.isatty())
+                    if any(problems):
+                        # Only a person's terminal is given the key, never a pipe.
+                        shown['problem'] = problems[-1]
                     print(json.dumps(shown), flush=True)
                 else:
                     print('Marketing Studio is ready.\n' + desk.url + '\n\nLeave this terminal open while you work. Press Ctrl-C to stop.', flush=True)
                     if lan:
                         print('Open on your phone (same trusted Wi-Fi):\n' + lan.snapshot()['url'] +
                               '\nKeep this link private. HTTP is unencrypted; it grants full studio access.', flush=True)
-                    if not args.no_open:
-                        open_action(action)
+                    problem = None if args.no_open else first_open(action)
+                    if problem:
+                        print('\n' + problem + '\nMarketing Studio is still running. Open this private link in a browser:\n'
+                              + desk.url, flush=True)
                 desk.serve()
             except KeyboardInterrupt:
                 pass

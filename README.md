@@ -152,10 +152,11 @@ marketing-studio open training
 | :--- | :--- |
 | `marketing-studio` | Opens the home page |
 | `marketing-studio open presentation` | Opens Presentation Studio; reuses it if already open through Marketing Studio |
+| `marketing-studio serve` | Runs the home server in this terminal without opening a browser, for example over SSH |
 | `marketing-studio serve --lan` | Enables private phone access on your trusted local network |
 | `marketing-studio setup` | Opens shared settings, or first-run setup |
-| `marketing-studio status` | Shows which studios are installed and whether shared setup is complete |
-| `marketing-studio doctor` | Checks the tools on this computer without contacting providers |
+| `marketing-studio status` | Shows each studio's version and folder, marks Git checkout copies, and says whether shared setup is complete |
+| `marketing-studio doctor` | Checks the tools on this computer, including that your assistant is installed, without contacting providers |
 | `marketing-studio --help` | Shows the command guide |
 | `marketing-studio --version` | Shows the installed suite version |
 
@@ -238,7 +239,9 @@ installed studios, project content, and settings.
 | A studio says **Not installed** | Run the installer for that studio. For a custom checkout, set its folder in **Shared settings → Studio installations**. |
 | Git asks who you are | Set `git config --global user.name "Your Name"` and `git config --global user.email "you@example.com"`. |
 | A tool is missing | Run `marketing-studio doctor`, then rerun the downloaded setup script to install missing prerequisites. |
+| A browser cannot open, for example over SSH | Marketing Studio keeps running and prints why with its private link. Open that link in a browser, or start with `marketing-studio serve`. |
 | An assistant cannot start | Open that CLI in your own terminal and complete its sign-in. |
+| A studio does not open | The message names its launch log, `~/.local/share/marketing-studio/logs/<studio>.log`, and shows its last lines. The launch before it is kept as `<studio>.previous.log`. |
 | Another studio changed a setting | Reload the settings page so you can review the current value before saving. |
 
 Content choices such as a blog’s tone, a deck’s audience, or a training’s level

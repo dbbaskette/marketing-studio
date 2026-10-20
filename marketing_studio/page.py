@@ -3,7 +3,7 @@ import threading
 from pathlib import Path
 
 from studio_core import preferences as shared_preferences
-from studio_core import brand_catalog
+from studio_core import brand_catalog, runtime
 from studio_core.model_catalog import Catalog
 
 from . import catalog, server, shared, state, validation
@@ -40,6 +40,7 @@ class Home(server.Page):
         return {'studios': catalog.describe(preferences.get('paths', {}), self.launcher.running),
                 'shared': values, 'shared_problem': problem, 'setup': {**preferences, 'done': not problem and self.configured(values)},
                 'computer': self.computer(False), 'efforts': validation.EFFORTS,
+                'assistant_default': runtime.assistant_default(state.data_root()),
                 'network': self.launcher.network.snapshot() if self.launcher.network else None}
 
     def read(self, path, one):

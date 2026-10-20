@@ -1,10 +1,11 @@
 """Profiles resolve without provider calls and respect the shared settings lock."""
 import copy
 import json
+from unittest import mock
 
 from test_home import IsolatedHome
 from marketing_studio import shared
-from studio_core import model_profiles as models, preferences
+from studio_core import model_profiles as models, preferences, runtime
 
 
 def configuration(agent='codex'):
@@ -66,7 +67,9 @@ class ProfileTests(IsolatedHome):
                         {'models': {'profiles': {'quick': {'model': ['bad']}}}}):
             with self.subTest(changes=changes):
                 before = shared.path().read_bytes() if shared.path().exists() else None
-                with self.assertRaises(ValueError):
+                # Unsaved, the assistant is the computer's default; Claude Code has no 'ultra'.
+                with self.assertRaises(ValueError), \
+                        mock.patch.object(runtime, 'assistant_default', return_value='claude'):
                     preferences.save(shared, changes, {})
                 self.assertEqual(shared.path().read_bytes() if shared.path().exists() else None, before)
 

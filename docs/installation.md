@@ -43,7 +43,8 @@ with `--target codex` or `--target claude`. The default detects one existing CLI
 Codex when both exist; if neither exists, it installs the Codex skill integration and
 reports that an assistant must be installed and signed in before work can start.
 Use `--target both` only when you want both skill integrations. The bundled installer
-never installs assistant software or signs into a service.
+never installs assistant software or signs into a service. Shared setup starts with the
+assistant recorded here, and `marketing-studio doctor` reports when it is missing.
 
 The same private runtimes support each studio's independent launcher. Deleting the
 unpacked download does not remove the installed runtimes. Existing workspaces and
