@@ -58,7 +58,8 @@ This creates no model process in chat: you do the writing here.
 5. For requested changes use `... run changes --id <id> --expected <latest>
    --request "Their request"`. Add `--stage draft` (or another earlier stage)
    to revise earlier work. Later decisions are invalidated and must be made
-   again. Reload status before submitting the revision.
+   again. Reload status, then write the revision as a [minimal edit](minimal-edits.md)
+   of the saved document before submitting it.
 
 Never bypass the runner with an approval field in a document or a generic stage
 edit. A stale document cannot be approved. A changed source pin needs explicit

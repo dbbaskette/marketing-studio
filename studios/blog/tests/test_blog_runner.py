@@ -223,6 +223,58 @@ class BlogRunnerTests(Fixture):
         self.assertIn('Change the thesis', found['stages'][0]['request'])
         self.assertEqual(found['stages'][0]['status'], 'draft')
 
+    def test_change_request_is_an_instruction_for_a_minimal_edit(self):
+        draft = '# Draft\nThe first fictional paragraph.\n\nThe second fictional paragraph.'
+        found = self.approve(self.submit(self.create()))
+        found = self.submit(found, draft)
+        found = runner.decide(
+            self.root, found['id'], found['expected'], 'changes', 'Shorten the second paragraph.'
+        )
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertIn('Shorten the second paragraph.', guidance)
+        self.assertIn('minimal edit, not a rewrite', guidance)
+        self.assertIn('verbatim', guidance)
+        self.assertNotIn('Write the blog from the approved outline', guidance)
+        self.assertEqual(payload['documents']['draft'], draft)
+        # A review that sends the draft back is an edit of that draft too.
+        found = self.approve(self.submit(found, draft))
+        found = self.submit(found)
+        found = runner.decide(
+            self.root,
+            found['id'],
+            found['expected'],
+            'changes',
+            'Fix the review finding about the title.',
+            target='draft',
+        )
+        guidance = runner.job(self.root, found['id'])[2]
+        self.assertIn('Fix the review finding about the title.', guidance)
+        self.assertIn('minimal edit, not a rewrite', guidance)
+
+    def test_request_for_a_new_document_directs_the_step_without_an_edit(self):
+        ideas = '# Three angles\n\n1. Ownership\n2. Feedback\n3. Context'
+        found = self.submit(self.create(page=True, mode='ideas', stop='outline'), ideas, page=True)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {
+                    'id': found['id'],
+                    'expected': found['expected'],
+                    'request': 'Develop the second idea for technical authors.',
+                },
+            )
+        guidance = runner.job(self.root, found['id'])[2]
+        self.assertIn('Develop the second idea for technical authors.', guidance)
+        self.assertIn('Make an argument outline', guidance)
+        self.assertNotIn('minimal edit', guidance)
+
+    def test_revising_a_manuscript_does_not_ask_for_an_outline_based_draft(self):
+        found = self.create(mode='revise', id=self.article(), stop='draft')
+        guidance = runner.job(self.root, found['id'])[2]
+        self.assertNotIn('approved outline', guidance)
+        self.assertIn('Revise the supplied manuscript', guidance)
+
     def test_research_questions_and_findings_each_wait_for_approval(self):
         found = self.create(research='supplied-only', stop='outline')
         self.assertEqual(
@@ -669,6 +721,10 @@ class BlogRunnerTests(Fixture):
             target='draft',
         )
         self.assertEqual(found['next'], 'draft')
+        # The author's own manuscript is edited, not rewritten from the brief.
+        guidance = runner.job(self.root, ident)[2]
+        self.assertIn('minimal edit, not a rewrite', guidance)
+        self.assertIn('Clarify the introduction', guidance)
         found = self.submit(found, 'My revised synthetic draft')
         self.assertEqual(found['stages'][0]['status'], 'draft')
         found = self.approve(found)

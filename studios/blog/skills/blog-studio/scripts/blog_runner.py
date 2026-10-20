@@ -721,15 +721,34 @@ def job(root, ident):
             payload['documents']['manuscript'] = text_only(payload['documents']['manuscript'])
     if run.get('mode') == 'from-outline':
         payload['documents']['outline'] = (directory / 'OUTLINE.md').read_text()
-    payload['changes'] = run['stages'].get(stage, {}).get('request', '') or run.get(
-        'editor_request', ''
-    )
+    saved = run['stages'].get(stage, {})
+    request = saved.get('request', '') or run.get('editor_request', '')
+    payload['changes'] = request
     if len(json.dumps(payload)) > 600_000:
         raise ValueError('This job needs smaller source excerpts. Continue it in chat.')
+    # A request against a version the author has already seen, or their own manuscript,
+    # edits it. Otherwise (a developed idea, a first attempt) it directs a new document.
+    edit = bool(
+        request
+        and payload['documents'].get(stage, '').strip()
+        and not (stage == 'review' and run.get('editor_check'))
+        and (saved.get('hash') or (stage == 'draft' and run['existing']))
+    )
     references = Path(__file__).resolve().parents[1] / 'references'
-    guidance = STAGES[stage][2] + '\n\n' + (references / GUIDES[stage]).read_text()
-    if stage == 'draft' and run['existing']:
-        guidance += '\nRevise the supplied manuscript in the scope of its brief. Preserve its stance, meaningful qualifiers and author voice; retain unsupported claims as questions rather than inventing support.'
+    if edit:
+        guidance = (
+            f'Edit the saved {STAGES[stage][0].lower()} in documents.{stage}. This is a minimal '
+            'edit, not a rewrite: apply the author’s request at the end of this guidance and '
+            'keep everything else verbatim.\n\n' + (references / 'minimal-edits.md').read_text()
+        )
+    elif stage == 'draft' and run['existing']:
+        guidance = (
+            'Revise the supplied manuscript in the scope of its brief. Preserve its stance, '
+            'meaningful qualifiers and author voice; retain unsupported claims as questions '
+            'rather than inventing support.\n\n' + (references / GUIDES[stage]).read_text()
+        )
+    else:
+        guidance = STAGES[stage][2] + '\n\n' + (references / GUIDES[stage]).read_text()
     guidance += '\n\n' + (references / 'style/house.md').read_text()
     if stage in ('draft', 'review'):
         requested = run.get('editor_check')
@@ -775,6 +794,20 @@ def job(root, ident):
             'a concise reason, evidence as a source passage or an explanation of editorial judgment, '
             'and verdict supported/unsupported/contradicted/editorial. '
             'Do not invent a clean verdict. Return an empty findings list only with explicit coverage and limitations.'
+        )
+    if request:
+        # The request is the author's instruction for this step, not untrusted document data.
+        guidance += (
+            '\n\nAUTHOR’S REQUEST FOR THIS STEP, from the author through Blog Studio. '
+            + (
+                'Apply it as a minimal edit of documents.' + stage + ' and change nothing '
+                'it does not require.'
+                if edit
+                else 'Follow it within this step.'
+            )
+            + '\n"""\n'
+            + request
+            + '\n"""'
         )
     if run.get('model_profiles'):
         found['model_selection'] = model_profiles.route(
