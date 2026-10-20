@@ -2549,6 +2549,12 @@ a.button {
   margin-top: 0.9rem;
 }
 
+/* A long toolbar button wraps instead of pushing the page sideways. */
+.toolbar-actions > .button {
+  max-width: 100%;
+  white-space: normal;
+}
+
 /* Blog Studio's writing steps tighten below 600px, as they did before they were shared. */
 @media (max-width: 37.5rem) {
   .workflow-steps .button,

@@ -22,16 +22,18 @@
 #editorial-screen .actions,.filter-bar,.access-panel,.access-lines{display:flex;gap:.7rem;flex-wrap:wrap}
 .filter-bar{align-items:end;margin:1rem 0}
 .filter-bar .search{flex:1;min-width:12rem}
-.access-panel{padding:1rem 0;justify-content:space-between;border-bottom:1px solid var(--hair)}
+.access-panel{padding:1rem 0;justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--hair)}
 .access-lines{flex-direction:column;max-width:70ch}
 .desk-panel{overflow:hidden}
 .panel-heading,.pagination{display:flex;justify-content:space-between;gap:1rem;align-items:center}
 .pagination{padding-top:.8rem}
 #editorial-screen td p{font-size:.9rem;color:var(--quiet);margin-top:.3rem}
+#results .table td:last-child{text-align:left}
 .title-button{background:none;border:0;color:var(--link);font:inherit;font-weight:650;text-align:left;cursor:pointer;padding:.3rem 0}
 .help,.footnote{font-size:.9rem;color:var(--quiet)}.empty{padding:2.5rem;text-align:center}
 .context-note,.dialog-notice,.sync-status{padding:1rem;border:1px solid var(--hair);background:var(--solid);border-radius:10px;margin:.7rem 0}
-.error,.problem{color:var(--late)}.table-wrap{overflow:auto}
+.dialog > .dialog-notice{margin:0 1.3rem 1.3rem}
+.error,.problem{color:var(--late)}.table-wrap{overflow:auto;padding:.5rem;margin:-.5rem}
 #editorial-screen .badge{display:inline-block;background:var(--well);color:var(--ink);white-space:normal}
 .check{display:flex;gap:.7rem;align-items:center;font-weight:400}.check input{width:auto}
 .source-excerpt,.manuscript-preview{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--paper);padding:1rem;border-radius:12px;max-height:28rem;overflow:auto;font:.9rem/1.6 var(--typed)}
