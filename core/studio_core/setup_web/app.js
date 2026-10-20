@@ -9,6 +9,11 @@ const requestedView = launchOptions.get('view') === 'settings' ? 'settings' : 'h
 const tokenInLink = launchOptions.get('token') || (standalone && /^[A-Za-z0-9_-]+$/.test(location.hash.slice(1)) ? location.hash.slice(1) : '');
 if (tokenInLink) { sessionStorage.setItem(sessionKey, tokenInLink); history.replaceState(null, '', location.pathname); }
 const token = tokenInLink || sessionStorage.getItem(sessionKey) || '';
+// Studios opened from here link back to this tab by its name.
+if (!standalone) window.name = 'marketing-studio';
+function withHome(link) {
+  return link + (link.includes('#') ? '&' : '#') + 'home=' + encodeURIComponent(location.origin);
+}
 let snapshot, setup = false, step = 0, view = 'home', profileAgent;
 const labels = ['You and your assistant', 'Your workspace', 'Brand and delivery'];
 const form = $('#settings-form');
@@ -257,9 +262,9 @@ function renderHome() {
         button.disabled = true; button.textContent = 'Opening…'; $('#problem').hidden = true; $('#message').hidden = true;
         try {
           const result = await api('open', {studio: studio.id});
-          if (tab) tab.location.href = result.link;
+          if (tab) tab.location.href = withHome(result.link);
           else {
-            const link = element('a', `Open ${studio.name}`); link.href = result.link; link.target = `marketing-${studio.id}`; link.rel = 'noreferrer';
+            const link = element('a', `Open ${studio.name}`); link.href = withHome(result.link); link.target = `marketing-${studio.id}`; link.rel = 'noreferrer';
             const message = $('#message'); message.replaceChildren(document.createTextNode('Your browser blocked the new tab. '), link); message.hidden = false;
             link.focus(); blocked = true;
           }
@@ -401,6 +406,9 @@ function openNative() {
 modelPicker(form.elements['assistant.model'], 'Shared model');
 $('#refresh-models').addEventListener('click', () => loadModels(true));
 (async () => {
-  try { snapshot = await api('home'); setup = !snapshot.setup.done; fill(); renderHome(); show(setup || standalone ? 'settings' : requestedView); if (snapshot.shared_problem) inform(snapshot.shared_problem, true); }
+  try {
+    if (!token) { $('#loading').hidden = true; inform(`This page needs its private link. Run ${standalone ? 'the studio command' : 'marketing-studio'} in your terminal to open it again.`, true); return; }
+    snapshot = await api('home'); setup = !snapshot.setup.done; fill(); renderHome(); show(setup || standalone ? 'settings' : requestedView); if (snapshot.shared_problem) inform(snapshot.shared_problem, true);
+  }
   catch (error) { $('#loading').hidden = true; inform(error.message, true); }
 })();

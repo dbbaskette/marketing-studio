@@ -2564,6 +2564,19 @@ a.button {
   }
 }
 
+/* The way back to Marketing Studio, shown only when Marketing Studio opened this studio. */
+.suite-link {
+  margin-top: auto;
+  color: inherit;
+  text-decoration: none;
+}
+
+@media (max-width: 52rem) {
+  .suite-link {
+    margin-top: 0;
+  }
+}
+
 /* --- fallbacks: each one swaps the glass for something solid --------------------------- */
 
 /* No blur to be had: glass would be see-through and nothing more. */

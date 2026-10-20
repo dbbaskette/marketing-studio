@@ -32,6 +32,7 @@ const ICONS = {
   status: ['M3 12.5h4l2.5-6.5 4.5 12 2.5-5.5H21'],
   settings: ['M4.5 7.5h7', 'M16.5 7.5h3', 'M14 5.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z', 'M4.5 16.5h3',
     'M12.5 16.5h7', 'M10 14.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z'],
+  suite: ['M4 4h6v6H4z', 'M14 4h6v6h-6z', 'M4 14h6v6H4z', 'M14 14h6v6h-6z'],
   back: ['M14.5 5.5 8 12l6.5 6.5'],
   more: ['M6 12h.01', 'M12 12h.01', 'M18 12h.01'],
   check: ['M5.5 12.5 10 17l8.5-10'],
@@ -7264,6 +7265,15 @@ function followPointer() {
   }, { passive: true });
 }
 
+// Marketing Studio names its own address when it opens this studio, so the page can link back
+// to that tab. Only the same scheme and host on another port is accepted.
+function suiteHome(hash, here) {
+  const named = new URLSearchParams(String(hash).replace(/^#/, '')).get('home') || '';
+  const found = /^(https?:)\/\/([^/:?#@\s]+):(\d{1,5})\/?$/.exec(named);
+  return found && found[1] === here.protocol && found[2] === here.hostname && found[3] !== here.port
+    ? found[1] + '//' + found[2] + ':' + found[3] : '';
+}
+
 function linkToken() {
   const found = /(?:^#|&)token=([A-Za-z0-9_-]+)/.exec(window.location.hash);
   return found ? found[1] : '';
@@ -7285,6 +7295,13 @@ function begin() {
     const item = byId(id);
     item.prepend(icon(drawing));
     item.addEventListener('click', () => show(screen));
+  }
+  const suite = byId('go-suite');
+  const home = suiteHome(window.location.hash, window.location);
+  if (suite && home) {
+    suite.href = home + '/';
+    suite.prepend(icon('suite'));
+    suite.hidden = false;
   }
   window.addEventListener('popstate', (event) => {
     view.pushed = Math.max(0, view.pushed - 1);

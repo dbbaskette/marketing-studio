@@ -596,6 +596,8 @@ function sSamePassage(left,right){return left.kind==='edit'&&right.kind==='edit'
 
 // Keep initialization below this marker so the same controller can be exercised with a DOM fixture.
 STUDIO_ICONS.studio=['M5 3h10l4 4v14H5z','M14 3v5h5','M8 12h8','M8 16h6'];
+STUDIO_ICONS.suite=['M4 4h6v6H4z','M14 4h6v6h-6z','M4 14h6v6H4z','M14 14h6v6h-6z'];
+{const back=$('go-suite');if(back&&suite){back.href=suite+'/';back.prepend(sIcon('suite'));back.hidden=false;}}
 $('studio-symbol')?.append(sIcon('studio'));
 for(const [id,screen,icon]of [['go-home','home','home'],['go-blogs','blogs','blogs'],['go-status','status','status'],['go-settings','settings','settings']]){const node=$(id);node.prepend(sIcon(icon));node.addEventListener('click',()=>sRoute(screen));}
 for(const node of document.querySelectorAll('[data-view]'))node.addEventListener('click',()=>sLegacy(node.dataset.view));

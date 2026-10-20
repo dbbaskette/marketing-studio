@@ -1,7 +1,17 @@
 'use strict';
 const $ = id => document.getElementById(id);
-const token = location.hash.slice(1) || sessionStorage.getItem('blog-studio-session') || '';
+// Marketing Studio names its own address when it opens this studio, so the page can link back
+// to that tab. Only the same scheme and host on another port is accepted.
+function suiteHome(hash, here) {
+  const named = new URLSearchParams(String(hash).replace(/^#/, '')).get('home') || '';
+  const found = /^(https?:)\/\/([^/:?#@\s]+):(\d{1,5})\/?$/.exec(named);
+  return found && found[1] === here.protocol && found[2] === here.hostname && found[3] !== here.port
+    ? found[1] + '//' + found[2] + ':' + found[3] : '';
+}
+const token = location.hash.slice(1).split('&')[0] || sessionStorage.getItem('blog-studio-session') || '';
+const suite = suiteHome(location.hash, location) || sessionStorage.getItem('marketing-studio-home') || '';
 if(token)sessionStorage.setItem('blog-studio-session',token);
+if(suite)sessionStorage.setItem('marketing-studio-home',suite);
 history.replaceState(null, '', location.pathname+(location.search||''));
 let view = 'board', offset = 0, total = 0, memoryEdit = null;
 const limit = 20;
