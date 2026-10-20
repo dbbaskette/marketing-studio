@@ -5196,11 +5196,13 @@ function combinedReview(run) {
     const detail = add(make('details', 'review-bundle'), make('summary', 'row-title', item.label));
     detail.dataset.key = 'combined-' + review.phase + '-' + item.target;
     const part = make('div', 'review-bundle-body'); add(detail, part);
-    detail.open = Boolean(item.sample || item.deck_view
+    detail.open = Boolean(item.sample || item.sample_note || item.deck_view
       || (review.phase === 'direction' ? item.target === 'research' : item === firstMaterial));
     if (item.text) add(part, window.TrainingStudioMarkdown.render(item.text));
     if (item.sample) add(part, pictureAt({path: view.path, ...item.sample},
       'Sample slide for ' + item.label, review.expected));
+    // A sample that could not be drawn is said in its place; the review goes on without it.
+    if (item.sample_note) add(part, make('p', 'fix', item.sample_note));
     if (item.deck_view) {
       for (const slide of list(item.deck_view.slides)) add(part,
         pictureAt({path: view.path, artifact: item.target, number: slide.number},

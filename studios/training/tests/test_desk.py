@@ -2522,6 +2522,30 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     """What the runner adds to the page: set-up, a new training, a run, and running work in
     every list. Each screen is driven through its own controls."""
 
+    def test_a_sample_slide_that_could_not_be_drawn_is_a_note_on_the_direction_review(self):
+        self.started()
+        waiting = 'Waiting for you to review the direction.'
+        note = ('A sample slide could not be drawn: The renderer could not be started. The '
+                'direction can still be reviewed from what the deck says; the slides are '
+                'drawn and reviewed after you approve it.')
+        run = a_run('waiting', waiting, steps=steps(*['done'] * 7))
+        run['body']['review'] = {
+            'phase': 'direction', 'label': 'Review the direction', 'expected': 'the-signature',
+            'items': [{'target': 'research', 'label': 'The research', 'text': '# Research\n',
+                       'deck': False, 'notes': ''},
+                      {'target': 'outline:', 'label': 'Deck direction',
+                       'text': '# What the deck says\n', 'sample_note': note}]}
+        answers = self.answers(**{'GET /api/trainings': [self.listed('waiting', waiting)],
+                                  'GET /api/training': [self.detail('waiting', waiting)],
+                                  'GET /api/run': [run]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'snapshot': 'review'}])
+        shown = result['snapshots']['review']
+        self.assertIn(note, shown['text'])
+        self.assertIn('Deck direction', shown['text'])
+        self.assertEqual(self.asked(result, 'picture'), [])
+        self.assertIn('Ask for changes to Deck direction', shown['text'])
+
     def test_selected_materials_and_source_permission_are_sent_without_extra_work(self):
         result = self.run_page(self.answers(**{'POST /api/trainings': [
             {'status': 409, 'body': {'error': 'Fixture stopped before starting.'}}]}), [
