@@ -276,7 +276,8 @@ class BlogRunnerTests(Fixture):
         self.assertIn('Revise the supplied manuscript', guidance)
 
     def test_research_questions_and_findings_each_wait_for_approval(self):
-        found = self.create(research='supplied-only', stop='outline')
+        source = self.source('A fictional gateway routes synthetic requests.')
+        found = self.create(research='supplied-only', stop='outline', sources=[source['id']])
         self.assertEqual(
             [row['stage'] for row in found['stages']], ['research-plan', 'research', 'outline']
         )
@@ -315,6 +316,25 @@ class BlogRunnerTests(Fixture):
             'A fictional manuscript', runner.job(self.root, ident)[1]['documents']['manuscript']
         )
 
+    def test_supplied_only_research_without_sources_is_no_research(self):
+        for research in ('supplied-only', None):
+            with self.subTest(research=research):
+                data = {
+                    'title': 'Synthetic gateway guide',
+                    'audience': 'New authors',
+                    'goal': 'Explain a fictional gateway',
+                }
+                if research:
+                    data['research'] = research
+                found = runner.create(self.root, data)
+                self.assertEqual(
+                    [row['stage'] for row in found['stages']],
+                    ['outline', 'draft', 'review', 'package'],
+                )
+                _, record, run = runner.load(self.root, found['id'])
+                self.assertNotIn('research_contract', run)
+                self.assertEqual(record['research_policy'], 'supplied-only')
+
     def test_page_creation_retry_is_idempotent(self):
         data = {
             'operation': 'a' * 32,
@@ -332,7 +352,8 @@ class BlogRunnerTests(Fixture):
         import studios_config
 
         studios_config.update({'review': {'level': 'balanced'}})
-        found = self.create(page=True, research='supplied-only')
+        source = self.source('A fictional gateway routes synthetic requests.')
+        found = self.create(page=True, research='supplied-only', sources=[source['id']])
         ident = found['id']
         while found['next'] != 'outline':
             found = self.submit(found, page=True)

@@ -122,7 +122,8 @@ data folder. Only the selected contract travels with a blog.
 
 ## Run and review
 
-Choose selected sources only, sources plus public research, or no research. Pick
+Choose selected sources only, sources plus public research, or no research.
+Selected sources only, with no sources selected, skips the research steps. Pick
 Codex or Claude Code, already installed and signed in, and a time limit for each
 step. The runner uses your CLI account. It does not hold an API key. It has no
 spending limit; your account's usage charges or limits still apply.

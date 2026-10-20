@@ -26,7 +26,7 @@ research scope and requested stop. Then use:
 ```
 
 Use `--research web-allowed` only for authorized public research, or `none` to
-omit research. Add `--source <id>` for each chosen source and `--profile <id>`
+omit research. `supplied-only` with no selected sources also omits it. Add `--source <id>` for each chosen source and `--profile <id>`
 for a saved voice, or `--tone "description"`. `--author` overrides a saved
 default. Select an installed brand with `--brand ID --variant VARIANT`, or
 `--brand ''` for no brand. Read its pinned guides in `derived/blog-run.json`;

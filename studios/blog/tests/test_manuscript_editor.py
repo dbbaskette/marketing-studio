@@ -52,6 +52,16 @@ class ManuscriptTests(Fixture):
         self.assertEqual(payload['response_kind'], 'editing-review')
         self.assertIn('structured editing review', guidance)
 
+    def test_supplied_only_check_without_sources_skips_research(self):
+        with patch.object(runner.Engine, 'control', return_value={}):
+            for attempt in ('new run', 'existing run'):
+                with self.subTest(attempt=attempt):
+                    self.action('check', check='factual-support', research='supplied-only')
+                    _, record, run = runner.load(self.root, self.ident)
+                    self.assertEqual(run['pipeline'], ['review'])
+                    self.assertNotIn('research_contract', run)
+                    self.assertEqual(record['research_policy'], 'supplied-only')
+
     def test_proofread_and_copyedit_replace_failed_research_without_research(self):
         for check in ('polish', 'proofread', 'copyedit'):
             with self.subTest(check=check), patch.object(runner.Engine, 'control', return_value={}):

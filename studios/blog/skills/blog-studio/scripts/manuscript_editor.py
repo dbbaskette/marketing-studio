@@ -292,6 +292,7 @@ def dispatch(root, action, data):
             record['sources'] = pins
         state = directory / blog_runner.STATE
         if state.is_file():
+            research = blog_runner.research_scope(research, record['sources'])
             _, _, run = blog_runner.load(root, ident)
             run['approval'] = 'page'
             run['mode'] = 'revise' if check == 'revise' else 'review'

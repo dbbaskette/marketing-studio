@@ -375,6 +375,11 @@ def save(root, directory, record, run, event):
     receipt(root, 'Guided blog', result, 'article')
 
 
+def research_scope(research, sources):
+    """Supplied-only research has nothing to read without supplied sources."""
+    return 'none' if research == 'supplied-only' and not sources else research
+
+
 def create(root, data, approval='conversation'):
     data = dict(data)
     defaults = settings(root)['defaults']
@@ -511,6 +516,7 @@ def create(root, data, approval='conversation'):
     if profile:
         record['voice'] = {'mode': 'profile', **studio.voice_pin(root, profile)}
     record['research_policy'] = 'supplied-only' if research == 'none' else research
+    research = research_scope(research, record['sources'])
     pipeline = [] if research == 'none' else ['research-plan', 'research']
     pipeline += (
         (['draft', 'review', 'package'] if mode == 'revise' else ['review', 'package'])
