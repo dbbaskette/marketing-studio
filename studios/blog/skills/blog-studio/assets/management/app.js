@@ -128,7 +128,7 @@ function unreadableNote(result) {
 function button(text, action, cls='secondary') {const b=element('button',text,cls);b.type='button';b.addEventListener('click',()=>Promise.resolve(action()).catch(e=>notice(e.message,true)));return b;}
 function textCell(row, text) {const cell=element('td',text??'—');cell.setAttribute('role','cell');row.append(cell);return cell;}
 function sameView(left, right) {
-  return left && right && ['view','query','stage'].every(key=>left[key]===right[key]);
+  return left && right && ['view','query','stage','sourceStatus','collection'].every(key=>left[key]===right[key]);
 }
 function loading(state, pending) {
   $('results').setAttribute('aria-busy',String(pending));
@@ -138,7 +138,7 @@ function loading(state, pending) {
   $('next').disabled=pending || !sameView(renderedState,state) || renderedState.offset+limit>=total;
 }
 async function load() {
-  const state=Object.freeze({view,offset,query:$('query').value,stage:view==='board'?$('stage').value:''});
+  const state=Object.freeze({view,offset,query:$('query').value,stage:view==='board'?$('stage').value:'',sourceStatus:view==='library'?$('library-status').value:'',collection:view==='library'?$('library-collection').value:''});
   const generation=++loadGeneration;
   if(loadController)loadController.abort();
   const controller=new AbortController();loadController=controller;
@@ -147,6 +147,8 @@ async function load() {
   loadReceipts(controller.signal,current).catch(error=>{if(current()&&error.name!=='AbortError')notice(error.message,true);});
   const args=new URLSearchParams({limit:String(limit),offset:String(state.offset),query:state.query});
   if(state.stage)args.set('stage',state.stage);
+  if(state.sourceStatus)args.set('status',state.sourceStatus);
+  if(state.collection)args.set('collection',state.collection);
   try {
     const result=await api(state.view+'?'+args,undefined,controller.signal);
     if(!current())return;
@@ -163,7 +165,7 @@ function render(state, result) {
   const {view,offset}=state, total=result.total;
   if(view==='runs'){renderRuns(result);return;}
   $('heading').textContent=views[view][0];$('subtitle').textContent=views[view][1];$('section-title').textContent=views[view][2];$('count').textContent=total+' '+(total===1?'item':'items');
-  $('import-open').hidden=view!=='library';$('stage-filter').hidden=view!=='board';$('memory-open').hidden=view!=='memory';$('previous').disabled=offset===0;$('next').disabled=offset+limit>=total;$('page-label').textContent=total?`${offset+1}–${Math.min(offset+limit,total)} of ${total}`:'No items yet';
+  $('import-open').hidden=view!=='library';$('stage-filter').hidden=view!=='board';$('library-status-filter').hidden=view!=='library';$('library-collection-filter').hidden=view!=='library';$('memory-open').hidden=view!=='memory';$('previous').disabled=offset===0;$('next').disabled=offset+limit>=total;$('page-label').textContent=total?`${offset+1}–${Math.min(offset+limit,total)} of ${total}`:'No items yet';
   $('query').placeholder={board:'Blog title, author, owner…',inbox:'Blog, finding, status…',library:'Title, author, topic…',memory:'Title, kind, scope…'}[view];
   $('observation').textContent=result.observation||result.google_observation||'Saved content only. Historical product claims need current verification.';
   $('results').replaceChildren();
@@ -340,6 +342,7 @@ async function curate(item) {
       }
       const saved=await api('curate',{id:result.id,location:result.location,expected:result.expected,...changes});
       $('detail-dialog').close();await load();savedNotice(saved);
+      if(changes.curation==='retired'){const current=await api('source?'+new URLSearchParams({id:result.id,location:result.location}));const undo=button('Undo retirement',async()=>{const restored=await api('curate',{id:result.id,location:result.location,expected:current.expected,curation:library.curation||'active'});await load();savedNotice(restored);});$('notice').append(undo);}
     } catch(error) {
       if(error.status===409){blocked=true;conflict.hidden=false;comparison.replaceChildren();}
       notice(error.message,true);
@@ -516,7 +519,7 @@ async function saveUpload(submit){
     await busy(submit,analyzing?'Uploading, then summarizing and tagging…':'Uploading…',async()=>{
       const file=$('upload-file').files[0];
       if(!file||file.size>10*1024*1024)throw new Error('Choose a file of at most 10 MiB.');
-      const payload={filename:file.name,content:await encodeImportFile(file),title:$('upload-title').value,author:$('upload-author').value,as_blog:$('upload-blog').checked,...analysisChoice('upload')};
+      const payload={filename:file.name,content:await encodeImportFile(file),title:$('upload-title').value,author:$('upload-author').value,purpose:$('upload-purpose').value||'reference',as_blog:$('upload-blog').checked,...analysisChoice('upload')};
       const result=await api('upload',{...payload,operation:operationFor('upload',payload)});
       $('upload-dialog').close();await load();savedNotice(result);
     });

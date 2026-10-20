@@ -182,7 +182,7 @@ from runner import companion
 
 VARIABLE = 'HARNESS_SLIDES_RUNTIME'
 MINIMUM = '0.13.1'      # the oldest runtime taken: a deck begun on it carries on there
-RELEASE = '0.14.1'      # what a person is told to update to, as the installer pins it
+RELEASE = '0.15.1'      # what a person is told to update to, as the installer pins it
 # What a new deck needs of the slides tool, by the names its `version` lists.
 NEEDED = ('design-schema-2', 'design-batch', 'json-refusals', 'compose-section', 'assets',
           'compose-review')

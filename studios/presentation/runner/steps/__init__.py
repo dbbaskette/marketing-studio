@@ -25,4 +25,6 @@ class Work:
     profile: str
     prepared: dict      # what worker_tools.prepare takes
     name: str = ''      # the name a draft is handed back under
+    purpose: str = ''   # semantic routing purpose; independent of tool permissions
+    guard: tuple[str, int] | None = None  # only results for current slide direction survive
 

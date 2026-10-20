@@ -59,6 +59,7 @@ def row(record, ident, location, revision=None, conflict=False):
     due = text_or(details.get('due'))
     return {
         'id': ident,
+        'mode': record.get('mode'),
         'title': text_or(record.get('title'), 'Untitled'),
         'author': text_or(record.get('author'), 'Unassigned'),
         'owner': text_or(details.get('owner'), 'Unassigned'),

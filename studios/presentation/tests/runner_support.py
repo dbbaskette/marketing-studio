@@ -517,8 +517,15 @@ class Slides:
                 shown.append({'id': made['id'], 'number': number, 'title': made['title'],
                               'image': str(image),
                               'findings': list(self.findings.get(made['id'], ()))})
+            (folder / 'contact-sheet.png').write_bytes(png(0))
+            native = json.loads(scene)
+            shared = hashlib.sha256((Path(compiled) / 'brand-contract.json').read_bytes() + renderer.encode()).hexdigest()
+            evidence = {'schema': 1, 'shared': shared, 'deckSha256': hashlib.sha256((folder / 'deck.pptx').read_bytes()).hexdigest(),
+                'slides': [{'id': made['id'], 'number': index + 1,
+                    'fingerprint': hashlib.sha256(json.dumps([shared, index, len(native['slides']), made], sort_keys=True).encode()).hexdigest(),
+                    'imageSha256': hashlib.sha256(Path(shown[index]['image']).read_bytes()).hexdigest()} for index, made in enumerate(native['slides'])]}
             mine = file_id or (self.files[-1] if renderer == 'drive' else None)
-            return {'deck': str(folder / 'deck.pptx'), 'renderer': renderer, 'fileId': mine,
+            return {'deck': str(folder / 'deck.pptx'), 'renderer': renderer, 'fileId': mine, 'renderEvidence': evidence,
                     'deckSha256': hashlib.sha256((folder / 'deck.pptx').read_bytes())
                     .hexdigest(), 'contactSheet': str(folder / 'contact-sheet.png'),
                     'url': f'https://docs.example.com/presentation/d/{mine}/edit' if mine
@@ -542,6 +549,11 @@ class Slides:
         problems += [f'{key} is not something a finding has.' for finding in given['findings']
                      for key in finding if key not in ('slide', 'question', 'severity',
                                                        'note', 'fix')]
+        answers = given.get('slides') or []
+        if len(answers) != len(json.loads((folder / 'deck.pptx').read_bytes()[4:])['slides']):
+            problems.append('Native critique needs explicit answers for every slide.')
+        if any(len(s.get('answers', [])) != 8 or any(type(a) is not bool for a in s['answers']) for s in answers):
+            problems.append('Native critique needs eight boolean answers per slide.')
         if problems:
             raise slides.Refused(problems)
         (folder / 'critique.json').write_text(json.dumps(given))
@@ -778,8 +790,13 @@ class Workers:
         self._ok(tools.submit_section(made, 'Nothing: it read well at once.'))
 
     def review(self, tools, job):
-        listed = tools.job['review']['slides']
+        review = tools.job['review']
+        listed = review['slides']
+        if review.get('sheet'):
+            self._ok(tools.look_at_deck())
         for slide in listed:
+            if slide['id'] not in review.get('inspect', [s['id'] for s in listed]):
+                continue
             self._ok(tools.look_at_slide(slide['number']))
         found = self.found.pop(0)(listed) if self.found else []
         self._ok(tools.submit_assessment(json.dumps(found), '[]'))

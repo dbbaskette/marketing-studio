@@ -842,6 +842,14 @@ function fillFrame(node) {
   if (held && held.state === 'here') {
     const image = make('img', 'picture');
     image.alt = place.alt;
+    image.addEventListener('load', () => {
+      if (place.where.kind !== 'progress') return;
+      view.progressSeen ||= new Set();
+      const key = place.where.path + ':' + place.where.ref;
+      if (view.progressSeen.has(key)) return;
+      view.progressSeen.add(key);
+      send('progress-seen', {path: place.where.path, ref: place.where.ref}).catch(() => view.progressSeen.delete(key));
+    });
     image.src = held.url;
     image.addEventListener('error', () => {
       node.replaceChildren(says('problem', 'What was fetched cannot be shown as a picture.'));
@@ -1226,7 +1234,7 @@ function noteSheet(kind) {
 
 function drawSheet() {
   const holder = byId('sheet');
-  const shown = Boolean(view.sheet && (view.run || ['companions', 'upgrade', 'brand']
+  const shown = Boolean(view.sheet && (view.run || ['companions', 'upgrade', 'brand', 'bring']
     .includes(view.sheet)));
   holder.hidden = !shown;
   // While a sheet is open it holds the one filled button, so the toolbar's are put away.
@@ -1243,6 +1251,7 @@ function drawSheet() {
   else if (view.sheet === 'companions') body = updateSheet();
   else if (view.sheet === 'upgrade') body = upgradeSheet();
   else if (view.sheet === 'brand') body = brandSheet();
+  else if (view.sheet === 'bring') body = bringSheet();
   else if (TEAM_SHEETS.includes(view.sheet)) body = teamSheet(view.sheet);
   else if (FORMS[view.sheet]) body = noteSheet(view.sheet);
   else if (view.sheet === 'rebrand') body = rebrandSheet();
@@ -1446,9 +1455,46 @@ function drawDecks(fresh) {
       shown.map((brief) => ['deck ' + brief.path, brief, () => deckCard(brief)]))]);
   }
   placeParts({ title: 'Decks', actions: [newButton('filled'),
+    capsule('Bring in a deck', 'quiet', openBring, 'bring'),
     capsule('Published', 'quiet', () => show('published'), 'published')],
   mark: ['Decks'] }, parts, fresh);
   tidyPictures();
+}
+
+async function openBring() {
+  view.knownDecks = null;
+  view.bringProblem = '';
+  openSheet('bring', 'bring')();
+  try {
+    const found = await ask('known-decks');
+    view.knownDecks = list(found.decks);
+  } catch (failure) { view.bringProblem = failure.message; }
+  if (view.sheet === 'bring') drawSheet();
+}
+
+function bringSheet() {
+  const problem = problemLine();
+  say(problem, view.bringProblem || '');
+  const body = add(make('div', 'note'), make('p', '',
+    'Copy a deck made through the conversation workflow into this workspace and resume it. '
+    + 'Its original folder stays unchanged. Only decks remembered on this computer are listed.'));
+  if (!view.knownDecks) add(body, make('p', '', 'Looking for remembered decks…'));
+  else if (!view.knownDecks.length) add(body, make('p', '', 'No decks outside this workspace are remembered yet.'));
+  for (const deck of view.knownDecks || []) {
+    add(body, capsule('Bring in “' + deck.title + '”', '', async (event) => {
+      const pressed = event.currentTarget;
+      if (view.bringing) return;
+      view.bringing = true; pressed.disabled = true;
+      try {
+        const made = await send('bring', {path: deck.path});
+        closeSheet(); show('deck', {path: made.path});
+        notify('Deck copied into this workspace.');
+      } catch (failure) { say(problem, failure.message); }
+      finally { view.bringing = false; pressed.disabled = false; }
+    }, 'bring ' + deck.path));
+  }
+  return [sheetTitle('Bring in a deck'), add(body, problem,
+    capsule('Cancel', 'quiet', closeSheet, 'cancel'))];
 }
 
 // --- status -----------------------------------------------------------------------
@@ -2558,7 +2604,7 @@ function newDraft() {
   const agent = (view.setup && view.setup.agent) || {};
   const brand = (view.setup && view.setup.brand && view.setup.brand.default) || {};
   return settleBrand({ route: null, step: 0, title: '', audience: '', goal: '', minutes: '',
-    research: false, level: null, selected: '', source: 0, link: '', text: '', upload: null,
+    research: false, firstDraft: false, firstDraftExplicit: false, level: null, selected: '', source: 0, link: '', text: '', upload: null,
     reading: false, brand: brand.brand || '', variant: brand.variant || '',
     output: view.setup && view.setup.output === 'pptx' ? 1 : 0,
     agent: agent.default === 'codex' ? 'codex' : 'claude', model: agent.model || '',
@@ -2737,6 +2783,11 @@ function deckStep(draft) {
   add(card('What changes'), ...levelCards(draft))];
 }
 
+function firstDraftChoice(draft) {
+  if (draft.firstDraftExplicit) return draft.firstDraft;
+  return /skip ai review on the first build|show me the first draft without reviewing it|show first draft before ai review/i.test(draft.goal || '');
+}
+
 function aboutStep(draft) {
   const research = draft.route !== 'existing' ? chip('Research it first', draft.research,
     (on) => {
@@ -2788,6 +2839,10 @@ function startStep(draft) {
       }, 'new-output')),
   add(card('The agent that does the drafting'),
     ...agentFields(draft, 'new', 'For this deck', told)),
+  ...(draft.level === 'selected' ? [] : [add(card('First native build'),
+    chip('Show first draft before AI review', firstDraftChoice(draft), on => {
+      draft.firstDraft = on; draft.firstDraftExplicit = true;
+    }, 'first-draft'), make('p', 'quiet', 'Still validates and renders your slides. Lets you review the first build before AI critique and polishing.'))]),
   add(card('Limits'), make('p', '', limitsSays(limits)
     || 'No limits are set for this computer.'),
   make('p', 'quiet', 'A deck that reaches a limit stops and asks you. The limits are changed '
@@ -2899,6 +2954,7 @@ function formOf(draft) {
     variant: draft.variant || null, output: OUTPUTS[draft.output][0],
     research: draft.route !== 'existing' && draft.research,
     agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null };
+  if (draft.firstDraftExplicit || firstDraftChoice(draft)) form.initial_review = firstDraftChoice(draft) ? 'user-first' : 'standard';
   const uploads = {};
   if (draft.route === 'existing') {
     form.level = draft.level;
@@ -3526,6 +3582,8 @@ function outlineWork(gate) {
 
 function outlineEdited(gate) {
   chosenFor(gate).edited = true;
+  chosenFor(gate).storyboard = null;
+  byId('storyboard-surface')?.replaceChildren(make('p', 'quiet', 'Outline changed. Preview the storyboard again.'));
   paintOutline(gate, byId('outline-list'), byId('outline-said'));
   reviewChanged(gate);
 }
@@ -3668,6 +3726,7 @@ function outlinePanel(gate, readonly) {
     }
   }
   const slides = list(gate.slides);
+  if (gate.expected) add(node, storyboardPanel(gate, readonly));
   add(node, make('p', '', count(slides.length, 'slide', 'slides') + ', each with its title '
     + 'and what it must make clear; its points and notes open under it.' + (readonly ? ''
     : ' Retitle, move, add or remove slides here, or ask for changes to one; your edits go '
@@ -3725,6 +3784,52 @@ function outlinePanel(gate, readonly) {
   return add(node, ...gateSaid(gate));
 }
 
+function storyboardPanel(gate, readonly) {
+  const held = chosenFor(gate);
+  const node = add(make('div', 'card-part'), make('p', 'quiet',
+    'Visual storyboard: proposed wording and structure, before native slide construction. '
+    + 'This preview does not approve the outline or choose final slide layouts.'));
+  const problem = problemLine();
+  const holder = make('div', 'storyboard-holder');
+  holder.id = 'storyboard-surface';
+  const render = () => {
+    if (!held.storyboard) return;
+    const frame = make('iframe', 'storyboard');
+    frame.title = 'Visual storyboard — wording and structure';
+    frame.setAttribute('sandbox', '');
+    frame.srcdoc = '<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; style-src &#39;unsafe-inline&#39;">' + held.storyboard;
+    holder.replaceChildren(frame);
+  };
+  const preview = capsule('Preview storyboard', '', async (event) => {
+    const pressed = event.currentTarget;
+    if (held.previewing) return;
+    held.previewing = true; pressed.disabled = true; say(problem, '');
+    const path = view.path;
+    const slides = readonly ? null : JSON.parse(JSON.stringify(outlineWork(gate)));
+    const before = JSON.stringify(slides);
+    try {
+      const found = await send('storyboard', {path, expected: gate.expected, slides});
+      if (path !== view.path) return;
+      if (!readonly && before !== JSON.stringify(outlineWork(gate))) {
+        say(problem, 'Your outline changed while the preview was drawn. Preview it again.'); return;
+      }
+      held.storyboard = found.html; render();
+    } catch (failure) { say(problem, failure.message); }
+    finally { held.previewing = false; pressed.disabled = false; }
+  }, 'storyboard-preview');
+  render();
+  if (!held.storyboard && !held.previewing) {
+    held.previewing = true;
+    const path = view.path;
+    const before = JSON.stringify(outlineWork(gate));
+    ask('storyboard', {path, expected: gate.expected}).then(found => {
+      if (path !== view.path || before !== JSON.stringify(outlineWork(gate))) return;
+      held.storyboard = found.html; render();
+    }).catch(failure => say(problem, failure.message)).finally(() => { held.previewing = false; });
+  }
+  return add(node, preview, problem, holder);
+}
+
 // The brand: the deck's cover drawn in the brand it is made in, so the person can see it is
 // the one they meant. No layout is chosen here: each slide is designed on its own as it is
 // built.
@@ -3753,9 +3858,12 @@ function findingItems(findings) {
       || ['none', spoken(finding.severity || 'finding')];
     add(items, add(make('li', 'finding'),
       add(make('p', 'foot-line'), state(shape, words),
-        ABOUT_TAGS[finding.about] ? make('span', 'tag', ABOUT_TAGS[finding.about]) : null),
+        ABOUT_TAGS[finding.about] ? make('span', 'tag', ABOUT_TAGS[finding.about]) : null,
+        finding.persistent ? make('span', 'tag', 'Still unresolved after repair') : null),
       make('p', '', finding.note || finding.question || ''),
-      finding.fix ? make('p', 'quiet', 'Suggested: ' + finding.fix) : null));
+      finding.fix ? make('p', 'quiet', 'Suggested: ' + finding.fix) : null,
+      finding.verification && finding.verification !== finding.fix
+        ? make('p', 'quiet', 'Check: ' + finding.verification) : null));
   }
   return items;
 }
@@ -3782,21 +3890,89 @@ function auditPart(gate) {
 
 function buildProgressCard(progress) {
   const node = card('Slides taking shape');
-  add(node, state('late', 'Unreviewed'), make('p', 'quiet', progress.incomplete
+  add(node, state('late', view.run?.unreviewed ? 'Unreviewed first draft' : 'Unreviewed'), make('p', 'quiet', progress.incomplete
     ? 'The render stopped before it finished. These previews are kept so you can inspect them.'
-    : 'Previews appear as each slide is drawn. The deck still needs its review and your decision.'));
+    : view.run?.unreviewed ? 'AI review is skipped for this first draft. You can request it at the draft checkpoint.' : 'Previews appear as each slide is drawn. The deck still needs its review and your decision.'));
   const slides = list(progress.slides).map((one) => ({ ...one, partial: true,
     where: pictureOf(view.path, { kind: 'progress', ref: one.ref }),
     mark: one.ref }));
   if (slides.length) add(node, pager(slides, (one) => [
     make('p', '', 'Rendered preview · Unreviewed'),
-    make('p', 'quiet', 'Render ' + String(one.revision).slice(0, 12))]));
+    make('p', 'quiet', 'Render ' + String(one.revision).slice(0, 12)),
+    one.part !== 'whole' && view.run?.mine ? progressFeedback(one) : null]));
   return node;
 }
 
+function progressFeedback(one) {
+  view.progressNotes ||= {};
+  const held = view.progressNotes[one.ref] ||= {note: ''};
+  const form = make('form', 'note');
+  const problem = problemLine();
+  const submit = submitButton(held.sending ? 'Saving feedback…' : 'Send slide feedback', 'feedback ' + one.ref);
+  submit.disabled = Boolean(held.sending);
+  add(form, field('feedback-note-' + one.ref, 'What should change on slide ' + one.number + '?',
+    held, 'note', {long: true, limit: 4000}), make('p', 'quiet',
+    'Applies to this displayed revision. Other sections keep working. This does not approve the deck.'), problem, submit);
+  form.addEventListener('submit', async event => {
+    event.preventDefault(); if (held.sending) return;
+    const note = held.note.trim(), path = view.path;
+    if (!note) { say(problem, 'Say what should change first.'); return; }
+    held.sending = true; submit.disabled = true; say(problem, '');
+    try {
+      const found = await send('build-feedback', {path, ref: one.ref, note});
+      if (held.note.trim() === note) held.note = '';
+      if (path === view.path) { view.run = found; paintDeck(false); }
+      notify('Slide feedback saved.');
+    } catch (failure) { say(problem, failure.message + ' Your note is kept.'); }
+    finally { held.sending = false; submit.disabled = false; }
+  });
+  return form;
+}
+
+function savedDetails(run) {
+  const node = add(make('details', 'card'), make('summary', '', 'Saved inputs, outline and run details'));
+  const holder = make('div', 'card-part'), problem = problemLine();
+  for (const [name, label] of [['intake.md', 'Read intake'], ['classify.md', 'Read source classification'],
+    ['outline.md', 'Read saved outline'], ['research/plan.md', 'Read research plan'], ['research/report.md', 'Read research report']]) {
+    const go = capsule(label, 'quiet', async () => {
+      go.disabled = true; say(problem, '');
+      try {
+        const found = await ask('file', {path: run.path, name});
+        holder.replaceChildren(documentPart(label, found.text),
+          ...(found.truncated ? [make('p', 'quiet', 'This is a shortened preview. The full file remains in your workspace.')] : []));
+      } catch (failure) { say(problem, failure.message); }
+      finally { go.disabled = false; }
+    }, 'read ' + name);
+    add(node, go);
+  }
+  const receipts = list(run.model_jobs);
+  if (receipts.length) add(node, make('h3', 'row-title', 'Recent model jobs'), bullets(receipts.map(job =>
+    `${spoken(job.purpose)} · ${capital(job.profile)} · ${job.model || 'assistant default'}${job.effort ? ' · ' + job.effort : ''}`
+    + (job.reason ? ' · ' + job.reason : '') + '. Reported actual model: ' + (job.actual_model || 'not reported') + '.')));
+  if (run.build_timing && Object.keys(run.build_timing).length) add(node, make('h3', 'row-title', 'Preview timing'),
+    bullets(Object.entries(run.build_timing).map(([name, at]) => spoken(name.replaceAll('_', ' ')) + ': ' + at)));
+  if (list(run.build_feedback).length) add(node, make('h3', 'row-title', 'Saved slide feedback'),
+    bullets(run.build_feedback.map(item => 'Slide ' + item.number + ': ' + item.note)));
+  return add(node, problem, holder);
+}
+
 function buildPanel(gate, readonly) {
-  const node = card('The deck');
+  const node = card(gate.unreviewed ? 'Unreviewed first draft' : 'The deck');
   const held = chosenFor(gate);
+  if (gate.unreviewed) {
+    add(node, state('late', 'Unreviewed first draft'), make('p', '',
+      'Validated and rendered. AI critique and visual polishing have not run. Exporting or resuming does not start them.'),
+      capsule('Run AI review', '', async event => {
+        const pressed = event.currentTarget; if (held.reviewing) return;
+        held.reviewing = true; pressed.disabled = true;
+        try {
+          const path = view.path;
+          const found = await send('review-draft', {path, expected: gate.expected_deck});
+          if (path === view.path) { view.run = found; paintDeck(false); }
+        } catch (failure) { notify(failure.message); }
+        finally { held.reviewing = false; pressed.disabled = false; }
+      }, 'review-draft'));
+  }
   const changed = list(gate.changed);
   const pairs = new Map(list(gate.pairs).map((pair) => [pair.number, pair]));
   const slides = list(gate.slides).map((one) => ({ number: one.number, title: one.title,
@@ -3809,7 +3985,7 @@ function buildPanel(gate, readonly) {
     .includes(finding.severity)).length, 0);
   add(node, make('p', '', count(slides.length, 'slide', 'slides') + '. ' + (findings
     ? count(findings, 'finding remains', 'findings remain') + ' from the review, each shown '
-      + 'with its slide.' : 'The review has nothing left to raise. Whether the deck is good '
+      + 'with its slide.' : gate.unreviewed ? 'AI review has not run. Whether the deck is useful is yours to judge.' : 'The review has nothing left to raise. Whether the deck is good '
       + 'is still yours to judge.')),
   serious ? state('late', count(serious, 'serious finding', 'serious findings')
     + ' still listed.') : null,
@@ -3904,7 +4080,8 @@ function gateLine(run) {
 
 function deliverPart(run) {
   const found = run.deliver;
-  const node = card('Delivered');
+  const node = card(run.unreviewed || found.review_status === 'unreviewed' ? 'Delivered — unreviewed first draft' : 'Delivered');
+  if (run.unreviewed || found.review_status === 'unreviewed') add(node, make('p', 'quiet', 'AI review has not run on this draft.'));
   add(node, state('done', 'Revision ' + (found.revision || 1) + '.'),
     found.at ? add(make('p', 'quiet'), 'Delivered ', when(found.at), '.') : null);
   const bar = make('div', 'bar');
@@ -4470,7 +4647,7 @@ function deckActions(run, lead) {
     // a stop reviewed item by item it says what it will do with the marks. Pressed, it
     // acts on the gate as it is then, as `decide` does.
     const approve = capsule(REVIEWED.includes(run.gate.name) ? reviewOf(run.gate).label
-      : 'Approve', lead === 'approve' ? 'filled' : '', () => {
+      : run.gate.unreviewed ? 'Use/export draft as-is' : 'Approve', lead === 'approve' ? 'filled' : '', () => {
       const gate = view.run.gate;
       if (gate && REVIEWED.includes(gate.name)) sendReview(gate, approve);
       else decide('approve', '', null, approve);
@@ -4537,6 +4714,7 @@ function paintDeck(fresh) {
     ['cost', [run.spent, run.agent, run.model, run.effort, view.setup && view.setup.limits],
       () => costCard(run)],
     ['steps', [run.timeline], () => stepsCard(run)],
+    ['saved-details', [run.path, run.model_jobs, run.build_feedback], () => savedDetails(run)],
     // What this computer runs for a team can be handed over, for anyone to take.
     !read && driver && driver.here ? ['mine', [driver, title, run.kept],
       () => minePart(driver, run.kept)] : null,

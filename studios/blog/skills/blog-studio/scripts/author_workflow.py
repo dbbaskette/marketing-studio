@@ -444,7 +444,7 @@ def histories(directory, kind):
 
 
 def history_file(directory, kind, name):
-    if not re.fullmatch(kind + r'-[A-Za-z0-9_.-]+\.md', name):
+    if not isinstance(name, str) or not re.fullmatch(kind + r'-[A-Za-z0-9_.-]+\.md', name):
         raise ValueError('Choose a listed history revision for this artifact.')
     path = studio.inside(directory, 'history', name)
     if path.is_symlink() or not path.is_file():

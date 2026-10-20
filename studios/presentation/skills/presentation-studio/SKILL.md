@@ -5,11 +5,11 @@ description: Make a slide deck in your organisation's brand from an idea, a docu
 
 # Presentation Studio
 
-Conversation guidance. `studio` opens the page, whose new runs use the shared review level. Existing conversation checkpoints stay in place.
+Conversation guidance. `studio` opens the page. Reuse settled choices and honor explicit review cadence; show the storyboard before construction and retain the final native checkpoint unless waived.
 
-## Rules that always hold
+## Rules
 
-- **Only the person approves.** Each step ends at a stop: show what was made, then wait. Move on only when the person says they approve, in this conversation. Never approve for them, and never take silence or "looks fine so far" as approval of a later step. Record each decision as [the workspace](references/workspace.md) says.
+- **Only the person approves.** At a required checkpoint, show what was made, then wait. An explicitly waived checkpoint is recorded as waived, never approved. Silence or approval of an earlier step never approves a later one. Record each decision as [the workspace](references/workspace.md) says.
 - **Slides are made by harness-slides.** Draw, check, preview, render and patch slides through its commands and guidance. Never write or edit a slide file yourself.
 - **Each slide is designed on its own,** from what it says. Never have the person pick a layout for the whole deck.
 - **The brand is the person's brand skill.** Before the first step that needs the brand, export its contract into the deck's `brand/` folder with the brand skill's own `contract export` command, and give that contract to harness-slides with `--brand`. Presentation Studio names no brand: offer the brands and variants the brand skill lists.
@@ -43,4 +43,7 @@ For fresh synthesis research, read [the research handoff](references/research.md
 
 ## Checking where a deck stands
 
-`run.json` in the deck's folder says which steps are done and which stop waits. Read it before you resume. When guidance start gave you a `helper`, `"<helper>" status` prints, as JSON, every deck the runner knows on this computer.
+`run.json` in the deck's folder says which steps are done and which stop waits. Read it before you resume. A deck made in conversation can be copied into the
+page's workspace with Decks → Bring in a deck; its original stays untouched.
+
+`studio status` lists remembered decks as JSON without serving.

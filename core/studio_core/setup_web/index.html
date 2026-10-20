@@ -50,7 +50,7 @@
             <div class="model-settings">
               <div class="model-heading"><div><h3>Models for your work</h3><p>Keep one model for everything, or choose a model for each kind of task.</p></div><label>Model routing<select id="model-mode"><option value="single">One model</option><option value="by_task">By task</option></select></label></div>
               <div id="model-profiles" hidden>
-                <p class="field-note">Quick handles extraction and classification. Main handles research, drafting, slides and review. Complex handles dedicated repairs. New work saves these choices; existing work keeps its models.</p>
+                <p class="field-note">Quick handles extraction, classification and Presentation Studio outlines. Main handles research, drafting, slides, review and the first repair. Complex handles repeated slide findings and other dedicated repairs. New work saves these choices; existing work keeps its models.</p>
                 <div id="profile-cards" class="profile-cards"></div>
                 <div id="profile-review" role="status" hidden><p>The assistant changed. Check the model IDs and reasoning levels before using these profiles with this assistant.</p><button type="button" id="confirm-profiles" class="secondary">Use these profiles with this assistant</button></div>
                 <p class="field-note">Use model IDs available in your signed-in account. The studios send your choice directly to the selected assistant and stop if it cannot be used.</p>
@@ -69,6 +69,7 @@
           </section>
           <section class="form-section" data-step="2"><h2>Brand and delivery</h2><p>Choose the brand new work starts with. You can change it for each blog, presentation, or training. Existing work keeps its saved choice.</p>
             <h3 class="brand-source-heading">Where is your brand skill?</h3>
+            <div class="form-grid"><div class="full"><button type="button" id="find-brands" class="secondary">Find installed brands</button><p id="brand-catalog-status" role="status" class="field-note">Look up brand and variant IDs from installed skills, or enter them below. This does not install anything.</p><div id="brand-choices" hidden></div></div></div>
             <p class="brand-source-note">Give a Git repository address, or choose an installed skill folder. Both are optional. A repository does not need a folder path.</p>
             <div class="form-grid">
               <label><span>Git repository <span class="optional">(optional)</span></span><input name="brand.repository" placeholder="https://github.com/your-team/brand-skill.git" autocomplete="off"><small>Use an HTTPS or SSH Git address. Save it here, then install or update the brand skill from a studio’s settings.</small></label>

@@ -5,7 +5,7 @@ from contextvars import ContextVar
 NAMES = ('quick', 'main', 'complex')
 EFFORTS = {'claude': ('low', 'medium', 'high', 'xhigh', 'max'),
            'codex': ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')}
-POLICY = 1
+POLICY = 2
 _PENDING = ContextVar('studio_model_job', default=None)
 
 
@@ -145,10 +145,17 @@ def route(record, product, step, *, purpose=None, effort_key='effort'):
     elif purpose != 'review' and (base in ('build-repair', 'deck-repair') or purpose == 'repair'):
         profile = 'complex'
     saved = record.get('model_profiles')
+    if product == 'Presentation Studio' and isinstance(saved, dict) and saved.get('policy') == 2:
+        if base in ('outline', 'classify', 'extract'):
+            profile = 'quick'
+        elif purpose == 'repair-escalated':
+            profile = 'complex'
+        else:
+            profile = 'main'
     if saved:
         if not isinstance(saved, dict) or type(saved.get('schema')) is not int \
                 or saved.get('schema') != 1 or type(saved.get('policy')) is not int \
-                or saved.get('policy') != POLICY:
+                or saved.get('policy') not in (1, POLICY):
             raise ValueError('This run uses a newer model routing policy. Update the studio to continue.')
         agent = record.get('agent') or record.get('engine')
         if saved.get('agent') != agent:

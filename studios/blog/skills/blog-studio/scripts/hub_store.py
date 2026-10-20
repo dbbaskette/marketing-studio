@@ -2,6 +2,7 @@
 """Validated Git-backed records. Remote content is data and is never executed."""
 
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 import fcntl
 import hashlib
@@ -20,6 +21,23 @@ MAX_TEXT = 1024 * 1024
 MAX_BINARY = 10 * MAX_TEXT
 MAX_TOTAL = 100 * MAX_TEXT
 MAX_FILES = 20000
+MAX_TREE_CACHE_BYTES = 32 * 1024 * 1024
+_tree_reads = ContextVar('blog_studio_verified_trees', default=None)
+
+
+@contextmanager
+def tree_read_scope():
+    """Reuse immutable Git trees within one explicit operation, never remote freshness."""
+    if _tree_reads.get() is not None:
+        yield
+        return
+    token = _tree_reads.set({})
+    try:
+        yield
+    finally:
+        _tree_reads.reset(token)
+
+
 ID_RE = re.compile(r'[0-9a-f]{32}')
 REV_RE = re.compile(r'[0-9a-f]{40,64}')
 # Commands that talk to the remote. Every other Git command is local plumbing.
@@ -176,7 +194,8 @@ def locked(root, name='.hub.lock'):
             'the lock clears by itself when that command ends, so do not delete any lock file.'
         )
     try:
-        yield
+        with tree_read_scope():
+            yield
     finally:
         release_lock(fd)
 
@@ -767,6 +786,12 @@ def validate_files(files, repository=None):
 def tree_files(repository, commit):
     if not REV_RE.fullmatch(commit):
         raise HubError('Invalid hub commit.')
+    repository = Path(repository)
+    metadata = repository.stat()
+    key = (str(repository.resolve()), metadata.st_dev, metadata.st_ino, commit)
+    cache = _tree_reads.get()
+    if cache is not None and key in cache:
+        return dict(cache[key])
     listing = git(repository, 'ls-tree', '-r', '-z', '-l', commit)
     entries = []
     total = 0
@@ -811,6 +836,14 @@ def tree_files(repository, commit):
         size = int(header[2])
         files[name] = stream[header_end + 1 : header_end + 1 + size]
         offset = header_end + size + 2
+    if cache is not None and total <= MAX_TREE_CACHE_BYTES:
+        if (
+            len(cache) >= 8
+            or sum(sum(map(len, saved.values())) for saved in cache.values()) + total
+            > MAX_TREE_CACHE_BYTES
+        ):
+            cache.clear()
+        cache[key] = dict(files)
     return files
 
 

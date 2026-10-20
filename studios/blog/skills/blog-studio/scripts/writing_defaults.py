@@ -234,4 +234,9 @@ def for_create(root, args):
             pin = studio.voice_pin(root, local_id)
         else:
             pin = voice['value']
+        _, selected_profile = studio.item(root, 'profiles', pin['profile_id'])
+        if selected_profile['status'] == 'retired':
+            raise ValueError(
+                'The default voice profile is retired. Choose an active voice or preserve the manuscript voice for new work.'
+            )
     return pin

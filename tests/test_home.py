@@ -194,6 +194,17 @@ class SecurityTests(IsolatedHome):
         self.assertEqual(self.request('PUT', headers=self.auth())[0], 405)
         self.assertEqual(self.request('GET', '/../../etc/passwd', headers=self.auth())[0], 404)
 
+    def test_installed_brand_lookup_is_authenticated_and_read_only(self):
+        expected = {'skills': [], 'problem': 'No synthetic brand is installed.'}
+        before = shared.read()[0]
+        with mock.patch('studio_core.brand_catalog.choices', return_value=expected) as lookup:
+            self.assertEqual(self.request('POST', '/api/brands', '{}')[0], 403)
+            lookup.assert_not_called()
+            status, _, body = self.request('POST', '/api/brands', '{}', self.auth())
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(body), expected)
+        self.assertEqual(shared.read()[0], before)
+
     def test_real_post_and_restart_keeps_setup(self):
         body = json.dumps({'changes': {'local': {'root': str(self.root / 'work')}}, 'seen': {}})
         self.assertEqual(self.request('POST', '/api/shared', body, self.auth())[0], 200)

@@ -265,6 +265,9 @@ def kept(section, spec: dict) -> list[str]:
                            + ', '.join(wanted) + '.']
     for mine, theirs in zip(slides, spec['slides']):
         ident = theirs['id']
+        frozen = (spec.get('unchanged_slides') or {}).get(ident)
+        if frozen is not None and mine != frozen:
+            problems.append(f'{ident}: this slide has no requested repair. Keep its drawing unchanged.')
         if mine.get('title') != theirs['title']:
             problems.append(f"{ident}: the title is fixed: {json.dumps(theirs['title'])}")
         if mine.get('sources') != theirs['sources']:
@@ -788,11 +791,14 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
         if text.strip():
             inputs[name] = text
     title = run.get('title') or whole.get('title') or 'the deck'
-    drawn = state['sections'].get(section)
+    drawn = state['sections'].get(section) or (state.get('feedback_previous') or {}).get(section)
     last = state['rounds'][-1] if state['rounds'] else None
     found = [finding for finding in ((last or {}).get('review') or {}).get('findings') or ()
              if finding['slide'] in ids] if drawn else []
     note, look = _note(run, request), []
+    feedback = [item for item in run.get('build_feedback', []) if item.get('section') == section]
+    if feedback:
+        note = '\n'.join(filter(None, [note, *(f"Slide {item['number']}: {item['note']}" for item in feedback)]))
     lines = [f'Draw section {number} of "{title}": the slides in your input "brief".']
     if drawn:
         mine = [slide for slide in (last or {}).get('slides') or () if slide['id'] in ids]
@@ -824,6 +830,17 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
         lines.append('These slides show no words in the deck you were given, so draw no '
                      'text on them: ' + ', '.join(drawn_bare) + '.')
     fixed_spec = fixed(whole, ids, number, strict, bare, placed, titled)
+    focused = {finding['slide'] for finding in grave(found) if finding.get('about') == 'drawing'}
+    asked_numbers = ((run.get('gates') or {}).get('gate:build') or {}).get('slides')
+    if asked_numbers and last:
+        focused.update(slide['id'] for slide in last['slides'] if slide['number'] in asked_numbers)
+    focused.update(item['slide'] for item in feedback)
+    if drawn and focused:
+        earlier = home.read_json(root / drawn['file'], {})
+        fixed_spec['unchanged_slides'] = {slide['id']: slide for slide in earlier.get('slides', [])
+                                         if slide['id'] not in focused}
+        lines.append('Only these slides need repair: ' + ', '.join(sorted(focused))
+                     + '. Copy all other slides in your section exactly, including their drawing.')
     pictured = [slide for slide in fixed_spec['slides'] if slide.get('image')]
     if pictured:
         lines.append('Each of these slides keeps the picture it showed. Place its image node '
@@ -845,11 +862,32 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
             **({'pictures': str((root / began['folder'] / PICTURES).resolve())}
                if (root / began['folder'] / PICTURES).is_dir() else {}),
             'previews': PREVIEWS, **how(root, run, renderer)}
+    first_draft = decks.user_first(run)
+    if first_draft:
+        spec['user_first'] = True
     spec['progress'] = build_progress.begin(root, began['folder'], section,
         [{'id': slide['id'], 'title': slide.get('title') or '', 'number': number}
          for number, slide in enumerate(slides_of(whole), 1) if slide['id'] in ids])
-    return Work(guidance=briefs.guidance('section', repair=bool(found)),
+    repeated = [finding for finding in found if finding.get('persistent')]
+    if repeated:
+        spec['escalation_reason'] = 'The same identified finding survived a focused repair: ' + ', '.join(f['id'] for f in repeated)
+    guidance = briefs.guidance('section', repair=bool(found))
+    if first_draft:
+        guidance = guidance.partition('## How to work')[0] + '''## How to work
+
+The person explicitly requested an unreviewed first draft. Design each slide from
+its content and keep every approved word, brand rule and asset permission.
+Use check_section until deterministic validation passes. Render once with
+preview_section, fix reported blocking validation errors within the normal limits,
+then submit_section with exactly that rendered section. Do not inspect pixels,
+run critique, or spend time on discretionary visual polishing. The person will
+see the first native build before choosing whether to request AI review.
+Do not claim visual review or invent assessment evidence. Then stop.
+'''
+    return Work(guidance=guidance,
                 task='\n\n'.join(lines), profile='write', name='section',
+                purpose='repair-escalated' if repeated else 'construction',
+                guard=(section, (run.get('build_feedback_revisions') or {}).get(section, 0)),
                 prepared={'inputs': inputs, 'ask': False, 'look': look,
                           'artifacts': {'section': spec}})
 
@@ -965,6 +1003,7 @@ def draw_whole(root, run: dict, slides, renderer) -> dict:
             'compiled': (folder / 'compiled').relative_to(root).as_posix(),
             'file': file.relative_to(root.resolve()).as_posix(), 'deck': digest,
             'review': None,
+            'render_evidence': shown.get('renderEvidence'),
             'sheet': sheet.relative_to(root.resolve()).as_posix() if sheet else None,
             'made_from': {ident: entry['file'] for ident, entry in drawn.items()},
             'changed': [slide['number'] for slide in slides_kept
@@ -1056,21 +1095,67 @@ def _last(state: dict) -> dict:
     return state['rounds'][-1]
 
 
+def reusable_review(root, state):
+    """Reuse only clear slides with verified native dependency and pixel identities."""
+    rounds = state.get('rounds') or []
+    if len(rounds) < 2:
+        return {}
+    previous, current = rounds[-2:]
+    old, new = previous.get('render_evidence') or {}, current.get('render_evidence') or {}
+    coverage = (previous.get('review') or {}).get('coverage') or {}
+    if old.get('schema') != 1 or new.get('schema') != 1 or old.get('shared') != new.get('shared') \
+            or not isinstance(old.get('shared'), str) or not re.fullmatch(r'[a-f0-9]{64}', old['shared']) or old.get('deckSha256') != previous['deck'] \
+            or new.get('deckSha256') != current['deck'] or coverage.get('questions') != list(QUESTIONS):
+        return {}
+    if not current.get('sheet') or not (Path(root) / current['sheet']).is_file():
+        return {}
+    old_slides = old.get('slides') or []
+    new_slides = new.get('slides') or []
+    if [(s.get('id'), s.get('number')) for s in old_slides] != [(s['id'], s['number']) for s in current['slides']] \
+            or len(new_slides) != len(old_slides):
+        return {}
+    inspected = {s['id']: s for s in coverage.get('slides') or []}
+    needs = {finding['slide'] for finding in (previous.get('review') or {}).get('findings') or []}
+    candidates = {}
+    for prior, now, image in zip(old_slides, new_slides, current['slides'], strict=True):
+        ident = image['id']
+        receipt = inspected.get(ident) or {}
+        if now.get('id') != ident or now.get('number') != image['number'] \
+                or now.get('imageSha256') != image['sha256'] \
+                or receipt.get('image_sha256') != prior.get('imageSha256') \
+                or prior.get('imageSha256') != now.get('imageSha256') \
+                or prior.get('fingerprint') != now.get('fingerprint') \
+                or not now.get('fingerprint') or receipt.get('answers') != [True] * len(QUESTIONS):
+            needs.add(ident)
+        else:
+            candidates[ident] = {**receipt, 'from_deck': previous['deck']}
+    numbers = {slide['id']: slide['number'] for slide in current['slides']}
+    affected = {numbers[ident] for ident in needs if ident in numbers}
+    neighbors = {number + offset for number in affected for offset in (-1, 0, 1)}
+    return {ident: receipt for ident, receipt in candidates.items() if numbers[ident] not in neighbors}
+
+
 def review_work(root, run: dict) -> Work:
-    """The job of reviewing the whole deck as it was rendered, by a worker that drew none
-    of it. After a round of drawing again it is also told what was found before."""
+    """Inspect changes/neighbors plus the whole deck; keep verified unchanged coverage."""
     root = Path(root)
     state = read_state(root)
     last, rounds = _last(state), state['rounds']
     earlier = (rounds[-2].get('review') or {}).get('findings') if len(rounds) > 1 else None
     slides = _shown(root, last['slides'])
+    reused = reusable_review(root, state)
+    inspect = [slide['id'] for slide in slides if slide['id'] not in reused]
     task = (f"Review \"{run.get('title') or 'the deck'}\" as it was rendered: {len(slides)} "
-            'slides. Your input "the review" has the questions and the slides. Look at '
-            'every slide with look_at_slide, then hand in what you find with '
-            'submit_assessment.')
+            'slides. Your input "the review" has the questions and the slides. '
+            + ('Look at the current whole deck with look_at_deck for consistency. ' if last.get('sheet') else '')
+            + 'Use look_at_slide on these IDs at full size: ' + ', '.join(inspect)
+            + '. Hand in every negative finding with submit_assessment. '
+            + ('Other clear slides retain verified inspection evidence, not user approval. '
+               'You may inspect or flag any of them if the whole-deck view suggests a regression. ' if reused else ''))
     review = {'preview': str(root / last['preview']), 'deck': last['deck'], 'slides': slides,
-              'recorded': str(root / last['folder'] / 'assessment.json')}
+              'recorded': str(root / last['folder'] / 'assessment.json'), 'inspect': inspect,
+              'reused': reused, 'sheet': str(root / last['sheet']) if last.get('sheet') else None}
     return Work(guidance=briefs.guidance('review'), task=task, profile='write',
+                guard=('whole', (run.get('build_feedback_revisions') or {}).get('whole', 0)),
                 prepared={'inputs': {'the review': asked(slides, earlier)}, 'ask': False,
                           'review': review})
 
@@ -1091,6 +1176,8 @@ def _review_md(number: int, findings: list[dict], slides: list[dict], back: list
         lines.append(f"- Slide {finding['number']} ({titles.get(finding['slide'], '')}), "
                      f"{finding['severity']}, {finding['about']}: {finding['note']}"
                      + (f" Suggested: {finding['fix']}" if finding.get('fix') else ''))
+        if finding.get('persistent'):
+            lines.append('  Still unresolved after a focused repair; decide the specific correction or tradeoff.')
     if findings:
         lines.append('')
     if back:
@@ -1115,8 +1202,16 @@ def keep_review(root, run: dict, handed) -> list[dict]:
     where = {ident: entry['id'] for entry in began['sections'] for ident in entry['slides']}
     findings = [{**finding, 'section': where.get(finding.get('slide'))}
                 for finding in assessed['findings']]
+    previous = {finding.get('id') for entry in state['rounds'][:-1]
+                for finding in (entry.get('review') or {}).get('findings', [])}
+    for finding in findings:
+        identity = {key: finding.get(key) for key in ('slide', 'question', 'about')}
+        identity['defect'] = ' '.join(str(finding.get('note') or '').lower().split())
+        finding['id'] = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:16]
+        finding['persistent'] = finding['id'] in previous
+        finding['verification'] = finding.get('fix') or QUESTIONS[finding['question'] - 1]
     last['review'] = {'findings': findings, 'weakest': list(assessed.get('weakest') or ()),
-                      'at': home.now()}
+                      'at': home.now(), 'coverage': assessed.get('coverage')}
     back = repair_sections(findings)
     spent = state.get('repaired', 0) >= REPAIRS
     if spent:

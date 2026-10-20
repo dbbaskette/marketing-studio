@@ -42,7 +42,11 @@ bash package.sh --verify /path/to/bundle.zip
 
 Online bundles include the studios, skills, brand and private Python/Node. Setup
 downloads pinned Google and local preview tools into private directories.
-Offline bundles carry those tools too. Nothing uses system Python or Node during
+Offline bundles carry those tools too. Newly installed studios share one private
+tool set keyed by the complete pinned tools lock, so installing another studio
+reuses LibreOffice, Google Cloud CLI, Git and preview dependencies. Each product
+keeps its own launch environment and installation record. Changed pins install
+beside previous tools; existing versions and rollback paths are retained. Nothing uses system Python or Node during
 bundled installation, and setup never installs an assistant or starts a provider job.
 Packaging needs an existing Python 3.11+, Git, Node 22+ and npm on the build computer;
 it can build and verify Apple Silicon archives on an Intel Mac. Native execution

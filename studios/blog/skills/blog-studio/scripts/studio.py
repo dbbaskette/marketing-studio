@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
@@ -140,12 +139,15 @@ def locked(root):
     from studio_sync.support import locked as team_locked
 
     found = space(root)
-    if found:
-        with team_locked(found.repo / '.git/blog-studio.lock'), _locked(root):
-            yield
-    else:
-        with _locked(root):
-            yield
+    from hub_store import tree_read_scope
+
+    with tree_read_scope():
+        if found:
+            with team_locked(found.repo / '.git/blog-studio.lock'), _locked(root):
+                yield
+        else:
+            with _locked(root):
+                yield
 
 
 def initialize(root):
@@ -196,6 +198,8 @@ def snapshot_profile(directory, record):
 
 def voice_pin(root, profile_id, revision=None):
     directory, record = item(root, 'profiles', profile_id)
+    if revision is None and record['status'] == 'retired':
+        raise ValueError('This voice profile is retired. Choose an active profile for new work.')
     version = revision or record['revision']
     version_dir = inside(directory, 'revisions', str(version))
     if not (version_dir / 'record.json').is_file():
@@ -254,6 +258,14 @@ def profile_command(root, args):
             'background': str(saved / 'BACKGROUND.md'),
             'rules': str(saved / 'rules.json'),
         }
+    if args.action == 'retire':
+        if args.confirmed is not True or args.expected_revision != record['revision']:
+            raise ValueError('Confirm the current profile revision before retiring it.')
+        if record['status'] != 'retired':
+            record.update(status='retired', revision=record['revision'] + 1)
+            persist(directory, 'profiles', record)
+            snapshot_profile(directory, record)
+        return record
     guide = read_text(args.guide_file)
     if not guide.strip():
         raise ValueError('Voice guide cannot be empty.')
@@ -264,6 +276,8 @@ def profile_command(root, args):
     )
     validate_rules(rules)
     record['revision'] += 1
+    if getattr(args, 'name', None):
+        record['name'] = args.name
     record['sample_ids'] = samples
     record['status'] = args.status or record['status']
     atomic(directory / 'VOICE.md', guide.encode())
@@ -819,7 +833,14 @@ def article_command(root, args):
 
 
 def parser():
-    p = argparse.ArgumentParser(description=__doc__)
+    from command_outcomes import Parser
+
+    p = Parser(description=__doc__)
+    p.add_argument(
+        '--compact',
+        action='store_true',
+        help='Print a bounded outcome envelope instead of the compatible full JSON result',
+    )
     p.add_argument('--root', required=True, help='Absolute path to an author-chosen data workspace')
     groups = p.add_subparsers(dest='group', required=True)
     from blog_runner import add_parser as run_parser
@@ -853,6 +874,12 @@ def parser():
     from author_workflow import add_parser as author_parser
 
     author_parser(groups)
+    from prepublish import add_parser as prepublish_parser
+
+    prepublish_parser(groups)
+    from planning import add_parser as planning_parser
+
+    planning_parser(groups)
     profiles = groups.add_parser('profile').add_subparsers(dest='action', required=True)
     create = profiles.add_parser('create')
     create.add_argument('--name', required=True)
@@ -864,6 +891,7 @@ def parser():
     create.add_argument('--sample', action='append', default=[])
     save = profiles.add_parser('save')
     save.add_argument('--id', required=True)
+    save.add_argument('--name')
     save.add_argument('--guide-file', required=True)
     save.add_argument('--background-file')
     save.add_argument('--rules-file')
@@ -872,6 +900,12 @@ def parser():
     show = profiles.add_parser('show')
     show.add_argument('--id', required=True)
     show.add_argument('--revision', type=int)
+    retire = profiles.add_parser(
+        'retire', help='Retire a current voice profile; keep existing pinned revisions'
+    )
+    retire.add_argument('--id', required=True)
+    retire.add_argument('--expected-revision', required=True, type=int)
+    retire.add_argument('--confirmed', action='store_true', required=True)
     sources = groups.add_parser('source').add_subparsers(dest='action', required=True)
     add = sources.add_parser('add')
     add.add_argument('--name', required=True)
@@ -1002,7 +1036,12 @@ def main():
         if args.group == 'team':
             from team_workspace import command
 
-            print(json.dumps(command(root, args), indent=2))
+            result = command(root, args)
+            if args.compact:
+                from command_outcomes import compact
+
+                result = compact(result, args)
+            print(json.dumps(result, indent=2))
             return 0
         from team_workspace import before, saved, space
 
@@ -1028,6 +1067,8 @@ def main():
             'compare',
             'capabilities',
         )
+        if args.group == 'google' and args.action == 'pull' and not args.accept:
+            team_mutation = False
         if team_mutation:
             before(
                 root,
@@ -1047,6 +1088,24 @@ def main():
             from blog_library import command
 
             result = command(root, args)
+        elif args.group == 'google' and args.action == 'pull':
+            from google_workflow import command
+
+            with locked(root):
+                result = command(root, args)
+                if args.accept:
+                    from management import share
+
+                    _, record = item(root, 'articles', args.id)
+                    result['hub_sync'] = share(root, 'article', record).get('hub_sync')
+        elif args.group == 'plan':
+            from planning import report
+
+            result = report(root, args.topic)
+        elif args.group == 'prepublish':
+            from prepublish import report
+
+            result = report(root, args.id, args.title_limit)
         elif args.group in ('resume', 'passages', 'check', 'cache'):
             from performance import command
 
@@ -1157,12 +1216,21 @@ def main():
                 else None
             )
             result['team_sync'] = saved(root, ident)
-        if getattr(args, 'format', None) == 'markdown' and 'card' in result:
+        if args.compact:
+            from command_outcomes import compact
+
+            print(json.dumps(compact(result, args), ensure_ascii=False))
+        elif getattr(args, 'format', None) == 'markdown' and 'card' in result:
             print(result['card'])
         else:
             print(json.dumps(result, indent=2, ensure_ascii=False))
     except (HubError, OSError, ValueError, KeyError, TypeError) as exc:
-        print(f'Blog Studio: {exc}', file=sys.stderr)
+        if args.compact:
+            from command_outcomes import failure
+
+            print(json.dumps(failure(str(exc))))
+        else:
+            print(f'Blog Studio: {exc}', file=sys.stderr)
         return 1
     return 0
 

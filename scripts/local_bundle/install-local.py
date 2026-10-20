@@ -141,6 +141,40 @@ def install_tools(payload, version, env):
     shutil.copytree(payload / 'google-cloud-sdk', version / 'google-cloud-sdk')
 
 
+def shared_tools(home, manifest, env):
+    """Keep one private, pinned tool set across independently installed studios."""
+    key = hashlib.sha256(json.dumps(manifest['tools'], sort_keys=True,
+                                   separators=(',', ':')).encode()).hexdigest()
+    base = home / '.local/share/studios-tools'
+    base.mkdir(parents=True, exist_ok=True)
+    target = base / 'versions' / key
+    with (base / 'install.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError('Another studio is installing the shared private tools. Let it finish, then run setup again.') from None
+        ready = target / 'ready.json'
+        if ready.is_file():
+            if json.loads(ready.read_text()).get('tools') != key or not all(
+                    (target / name).is_dir() for name in ('tools', 'LibreOffice.app', 'google-cloud-sdk')):
+                raise RuntimeError('The shared private tools are incomplete. Preserve ' + str(target) + ' before retrying setup.')
+            print('Reusing the verified private tools already installed for your studios.', flush=True)
+            return target
+        if target.exists():
+            raise RuntimeError('An incomplete shared tools installation remains at ' + str(target)
+                               + '. Preserve it for diagnosis before retrying.')
+        target.mkdir(parents=True)
+        try:
+            from tool_payload import installer_payload
+            with installer_payload(ROOT, manifest, base / 'cache') as payload:
+                install_tools(payload, target, env)
+            atomic(ready, json.dumps({'tools': key}) + '\n', 0o600)
+        except BaseException:
+            shutil.rmtree(target, ignore_errors=True)
+            raise
+    return target
+
+
 def install(home, base, env, target, manifest, config, agent, selected=None):
     product, selected = selection(manifest, selected)
     title = product.title() + ' Studio'
@@ -158,9 +192,9 @@ def install(home, base, env, target, manifest, config, agent, selected=None):
         version.mkdir(parents=True)
         try:
             sys.path.insert(0, str(ROOT))
-            from tool_payload import installer_payload
-            with installer_payload(ROOT, manifest, base / 'cache') as payload:
-                install_tools(payload, version, env)
+            tools = shared_tools(home, manifest, env)
+            for name in ('tools', 'LibreOffice.app', 'google-cloud-sdk'):
+                (version / name).symlink_to(tools / name, target_is_directory=True)
             ready.write_text(json.dumps({'id': manifest['id']}))
         except BaseException:
             # Only this attempt's new private tools folder is removed; existing versions stay.

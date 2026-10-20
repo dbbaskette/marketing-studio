@@ -1,0 +1,440 @@
+"""Contextual tool tasks keep synthetic writing and existing approval boundaries."""
+
+from unittest.mock import patch
+
+from test_editorial_tools import Fixture
+import advanced_tools
+import blog_runner
+import manuscript_editor
+import prepublish
+import studio
+
+
+class AdvancedToolsTests(Fixture):
+    def setUp(self):
+        super().setUp()
+        self.ident = self.article()
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+
+    def save(self, content):
+        current = manuscript_editor.read(self.root, self.ident)
+        return manuscript_editor.dispatch(
+            self.root,
+            'save',
+            {'id': self.ident, 'expected': current['expected'], 'content': content},
+        )
+
+    def test_history_preview_and_restore_use_existing_guards_and_keep_metadata(self):
+        self.save('# Earlier wording\n\nKeep the technical qualifier.')
+        self.save('# Current wording\n\nKeep the technical qualifier.')
+        found = advanced_tools.overview(self.root, self.ident)
+        revision = found['history'][0]['revision']
+        preview = advanced_tools.history_preview(self.root, self.ident, revision)
+        directory, before = studio.item(self.root, 'articles', self.ident)
+        source, voice = before['sources'], before['voice']
+        result = advanced_tools.dispatch(
+            self.root,
+            {
+                'action': 'restore',
+                'id': self.ident,
+                'expected': found['expected'],
+                'revision': revision,
+                'restore_expected': preview['expected'],
+                'confirmed': True,
+            },
+        )
+        self.assertEqual(result['status'], 'restored')
+        self.assertIn('Earlier wording', (directory / 'DRAFT.md').read_text())
+        _, after = studio.item(self.root, 'articles', self.ident)
+        self.assertEqual((after['sources'], after['voice']), (source, voice))
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            advanced_tools.dispatch(
+                self.root,
+                {
+                    'action': 'restore',
+                    'id': self.ident,
+                    'expected': found['expected'],
+                    'revision': revision,
+                    'restore_expected': preview['expected'],
+                    'confirmed': True,
+                },
+            )
+
+    def test_report_is_read_only_and_distinguishes_findings_from_remote_coverage(self):
+        self.save(
+            '# A title\n\n### Skipped heading\n\nTODO citation\n\n![](TBD)\n\n[missing]()\n[source:unknown]\n'
+        )
+        directory, _ = studio.item(self.root, 'articles', self.ident)
+        before = {
+            p.relative_to(directory): p.read_bytes() for p in directory.rglob('*') if p.is_file()
+        }
+        result = prepublish.report(self.root, self.ident)
+        self.assertEqual(
+            {f['code'] for f in result['findings']},
+            {
+                'heading-order',
+                'unfinished-note',
+                'image-alt',
+                'image-source',
+                'link-target',
+                'evidence-reference',
+            },
+        )
+        self.assertTrue(result['report_only'])
+        self.assertIn('not verified', result['coverage'])
+        self.assertEqual(
+            before,
+            {p.relative_to(directory): p.read_bytes() for p in directory.rglob('*') if p.is_file()},
+        )
+        self.save(
+            '# A supported title\n\n## Context\n\n[Source](https://docs.example.com/source)\n'
+        )
+        self.assertEqual(prepublish.report(self.root, self.ident)['status'], 'no-findings')
+
+    def test_geo_uses_only_relevant_guidance_and_stales_on_new_text(self):
+        current = manuscript_editor.read(self.root, self.ident)
+        with patch.object(blog_runner.Engine, 'control', return_value={'status': 'queued'}):
+            manuscript_editor.dispatch(
+                self.root,
+                'check',
+                {
+                    'id': self.ident,
+                    'expected': current['expected'],
+                    'check': 'geo',
+                    'request': 'Keep uncertainty',
+                    'research': 'none',
+                },
+            )
+        _, payload, guidance = blog_runner.job(self.root, self.ident)
+        self.assertEqual(payload['response_kind'], 'editing-review')
+        self.assertIn('retrieval', guidance.lower())
+        self.assertNotIn('Humanization capability', guidance)
+        self.assertIn('Keep uncertainty', payload['changes'])
+
+
+class ContextJobTests(Fixture):
+    def setUp(self):
+        super().setUp()
+        import article_tools
+        import tool_jobs
+
+        self.tools, self.jobs = article_tools, tool_jobs
+        self.ident = self.article()
+        self.engine = blog_runner.Engine(
+            self.root,
+            worker=lambda *a, **k: {'content': 'Prepared synthetic text.', 'notes': 'No posting.'},
+        )
+        blog_runner.ENGINES[str(self.root)] = self.engine
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+
+    def create(self, kind='repurpose', **extra):
+        return self.tools.request(
+            self.root,
+            {
+                'kind': kind,
+                'id': self.ident,
+                'operation': 'a' * 32,
+                'format': 'summary',
+                'words': 150,
+                **extra,
+            },
+        )
+
+    def test_job_is_explicit_idempotent_immutable_and_saves_separate_reviewed_variant(self):
+        from pathlib import Path
+
+        before = (Path(self.root) / 'articles' / self.ident / 'DRAFT.md').read_bytes()
+        job = self.create()
+        self.assertEqual(job['status'], 'queued')
+        self.assertIsNone(job['result'])
+        self.assertEqual(self.create()['id'], job['id'])
+        with self.assertRaisesRegex(ValueError, 'another request'):
+            self.create(words=300)
+        self.jobs.once(self.engine)
+        saved = self.jobs.read(self.root, job['id'])
+        self.assertEqual(saved['status'], 'ready')
+        self.assertFalse(
+            saved['model_selection']['web'] if 'web' in saved['model_selection'] else False
+        )
+        receipt = self.tools.apply(
+            self.root,
+            {
+                'job': job['id'],
+                'name': 'launch-summary',
+                'content': 'Human-adjusted synthetic copy.',
+            },
+        )
+        self.assertFalse(receipt['posted'])
+        self.assertEqual(self.tools.apply(self.root, {'job': job['id']}), receipt)
+        self.assertEqual(
+            before, (Path(self.root) / 'articles' / self.ident / 'DRAFT.md').read_bytes()
+        )
+        self.assertFalse(self.tools.job_view(self.root, job['id'])['source_changed'])
+        copy = self.tools.variant(self.root, self.ident, 'launch-summary')
+        self.tools.save_variant(
+            self.root,
+            {
+                'id': self.ident,
+                'name': 'launch-summary',
+                'expected': copy['expected'],
+                'content': 'A revised local channel copy.',
+            },
+        )
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            self.tools.save_variant(
+                self.root,
+                {
+                    'id': self.ident,
+                    'name': 'launch-summary',
+                    'expected': copy['expected'],
+                    'content': 'Older text',
+                },
+            )
+        self.assertEqual(
+            self.tools.variant(self.root, self.ident, 'launch-summary')['content'],
+            'A revised local channel copy.',
+        )
+        self.assertEqual(
+            self.tools.job_view(self.root, job['id'])['saved_content'],
+            'Human-adjusted synthetic copy.',
+        )
+
+    def test_source_change_blocks_apply_and_cancelled_late_output_is_discarded(self):
+        job = self.create()
+
+        def cancelling(*args, **kwargs):
+            self.jobs.control(self.root, job['id'], 'cancel', self.engine)
+            return {'content': 'Late result'}
+
+        self.engine.worker = cancelling
+        self.jobs.once(self.engine)
+        value = self.jobs.read(self.root, job['id'])
+        self.assertEqual(value['status'], 'cancelled')
+        self.assertIsNone(value['result'])
+        self.jobs.control(self.root, job['id'], 'retry', self.engine)
+        self.engine.worker = lambda *a, **k: {'content': 'New copy'}
+        self.jobs.once(self.engine)
+        self.file.write_text('Changed original manuscript.')
+        self.command(
+            'article', 'save', '--id', self.ident, '--kind', 'draft', '--file', str(self.file)
+        )
+        self.assertTrue(self.tools.job_view(self.root, job['id'])['source_changed'])
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            self.tools.apply(self.root, {'job': job['id'], 'name': 'new-copy'})
+
+    def test_interrupted_and_bad_model_jobs_fail_without_stopping_scheduler(self):
+        job = self.create()
+        saved = self.jobs.read(self.root, job['id'])
+        saved['status'] = 'working'
+        self.jobs.write(self.root, saved)
+        self.jobs.recover(self.root)
+        self.assertEqual(self.jobs.read(self.root, job['id'])['status'], 'failed')
+        self.jobs.control(self.root, job['id'], 'retry', self.engine)
+        with patch(
+            'studio_core.model_profiles.route', side_effect=ValueError('Invalid saved model')
+        ):
+            self.jobs.once(self.engine)
+        self.assertEqual(self.jobs.read(self.root, job['id'])['status'], 'failed')
+        self.jobs.control(self.root, job['id'], 'retry', self.engine)
+        self.jobs.once(self.engine)
+        self.assertEqual(self.jobs.read(self.root, job['id'])['status'], 'ready')
+
+    def test_voice_learning_permission_confirmation_audition_retirement_and_pins(self):
+        sample = self.source('Synthetic authored passage with a distinctive short rhythm.')
+        folder, record = studio.item(self.root, 'sources', sample['id'])
+        record['purposes'] = ['voice-sample']
+        studio.persist(folder, 'sources', record)
+        with self.assertRaisesRegex(ValueError, 'Confirm'):
+            self.create('voice-learn', name='Synthetic Author', samples=[sample['id']])
+        job = self.create(
+            'voice-learn', name='Synthetic Author', samples=[sample['id']], confirmed=True
+        )
+        self.jobs.once(self.engine)
+        receipt = self.tools.apply(self.root, {'job': job['id']})
+        profile = self.tools.profile(self.root, receipt['profile'])
+        self.assertEqual(profile['status'], 'provisional')
+        pin = studio.voice_pin(self.root, profile['id'])
+        with self.assertRaisesRegex(ValueError, 'Confirm'):
+            self.tools.save_profile(
+                self.root,
+                {
+                    'profile': profile['id'],
+                    'expected': profile['expected'],
+                    'guide': 'Reviewed guide',
+                    'status': 'confirmed',
+                },
+            )
+        receipt = self.tools.save_profile(
+            self.root,
+            {
+                'profile': profile['id'],
+                'expected': profile['expected'],
+                'name': 'Reviewed Author',
+                'guide': 'Reviewed guide',
+                'status': 'confirmed',
+                'confirmed': True,
+            },
+        )
+        profile = self.tools.profile(self.root, receipt['profile'])
+        self.assertEqual(profile['name'], 'Reviewed Author')
+        self.assertEqual(pin['revision'], 1)
+        self.create(
+            'voice-audition',
+            operation='b' * 32,
+            profile=profile['id'],
+            content='A passage to audition.',
+        )
+        self.jobs.once(self.engine)
+        with self.assertRaisesRegex(ValueError, 'read-only'):
+            self.tools.apply(self.root, {'job': 'b' * 32})
+        self.tools.retire_profile(
+            self.root,
+            {'profile': profile['id'], 'expected': profile['expected'], 'confirmed': True},
+        )
+        with self.assertRaisesRegex(ValueError, 'retired'):
+            studio.voice_pin(self.root, profile['id'])
+        self.assertEqual(studio.voice_pin(self.root, profile['id'], 1), pin)
+
+    def test_interview_persists_resume_revisions_and_outline_without_starting_draft(self):
+        data = {
+            'title': 'Synthetic interview',
+            'audience': 'Developers',
+            'goal': 'Explain a gateway',
+            'operation': 'c' * 32,
+        }
+        current = self.tools.start_interview(self.root, data)
+        self.assertEqual(self.tools.start_interview(self.root, data)['id'], current['id'])
+        self.assertEqual(len(list((self.root / 'articles').iterdir())), 2)
+        current = self.tools.answer(
+            self.root,
+            {
+                'id': current['id'],
+                'expected': current['expected'],
+                'answer': 'I observed the gateway route a request.',
+            },
+        )
+        current = self.tools.answer(
+            self.root,
+            {
+                'id': current['id'],
+                'expected': current['expected'],
+                'question_id': current['answers'][0]['id'],
+                'answer': 'Correction: this is a synthetic example.',
+            },
+        )
+        self.assertEqual(
+            current['answers'][0]['answer'], 'Correction: this is a synthetic example.'
+        )
+        job = self.create('interview-outline', operation='d' * 32, id=current['id'])
+        self.jobs.once(self.engine)
+        receipt = self.tools.apply(self.root, {'job': job['id']})
+        self.assertFalse(receipt['draft_started'])
+        self.assertFalse(receipt['approved'])
+        current = self.tools.interview(self.root, current['id'])
+        self.assertTrue(current['outline'])
+        self.assertTrue(current['outline_content'])
+        folder, _ = studio.item(self.root, 'articles', current['id'])
+        self.assertFalse((folder / 'DRAFT.md').exists())
+        run = blog_runner.create(
+            self.root,
+            {
+                'id': current['id'],
+                'mode': 'from-outline',
+                'outline_text': current['outline_content'],
+                'goal': 'Explain the synthetic gateway',
+                'audience': 'Developers',
+                'stop': 'draft',
+                'research': 'none',
+            },
+        )
+        self.assertEqual(run['id'], current['id'])
+        self.assertEqual(
+            studio.item(self.root, 'articles', current['id'])[1]['stop_point'], 'draft'
+        )
+
+
+class AdvisoryAndOutcomeTests(Fixture):
+    def test_topic_advice_and_filters_are_local_bounded_and_non_mutating(self):
+        import blog_library
+        import planning
+
+        source = self.source('Synthetic gateway performance notes.')
+        folder, record = studio.item(self.root, 'sources', source['id'])
+        record['library'] = {'collections': ['team-one'], 'curation': 'active'}
+        studio.persist(folder, 'sources', record)
+        before = (folder / 'record.json').read_bytes()
+        self.assertEqual(planning.report(self.root, 'gateway')['items'][0]['id'], source['id'])
+        self.assertEqual(
+            blog_library.catalog(self.root, collection='team-one', status='needs-analysis')[
+                'total'
+            ],
+            1,
+        )
+        other = self.base / 'other-team'
+        studio.initialize(other)
+        self.assertEqual(planning.report(other, 'gateway')['total'], 0)
+        self.assertEqual((folder / 'record.json').read_bytes(), before)
+        blog_library.curate(self.root, source['id'], {'curation': 'retired'})
+        self.assertEqual(planning.report(self.root, 'gateway')['total'], 0)
+        self.assertEqual(
+            blog_library.catalog(self.root, status='retired', include_retired=True)['total'], 1
+        )
+
+    def test_compact_cli_keeps_full_default_and_reports_usage_save_and_failure(self):
+        import json
+        from pathlib import Path
+        import subprocess
+        import sys
+
+        script = Path(studio.__file__)
+        ident = self.article()
+        self.file.write_text('A synthetic saved draft.')
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                '--root',
+                str(self.root),
+                '--compact',
+                'article',
+                'save',
+                '--id',
+                ident,
+                '--kind',
+                'draft',
+                '--file',
+                str(self.file),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        value = json.loads(result.stdout)
+        self.assertTrue(value['saved'])
+        self.assertFalse(value['shared'])
+        self.assertNotIn('artifact_events', value)
+        usage = subprocess.run(
+            [sys.executable, str(script), '--compact', '--root', str(self.root), 'article', 'save'],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(usage.returncode, 2)
+        self.assertEqual(json.loads(usage.stdout)['status'], 'usage')
+        failure = subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                '--compact',
+                '--root',
+                str(self.root),
+                'article',
+                'show',
+                '--id',
+                'missing',
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(failure.returncode, 1)
+        self.assertEqual(json.loads(failure.stdout)['status'], 'failed')
+        self.assertIsNone(json.loads(failure.stdout)['saved'])

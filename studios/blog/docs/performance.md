@@ -132,3 +132,40 @@ prompts, shell syntax, and offline install/check/uninstall for Codex, Claude, an
 both. The signed-in author VM was not used or modified. GitHub's Linux/macOS
 Python 3.11/3.13 matrix remains the required PR gate before merge. Live Codex/Claude, two-member account, and Google pilots remain separate
 in #9, #10, and #15; no fixture result closes those live acceptance issues.
+
+## Current shared workspace and legacy Hub: 41 saves
+
+`python3 scripts/performance/storage-review.py --output /tmp/storage.json` runs
+41 synthetic saves separately through the shared-workspace and legacy-Hub APIs
+with local bare Git remotes. `--reuse-reads` includes the outer operation scope
+used by the page/CLI. It records save/share, board and sync subprocess calls,
+logical bytes and profiler timings at saves 1 and 41. No account, model, Google
+request or private writing is used. The real CLI journeys additionally exercise
+cross-clone resume, offline retry and local-edit protection.
+
+The refinement adds a bounded in-memory Git-tree cache for the current operation
+only: canonical repository identity plus exact immutable commit, at most eight
+trees / 32 MiB. Every new commit reads again; returned mappings are independent.
+Ending the operation drops the cache. Remote access/fetch, graph validation and
+save guards still run. Nothing caches an approval or a remote-freshness claim.
+
+| Synthetic operation | Before: subprocesses / ms | With reuse: subprocesses / ms |
+| --- | ---: | ---: |
+| Shared save/share 1 | 11 / 541 | 11 / 538 |
+| Shared save/share 41 | 11 / 561 | 11 / 592 |
+| Legacy Hub save/share 1 | 66 / 2,562 | 50 / 2,033 |
+| Legacy Hub save/share 41 | 69 / 3,857 | 53 / 2,803 |
+
+The demonstrated improvement is 16 fewer Git subprocesses per legacy save in
+this fixture. Shared saves and board reads show no demonstrated speed improvement;
+small timing differences are noise. This is a local transport benchmark with
+profiling overhead, not a provider or end-to-end writing latency promise. Source
+and revision history remain intact and sizes grow with the saved content.
+
+For an already-large Hub, first keep a verified backup/clone and inspect Git
+object size plus the saved/source history. Preview selected exports or migration
+to the readable shared workspace in a disposable copy, compare counts and resume
+a representative article, then explicitly choose migration. Existing maintenance
+can clear rebuildable local indexes; it does not shrink published Git history.
+No automatic pruning, history rewrite, layout retirement or destructive garbage
+collection is added.

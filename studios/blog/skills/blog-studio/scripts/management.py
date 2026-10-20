@@ -1250,6 +1250,31 @@ def _dispatch(root, route, data):
             return (google_intake.preview if route == 'google-preview' else google_intake.start)(
                 root, data
             )
+        if route == 'tool-action':
+            from advanced_tools import dispatch as tool_dispatch
+
+            result = tool_dispatch(root, data)
+            if result.get('profile') and data.get('action') in (
+                'profile-save',
+                'profile-retire',
+                'job-apply',
+            ):
+                _, record = studio.item(root, 'profiles', result['profile'])
+                shared = share(root, 'profile', record)
+                result['receipts'] = [receipt(root, 'Voice profile', shared, 'profile')]
+            elif result.get('id') and data.get('action') in (
+                'restore',
+                'interview-start',
+                'interview-answer',
+                'voice-apply',
+                'job-apply',
+                'variant-save',
+                'google-accept',
+            ):
+                _, record = studio.item(root, 'articles', result['id'])
+                shared = share(root, 'article', record)
+                result['receipts'] = [receipt(root, 'Blog Studio tool', shared, 'article')]
+            return result
         if route.startswith('editor-'):
             import manuscript_editor
 
@@ -1433,7 +1458,11 @@ def dispatch(root, route, data):
 
     if route in ('editor-google-plan', 'editor-google-send'):
         return _dispatch(root, route, data)
-    if route == 'google-preview':
+    if (
+        route == 'google-preview'
+        or route == 'tool-action'
+        and data.get('action') == 'google-compare'
+    ):
         # A preview stages only the selected Doc on this computer; it does not
         # publish unrelated pending team work or start a writing job.
         return _dispatch(root, route, data)
@@ -1487,14 +1516,15 @@ def dispatch(root, route, data):
             data.get('id')
             if route.startswith(('run-', 'editor-'))
             and route != 'run-create'
-            or route in ('schedule',)
+            or route in ('schedule', 'tool-action')
             else None,
         )
     result = _dispatch(root, route, data)
     if space(root) and route != 'run-settings':
         ident = (
             result.get('id')
-            if route.startswith(('run-', 'editor-')) or route in ('schedule', 'google-start')
+            if route.startswith(('run-', 'editor-'))
+            or route in ('schedule', 'google-start', 'tool-action')
             else None
         )
         result['team_sync'] = saved(root, ident)
@@ -1603,6 +1633,32 @@ def view(root, name, query):
             }
         )
         return result
+    if name in ('voices', 'voice', 'interview', 'tool-job', 'variants', 'variant'):
+        import article_tools
+
+        with studio.locked(root):
+            if name == 'variant':
+                return article_tools.variant(root, arg('id'), arg('name'))
+            if name == 'variants':
+                return article_tools.variants(root, arg('id'))
+            if name == 'voices':
+                return article_tools.voices(root)
+            if name == 'voice':
+                return article_tools.profile(root, arg('profile'))
+            if name == 'interview':
+                return article_tools.interview(root, arg('id'))
+            return article_tools.job_view(root, arg('job'))
+    if name in ('tools', 'tool-history', 'prepublish'):
+        import advanced_tools
+
+        with studio.locked(root):
+            if name == 'tool-history':
+                return advanced_tools.history_preview(root, arg('id'), arg('revision'))
+            if name == 'prepublish':
+                return advanced_tools.prepublish.report(
+                    root, arg('id'), whole(arg('title_limit', 80))
+                )
+            return advanced_tools.overview(root, arg('id'), whole(arg('offset', 0)))
     if name == 'manuscript':
         import manuscript_editor
 
@@ -1626,6 +1682,10 @@ def view(root, name, query):
         return editorial.board(root, arg('query', ''), arg('stage'), arg('owner'), limit, offset)
     if name == 'inbox':
         return editorial.inbox(root, arg('id'), limit, offset, query=arg('query', ''))
+    if name == 'planning':
+        from planning import report
+
+        return report(root, arg('topic', ''))
     if name == 'library':
         return blog_library.catalog(
             root,
@@ -1638,7 +1698,8 @@ def view(root, name, query):
             arg('until'),
             limit,
             offset,
-            arg('retired') == 'true',
+            arg('retired') == 'true' or arg('status') == 'retired',
+            status=arg('status'),
         )
     if name == 'memory':
         return memories(root, limit, offset, arg('query', ''))

@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from studio_core import preferences
+from studio_core import preferences, brand_catalog
 from studio_core.model_catalog import Catalog
 from studio_core.server import for_product
 from studio_core.studios_config import for_product as config_for
@@ -38,7 +38,7 @@ class Controller:
 
         class Page(protocol.Page):
             reads = ('/onboarding/api/home', '/onboarding/api/models')
-            writes = ('/onboarding/api/shared', '/onboarding/api/setup', '/onboarding/api/models')
+            writes = ('/onboarding/api/shared', '/onboarding/api/setup', '/onboarding/api/models', '/onboarding/api/brands')
 
             def read(self, path, one):
                 if path.endswith('/models'):
@@ -46,6 +46,12 @@ class Controller:
                 return protocol.as_json(200, owner.snapshot())
 
             def write(self, path, sent):
+                if path.endswith('/brands'):
+                    skill = sent.get('skill')
+                    if skill is not None and (not isinstance(skill, str) or len(skill) > 2000
+                                             or not Path(skill).expanduser().is_absolute()):
+                        raise ValueError('Choose an absolute installed brand skill folder, or leave it blank.')
+                    return protocol.as_json(200, brand_catalog.choices(skill))
                 if path.endswith('/models'):
                     return protocol.as_json(200, owner.models.get(sent.get('agent'), refresh=True))
                 with owner.lock:

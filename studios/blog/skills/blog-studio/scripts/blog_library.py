@@ -1036,6 +1036,7 @@ def search_index(database, rows, signature, filters):
         offset,
         include_retired,
         reusable_only,
+        status,
     ) = filters
     with closing(sqlite3.connect(database)) as db, db:
         database.chmod(0o600)
@@ -1119,6 +1120,15 @@ def search_index(database, rows, signature, filters):
             params.append('%' + word.replace('!', '!!').replace('%', '!%').replace('_', '!_') + '%')
         if not include_retired:
             clauses.append('retired = 0')
+        if status == 'retired':
+            clauses.append('retired = 1')
+        elif status == 'needs-analysis':
+            clauses.append(
+                "coalesce(json_extract(data, '$.analysis.status'), 'needs-analysis') != 'ready'"
+            )
+        elif status:
+            clauses.append("json_extract(data, '$.status') = ?")
+            params.append(status)
         if reusable_only:
             clauses.extend(
                 [
@@ -1167,9 +1177,12 @@ def catalog(
     offset=0,
     include_retired=False,
     reusable_only=False,
+    status=None,
 ):
     if not 1 <= limit <= 50 or offset < 0:
         raise ValueError('Choose limit 1–50 and nonnegative offset.')
+    if status not in (None, '', 'ready', 'pending', 'unavailable', 'retired', 'needs-analysis'):
+        raise ValueError('Choose a listed library status.')
     rows = source_rows(root)
     signature = sha(
         encoded(
@@ -1220,6 +1233,7 @@ def catalog(
         offset,
         include_retired,
         reusable_only,
+        status,
     )
     try:
         total, found, rebuilt = search_index(database, rows, signature, filters)
@@ -1465,6 +1479,9 @@ def add_parser(groups):
         help='Ready active references suitable for reuse across blogs.',
     )
     p.add_argument('--query', default='')
+    p.add_argument(
+        '--status', choices=('ready', 'pending', 'unavailable', 'needs-analysis', 'retired')
+    )
     p.add_argument('--collection')
     p.add_argument('--author')
     p.add_argument('--topic')
@@ -1520,6 +1537,8 @@ def command(root, args):
             args.limit,
             args.offset,
             reusable_only=getattr(args, 'reusable_only', False),
+            status=getattr(args, 'status', None),
+            include_retired=getattr(args, 'status', None) == 'retired',
         )
     if args.action == 'preview':
         return preview(root, args.collection)

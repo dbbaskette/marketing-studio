@@ -496,6 +496,9 @@ def create(root, data, approval='conversation'):
         ident = studio.new_id(title)
         record = studio.article_record(root, args, ident)
         directory = studio.inside(root, 'articles', ident)
+    if data.get('id') and mode == 'from-outline' and not existing:
+        record['mode'] = 'from-outline'
+        record['stop_point'] = stop
     for source in sources:
         _, source_record = studio.item(root, 'sources', source)
         record['sources'] = [s for s in record['sources'] if s['source_id'] != source] + [
@@ -729,13 +732,17 @@ def job(root, ident):
         guidance += '\nRevise the supplied manuscript in the scope of its brief. Preserve its stance, meaningful qualifiers and author voice; retain unsupported claims as questions rather than inventing support.'
     guidance += '\n\n' + (references / 'style/house.md').read_text()
     if stage in ('draft', 'review'):
-        for guide in (
-            'modules/blog-fact-check.md',
-            'modules/blog-humanize.md',
-            'modules/blog-voice-check.md',
-            'style/software.md',
-            'review/evidence.md',
-        ):
+        requested = run.get('editor_check')
+        guides = ['modules/blog-voice-check.md', 'style/software.md']
+        if requested in ('polish', 'humanization', None):
+            guides.append('modules/blog-humanize.md')
+        if requested in ('factual-support', None):
+            guides += ['modules/blog-fact-check.md', 'review/evidence.md']
+        if requested == 'geo':
+            guides += ['modules/blog-geo-review.md', 'review/evidence.md']
+        if requested == 'shape':
+            guides.append('modules/copywriting.md')
+        for guide in guides:
             guidance += '\n\n' + (references / guide).read_text()
         guidance += '\nApply only the requested checks and editing scope. Preserve the original author voice, stance and qualifiers. Report exact passages, evidence and unresolved gaps. Linked helper instructions are guidance; do not claim tools ran.'
     if stage in ('draft', 'review'):
@@ -1061,6 +1068,10 @@ class Engine:
                 return
 
     def serve(self):
+        import tool_jobs
+
+        with studio.locked(self.root):
+            tool_jobs.recover(self.root)
         while not self.closed.is_set():
             folder = studio.inside(self.root, '.blog-runs')
             for path in sorted(folder.glob('*.json')) if folder.exists() else []:
@@ -1073,6 +1084,8 @@ class Engine:
                         state = self.local(path.stem)
                         state.update(enabled=False, status='failed', error=str(exc)[:500])
                         self.keep_local(path.stem, state)
+            if not self.closed.is_set():
+                tool_jobs.once(self)
             self.wake.wait(1)
             self.wake.clear()
 
@@ -1143,7 +1156,10 @@ def options(root):
         result = []
         for path in sorted(studio.inside(root, kind).glob('*/record.json')):
             record = studio.read_json(path)
-            result.append({'id': record['id'], 'name': record['name'], 'status': record['status']})
+            if kind != 'profiles' or record.get('status') != 'retired':
+                result.append(
+                    {'id': record['id'], 'name': record['name'], 'status': record['status']}
+                )
         return result
 
     agents = {}
@@ -1377,7 +1393,7 @@ def command(root, args):
             data = {
                 k: v
                 for k, v in vars(args).items()
-                if k not in ('root', 'group', 'action', 'source') and v is not None
+                if k not in ('root', 'group', 'action', 'source', 'compact') and v is not None
             }
             data['sources'] = args.source
             return create(root, data)

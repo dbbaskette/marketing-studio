@@ -329,6 +329,35 @@ class PresentationBundleTests(unittest.TestCase):
             with tool_payload.installer_payload(self.root, {'mode': 'unknown'}, cache):
                 self.fail('Unknown mode was accepted')
 
+    def test_identical_tools_are_installed_once_across_independent_studio_bundles(self):
+        from contextlib import contextmanager
+        @contextmanager
+        def payload(*args):
+            yield self.root / 'synthetic-payload'
+        def native(payload, target, env):
+            for name in ('tools', 'LibreOffice.app', 'google-cloud-sdk'):
+                (target / name).mkdir()
+            (target / 'tools/synthetic-tool').write_text('pinned private tool')
+        home = self.root / 'disposable home'
+        with mock.patch.object(tool_payload, 'installer_payload', side_effect=payload) as prepare, \
+                mock.patch.object(local_installer, 'install_tools', side_effect=native) as install:
+            one = local_installer.shared_tools(home, {'tools': {'pin': 'first'}, 'product': 'presentation'}, {})
+            two = local_installer.shared_tools(home, {'tools': {'pin': 'first'}, 'product': 'training'}, {})
+            self.assertEqual(one, two)
+            self.assertEqual(install.call_count, 1)
+            self.assertEqual(prepare.call_count, 1)
+            other = local_installer.shared_tools(home, {'tools': {'pin': 'next'}}, {})
+            self.assertNotEqual(one, other)
+            self.assertEqual((one / 'tools/synthetic-tool').read_text(), 'pinned private tool')
+            self.assertEqual(install.call_count, 2)
+
+    def test_interrupted_shared_tools_preserve_previous_version_and_retry_cleanly(self):
+        home = self.root / 'disposable home'
+        with mock.patch.object(tool_payload, 'installer_payload', side_effect=URLError('offline')):
+            with self.assertRaises(URLError):
+                local_installer.shared_tools(home, {'tools': {'pin': 'first'}}, {})
+        self.assertEqual(list((home / '.local/share/studios-tools/versions').iterdir()), [])
+
     def test_failed_online_install_preserves_installed_version_settings_and_cached_downloads(self):
         base = self.root / 'private-tools'
         previous = base / 'versions/previous/ready.json'

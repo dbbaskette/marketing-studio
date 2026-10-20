@@ -48,7 +48,7 @@ class ManuscriptTests(Fixture):
         _, payload, guidance = runner.job(self.root, self.ident)
         self.assertIn('repetitive openings', payload['changes'])
         self.assertIn('Humanization capability', guidance)
-        self.assertIn('Factual support capability', guidance)
+        self.assertNotIn('Factual support capability', guidance)
         self.assertEqual(payload['response_kind'], 'editing-review')
         self.assertIn('structured editing review', guidance)
 

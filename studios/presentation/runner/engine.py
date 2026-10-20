@@ -1091,6 +1091,8 @@ class Engine(Jobs, Researching):
             record = self._load(root)
             if step.name == 'gate:build':
                 build.gate_view(root, record)
+                build_progress.mark(root, (build.read_state(root).get('start') or {}).get('folder'),
+                    'first_draft_ready_at' if decks.user_first(record) else 'final_review_ready_at')
                 record = self._load(root)
             else:
                 gate = record['gates'].get(step.name) or {}
@@ -1513,8 +1515,8 @@ class Engine(Jobs, Researching):
         self._contract(root)
         if build.to_draw(root):
             self._draw(root, run, step, how)
-        if not build.to_draw(root):
-            with self.files:
+        with self.files:
+            if not build.to_draw(root):
                 self._done(root, step, time.monotonic(), 'every section is drawn')
 
     def _review(self, root: Path, run: _Run, step: stages.Step) -> None:
@@ -1531,6 +1533,10 @@ class Engine(Jobs, Researching):
         return bool(state['rounds']) and state['rounds'][-1].get('review') is not None
 
     def _build_review(self, root: Path, run: _Run, step: stages.Step) -> None:
+        if decks.user_first(self._load(root)):
+            with self.files:
+                self._done(root, step, time.monotonic(), 'AI review deferred to your decision')
+            return
         self._contract(root)
         if self._reviewed(root):
             with self.files:
@@ -1547,12 +1553,74 @@ class Engine(Jobs, Researching):
             return self._draw(root, run, step, how)
         if self._needs_whole(root):
             return self._whole(root, how)
-        if not self._reviewed(root):
+        if not self._reviewed(root) and not decks.user_first(self._load(root)):
             return self._review(root, run, step)
         with self.files:
             self._done(root, step, time.monotonic(), 'nothing more is sent back')
 
     # --- what a person does ------------------------------------------------------------------
+
+    def progress_seen(self, path, ref):
+        root = self.driven(path)
+        if root is None or not isinstance(ref, str) or not build_progress.REF.fullmatch(ref):
+            raise WorkspaceError('Choose a current slide preview.')
+        basis = (build.read_state(root).get('start') or {}).get('folder')
+        return {'timings': build_progress.mark(root, basis, 'first_section_visible_at', ref)}
+
+    def build_feedback(self, path, ref: str, note: str) -> dict:
+        root = self._held(path)
+        note = self._note(note)
+        if not note:
+            raise WorkspaceError('Say what should change on this slide.')
+        with self.files:
+            record = self._load(root)
+            if any(item['ref'] == ref and item['note'] == note for item in record.get('build_feedback', [])):
+                return self.view(path)
+            step = first(record)
+            if not step or step.name != 'build-sections':
+                raise WorkspaceError('The build has moved on. Keep your note and request changes at the deck review.')
+            state = build.read_state(root)
+            basis = (state.get('start') or {}).get('folder')
+            progress = build_progress.view(root, basis)
+            slide = next((one for one in (progress or {}).get('slides', []) if one['ref'] == ref), None)
+            if not slide or slide['part'] == 'whole':
+                raise WorkspaceError('That slide preview has been replaced. Reload it before sending feedback.')
+            section = slide['part']
+            # Close only this section's old progress producer. Other workers retain ownership.
+            build_progress.invalidate(root, basis, section)
+            record.setdefault('build_feedback', []).append({
+                'slide': slide['id'], 'number': slide['number'], 'section': section,
+                'revision': slide['revision'], 'ref': ref, 'note': note, 'at': home.now()})
+            versions = record.setdefault('build_feedback_revisions', {})
+            for scope in (section, 'whole'):
+                versions[scope] = versions.get(scope, 0) + 1
+            if section in state['sections']:
+                state.setdefault('feedback_previous', {})[section] = state['sections'].pop(section)
+                build.write_state(root, state)
+            self._store(root, record)
+            self._commit(root, 'keep feedback on slide ' + str(slide['number']))
+        return self.view(path)
+
+    def review_draft(self, path, expected: str) -> dict:
+        """Explicitly request normal AI review for the exact native draft on screen."""
+        root = self._held(path)
+        with self.files:
+            record = self._load(root)
+            last = (build.read_state(root).get('rounds') or [{}])[-1]
+            if not expected or last.get('deck') != expected:
+                raise WorkspaceError('The draft changed. Reload it before requesting AI review.')
+            if record.get('review_requested'):
+                return self.view(path)
+            if not decks.user_first(record) or gate_state(record, 'gate:build') != 'waiting':
+                raise WorkspaceError('AI review can be requested at the unreviewed draft checkpoint.')
+            record['review_requested'] = {'at': home.now(), 'deck': expected}
+            for name in ('build-review', 'build-repair', 'build-render'):
+                record['steps'].pop(name, None)
+            record['gates'].pop('gate:build', None)
+            self._store(root, record)
+            self._commit(root, 'request AI review of the first draft')
+        self.wake(root)
+        return self.view(path)
 
     @staticmethod
     def _note(note) -> str | None:
@@ -1904,7 +1972,7 @@ class Engine(Jobs, Researching):
             raise WorkspaceError('There is no deck there.')
         record = self._load(root)
         deck = build.delivered_deck(root, record)
-        return f'{root.name}.pptx', deck.read_bytes()
+        return f'{root.name}' + ('-unreviewed-first-draft' if decks.user_first(record) else '') + '.pptx', deck.read_bytes()
 
     # --- sharing -----------------------------------------------------------------------------
 
@@ -2208,9 +2276,41 @@ class Engine(Jobs, Researching):
     def _show_research(self, root: Path, record: dict) -> dict:
         return {'text': text_of(root / REPORT) or '', 'items': self._findings_shown(root, record)}
 
+    def storyboard(self, path, edited, expected: str) -> dict:
+        """Preview the current or unsaved outline without saving or approving it."""
+        started = time.monotonic()
+        root = self.driven(path)
+        if root is None:
+            raise WorkspaceError('There is no deck there.')
+        with self.files:
+            record = self._load(root)
+            gate = self._gate_view(root, record)
+            if not gate or gate.get('name') != 'gate:outline' or gate.get('expected') != expected:
+                raise WorkspaceError('The outline changed. Reload it before previewing again.')
+            outline = home.read_json(root / outlines.OUTLINE)
+            if not isinstance(outline, dict):
+                raise WorkspaceError('The outline is not ready to preview.')
+            if edited is not None:
+                if not isinstance(edited, list) or not edited or not all(isinstance(s, dict) for s in edited):
+                    raise WorkspaceError('The slides are a nonempty list of objects.')
+                outline['slides'] = edited
+            contract = root / build.CONTRACT
+            if not contract.is_file():
+                raise WorkspaceError('The outline needs its saved brand contract before previewing.')
+            # Temporary input and output never enter the shared workspace or approval record.
+            with tempfile.TemporaryDirectory(prefix='presentation-storyboard-') as temporary:
+                source, output = Path(temporary) / 'outline.json', Path(temporary) / 'draft.html'
+                source.write_text(json.dumps(outline), encoding='utf-8')
+                self.slides().outline_draft(source, contract, output)
+                text = output.read_text(encoding='utf-8')
+                if len(text.encode('utf-8')) > 4_000_000:
+                    raise WorkspaceError('The storyboard is too large to show in the page.')
+        return {'html': text, 'expected': expected, 'milliseconds': round((time.monotonic() - started) * 1000, 1)}
+
     def _show_outline(self, root: Path, record: dict) -> dict:
         found = home.read_json(root / outlines.OUTLINE, None)
         return {'text': text_of(root / outlines.OUTLINE_MD) or '',
+                'expected': self._direction_signature(root, record),
                 'slides': build.slides_of(found) if isinstance(found, dict) else [],
                 'delivery': (found.get('delivery') if isinstance(found, dict) else None)
                 or build.DELIVERY}
@@ -2225,6 +2325,9 @@ class Engine(Jobs, Researching):
     def _show_build(self, root: Path, record: dict) -> dict:
         """build.gate_view, with each picture named as `picture` takes it, never by path."""
         shown = build.gate_view(root, json.loads(json.dumps(record)))
+        last = (build.read_state(root).get('rounds') or [{}])[-1]
+        shown['unreviewed'] = decks.user_first(record) and not last.get('review')
+        shown['expected_deck'] = last.get('deck')
         for slide in shown['slides']:
             slide['image'] = {'kind': 'build', 'ref': slide['number']}
         shown['pairs'] = [{'number': pair['number'],
@@ -2256,6 +2359,7 @@ class Engine(Jobs, Researching):
             'id': record.get('id') or root.name, 'path': str(root), 'title': record['title'],
             'route': record['route'], 'level': (record.get('form') or {}).get('level'),
             'output': (record.get('form') or {}).get('output'),
+            'unreviewed': decks.user_first(record),
             'state': state, 'sentence': sentence, 'timeline': self._timeline(record, state),
             'gate': self._gate_view(root, record) if not halted else None,
             'driver': who, 'mine': mine, 'notice': self._notice(root, record),
@@ -2266,6 +2370,9 @@ class Engine(Jobs, Researching):
             'agent': record.get('agent'), 'model': record.get('model'),
             'effort': record.get('level_of_effort'),
             'model_mode': (record.get('model_profiles') or {}).get('mode', 'single'),
+            'model_jobs': list(record.get('model_jobs') or [])[-20:],
+            'build_feedback': list(record.get('build_feedback') or []),
+            'build_timing': build_progress.timings(root),
             'review_level': review_policy.level(record),
             'workers': self._workers(run),
             'build_progress': progress,
