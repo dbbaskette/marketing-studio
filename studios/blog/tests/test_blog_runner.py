@@ -431,6 +431,30 @@ class BlogRunnerTests(Fixture):
         _, _, saved = runner.load(self.root, ident)
         self.assertEqual(saved['stages']['draft']['accepted_by'], 'review-policy')
 
+    def test_status_says_whether_a_step_was_accepted_or_awaits_a_decision(self):
+        import studios_config
+
+        studios_config.update({'review': {'level': 'balanced'}})
+        found = self.create()
+        self.assertEqual(found['awaits'], 'submission')
+        found = self.submit(found)
+        self.assertEqual((found['next'], found['awaits']), ('outline', 'decision'))
+        found = self.approve(found)
+        self.assertFalse(found['stages'][0]['auto_accepted'])
+        found = self.submit(found)
+        # Balanced accepts the draft; nothing waits for the person, so approve is refused.
+        self.assertEqual((found['next'], found['awaits']), ('review', 'submission'))
+        self.assertTrue(found['stages'][1]['auto_accepted'])
+        with self.assertRaisesRegex(ValueError, 'need no approval'):
+            self.approve(found)
+        status = runner.engine(self.root).describe(found['id'])
+        self.assertEqual(status['awaits'], 'submission')
+        self.assertTrue(status['stages'][1]['auto_accepted'])
+        found = self.submit(self.submit(found))
+        self.assertEqual((found['next'], found['awaits']), ('package', 'decision'))
+        found = self.approve(found)
+        self.assertIsNone(found['awaits'])
+
     def test_automatic_worker_continues_until_final_review(self):
         import studios_config
 

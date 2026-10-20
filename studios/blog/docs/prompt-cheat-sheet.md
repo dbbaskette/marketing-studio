@@ -144,6 +144,6 @@ on the Hub's main branch.
 Blog Studio asks only for missing details. Imports and rule promotion are explicit;
 preparing a package does not send or publish it. [Desk guide](editorial-desk.md).
 
-[Project README](https://github.com/dbbaskette/blog-studio#readme) ·
+[Project README](https://github.com/dbbaskette/marketing-studio/tree/main/studios/blog#readme) ·
 [Status card](status-card.md) · [First-session guide](new-user-guide.md) · [Setup](installation.md) ·
 [Google Docs](google-docs.md) · [Team Hub](team-hub.md)

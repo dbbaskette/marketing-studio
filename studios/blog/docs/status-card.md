@@ -56,4 +56,4 @@ For a managed install, the helpers are in the installed skill's `scripts/` folde
 and its `config.json` names the interpreter. The chat skill handles these paths
 for you.
 
-[Prompt cheat sheet](prompt-cheat-sheet.md) · [Setup](installation.md) · [README](https://github.com/dbbaskette/blog-studio#readme)
+[Prompt cheat sheet](prompt-cheat-sheet.md) · [Setup](installation.md) · [README](https://github.com/dbbaskette/marketing-studio/tree/main/studios/blog#readme)

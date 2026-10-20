@@ -137,12 +137,23 @@ spending limit; your account's usage charges or limits still apply.
 | A review | Which findings need changes? |
 | An export package | Are the title, excerpt and handoff ready? |
 
-Every row has a separate approval. Choose an earlier stage under **Ask for
-changes** to revise the draft or outline after reviewing it. The later stages
-are made and approved again. You can stop at outline, draft or review instead
-of making a package. A saved draft can enter at review or revision. Review mode
-keeps the manuscript as written; revision makes a new draft while retaining the
-original.
+How often you decide depends on the shared **Review level** in **Settings**; a
+run keeps the level it started with. The default, **Balanced**, stops for you
+twice: at the outline, with the research questions and findings beside it, and
+at the run's last step (the export package or your chosen stop), with the steps
+since the outline beside it. The steps between continue on their own; Blog Studio
+records that the review level accepted them, never that you approved them.
+**Step by step** stops at every row, and **Automatic draft** only at the last
+step. Without an outline, as when revising a draft, Balanced also stops only at
+the last step.
+
+Choose an earlier stage under **Ask for changes** to revise the draft or outline
+after reviewing it, including one the review level accepted. The assistant edits
+that saved document, changing only what you asked. The later stages are made
+again and reach you at their usual stops. You can stop at outline, draft or
+review instead of making a package. A saved draft can enter at review or
+revision. Review mode keeps the manuscript as written; revision makes a new draft
+while retaining the original.
 
 **Blogs** shows all guided blogs and saved writing. Open a run to see steps and
 made files. Each review page renders the saved Markdown as a paper document,
@@ -161,7 +172,7 @@ Blog Studio factual checks as passed.
 
 **Pause after this step** lets the current job finish and prevents another.
 **Stop** ends its process. Failed jobs retain previous writing and offer
-**Try again**. No job automatically approves the result or publishes a blog.
+**Try again**. No job approves its own result or publishes a blog.
 One job works at a time in this workspace. Models can search the web only in a
 public research job; they have no shell, file tools, connected apps or approval
 tools. Only the runner saves their returned documents.

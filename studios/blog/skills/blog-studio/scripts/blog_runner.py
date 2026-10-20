@@ -314,9 +314,17 @@ def survey(root, ident, listing=False):
                 'path': STAGES[name][1],
                 'notes': saved.get('notes', ''),
                 'accepted_by': saved.get('accepted_by'),
+                # Accepted by the saved review level, not the person; it needs no approval.
+                'auto_accepted': status == 'approved'
+                and saved.get('accepted_by') == 'review-policy',
                 'request': saved.get('request', ''),
             }
         )
+    # What moves the run on: the person's decision on a submitted document, or a submission.
+    awaits = None
+    if next_stage:
+        submitted = next(row for row in rows if row['stage'] == next_stage)['status'] == 'draft'
+        awaits = 'decision' if submitted else 'submission'
     content, revision = '', None
     if next_stage and not listing:
         path = studio.inside(directory, STAGES[next_stage][1])
@@ -354,6 +362,7 @@ def survey(root, ident, listing=False):
         'seconds': run['seconds'],
         'stages': rows,
         'next': next_stage,
+        'awaits': awaits,
         'complete': next_stage is None,
         'content': content,
         'expected': revision,
@@ -688,7 +697,10 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
             not stage
             or next(row['status'] for row in found['stages'] if row['stage'] == stage) != 'draft'
         ):
-            raise ValueError('Only a current submitted draft can be approved.')
+            raise ValueError(
+                'Only a current submitted draft can be approved. Read awaits in run status: '
+                'steps the review level accepted automatically need no approval.'
+            )
         _accept(directory, run, stage, 'page' if page else 'conversation')
     elif action == 'changes':
         if not stage:

@@ -13,8 +13,8 @@ newer version, download or pull the update and run setup again.
   and run setup again. Setup finds Python by itself, including Homebrew and
   python.org installations.
 - **An installer download or repository clone.** Get the ZIP from the
-  [latest release](https://github.com/dbbaskette/blog-studio/releases/latest) or
-  your team administrator, or clone the public repository using Git.
+  [latest release](https://github.com/dbbaskette/marketing-studio/releases/latest) or
+  your team administrator, or clone the public Marketing Studio repository using Git.
 
 Git is needed for the clone option or a Team Hub; a ZIP install and local writing
 can work without it. You do not need the GitHub CLI, Node, a Google account or a
@@ -32,9 +32,9 @@ with older downloads and source checkouts.
 With Git installed, open Terminal and run:
 
 ```sh
-git clone https://github.com/dbbaskette/blog-studio.git
-cd blog-studio
-sh installer/install.sh
+git clone https://github.com/dbbaskette/marketing-studio.git
+cd marketing-studio
+bash install.sh --studios blog
 ```
 
 Cloning downloads the current code from the repository. The ZIP option below
@@ -43,7 +43,7 @@ either one.
 
 ### Download the ZIP
 
-1. Open the [latest release](https://github.com/dbbaskette/blog-studio/releases/latest)
+1. Open the [latest release](https://github.com/dbbaskette/marketing-studio/releases/latest)
    and download `blog-studio-installer.zip`.
 2. Expand the ZIP. Keep the resulting `blog-studio-setup` folder together; the
    installer copies the skill from the `skills` folder beside it.
@@ -111,7 +111,7 @@ sh ~/.local/share/blog-studio/studio --root "$HOME/Documents/My blogs/.blog-stud
 
 That choice is remembered for the next launch. The page does not turn on reference
 analysis just because you opened it. Use **New blog** to choose sources and start
-writing. See [page and conversation workflows](https://github.com/dbbaskette/blog-studio/blob/main/docs/runner.md).
+writing. See [page and conversation workflows](https://github.com/dbbaskette/marketing-studio/blob/main/studios/blog/docs/runner.md).
 
 ## Check this computer
 
@@ -158,11 +158,11 @@ removing Blog Studio do not touch it.
 
 ## Update
 
-For a repository clone, open Terminal in your `blog-studio` folder and run:
+For a repository clone, open Terminal in your `marketing-studio` folder and run:
 
 ```sh
 git pull --ff-only
-sh installer/install.sh
+bash install.sh --studios blog
 ```
 
 For a ZIP install, download the installer ZIP from the newest release and run
@@ -195,8 +195,8 @@ upgrades the existing installation in place.
 
 ## Check, repair, roll back or remove
 
-Run these from your current `blog-studio` clone or expanded `blog-studio-setup`
-folder. Both launchers accept the same words.
+Run these from the `studios/blog` folder of your `marketing-studio` clone or from
+your expanded `blog-studio-setup` folder. Both launchers accept the same words.
 
 ```sh
 sh installer/install.sh check
@@ -243,7 +243,7 @@ repairing a Codex-only setup does not add Claude Code.
 
 Use **Settings → Join our team repository** to keep blogs beside your team’s
 trainings and presentations. Shared settings live in one `studios-config.json` file; Settings changes are
-available to all studios on their next read. See [team workspaces](https://github.com/dbbaskette/blog-studio/blob/main/docs/team-workspace.md).
+available to all studios on their next read. See [team workspaces](https://github.com/dbbaskette/marketing-studio/blob/main/studios/blog/docs/team-workspace.md).
 
 ## Optional: Team Hub
 
@@ -252,7 +252,7 @@ repository that your team owns. It needs Git and a signed-in GitHub CLI
 (`gh auth login`) with access to that repository. Installation does not set
 either up and does not create or join a Hub; ask Blog Studio to “create” or
 “join” one. See the
-[Team Hub guide](https://github.com/dbbaskette/blog-studio/blob/main/docs/team-hub.md).
+[Team Hub guide](https://github.com/dbbaskette/marketing-studio/blob/main/studios/blog/docs/team-hub.md).
 
 ## Optional: Google Docs
 
@@ -269,7 +269,7 @@ Google asks for the access every `gcloud` sign-in requests plus full Google
 Drive access. Naming the account adds it without changing the account `gcloud`
 already uses; add `--activate` to switch. Sign-in creates no Cloud project,
 OAuth client or billing setup. See the
-[Google Docs guide](https://github.com/dbbaskette/blog-studio/blob/main/docs/google-docs.md).
+[Google Docs guide](https://github.com/dbbaskette/marketing-studio/blob/main/studios/blog/docs/google-docs.md).
 
 ## Platforms
 
