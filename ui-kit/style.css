@@ -2664,22 +2664,3 @@ body[data-product="Training Studio"] .card > .training-options {
   padding: 0.75rem 0;
   margin-block: 0.5rem;
 }
-body[data-product="Training Studio"] .material-choices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-  margin-block: 1rem 1.5rem;
-}
-body[data-product="Training Studio"] .material-choice {
-  min-height: 44px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-body[data-product="Training Studio"] .material-choice[aria-pressed="true"]::before {
-  content: "✓";
-  margin-inline-end: 0.4rem;
-}
-body[data-product="Training Studio"] .material-choice[aria-pressed="true"] {
-  border-color: var(--link);
-  background: var(--selection);
-}

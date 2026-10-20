@@ -4070,26 +4070,21 @@ function trainingOptions(label, key, ...children) {
 }
 
 function materialChoices(draft) {
-  const node = make('div', 'material-choices');
+  const node = make('div', 'chips material-choices');
   node.setAttribute('role', 'group');
   node.setAttribute('aria-label', 'Materials to make');
   for (const [id, label] of MATERIALS) {
-    const control = button(label, 'button capsule material-choice', () => {
-      const selected = !draft.materials.includes(id);
+    node.append(chip(label, draft.materials.includes(id), (selected) => {
       draft.materials = MATERIALS.map(([key]) => key)
         .filter((key) => key === id ? selected : draft.materials.includes(key));
-      control.setAttribute('aria-pressed', String(selected));
       // Yoodli's knowledge and scenario dependencies are explicit selections.
       if (!selected && ['brief', 'scenario'].includes(id)) {
         draft.yoodli = false;
-        const yoodli = Array.from(main().querySelectorAll('.chip')).find((node) => node.dataset.key === 'practice yoodli');
+        const yoodli = Array.from(main().querySelectorAll('.chip')).find((item) => item.dataset.key === 'practice yoodli');
         if (yoodli) yoodli.setAttribute('aria-pressed', 'false');
       }
       say(byId('new-problem'), '');
-    }, 'material ' + id);
-    control.setAttribute('aria-pressed', String(draft.materials.includes(id)));
-    control.setAttribute('aria-label', label);
-    node.append(control);
+    }, 'material ' + id));
   }
   return node;
 }

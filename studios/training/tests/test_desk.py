@@ -3166,7 +3166,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         two = result['snapshots']['two']
         self.assertEqual(two['pressed'], ['Google Slides'])
         self.assertEqual((two['fields']['The deck’s brand'], two['fields']['The brand’s variant'],
-                          two['chosen']), ('example-co', 'dark', []))
+                          two['chosen']), ('example-co', 'dark',
+                                           ['Learner guide', 'Reference brief', 'Practice scenarios']))
         # A brand the brand skill here does not have is not offered: its first one is.
         shared = {'brand': {'brand': 'acme', 'variant': 'dark'}, 'output': 'pptx'}
         answers = self.answers({**SET_UP, 'shared': shared, 'shared_problem': None})
@@ -3439,8 +3440,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         two = shots['two']
         self.assertEqual((two['heading'], two['focus']), ('Materials', 'title'))
         self.assertIn('New training · Step 2 of 3', two['text'])
+        # The three materials are shared chips, and every one begins on.
         self.assertEqual((two['chosen'], two['pressed']),
-                         ([], ['PowerPoint']))
+                         (['Learner guide', 'Reference brief', 'Practice scenarios'], ['PowerPoint']))
         # The deck's brand is one of those the brand skill lists, and the first to begin with.
         self.assertEqual(two['fields'], {'How long it should take (optional)': ''})
 
@@ -3470,7 +3472,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         # Going back a step loses nothing.
         kept = shots['kept']
         self.assertEqual((kept['chosen'], kept['pressed']),
-                         (['101', '301', 'Google Docs'], ['Google Slides', 'A comparison']))
+                         (['Learner guide', 'Reference brief', 'Practice scenarios',
+                           '101', '301', 'Google Docs'], ['Google Slides', 'A comparison']))
         self.assertEqual(kept['fields'], {'How long it should take (optional)': '30 minutes',
                                           'The deck’s brand': 'example-co',
                                           'The brand’s variant': 'dark'})
