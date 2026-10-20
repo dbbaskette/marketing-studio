@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Update Marketing Studio and sibling component checkouts without discarding work."""
 import argparse
+import configparser
 from dataclasses import dataclass
 import os
 import math
+import re
 from pathlib import Path
 import shlex
 import shutil
@@ -15,7 +17,7 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'core'))
-from studio_core.bundle_sources import load_config
+from studio_core.bundle_sources import load_config, source_spec
 from studio_core.install_log import redact
 
 DEFAULTS = {
@@ -34,12 +36,64 @@ class Repository:
     url: str | None = None
 
 
+def config_file(root, requested=None):
+    if requested is not None:
+        return Path(requested).expanduser().resolve()
+    for name in ('sync.cfg', 'studio-package.local.json', 'presentation-studio-package.local.json'):
+        candidate = root / name
+        if candidate.exists() or candidate.is_symlink():
+            return candidate
+    return None
+
+
+def discover_harness(result, directory):
+    seen = {repository.path.resolve() for repository in result}
+    for path in sorted(directory.glob('harness-*')):
+        if path.is_dir() and (path / '.git').exists() and path.resolve() not in seen:
+            seen.add(path.resolve())
+            result.append(Repository(path.name, path))
+    return result
+
+
+def configured_repositories(path):
+    parser = configparser.ConfigParser(interpolation=None, empty_lines_in_values=False)
+    parser.optionxform = str
+    try:
+        with path.open(encoding='utf-8') as stream:
+            parser.read_file(stream)
+        if parser.defaults() or set(parser.sections()) != {'sync', 'repositories'}:
+            raise ValueError('Sync config needs [sync] and [repositories] sections only.')
+        options = parser['sync']
+        if set(options) - {'directory', 'discover_harness'} or not options.get('directory', '').strip():
+            raise ValueError('[sync] needs directory, with optional discover_harness = true or false.')
+        directory = Path(options['directory']).expanduser()
+        directory = (path.parent / directory).resolve()
+        discover = options.getboolean('discover_harness', fallback=False)
+        entries = parser['repositories']
+        if not entries:
+            raise ValueError('List at least one repository in [repositories].')
+        labels = {'marketing-studio': 'Marketing Studio', 'harness-research-skill': 'Harness Research',
+                  'harness-slides-skill': 'Harness Slides', 'tanzu-brand': 'Tanzu Brand'}
+        result, seen = [], set()
+        for folder, url in entries.items():
+            if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', folder):
+                raise ValueError('Repository keys must be folder names, without paths or spaces.')
+            if folder.casefold() in seen:
+                raise ValueError('Repository folder names must be unique, ignoring case.')
+            seen.add(folder.casefold())
+            validated = source_spec({'git': url}, path.parent)
+            result.append(Repository(labels.get(folder, folder), directory / folder, validated['git']))
+        return discover_harness(result, directory) if discover else result
+    except configparser.Error as error:
+        raise ValueError('Invalid sync config: ' + str(error)) from error
+
+
 def repositories(root, config=None):
-    """Keep every component beside Marketing Studio, even with another host's config."""
+    """Use explicit sync destinations, falling back to the original sibling discovery."""
     root = Path(root).resolve()
-    if config is None:
-        config = next((root / name for name in ('studio-package.local.json',
-                      'presentation-studio-package.local.json') if (root / name).is_file()), None)
+    config = config_file(root, config)
+    if config is not None and config.suffix != '.json':
+        return configured_repositories(config)
     sources = load_config(config) if config else {}
     result = [Repository('Marketing Studio', root)]
     seen = {root}
@@ -65,11 +119,7 @@ def repositories(root, config=None):
             continue
         seen.add(path.resolve())
         result.append(Repository('Tanzu Brand' if key == 'brand' else key.replace('-', ' ').title(), path, url))
-    for path in sorted(root.parent.glob('harness-*')):
-        if path.is_dir() and (path / '.git').exists() and path.resolve() not in seen:
-            seen.add(path.resolve())
-            result.append(Repository(path.name, path))
-    return result
+    return discover_harness(result, root.parent)
 
 
 class Sync:
@@ -121,9 +171,10 @@ class Sync:
             return 'SKIPPED', 'Folder is a link; keep sibling checkouts in real directories.'
         if not path.exists():
             if not self.clone or not repository.url:
-                return 'MISSING', 'No checkout; use a Git URL in the source config to enable cloning.'
+                return 'MISSING', 'No checkout; enable cloning and provide its Git URL in the config.'
             if self.dry_run:
                 return 'PLAN', 'Clone ' + repository.url + ' into ' + str(path)
+            path.parent.mkdir(parents=True, exist_ok=True)
             self.git(path.parent, 'clone', '--progress', '--', repository.url, str(path),
                      live=True, env=self.network_environment(path.parent))
             return 'CLONED', self.git(path, 'rev-parse', '--short', 'HEAD')
@@ -158,7 +209,7 @@ class Sync:
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='sync.sh', description=__doc__, epilog=
         'Related checkouts are siblings of Marketing Studio. No reset, stash, rebase, install, or provider jobs.')
-    parser.add_argument('--config', type=Path, help='Packaging source config; folder names and Git URLs are reused.')
+    parser.add_argument('--config', type=Path, help='Sync .cfg file or legacy packaging source JSON (default: sync.cfg when present).')
     parser.add_argument('--dry-run', action='store_true', help='Inspect and show the plan; no fetch, clone, or pull.')
     parser.add_argument('--no-clone', action='store_true', help='Update existing checkouts only.')
     parser.add_argument('--timeout', type=float, default=180, help='Seconds allowed per Git command (default: 180).')
@@ -168,12 +219,14 @@ def main(argv=None):
     if not shutil.which('git'):
         parser.error('Git is required; no software was installed.')
     try:
-        selected = repositories(ROOT, args.config)
+        selected_config = config_file(ROOT, args.config)
+        selected = repositories(ROOT, selected_config)
     except (ValueError, OSError) as error:
         parser.error(str(error))
     sync = Sync(timeout=args.timeout, dry_run=args.dry_run, clone=not args.no_clone)
     results = []
-    print('Marketing Studio repository sync\nSibling directory: ' + str(ROOT.parent), flush=True)
+    print('Marketing Studio repository sync', flush=True)
+    print('Config: ' + (str(selected_config) if selected_config else 'default sibling discovery'), flush=True)
     for repository in selected:
         print('\n=== ' + repository.name + ': ' + str(repository.path) + ' ===', flush=True)
         try:
