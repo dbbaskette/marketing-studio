@@ -132,7 +132,36 @@ class FormTests(StudioCase):
             'audience': 'Operators', 'purpose': 'Technical upskilling', 'time_limit': None,
             'brand': None, 'levels': ['101', '301'], 'copies': ['google', 'word'],
             'brief_kind': 'product', 'deck_target': None, 'source_scope': 'public-web',
-            'yoodli': False, 'agent': None, 'model': None, 'effort': None})
+            'yoodli': False, 'materials': ['document', 'brief', 'scenario'],
+            'agent': None, 'model': None, 'effort': None})
+
+    def test_selected_materials_use_existing_skip_decisions_and_manual_gate_counts(self):
+        form = pipeline.check_form({**FORM, 'materials': ['document', 'document']})
+        self.assertEqual(form['materials'], ['document'])
+        self.assertEqual(pipeline.gates(form), 4)
+        root = pipeline.create(self.space, form)
+        session = workspace.load(root)
+        self.assertEqual(session['settings']['stages'], ['document'])
+        self.assertEqual({event['stage'] for event in session['events']
+                          if event['event'] == 'skip'}, {'brief', 'scenario', 'deck'})
+        self.assertTrue(all(event.get('by') == 'page' for event in session['events']
+                            if event['event'] == 'skip'))
+
+    def test_empty_unknown_and_yoodli_incomplete_material_choices_are_refused(self):
+        for changes, message in (
+            ({'materials': []}, 'at least one material'),
+            ({'materials': ['package']}, 'Choose materials'),
+            ({'materials': 'document'}, 'as a list'),
+            ({'materials': ['document'], 'yoodli': True}, 'Yoodli needs'),
+        ):
+            with self.subTest(changes=changes):
+                with self.assertRaisesRegex(WorkspaceError, message):
+                    pipeline.check_form({**FORM, **changes})
+        deck = pipeline.check_form({**FORM, 'materials': [], 'deck_target': 'pptx'})
+        self.assertEqual(pipeline.gates(deck, deck=True), 5)
+        yoodli = pipeline.check_form({**FORM, 'materials': ['brief', 'scenario'],
+                                     'yoodli': True})
+        self.assertTrue(yoodli['yoodli'])
 
     def test_research_may_look_at_the_web_the_persons_documents_or_both(self):
         self.assertEqual(pipeline.check_form({**FORM, 'source_scope': None})['source_scope'],

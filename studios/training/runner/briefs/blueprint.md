@@ -8,6 +8,7 @@ Your task says what to hand back and names your inputs. `list_inputs` shows them
 
 - **The intake** says who the training is for, what it is for and any time limit.
 - **The research findings** each have an ID, a verdict and a summary. These IDs are the only ones you may cite. What no finding says, you may not teach as fact.
+- **Earlier levels**, when supplied, name prerequisites already taught. Advance the learner's task rather than repeating those objectives under new wording.
 
 If you are revising an earlier blueprint, the task carries it and what the person asked for. Change what they asked for and leave the rest as it is.
 
@@ -42,6 +43,8 @@ Propose the size the research supports and give the reason. Do not pad to reach 
 
 Write behaviours you could watch someone do. "Understand rolling restarts" is not one. "Explain when a rolling restart keeps capacity" is.
 
+Choose the smallest useful set that fits the learner's time. Connect every objective to a realistic decision or task for this audience. More objectives and more scenarios do not make a better course.
+
 ## Modules
 
 Under each module heading, one item per line:
@@ -57,6 +60,8 @@ Under each module heading, one item per line:
 One line per objective: `- O1: Check: <knowledge-check question> | Observe: <what a practice session should show>`
 
 The check goes into the learner guide; the observation guides the practice scenarios. Each must ask for the behaviour its objective names: explaining a procedure is not evidence of being able to perform it.
+
+Use a fresh case to assess transfer, not only repetition of a worked example. Budget explanation, demonstration, learner practice and debrief inside the module time. For applied work, name the learner's output and the observable sign that it worked. Label invented practice situations as hypothetical; they cannot establish product facts or customer outcomes.
 
 ## Practice plan
 

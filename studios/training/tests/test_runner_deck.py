@@ -319,7 +319,7 @@ class RuleTests(JobCase):
         self.assertEqual([line for line in text.splitlines() if line.startswith('#')], [
             '# Deck handoff: Rolling restarts, level 301', '## Goal',
             '## Audience and duration', '## Use', '## Required elements', '## Sources',
-            '## Research', '## Output'])
+            '## Research', '## Output', '## Teaching and assessment'])
         for told in ('- Describe what a rolling restart does (O1)', 'Duration: 25 min',
                      'no slide may depend on its speaker notes', 'M1, Rolling restarts',
                      'says what to practise next: main, then a closing slide.',
@@ -328,6 +328,10 @@ class RuleTests(JobCase):
                      'Google Slides, in the brand example-co (light).'):
             self.assertIn(told, text)
         self.assertEqual(deck.before(8), {'dollars': 3.2, 'minutes': 10.0})
+        import checks
+        for objective, assessment in checks.parse_blueprint(BLUEPRINT)['assessment'].items():
+            self.assertIn(f'- {objective}: {assessment}', text)
+        self.assertIn('practice and debrief', text)
 
 
 class ToolCase(JobCase):
@@ -1025,6 +1029,20 @@ class DeckCase(StudioCase):
 
 
 class FlowTests(DeckCase):
+    def test_a_deck_only_bundle_uses_the_blueprint_without_other_material_writers(self):
+        root = self.begin(materials=[])
+        self.to_outline(root)
+        self.engine.outline(root, None, 'approve')
+        self.assertEqual(self.to_end(root), ['deck'])
+        self.assertTrue(self.view(root)['finished']['ready'])
+        self.assertEqual(workspace.load(root)['settings']['stages'], ['deck'])
+        self.assertTrue((root / 'deck.pptx').is_file())
+        self.assertNotIn('document', self.kinds())
+        self.assertNotIn('brief', self.kinds())
+        self.assertNotIn('scenario', self.kinds())
+        self.assertIn('The blueprint, and the research findings.',
+                      (root / 'deck-handoff.md').read_text())
+
     def test_a_deck_goes_from_the_handoff_to_approved_as_powerpoint(self):
         root = self.begin()
         view = self.to_outline(root)

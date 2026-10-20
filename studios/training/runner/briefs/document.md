@@ -25,7 +25,7 @@ Follow the shape of the example at the end of this guidance. A course is one gui
    - one "Common mistake" callout for each misconception,
    - a summary,
    - a knowledge check that uses the `Check:` questions from the blueprint's assessment plan.
-3. An answer key.
+3. An answer key that explains the reasoning, a plausible wrong answer and the misconception behind it. For open tasks, give an example response and observable success criteria rather than pretending there is one exact wording.
 4. A glossary: every term the audience may not know.
 5. Sources: the original address or document behind each finding used.
 
@@ -48,6 +48,7 @@ A comment is a claim that its section teaches those things. The program cannot t
 - Write to the audience in the intake: assume what they know, explain what they do not.
 - Prefer short sections with descriptive headings over long ones.
 - A time limit in the intake is the reader's time. Fit it.
+- Separate a worked example from a fresh learner exercise. Hypothetical details can make the exercise concrete, but label them and never invent capabilities, measurements or customer results. Include a useful debrief and a next action the learner can try in their own work.
 
 ## Hand back
 

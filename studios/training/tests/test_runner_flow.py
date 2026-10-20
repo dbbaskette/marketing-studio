@@ -9,6 +9,7 @@ started, nothing is converted and nothing touches the network.
 import re
 import shutil
 from pathlib import Path
+from unittest import mock
 
 import helpers  # noqa: F401
 from runner_support import (BLUEPRINT, BRIEF, DOCUMENT, FORM, QUOTE, SCENARIO, YOODLI,
@@ -50,6 +51,36 @@ class FlowCase(StudioCase):
 
 
 class ToTheEndTests(FlowCase):
+    def test_a_changed_review_preference_refuses_start_before_making_any_files(self):
+        before = sorted(self.space.repo.iterdir())
+        form = pipeline.check_form({**FORM, 'review_level': 'step_by_step'})
+        with mock.patch('studio_core.review_policy.capture',
+                        return_value={'schema': 1, 'level': 'automatic'}):
+            with self.assertRaisesRegex(WorkspaceError, 'review preference changed'):
+                self.engine.start(form)
+        self.assertEqual(sorted(self.space.repo.iterdir()), before)
+        self.assertEqual(self.workers.jobs, [])
+
+    def test_selected_materials_finish_without_unrequested_workers_or_gates(self):
+        for materials, gates, writers in (
+            (['document'], ['document'], ['document']),
+            (['scenario'], ['scenario:main'], ['scenario']),
+            (['brief'], ['brief'], ['brief']),
+        ):
+            with self.subTest(materials=materials):
+                start = len(self.workers.jobs)
+                root = self.start(title='Only ' + materials[0], materials=materials)
+                self.assertEqual(self.to_end(root), ['research-plan', 'research', 'blueprint',
+                                                     *gates])
+                kinds = self.kinds(start)
+                self.assertEqual([kind for kind in kinds if kind in
+                                  ('document', 'brief', 'scenario', 'yoodli')], writers)
+                self.assertTrue(self.view(root)['finished']['ready'])
+                self.assertEqual(workspace.load(root)['settings']['stages'], materials)
+                for stage, file in (('document', 'document.md'), ('brief', 'product-brief.md'),
+                                    ('scenario', 'scenario.md')):
+                    self.assertEqual((root / file).exists(), stage in materials)
+
     def test_a_plain_training_goes_from_the_form_to_finished(self):
         self.engine = self.make(at_once=1)
         root = self.start()

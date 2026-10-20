@@ -282,7 +282,8 @@ class RuleTests(PageCase):
 class SetUpTests(FirstTimeCase):
     def test_nothing_is_set_up_at_first(self):
         self.assertEqual(self.get('setup'), {
-            'configured': False, 'workspace': None, 'shared': {}, 'shared_problem': None,
+            'configured': False, 'review_level': 'step_by_step',
+            'workspace': None, 'shared': {}, 'shared_problem': None,
             'team_moved': None, 'shared_notice': None,
             'agent': {'default': 'claude', 'model': None, 'effort': None},
             'limits': {'step_seconds': 900, 'training_dollars': 20.0, 'parallel': 2},
@@ -304,7 +305,7 @@ class SetUpTests(FirstTimeCase):
             'effort': 'ultra',
             'limits': {'step_seconds': 600, 'training_dollars': 7.5, 'parallel': 3}})
         self.assertEqual(made, {
-            'configured': True,
+            'configured': True, 'review_level': 'step_by_step',
             # A folder on this computer has nowhere to share to, so when to share, a value
             # every studio shares, is not set from it.
             'workspace': {'name': 'my-work', 'repository': None, 'path': str(folder),

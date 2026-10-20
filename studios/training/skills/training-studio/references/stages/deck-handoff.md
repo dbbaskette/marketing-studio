@@ -15,6 +15,7 @@ One page, with these headings:
 - **Sources.** `blueprint.md`, `document.md` and `research-report.md`. When the document is skipped, `blueprint.md` and `research-report.md`.
 - **Research.** Complete. Work from the sources only and start no new research. Anything under the blueprint's open gaps stays out.
 - **Output.** Google Slides or PowerPoint, from `settings.deck_target`, and the brand from `settings.brand` if one is set.
+- **Teaching and assessment.** Carry each objective's actual `Check:` and `Observe:` from the blueprint. Budget demonstrations, responses, practice and debrief within module timing; do not convert duration into a fixed slide count. Put check answers and rationale in presenter notes.
 
 `deck-handoff.md` is derived. Rewrite it whenever the blueprint or the settings change; never `save` it.
 

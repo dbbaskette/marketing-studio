@@ -6,7 +6,7 @@ The writing is done by an AI assistant you already have, Claude Code or Codex. T
 
 ## What you get
 
-For each training:
+Research and a teaching blueprint connect the materials. Choose what you need:
 
 - **A research report** with sources, so every claim can be traced.
 - **A blueprint**: the learning objectives and outline.
@@ -19,7 +19,7 @@ You can ask for one or more **levels**, from 101 (introduction) to 401 (expert).
 
 ## Two ways to work
 
-You can make a training in either of two ways. Both make the same files, and both wait for you at every stage.
+You can make a training in either of two ways. Both use the same file formats. The page follows your saved review preference; a conversation keeps its explicit checkpoints.
 
 | | On the page | In a conversation |
 | --- | --- | --- |
@@ -29,7 +29,7 @@ You can make a training in either of two ways. Both make the same files, and bot
 | Working with a team | Built in: your team shares one workspace | Through a [team hub](docs/team-hub.md) |
 | Best for | Getting a training made while you get on with other things | Steering each step closely |
 
-The page is newer. If you are not sure, start with a conversation: it needs the least set-up.
+Start on the page for a guided workflow, or use a conversation when you want to steer each stage closely.
 
 ## Before you start
 
@@ -81,9 +81,9 @@ A terminal window opens and the page opens in your browser. Leave the window ope
 
 **2. Set it up, once.** Say where trainings are kept: a folder on this computer to try things out, or a git repository your team shares. The page checks each answer as you give it. If you use Presentation Studio or Blog Studio too, the answers they share, such as the team repository and the agent, are kept in one place for all of them, so a change in one studio is a change in all three (see [the shared studios config](docs/runner.md#shared-studios-config)).
 
-**3. Press "New training".** Give a title, what it should teach and who it is for. It starts at once.
+**3. Press "New training".** Describe what learners should be able to do and what they know already. Choose the materials: a guide, reference brief, deck, practice, or a combination. Set the learner's time and select public research, your documents, or both. The final summary shows the materials and review preference before you start. Depth, extra copies and assistant settings are optional details.
 
-**4. Decide at each stop.** The page shows what needs you. Approve each stage, or ask for changes in your own words. You can close the page while it works and come back later.
+**4. Review what needs you.** Read the teaching plan and materials when the page asks, or request changes in your own words. Balanced and Automatic draft continue intermediate work according to their saved policy; Step by step asks at each stage. Completed materials stay ahead of the optional production log. You can close the page while it works and come back later.
 
 See [the runner](docs/runner.md) for every step, the slide deck, working as a team, and what it guarantees.
 

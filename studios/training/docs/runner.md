@@ -141,7 +141,24 @@ Saving writes only the values you changed on that screen, and only where the fil
 
 ## Start a training
 
-"New training" asks for a title, what it should teach, who it is for, and a few choices that already have answers. Then it starts at once.
+"New training" has three steps: Learning goal, Materials, and Review and start.
+Describe the learner's task and prior knowledge, choose the materials and learner
+time, then confirm sources and the saved review preference. Research and the
+teaching blueprint support whichever materials you select. Guide-only,
+brief-only, deck-only and practice-only bundles are supported; existing runs
+keep their selections. Yoodli requires a reference brief and practice scenarios
+and prepares fields to copy into its builder, with no automatic posting.
+
+Depth, brand details, extra copies and assistant settings stay available under
+disclosures. The primary next action stays in the toolbar on a phone. Finished
+materials appear before the collapsible production steps. If another studio
+changes the review preference while this form is open, starting is refused
+before any files are made; the page reloads the preference and keeps the answers.
+
+The sequence below describes Step by step review. Balanced groups the teaching
+plan and finished-material decisions; Automatic draft brings the finished
+materials for review. Only selected material stages run. Earlier trainings keep
+the review policy they started with.
 
 | The runner does this on its own | Then it stops for you |
 | --- | --- |

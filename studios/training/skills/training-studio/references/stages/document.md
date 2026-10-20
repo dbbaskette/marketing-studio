@@ -14,7 +14,7 @@ Follow the shape of the example document. A course is one document with a chapte
    - one "Common mistake" callout per misconception,
    - a summary,
    - a knowledge check using the `Check:` questions from the assessment plan.
-3. Answer key.
+3. Answer key with reasoning, a plausible wrong answer and its misconception. Open tasks use an example response and observable success criteria.
 4. Glossary: every term the audience may not know.
 5. Sources: the original URL or document behind each finding used.
 
@@ -33,6 +33,7 @@ This is declared coverage. It proves a section claims to teach something, not th
 - Write to the audience in intake: assume what they know, explain what they do not.
 - With levels, name what an earlier level covered as assumed. Do not teach it again.
 - Prefer short sections with descriptive headings over long ones.
+- Distinguish worked examples from fresh exercises. Label hypothetical details; invent no capabilities or results. Include a debrief and a next action for the learner.
 
 ## Gate 4
 

@@ -22,7 +22,8 @@ Required: `# Scenario: <name>`, then `## Situation`, `## Learner role`, `## AI r
 - Success criteria are a list, one thing the learner should do in each item. Their order numbers them from 1. Leave objective IDs out: the person who owns the scenario never needs them.
 - Write criteria for what the session can observe, and cover the objectives the practice plan gives this scenario.
 - The situation is fiction about the practice setting. Say that it is a hypothetical practice situation.
-- Product facts the AI may use come only from the brief. Never write a concern, a question or a criterion whose answer is not in the brief: the learner cannot be graded on what the reference does not contain.
+- Product facts come from the brief when supplied, otherwise only from the blueprint's supported key points. Never grade knowledge absent from those references. Say which reference the session uses; a missing brief must not be silently invented.
+- Start with a plausible problem at this audience's level, then vary one constraint so the learner must transfer the learning. Describe an observable successful response and a useful debrief, without scripting every learner answer or requiring a sales pitch for technical practice.
 
 ## When the scenario is the person's own
 
