@@ -52,6 +52,15 @@ class ManuscriptTests(Fixture):
         self.assertEqual(payload['response_kind'], 'editing-review')
         self.assertIn('structured editing review', guidance)
 
+    def test_only_evidence_checks_receive_sources(self):
+        source = self.source('A fictional gateway routes synthetic requests.')
+        with patch.object(runner.Engine, 'control', return_value={}):
+            for check, expected in (('polish', 0), ('humanization', 0), ('factual-support', 1)):
+                with self.subTest(check=check):
+                    self.action('check', check=check, sources=[source['id']])
+                    _, payload, _ = runner.job(self.root, self.ident)
+                    self.assertEqual(len(payload['sources']), expected)
+
     def test_supplied_only_check_without_sources_skips_research(self):
         with patch.object(runner.Engine, 'control', return_value={}):
             for attempt in ('new run', 'existing run'):

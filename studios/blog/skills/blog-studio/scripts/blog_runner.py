@@ -715,6 +715,11 @@ def job(root, ident):
         raise ValueError('This run is complete.')
     directory, record, run = load(root, ident)
     payload = inputs(root, record, run)
+    # The package works from the saved writing, and only evidence checks review against
+    # sources. inputs() above still refuses a changed source pin for every step.
+    check = run.get('editor_check')
+    if stage == 'package' or (stage == 'review' and check and check not in studio.SOURCE_CHECKS):
+        payload['sources'] = []
     if (
         run.get('research_contract')
         and stage not in ('research-plan', 'research')

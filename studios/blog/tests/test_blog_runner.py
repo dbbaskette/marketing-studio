@@ -381,6 +381,16 @@ class BlogRunnerTests(Fixture):
             runner.basis(self.root, directory, record, run, 'draft'), pin({'outline': outline})
         )
 
+    def test_only_steps_that_use_evidence_receive_sources(self):
+        source = self.source('A fictional gateway routes synthetic requests.')
+        found = self.create(sources=[source['id']])
+        while found['next'] != 'package':
+            self.assertEqual(len(runner.job(self.root, found['id'])[1]['sources']), 1)
+            found = self.approve(self.submit(found))
+        _, payload, _ = runner.job(self.root, found['id'])
+        self.assertEqual(payload['sources'], [])
+        self.assertIn('review', payload['documents'])
+
     def test_page_creation_retry_is_idempotent(self):
         data = {
             'operation': 'a' * 32,
@@ -852,6 +862,35 @@ else:
                 else:
                     self.assertEqual(args[args.index('--tools') + 1], '')
                     self.assertIn('--strict-mcp-config', args)
+
+    def test_policy_and_job_guidance_are_sent_once(self):
+        self.executable(
+            'args=sys.argv[1:]\n'
+            "system=args[args.index('--system-prompt')+1] if '--system-prompt' in args else Path(json.loads([a for a in args if a.startswith('model_instructions_file=')][0].split('=',1)[1])).read_text()\n"
+            'Path('
+            + repr(str(self.capture))
+            + ').write_text(json.dumps({"system":system,"stdin":sys.stdin.read()}))\n'
+            "value={'content':'Synthetic output','notes':'Fixture CLI; no account.'}\n"
+            "if '--output-last-message' in args:\n Path(args[args.index('--output-last-message')+1]).write_text(json.dumps(value))\n"
+            "else:\n print(json.dumps({'structured_output':value}))\n"
+        )
+        for agent in ('codex', 'claude'):
+            with (
+                self.subTest(agent=agent),
+                patch.object(
+                    blog_worker.source_curator, 'executable', return_value=str(self.binary)
+                ),
+                patch.object(blog_worker.source_curator, 'codex_options', return_value=[]),
+            ):
+                blog_worker.generate(
+                    agent, {'title': 'Synthetic title'}, 'Write the fixture outline', seconds=5
+                )
+                seen = json.loads(self.capture.read_text())
+                sent = seen['system'] + seen['stdin']
+                for text in (blog_worker.POLICY, 'Write the fixture outline'):
+                    self.assertEqual(sent.count(text), 1)
+                    self.assertIn(text, seen['system'])
+                self.assertIn('"title": "Synthetic title"', seen['stdin'])
 
     def test_editing_reviews_use_a_typed_schema_in_both_cli_adapters(self):
         self.executable(
