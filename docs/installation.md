@@ -156,3 +156,41 @@ Builds and tests do not publish releases or change the installed studios.
 Runtime sources: [Node downloads](https://nodejs.org/en/download),
 [Python standalone distributions](https://github.com/astral-sh/python-build-standalone),
 and [Python distribution format](https://github.com/astral-sh/python-build-standalone/blob/main/docs/distributions.rst).
+
+## Installation logs
+
+Every installation attempt keeps a timestamped, private log under
+`~/.local/state/marketing-studio/logs/`. Terminal prints its full path at the
+start and end, including on failure. This applies to Marketing Studio, each
+independent studio, and online/offline local bundles. `--home PATH` puts the log
+under that home. Help and dry runs do not create logs.
+
+The log includes the shell bootstrap's console transcript, Python version and
+executable, installer subprocess commands and working directories, captured output,
+exit statuses, timeouts, and final result. Nested installers share one file;
+retries create a new file. JSON output stays separate from diagnostic messages.
+Logs are outside verified bundle contents and remain after rollback or uninstall.
+Commands mask recognized credential arguments; environments and subprocess stdin
+are not recorded. Tool console output and local paths can contain private details,
+so review the log before sharing it. Logs are readable only by the installing user.
+
+Workspace setup runs after installation. When Git fails without any error output,
+the setup page now names the Git command and exit status or terminating signal.
+It also names a private metadata file under the affected studio's data folder,
+`~/.local/share/<studio>-studio/logs/git-*.json`. That record contains the Git
+executable and working directory, without command arguments or document content.
+
+Local bundles also include an offline Git check:
+
+```sh
+bash diagnose-git.sh
+# Or after installation:
+bash "$HOME/Applications/Diagnose Presentation Studio Git.sh"
+```
+
+It tests the installed private Git in a disposable repository with a synthetic
+identity, hooks and commit signing disabled. It makes no network requests and
+does not change existing workspaces, Git configuration, or studio settings. Its
+private report goes beside the installation logs. A passing check establishes
+that Git can start, initialize, and commit; it does not check an existing
+workspace's hooks, signing setup, identity, or repository permissions.

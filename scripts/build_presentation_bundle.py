@@ -265,7 +265,7 @@ def build(brand, output, cache, lock, sources=None, mode='online', product='pres
             prepare_tools(lock, cache, stage / 'payload')
         else:
             print('Recording pinned tools for download during installation…', flush=True)
-        for name in ('install.sh', 'install-local.py', 'install-brand.mjs', 'verify-installed.py', 'tool_payload.py', 'Install Presentation Studio.command'):
+        for name in ('install.sh', 'install-local.py', 'install-brand.mjs', 'diagnose-git.sh', 'verify-installed.py', 'tool_payload.py', 'Install Presentation Studio.command'):
             shutil.copy2(TEMPLATES / name, stage / name)
         if product != 'presentation':
             (stage / 'Install Presentation Studio.command').rename(stage / ('Install ' + title + '.command'))
@@ -276,7 +276,7 @@ def build(brand, output, cache, lock, sources=None, mode='online', product='pres
             ast.parse((stage / name).read_text())
         (stage / ('Install ' + title + '.command')).chmod(0o755)
         (stage / 'install.sh').chmod(0o755)
-        values = {'PRODUCT_NAME': title, 'PRODUCT_SLUG': product + '-studio',
+        values = {'PRODUCT_NAME': title, 'PRODUCT_ID': product, 'PRODUCT_SLUG': product + '-studio',
                   'PRODUCT_START': '.local/share/marketing-studio/marketing-studio' if product == 'marketing' else '.local/share/' + product + '-studio/studio',
                   'SELECTED_STUDIOS': ', '.join(name.title() + ' Studio' for name in selected),
                   'SLIDES_CONTENT': ('Harness Slides ' + record['companions']['harness-slides']['version'] + ' with production Node packages and Gemini API image tools;\n' if 'harness-slides' in record['companions'] else ''),

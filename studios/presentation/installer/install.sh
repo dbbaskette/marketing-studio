@@ -6,6 +6,9 @@ suite_dir="$installer_dir/../../.."
 if [ -f "$suite_dir/distribution.json" ] && [ -f "$suite_dir/installer/install.sh" ]; then
   exec /bin/bash "$suite_dir/installer/install.sh" "$@" --studios presentation
 fi
+if [ -z "${STUDIO_INSTALL_LOG:-}" ] && [ -z "${STUDIO_INSTALL_LOG_WRAPPED:-}" ]; then
+  exec /bin/bash "$installer_dir/../skills/presentation-studio/scripts/studio_core/install-log.sh" "$0" "$@"
+fi
 for candidate in python3 python3.14 python3.13 python3.12 python3.11 \
   /opt/homebrew/bin/python3 /usr/local/bin/python3 \
   /Library/Frameworks/Python.framework/Versions/Current/bin/python3; do

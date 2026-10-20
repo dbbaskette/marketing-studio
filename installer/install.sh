@@ -7,6 +7,20 @@ installer_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 if [ -f "$installer_dir/../../local-manifest.json" ] && [ -f "$installer_dir/../../install-local.py" ]; then
   exec /bin/sh "$installer_dir/../../install.sh" "$@"
 fi
+if [ -z "${STUDIO_INSTALL_LOG:-}" ] && [ -z "${STUDIO_INSTALL_LOG_WRAPPED:-}" ]; then
+  exec /bin/bash "$installer_dir/../core/studio_core/install-log.sh" "$0" "$@"
+fi
+run_step() {
+  if [ -n "${STUDIO_INSTALL_LOG:-}" ]; then
+    { printf '\nRun: '; printf '%q ' "$@"; printf '\n'; } >> "$STUDIO_INSTALL_LOG"
+  fi
+  local result=0
+  "$@" || result=$?
+  if [ -n "${STUDIO_INSTALL_LOG:-}" ]; then
+    printf 'Command finished: exit %s\n' "$result" >> "$STUDIO_INSTALL_LOG"
+  fi
+  return "$result"
+}
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 prerequisites=ask
 assistants=skip
@@ -158,18 +172,18 @@ if [ "$prerequisites" != skip ]; then
       confirm 'Install Homebrew from https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh? This may request your administrator password.' || exit 1
       bootstrap_file="$(mktemp "${TMPDIR:-/tmp}/marketing-homebrew.XXXXXX")"
       trap 'rm -f "$bootstrap_file"' EXIT
-      curl --fail --show-error --silent --location https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o "$bootstrap_file"
-      if [ "$noninteractive" = 1 ]; then NONINTERACTIVE=1 /bin/bash "$bootstrap_file"; else /bin/bash "$bootstrap_file"; fi
+      run_step curl --fail --show-error --silent --location https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o "$bootstrap_file"
+      if [ "$noninteractive" = 1 ]; then NONINTERACTIVE=1 run_step /bin/bash "$bootstrap_file"; else run_step /bin/bash "$bootstrap_file"; fi
       rm -f "$bootstrap_file"
       trap - EXIT
       brew_command="$(command -v brew || true)"
       [ -n "$brew_command" ] || { echo 'Homebrew setup did not finish. Reopen setup after resolving its reported error.' >&2; exit 1; }
     fi
     if [ -n "$brew_command" ]; then
-      HOMEBREW_NO_AUTO_UPDATE=1 "$brew_command" install "${missing[@]}" >&2
+      HOMEBREW_NO_AUTO_UPDATE=1 run_step "$brew_command" install "${missing[@]}" >&2
     else
       as_root() {
-        if [ "$(id -u)" = 0 ]; then "$@"; else sudo "$@"; fi
+        if [ "$(id -u)" = 0 ]; then run_step "$@"; else run_step sudo "$@"; fi
       }
       packages=()
       for package in "${missing[@]}"; do
@@ -194,7 +208,7 @@ if [ "$prerequisites" != skip ]; then
   if [ "$assistants" = install ] && [ "${#missing_assistants[@]}" -gt 0 ]; then
     for assistant in "${missing_assistants[@]}"; do
       case "$assistant" in codex) package=@openai/codex;; claude) package=@anthropic-ai/claude-code;; esac
-      npm install --global --prefix "$HOME/.local" "$package" >&2
+      run_step npm install --global --prefix "$HOME/.local" "$package" >&2
       hash -r
       "$assistant" --version >&2
       printf 'Installed %s. Run `%s` in your terminal to sign in before starting assistant work.\n' "$assistant" "$assistant" >&2

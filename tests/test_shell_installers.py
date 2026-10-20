@@ -28,6 +28,11 @@ class ShellInstallerTests(unittest.TestCase):
                     'PATH': str(Path(sys.executable).parent) + ':/usr/bin:/bin',
                     'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1'}
 
+    def logging_helper(self, suite):
+        target = suite / 'core/studio_core/install-log.sh'
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / 'core/studio_core/install-log.sh', target)
+
     def recorder(self, target):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text('#!' + sys.executable + '\nimport json,sys\n'
@@ -68,6 +73,7 @@ class ShellInstallerTests(unittest.TestCase):
         shutil.copy2(ROOT / 'scripts/local_bundle/install.sh', folder / 'install.sh')
         (folder / 'installer').mkdir()
         shutil.copy2(ROOT / 'scripts/local_bundle/bootstrap.sh', folder / 'installer/install.sh')
+        self.logging_helper(folder / 'studio')
         self.recorder(folder / 'studio/runtime/python/bin/python3')
         fakebin = self.root / 'fakebin'
         fakebin.mkdir()
@@ -94,6 +100,7 @@ class ShellInstallerTests(unittest.TestCase):
         shutil.copy2(ROOT / 'scripts/local_bundle/install.sh', folder / 'install.sh')
         (folder / 'installer').mkdir()
         shutil.copy2(ROOT / 'scripts/local_bundle/bootstrap.sh', folder / 'installer/install.sh')
+        self.logging_helper(folder / 'studio')
         python = folder / 'studio/runtime/python/bin/python3'
         python.parent.mkdir(parents=True)
         python.symlink_to(sys.executable)
@@ -115,7 +122,7 @@ class ShellInstallerTests(unittest.TestCase):
                                   env=env, capture_output=True, text=True, timeout=20)
             self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
             self.assertEqual(cache.read_bytes(), original)
-        self.assertEqual(list(Path(self.env['HOME']).iterdir()), [])
+        self.assertEqual(len(list(Path(self.env['HOME']).rglob('install-*'))), 2)
 
     def test_all_subset_inventories_contain_suite_and_native_shell_entries(self):
         for name in ('blog', 'presentation', 'training'):
@@ -126,6 +133,7 @@ class ShellInstallerTests(unittest.TestCase):
                     self.assertTrue(entries[key].stat().st_mode & 0o111)
 
     def packaged_suite(self, folder, studios):
+        self.logging_helper(folder)
         for name in ('install.sh', 'installer/install.sh',
                      *(str(Path('studios') / studio / entry) for studio in studios
                        for entry in ('install.sh', 'installer/install.sh'))):
@@ -153,6 +161,7 @@ class ShellInstallerTests(unittest.TestCase):
         shutil.copy2(ROOT / 'scripts/local_bundle/install.sh', folder / 'install.sh')
         (folder / 'installer').mkdir()
         shutil.copy2(ROOT / 'scripts/local_bundle/bootstrap.sh', folder / 'installer/install.sh')
+        self.logging_helper(folder / 'studio')
         (folder / 'local-manifest.json').write_text('{}')
         (folder / 'install-local.py').write_text('# synthetic installer\n')
         self.recorder(folder / 'studio/runtime/python/bin/python3')
@@ -202,7 +211,7 @@ class ShellInstallerTests(unittest.TestCase):
                     self.assertEqual(Path(forwarded[0]).resolve(), folder / 'installer/install.py')
                     self.assertEqual(forwarded[1:], [*arguments, '--studios', name])
                     self.assertNotIn('System Python', done.stderr)
-        self.assertEqual(list(Path(self.env['HOME']).iterdir()), [])
+        self.assertEqual(len(list(Path(self.env['HOME']).rglob('install-*'))), 6)
 
 
 if __name__ == '__main__':

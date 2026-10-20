@@ -88,3 +88,12 @@ LibreOffice: https://www.libreoffice.org/
 Google Cloud CLI: https://docs.cloud.google.com/sdk/docs/install-sdk
 Poppler/Git: https://conda.anaconda.org/conda-forge/
 Micromamba: https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html
+
+DIAGNOSTICS
+Setup prints a persistent installation log path at the start and end.
+Logs: ~/.local/state/marketing-studio/logs/ (private; review before sharing).
+If UI setup reports a Git error, run an offline check from this extracted folder:
+  bash diagnose-git.sh --studio @PRODUCT_ID@
+Or after installation:
+  bash "$HOME/Applications/Diagnose @PRODUCT_NAME@ Git.sh"
+The check uses a disposable repository and does not change existing workspaces.

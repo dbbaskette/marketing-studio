@@ -247,6 +247,9 @@ def install(home, base, env, target, manifest, config, agent, selected=None):
               'brand': brand['current'], 'environment': str(version / 'environment.sh'), 'assistant': agent}
     atomic(base / 'installation.json', json.dumps(record, indent=2) + '\n', 0o600)
     shutil.copy2(ROOT / 'verify-installed.py', version / 'verify-installed.py')
+    shutil.copy2(ROOT / 'diagnose-git.sh', version / 'diagnose-git.sh')
+    diagnostic = '#!/bin/bash\nexec /bin/bash ' + shlex.quote(str(version / 'diagnose-git.sh')) + ' --home ' + shlex.quote(str(home)) + ' --studio ' + shlex.quote(product) + '\n'
+    atomic(home / ('Applications/Diagnose ' + title + ' Git.sh'), diagnostic)
     verify_command = '#!/bin/bash\nset -euo pipefail\nexec ' + shlex.quote(str(suite / 'runtime/python/bin/python3')) + ' ' + shlex.quote(str(version / 'verify-installed.py')) + ' --record ' + shlex.quote(str(base / 'installation.json')) + '\n'
     for suffix in ('sh', 'command'):
         atomic(home / ('Applications/Verify ' + title + '.' + suffix), verify_command)
@@ -265,8 +268,11 @@ def install(home, base, env, target, manifest, config, agent, selected=None):
 
 
 if __name__ == '__main__':
-    try:
-        main()
-    except Exception as error:
-        print('Installation stopped: ' + str(error), file=sys.stderr)
-        raise SystemExit(1)
+    sys.path.insert(0, str(ROOT / 'studio/core'))
+    from studio_core.install_log import session
+    with session('Local studio bundle'):
+        try:
+            main()
+        except Exception as error:
+            print('Installation stopped: ' + str(error), file=sys.stderr)
+            raise SystemExit(1)
