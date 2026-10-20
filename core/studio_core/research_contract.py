@@ -15,6 +15,19 @@ import subprocess
 OWNER = 'harness-research-synthesis'
 CASE = Path('.studio-research')
 ARTIFACTS = {'report.md', 'brief.md', 'evidence.md', 'facts.json'}
+# Harness Research 1.0.1 and newer exit 1 for a needs-revision review and for stale
+# evidence while still printing the result. Callers judge that result's status.
+RESULTS = {('synthesis', 'review'), ('synthesis', 'verify'), ('synthesis', 'status')}
+
+
+def answered(args, code, out):
+    """True when a command that exited 1 still printed its JSON result."""
+    if code != 1 or tuple(args[:2]) not in RESULTS:
+        return False
+    try:
+        return isinstance(json.loads(out), dict)
+    except (TypeError, ValueError):
+        return False
 
 
 def inside(root, name):
@@ -201,7 +214,7 @@ class Workflow:
         result = subprocess.run([node, str(self.runtime / 'scripts/harness-research.mjs'), *args],
                                 capture_output=True, text=True, timeout=120,
                                 stdin=subprocess.DEVNULL)
-        if result.returncode:
+        if result.returncode and not answered(args, result.returncode, result.stdout):
             raise ValueError((result.stderr.strip().splitlines() or ['Harness Research failed.'])[-1])
         return json.loads(result.stdout)
 

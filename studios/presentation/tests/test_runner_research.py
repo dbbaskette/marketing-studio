@@ -150,6 +150,23 @@ class CommandTests(unittest.TestCase):
             self.research.record(Path('/t'), 'run-1', 'nothing', {'status': 'supported'})
         self.assertFalse(self.files[0][0].exists())
 
+    def test_a_synthesis_result_that_exits_one_is_an_answer_not_a_refusal(self):
+        # Harness Research 1.0.1 exits 1 for a needs-revision review and stale evidence.
+        self.answers = [(1, '{"status": "needs-revision"}\n', 'Review rejected.\n'),
+                        (1, '{"status": "stale"}\n', ''), (1, '{"status": "stale"}\n', '')]
+        for action in ('review', 'verify', 'status'):
+            self.assertIn(self.research._json('synthesis', action, '--project', '/t/case')['status'],
+                          ('needs-revision', 'stale'))
+        self.answers = [(1, '', 'Evidence is stale.\n'), (1, '{"status": "draft"}', 'Invalid dossier.\n'),
+                        (2, '{"status": "stale"}', ''), (1, '{"status": "stale"}', '')]
+        for args, line in ((('synthesis', 'review'), 'Evidence is stale.'),
+                           (('synthesis', 'save'), 'Invalid dossier.'),
+                           (('synthesis', 'verify'), 'it ended with exit code 2'),
+                           (('status',), 'it ended with exit code 1')):
+            with self.assertRaises(research.Refused) as refused:
+                self.research._json(*args, '--project', '/t/case')
+            self.assertEqual(refused.exception.line, line)
+
     def test_an_answer_that_is_not_json_is_not_trusted(self):
         for answer in ('Usage: node scripts/harness-research.mjs ...', '[1, 2]', ''):
             self.answers = [(0, answer, '')]

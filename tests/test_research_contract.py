@@ -1,13 +1,47 @@
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
+from unittest import mock
 import marketing_studio  # Puts the shared core on the import path.
 from studio_core import research_contract as contract
 from synthesis_fixture import TEXT, dossier, review
 
 RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
+
+
+class HelperAnswerTests(unittest.TestCase):
+    """Harness Research 1.0.1 exits 1 for a needs-revision review and stale evidence."""
+
+    def answer(self, action, code, out, err=''):
+        done = subprocess.CompletedProcess([], code, out, err)
+        with mock.patch.object(contract.shutil, 'which', return_value='/usr/bin/node'), \
+                mock.patch.object(contract.subprocess, 'run', return_value=done):
+            return contract.Workflow('/opt/harness-research').command(
+                Path('/t/case'), action, *(('review.json', 'reviewer-1') if action in ('save', 'review') else ()))
+
+    def test_results_that_exit_one_are_read_for_review_verify_and_status(self):
+        self.assertEqual(self.answer('review', 1, '{"status":"needs-revision"}', 'Rejected.\n'),
+                         {'status': 'needs-revision'})
+        self.assertEqual(self.answer('verify', 1, '{"status":"stale","artifact_integrity":"failed"}\n'),
+                         {'status': 'stale', 'artifact_integrity': 'failed'})
+        self.assertEqual(self.answer('status', 1, '{"status":"stale"}'), {'status': 'stale'})
+
+    def test_a_non_zero_exit_without_a_json_result_is_a_failure(self):
+        for out in ('', 'Usage: harness-research', '[1]'):
+            with self.assertRaisesRegex(ValueError, 'Evidence is stale'):
+                self.answer('review', 1, out, 'Evidence is stale. Save revised content.\n')
+        with self.assertRaisesRegex(ValueError, 'Harness Research failed'):
+            self.answer('verify', 2, '{"status":"stale"}')
+
+    def test_other_actions_still_fail_on_any_non_zero_exit(self):
+        with self.assertRaisesRegex(ValueError, 'Invalid dossier'):
+            self.answer('save', 1, '{"status":"draft"}', 'Invalid dossier.\n')
+        self.assertEqual(contract.answered(['synthesis', 'save'], 1, '{}'), False)
+        self.assertEqual(contract.answered(['status'], 1, '{}'), False)
+        self.assertEqual(contract.answered(('synthesis', 'verify'), 1, '{}'), True)
 
 @unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME to the exact locked release source for helper integration.')
 class ResearchContractTests(unittest.TestCase):
