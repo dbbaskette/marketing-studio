@@ -89,6 +89,11 @@ uninstall. Repeated open/setup commands contact a same-user Unix socket with mod
 keys. Long custom data paths use a verified private short-path directory. Status
 and doctor neither start the app nor contact providers.
 
+`serve` runs the home server without opening a browser. When the first browser or
+studio open fails, including on a computer without a screen, the server keeps
+running: a terminal is shown the reason with the private link, and a pipe is
+given the reason in its JSON line without the session key.
+
 ## Installation and updates
 
 The suite installer stages a content-addressed runtime, uses the native installers

@@ -9,11 +9,35 @@ import unittest
 from unittest import mock
 
 from marketing_studio import cli, control
+from marketing_studio.errors import WorkspaceError
 
 
-class CliTests(unittest.TestCase):
+class Terminal(io.StringIO):
+    def isatty(self):
+        return True
+
+
+class FakeDesk:
+    """Stands in for the home server: binds nothing and returns from serve at once."""
+    made = []
+
+    def __init__(self, port=0, page=None):
+        self.port = 43210
+        self.address = f'http://127.0.0.1:{self.port}/'
+        self.url = self.address + '#token=' + 'k' * 43
+        self.served = self.stopped = False
+        FakeDesk.made.append(self)
+
+    def serve(self):
+        self.served = True
+
+    def stop(self):
+        self.stopped = True
+
+
+class Disposable(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='marketing-cli-', dir='/tmp')
+        self.tmp = tempfile.TemporaryDirectory(prefix='marketing-cli-')
         self.addCleanup(self.tmp.cleanup)
         self.data = Path(self.tmp.name) / 'data'
         self.data.mkdir()
@@ -22,6 +46,8 @@ class CliTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
+
+class CliTests(Disposable):
     def test_status_and_doctor_are_offline(self):
         with mock.patch.object(cli.server, 'show', side_effect=AssertionError('Opened browser')):
             output = io.StringIO()
@@ -75,6 +101,67 @@ class CliTests(unittest.TestCase):
         command = call.call_args.args[0]
         self.assertIn('--yes', command)
         self.assertEqual(command[command.index('--studios') + 1], 'blog')
+
+
+class HomeServerTests(Disposable):
+    """A failed first open is reported; the home server keeps serving."""
+
+    def setUp(self):
+        super().setUp()
+        FakeDesk.made.clear()
+        for target, name, value in ((cli.server, 'Desk', FakeDesk),
+                                    (cli.server, 'show', mock.Mock(return_value=False)),
+                                    (cli.signal, 'signal', mock.Mock()),
+                                    (cli.control, 'Control', mock.Mock())):
+            patcher = mock.patch.object(target, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def run_home(self, arguments, output):
+        errors = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            code = cli.main(arguments)
+        return code, output.getvalue() + errors.getvalue()
+
+    def test_browser_that_cannot_open_keeps_serving_with_private_link(self):
+        code, printed = self.run_home([], Terminal())
+        desk = FakeDesk.made[-1]
+        self.assertEqual(code, 0)
+        self.assertTrue(desk.served)
+        self.assertTrue(desk.stopped)
+        problem = printed.index('A browser could not be opened')
+        self.assertIn(desk.url, printed[problem:])
+
+    def test_refused_first_studio_open_keeps_serving(self):
+        launcher = mock.Mock()
+        launcher.open.side_effect = WorkspaceError('Training Studio stopped before opening.')
+        with mock.patch.object(cli, 'Launcher', return_value=launcher), \
+                mock.patch.object(cli.Home, 'configured', return_value=True):
+            code, printed = self.run_home(['open', 'training'], Terminal())
+        desk = FakeDesk.made[-1]
+        self.assertEqual(code, 0)
+        self.assertTrue(desk.served)
+        problem = printed.index('Training Studio stopped before opening.')
+        self.assertIn(desk.url, printed[problem:])
+        launcher.close.assert_called_once_with()
+
+    def test_failed_open_for_a_pipe_reports_without_the_key(self):
+        code, printed = self.run_home([], io.StringIO())
+        desk = FakeDesk.made[-1]
+        self.assertEqual(code, 0)
+        self.assertTrue(desk.served)
+        shown = json.loads(printed.splitlines()[0])
+        self.assertFalse(shown['opened'])
+        self.assertIn('A browser could not be opened', shown['problem'])
+        self.assertNotIn('k' * 43, printed)
+
+    def test_serve_never_opens_a_browser_or_asks_a_running_home(self):
+        cli.server.show.side_effect = AssertionError('Opened a browser')
+        with mock.patch.object(cli.control, 'request', side_effect=AssertionError('Asked a running home')):
+            code, printed = self.run_home(['serve'], Terminal())
+        self.assertEqual(code, 0)
+        self.assertTrue(FakeDesk.made[-1].served)
+        self.assertIn(FakeDesk.made[-1].url, printed)
 
 
 if __name__ == '__main__':

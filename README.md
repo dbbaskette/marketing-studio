@@ -150,6 +150,7 @@ marketing-studio open training
 | :--- | :--- |
 | `marketing-studio` | Opens the home page |
 | `marketing-studio open presentation` | Opens Presentation Studio; reuses it if already open through Marketing Studio |
+| `marketing-studio serve` | Runs the home server in this terminal without opening a browser, for example over SSH |
 | `marketing-studio serve --lan` | Enables private phone access on your trusted local network |
 | `marketing-studio setup` | Opens shared settings, or first-run setup |
 | `marketing-studio status` | Shows which studios are installed and whether shared setup is complete |
@@ -236,6 +237,7 @@ installed studios, project content, and settings.
 | A studio says **Not installed** | Run the installer for that studio. For a custom checkout, set its folder in **Shared settings → Studio installations**. |
 | Git asks who you are | Set `git config --global user.name "Your Name"` and `git config --global user.email "you@example.com"`. |
 | A tool is missing | Run `marketing-studio doctor`, then rerun the downloaded setup script to install missing prerequisites. |
+| A browser cannot open, for example over SSH | Marketing Studio keeps running and prints why with its private link. Open that link in a browser, or start with `marketing-studio serve`. |
 | An assistant cannot start | Open that CLI in your own terminal and complete its sign-in. |
 | Another studio changed a setting | Reload the settings page so you can review the current value before saving. |
 
