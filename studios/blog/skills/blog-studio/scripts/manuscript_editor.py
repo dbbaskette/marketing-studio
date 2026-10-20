@@ -10,7 +10,9 @@ import blog_runner
 from text_checks import preserve
 
 CHECKS = {
+    'polish': 'Proofread and copy edit the manuscript together: correct spelling, grammar, punctuation and consistency; improve clarity and concision; humanize formulaic wording, repetition and unnatural rhythm using the pinned author rules, house style and humanization guidance. Preserve the author voice, stance, facts, quotations, links and meaningful technical qualifiers. Never invent experience or new claims. Return selected, located suggestions rather than rewriting the whole manuscript. Do not research. This is editorial review, not AI detection.',
     'proofread': 'Proofread for clarity, grammar and the pinned author and house rules. Preserve the author voice.',
+    'copyedit': 'Suggest precise copy edits for grammar, clarity, concision, consistency and natural wording using the pinned author and house rules. Preserve voice, stance, facts, quotations and technical qualifiers. Do not research or introduce new claims.',
     'factual-support': 'Check exact factual claims against selected evidence. Report supported, unsupported and contradicted claims with source passages; mark unavailable evidence and coverage gaps.',
     'humanization': 'Review formulaic language, repetition and rhythm using the humanization guidance. Preserve the author voice, facts and stance; never invent experience.',
     'shape': 'Review the argument, audience relevance, section order and technical marketing claims. Distinguish optional alternatives from corrections.',
@@ -35,6 +37,18 @@ def read(root, ident):
 
         baseline = snapshot_path(directory, base['transfer'], 'document').read_text()
     review = directory / 'derived/blog-review.md'
+    operation = None
+    if (directory / blog_runner.STATE).is_file():
+        shown = blog_runner.engine(root).describe(ident)
+        operation = {
+            key: shown.get(key)
+            for key in ('id', 'expected', 'status', 'error', 'enabled', 'next', 'editor_check')
+        }
+    checks = studio.freshness(root, directory, record)
+    checked = operation.get('editor_check') if operation else None
+    if checked in ('revise', 'copyedit'):
+        checked = 'proofread'
+    findings_from = [checks[checked]] if checked in checks else checks.values()
     return {
         'id': ident,
         'title': record['title'],
@@ -44,11 +58,11 @@ def read(root, ident):
         'baseline': baseline,
         'proposals': proposals,
         'sources': [item['source_id'] for item in record['sources']],
-        'checks': studio.freshness(root, directory, record),
+        'checks': checks,
         'review': review.read_text() if review.is_file() else '',
         'findings': [
             f
-            for v in studio.freshness(root, directory, record).values()
+            for v in findings_from
             if v.get('status') in ('current', 'unavailable')
             and v.get('inputs', {}).get('draft')
             == studio.artifact_fingerprint(directory, 'DRAFT.md')
@@ -57,7 +71,9 @@ def read(root, ident):
         'diff': list(difflib.unified_diff(baseline.splitlines(), body.splitlines(), lineterm=''))
         if base
         else [],
-        'working': blog_runner.engine(root).current == ident,
+        'operation': operation,
+        'working': blog_runner.engine(root).current == ident
+        or bool(operation and operation['status'] in ('working', 'queued')),
     }
 
 
@@ -121,6 +137,12 @@ def dispatch(root, action, data):
     current = guard(root, data)
     ident = current['id']
     directory, record = studio.item(root, 'articles', ident)
+    if action in ('save', 'apply-proposal', 'apply-selected'):
+        operation = current.get('operation') or {}
+        if operation.get('editor_check') and operation.get('status') == 'waiting-for-approval':
+            # Older page runs kept their worker enabled at the review gate.
+            # Applying chosen feedback completes that pass, including on old runs.
+            blog_runner.engine(root).control(ident, 'pause')
     if action == 'save':
         body = data.get('content')
         if not isinstance(body, str) or not body.strip() or len(body) > 200000:
@@ -149,6 +171,37 @@ def dispatch(root, action, data):
         studio.save_artifact(directory, 'draft', body, record, 'Apply selected local suggestion')
         studio.persist(directory, 'articles', record)
         return {**read(root, ident), 'preservation': result}
+    if action == 'apply-selected':
+        chosen = data.get('proposals')
+        if not isinstance(chosen, list) or not chosen or len(set(chosen)) != len(chosen):
+            raise ValueError('Choose the saved edits to apply.')
+        entries = {item['id']: item for item in current['proposals']}
+        if any(value not in entries or entries[value]['kind'] != 'edit' for value in chosen):
+            raise ValueError('Choose saved suggested replacements only.')
+        spans = []
+        body = current['content']
+        for value in chosen:
+            entry = entries[value]
+            anchor = entry.get('context') or entry['before']
+            if body.count(anchor) != 1 or anchor.count(entry['before']) != 1:
+                raise ValueError(
+                    'A selected quote is missing or ambiguous. Review the manuscript; no edits were applied.'
+                )
+            start = body.index(anchor) + anchor.index(entry['before'])
+            spans.append((start, start + len(entry['before']), entry['after']))
+        spans.sort()
+        if any(left[1] > right[0] for left, right in zip(spans, spans[1:], strict=False)):
+            raise ValueError(
+                'Selected edits overlap. Choose one alternative for each passage; no edits were applied.'
+            )
+        for start, end, replacement in reversed(spans):
+            body = body[:start] + replacement + body[end:]
+        if not body.strip():
+            raise ValueError('Selected edits cannot remove the entire manuscript.')
+        result = preserve(current['content'], body)
+        studio.save_artifact(directory, 'draft', body, record, 'Apply selected writing edits')
+        studio.persist(directory, 'articles', record)
+        return {**read(root, ident), 'applied': len(spans), 'preservation': result}
     if action == 'changes':
         if not current['google']:
             raise ValueError('This manuscript has no Google baseline.')
@@ -215,6 +268,8 @@ def dispatch(root, action, data):
         research = data.get('research', 'none')
         if research not in ('none', 'supplied-only', 'web-allowed'):
             raise ValueError('Choose a research scope.')
+        if check in ('polish', 'proofread', 'copyedit'):
+            research = 'none'
         if 'sources' in data:
             selected = data['sources']
             if (
@@ -326,8 +381,8 @@ def dispatch(root, action, data):
     raise ValueError('Unknown manuscript action.')
 
 
-def record_review(root, directory, record, run, result):
-    """Store scoped assistant findings with exact input pins, never a fabricated tool verdict."""
+def validate_review(result, manuscript):
+    """Validate generated feedback without changing the manuscript or review records."""
     try:
         value = json.loads(result['content'])
         if (
@@ -337,7 +392,6 @@ def record_review(root, directory, record, run, result):
         ):
             raise ValueError()
         findings = []
-        manuscript = (directory / 'DRAFT.md').read_text()
         for item in value['findings']:
             if item.get('verdict') not in (
                 'supported',
@@ -354,7 +408,13 @@ def record_review(root, directory, record, run, result):
         raise ValueError(
             'The editing review did not return valid, located findings. Your manuscript is unchanged; retry this check.'
         ) from None
-    check = run['editor_check'] if run['editor_check'] != 'revise' else 'proofread'
+    return value, findings
+
+
+def record_review(root, directory, record, run, result):
+    """Store scoped assistant findings with exact input pins, never a fabricated tool verdict."""
+    value, findings = validate_review(result, (directory / 'DRAFT.md').read_text())
+    check = 'proofread' if run['editor_check'] in ('revise', 'copyedit') else run['editor_check']
     status = 'current'
     if (
         check == 'factual-support'

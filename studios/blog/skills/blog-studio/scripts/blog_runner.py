@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import threading
 import tempfile
+import time
 from types import SimpleNamespace
 import uuid
 
@@ -341,6 +342,7 @@ def survey(root, ident):
         'directory': str(directory),
         'brief': run['brief'],
         'existing': run['existing'],
+        'editor_check': run.get('editor_check'),
         'mode': run.get('mode', 'review' if run['existing'] else 'write'),
         'brand': {key: run['brand'][key] for key in ('skill', 'version', 'brand', 'variant')}
         if run.get('brand')
@@ -741,7 +743,7 @@ def job(root, ident):
             payload['documents'].get('manuscript', payload['documents'].get('draft', '')),
             rules or {},
         )
-    if run.get('editor_check') == 'humanization':
+    if run.get('editor_check') in ('polish', 'humanization'):
         guidance += (
             '\n\n' + (references / 'blogforge/voice/assets/ai-tells/patterns.md').read_text()
         )
@@ -912,6 +914,7 @@ class Engine:
                     target, run, payload, self.worker, seconds=found['seconds'], stop=self.stop
                 )
             else:
+                started = time.monotonic()
                 result = self.worker(
                     found['engine'],
                     payload,
@@ -921,6 +924,34 @@ class Engine:
                     stop=self.stop,
                     model_selection=found.get('model_selection'),
                 )
+            if found['next'] == 'review' and run.get('editor_check'):
+                from manuscript_editor import validate_review
+
+                try:
+                    validate_review(result, payload['documents']['manuscript'])
+                except ValueError as error:
+                    remaining = found['seconds'] - (time.monotonic() - started)
+                    if self.stop.is_set() or self.closed.is_set() or remaining <= 0:
+                        raise error
+                    result = self.worker(
+                        found['engine'],
+                        {
+                            **payload,
+                            'previous_output': result.get('content', ''),
+                            'validation_error': str(error),
+                        },
+                        guidance
+                        + '\nCorrect the previous output once. Return valid JSON with summary and findings. '
+                        'Each before must be copied verbatim from the supplied manuscript, preserving punctuation and whitespace. '
+                        'Use kind edit/comment, verdict editorial for writing advice, and a short evidence explanation. '
+                        'Use IDs containing only letters, digits, underscores or hyphens. '
+                        'Do not remove legitimate findings to evade validation.',
+                        seconds=max(1, int(remaining)),
+                        web=False,
+                        stop=self.stop,
+                        model_selection=found.get('model_selection'),
+                    )
+                    validate_review(result, payload['documents']['manuscript'])
             with studio.locked(self.root):
                 if self.stop.is_set() or self.closed.is_set():
                     return
@@ -942,6 +973,8 @@ class Engine:
                 submit(self.root, ident, found['next'], result, found['expected'], page=True)
                 state = self.local(ident)
                 state.update(status='waiting-for-approval', error='')
+                if run.get('editor_check'):
+                    state['enabled'] = False
                 self.keep_local(ident, state)
         except Exception as exc:
             with studio.locked(self.root):
@@ -1042,6 +1075,7 @@ def catalog(root):
                             'complete',
                             'engine',
                             'mode',
+                            'editor_check',
                             'team',
                             'driver',
                         )

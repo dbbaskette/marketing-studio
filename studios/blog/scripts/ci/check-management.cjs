@@ -24,7 +24,8 @@ function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{reso
 function fixture(responder=()=>({items:[],total:0})){
   const nodes=new Map();const get=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};
   const document={getElementById:get,createElement:t=>new Element(t),createElementNS:(_,t)=>new Element(t),createDocumentFragment:()=>new Element('fragment'),createTextNode:text=>{const node=new Element('#text');node.textContent=text;return node;},querySelector:s=>s==='dialog[open]'?[...nodes.values()].find(n=>n.open):null,querySelectorAll:s=>[...nodes.values()].flatMap(n=>n.querySelectorAll(s))};
-  const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:()=>'',setItem:()=>{},removeItem:()=>{}},history:{replaceState:()=>{},pushState:()=>{}},window:{},URLSearchParams,AbortController,Uint8Array,btoa,FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:()=>true,crypto:{getRandomValues:values=>require('node:crypto').webcrypto.getRandomValues(values)},setInterval:()=>0,setTimeout:()=>0,fetch:async(url,options)=>{const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
+  const stored=new Map();
+  const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:key=>stored.get(key)||'',setItem:(key,value)=>stored.set(key,value),removeItem:key=>stored.delete(key)},history:{replaceState:()=>{},pushState:()=>{}},window:{},URLSearchParams,AbortController,Uint8Array,TextEncoder,btoa,FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:()=>true,crypto:{getRandomValues:values=>require('node:crypto').webcrypto.getRandomValues(values)},setInterval:()=>0,setTimeout:()=>0,fetch:async(url,options)=>{const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
   const source=fs.readFileSync('skills/blog-studio/assets/management/app.js','utf8').split("for(const b of document.querySelectorAll('[data-view]'))")[0];
   vm.runInContext(source,context);
   vm.runInContext("access={status:'local-only',message:'Local only',actions:{edit:true,memory:false,refresh:false}}",context);
@@ -60,6 +61,9 @@ async function check(){
   await guidedRuns();
   await googleIntake();
   await manuscriptEditing();
+  await taskJourneys();
+  await revisionCompletion();
+  await deliveryRecovery();
   await brandInputs();
   await sharedSettings();
   await staleSharedForms();
@@ -79,29 +83,124 @@ function controlled(){
   return {...f,requests};
 }
 async function manuscriptEditing(){
-  let state={id:'fixture',title:'Synthetic author draft',content:'The delay matters.',expected:'v1',google:{url:'https://docs.google.com/document/d/fixture/edit'},proposals:[],findings:[],baseline:'The delay matters.',diff:[],checks:{proofread:{status:'not-run'}},working:false};
+  let state={id:'fixture',title:'Synthetic author draft',content:'The delay matters.',expected:'v1',google:{url:'https://docs.google.com/document/d/fixture/edit'},proposals:[],findings:[],baseline:'The delay matters.',diff:[],checks:{polish:{status:'not-run'}},working:false};
   const writes=[];const f=fixture((url,options)=>{
     if(url.startsWith('/api/manuscript?'))return state;
+    if(url.startsWith('/api/run?'))return state.operation;
     if(url==='/api/run-options')return {sources:[]};
     if(options?.body){const data=JSON.parse(options.body);writes.push({url,data});
-      if(url==='/api/editor-save'){assert.equal(data.expected,state.expected);state={...state,content:data.content,expected:'v2'};return {...state,preservation:{needs_review:false}};}
+      if(url==='/api/editor-check'){state={...state,operation:{id:'fixture',expected:'run1',status:'working',error:'',enabled:true,next:'review',editor_check:'polish'},working:true};return state.operation;}
       if(url==='/api/editor-proposals'){state={...state,proposals:data.proposals,expected:'v3'};return state;}
       if(url==='/api/editor-google-plan')return {plan:'a'.repeat(32),target:state.google.url,count:state.proposals.length,mode:'auto',expected:state.expected,proposals:state.proposals};
       if(url==='/api/editor-google-send')return {status:'verified-pending'};
     }return {items:[]};
   });f.loadRunner();await f.run("sRoute('editor','fixture')");
-  const byId=id=>descendants(f.get('studio-page')).find(e=>e.id===id);
-  let nodes=descendants(f.get('studio-page'));const input=nodes.find(e=>e.attributes['aria-label']==='Manuscript Markdown');input.value='The wait matters.';input.listeners.input();
-  await nodes.find(e=>e.textContent==='Save local edits').listeners.click();
-  assert.equal(state.content,'The wait matters.');
-  for(const [id,value] of [['proposal-before','delay'],['proposal-after','wait'],['proposal-reason','Plainer wording']]){byId(id).value=value;byId(id).listeners.input();}
-  const add=descendants(f.get('studio-page')).find(e=>e.textContent==='Keep suggestion locally');await add.parent.listeners.submit({preventDefault(){}});
-  assert.equal(state.proposals.length,1);assert.equal(writes.some(r=>r.url==='/api/editor-google-send'),false);
-  await descendants(f.get('studio-page')).find(e=>e.textContent==='Preview Google delivery').listeners.click();
-  assert.equal(writes.some(r=>r.url==='/api/editor-google-send'),false);
-  await descendants(f.get('sheet')).find(e=>e.textContent==='Send this feedback').listeners.click();
+  const nodes=()=>descendants(f.get('studio-page'));
+  assert.equal(nodes().find(e=>e.id==='editor-check').value,'polish');
+  assert.equal(nodes().some(e=>e.textContent==='Polish writing'),true);
+  const form=nodes().find(e=>e.tagName==='form');await form.listeners.submit({preventDefault(){}});
+  assert.equal(writes[0].url,'/api/editor-check');assert.equal(writes[0].data.research,'none');
+  assert.equal(f.run('studio.screen'),'editor');assert.ok(nodes().some(e=>e.textContent==='Polishing your document'));
+  state={...state,working:false,operation:{...state.operation,status:'waiting-for-approval'},findings:[{id:'plain',kind:'edit',before:'delay',after:'wait',reason:'Plainer wording.',evidence:'Editorial judgment',verdict:'editorial'}]};
+  await f.run('sPoll()');
+  assert.ok(nodes().some(e=>e.textContent==='wait'),'show proposed replacement beside original');
+  assert.equal(f.get('actions').children.some(e=>e.textContent==='Approve'),false);
+  await f.run("sRoute('gate','fixture','review')");assert.equal(f.run('studio.screen'),'editor','old focused-review links use the workflow');
+  const preferred=nodes().find(e=>e.id==='wording-0');preferred.value='pause';preferred.listeners.input();
+  await nodes().find(e=>e.textContent==='Use this change').listeners.click();
+  assert.equal(state.proposals.length,1);assert.equal(state.proposals[0].after,'pause');
+  assert.equal(writes.some(r=>r.url==='/api/editor-google-send'),false,'finish preview only reads Google');
+  assert.equal(writes.filter(r=>r.url==='/api/editor-google-plan').length,1);
+  assert.ok(nodes().some(e=>e.textContent==='Send to the original Google Doc'));
+  await nodes().find(e=>e.textContent==='Send feedback to Google').listeners.click();
   assert.equal(writes.find(r=>r.url==='/api/editor-google-send').data.confirmed,true);
-  assert.ok(descendants(f.get('sheet')).some(e=>e.textContent.includes('author can accept or reject')));
+  assert.ok(nodes().some(e=>e.textContent==='Feedback sent'));
+  assert.equal(nodes().some(e=>e.textContent==='Send feedback to Google'),false,'verified delivery does not offer a duplicate send');
+  assert.equal(writes.filter(r=>r.url==='/api/editor-google-plan').length,1,'success does not prepare another write');
+  f.run('studio.editorDelivery=null');await f.run("sRoute('editor','fixture','finish')");
+  assert.ok(nodes().some(e=>e.textContent==='Feedback sent'),'refresh keeps the verified delivery result');
+  assert.equal(writes.filter(r=>r.url==='/api/editor-google-plan').length,1);
+
+  f.run("studio.editorDelivery={id:'fixture',expected:'v3',status:'local',message:'Saved locally'}");await f.run("sRoute('editor','fixture','finish')");
+  assert.ok(nodes().some(e=>e.textContent==='Send feedback to Google'),'saving locally still permits sending selected feedback');
+  assert.equal(nodes().some(e=>e.textContent==='Apply selected edits to local draft'),false);
+
+}
+
+async function deliveryRecovery(){
+  let attempts=0,plans=0;const tokens=[];
+  const state={id:'retry',title:'Retry fixture',content:'Old wording.',expected:'v1',google:{url:'https://docs.google.com/document/d/fixture/edit'},proposals:[{id:'one',kind:'edit',before:'Old',after:'New',reason:'Clearer'}],findings:[],checks:{},working:false};
+  const f=fixture((url,options)=>{
+    if(url.startsWith('/api/manuscript?'))return state;
+    if(url==='/api/editor-google-plan'){plans++;return {plan:'b'.repeat(32),expected:'v1',count:1,mode:'auto'};}
+    if(url==='/api/editor-google-send'){tokens.push(JSON.parse(options.body).plan);return {status:++attempts===1?'uncertain':'verified-comments'};}
+    return {items:[]};
+  });f.loadRunner();await f.run("sRoute('editor','retry','finish')");
+  const nodes=()=>descendants(f.get('studio-page'));
+  await nodes().find(e=>e.textContent==='Send feedback to Google').listeners.click();
+  assert.ok(nodes().some(e=>e.textContent==='Check delivery'));assert.equal(plans,1);
+  f.run('studio.editorDelivery=null');await f.run("sRoute('editor','retry','finish')");
+  assert.ok(nodes().some(e=>e.textContent==='Check delivery'),'uncertain attempt survives refresh');
+  await nodes().find(e=>e.textContent==='Check delivery').listeners.click();
+  assert.equal(plans,1);assert.deepEqual(tokens,['b'.repeat(32),'b'.repeat(32)]);
+  assert.ok(nodes().some(e=>e.textContent==='Feedback sent'));
+  state.proposals=[];state.operation={editor_check:'polish',next:'review',status:'waiting-for-approval'};
+  await f.run("sRoute('editor','retry','changes')");
+  assert.ok(nodes().some(e=>e.textContent==='No changes suggested'));
+  assert.equal(nodes().some(e=>e.textContent==='Use all 0 changes'),false);
+}
+
+async function revisionCompletion(){
+  const state={id:'revised',title:'Revised local draft',content:'The revised wording.',expected:'v1',google:null,proposals:[],findings:[],checks:{},working:false,operation:{editor_check:'revise',next:'review',status:'waiting-for-approval'}};
+  const f=fixture(()=>state);f.loadRunner();await f.run("sRoute('editor','revised')");
+  const nodes=()=>descendants(f.get('studio-page'));
+  assert.ok(nodes().some(e=>e.textContent==='Your revised draft'));
+  assert.equal(nodes().some(e=>e.textContent==='No wording changes found'),false);
+  await nodes().find(e=>e.textContent==='Use revised draft').listeners.click();
+  assert.ok(nodes().some(e=>e.textContent==='Download polished document'));
+}
+
+async function taskJourneys(){
+  const defaults={engine:'codex',seconds:600,research:'web-allowed',stop:'package',tone:'Clear',author:''};
+  const requests=[];
+  const manuscript={id:'pasted',title:'Pasted draft',content:'Café draft.',expected:'v1',google:null,proposals:[],findings:[],checks:{},working:false};
+  const found={id:'written',title:'Supplied outline',status:'queued',next:'draft',approval:'page',expected:'r1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',decisions:[],brief:{goal:'Explain',audience:'Authors'},stages:[]};
+  const f=fixture((url,options)=>{
+    requests.push({url,data:options?.body?JSON.parse(options.body):null});
+    if(url==='/api/run-options')return {settings:{defaults},sources:[],profiles:[],agents:{codex:true}};
+    if(url==='/api/upload')return {article:{id:'pasted'}};
+    if(url.startsWith('/api/manuscript?'))return manuscript;
+    if(url==='/api/run-create'||url.startsWith('/api/run?'))return found;
+    return {items:[],total:0};
+  });f.loadRunner();f.run('sHome()');
+  const nodes=()=>descendants(f.get('studio-page')),field=id=>nodes().find(e=>e.id===id);
+  for(const label of ['Polish a document','Write from a brief','Use my outline','Explore ideas'])assert.ok(nodes().some(e=>e.textContent===label));
+  await nodes().find(e=>e.textContent==='Polish a document').listeners.click();
+  assert.ok(nodes().some(e=>e.textContent==='Google Doc'));assert.ok(nodes().some(e=>e.textContent==='Upload a file'));
+  await nodes().find(e=>e.textContent==='Paste text').listeners.click();
+  for(const [id,value] of [['draft-title','Pasted draft'],['draft-content','Café draft.']]){field(id).value=value;field(id).listeners.input();}
+  await nodes().find(e=>e.textContent==='Google Doc').listeners.click();
+  await nodes().find(e=>e.textContent==='Paste text').listeners.click();
+  assert.equal(field('draft-content').value,'Café draft.');
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const upload=requests.find(r=>r.url==='/api/upload').data;
+  assert.equal(upload.as_blog,true);assert.equal(upload.analyze,false);assert.equal(Buffer.from(upload.content,'base64').toString(),'Café draft.');
+  assert.equal(f.run('studio.screen'),'editor');assert.equal(requests.some(r=>r.url==='/api/editor-check'),false,'opening a manuscript does not start a model');
+  await f.run("sRoute('polish')");
+  await nodes().find(e=>e.textContent==='Upload a file').listeners.click();
+  field('draft-title').value='Uploaded draft';field('draft-title').listeners.input();
+  const file=nodes().find(e=>e.type==='file');file.files=[{name:'sample.txt',size:11,arrayBuffer:async()=>new TextEncoder().encode('Plain text.').buffer}];file.listeners.change();
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const uploaded=requests.filter(r=>r.url==='/api/upload').at(-1).data;
+  assert.equal(uploaded.filename,'sample.txt');assert.equal(uploaded.analyze,false);assert.equal(Buffer.from(uploaded.content,'base64').toString(),'Plain text.');
+  await f.run("newBlog('',null,'from-outline')");
+  for(const [id,value] of [['new-title','Supplied outline'],['new-goal','Explain'],['new-audience','Authors'],['new-outline','# First\n## Second']]){field(id).value=value;field(id).listeners.input();}
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.ok(nodes().some(e=>e.textContent==='Ready to start'));
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const creation=requests.find(r=>r.url==='/api/run-create').data;
+  assert.equal(creation.mode,'from-outline');assert.equal(creation.outline_text,'# First\n## Second');assert.equal(creation.research,'none');
+  assert.equal(creation.stop,'draft');
 }
 
 async function googleIntake(){
@@ -120,13 +219,13 @@ async function googleIntake(){
   });
   f.loadRunner();
   const find=id=>descendants(f.get('studio-page')).find(e=>e.id===id);
-  await f.run('sGoogleButton().listeners.click()');
-  assert.equal(f.get('title').textContent,'Open Google Doc');
-  find('google-url').value=preview.linked_document;find('google-url').listeners.input();
-  let form=f.get('studio-page').children[0];await form.listeners.submit({preventDefault(){}});
+  await f.run("sRoute('polish')");
+  assert.equal(f.get('title').textContent,'Polish a document');
+  find('polish-url').value=preview.linked_document;find('polish-url').listeners.input();
+  let form=f.get('studio-page').children.find(e=>e.tagName==='form');await form.listeners.submit({preventDefault(){}});
   assert.equal(requests.filter(r=>r.url==='/api/google-preview').length,1);
   assert.equal(requests.some(r=>r.url==='/api/google-start'),false);
-  form=f.get('studio-page').children[0];let nodes=descendants(form);
+  form=f.get('studio-page').children.find(e=>e.tagName==='form');let nodes=descendants(form);
   assert.equal(nodes.find(e=>e.type==='submit').disabled,true);
   assert.equal(nodes.some(e=>e.tagName==='script'),false);
   assert.ok(nodes.some(e=>e.textContent.includes('1 pending Google suggestions')));
@@ -141,31 +240,31 @@ async function googleIntake(){
   assert.equal(f.run('studio.editorDraft.content'),'Synthetic text');
   assert.equal(requests.some(r=>r.url==='/api/run-create'),false,'intake does not start an assistant');
   assert.deepEqual(JSON.parse(requests.find(r=>r.url==='/api/google-start').options.body),{preview:preview.preview,expected:preview.expected,title:preview.title,confirmed:true});
-  assert.ok(descendants(f.get('studio-page')).some(e=>e.tagName==='a'&&e.href===preview.linked_document));
+  assert.ok(descendants(f.get('actions')).some(e=>e.tagName==='a'&&e.href===preview.linked_document));
   await f.run("newBlog('imported',{goal:'Keep my purpose',audience:'Operators',brand:'',variant:'',author:'',mode:'revise',stop:'draft'})");
   assert.equal(f.run('studio.draft.goal'),'Keep my purpose');assert.equal(f.run('studio.draft.audience'),'Operators');
   assert.equal(f.run('studio.draft.brand'),'');assert.equal(f.run('studio.draft.mode'),'revise');assert.equal(f.run('studio.draft.stop'),'draft');
   // Access failures keep the entered link, show an inline error, and permit retry.
   const denied=fixture(()=>({__http:400,error:'Google sign-in is unavailable.'}));denied.loadRunner();
   await denied.run('sGoogleButton().listeners.click()');denied.run("studio.google.url='fixture-doc'");
-  await denied.get('studio-page').children[0].listeners.submit({preventDefault(){}});
+  await denied.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   assert.equal(denied.run('studio.google.url'),'fixture-doc');
   assert.ok(descendants(denied.get('studio-page')).some(e=>e.textContent.includes('Google sign-in is unavailable.')));
   assert.equal(descendants(denied.get('studio-page')).find(e=>e.type==='submit').disabled,false);
   // A late preview response cannot replace the screen the person navigated to.
   const pending=deferred(),late=fixture(()=>pending.promise);late.loadRunner();
   await late.run('sGoogleButton().listeners.click()');late.run("studio.google.url='fixture-doc'");
-  const reading=late.get('studio-page').children[0].listeners.submit({preventDefault(){}});
+  const reading=late.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   late.run("studio.turn++;studio.screen='blogs'");pending.resolve(preview);await reading;
   assert.equal(late.run('studio.screen'),'blogs');
   // A repeated link opens its existing guided run without a new import.
   const existing={id:'imported',title:preview.title,google:{url:preview.linked_document},status:'complete',complete:true,next:null,stages:[],brief:{goal:'Synthetic review',audience:'Authors'},decisions:[],engine:'codex',seconds:600,approval:'page',directory:'/synthetic/articles/imported'};
   const reopened=[];const again=fixture((url)=>{reopened.push(url);if(url==='/api/google-preview')return {status:'already-linked',id:existing.id};if(url==='/api/runs')return {items:[existing]};if(url.startsWith('/api/run?'))return existing;if(url.startsWith('/api/manuscript?'))return manuscript;if(url==='/api/run-options')return {sources:[]};return {items:[]};});again.loadRunner();
   await again.run('sGoogleButton().listeners.click()');again.run("studio.google.url='fixture-doc'");
-  await again.get('studio-page').children[0].listeners.submit({preventDefault(){}});
+  await again.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   assert.equal(again.run('studio.screen'),'editor');assert.equal(again.run('studio.id'),'imported');
   assert.equal(reopened.includes('/api/google-start'),false);
-  assert.ok(descendants(again.get('studio-page')).some(e=>e.tagName==='a'&&e.href===preview.linked_document));
+  assert.ok(descendants(again.get('actions')).some(e=>e.tagName==='a'&&e.href===preview.linked_document));
 }
 const empty=(total=0)=>({items:[],total});
 async function requestOrdering(){
@@ -512,12 +611,12 @@ async function staleSharedForms(){
   const byId=id=>descendants(f.get('studio-page')).find(e=>e.id===id);
   let input=byId('settings-author');input.value='My stale author';input.listeners.input();
   input=byId('settings-tone');input.value='Unsaved local tone';input.listeners.input();
-  await f.get('studio-page').children[0].listeners.submit({preventDefault(){}});
+  await f.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   assert.equal(reads,0,'refusal never silently reloads or retries');assert.equal(requests.length,1);
   let reload=descendants(f.get('studio-page')).find(e=>e.textContent==='Reload shared settings');assert.ok(reload);
   await reload.listeners.click();assert.equal(reads,1);assert.equal(requests.length,1);
   assert.equal(byId('settings-author').value,'Other studio');assert.equal(byId('settings-tone').value,'Unsaved local tone');
-  saved=true;await f.get('studio-page').children[0].listeners.submit({preventDefault(){}});
+  saved=true;await f.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   assert.deepEqual(requests[1].data.shared_before,freshBefore);assert.equal(requests[1].data.engine,'claude');assert.equal(requests[1].data.tone,'Unsaved local tone');
 
   for(const kind of ['brand','team']){
@@ -547,7 +646,7 @@ async function sharedSettings(){
   f.loadRunner();f.set('defaults',defaults);f.set('before',before);f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic'};studio.screen='settings';sSettings()");
   assert.equal(descendants(f.get('studio-page')).filter(e=>e.type==='checkbox').length,0,'shared saves have no second consent toggle');
   const input=descendants(f.get('studio-page')).find(e=>e.id==='settings-author');input.value='New Author';input.listeners.input();
-  await f.get('studio-page').children[0].listeners.submit({preventDefault(){}});
+  await f.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   assert.equal(requests[0].url,'/api/run-settings');assert.equal(requests[0].data.author,'New Author');
   assert.deepEqual(requests[0].data.shared_before,before);assert.equal('for_all_studios' in requests[0].data,false);
 }
@@ -603,7 +702,7 @@ async function guidedRuns(){
   assert.ok(descendants(content).some(e=>/^h[1-6]$/.test(e.tagName)&&descendants(e).some(n=>n.textContent==='Outline')));
   assert.ok(descendants(content).some(e=>e.textContent==='Checked for you'));
   assert.ok(descendants(content).some(e=>e.textContent==='Worth a look'));
-  const approve=f.get('actions').children.find(e=>e.textContent==='Approve');await approve.listeners.click();
+  const approve=f.get('actions').children.find(e=>e.textContent==='Use this outline');await approve.listeners.click();
   assert.equal(requests.length,0,'opening the confirmation must not approve');
   assert.equal(f.get('sheet').hidden,false);assert.equal(f.get('main').inert,true);
   const confirm=descendants(f.get('sheet')).find(e=>e.textContent==='Approve');await confirm.listeners.click();
@@ -615,7 +714,7 @@ async function guidedRuns(){
     direct.loadRunner();direct.set('found',{...found,review_level:mode});direct.set('shown',{...shown,bundle:[{stage:'research',label:'Research findings',content:'# Synthetic evidence'}]});
     direct.run("studio.screen='gate';studio.found=found;sGate(found,shown)");
     assert.ok(descendants(direct.get('studio-page')).some(e=>e.textContent==='Research findings'));
-    await direct.get('actions').children.find(e=>e.textContent==='Approve').listeners.click();
+    await direct.get('actions').children.find(e=>e.textContent==='Use this outline').listeners.click();
     assert.equal(calls[0].url,'/api/run-approve','grouped reviews approve the displayed revision directly');
     assert.deepEqual(JSON.parse(calls[0].options.body),{id:'synthetic',expected:'version-1'});
   }
@@ -626,9 +725,9 @@ async function guidedRuns(){
   assert.ok(f.get('actions').children.some(e=>e.textContent==='Try again'));
   assert.ok(descendants(content).some(e=>e.textContent==='Synthetic failure'));
   f.set('found',found);f.run('studio.listing=[found];sHome()');
-  assert.equal(f.get('title').textContent,'Home');assert.equal(f.get('needs-count').textContent,'1');
-  assert.ok(descendants(content).some(e=>e.textContent==='Needs you'));
-  f.run('studio.ordinary=[];sBlogs()');assert.equal(f.get('title').textContent,'Blogs');
+  assert.equal(f.get('title').textContent,'Blog Studio');assert.equal(f.get('needs-count').textContent,'1');
+  assert.ok(descendants(content).some(e=>e.textContent==='Continue your work'));
+  f.run('studio.ordinary=[];sBlogs()');assert.equal(f.get('title').textContent,'Your blogs');
   assert.ok(descendants(content).some(e=>e.textContent==='Synthetic blog'));
   f.run("studio.computer={checks:[{label:'Codex',status:'action',detail:'Sign-in needed',next_step:'Run codex login'}]};studio.settings={workspace:'/synthetic'};sStatusPage()");
   assert.ok(descendants(content).some(e=>e.textContent==='Run codex login'));
@@ -639,14 +738,12 @@ async function guidedRuns(){
   assert.equal(descendants(content).filter(e=>e.tagName==='a').length,1);
   const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};
   f.set('defaults',defaults);f.run("studio.options={settings:{defaults},sources:[],profiles:[],agents:{codex:true}};studio.screen='new';studio.draft={...defaults,step:0,id:'',title:'A synthetic blog',goal:'Explain a fictional gateway',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',minutes:'10',operation:'a'.repeat(32)};sWizard()");
-  assert.equal(f.get('above').textContent,'New blog · Step 1 of 3');
-  let form=f.get('studio-page').children[0];await form.listeners.submit({preventDefault(){}});
-  assert.equal(f.get('above').textContent,'New blog · Step 2 of 3');
-  const outline=descendants(f.get('studio-page')).find(e=>e.tagName==='button'&&e.children.some(c=>c.textContent==='Outline only'));await outline.listeners.click();
-  assert.equal(f.run('studio.draft.mode'),'outline');assert.equal(f.run('studio.draft.stop'),'outline');
-  form=f.get('studio-page').children[0];await form.listeners.submit({preventDefault(){}});
-  assert.equal(f.get('above').textContent,'New blog · Step 3 of 3');
-  assert.ok(descendants(f.get('studio-page')).some(e=>e.textContent==='Start the blog'));
+  assert.equal(f.get('above').textContent,'New writing');
+  let form=f.get('studio-page').children.find(e=>e.tagName==='form');await form.listeners.submit({preventDefault(){}});
+  assert.ok(descendants(f.get('studio-page')).some(e=>e.textContent==='Ready to start'));
+  assert.ok(descendants(f.get('studio-page')).some(e=>e.textContent==='Start writing'));
+  f.run("studio.draft.step=0;studio.draft.mode='from-outline';studio.draft.outline_text='## Supplied outline';sWizard()");
+  assert.equal(descendants(f.get('studio-page')).find(e=>e.id==='new-outline').value,'## Supplied outline');
   f.run('sChanges(found, "outline")');const note=descendants(f.get('sheet')).find(e=>e.tagName==='textarea');note.value='Keep my request';
   await f.run('sPoll()');assert.equal(note.value,'Keep my request');
   // A newer server version cannot silently replace the document being read or be approved.
@@ -654,7 +751,7 @@ async function guidedRuns(){
   const visibleDocument=f.get('studio-page').children.at(-1);
   await f.run('sPoll()');
   assert.equal(f.get('studio-page').children.at(-1),visibleDocument);
-  assert.equal(f.get('actions').children.find(e=>e.textContent==='Approve').disabled,true);
+  assert.equal(f.get('actions').children.find(e=>e.textContent==='Use this outline').disabled,true);
   f.set('found',{...updated,complete:true,next:null,stages:updated.stages.map(e=>({...e,status:'approved'}))});
   f.run('sGate(found,{...shown,status:"approved"})');
   assert.ok(f.get('actions').children.some(e=>e.textContent==='Ask for changes'));
