@@ -264,7 +264,7 @@ function renderHome() {
           const result = await api('open', {studio: studio.id});
           if (tab) tab.location.href = withHome(result.link);
           else {
-            const link = element('a', `Open ${studio.name}`); link.href = withHome(result.link); link.target = `marketing-${studio.id}`; link.rel = 'noreferrer';
+            const link = element('a', `Open ${studio.name}`); link.href = withHome(result.link); link.target = `marketing-${studio.id}`;
             const message = $('#message'); message.replaceChildren(document.createTextNode('Your browser blocked the new tab. '), link); message.hidden = false;
             link.focus(); blocked = true;
           }
