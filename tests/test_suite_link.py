@@ -29,6 +29,7 @@ CASES = [
     ('#token=abc&home=http%3A%2F%2F127.0.0.1%3A8791', ''),
     ('#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790%2Fapi', ''),
     ('#token=abc&home=javascript%3Aalert(1)', ''),
+    ('#token=abc&home=http%3A%2F%2F127.0.0.1%3A99999', ''),
 ]
 LINK = ('<a id="go-suite" class="nav-item suite-link" target="marketing-studio" hidden>'
         '<span class="nav-label">Marketing Studio</span></a>')

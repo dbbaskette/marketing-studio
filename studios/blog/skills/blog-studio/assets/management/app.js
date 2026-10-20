@@ -6,6 +6,7 @@ function suiteHome(hash, here) {
   const named = new URLSearchParams(String(hash).replace(/^#/, '')).get('home') || '';
   const found = /^(https?:)\/\/([^/:?#@\s]+):(\d{1,5})\/?$/.exec(named);
   return found && found[1] === here.protocol && found[2] === here.hostname && found[3] !== here.port
+    && Number(found[3]) > 0 && Number(found[3]) < 65536
     ? found[1] + '//' + found[2] + ':' + found[3] : '';
 }
 const token = location.hash.slice(1).split('&')[0] || sessionStorage.getItem('blog-studio-session') || '';

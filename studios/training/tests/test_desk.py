@@ -1456,9 +1456,13 @@ class PageFileTests(unittest.TestCase):
         self.assertEqual(set(re.findall(r"fetch\(\s*([^,)]+)", script)), {"'/api/' + endpoint"})
         self.assertNotIn('fetch(', self.read('markdown.js'))
         for elsewhere in ('XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon', 'import(',
-                          'localStorage', 'sessionStorage', 'document.cookie'):
+                          'localStorage', 'document.cookie'):
             for name in ('app.js', 'markdown.js'):
                 self.assertNotIn(elsewhere, self.read(name))
+        self.assertNotIn('sessionStorage', self.read('markdown.js'))
+        # The one thing kept in the tab is the way back to Marketing Studio.
+        self.assertEqual(re.findall(r"sessionStorage\.(\w+)\('([\w-]+)'", script),
+                         [('getItem', 'marketing-studio-home'), ('setItem', 'marketing-studio-home')])
 
     def test_the_page_has_nothing_its_own_policy_would_block(self):
         page = self.read('index.html')
@@ -1636,7 +1640,7 @@ class PageFileTests(unittest.TestCase):
         self.assertIn('::view-transition-group(*)', still)
         script = self.read('app.js')
         self.assertIn('if (document.startViewTransition && !calm())', script)
-        self.assertRegex(script, r'function followPointer\(\) \{\n  if \(calm\(\)\) return;')
+        self.assertNotIn('followPointer', script)
         self.assertIn("(prefers-reduced-motion: reduce)", script)
 
     def test_the_system_colour_and_the_system_type_are_used(self):

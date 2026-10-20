@@ -35,7 +35,7 @@ To use the optional prompt generator locally:
 python3 -m http.server 8896 --bind 127.0.0.1
 ```
 
-Run it from this directory, so the page can reach the shared stylesheet, and visit
+Run the command from the Blog Studio folder (`studios/blog`), so the page can reach the shared stylesheet, and visit
 `http://127.0.0.1:8896/preview/blog-studio.html`.
 
 ## Verify

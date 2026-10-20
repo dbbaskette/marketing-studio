@@ -83,6 +83,6 @@
   .review-selection>p{grid-column:1/-1;margin:0}
 }
 
-.sheet-heading{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:1rem;background:var(--paper);border-bottom:1px solid var(--hair);padding-bottom:.75rem}
+.sheet-heading{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:1rem;background:var(--sheet-fill);border-bottom:1px solid var(--hair);padding-bottom:.75rem}
 .sheet-heading .sheet-title{margin:0;min-width:0;overflow-wrap:anywhere}
 .sheet-heading .button{flex-shrink:0}

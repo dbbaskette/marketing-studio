@@ -6,7 +6,7 @@ const tokenHeader = document.body.dataset.tokenHeader;
 const sessionKey = standalone ? product.toLowerCase().replaceAll(' ', '-') + '-setup-token' : 'marketing-studio-token';
 const launchOptions = new URLSearchParams(location.hash.slice(1));
 const requestedView = launchOptions.get('view') === 'settings' ? 'settings' : 'home';
-const tokenInLink = launchOptions.get('token') || (standalone && /^[A-Za-z0-9_-]+$/.test(location.hash.slice(1)) ? location.hash.slice(1) : '');
+const tokenInLink = launchOptions.get('token') || (standalone && /^[A-Za-z0-9_-]+$/.test(location.hash.slice(1).split('&')[0]) ? location.hash.slice(1).split('&')[0] : '');
 if (tokenInLink) { sessionStorage.setItem(sessionKey, tokenInLink); history.replaceState(null, '', location.pathname); }
 const token = tokenInLink || sessionStorage.getItem(sessionKey) || '';
 // Studios opened from here link back to this tab by its name.
@@ -83,8 +83,6 @@ function show(next) {
   $('#save').textContent = setup ? (step === 2 ? 'Finish setup' : 'Continue') : 'Save settings';
   $('#installations').hidden = setup || standalone;
   if (standalone) {
-    document.querySelectorAll('nav [data-view]').forEach(node => { node.hidden = true; });
-    $('#home-name').textContent = product;
     $('#prepare-note').textContent = 'Finish setup prepares this studio. Other studios will use these settings when you open them.';
     $('#save').textContent = setup && step < 2 ? 'Continue' : `Save and open ${product}`;
   }
@@ -238,9 +236,6 @@ const drawings = {
   presentation: '<path d="M3 5h20v14H3zM13 19v5M8 24h10M7 14l4-4 4 3 4-5"/>',
   training: '<path d="m2 9 11-5 11 5-11 5zM6 12v7c4 3 10 3 14 0v-7M24 9v10"/>'
 };
-const ownStudio = {'Blog Studio': 'blog', 'Presentation Studio': 'presentation', 'Training Studio': 'training'}[product];
-// Standalone setup shows the studio's own symbol, as its sidebar and its home card do.
-if (ownStudio) $('#home-symbol').innerHTML = `<svg class="icon" viewBox="0 0 26 28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${drawings[ownStudio]}</svg>`;
 function renderHome() {
   const list = $('#studio-list'); list.replaceChildren();
   for (const studio of snapshot.studios) {
@@ -373,7 +368,7 @@ $('#find-brands').addEventListener('click', async () => {
 form.elements['assistant.agent'].addEventListener('change', () => { efforts(''); form.elements['assistant.model'].value = ''; for (const name of profileNames) { const select = form.elements[`models.${name}.effort`]; profileLevels(select, select.value); } for (const picker of modelPickers.values()) renderModelPicker(picker); profilesChanged(); loadModels(); });
 form.querySelectorAll('[name="storage"]').forEach(input => input.addEventListener('change', storage));
 document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => show(button.dataset.view)));
-$('#home-link').addEventListener('click', event => { event.preventDefault(); if (standalone) return openNative(); show('home'); });
+$('#home-link').addEventListener('click', event => { event.preventDefault(); show('home'); });
 $('#back-to-studio').addEventListener('click', () => openNative());
 $('#check').addEventListener('click', async () => {
   $('#check').disabled = true;

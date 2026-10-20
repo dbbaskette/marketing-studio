@@ -175,7 +175,7 @@
 
 .profile-cards {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
   gap: 0.8rem;
 }
 
@@ -207,8 +207,7 @@
 }
 
 @media (max-width: 70rem) {
-  .studio-list,
-  .profile-cards {
+  .studio-list {
     grid-template-columns: 1fr;
   }
 

@@ -7253,24 +7253,13 @@ async function catchUp() {
   }
 }
 
-// A highlight on glass that follows the pointer. Not when the person asked for less motion.
-function followPointer() {
-  if (calm()) return;
-  document.addEventListener('pointermove', (event) => {
-    const lit = event.target && event.target.closest ? event.target.closest('.shine') : null;
-    if (!lit) return;
-    const box = lit.getBoundingClientRect();
-    lit.style.setProperty('--mx', (event.clientX - box.left) + 'px');
-    lit.style.setProperty('--my', (event.clientY - box.top) + 'px');
-  }, { passive: true });
-}
-
 // Marketing Studio names its own address when it opens this studio, so the page can link back
 // to that tab. Only the same scheme and host on another port is accepted.
 function suiteHome(hash, here) {
   const named = new URLSearchParams(String(hash).replace(/^#/, '')).get('home') || '';
   const found = /^(https?:)\/\/([^/:?#@\s]+):(\d{1,5})\/?$/.exec(named);
   return found && found[1] === here.protocol && found[2] === here.hostname && found[3] !== here.port
+    && Number(found[3]) > 0 && Number(found[3]) < 65536
     ? found[1] + '//' + found[2] + ':' + found[3] : '';
 }
 
@@ -7297,7 +7286,14 @@ function begin() {
     item.addEventListener('click', () => show(screen));
   }
   const suite = byId('go-suite');
-  const home = suiteHome(window.location.hash, window.location);
+  // The key's fragment is lost when a link changes the address, so the way back is kept for this tab.
+  let home = suiteHome(window.location.hash, window.location);
+  try {
+    home = home || sessionStorage.getItem('marketing-studio-home') || '';
+    if (home) sessionStorage.setItem('marketing-studio-home', home);
+  } catch (failure) {
+    // No tab storage: the address in this link is still used.
+  }
   if (suite && home) {
     suite.href = home + '/';
     suite.prepend(icon('suite'));
@@ -7344,7 +7340,6 @@ function begin() {
     event.preventDefault();
     main().focus();
   });
-  followPointer();
   if (!view.token) {
     place({ title: 'This page needs its link' }, [], true);
     notify(NOTICES.refused);
