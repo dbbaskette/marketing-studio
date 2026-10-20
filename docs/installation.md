@@ -111,14 +111,24 @@ with lifecycle scripts disabled, and includes dependency license notices. Privat
 runtime locks are in `pins/runtimes.json`. Companion requirements and exact release
 locks are in `pins/companions.json`.
 
-Companions accept minimum versions, with `requirement: ">=0.9.5"` for Harness Research
-and `requirement: ">=0.14.1"` for Harness Slides. The accompanying `version`, `commit`,
-and `sha256` describe the exact source used for a release bundle. Refresh those locks
-explicitly before building a new set of platform downloads:
+Each companion lock names an exact `version`, `commit` and source `sha256`, and a
+minimum requirement: `requirement: ">=1.0.0"` for Harness Research and
+`requirement: ">=0.14.1"` for Harness Slides. Source installs, companion updates and
+release bundles all use the exact lock. A missing companion, or one older than its
+requirement, is fetched at the locked commit and must match the locked checksum file
+for file; nothing is recomputed. The requirement only decides which already-installed
+copy is accepted. An accepted copy is left alone without looking anything up online,
+so a source install with current companions succeeds offline.
+
+Moving to newer releases is an explicit maintainer step. Refresh the locks, then run
+the research contract tests against the newly locked Harness Research source before
+building a new set of platform downloads:
 
 ```sh
 python3 scripts/update_companions.py --check
 python3 scripts/update_companions.py
+python3 scripts/ci/research-runtime.py "$TMPDIR/research-runtime"
+STUDIO_TEST_RESEARCH_RUNTIME="$TMPDIR/research-runtime" PYTHONPATH=tests python3 -m unittest test_research_contract
 ```
 
 The refresh selects the newest stable numeric Git tag satisfying the requirement,
@@ -128,13 +138,13 @@ locked tag, mismatched package, unsafe source, or failed resolution leaves the l
 unchanged. Normal bundle builds reuse the exact saved lock, so all platform builds can
 use the same inputs.
 
-An explicit source companion install/update resolves requirements afresh, asks before
-fetching source or running installers, then records the selected version, commit and
-checksum. `--companions skip`, noninteractive unapproved installs, offline bundle
-installation, status checks and opening studios do not perform this resolution.
-Stable numeric tags are eligible; branches and prerelease tags are ignored. Removing
-a requirement retains legacy exact-lock behavior. Newer installed releases are never
-downgraded. Private Python and Node downloads remain exact and checksum-verified.
+An explicit source companion install or update asks before fetching source or running
+installers, then records the locked version, commit and checksum. `--companions skip`,
+noninteractive unapproved installs, offline bundle installation, status checks and
+opening studios fetch nothing. Only the refresh reads release tags: stable numeric tags
+are eligible; branches and prerelease tags are ignored. Without a requirement, the lock
+itself is the minimum accepted. Newer installed releases are never downgraded. Private
+Python and Node downloads remain exact and checksum-verified.
 
 ```sh
 python3 scripts/build_bundles.py --platform macos-arm64

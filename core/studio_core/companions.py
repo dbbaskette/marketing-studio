@@ -87,7 +87,8 @@ def version_key(version: str) -> tuple:
 
 
 def minimum_version(pin: dict) -> str:
-    """Exact locks remain readable; a requirement opts into newer stable tags."""
+    """The oldest installed copy that is accepted: the requirement's version, or the lock
+    itself when there is no requirement. Installs always use the exact lock."""
     requirement = pin.get('requirement')
     if requirement is None and 'requirement' not in pin:
         return pin['version']
@@ -97,20 +98,9 @@ def minimum_version(pin: dict) -> str:
     return match[1]
 
 
-def available_version(pin: dict, known: dict) -> str:
-    """Choose an allowed version from cached release metadata, without network access."""
-    locked = pin['version']
-    if not pin.get('requirement') or not isinstance(known, dict):
-        return locked
-    latest = known.get('latest')
-    if not isinstance(latest, str) or not re.fullmatch(r'\d+\.\d+\.\d+', latest) \
-            or str(known.get('repository', '')).removesuffix('.git') != pin['repository'].removesuffix('.git'):
-        return locked
-    return latest if as_tuple(latest) >= max(as_tuple(locked), as_tuple(minimum_version(pin))) else locked
-
-
 def select_release(pin: dict) -> dict:
-    """Look up stable tags only. No source is downloaded and no installer runs."""
+    """Look up stable tags only, for an explicit lock refresh. No source is downloaded and
+    no installer runs."""
     if 'requirement' not in pin:
         return dict(pin)
     code, said = git(['ls-remote', '--tags', '--', pin['repository']], Path(tempfile.gettempdir()))
@@ -321,23 +311,16 @@ def run_companion(name: str, pin: dict, checkout: Path, home: Path,
 
 def bring_companions(home: Path, root: Path, harnesses: list[str], pins: dict, agree,
                      state: dict, declined: str | None = None) -> dict:
-    """Resolve allowed stable releases on an explicit install/update, then ask before fetching.
-    Installed releases as new or newer than the selected release are left alone. Nothing here undoes the studio's own
-    installation: what goes wrong is reported. `declined` says why one was not agreed to."""
+    """Install each missing companion, or one older than its requirement, at its exact locked
+    version, commit and checksum, after asking. An installed copy that meets the requirement
+    is left alone, and nothing is looked up online; newer releases come only through an
+    explicit lock refresh. Nothing here undoes the studio's own installation: what goes
+    wrong is reported. `declined` says why one was not agreed to."""
     outcomes = {}
-    for name, original in pins.items():
-        pin = original
+    for name, pin in pins.items():
         found = companion_found(home, harnesses, name)
         outcome = {'wanted': pin['version'], 'found': found, 'state': 'left alone'}
-        if declined not in ('skipped', 'nobody to ask'):
-            try:
-                pin = select_release(pin)
-                outcome['wanted'] = pin['version']
-            except InstallError as refusal:
-                outcome.update({'state': 'refused', 'detail': str(refusal)})
-                outcomes[name] = outcome
-                continue
-        if wanting(found, pin['version']):
+        if wanting(found, minimum_version(pin)):
             if not node_is_enough(node_version()):
                 outcome.update({'state': 'failed', 'detail': f'its installer needs Node '
                                 f'{NODE_NEEDED} or newer.'})
@@ -347,7 +330,6 @@ def bring_companions(home: Path, root: Path, harnesses: list[str], pins: dict, a
                     outcome['why'] = declined
             else:
                 try:
-                    pin = lock_companion(name, pin)
                     checkout = fetch_companion(name, pin, root)
                     outcome.update(run_companion(name, pin, checkout, home, harnesses))
                 except InstallError as refusal:

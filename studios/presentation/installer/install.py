@@ -662,7 +662,7 @@ def said_of(name: str, pin: dict, outcome: dict, harnesses: list[str]) -> str | 
     if outcome['state'] in ('refused', 'failed'):
         return (f"{name} {wanted} was not installed, and {need}: {outcome['detail']} When that "
                 f'is put right, run: {command}')
-    short = wanting(found, wanted)
+    short = wanting(found, minimum_version(pin))
     if short:
         who = ' and '.join(HARNESS[harness] for harness in short)
         what = 'is not installed' if all(found[harness] is None for harness in short) \
@@ -779,7 +779,7 @@ def plan(source: Path, home: Path, root: Path, harnesses: list[str], link_only: 
     for name, pin in pins.items():
         found = companion_found(home, harnesses, name)
         companions[name] = {'wanted': pin['version'], 'found': found,
-                            'would_offer': bool(wanting(found, pin['version'])),
+                            'would_offer': bool(wanting(found, minimum_version(pin))),
                             'from': pin['repository'], 'commit': pin['commit']}
     return {'action': 'plan',
             'version': (source / 'VERSION').read_text(encoding='utf-8').strip(),
@@ -899,14 +899,6 @@ def offer(name: str, pin: dict, found: dict) -> bool:
           + (f'is newer than the {having[0]} on this computer' if having
              else 'is not on this computer')
           + f": {NEEDS.get(name, NEED)}.")
-    if pin.get('requirement'):
-        print(f"  Selected from stable tags satisfying {pin['requirement']}. It would be fetched "
-              f"from {source} at revision {pin['commit'][:12]}, checked against the tag's version, "
-              'and its source checksum recorded before its own installer runs. Its installer '
-              'registers the skill for every assistant it knows.')
-        if pin.get('note'):
-            print(f"  {pin['note']}")
-        return input('Fetch and install it? [y/N]: ').strip().lower() in ('y', 'yes')
     print(f"  It would be fetched from {source} at revision {pin['commit'][:12]} and checked, "
           'file for file,\n  against what this installer expects. Then its own installer '
           'would be run with Node.\n  That installer registers the skill for every assistant '

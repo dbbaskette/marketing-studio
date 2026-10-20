@@ -8,7 +8,7 @@
       "sha256": "c39e556b0ba1f8df6bf4904840c9600ad89a093a522dc94ddf86dbebb1a41099",
       "stub": "bootstrap/SKILL.md",
       "installer": "scripts/install.mjs",
-      "note": "Stable synthesis research with schema-2 studio integration. Newer stable releases are resolved to an exact commit and verified source checksum before installation.",
+      "note": "Stable synthesis research with schema-2 studio integration. Installs use this exact commit and source checksum; newer releases arrive only through an explicit lock refresh.",
       "requirement": ">=1.0.0"
     },
     "harness-slides": {

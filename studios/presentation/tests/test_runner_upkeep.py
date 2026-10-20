@@ -697,18 +697,29 @@ if __name__ == '__main__':
 
 
 class RequirementTests(UpkeepCase):
-    def test_newer_allowed_release_is_offered_without_installing_or_fetching(self):
-        pin = {'version': '1.0.0', 'requirement': '>=1.0.0',
+    def companion(self, installed, locked='1.1.0'):
+        pin = {'version': locked, 'requirement': '>=1.0.0',
                'repository': str(self.base / 'research.git'), 'commit': 'a' * 40}
-        known = {'latest': '1.1.0', 'repository': pin['repository']}
+        known = {'latest': '1.2.0', 'repository': pin['repository']}
         keep = self.keeper()
-        with mock.patch.object(keep, '_assistant_versions', return_value={'claude': '1.0.0'}), mock.patch.object(keep, '_saved', return_value={'found': {'harness-research': known}}):
+        with mock.patch.object(keep, '_assistant_versions', return_value={'claude': installed}), mock.patch.object(keep, '_saved', return_value={'found': {'harness-research': known}}):
             entry = keep._companion('harness-research', pin, ['claude'])
-        self.assertEqual(entry['state'], 'older')
-        self.assertEqual(entry['wanted'], '1.1.0')
-        self.assertEqual(entry['locked'], '1.0.0')
-        row = keep._companion_row(entry, known, None, None, None)
-        self.assertEqual(row['state'], 'update')
-        self.assertEqual(row['target'], '1.1.0')
-        self.assertEqual(row['pinned'], '1.0.0')
-        self.assertIsNone(row['beyond'])
+        return entry, keep._companion_row(entry, known, None, None, None)
+
+    def test_a_newer_release_is_reported_and_never_offered(self):
+        entry, row = self.companion('1.1.0')
+        self.assertEqual((entry['state'], entry['wanted'], entry['locked']), ('ok', '1.1.0', '1.1.0'))
+        self.assertEqual((row['state'], row['target'], row['pinned']), ('current', None, '1.1.0'))
+        self.assertIn('harness-research 1.2.0 is out, newer than Presentation Studio supports yet', row['beyond'])
+
+    def test_a_copy_that_meets_the_requirement_is_not_offered_the_lock(self):
+        entry, row = self.companion('1.0.0')
+        self.assertEqual(entry['state'], 'ok')
+        self.assertEqual(row['state'], 'current')
+        self.assertIsNone(row['target'])
+
+    def test_a_copy_below_the_requirement_is_offered_the_exact_lock(self):
+        entry, row = self.companion('0.9.0')
+        self.assertEqual((entry['state'], entry['wanted']), ('older', '1.1.0'))
+        self.assertNotIn('1.2.0', entry['says'])
+        self.assertEqual((row['state'], row['target']), ('update', '1.1.0'))
