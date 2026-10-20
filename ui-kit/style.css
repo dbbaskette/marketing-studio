@@ -2453,11 +2453,6 @@ a.brand {
   text-decoration: none;
 }
 
-.large-title:focus {
-  outline: none;
-  box-shadow: none;
-}
-
 /* A dialog the browser keeps: on the sheet's surface, its title bar held at the top. */
 .dialog {
   width: min(46rem, calc(100% - 1.5rem));
@@ -2471,10 +2466,9 @@ a.brand {
   box-shadow: var(--edge), var(--lift);
 }
 
+/* Dimmed, not blurred: only the shell's material blurs what is behind it. */
 .dialog::backdrop {
   background: rgb(15 20 40 / 0.35);
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
 }
 
 .dialog-header {
@@ -2569,11 +2563,6 @@ a.brand {
   }
 
   .glass {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-
-  .dialog::backdrop {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
