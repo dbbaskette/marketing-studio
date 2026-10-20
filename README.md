@@ -292,3 +292,11 @@ Blog Studio research work is preserved on a separate migration branch.
 
 Research uses a shared purpose-led report and brief, independently reviewed before
 writing or slide work continues. See [research compatibility and the shared helper](docs/research-synthesis.md).
+
+## Update the source checkouts
+
+Run `bash sync.sh` from Marketing Studio to pull it and the related repositories.
+Missing components are cloned beside Marketing Studio, and other existing sibling
+`harness-*` checkouts are included. Local work is preserved; failures are reported
+without stopping the other updates. See [repository sync](docs/repository-sync.md)
+for the layout, preview mode, source config, and timeout options.
