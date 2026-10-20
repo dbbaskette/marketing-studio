@@ -20,7 +20,7 @@ approve an internal review artifact before choosing edits.
 Home offers tasks and a compact resume list. Polish a document asks for the
 input method: Google Doc link, pasted text, or an uploaded text/Markdown/Word/PDF
 file. These are source choices within one task, rather than separate workflows. Blogs open the relevant next step.
-The editor has three explicit steps: Choose task, Review changes, Finish.
+The editor has three explicit steps: Polish, Choose changes, Finish.
 Polish combines proofreading, copy editing and natural wording, without research.
 Fact checking, structure review and scoped revision remain available under other
 editing actions. Evidence and provider details use progressive disclosure.
@@ -32,6 +32,33 @@ requires an explicit send, and reports verified, pending or uncertain outcomes.
 Repeated delivery checks use the existing receipt rather than resending.
 Stale feedback cannot be silently selected or sent. Manual quoted feedback and
 raw manuscript editing remain available as secondary tools.
+
+Review starts with visibly checked changes. Clearing the selection disables
+Continue; it never means "use everything." The primary action stays in the
+existing toolbar while the writer reads. Skipped changes, adjusted wording and
+unfinished feedback survive moving between steps, bound to the manuscript
+version. A new version replaces those choices rather than reusing stale quotes.
+Local completion summarizes the selection and keeps the full comparison behind
+a disclosure. Comments can be downloaded as feedback without applying edits.
+
+Pasted text and uploaded files can supply their own working title. Import
+details, raw text editing and failure diagnostics remain secondary. A failed
+pass is distinct from a successful review with no suggestions; manual feedback
+remains available in either case. Saved edits to a Google copy can be converted
+into suggestions without first running an assistant pass.
+
+Moving between editing steps keeps the current document visible during reads.
+Late reads and completed saves cannot replace a newer step or force a return
+after navigation. Typing that continues during a manuscript save stays in the
+local edit buffer. Google preparation has a visible read-only checking state;
+delivery still requires an explicit send and reuses uncertain receipts.
+
+Ready outlines and drafts open directly for reading. Back opens progress without
+immediately reopening the document. Ideas have one primary "Develop an idea"
+action with an explicit choice, alongside saving the angles for later. The
+writing flow keeps approvals and stale-version protections; navigating to a
+ready document never approves it. Developing a chosen angle makes an outline
+and an editable draft; it does not append review-report or export-package stages.
 
 Active and failed editing operations stay in the editor, with progress, stop,
 retry and a clear route back to the draft. The editor refreshes when operation

@@ -167,6 +167,34 @@ class BlogRunnerTests(Fixture):
         found = self.approve(found, page=True)
         self.assertEqual(found['next'], 'draft')
 
+    def test_developing_an_idea_stops_at_an_editable_draft(self):
+        ideas = '# Three angles\n\n1. Ownership\n2. Feedback\n3. Context'
+        found = self.submit(self.create(page=True, mode='ideas', stop='outline'), ideas, page=True)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {
+                    'id': found['id'],
+                    'expected': found['expected'],
+                    'request': 'Develop the second idea for technical authors.',
+                },
+            )
+        directory, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(run['pipeline'], ['outline', 'draft'])
+        self.assertEqual(record['stop_point'], 'draft')
+        self.assertIn('second idea', run['stages']['outline']['request'])
+        self.assertEqual((directory / 'OUTLINE.md').read_text(), ideas)
+        found = runner.survey(self.root, found['id'])
+        for stage in ('outline', 'draft'):
+            self.assertEqual(found['next'], stage)
+            found = self.submit(found, page=True)
+            found = self.approve(found, page=True)
+        self.assertTrue(found['complete'])
+        self.assertIsNone(found['next'])
+        self.assertEqual(record['research_policy'], 'supplied-only')
+        self.assertNotIn('research', run['pipeline'])
+
     def test_old_page_decision_and_manual_edit_do_not_renew_approval(self):
         found = self.submit(self.create())
         old = found['expected']
@@ -701,6 +729,38 @@ else:
                 else:
                     self.assertEqual(args[args.index('--tools') + 1], '')
                     self.assertIn('--strict-mcp-config', args)
+
+    def test_editing_reviews_use_a_typed_schema_in_both_cli_adapters(self):
+        self.executable(
+            'args=sys.argv[1:]\n'
+            "schema=json.loads(Path(args[args.index('--output-schema')+1]).read_text()) if '--output-schema' in args else json.loads(args[args.index('--json-schema')+1])\n"
+            'Path(' + repr(str(self.capture)) + ').write_text(json.dumps(schema))\n'
+            "value={'summary':'Synthetic polish, no research.','findings':[{'id':'wording','kind':'edit','before':'Utilize it.','after':'Use it.','context':'','reason':'Prefer the familiar word.','evidence':'Editorial judgment','verdict':'editorial'}],'notes':'No account or provider used.'}\n"
+            "if '--output-last-message' in args:\n Path(args[args.index('--output-last-message')+1]).write_text(json.dumps(value))\n"
+            "else:\n print(json.dumps({'structured_output':value}))\n"
+        )
+        for agent in ('codex', 'claude'):
+            with (
+                self.subTest(agent=agent),
+                patch.object(
+                    blog_worker.source_curator, 'executable', return_value=str(self.binary)
+                ),
+                patch.object(blog_worker.source_curator, 'codex_options', return_value=[]),
+            ):
+                found = blog_worker.generate(
+                    agent, {'response_kind': 'editing-review'}, 'Polish writing', seconds=5
+                )
+                schema = json.loads(self.capture.read_text())
+                self.assertEqual(set(schema['required']), {'summary', 'findings', 'notes'})
+                self.assertNotIn('content', schema['properties'])
+                items = schema['properties']['findings']['items']
+                self.assertFalse(items['additionalProperties'])
+                self.assertEqual(set(items['required']), set(items['properties']))
+                self.assertEqual(items['properties']['kind']['enum'], ['edit', 'comment'])
+                review = json.loads(found['content'])
+                self.assertEqual(review['findings'][0]['before'], 'Utilize it.')
+                self.assertEqual(review['findings'][0]['after'], 'Use it.')
+                self.assertIn('No account', found['notes'])
 
     def test_saved_profile_selection_reaches_both_cli_commands(self):
         self.executable(

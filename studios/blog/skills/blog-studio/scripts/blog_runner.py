@@ -712,6 +712,10 @@ def job(root, ident):
     if run['existing']:
         path = directory / ('DRAFT.md' if (directory / 'DRAFT.md').is_file() else 'ORIGINAL.md')
         payload['documents']['manuscript'] = path.read_text()
+        if stage == 'review' and run.get('editor_check'):
+            from manuscript_preview import text_only
+
+            payload['documents']['manuscript'] = text_only(payload['documents']['manuscript'])
     if run.get('mode') == 'from-outline':
         payload['documents']['outline'] = (directory / 'OUTLINE.md').read_text()
     payload['changes'] = run['stages'].get(stage, {}).get('request', '') or run.get(
@@ -752,7 +756,19 @@ def job(root, ident):
     if run.get('mode') == 'from-outline':
         guidance += '\nUse the supplied outline as authoritative structure. Preserve headings and order unless explicitly asked to restructure.'
     if stage == 'review' and run.get('editor_check'):
-        guidance += '\nFor this focused review return JSON in content: {"summary":"coverage and limits", "findings":[{"id":"stable-id", "kind":"edit or comment", "before":"exact single-paragraph prose quote without Markdown markers or link syntax", "after":"replacement for edit only", "reason":"specific explanation", "evidence":"source ID and passage, or unavailable", "verdict":"supported, unsupported, contradicted, or editorial"}]}. Do not invent a clean verdict. Return an empty findings list only with explicit coverage and limitations.'
+        payload['response_kind'] = 'editing-review'
+        guidance += (
+            '\nReturn the structured editing review required by the response schema: summary, findings and notes. '
+            'Use at most 100 findings with distinct IDs containing only letters, digits, underscores or hyphens. '
+            'Each before must be a verbatim contiguous quote from documents.manuscript, including its exact punctuation and whitespace. '
+            'Choose a shorter quote within one plain-text run when a sentence crosses Markdown formatting or link boundaries. '
+            'Do not quote a rendered or paraphrased version of the Markdown. '
+            'Use kind edit/comment, after as the proposed replacement (empty for comments or deletion), '
+            'context as exact surrounding manuscript text only when needed to disambiguate (otherwise empty), '
+            'a concise reason, evidence as a source passage or an explanation of editorial judgment, '
+            'and verdict supported/unsupported/contradicted/editorial. '
+            'Do not invent a clean verdict. Return an empty findings list only with explicit coverage and limitations.'
+        )
     if run.get('model_profiles'):
         found['model_selection'] = model_profiles.route(
             run,
@@ -899,7 +915,13 @@ class Engine:
             # Includes session metadata as well as run/documents: a parallel edit wins.
             directory, _, run = load(self.root, ident)
             session = (directory / 'session.json').read_bytes()
+            review_source = (
+                (directory / 'DRAFT.md').read_text()
+                if found['next'] == 'review' and run.get('editor_check')
+                else None
+            )
         pending = None
+        review_attempts = []
         try:
             if found['next'] == 'research' and run.get('research_contract'):
                 import synthesis_research
@@ -928,8 +950,9 @@ class Engine:
                 from manuscript_editor import validate_review
 
                 try:
-                    validate_review(result, payload['documents']['manuscript'])
+                    validate_review(result, review_source)
                 except ValueError as error:
+                    review_attempts.append({'response': result, 'error': str(error)})
                     remaining = found['seconds'] - (time.monotonic() - started)
                     if self.stop.is_set() or self.closed.is_set() or remaining <= 0:
                         raise error
@@ -941,7 +964,7 @@ class Engine:
                             'validation_error': str(error),
                         },
                         guidance
-                        + '\nCorrect the previous output once. Return valid JSON with summary and findings. '
+                        + '\nCorrect the previous output once using the structured editing review schema. '
                         'Each before must be copied verbatim from the supplied manuscript, preserving punctuation and whitespace. '
                         'Use kind edit/comment, verdict editorial for writing advice, and a short evidence explanation. '
                         'Use IDs containing only letters, digits, underscores or hyphens. '
@@ -951,7 +974,11 @@ class Engine:
                         stop=self.stop,
                         model_selection=found.get('model_selection'),
                     )
-                    validate_review(result, payload['documents']['manuscript'])
+                    try:
+                        validate_review(result, review_source)
+                    except ValueError as error:
+                        review_attempts.append({'response': result, 'error': str(error)})
+                        raise
             with studio.locked(self.root):
                 if self.stop.is_set() or self.closed.is_set():
                     return
@@ -985,6 +1012,24 @@ class Engine:
                         if isinstance(exc, (ValueError, OSError))
                         else 'The worker failed. Retry this step; saved work is kept.'
                     )
+                    if review_attempts:
+                        try:
+                            folder = studio.inside(self.root, '.blog-runs', 'diagnostics')
+                            folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+                            folder.chmod(0o700)
+                            diagnostic = folder / (ident + '.json')
+                            studio.write_json(
+                                diagnostic,
+                                {
+                                    'check': run.get('editor_check'),
+                                    'at': studio.now(),
+                                    'manuscript_sha256': studio.digest(review_source.encode()),
+                                    'attempts': review_attempts,
+                                },
+                            )
+                            diagnostic.chmod(0o600)
+                        except OSError:
+                            message += ' The private failure diagnostic could not be saved.'
                     state.update(enabled=False, status='failed', error=message[:500])
                     self.keep_local(ident, state)
         finally:
@@ -1226,14 +1271,14 @@ def dispatch(root, action, data):
             raise ValueError('Choose a saved idea or outline before developing it.')
         request = text(data.get('request', ''), 'selected angle', 8000, required=True)
         run['mode'] = 'write'
-        run['pipeline'] = ['outline', 'draft', 'review', 'package']
+        run['pipeline'] = ['outline', 'draft']
         run['stages'] = {
             'outline': {
                 'status': 'pending',
                 'request': 'Develop this selected angle or structure: ' + request,
             }
         }
-        record['stop_point'] = 'review'
+        record['stop_point'] = 'draft'
         save(root, directory, record, run, 'Selected angle for drafting')
         return runner.control(ident, 'resume')
     if action == 'start':

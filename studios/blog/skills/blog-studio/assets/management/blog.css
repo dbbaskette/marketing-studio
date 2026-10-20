@@ -74,7 +74,7 @@ dialog::backdrop{background:rgb(15 20 40/.35);backdrop-filter:blur(4px)}
 .task-choice span{display:block;font-weight:400;font-size:.93rem;line-height:1.5;margin-top:.35rem}
 .task-choice:hover{background:var(--selection)}
 .workflow-steps{display:flex;gap:.35rem;flex-wrap:wrap;border-bottom:1px solid var(--hair);padding-bottom:.6rem;margin-bottom:1.2rem}
-.workflow-steps .button,.workflow-step{padding:.5rem .7rem;min-height:2.75rem;font-size:.88rem;border:0;border-radius:8px;box-shadow:none;background:transparent;flex:1;text-align:center}
+.workflow-steps .button,.workflow-step{padding:.5rem .7rem;min-height:2.75rem;font-size:.88rem;border:0;border-radius:8px;box-shadow:none;background:transparent;flex:1;text-align:center;white-space:normal;line-height:1.3}
 .workflow-steps [aria-current=step]{background:var(--selection);color:var(--link);font-weight:700}
 .workflow-next{border-top:1px solid var(--hair);padding-top:1rem;display:flex;justify-content:flex-end}
 .writing-changes{background:var(--paper);border:1px solid var(--hair);border-radius:12px;overflow:hidden}
@@ -90,3 +90,23 @@ dialog::backdrop{background:rgb(15 20 40/.35);backdrop-filter:blur(4px)}
 @media(max-width:600px){.task-list{grid-template-columns:1fr}.task-choice.button{min-height:5rem}.workflow-next .button{width:100%}.workflow-steps .button,.workflow-step{padding:.5rem .3rem;font-size:.82rem}.writing-change{padding:1rem}}
 .finish-selection{display:grid;gap:.8rem}.finish-change{padding:.8rem 0;border-bottom:1px solid var(--hair);overflow-wrap:anywhere}
 .writing-change details{margin-top:.8rem}.finish-change:last-child{border-bottom:0}
+
+/* The existing toolbar owns the review action, even while reading a long list. */
+.review-continue{white-space:normal}
+.review-selection{justify-content:flex-end;gap:.3rem .65rem}
+.review-selection>p{margin-right:auto}
+.writing-change[data-selected=false]{background:var(--solid)}
+.writing-change[data-selected=false] .change-select{color:var(--quiet)}
+.change-select{min-height:44px;margin-bottom:.5rem}
+.polish-intake #draft-content{min-height:12rem;resize:vertical}
+@media(max-width:600px){
+  #studio-toolbar[data-workflow=review] .toolbar-actions{flex-basis:100%;width:100%}
+  #studio-toolbar[data-workflow=review] .review-continue{width:100%;min-height:44px}
+  .review-selection .button{padding-inline:.65rem}
+  .polish-intake>.button-filled{width:100%}
+  .polish-intake .seg-option{padding-inline:.45rem;font-size:.88rem;white-space:normal}
+}
+@media(max-width:360px){
+  .review-selection{display:grid;grid-template-columns:1fr 1fr}
+  .review-selection>p{grid-column:1/-1;margin:0}
+}

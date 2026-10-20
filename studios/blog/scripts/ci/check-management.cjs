@@ -6,6 +6,7 @@ class Element {
   constructor(tag='div'){this.tagName=tag;this.children=[];this.attributes={};this.listeners={};this.hidden=false;this.disabled=false;this.value='';this.textContent='';this.className='';this.dataset={};if(tag==='textarea')Object.defineProperty(this,'type',{get:()=> 'textarea'});}
   append(...children){this.children.push(...children);for(const child of children)child.parent=this;}
   get firstElementChild(){return this.children[0]||null;}
+  get parentElement(){return this.parent||null;}
   prepend(...children){this.children.unshift(...children);for(const child of children)child.parent=this;}
   remove(){if(this.parent)this.parent.children=this.parent.children.filter(child=>child!==this);}
   replaceChildren(...children){this.children=[];this.append(...children);}
@@ -13,7 +14,7 @@ class Element {
   removeAttribute(key){delete this.attributes[key];}
   addEventListener(key,fn){this.listeners[key]=fn;}
   querySelector(selector){return this.querySelectorAll(selector)[0]||null;}
-  querySelectorAll(selector){return this.children.flatMap(c=>[...(selector==='.dialog-notice'&&c.className.includes('dialog-notice')?[c]:selector==='[type=submit]'&&c.type==='submit'?[c]:selector==='button'&&c.tagName==='button'?[c]:[]),...c.querySelectorAll(selector)]);}
+  querySelectorAll(selector){return this.children.flatMap(c=>[...(selector==='.dialog-notice'&&c.className.includes('dialog-notice')?[c]:selector==='[type=submit]'&&c.type==='submit'?[c]:['button','input','textarea','select'].includes(selector)&&c.tagName===selector?[c]:[]),...c.querySelectorAll(selector)]);}
   showModal(){this.open=true;}
   close(){this.open=false;}
   focus(){this.focused=true;}
@@ -60,7 +61,14 @@ async function check(){
   await refreshWithNewSelection();
   await guidedRuns();
   await googleIntake();
+  await googleReopening();
   await manuscriptEditing();
+  await reviewInteractions();
+  await editorTransitions();
+  await commentCompletionAndFailure();
+  await pendingEditorSaves();
+  await manualEditingJourneys();
+  await writingReviewJourneys();
   await taskJourneys();
   await revisionCompletion();
   await deliveryRecovery();
@@ -71,7 +79,7 @@ async function check(){
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','brand skill inputs and confirmation','shared settings refusal/reload/retry','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -107,7 +115,7 @@ async function manuscriptEditing(){
   assert.equal(f.get('actions').children.some(e=>e.textContent==='Approve'),false);
   await f.run("sRoute('gate','fixture','review')");assert.equal(f.run('studio.screen'),'editor','old focused-review links use the workflow');
   const preferred=nodes().find(e=>e.id==='wording-0');preferred.value='pause';preferred.listeners.input();
-  await nodes().find(e=>e.textContent==='Use this change').listeners.click();
+  await descendants(f.get('actions')).find(e=>e.textContent==='Use this change').listeners.click();
   assert.equal(state.proposals.length,1);assert.equal(state.proposals[0].after,'pause');
   assert.equal(writes.some(r=>r.url==='/api/editor-google-send'),false,'finish preview only reads Google');
   assert.equal(writes.filter(r=>r.url==='/api/editor-google-plan').length,1);
@@ -127,6 +135,135 @@ async function manuscriptEditing(){
 
 }
 
+async function reviewInteractions(){
+  let state={id:'selection',title:'Selection fixture',content:'Old wording. Other wording.',expected:'v1',google:null,proposals:[],findings:[{id:'one',kind:'edit',before:'Old wording.',after:'New wording.',reason:'Clearer.'},{id:'two',kind:'comment',before:'Other wording.',reason:'Explain this.'}],checks:{},working:false};
+  const writes=[];let refuse=true;
+  const f=fixture((url,options)=>{if(url.startsWith('/api/manuscript?'))return state;if(url==='/api/editor-proposals'){writes.push(JSON.parse(options.body));if(refuse)return {__http:409,error:'Reload before saving.'};state={...state,expected:'v2',proposals:writes.at(-1).proposals};return state;}return {items:[]};});f.loadRunner();await f.run("sRoute('editor','selection','changes')");
+  const nodes=()=>descendants(f.get('studio-page')),next=()=>descendants(f.get('actions')).find(e=>e.className.includes('review-continue')),boxes=()=>nodes().filter(e=>e.type==='checkbox');
+  assert.equal(boxes().every(box=>box.checked),true,'default selection is visible');
+  assert.equal(next().textContent,'Use all 2 changes');
+  await nodes().find(e=>e.textContent==='Clear selection').listeners.click();
+  assert.equal(next().disabled,true);assert.ok(nodes().some(e=>e.textContent==='0 of 2 selected'));
+  await next().listeners.click();assert.equal(writes.length,0,'clearing the selection never falls back to all changes');
+  boxes()[0].checked=true;boxes()[0].listeners.change();
+  const wording=nodes().find(e=>e.id==='wording-0');wording.value='Better wording.';wording.listeners.input();
+  const manual=nodes().find(e=>e.id==='proposal-reason');manual.value='Keep this unfinished note.';manual.listeners.input();
+  await f.run("sRoute('editor','selection','prepare')");await f.run("sRoute('editor','selection','changes')");
+  assert.deepEqual(boxes().map(box=>box.checked),[true,false],'step navigation keeps skipped changes');
+  assert.equal(nodes().find(e=>e.id==='wording-0').value,'Better wording.');
+  assert.equal(nodes().find(e=>e.id==='proposal-reason').value,'Keep this unfinished note.');
+  await next().listeners.click();
+  assert.equal(writes.length,1);assert.equal(writes[0].proposals.length,1);assert.equal(writes[0].proposals[0].after,'Better wording.');
+  assert.equal(nodes().find(e=>e.id==='wording-0').value,'Better wording.','a save conflict keeps the adjusted wording');
+  assert.deepEqual(boxes().map(box=>box.checked),[true,false]);
+  refuse=false;await next().listeners.click();assert.equal(f.run('studio.stage'),'finish');
+  assert.equal(writes.at(-1).proposals[0].id,'one');
+  state={...state,expected:'v3',proposals:[],findings:[{id:'fresh',kind:'edit',before:'Old wording.',after:'Fresh wording.',reason:'Fresh pass.'}]};
+  await f.run("sRoute('editor','selection','changes')");
+  assert.equal(boxes().length,1);assert.equal(nodes().find(e=>e.id==='wording-0').value,'Fresh wording.','a new document version resets old review choices');
+  f.run('access.actions.edit=false');await f.run("sRoute('editor','selection','changes')");assert.equal(next().disabled,true);
+}
+
+async function editorTransitions(){
+  const state={id:'race',title:'Stable title',content:'Saved text.',expected:'v1',google:null,proposals:[],findings:[],checks:{},working:false};
+  let pending=false;const reads=[];
+  const f=fixture(url=>{if(url.startsWith('/api/manuscript?')){if(!pending)return state;const next=deferred();reads.push(next);return next.promise;}return {items:[]};});f.loadRunner();await f.run("sRoute('editor','race','prepare')");
+  const visible=f.get('studio-page').children[0];pending=true;
+  const older=f.run("sRoute('editor','race','changes')");
+  assert.equal(f.get('studio-page').children[0],visible,'step changes retain the current document while loading');
+  assert.equal(f.get('title').textContent,'Stable title');assert.equal(f.get('studio-page').attributes['aria-busy'],'true');
+  const latest=f.run("sRoute('editor','race','prepare')");
+  reads[1].resolve(state);await latest;reads[0].resolve({...state,title:'Late title'});await older;
+  assert.equal(f.get('title').textContent,'Stable title','an older same-document response cannot overwrite the current step');
+  assert.equal(f.get('studio-page').attributes['aria-busy'],undefined);
+  const plans=[];let sent;
+  const google={...state,google:{url:'https://docs.google.com/document/d/fixture/edit'},proposals:[{id:'one',kind:'comment',before:'Saved text.',reason:'Clarify.'}]};
+  const g=fixture((url,options)=>{if(url.startsWith('/api/manuscript?'))return google;if(url==='/api/editor-google-plan'){const plan=deferred();plans.push(plan);return plan.promise;}if(url==='/api/editor-google-send'){sent=JSON.parse(options.body);return {status:'verified-comments'};}return {items:[]};});g.loadRunner();
+  const first=g.run("sRoute('editor','race','finish')");await new Promise(resolve=>setImmediate(resolve));
+  const second=g.run("sEditor('race')");await new Promise(resolve=>setImmediate(resolve));
+  plans[1].resolve({plan:'b'.repeat(32),expected:'v1',count:1,mode:'comments'});await second;
+  plans[0].resolve({plan:'a'.repeat(32),expected:'v1',count:1,mode:'auto'});await first;
+  await descendants(g.get('studio-page')).find(e=>e.textContent==='Send feedback to Google').listeners.click();
+  assert.equal(sent.plan,'b'.repeat(32),'a late delivery preview cannot restore an older plan');
+}
+
+async function commentCompletionAndFailure(){
+  const state={id:'comments',title:'Local comments',content:'Keep this text.',expected:'v1',google:null,proposals:[{id:'one',kind:'comment',before:'Keep this text.',reason:'Explain the audience.'}],findings:[],checks:{},working:false};
+  const f=fixture(url=>url==='/api/run-options'?{sources:[]}:state);f.loadRunner();f.run('sDownload=async value=>{window.downloaded=value;}');await f.run("sRoute('editor','comments','finish')");
+  const nodes=()=>descendants(f.get('studio-page'));
+  assert.equal(nodes().some(e=>e.textContent==='Save 0 edits to my draft'),false);
+  await nodes().find(e=>e.textContent==='Download feedback').listeners.click();
+  assert.match(f.run('window.downloaded.content'),/Explain the audience/);assert.match(f.run('window.downloaded.content'),/> Keep this text/);
+  state.proposals=[];state.operation={status:'failed',error:'A synthetic detailed validation error.',editor_check:'polish',next:'review'};
+  await f.run("sRoute('editor','comments','prepare')");
+  assert.ok(nodes().some(e=>e.textContent==='This review couldn’t finish'));
+  assert.ok(nodes().some(e=>e.textContent==='Try again'));
+  assert.equal(nodes().some(e=>e.textContent==='No changes suggested'),false,'failure never reads as a successful clean review');
+  assert.equal(nodes().find(e=>e.textContent===state.operation.error).parentElement.tagName,'details','technical diagnostics remain secondary');
+  assert.equal(nodes().find(e=>e.textContent==='2. Choose changes').disabled,false,'manual feedback remains available after a failed pass');
+  state.findings=[{id:'old',kind:'edit',before:'Keep this text.',after:'Keep the text.',reason:'Earlier pass.'}];state.expected='v2';
+  await f.run("sRoute('editor','comments')");
+  assert.ok(nodes().some(e=>e.textContent==='This review couldn’t finish'),'a failed latest pass is shown before earlier feedback');
+  await f.run("sRoute('editor','comments','changes')");
+  assert.ok(nodes().some(e=>e.textContent==='The latest pass failed. These are earlier saved suggestions; no new results were added.'));
+  state.operation.editor_check='factual-support';f.run('studio.editorChoices={}');await f.run("sRoute('editor','comments','prepare')");
+  assert.equal(nodes().find(e=>e.id==='editor-check').value,'factual-support','reopening a failed pass retains its action instead of switching to polish');
+  assert.ok(nodes().some(e=>e.textContent==='Try again'));
+}
+
+async function pendingEditorSaves(){
+  const pending=deferred();let state={id:'typing',title:'Typing fixture',content:'Original.',expected:'v1',google:null,proposals:[],findings:[],checks:{},working:false};
+  const f=fixture((url,options)=>{if(url.startsWith('/api/manuscript?'))return state;if(url==='/api/editor-save')return pending.promise;return {items:[]};});f.loadRunner();await f.run("sRoute('editor','typing','prepare')");
+  const nodes=()=>descendants(f.get('studio-page')),input=nodes().find(e=>e.attributes['aria-label']==='Manuscript Markdown');
+  input.value='Submitted text.';input.listeners.input();const saving=nodes().find(e=>e.textContent==='Save local edits').listeners.click();
+  input.value='Submitted text. More typing.';input.listeners.input();
+  state={...state,content:'Submitted text.',expected:'v2'};pending.resolve({...state,preservation:{needs_review:false}});await saving;
+  assert.equal(nodes().find(e=>e.attributes['aria-label']==='Manuscript Markdown').value,'Submitted text. More typing.','typing during a save is not discarded');
+  assert.equal(f.run('studio.editorDraft.baseContent'),'Submitted text.');assert.equal(f.run('studio.editorDraft.expected'),'v2');
+  const selected=deferred(),review={...state,id:'leave',content:'Original.',expected:'v1',findings:[{id:'one',kind:'edit',before:'Original.',after:'Revised.',reason:'Clearer.'}]};
+  const g=fixture(url=>url.startsWith('/api/manuscript?')?review:url==='/api/editor-proposals'?selected.promise:{items:[]});g.loadRunner();await g.run("sRoute('editor','leave','changes')");
+  const page=()=>descendants(g.get('studio-page'));const next=descendants(g.get('actions')).find(e=>e.className.includes('review-continue'));
+  const keeping=next.listeners.click();assert.equal(page().find(e=>e.type==='checkbox').disabled,true,'selection is stable during its save');
+  assert.equal(page().find(e=>e.id==='wording-0').disabled,true);
+  await g.run("sRoute('polish')");selected.resolve(review);await keeping;
+  assert.equal(g.run('studio.screen'),'polish','a completed save does not pull the person back after navigation');
+}
+
+async function manualEditingJourneys(){
+  let state={id:'manual',title:'Manual fixture',content:'Revised text.',baseline:'Original text.',expected:'v1',google:{url:'https://docs.google.com/document/d/fixture/edit'},proposals:[],findings:[],checks:{},working:false};
+  const writes=[];const f=fixture((url,options)=>{if(url.startsWith('/api/manuscript?'))return state;if(options?.body){writes.push({url,data:JSON.parse(options.body)});if(url==='/api/editor-proposals'){state={...state,proposals:writes.at(-1).data.proposals,expected:'v2'};return state;}}return {items:[]};});f.loadRunner();await f.run("sRoute('editor','manual','prepare')");
+  const nodes=()=>descendants(f.get('studio-page'));
+  assert.equal(nodes().find(e=>e.textContent==='3. Finish').disabled,false,'saved manual Google edits can reach delivery preparation');
+  await f.run("sRoute('editor','manual','finish')");assert.ok(nodes().some(e=>e.textContent==='Prepare your edits for Google'));
+  assert.equal(writes.length,0,'opening manual preparation never sends feedback or starts a model');
+  await nodes().find(e=>e.textContent==='Add quoted feedback instead').listeners.click();
+  for(const [id,value]of [['proposal-before','Revised text.'],['proposal-after','Better text.'],['proposal-reason','Clearer wording.']]){const input=nodes().find(e=>e.id===id);input.value=value;input.listeners.input();}
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.equal(writes[0].url,'/api/editor-proposals');assert.equal(writes[0].data.proposals[0].after,'Better text.');
+  assert.equal(writes.some(write=>write.url==='/api/editor-check'||write.url==='/api/editor-google-send'),false);
+}
+
+async function writingReviewJourneys(){
+  let run={id:'ready',title:'Ready writing',expected:'r1',approval:'page',status:'waiting-for-approval',next:'outline',enabled:true,complete:false,existing:false,mode:'write',engine:'codex',seconds:600,brief:{goal:'Explain',audience:'Authors'},decisions:[],stages:[{stage:'outline',label:'Outline',status:'draft',path:'OUTLINE.md'},{stage:'draft',label:'Draft',status:'pending',path:'DRAFT.md'}]};
+  const shown={stage:'outline',label:'Outline',expected:'r1',status:'draft',content:'# Three ideas\n\nAn angle to develop.',checks:[],notes:'Synthetic only.',previous:null,diff:[]},writes=[];
+  const f=fixture((url,options)=>{if(url.startsWith('/api/run?'))return run;if(url.startsWith('/api/run-file?'))return shown;if(url==='/api/run-develop'){writes.push(JSON.parse(options.body));run={...run,mode:'write',status:'queued',next:'draft'};return run;}return {items:[]};});f.loadRunner();
+  await f.run("sRoute('run','ready')");
+  assert.equal(f.run('studio.screen'),'gate','a ready outline opens directly for reading');
+  assert.equal(writes.length,0,'opening a document never approves it');
+  await descendants(f.get('toolbar-lead')).find(e=>e.attributes['aria-label']==='Back').listeners.click();
+  assert.equal(f.run('studio.screen'),'run');assert.equal(f.run('studio.stage'),'status','Back can still open progress');await f.run('sPoll()');assert.equal(f.run('studio.screen'),'run');
+  run={...run,mode:'ideas'};await f.run("sRoute('run','ready')");
+  assert.equal(f.get('title').textContent,'Ideas');
+  const actions=()=>descendants(f.get('actions'));
+  assert.equal(actions().filter(e=>e.tagName==='button'&&e.className.includes('button-filled')).length,1);
+  assert.ok(actions().some(e=>e.textContent==='Save ideas for later'));
+  await actions().find(e=>e.textContent==='Develop an idea').listeners.click();
+  const sheet=()=>descendants(f.get('sheet')),go=sheet().find(e=>e.textContent==='Develop this choice');assert.equal(go.disabled,true);assert.equal(writes.length,0);
+  const choice=sheet().find(e=>e.id==='develop-choice');choice.value='Develop the second idea for technical leads.';choice.listeners.input();assert.equal(go.disabled,false);
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.equal(writes.length,1);assert.equal(writes[0].request,'Develop the second idea for technical leads.');
+}
+
 async function deliveryRecovery(){
   let attempts=0,plans=0;const tokens=[];
   const state={id:'retry',title:'Retry fixture',content:'Old wording.',expected:'v1',google:{url:'https://docs.google.com/document/d/fixture/edit'},proposals:[{id:'one',kind:'edit',before:'Old',after:'New',reason:'Clearer'}],findings:[],checks:{},working:false};
@@ -144,7 +281,7 @@ async function deliveryRecovery(){
   await nodes().find(e=>e.textContent==='Check delivery').listeners.click();
   assert.equal(plans,1);assert.deepEqual(tokens,['b'.repeat(32),'b'.repeat(32)]);
   assert.ok(nodes().some(e=>e.textContent==='Feedback sent'));
-  state.proposals=[];state.operation={editor_check:'polish',next:'review',status:'waiting-for-approval'};
+  state.proposals=[];state.expected='v2';state.operation={editor_check:'polish',next:'review',status:'waiting-for-approval'};
   await f.run("sRoute('editor','retry','changes')");
   assert.ok(nodes().some(e=>e.textContent==='No changes suggested'));
   assert.equal(nodes().some(e=>e.textContent==='Use all 0 changes'),false);
@@ -193,6 +330,11 @@ async function taskJourneys(){
   await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   const uploaded=requests.filter(r=>r.url==='/api/upload').at(-1).data;
   assert.equal(uploaded.filename,'sample.txt');assert.equal(uploaded.analyze,false);assert.equal(Buffer.from(uploaded.content,'base64').toString(),'Plain text.');
+  await f.run("sRoute('polish')");await nodes().find(e=>e.textContent==='Paste text').listeners.click();
+  field('draft-content').value='# Café notes\n\nA new draft.';field('draft-content').listeners.input();
+  assert.equal(field('draft-title').required,false);
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.equal(requests.filter(r=>r.url==='/api/upload').at(-1).data.title,'Café notes','a pasted heading supplies the optional working title');
   await f.run("newBlog('',null,'from-outline')");
   for(const [id,value] of [['new-title','Supplied outline'],['new-goal','Explain'],['new-audience','Authors'],['new-outline','# First\n## Second']]){field(id).value=value;field(id).listeners.input();}
   await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
@@ -201,6 +343,50 @@ async function taskJourneys(){
   const creation=requests.find(r=>r.url==='/api/run-create').data;
   assert.equal(creation.mode,'from-outline');assert.equal(creation.outline_text,'# First\n## Second');assert.equal(creation.research,'none');
   assert.equal(creation.stop,'draft');
+}
+
+async function googleReopening(){
+  const manuscript={id:'existing',title:'Existing manuscript',content:'Keep these local edits.',expected:'v2',google:{url:'https://docs.google.com/document/d/fixture-doc/edit'},proposals:[],findings:[],checks:{},working:false};
+  const linked={status:'already-linked',id:manuscript.id,title:manuscript.title,linked_document:manuscript.google.url};
+  const preview={status:'preview',preview:'b'.repeat(32),expected:'v1',title:'Synthetic manuscript',linked_document:manuscript.google.url,content:'Original text.',summary:{structure:{paragraphs:1}}};
+  for(const entry of ['polish','google']){
+    for(const response of [linked,{...preview,summary:undefined},{...preview,summary:{}},{status:'unrecognized'},{status:'already-linked'}]){
+      const requests=[];let result=response;
+      const f=fixture((url,options)=>{requests.push({url,options});if(url==='/api/google-preview')return result;if(url.startsWith('/api/manuscript?'))return manuscript;return {items:[]};});
+      f.loadRunner();await f.run(`sRoute('${entry}')`);
+      const nodes=()=>descendants(f.get('studio-page'));
+      const input=nodes().find(e=>e.id===(entry==='polish'?'polish-url':'google-url'));input.value='fixture-doc';input.listeners.input();
+      const submit=()=>nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+      await submit();
+      if(response===linked){
+        assert.equal(f.run('studio.screen'),'editor',entry+' reopens an already linked Doc');
+        assert.equal(f.run('studio.editorDraft.content'),manuscript.content,'saved local edits are kept');
+        assert.ok(f.run('studio.intake')==null);assert.equal(f.run('studio.google'),null);
+      }else{
+        assert.equal(f.run('studio.screen'),entry,'invalid response stays at the entered link');
+        assert.equal(nodes().find(e=>e.id===input.id).value,'fixture-doc');
+        assert.ok(nodes().some(e=>e.className==='problem'&&e.textContent.includes('Read the document again')));
+        assert.equal(nodes().find(e=>e.type==='submit').disabled,false,'retry stays available');
+        result=linked;await submit();assert.equal(f.run('studio.screen'),'editor','retry reopens the existing manuscript');
+      }
+      assert.equal(requests.some(r=>r.options?.method==='POST'&&r.url!=='/api/google-preview'),false,'reopening does not reimport, start a model, or send feedback');
+      assert.equal(nodes().some(e=>e.textContent==='This view could not be read'),false);
+    }
+  }
+  // A link can become associated with a saved blog between preview and confirmation.
+  const raced=[];const f=fixture((url)=>{raced.push(url);if(url==='/api/google-preview')return preview;if(url==='/api/google-start')return linked;if(url.startsWith('/api/manuscript?'))return manuscript;return {items:[]};});f.loadRunner();
+  await f.run("sRoute('polish')");let nodes=()=>descendants(f.get('studio-page'));
+  const input=nodes().find(e=>e.id==='polish-url');input.value='fixture-doc';input.listeners.input();
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const confirm=nodes().find(e=>e.type==='checkbox');confirm.checked=true;confirm.listeners.change();
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.equal(f.run('studio.screen'),'editor');assert.equal(f.run('studio.editorDraft.content'),manuscript.content);
+  assert.equal(raced.filter(url=>url==='/api/google-start').length,1);
+  // Navigating away while the new entry point reads a link must not reopen it later.
+  const pending=deferred(),late=fixture(()=>pending.promise);late.loadRunner();await late.run("sRoute('polish')");
+  const reading=descendants(late.get('studio-page')).find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  late.run("studio.turn++;studio.screen='blogs'");pending.resolve(linked);await reading;
+  assert.equal(late.run('studio.screen'),'blogs');assert.equal(late.run('studio.google'),undefined);
 }
 
 async function googleIntake(){
