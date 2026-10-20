@@ -4,7 +4,7 @@ Blog Studio ships as one skill folder, [`skills/blog-studio/`](skills/blog-studi
 the entry file, its references and the Python helpers. What is installed is
 what is used; nothing is fetched while an author writes. Each release publishes
 three archives on the repository's
-[Releases page](https://github.com/dbbaskette/blog-studio/releases).
+[Releases page](https://github.com/dbbaskette/marketing-studio/releases).
 
 | Archive | Contents | Use |
 | --- | --- | --- |

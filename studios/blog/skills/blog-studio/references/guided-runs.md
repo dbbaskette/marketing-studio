@@ -26,7 +26,7 @@ research scope and requested stop. Then use:
 ```
 
 Use `--research web-allowed` only for authorized public research, or `none` to
-omit research. Add `--source <id>` for each chosen source and `--profile <id>`
+omit research. `supplied-only` with no selected sources also omits it. Add `--source <id>` for each chosen source and `--profile <id>`
 for a saved voice, or `--tone "description"`. `--author` overrides a saved
 default. Select an installed brand with `--brand ID --variant VARIANT`, or
 `--brand ''` for no brand. Read its pinned guides in `derived/blog-run.json`;
@@ -43,22 +43,29 @@ This creates no model process in chat: you do the writing here.
 
 ## Each stage
 
-1. Run `... run status --id <id>`. Read `next`, `stages`, `approval` and
-   `expected`. Inspect the selected article, sources and voice using existing
-   workspace helpers; retain originals and exact pins.
+1. Run `... run status --id <id>`. Read `next`, `awaits`, `stages`, `approval`,
+   `review_level` and `expected`. Inspect the selected article, sources and voice
+   using existing workspace helpers; retain originals and exact pins.
 2. Load the relevant module from SKILL.md and write only that stage: research
    questions, research findings, outline, draft, review or export package.
    Research in chat follows the existing research/evidence workflow. Review
    must distinguish completed checks from assistant judgment and missing facts.
 3. Save a temporary Markdown file outside the skill and submit it:
    `... run submit --id <id> --stage <next> --file <file> --expected <expected>`.
-4. Show the saved document and limits, then wait for the person. Only their
-   explicit approval authorizes `... run approve --id <id> --expected <latest>`.
-   A request to make the whole blog does not approve individual stages.
+4. Read `awaits` in the returned status. `submission` means the review level
+   accepted that stage (its row shows `auto_accepted`): do not approve it, and
+   write the next stage. The default Balanced level waits for the person only at
+   the outline and the final stage; Automatic draft only at the final stage;
+   Step by step at every stage. `decision` means show the saved document, any
+   stages accepted since the last decision, and their limits, then wait for the
+   person. Only their explicit approval authorizes
+   `... run approve --id <id> --expected <latest>`. A request to make the whole
+   blog does not approve individual stages.
 5. For requested changes use `... run changes --id <id> --expected <latest>
    --request "Their request"`. Add `--stage draft` (or another earlier stage)
    to revise earlier work. Later decisions are invalidated and must be made
-   again. Reload status before submitting the revision.
+   again. Reload status, then write the revision as a [minimal edit](minimal-edits.md)
+   of the saved document before submitting it.
 
 Never bypass the runner with an approval field in a document or a generic stage
 edit. A stale document cannot be approved. A changed source pin needs explicit

@@ -142,7 +142,11 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
         env = {k: v for k, v in os.environ.items() if not k.startswith(('CLAUDE', 'ANTHROPIC'))}
         # Regular files avoid a full stdout pipe blocking the child while we watch stop/time.
         with (folder / 'stdout').open('w+') as stdout, (folder / 'stdin').open('w+') as stdin:
-            stdin.write(prompt + '\n\nDOCUMENT DATA:\n' + json.dumps(payload))
+            # The policy and job guidance already are the system prompt or instructions file.
+            stdin.write(
+                'Do the job in your instructions with this data.\n\nDOCUMENT DATA:\n'
+                + json.dumps(payload)
+            )
             stdin.seek(0)
             process = subprocess.Popen(
                 command,

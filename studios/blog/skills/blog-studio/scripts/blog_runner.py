@@ -252,8 +252,10 @@ def inputs(root, record, run):
     return payload
 
 
-def basis(root, directory, record, run, stage):
-    context = inputs(root, record, run)
+def basis(root, directory, record, run, stage, context=None, research=None):
+    """A stage's input pin. Pass the serialised inputs() and research manifest to reuse them."""
+    if context is None:
+        context = json.dumps(inputs(root, record, run), sort_keys=True)
     previous = {}
     if run.get('mode') == 'from-outline':
         previous['supplied_outline'] = studio.artifact_fingerprint(directory, 'OUTLINE.md')
@@ -262,26 +264,37 @@ def basis(root, directory, record, run, stage):
             break
         previous[name] = studio.artifact_fingerprint(directory, STAGES[name][1])
     if run.get('research_contract') and 'research' in previous and run['stages'].get('research'):
-        _, manifest = research_contract.read_bundle(directory / 'research')
-        previous['research_digest'] = manifest['digest']
+        if research is None:
+            _, research = research_contract.read_bundle(directory / 'research')
+        previous['research_digest'] = research['digest']
     original = studio.artifact_fingerprint(directory, 'ORIGINAL.md')
     if run['existing'] and stage != 'draft':
         previous['manuscript'] = studio.artifact_fingerprint(directory, 'DRAFT.md') or original
-    return studio.digest(json.dumps([context, previous, original], sort_keys=True).encode())
+    # Byte-for-byte json.dumps([inputs, previous, original], sort_keys=True), so saved pins hold.
+    pinned = '[' + context + ', ' + json.dumps(previous, sort_keys=True) + ', '
+    return studio.digest((pinned + json.dumps(original) + ']').encode())
 
 
-def survey(root, ident):
+def survey(root, ident, listing=False):
+    """Stage states. A listing skips the version token and next document a decision needs."""
     directory, record, run = load(root, ident)
+    research = None
     if run.get('research_contract') and run['stages'].get('research'):
-        research_contract.read_bundle(directory / 'research')
+        _, research = research_contract.read_bundle(directory / 'research')
+    # Selected context is read and serialised once; every stage pin reuses it.
+    context = json.dumps(inputs(root, record, run), sort_keys=True)
+    bases = {}
+
+    def pin(name):
+        if name not in bases:
+            bases[name] = basis(root, directory, record, run, name, context, research)
+        return bases[name]
+
     rows, next_stage, upstream = [], None, False
     for name in run['pipeline']:
         saved = run['stages'].get(name, {})
         current = studio.artifact_fingerprint(directory, STAGES[name][1])
-        changed = bool(saved) and (
-            saved.get('hash') != current
-            or saved.get('basis') != basis(root, directory, record, run, name)
-        )
+        changed = bool(saved) and (saved.get('hash') != current or saved.get('basis') != pin(name))
         status = (
             'pending'
             if saved.get('status') == 'pending'
@@ -301,30 +314,43 @@ def survey(root, ident):
                 'path': STAGES[name][1],
                 'notes': saved.get('notes', ''),
                 'accepted_by': saved.get('accepted_by'),
+                # Accepted by the saved review level, not the person; it needs no approval.
+                'auto_accepted': status == 'approved'
+                and saved.get('accepted_by') == 'review-policy',
                 'request': saved.get('request', ''),
             }
         )
-    content = ''
+    # What moves the run on: the person's decision on a submitted document, or a submission.
+    awaits = None
     if next_stage:
+        submitted = next(row for row in rows if row['stage'] == next_stage)['status'] == 'draft'
+        awaits = 'decision' if submitted else 'submission'
+    content, revision = '', None
+    if next_stage and not listing:
         path = studio.inside(directory, STAGES[next_stage][1])
         content = path.read_text() if path.is_file() else ''
-    revision = studio.digest(
-        (
-            studio.inside(directory, STATE).read_bytes()
-            + ((directory / 'run.json').read_bytes() if (directory / 'run.json').is_file() else b'')
-            + json.dumps(
-                [
+    if not listing:
+        revision = studio.digest(
+            (
+                studio.inside(directory, STATE).read_bytes()
+                + (
+                    (directory / 'run.json').read_bytes()
+                    if (directory / 'run.json').is_file()
+                    else b''
+                )
+                + json.dumps(
                     [
-                        row,
-                        studio.artifact_fingerprint(directory, row['path']),
-                        basis(root, directory, record, run, row['stage']),
-                    ]
-                    for row in rows
-                ],
-                sort_keys=True,
-            ).encode()
+                        [
+                            row,
+                            studio.artifact_fingerprint(directory, row['path']),
+                            pin(row['stage']),
+                        ]
+                        for row in rows
+                    ],
+                    sort_keys=True,
+                ).encode()
+            )
         )
-    )
     return {
         'id': ident,
         'title': record['title'],
@@ -336,6 +362,7 @@ def survey(root, ident):
         'seconds': run['seconds'],
         'stages': rows,
         'next': next_stage,
+        'awaits': awaits,
         'complete': next_stage is None,
         'content': content,
         'expected': revision,
@@ -373,6 +400,11 @@ def save(root, directory, record, run, event):
     saved(root, record['id'], event)
     result = share(root, 'article', record)
     receipt(root, 'Guided blog', result, 'article')
+
+
+def research_scope(research, sources):
+    """Supplied-only research has nothing to read without supplied sources."""
+    return 'none' if research == 'supplied-only' and not sources else research
 
 
 def create(root, data, approval='conversation'):
@@ -511,6 +543,7 @@ def create(root, data, approval='conversation'):
     if profile:
         record['voice'] = {'mode': 'profile', **studio.voice_pin(root, profile)}
     record['research_policy'] = 'supplied-only' if research == 'none' else research
+    research = research_scope(research, record['sources'])
     pipeline = [] if research == 'none' else ['research-plan', 'research']
     pipeline += (
         (['draft', 'review', 'package'] if mode == 'revise' else ['review', 'package'])
@@ -664,7 +697,10 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
             not stage
             or next(row['status'] for row in found['stages'] if row['stage'] == stage) != 'draft'
         ):
-            raise ValueError('Only a current submitted draft can be approved.')
+            raise ValueError(
+                'Only a current submitted draft can be approved. Read awaits in run status: '
+                'steps the review level accepted automatically need no approval.'
+            )
         _accept(directory, run, stage, 'page' if page else 'conversation')
     elif action == 'changes':
         if not stage:
@@ -691,6 +727,11 @@ def job(root, ident):
         raise ValueError('This run is complete.')
     directory, record, run = load(root, ident)
     payload = inputs(root, record, run)
+    # The package works from the saved writing, and only evidence checks review against
+    # sources. inputs() above still refuses a changed source pin for every step.
+    check = run.get('editor_check')
+    if stage == 'package' or (stage == 'review' and check and check not in studio.SOURCE_CHECKS):
+        payload['sources'] = []
     if (
         run.get('research_contract')
         and stage not in ('research-plan', 'research')
@@ -721,15 +762,34 @@ def job(root, ident):
             payload['documents']['manuscript'] = text_only(payload['documents']['manuscript'])
     if run.get('mode') == 'from-outline':
         payload['documents']['outline'] = (directory / 'OUTLINE.md').read_text()
-    payload['changes'] = run['stages'].get(stage, {}).get('request', '') or run.get(
-        'editor_request', ''
-    )
+    saved = run['stages'].get(stage, {})
+    request = saved.get('request', '') or run.get('editor_request', '')
+    payload['changes'] = request
     if len(json.dumps(payload)) > 600_000:
         raise ValueError('This job needs smaller source excerpts. Continue it in chat.')
+    # A request against a version the author has already seen, or their own manuscript,
+    # edits it. Otherwise (a developed idea, a first attempt) it directs a new document.
+    edit = bool(
+        request
+        and payload['documents'].get(stage, '').strip()
+        and not (stage == 'review' and run.get('editor_check'))
+        and (saved.get('hash') or (stage == 'draft' and run['existing']))
+    )
     references = Path(__file__).resolve().parents[1] / 'references'
-    guidance = STAGES[stage][2] + '\n\n' + (references / GUIDES[stage]).read_text()
-    if stage == 'draft' and run['existing']:
-        guidance += '\nRevise the supplied manuscript in the scope of its brief. Preserve its stance, meaningful qualifiers and author voice; retain unsupported claims as questions rather than inventing support.'
+    if edit:
+        guidance = (
+            f'Edit the saved {STAGES[stage][0].lower()} in documents.{stage}. This is a minimal '
+            'edit, not a rewrite: apply the author’s request at the end of this guidance and '
+            'keep everything else verbatim.\n\n' + (references / 'minimal-edits.md').read_text()
+        )
+    elif stage == 'draft' and run['existing']:
+        guidance = (
+            'Revise the supplied manuscript in the scope of its brief. Preserve its stance, '
+            'meaningful qualifiers and author voice; retain unsupported claims as questions '
+            'rather than inventing support.\n\n' + (references / GUIDES[stage]).read_text()
+        )
+    else:
+        guidance = STAGES[stage][2] + '\n\n' + (references / GUIDES[stage]).read_text()
     guidance += '\n\n' + (references / 'style/house.md').read_text()
     if stage in ('draft', 'review'):
         requested = run.get('editor_check')
@@ -775,6 +835,20 @@ def job(root, ident):
             'a concise reason, evidence as a source passage or an explanation of editorial judgment, '
             'and verdict supported/unsupported/contradicted/editorial. '
             'Do not invent a clean verdict. Return an empty findings list only with explicit coverage and limitations.'
+        )
+    if request:
+        # The request is the author's instruction for this step, not untrusted document data.
+        guidance += (
+            '\n\nAUTHOR’S REQUEST FOR THIS STEP, from the author through Blog Studio. '
+            + (
+                'Apply it as a minimal edit of documents.' + stage + ' and change nothing '
+                'it does not require.'
+                if edit
+                else 'Follow it within this step.'
+            )
+            + '\n"""\n'
+            + request
+            + '\n"""'
         )
     if run.get('model_profiles'):
         found['model_selection'] = model_profiles.route(
@@ -824,8 +898,8 @@ class Engine:
         self.wake.set()
         return self.describe(ident)
 
-    def describe(self, ident):
-        found = survey(self.root, ident)
+    def describe(self, ident, listing=False):
+        found = survey(self.root, ident, listing)
         local = self.local(ident)
         status = local.get('status', 'paused')
         if found['complete']:
@@ -1118,7 +1192,7 @@ def catalog(root):
         ident = path.parent.name
         try:
             if studio.inside(path.parent, STATE).is_file():
-                found = engine(root).describe(ident)
+                found = engine(root).describe(ident, listing=True)
                 rows.append(
                     {
                         k: found[k]

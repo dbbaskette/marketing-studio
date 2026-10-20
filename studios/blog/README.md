@@ -78,10 +78,13 @@ Once the page is open, use its controls to drive the work:
 3. **Press Start the blog.** Blog Studio starts the selected assistant and runs
    the next stage. The progress view shows its steps and the files made so far.
    A new blog can go through research, outline, draft, review, and export package.
-4. **Review when it needs you.** Open the item under **Needs you** on Home or
-   choose **Review** on its run. Read the document, assistant notes, and any
-   comparison with the last approved version. Choose **Approve** and confirm to
-   let the next stage begin.
+4. **Review when it needs you.** With the default **Balanced** review level,
+   Blog Studio stops for you at the outline, with its research beside it, and
+   at the last step, with the steps since the outline beside it. Other steps
+   carry on by themselves. **Step by step** stops at every stage. Open the item
+   under **Needs you** on Home or choose **Review** on its run. Read the
+   document, assistant notes, and any comparison with the last approved version.
+   Choose **Approve** and confirm to let the run continue.
 5. **Request changes in the UI.** Choose **Ask for changes**, select the stage,
    and describe what you want—for example, “Make the introduction more direct.”
    The next version comes back for review. If the run is paused, choose **Resume**.
@@ -124,8 +127,8 @@ The page and chat use the same saved blog. You can move between them as you work
 
 ## Update or get help
 
-For a cloned copy, run `git pull --ff-only` and then `sh installer/install.sh`
-inside the `blog-studio` folder. For a ZIP install, download the latest installer
+For a cloned copy, run `git pull --ff-only` and then `bash install.sh --studios blog`
+inside the `marketing-studio` folder. For a ZIP install, download the latest installer
 ZIP and run setup again. Start a new chat afterwards. Updating keeps your
 writing and saved voices. [More update options →](docs/installation.md#update)
 

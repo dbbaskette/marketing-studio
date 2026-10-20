@@ -38,6 +38,11 @@
       "upstream_path": "packages/api/blogforge/generate/prompts/document.j2",
       "path": "references/blogforge/generate/prompts/document.j2",
       "sha256": "6b2b71326a9062387eca7deb1ea5423d868a1a47e5166ffcdeb8d163427988fb"
+    },
+    {
+      "upstream_path": "packages/api/blogforge/generate/prompts/section_revise.j2",
+      "path": "references/blogforge/generate/prompts/section_revise.j2",
+      "sha256": "6ecc610f04041dfdc0abeae9b6d5ab697a3574a3521afe8ef9e172c740646519"
     }
   ]
 }

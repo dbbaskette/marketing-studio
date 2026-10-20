@@ -223,8 +223,61 @@ class BlogRunnerTests(Fixture):
         self.assertIn('Change the thesis', found['stages'][0]['request'])
         self.assertEqual(found['stages'][0]['status'], 'draft')
 
+    def test_change_request_is_an_instruction_for_a_minimal_edit(self):
+        draft = '# Draft\nThe first fictional paragraph.\n\nThe second fictional paragraph.'
+        found = self.approve(self.submit(self.create()))
+        found = self.submit(found, draft)
+        found = runner.decide(
+            self.root, found['id'], found['expected'], 'changes', 'Shorten the second paragraph.'
+        )
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertIn('Shorten the second paragraph.', guidance)
+        self.assertIn('minimal edit, not a rewrite', guidance)
+        self.assertIn('verbatim', guidance)
+        self.assertNotIn('Write the blog from the approved outline', guidance)
+        self.assertEqual(payload['documents']['draft'], draft)
+        # A review that sends the draft back is an edit of that draft too.
+        found = self.approve(self.submit(found, draft))
+        found = self.submit(found)
+        found = runner.decide(
+            self.root,
+            found['id'],
+            found['expected'],
+            'changes',
+            'Fix the review finding about the title.',
+            target='draft',
+        )
+        guidance = runner.job(self.root, found['id'])[2]
+        self.assertIn('Fix the review finding about the title.', guidance)
+        self.assertIn('minimal edit, not a rewrite', guidance)
+
+    def test_request_for_a_new_document_directs_the_step_without_an_edit(self):
+        ideas = '# Three angles\n\n1. Ownership\n2. Feedback\n3. Context'
+        found = self.submit(self.create(page=True, mode='ideas', stop='outline'), ideas, page=True)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {
+                    'id': found['id'],
+                    'expected': found['expected'],
+                    'request': 'Develop the second idea for technical authors.',
+                },
+            )
+        guidance = runner.job(self.root, found['id'])[2]
+        self.assertIn('Develop the second idea for technical authors.', guidance)
+        self.assertIn('Make an argument outline', guidance)
+        self.assertNotIn('minimal edit', guidance)
+
+    def test_revising_a_manuscript_does_not_ask_for_an_outline_based_draft(self):
+        found = self.create(mode='revise', id=self.article(), stop='draft')
+        guidance = runner.job(self.root, found['id'])[2]
+        self.assertNotIn('approved outline', guidance)
+        self.assertIn('Revise the supplied manuscript', guidance)
+
     def test_research_questions_and_findings_each_wait_for_approval(self):
-        found = self.create(research='supplied-only', stop='outline')
+        source = self.source('A fictional gateway routes synthetic requests.')
+        found = self.create(research='supplied-only', stop='outline', sources=[source['id']])
         self.assertEqual(
             [row['stage'] for row in found['stages']], ['research-plan', 'research', 'outline']
         )
@@ -263,6 +316,81 @@ class BlogRunnerTests(Fixture):
             'A fictional manuscript', runner.job(self.root, ident)[1]['documents']['manuscript']
         )
 
+    def test_supplied_only_research_without_sources_is_no_research(self):
+        for research in ('supplied-only', None):
+            with self.subTest(research=research):
+                data = {
+                    'title': 'Synthetic gateway guide',
+                    'audience': 'New authors',
+                    'goal': 'Explain a fictional gateway',
+                }
+                if research:
+                    data['research'] = research
+                found = runner.create(self.root, data)
+                self.assertEqual(
+                    [row['stage'] for row in found['stages']],
+                    ['outline', 'draft', 'review', 'package'],
+                )
+                _, record, run = runner.load(self.root, found['id'])
+                self.assertNotIn('research_contract', run)
+                self.assertEqual(record['research_policy'], 'supplied-only')
+
+    def test_polling_reads_selected_context_once_per_run(self):
+        source = self.source('A fictional gateway routes synthetic requests.')
+        ids = []
+        for _ in range(3):
+            found = self.approve(self.submit(self.create(sources=[source['id']])))
+            found = self.approve(self.submit(found))
+            ids.append(self.submit(found)['id'])
+        with patch.object(runner, 'inputs', wraps=runner.inputs) as counted:
+            detail = runner.survey(self.root, ids[0])
+        self.assertEqual(counted.call_count, 1)
+        self.assertTrue(detail['expected'])
+        with patch.object(runner, 'inputs', wraps=runner.inputs) as counted:
+            listed = runner.catalog(self.root)
+        self.assertEqual(counted.call_count, len(ids))
+        self.assertEqual(
+            [row['stages'] for row in listed['items'] if row['id'] == ids[0]], [detail['stages']]
+        )
+        # List views skip the version token; decisions still need the exact one.
+        self.assertIsNone(runner.survey(self.root, ids[0], listing=True)['expected'])
+
+    def test_list_and_detail_views_agree_when_inputs_change(self):
+        found = self.approve(self.submit(self.create()))
+        directory, record = studio.item(self.root, 'articles', found['id'])
+        record['title'] = 'A changed synthetic title'
+        studio.persist(directory, 'articles', record)
+        detail = runner.survey(self.root, found['id'])
+        self.assertEqual(detail['stages'][0]['status'], 'stale')
+        self.assertNotEqual(detail['expected'], found['expected'])
+        listed = next(row for row in runner.catalog(self.root)['items'] if row['id'] == found['id'])
+        self.assertEqual(listed['stages'], detail['stages'])
+
+    def test_input_pins_keep_their_saved_format(self):
+        found = self.approve(self.submit(self.create()))
+        directory, record, run = runner.load(self.root, found['id'])
+        context = runner.inputs(self.root, record, run)
+        original = studio.artifact_fingerprint(directory, 'ORIGINAL.md')
+
+        def pin(previous):
+            return studio.digest(json.dumps([context, previous, original], sort_keys=True).encode())
+
+        self.assertEqual(run['stages']['outline']['basis'], pin({}))
+        outline = studio.artifact_fingerprint(directory, 'OUTLINE.md')
+        self.assertEqual(
+            runner.basis(self.root, directory, record, run, 'draft'), pin({'outline': outline})
+        )
+
+    def test_only_steps_that_use_evidence_receive_sources(self):
+        source = self.source('A fictional gateway routes synthetic requests.')
+        found = self.create(sources=[source['id']])
+        while found['next'] != 'package':
+            self.assertEqual(len(runner.job(self.root, found['id'])[1]['sources']), 1)
+            found = self.approve(self.submit(found))
+        _, payload, _ = runner.job(self.root, found['id'])
+        self.assertEqual(payload['sources'], [])
+        self.assertIn('review', payload['documents'])
+
     def test_page_creation_retry_is_idempotent(self):
         data = {
             'operation': 'a' * 32,
@@ -280,7 +408,8 @@ class BlogRunnerTests(Fixture):
         import studios_config
 
         studios_config.update({'review': {'level': 'balanced'}})
-        found = self.create(page=True, research='supplied-only')
+        source = self.source('A fictional gateway routes synthetic requests.')
+        found = self.create(page=True, research='supplied-only', sources=[source['id']])
         ident = found['id']
         while found['next'] != 'outline':
             found = self.submit(found, page=True)
@@ -301,6 +430,30 @@ class BlogRunnerTests(Fixture):
         self.assertTrue(self.approve(found, page=True)['complete'])
         _, _, saved = runner.load(self.root, ident)
         self.assertEqual(saved['stages']['draft']['accepted_by'], 'review-policy')
+
+    def test_status_says_whether_a_step_was_accepted_or_awaits_a_decision(self):
+        import studios_config
+
+        studios_config.update({'review': {'level': 'balanced'}})
+        found = self.create()
+        self.assertEqual(found['awaits'], 'submission')
+        found = self.submit(found)
+        self.assertEqual((found['next'], found['awaits']), ('outline', 'decision'))
+        found = self.approve(found)
+        self.assertFalse(found['stages'][0]['auto_accepted'])
+        found = self.submit(found)
+        # Balanced accepts the draft; nothing waits for the person, so approve is refused.
+        self.assertEqual((found['next'], found['awaits']), ('review', 'submission'))
+        self.assertTrue(found['stages'][1]['auto_accepted'])
+        with self.assertRaisesRegex(ValueError, 'need no approval'):
+            self.approve(found)
+        status = runner.engine(self.root).describe(found['id'])
+        self.assertEqual(status['awaits'], 'submission')
+        self.assertTrue(status['stages'][1]['auto_accepted'])
+        found = self.submit(self.submit(found))
+        self.assertEqual((found['next'], found['awaits']), ('package', 'decision'))
+        found = self.approve(found)
+        self.assertIsNone(found['awaits'])
 
     def test_automatic_worker_continues_until_final_review(self):
         import studios_config
@@ -669,6 +822,10 @@ class BlogRunnerTests(Fixture):
             target='draft',
         )
         self.assertEqual(found['next'], 'draft')
+        # The author's own manuscript is edited, not rewritten from the brief.
+        guidance = runner.job(self.root, ident)[2]
+        self.assertIn('minimal edit, not a rewrite', guidance)
+        self.assertIn('Clarify the introduction', guidance)
         found = self.submit(found, 'My revised synthetic draft')
         self.assertEqual(found['stages'][0]['status'], 'draft')
         found = self.approve(found)
@@ -729,6 +886,35 @@ else:
                 else:
                     self.assertEqual(args[args.index('--tools') + 1], '')
                     self.assertIn('--strict-mcp-config', args)
+
+    def test_policy_and_job_guidance_are_sent_once(self):
+        self.executable(
+            'args=sys.argv[1:]\n'
+            "system=args[args.index('--system-prompt')+1] if '--system-prompt' in args else Path(json.loads([a for a in args if a.startswith('model_instructions_file=')][0].split('=',1)[1])).read_text()\n"
+            'Path('
+            + repr(str(self.capture))
+            + ').write_text(json.dumps({"system":system,"stdin":sys.stdin.read()}))\n'
+            "value={'content':'Synthetic output','notes':'Fixture CLI; no account.'}\n"
+            "if '--output-last-message' in args:\n Path(args[args.index('--output-last-message')+1]).write_text(json.dumps(value))\n"
+            "else:\n print(json.dumps({'structured_output':value}))\n"
+        )
+        for agent in ('codex', 'claude'):
+            with (
+                self.subTest(agent=agent),
+                patch.object(
+                    blog_worker.source_curator, 'executable', return_value=str(self.binary)
+                ),
+                patch.object(blog_worker.source_curator, 'codex_options', return_value=[]),
+            ):
+                blog_worker.generate(
+                    agent, {'title': 'Synthetic title'}, 'Write the fixture outline', seconds=5
+                )
+                seen = json.loads(self.capture.read_text())
+                sent = seen['system'] + seen['stdin']
+                for text in (blog_worker.POLICY, 'Write the fixture outline'):
+                    self.assertEqual(sent.count(text), 1)
+                    self.assertIn(text, seen['system'])
+                self.assertIn('"title": "Synthetic title"', seen['stdin'])
 
     def test_editing_reviews_use_a_typed_schema_in_both_cli_adapters(self):
         self.executable(
