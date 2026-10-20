@@ -55,9 +55,9 @@ navigation and an optional foot line. The toolbar holds the title and the page's
 actions. At 52rem and below, the sidebar becomes the shared bottom tab bar, with
 safe-area insets.
 
-Navigation items carry an icon and a label in every product. Marketing Studio already
-does. The studios add icons for Home, the list screen (Blogs, Decks, Trainings), Status
-and Settings, drawn with each controller's existing icon helper.
+Navigation items carry an icon and a label in every product. The studios already draw
+theirs from one 24-unit icon set. Marketing Studio's sidebar uses the same set and the
+shared icon sizing, instead of its own stroke and size.
 
 ## Controls
 
@@ -66,12 +66,13 @@ and Settings, drawn with each controller's existing icon helper.
 | Actions | `.button`, `.button-filled`, `.button-quiet`, `.button-danger` |
 | Fields | `.field-label`, `.input`, `.field-hint`; the existing select and file-picker styles |
 | Two to four exclusive options | `.segmented` |
-| A choice that is an object (mode, template, material) | One shared choice card, promoted from Presentation Studio's `.pick-card`. It replaces Blog Studio's `.mode-choice` and Training Studio's `.material-choice` styling. |
+| A choice that is an object (a task to start, a template) | One shared choice card, promoted from Presentation Studio's `.pick-card`. Blog Studio's start tasks (`.task-choice`) use it. |
+| Several independent on/off choices | `.chips` and `.chip`. Training Studio's material choices use them instead of the Training-only `.material-choice` rules. |
 | Groups and objects | `.card` (opaque) |
 | Documents | `.paper` |
 | Tabular data | `.table` |
 | Page headings | `.large-title` and `.lede` |
-| Status | Shared toasts in a polite live region. A message stays long enough to read and pauses while hovered or focused. |
+| Status | Shared toasts in a polite live region, timed as the studios time them now. A message that holds a link or an action is a persistent `.callout` instead. |
 | Errors | The persistent `.notice` with `role="alert"` |
 | Sheets and dialogs | The shared sheet look. Blog Studio's native `<dialog>` elements keep their focus and Escape behaviour and take the sheet appearance. |
 
@@ -105,8 +106,10 @@ page. The duplicates in `home.css` and `blog.css` are removed.
     `min(72vh, 48rem)` and no nested scroll area on a phone.
 - **Blog Studio beginner page.** Links the shared stylesheet through the in-studio path
   `../skills/blog-studio/assets/management/style.css`, so `studios/blog` stays
-  self-contained. It uses the shell and Blog Studio blue, and keeps its content, its
-  prompt output and its no-server use.
+  self-contained. It is a single-task page, so it takes the toolbar, cards and Blog
+  Studio blue without a sidebar. It keeps its content, its prompt output and its
+  no-server use. Served locally from the Blog Studio root rather than `preview/`, so the
+  stylesheet resolves.
 - **Design documents.** Rebuild `docs/design/unified-settings-preview.html` on the
   shared shell and controls, and regenerate its screenshots. `docs/design/golden-gate.md`
   gains the component inventory and the rule that page stylesheets add layout only.
