@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from studio_core import preferences, brand_catalog
+from studio_core import preferences, brand_catalog, runtime
 from studio_core.model_catalog import Catalog
 from studio_core.server import for_product
 from studio_core.studios_config import for_product as config_for
@@ -72,7 +72,8 @@ class Controller:
         values, problem = self.store.read()
         return {'shared': values, 'shared_problem': problem,
                 'setup': {'done': not problem and preferences.ready(values)},
-                'studios': [], 'efforts': preferences.EFFORTS}
+                'studios': [], 'efforts': preferences.EFFORTS,
+                'assistant_default': runtime.assistant_default()}
 
     def accepts(self, target):
         path = urlsplit(target).path

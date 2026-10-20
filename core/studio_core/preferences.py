@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from studio_core import model_profiles, review_policy
+from studio_core import model_profiles, review_policy, runtime
 
 WorkspaceError = ValueError
 
@@ -78,7 +78,7 @@ def check(changes, current):
         if address:
             repository(address)
     assistant = merged.get('assistant') or {}
-    agent = assistant.get('agent') or 'claude'
+    agent = assistant.get('agent') or runtime.assistant_default()
     if agent not in EFFORTS:
         raise WorkspaceError('Choose Claude Code or Codex.')
     model, effort = assistant.get('model'), assistant.get('effort')
@@ -179,7 +179,7 @@ def finish(config, prepare):
     require_workspace(values)
     defaults = {}
     if not (values.get('assistant') or {}).get('agent'):
-        defaults['assistant'] = {'agent': 'claude'}
+        defaults['assistant'] = {'agent': runtime.assistant_default()}
     if values.get('output') is None:
         defaults['output'] = 'pptx'
     prepared = dict(values)

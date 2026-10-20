@@ -2,6 +2,8 @@
 from copy import deepcopy
 from contextvars import ContextVar
 
+from studio_core import runtime
+
 NAMES = ('quick', 'main', 'complex')
 EFFORTS = {'claude': ('low', 'medium', 'high', 'xhigh', 'max'),
            'codex': ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')}
@@ -51,7 +53,7 @@ def check(values):
     if mode not in ('single', 'by_task'):
         raise ValueError('Choose one model or models by task.')
     raw_agent = (values.get('assistant') or {}).get('agent')
-    agent = 'claude' if raw_agent in (None, '') else raw_agent
+    agent = runtime.assistant_default() if raw_agent in (None, '') else raw_agent
     if not isinstance(agent, str) or agent not in EFFORTS:
         raise ValueError('Choose Claude Code or Codex.')
     profiles = models.get('profiles', {})
