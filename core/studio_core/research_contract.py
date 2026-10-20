@@ -4,6 +4,7 @@ Studios supply bounded, separate author/reviewer invocations. Existing schema-1
 runs never enter this adapter. No provider, installation or shared setting is
 changed here.
 """
+import copy
 import hashlib
 import json
 import os
@@ -13,6 +14,8 @@ import shutil
 import subprocess
 
 OWNER = 'harness-research-synthesis'
+# Where the Harness Research installer keeps `current` and versions/<version>-<digest>.
+SHARED = (Path('Library/Application Support/Harness Research'), Path('.local/share/harness-research'))
 CASE = Path('.studio-research')
 ARTIFACTS = {'report.md', 'brief.md', 'evidence.md', 'facts.json'}
 # Harness Research 1.0.1 and newer exit 1 for a needs-revision review and for stale
@@ -61,27 +64,78 @@ def write(root, name, value):
 def snapshot(tool=None):
     """Select the installed capability once; an older helper retains the old adapter."""
     try:
-        runtime = Path(tool.runtime) if tool else find_runtime()
-        package = json.loads((runtime / 'package.json').read_text())
-        if not (runtime / 'scripts/lib/synthesis-cli.mjs').is_file():
-            return None
-        relevant = sorted([runtime / 'package.json', *runtime.glob('scripts/**/*.mjs'),
-                           *runtime.glob('references/*')])
-        digest = hashlib.sha256()
-        for path in relevant:
-            if path.is_file():
-                digest.update(str(path.relative_to(runtime)).encode())
-                digest.update(hashlib.sha256(path.read_bytes()).digest())
-        return {'schema': 2, 'version': package['version'], 'digest': digest.hexdigest()}
+        return capability(Path(tool.runtime) if tool else find_runtime())
     except (OSError, ValueError, AttributeError, KeyError):
         return None
+
+
+def capability(runtime):
+    """The schema, version and digest of the helper files a run depends on, or None for a
+    helper without synthesis."""
+    package = json.loads((runtime / 'package.json').read_text())
+    if not (runtime / 'scripts/lib/synthesis-cli.mjs').is_file():
+        return None
+    relevant = sorted([runtime / 'package.json', *runtime.glob('scripts/**/*.mjs'),
+                       *runtime.glob('references/*')])
+    digest = hashlib.sha256()
+    for path in relevant:
+        if path.is_file():
+            digest.update(str(path.relative_to(runtime)).encode())
+            digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return {'schema': 2, 'version': package['version'], 'digest': digest.hexdigest()}
+
+
+def runtime_for(saved, runtime=None):
+    """The helper with a run's saved capability: the current one, or a version the Harness
+    Research installer retained in versions/<version>-<digest> after an update. None when
+    neither is installed."""
+    version = saved.get('version') if isinstance(saved, dict) else None
+    if not isinstance(version, str) or not version:
+        return None
+    try:
+        current = (Path(runtime) if runtime else find_runtime()).resolve()
+    except (OSError, ValueError):
+        current = None
+    folders = [current.parent] if current and current.parent.name == 'versions' else []
+    if not os.environ.get('HARNESS_RESEARCH_RUNTIME'):
+        folders += [Path.home() / root / 'versions' for root in SHARED]
+    candidates = [current] if current else []
+    for folder in dict.fromkeys(folders):
+        try:
+            # A retained version is a real folder; a link could point anywhere.
+            candidates += sorted(path for path in folder.iterdir()
+                                 if path.name.startswith(version + '-')
+                                 and not path.is_symlink() and path.is_dir())
+        except OSError:
+            continue
+    for candidate in candidates:
+        try:
+            if capability(candidate) == saved:
+                return candidate
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return None
+
+
+def matching(tool, saved):
+    """`tool`, or a copy of it running the retained helper version `saved` describes. None
+    when that version is no longer installed."""
+    if not saved:
+        return None
+    if snapshot(tool) == saved:
+        return tool
+    runtime = runtime_for(saved, getattr(tool, 'runtime', None))
+    if runtime is None:
+        return None
+    kept = copy.copy(tool)
+    kept.runtime = runtime
+    return kept
 
 
 def find_runtime():
     override = os.environ.get('HARNESS_RESEARCH_RUNTIME')
     roots = [Path(override)] if override else [
-        Path.home() / 'Library/Application Support/Harness Research/current',
-        Path.home() / '.local/share/harness-research/current',
+        *(Path.home() / root / 'current' for root in SHARED),
         Path.home() / '.agents/skills/harness-research',
         Path.home() / '.claude/skills/harness-research',
     ]
@@ -322,9 +376,9 @@ def native(engine, root, run, task, sources, product):
     else:
         from runner.pipeline import Work, Step
     from workspace import WorkspaceError
-    tool = engine.research()
-    saved = engine._load(root).get('research_contract')
-    if not saved or snapshot(tool) != saved:
+    # After an update the run keeps the helper version it started with, while it is retained.
+    tool = matching(engine.research(), engine._load(root).get('research_contract'))
+    if tool is None:
         raise WorkspaceError('This research run needs its saved Harness Research version. Restore it before continuing.')
     folders = []
 

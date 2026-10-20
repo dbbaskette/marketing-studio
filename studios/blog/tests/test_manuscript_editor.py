@@ -689,9 +689,8 @@ class ResearchMetadataTests(Fixture):
             (root / 'research/report.md').write_text('Synthetic research')
 
         with (
-            patch.object(synthesis_research.research_contract, 'snapshot', return_value={}),
             patch.object(
-                synthesis_research.research_contract, 'find_runtime', return_value=self.base
+                synthesis_research.research_contract, 'runtime_for', return_value=self.base
             ),
             patch.object(
                 synthesis_research.research_contract.Workflow, 'run', side_effect=workflow

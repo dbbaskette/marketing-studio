@@ -1,5 +1,8 @@
 import json
 import os
+from pathlib import Path
+import shutil
+import tempfile
 import threading
 import unittest
 from unittest.mock import patch
@@ -136,6 +139,66 @@ class SynthesisIntegrationTests(Fixture):
         self.assertEqual(engine.describe(ident)['next'], 'outline', engine.local(ident))
         directory, _, _ = blog_runner.load(self.root, ident)
         research_contract.read_bundle(directory / 'research')
+
+    def test_unfinished_research_continues_with_the_retained_helper_after_an_update(self):
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        shared = Path(holder.name).resolve() / 'Harness Research'
+        version = json.loads((Path(RUNTIME) / 'package.json').read_text())['version']
+        old = shared / 'versions' / (version + '-' + 'a' * 20)
+        newer = shared / 'versions' / ('9.9.9-' + 'b' * 20)
+        for folder in (old, newer):
+            shutil.copytree(RUNTIME, folder, ignore=shutil.ignore_patterns('tests', 'docs'))
+        (newer / 'scripts/harness-research.mjs').write_text(
+            "console.error('This updated helper must not be used.'); process.exit(3);\n"
+        )
+        (shared / 'current').symlink_to('versions/' + old.name)
+        os.environ['HARNESS_RESEARCH_RUNTIME'] = str(shared / 'current')
+        source = self.source(TEXT)
+        shown = blog_runner.create(
+            self.root,
+            {
+                'title': 'Synthetic explanation',
+                'goal': 'Explain the bounded example',
+                'audience': 'New learners',
+                'sources': [source['id']],
+                'research': 'supplied-only',
+            },
+            'page',
+        )
+        ident = shown['id']
+        blog_runner.submit(
+            self.root,
+            ident,
+            'research-plan',
+            {'content': '# Plan\nExplain this synthetic example.', 'notes': ''},
+            shown['expected'],
+            page=True,
+        )
+        # The helper is updated before research runs; the old version stays retained.
+        (shared / 'current').unlink()
+        (shared / 'current').symlink_to('versions/' + newer.name)
+        directory, _, run = blog_runner.load(self.root, ident)
+        _, payload, _ = blog_runner.job(self.root, ident)
+
+        def worker(engine, data, guidance, **options):
+            if 'review_template' in data:
+                value = review(data['review_template'])
+            else:
+                captured = data['sources'][0]
+                value = dossier(data['worker'], captured['file'], captured['origin'], 'selected')
+            return {'content': json.dumps(value), 'notes': ''}
+
+        result = synthesis_research.generate(
+            directory, run, payload, worker, seconds=60, stop=threading.Event()
+        )
+        self.assertIn('Independent evidence and prose review completed', result['notes'])
+        research_contract.read_bundle(directory / 'research')
+        shutil.rmtree(old)
+        with self.assertRaisesRegex(ValueError, 'Restore the saved Harness Research version'):
+            synthesis_research.generate(
+                directory, run, payload, worker, seconds=60, stop=threading.Event()
+            )
 
     def test_malformed_sections_are_repaired_using_real_helper_validation(self):
         for repair in (True, False):
