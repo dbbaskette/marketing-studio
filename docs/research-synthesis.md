@@ -62,7 +62,11 @@ Blog Studio supplies the same brief and typed evidence to later writing jobs.
 New synthesis-driven browser runs use run schema 3, so older studio runtimes
 refuse them rather than resuming through a legacy research adapter. A missing
 research contract is rejected. Existing manual and queued research continues
-through its old adapter. Fresh
+through its old adapter. A run records the Harness Research version and digest it
+started with. When Harness Research is updated before the run finishes, the studio
+runs and verifies its research with the matching retained
+`versions/<version>-<digest>` folder of the Harness Research installation; only when
+that version is gone does it ask for it to be restored. Fresh
 conversation workflows can explicitly import a complete synthesis case:
 
 - Training Studio: `training.py research-import --case CASE`, then its normal

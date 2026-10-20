@@ -1,13 +1,108 @@
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 import marketing_studio  # Puts the shared core on the import path.
 from studio_core import research_contract as contract
 from synthesis_fixture import TEXT, dossier, review
 
 RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
+
+
+class HelperAnswerTests(unittest.TestCase):
+    """Harness Research 1.0.1 exits 1 for a needs-revision review and stale evidence."""
+
+    def answer(self, action, code, out, err=''):
+        done = subprocess.CompletedProcess([], code, out, err)
+        with mock.patch.object(contract.shutil, 'which', return_value='/usr/bin/node'), \
+                mock.patch.object(contract.subprocess, 'run', return_value=done):
+            return contract.Workflow('/opt/harness-research').command(
+                Path('/t/case'), action, *(('review.json', 'reviewer-1') if action in ('save', 'review') else ()))
+
+    def test_results_that_exit_one_are_read_for_review_verify_and_status(self):
+        self.assertEqual(self.answer('review', 1, '{"status":"needs-revision"}', 'Rejected.\n'),
+                         {'status': 'needs-revision'})
+        self.assertEqual(self.answer('verify', 1, '{"status":"stale","artifact_integrity":"failed"}\n'),
+                         {'status': 'stale', 'artifact_integrity': 'failed'})
+        self.assertEqual(self.answer('status', 1, '{"status":"stale"}'), {'status': 'stale'})
+
+    def test_a_non_zero_exit_without_a_json_result_is_a_failure(self):
+        for out in ('', 'Usage: harness-research', '[1]'):
+            with self.assertRaisesRegex(ValueError, 'Evidence is stale'):
+                self.answer('review', 1, out, 'Evidence is stale. Save revised content.\n')
+        with self.assertRaisesRegex(ValueError, 'Harness Research failed'):
+            self.answer('verify', 2, '{"status":"stale"}')
+
+    def test_other_actions_still_fail_on_any_non_zero_exit(self):
+        with self.assertRaisesRegex(ValueError, 'Invalid dossier'):
+            self.answer('save', 1, '{"status":"draft"}', 'Invalid dossier.\n')
+        self.assertEqual(contract.answered(['synthesis', 'save'], 1, '{}'), False)
+        self.assertEqual(contract.answered(['status'], 1, '{}'), False)
+        self.assertEqual(contract.answered(('synthesis', 'verify'), 1, '{}'), True)
+
+def fake_runtime(folder, version, text):
+    """Just enough of an installed helper for its capability to be described."""
+    (folder / 'scripts/lib').mkdir(parents=True)
+    (folder / 'references').mkdir()
+    (folder / 'package.json').write_text(json.dumps({'version': version}))
+    for name in ('scripts/harness-research.mjs', 'scripts/lib/synthesis-cli.mjs'):
+        (folder / name).write_text('// ' + text + '\n')
+    (folder / 'references/synthesize.md').write_text(text)
+    return folder
+
+
+class RetainedVersionTests(unittest.TestCase):
+    """The Harness Research installer keeps each version in versions/<version>-<digest>."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.home = Path(temp.name).resolve()
+        self.shared = self.home / 'Library/Application Support/Harness Research'
+        self.old = fake_runtime(self.shared / 'versions/1.0.0-aaaaaaaaaaaaaaaaaaaa', '1.0.0', 'old')
+        self.new = fake_runtime(self.shared / 'versions/1.0.1-bbbbbbbbbbbbbbbbbbbb', '1.0.1', 'new')
+        (self.shared / 'current').symlink_to('versions/' + self.new.name)
+        self.saved = contract.snapshot(SimpleNamespace(runtime=self.old))
+        for patch in (mock.patch.dict(os.environ, {'HARNESS_RESEARCH_RUNTIME': str(self.shared / 'current')}),
+                      mock.patch.object(Path, 'home', return_value=self.home)):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def test_the_current_helper_is_used_while_it_matches(self):
+        current = contract.snapshot(SimpleNamespace(runtime=self.new))
+        self.assertEqual(contract.runtime_for(current), self.new)
+        tool = SimpleNamespace(runtime=self.shared / 'current', node='node')
+        self.assertIs(contract.matching(tool, current), tool)
+
+    def test_unfinished_research_uses_the_retained_version_with_its_saved_digest(self):
+        self.assertEqual(contract.runtime_for(self.saved), self.old)
+        tool = SimpleNamespace(runtime=self.shared / 'current', node='node')
+        kept = contract.matching(tool, self.saved)
+        self.assertEqual((kept.runtime, kept.node), (self.old, 'node'))
+        self.assertEqual(tool.runtime, self.shared / 'current')
+        # A helper found elsewhere still finds the shared installer's retained versions.
+        os.environ.pop('HARNESS_RESEARCH_RUNTIME')
+        elsewhere = fake_runtime(self.home / 'checkout', '1.0.1', 'checkout')
+        self.assertEqual(contract.runtime_for(self.saved, elsewhere), self.old)
+
+    def test_a_changed_linked_or_unknown_version_is_never_used(self):
+        for saved in (None, {}, {**self.saved, 'version': '../1.0.0'}, {**self.saved, 'version': '1.0.2'},
+                      {**self.saved, 'digest': '0' * 64}):
+            with self.subTest(saved=saved):
+                self.assertIsNone(contract.runtime_for(saved))
+                self.assertIsNone(contract.matching(SimpleNamespace(runtime=self.new), saved))
+        (self.old / 'references/synthesize.md').write_text('changed')
+        self.assertIsNone(contract.runtime_for(self.saved))
+        (self.old / 'references/synthesize.md').write_text('old')
+        moved = self.home / 'moved'
+        self.old.rename(moved)
+        self.old.symlink_to(moved, target_is_directory=True)
+        self.assertIsNone(contract.runtime_for(self.saved))
+
 
 @unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME to the exact locked release source for helper integration.')
 class ResearchContractTests(unittest.TestCase):

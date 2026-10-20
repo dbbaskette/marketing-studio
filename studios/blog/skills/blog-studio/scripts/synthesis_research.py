@@ -140,7 +140,9 @@ def generate(directory, run, payload, worker, *, seconds, stop):
                 for source in sources:
                     research_contract.write(case, source['file'], source['path'].read_bytes())
                 research_contract.write(case, 'dossier.json', json.dumps(value))
-                research_contract.Workflow().command(case, 'save', 'dossier.json', data['worker'])
+                research_contract.Workflow(runtime).command(
+                    case, 'save', 'dossier.json', data['worker']
+                )
 
         def invoke(phase, guidance, data, offered, fetch):
             # Only the parent fetches and pins bytes; generated source text is never evidence.
@@ -204,12 +206,13 @@ def generate(directory, run, payload, worker, *, seconds, stop):
                         )
             return answer['content'], sources
 
-        saved = research_contract.snapshot()
-        if saved != run.get('research_contract'):
+        # After an update the blog keeps the helper version it started with, while it is retained.
+        runtime = research_contract.runtime_for(run.get('research_contract'))
+        if runtime is None:
             raise ValueError(
                 'Restore the saved Harness Research version before continuing this blog.'
             )
-        research_contract.Workflow().run(directory, task, invoke, sources)
+        research_contract.Workflow(runtime).run(directory, task, invoke, sources)
         research_contract.publish(directory / research_contract.CASE, directory / 'research')
         return {
             'content': (directory / 'research/report.md').read_text(),

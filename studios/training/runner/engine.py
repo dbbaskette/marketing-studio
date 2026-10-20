@@ -2773,7 +2773,10 @@ class Engine(Reviewing):
         with self.files:
             record = self._load(root)
             if record.get('research_contract'):
-                verified = self.research()._json('synthesis', 'verify', '--project', str(root / research_contract.CASE))
+                tool = self.research()
+                # Verify with the helper version that did the research, while it is retained.
+                tool = research_contract.matching(tool, record['research_contract']) or tool
+                verified = tool._json('synthesis', 'verify', '--project', str(root / research_contract.CASE))
                 if verified.get('status') != 'complete' or verified.get('artifact_integrity') == 'failed':
                     raise WorkspaceError('Research needs independent review before authoring can continue.')
                 facts, manifest = research_contract.publish(root / research_contract.CASE, root / 'research')

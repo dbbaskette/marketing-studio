@@ -34,6 +34,7 @@ import tempfile
 from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
+from studio_core import research_contract
 from workspace import WorkspaceError
 
 from runner import companion
@@ -98,7 +99,8 @@ class Research:
 
     def _call(self, *args: str) -> str:
         code, out, err = self.run([self.node, str(self.runtime / SCRIPT), *args])
-        if code != 0:
+        # A needs-revision review or stale evidence exits 1 with its result printed.
+        if code != 0 and not research_contract.answered(args, code, out):
             lines = [line.strip() for line in err.splitlines() if line.strip()]
             raise Refused(lines[-1] if lines else f'it ended with exit code {code}')
         return out

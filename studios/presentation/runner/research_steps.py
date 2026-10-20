@@ -56,6 +56,8 @@ class Researching:
         clock = time.monotonic()
         if self._load(root).get('research_contract'):
             tool = self.research()
+            # Verify with the helper version that did the research, while it is retained.
+            tool = research_contract.matching(tool, self._load(root)['research_contract']) or tool
             verified = tool._json('synthesis', 'verify', '--project', str(root / research_contract.CASE))
             if verified.get('status') != 'complete' or verified.get('artifact_integrity') == 'failed':
                 raise WorkspaceError('Research needs independent review before authoring can continue.')

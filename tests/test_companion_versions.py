@@ -120,13 +120,6 @@ class CompanionVersionsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'link or a special file'):
             companions.resolve_companion('harness-research', self.pin)
 
-    def test_cached_release_targets_do_not_fetch_or_accept_another_repository(self):
-        known = {'repository': str(self.repo), 'latest': '1.1.0'}
-        with mock.patch.object(companions, 'git', side_effect=AssertionError('Lookup used')):
-            self.assertEqual(companions.available_version(self.pin, known), '1.1.0')
-            self.assertEqual(companions.available_version(self.pin, {**known, 'repository': '/another'}), '1.0.0')
-            self.assertEqual(companions.available_version(self.pin, {**known, 'latest': '1.2.0-beta'}), '1.0.0')
-
     def test_no_matching_tag_and_remote_failure_are_explicit(self):
         with mock.patch.object(companions, 'git', return_value=(0, '')):
             with self.assertRaisesRegex(ValueError, 'No stable'):
@@ -158,12 +151,22 @@ class CompanionVersionsTests(unittest.TestCase):
             updater().refresh(path)
         self.assertEqual(path.read_bytes(), previous)
 
-    def bring(self, found, agree, declined=None):
+    def bring(self, found, agree, declined=None, pin=None):
         self.root_state = {}
         with mock.patch.object(companions, 'companion_found', return_value=found), \
                 mock.patch.object(companions, 'node_version', return_value='v24.0.0'):
             return companions.bring_companions(self.root / 'home', self.root / 'install', ['codex'],
-                {'harness-research': self.pin}, agree, self.root_state, declined)['harness-research']
+                {'harness-research': pin or self.pin}, agree, self.root_state, declined)['harness-research']
+
+    def offline(self):
+        """Release lookups fail as they would offline; fetching an exact commit still works."""
+        real = companions.git
+
+        def git(args, cwd):
+            if args[0] == 'ls-remote':
+                raise AssertionError('Release lookup used')
+            return real(args, cwd)
+        return mock.patch.object(companions, 'git', side_effect=git)
 
     def test_skip_and_noninteractive_ask_never_query_or_fetch(self):
         for declined in ('skipped', 'nobody to ask'):
@@ -173,9 +176,9 @@ class CompanionVersionsTests(unittest.TestCase):
     def test_declining_does_not_download_source_or_run_installers(self):
         self.release('1.1.0')
         with mock.patch.object(companions, 'fetch_revision', side_effect=AssertionError('Source fetched')):
-            result = self.bring({'codex': '1.0.0'}, lambda *args: False, 'declined')
+            result = self.bring({'codex': None}, lambda *args: False, 'declined')
         self.assertEqual(result['state'], 'waiting')
-        self.assertEqual(result['wanted'], '1.1.0')
+        self.assertEqual(result['wanted'], '1.0.0')
         self.assertFalse((self.root / 'install').exists())
 
     def test_newer_installed_release_is_never_downgraded(self):
@@ -183,18 +186,35 @@ class CompanionVersionsTests(unittest.TestCase):
         with mock.patch.object(companions, 'fetch_revision', side_effect=AssertionError('Source fetched')):
             self.assertEqual(self.bring({'codex': '2.0.0'}, lambda *args: True)['state'], 'left alone')
 
-    def test_explicit_install_selects_newer_even_when_the_minimum_is_already_met(self):
-        commit = self.release('1.1.0')
-        with mock.patch.object(companions, 'run_companion', return_value={'state': 'installed'}) as run:
-            result = self.bring({'codex': '1.0.0'}, lambda *args: True)
-        self.assertEqual(result['wanted'], '1.1.0')
-        self.assertEqual(result['state'], 'installed')
-        self.assertEqual(run.call_args.args[1]['commit'], commit)
-        recorded = self.root_state['companions']['harness-research']
-        self.assertEqual(recorded['version'], '1.1.0')
-        self.assertEqual(recorded['commit'], commit)
-        self.assertRegex(recorded['sha256'], r'^[0-9a-f]{64}$')
+    def test_an_installed_copy_meeting_the_requirement_is_accepted_offline(self):
+        newer = {**self.pin, 'version': '1.1.0', 'commit': self.release('1.1.0')}
+        with mock.patch.object(companions, 'git', side_effect=AssertionError('Lookup used')):
+            for pin in (self.pin, newer):
+                with self.subTest(locked=pin['version']):
+                    result = self.bring({'codex': '1.0.0'}, lambda *args: True, pin=pin)
+                    self.assertEqual(result['state'], 'left alone')
+                    self.assertEqual(self.root_state, {})
 
+    def test_install_uses_the_exact_lock_even_when_newer_tags_exist(self):
+        self.release('1.1.0')
+        for found in ({'codex': None}, {'codex': '0.9.0'}):
+            with self.subTest(found=found), self.offline(), \
+                    mock.patch.object(companions, 'run_companion', return_value={'state': 'installed'}) as run:
+                result = self.bring(found, lambda *args: True)
+            self.assertEqual((result['wanted'], result['state']), ('1.0.0', 'installed'))
+            self.assertEqual(run.call_args.args[1], self.pin)
+            recorded = self.root_state['companions']['harness-research']
+            self.assertEqual({key: recorded[key] for key in ('version', 'commit', 'sha256')},
+                             {key: self.pin[key] for key in ('version', 'commit', 'sha256')})
+
+    def test_a_lock_whose_source_changed_is_refused_rather_than_recomputed(self):
+        changed = {**self.pin, 'sha256': '0' * 64}
+        with self.offline(), mock.patch.object(companions, 'run_companion',
+                                               side_effect=AssertionError('Installer ran')):
+            result = self.bring({'codex': None}, lambda *args: True, pin=changed)
+        self.assertEqual(result['state'], 'refused')
+        self.assertIn('not what this installer expects', result['detail'])
+        self.assertEqual(self.root_state, {})
 
 if __name__ == '__main__':
     unittest.main()

@@ -786,6 +786,27 @@ class CompanionTests(InstallerCase):
             self.assertEqual((self.claude / name / 'SKILL.md').read_text(), 'mine\n')
         self.assertFalse(any(note.startswith('harness-') for note in result['notes']))
 
+    def test_a_copy_that_meets_the_requirement_is_accepted_and_only_the_lock_is_offered(self):
+        pin = self.pins['harness-research']
+        write_pins(self.pins_file, {**self.pins, 'harness-research': {**pin, 'requirement': '>=0.7.0'}})
+        for name, version in (('harness-research', '0.7.0'), ('harness-slides', '1.2.0')):
+            (self.claude / name).mkdir()
+            (self.claude / name / 'package.json').write_text(json.dumps({'version': version}))
+            (self.claude / name / 'SKILL.md').write_text('mine\n')
+        plan = self.run_installer('install', '--dry-run', '--target', 'claude')
+        self.assertFalse(plan['companions']['harness-research']['would_offer'])
+        result = self.run_installer('install', '--yes', '--companions', 'install',
+                                    '--target', 'claude')
+        self.assertEqual(result['companions']['harness-research']['state'], 'left alone')
+        self.assertEqual(self.fetched('harness-research'), [])
+        self.assertFalse(any(note.startswith('harness-') for note in result['notes']))
+        printed = io.StringIO()
+        with mock.patch('builtins.input', lambda question: 'n'), contextlib.redirect_stdout(printed):
+            install.offer('harness-research', {**pin, 'requirement': '>=0.7.0'}, {'claude': '0.6.0'})
+        self.assertNotIn('stable tags', printed.getvalue())
+        self.assertIn(f"harness-research {pin['version']} is newer than the 0.6.0", printed.getvalue())
+        self.assertIn(f"at revision {pin['commit'][:12]} and checked", printed.getvalue())
+
     def test_a_companion_whose_version_cannot_be_read_is_left_alone_and_named(self):
         (self.claude / 'harness-research').mkdir()
         result = self.run_installer('install', '--yes', '--companions', 'install',

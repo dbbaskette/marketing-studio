@@ -1,6 +1,8 @@
 import json
 import os
 from pathlib import Path
+import shutil
+import tempfile
 import unittest
 from unittest import mock
 from runner_support import StudioCase, URL
@@ -9,6 +11,26 @@ from studio_core import research_contract, review_policy
 from synthesis_fixture import TEXT, dossier, review
 
 RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
+
+
+def updated_helper(folder: Path) -> tuple[Path, Path]:
+    """Harness Research as its installer leaves it after an update: `current` names a
+    newer version, which must not run here, and the version a run started with is retained."""
+    shared = folder / 'Harness Research'
+    version = json.loads((Path(RUNTIME) / 'package.json').read_text())['version']
+    old = shared / 'versions' / (version + '-' + 'a' * 20)
+    newer = shared / 'versions' / ('9.9.9-' + 'b' * 20)
+    for kept in (old, newer):
+        shutil.copytree(RUNTIME, kept, ignore=shutil.ignore_patterns('tests', 'docs'))
+    (newer / 'scripts/harness-research.mjs').write_text(
+        "console.error('This updated helper must not be used.'); process.exit(3);\n")
+    (shared / 'current').symlink_to('versions/' + old.name)
+    return shared, old
+
+
+def update(shared: Path) -> None:
+    (shared / 'current').unlink()
+    (shared / 'current').symlink_to('versions/' + '9.9.9-' + 'b' * 20)
 
 @unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME for the real helper integration.')
 class SynthesisIntegrationTests(StudioCase):
@@ -86,3 +108,21 @@ class SynthesisIntegrationTests(StudioCase):
         self.assertFalse((root / 'research/output.json').exists())
         entry = self.engine._load(root)['steps']['research-author']
         self.assertIn('stopped', str(entry))
+
+    def test_unfinished_research_continues_with_the_retained_helper_after_an_update(self):
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        shared, old = updated_helper(Path(holder.name).resolve())
+        self.research = research.Research(shared / 'current')
+        root = self.start()
+        self.to_gate(root, 'research')
+        before = research_contract.read_bundle(root / 'research')[1]['digest']
+        update(shared)
+        self.workers.then('research-result', self.author, self.checker)
+        self.decide(root, 'research', 'revise', 'Explain the limits more clearly.')
+        self.assertIsNone(self.view(root)['problem'], self.view(root))
+        self.assertNotEqual(research_contract.read_bundle(root / 'research')[1]['digest'], before)
+        shutil.rmtree(old)
+        self.workers.then('research-result', self.author, self.checker)
+        self.decide(root, 'research', 'revise', 'Explain the limits again.')
+        self.assertIn('Restore it before continuing', str(self.view(root)['problem']))
