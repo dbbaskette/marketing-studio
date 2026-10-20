@@ -3144,8 +3144,9 @@ class Engine(Reviewing):
 
     # --- what the page shows -------------------------------------------------------------
 
-    def _doing(self, record: dict, found: pipeline.Survey) -> str:
-        """What a working run is doing now, in a sentence."""
+    def _doing(self, record: dict, found: pipeline.Survey, run: _Run | None = None) -> str:
+        """What a working run is doing now, in a sentence. `run` tells which worker is in
+        hand, where that says more than the record does."""
         step = found.next
         if step.kind == 'gate':
             return f'Getting {pipeline.subject(step.step)} ready for your review.'
@@ -3154,6 +3155,8 @@ class Engine(Reviewing):
             listed = len(mine.start.get('sections') or ())
             return (f'{step.step.doing}: {listed - len(step.questions)} of {listed} drawn '
                     'so far.')
+        if step.step.id == 'research' and record.get('research_contract'):
+            return self._synthesis_doing(record, run)
         if step.step.id == 'research':
             verdicts = found.research.verdicts
             answered = len(verdicts) - len(found.research.unread)
@@ -3163,6 +3166,30 @@ class Engine(Reviewing):
         if error:
             return f'{step.step.doing} again. The last try did not work: {error}'
         return f'{step.step.doing}.'
+
+    def _synthesis_doing(self, record: dict, run: _Run | None) -> str:
+        """Where research done as one authored report and one independent check stands:
+        which of the two jobs is in hand, and the round, when the check sent the report
+        back for correction. The rounds are counted from the start of this research: the
+        hand-over of the plan, or the last change the person asked for."""
+        with self._lock:
+            live = set(run.workers) if run else set()
+        handed = [attempt['started_at'] for attempt in attempts(record, 'research-start')
+                  if attempt.get('outcome') == 'kept']
+        asked = ((record.get('research') or {}).get('again') or {}).get('at') or ''
+        since = max([*handed, asked, ''])
+        checked = len([attempt for attempt in attempts(record, 'research-review')
+                       if attempt.get('outcome') == 'kept'
+                       and (attempt.get('started_at') or '') >= since])
+        rounds = checked + 1
+        if 'research-review' in live:
+            return ('Independently checking the research (job 2 of 2).' if rounds == 1 else
+                    'Independently checking the corrected research '
+                    f'(round {rounds}, job 2 of 2).')
+        if rounds > 1:
+            return ('Correcting the research after its independent check '
+                    f'(round {rounds}, job 1 of 2).')
+        return 'Investigating sources and writing the report (job 1 of 2).'
 
     def _state(self, record: dict, found: pipeline.Survey, run: _Run,
                report: dict | None = None) -> tuple[str, str]:
@@ -3202,7 +3229,7 @@ class Engine(Reviewing):
             return 'working', 'Waiting for its turn. ' + (
                 'It is next.' if not ahead else '1 training is ahead of it.' if ahead == 1
                 else f'{ahead} trainings are ahead of it.')
-        return 'working', self._doing(record, found)
+        return 'working', self._doing(record, found, run)
 
     def _queue(self, run: _Run) -> dict | None:
         """For a training waiting its turn: how many are ahead of it."""
