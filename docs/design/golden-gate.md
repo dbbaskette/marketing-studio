@@ -47,3 +47,37 @@ The unified-settings HTML file in this directory is a design preview using
 synthetic in-memory data. It shares this visual direction; its profile routing,
 global limits and override interactions do not imply those pending backend
 features are already implemented.
+
+## Shared components and page stylesheets
+
+`ui-kit/style.css` holds every token, the shell and the controls used by Marketing Studio,
+shared setup, Blog Studio, Presentation Studio and Training Studio:
+
+| Need | Component |
+| --- | --- |
+| Shell | `.backdrop`, `.window`, `.sidebar.glass`, `.content`, `.toolbar-wrap`, `.toolbar.glass`, `.page` |
+| Actions | `.button`, `.button-filled`, `.button-quiet`, `.button-danger`, `.button-round` |
+| Fields | `.field`, `.field-label`, `.input`, `.field-hint`, `label.field`, `.input-typed` |
+| Exclusive choices | `.segmented` with buttons or radio `label.seg-option` |
+| Independent choices | `.chips`, `.chip` |
+| Object choices | `.pick-cards`, `.pick-card`, `.pick-title`, `.pick-says` |
+| Steps | `.workflow-steps`, `.workflow-step` |
+| Surfaces | `.card`, `.paper`, `.table`, `.callout` |
+| Headings | `.large-title`, `.lede`, `.card-title`, `.sheet-part` |
+| Status | `.state` with `.bead`, `.tag`, `.toasts`/`.toast`, `.notice` |
+| Transient | `.sheet`, `.dialog`, `.menu` |
+| Studio mark | `.studio-symbol`, the rounded tile that carries a studio's drawing in its accent colour |
+| Studio identity | `[data-studio]` sets `--studio-color` and `--studio-wash`; `.card[data-studio]` takes that studio's colour for its accent, link, focus and hover border |
+| Way back | `.suite-link`, the "Marketing Studio" sidebar item a studio shows when Marketing Studio opened it |
+
+A page stylesheet (`home.css`, `blog.css`, `deck.css`, or an inline style on a static page)
+lays out its own parts. It may size and place a shared control, but never draws one, never
+styles bare controls or headings for the whole page, and takes every colour from a token.
+`tests/test_ui_consistency.py` checks the stylesheets' selectors; a page class on a shared
+element is outside what it can see.
+
+The screenshots below show the live pages with synthetic data.
+
+![Marketing Studio home](unified-settings-home.jpg)
+![Shared settings, models](unified-settings-models.jpg)
+![Presentation Studio](golden-gate-presentation.jpg)

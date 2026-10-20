@@ -10,89 +10,106 @@
   <script src="/app.js" defer></script>
 </head>
 <body data-product="Marketing Studio" data-token-header="X-Marketing-Studio-Token" data-standalone="false">
-<a class="skip" href="#content">Skip to content</a>
-<div class="workspace-shell">
-  <aside class="home-sidebar">
-    <a href="#" class="wordmark" id="home-link"><span class="app-symbol" aria-hidden="true">M</span><span>Marketing<br> Studio</span></a>
-    <nav aria-label="Main navigation">
-      <button type="button" data-view="home" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span>Studios</span></button>
-      <button type="button" data-view="settings" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg><span>Shared settings</span></button>
-      <button type="button" data-view="computer" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>This computer</span></button>
-    </nav>
+<a class="skip" href="#content">Skip to content</a><div class="backdrop" aria-hidden="true"></div>
+<div class="window">
+  <nav class="sidebar glass" aria-label="Main navigation">
+    <a href="#" class="brand" id="home-link"><span id="home-symbol" class="studio-symbol" aria-hidden="true">M</span><span id="home-name">Marketing Studio</span></a>
+    <button type="button" data-view="home" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span class="nav-label">Studios</span></button>
+    <button type="button" data-view="settings" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 7.5h7"/><path d="M16.5 7.5h3"/><path d="M14 5.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/><path d="M4.5 16.5h3"/><path d="M12.5 16.5h7"/><path d="M10 14.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg><span class="nav-label">Shared settings</span></button>
+    <button type="button" data-view="computer" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4.5h18v13H3z"/><path d="M8 21h8"/><path d="M12 17.5V21"/></svg><span class="nav-label">This computer</span></button>
     <p class="sidebar-foot">One place to get ready.<br>Three places to create.</p>
-  </aside>
-  <div class="home-main">
-    <header class="home-toolbar"><span id="view-title">Studios</span><span class="local-badge">On this computer</span></header>
-    <main id="content" tabindex="-1">
-      <div id="message" role="status" aria-live="polite" hidden></div>
-      <div id="problem" role="alert" hidden></div>
-      <section id="loading"><h1>Opening your studios…</h1></section>
+  </nav>
+  <div class="content">
+    <div class="toolbar-wrap"><header class="toolbar glass"><div class="toolbar-title"><h1 id="view-title" class="title" tabindex="-1">Studios</h1></div><div class="toolbar-actions"><button type="button" id="back-to-studio" class="button button-quiet" hidden>Back</button><span id="where" class="tag">On this computer</span></div></header></div>
+    <p id="problem" class="notice" role="alert" hidden></p>
+    <main id="content" class="page" tabindex="-1">
+      <p id="announce" class="offscreen" role="status" aria-live="polite"></p>
+      <div id="message" class="paper callout" role="status" hidden></div>
+      <section id="loading"><p class="large-title">Opening your studios…</p></section>
       <section id="home" hidden>
-        <div class="page-heading"><div><h1>What will you make?</h1><p>Your settings are shared. Each studio has its own space to work.</p></div></div>
+        <div class="intro"><h2 class="large-title">What will you make?</h2><p class="lede">Your settings are shared. Each studio has its own space to work.</p></div>
         <div id="studio-list" class="studio-list"></div>
-        <section class="settings-summary"><div><h2>Ready when you are</h2><p id="summary-text"></p></div><button type="button" data-view="settings" class="secondary">Change settings</button></section>
-        <section id="network-access" class="network-access" hidden aria-labelledby="network-heading">
-          <h2 id="network-heading">Continue on your phone</h2>
+        <section class="card settings-summary"><div><h3 class="card-title">Ready when you are</h3><p id="summary-text"></p></div><button type="button" data-view="settings" class="button">Change settings</button></section>
+        <section id="network-access" class="card" hidden aria-labelledby="network-heading">
+          <h3 id="network-heading" class="card-title">Continue on your phone</h3>
           <p>Connect to the same trusted Wi-Fi and open this private link. Your work and assistant stay on this computer.</p>
-          <label for="network-link">Private session link</label>
-          <div class="network-link-row"><input id="network-link" type="text" readonly autocomplete="off" spellcheck="false"><button type="button" id="copy-network" class="secondary">Copy link</button></div>
-          <p class="field-note">Anyone with this link has full studio access. HTTP is unencrypted. Keep it on a trusted network; stop Marketing Studio to disconnect.</p>
+          <div class="field"><label class="field-label" for="network-link">Private session link</label>
+            <div class="copy-row"><input id="network-link" class="input input-typed" type="text" readonly autocomplete="off" spellcheck="false" aria-describedby="network-link-hint"><button type="button" id="copy-network" class="button">Copy link</button></div></div>
+          <p id="network-link-hint" class="field-hint quiet">Anyone with this link has full studio access. HTTP is unencrypted. Keep it on a trusted network; stop Marketing Studio to disconnect.</p>
         </section>
-        <p class="launch-note">Leave the Marketing Studio terminal open while you work. You can also open each studio with its own launcher.</p>
+        <p class="quiet launch-note">Leave the Marketing Studio terminal open while you work. You can also open each studio with its own launcher.</p>
       </section>
       <section id="settings" hidden>
-        <div class="page-heading"><div><p id="step-label" class="step-label"></p><h1 id="settings-title">Shared settings</h1><p id="settings-intro">New work in every studio starts with these choices.</p></div></div>
-        <ol id="setup-progress" class="setup-progress" aria-label="Setup progress" hidden><li>You and your assistant</li><li>Your workspace</li><li>Brand and delivery</li></ol>
-        <form id="settings-form">
-          <section class="form-section" data-step="0"><h2>You and your assistant</h2><p>Use your signed-in assistant for research, writing, and slide work.</p>
-            <div class="form-grid"><label>Your name<input name="person.name" autocomplete="name" maxlength="100"></label><label>Assistant<select name="assistant.agent"><option value="claude">Claude Code</option><option value="codex">Codex</option></select></label><label><span>Model <span class="optional">(optional)</span></span><input name="assistant.model" maxlength="100" placeholder="Use the assistant’s default" autocomplete="off"><small>Use an ID available in your account. All three studios use these choices for the selected assistant.</small></label><label>Reasoning<select name="assistant.effort"></select></label></div>
-            <div class="model-catalog-bar"><p id="model-catalog-status" class="field-note" role="status">Loading model choices…</p><button type="button" id="refresh-models" class="secondary">Refresh models</button></div>
-            <div class="model-settings">
-              <div class="model-heading"><div><h3>Models for your work</h3><p>Keep one model for everything, or choose a model for each kind of task.</p></div><label>Model routing<select id="model-mode"><option value="single">One model</option><option value="by_task">By task</option></select></label></div>
+        <div class="intro"><p id="step-label" class="quiet"></p><h2 id="settings-title" class="large-title">Shared settings</h2><p id="settings-intro" class="lede">New work in every studio starts with these choices.</p></div>
+        <ol id="setup-progress" class="workflow-steps" aria-label="Setup progress" hidden><li class="workflow-step">You and your assistant</li><li class="workflow-step">Your workspace</li><li class="workflow-step">Brand and delivery</li></ol>
+        <form id="settings-form" class="setup-form">
+          <section class="card" data-step="0"><h3 class="card-title">You and your assistant</h3><p class="quiet">Use your signed-in assistant for research, writing, and slide work.</p>
+            <div class="field-grid">
+              <div class="field"><label class="field-label" for="person-name">Your name</label><input id="person-name" class="input" name="person.name" autocomplete="name" maxlength="100"></div>
+              <div class="field"><label class="field-label" for="assistant-agent">Assistant</label><select id="assistant-agent" class="input" name="assistant.agent"><option value="claude">Claude Code</option><option value="codex">Codex</option></select></div>
+              <div class="field"><label class="field-label" for="assistant-model">Model <span class="quiet">(optional)</span></label><input id="assistant-model" class="input" name="assistant.model" maxlength="100" placeholder="Use the assistant’s default" autocomplete="off" aria-describedby="assistant-model-hint"><p id="assistant-model-hint" class="field-hint quiet">Use an ID available in your account. All three studios use these choices for the selected assistant.</p></div>
+              <div class="field"><label class="field-label" for="assistant-effort">Reasoning</label><select id="assistant-effort" class="input" name="assistant.effort"></select></div>
+            </div>
+            <div class="model-catalog-bar"><p id="model-catalog-status" class="field-hint quiet" role="status">Loading model choices…</p><button type="button" id="refresh-models" class="button">Refresh models</button></div>
+            <div class="setup-part">
+              <div class="model-heading"><div><h4 class="sheet-part">Models for your work</h4><p class="quiet">Keep one model for everything, or choose a model for each kind of task.</p></div>
+                <div class="field"><p class="field-label" id="model-mode-label">Model routing</p><div class="segmented" data-count="2" data-at="0" role="radiogroup" aria-labelledby="model-mode-label"><span class="seg-thumb" aria-hidden="true"></span><label class="seg-option"><input type="radio" name="models.mode" value="single" checked>One model</label><label class="seg-option"><input type="radio" name="models.mode" value="by_task">By task</label></div></div></div>
               <div id="model-profiles" hidden>
-                <p class="field-note">Quick handles extraction, classification and Presentation Studio outlines. Main handles research, drafting, slides, review and the first repair. Complex handles repeated slide findings and other dedicated repairs. New work saves these choices; existing work keeps its models.</p>
+                <p class="field-hint quiet">Quick handles extraction, classification and Presentation Studio outlines. Main handles research, drafting, slides, review and the first repair. Complex handles repeated slide findings and other dedicated repairs. New work saves these choices; existing work keeps its models.</p>
                 <div id="profile-cards" class="profile-cards"></div>
-                <div id="profile-review" role="status" hidden><p>The assistant changed. Check the model IDs and reasoning levels before using these profiles with this assistant.</p><button type="button" id="confirm-profiles" class="secondary">Use these profiles with this assistant</button></div>
-                <p class="field-note">Use model IDs available in your signed-in account. The studios send your choice directly to the selected assistant and stop if it cannot be used.</p>
+                <div id="profile-review" class="paper callout" data-kind="yours" role="status" hidden><p>The assistant changed. Check the model IDs and reasoning levels before using these profiles with this assistant.</p><button type="button" id="confirm-profiles" class="button">Use these profiles with this assistant</button></div>
+                <p class="field-hint quiet">Use model IDs available in your signed-in account. The studios send your choice directly to the selected assistant and stop if it cannot be used.</p>
               </div>
             </div>
-            <div class="model-settings"><h3>Review level</h3>
-              <label>When should work stop for your review?<select name="review.level" aria-describedby="review-level-help"><option value="balanced">Balanced — direction and finished work</option><option value="automatic">Automatic draft — finished work only</option><option value="step_by_step">Step by step — every stage</option></select></label>
-              <p id="review-level-help" class="field-note">Balanced brings research and the planned direction together for one review, then shows the finished work. Automatic draft continues to the finished draft. Checks, visual review, repairs and spending limits still apply. Publishing is a separate action. New work saves this choice; existing runs keep their review level.</p>
+            <div class="setup-part"><h4 class="sheet-part">Review level</h4>
+              <div class="field"><label class="field-label" for="review-level">When should work stop for your review?</label><select id="review-level" class="input" name="review.level" aria-describedby="review-level-help"><option value="balanced">Balanced — direction and finished work</option><option value="automatic">Automatic draft — finished work only</option><option value="step_by_step">Step by step — every stage</option></select>
+                <p id="review-level-help" class="field-hint quiet">Balanced brings research and the planned direction together for one review, then shows the finished work. Automatic draft continues to the finished draft. Checks, visual review, repairs and spending limits still apply. Publishing is a separate action. New work saves this choice; existing runs keep their review level.</p></div>
             </div>
           </section>
-          <section class="form-section" data-step="1"><h2>Where your work lives</h2><p>Keep a Git history on this computer, or share work through a repository.</p>
-            <fieldset class="storage-choice"><legend class="offscreen">Workspace storage</legend><label><input type="radio" name="storage" value="local" checked> Local Git on this computer</label><label><input type="radio" name="storage" value="remote"> Shared repository</label></fieldset>
-            <div id="local-fields"><label>Work folder<input name="local.root" placeholder="~/Studios"><small>Each studio keeps a local repository inside this folder.</small></label></div>
-            <div id="remote-fields" class="form-grid" hidden><label class="full">Repository address<input name="team.repository" placeholder="https://github.com/your-team/studio-work.git" autocomplete="off"><small>Use an existing repository without credentials in its address.</small></label><label>Branch<input name="team.branch" placeholder="main"></label><label>Share changes<select name="share"><option value="decision">After each decision</option><option value="asked">When I ask</option></select></label></div>
-            <p class="field-note">Finishing setup prepares installed studios that have no workspace yet. Existing work stays where it is.</p>
-          </section>
-          <section class="form-section" data-step="2"><h2>Brand and delivery</h2><p>Choose the brand new work starts with. You can change it for each blog, presentation, or training. Existing work keeps its saved choice.</p>
-            <h3 class="brand-source-heading">Where is your brand skill?</h3>
-            <div class="form-grid"><div class="full"><button type="button" id="find-brands" class="secondary">Find installed brands</button><p id="brand-catalog-status" role="status" class="field-note">Look up brand and variant IDs from installed skills, or enter them below. This does not install anything.</p><div id="brand-choices" hidden></div></div></div>
-            <p class="brand-source-note">Give a Git repository address, or choose an installed skill folder. Both are optional. A repository does not need a folder path.</p>
-            <div class="form-grid">
-              <label><span>Git repository <span class="optional">(optional)</span></span><input name="brand.repository" placeholder="https://github.com/your-team/brand-skill.git" autocomplete="off"><small>Use an HTTPS or SSH Git address. Save it here, then install or update the brand skill from a studio’s settings.</small></label>
-              <label><span>Installed skill folder <span class="optional">(optional)</span></span><input name="brand.skill" placeholder="~/path/to/installed-brand-skill" autocomplete="off"><small>For a skill already on this computer. Use an absolute folder path or one beginning with ~/. Leave blank to find installed skills automatically.</small></label>
-              <label><span>Default brand <span class="optional">(optional)</span></span><input name="brand.brand" placeholder="For example, tanzu" aria-describedby="brand-default-help"><small id="brand-default-help">Use a brand name offered by your installed skill. For example, tanzu starts new work with Tanzu branding.</small></label>
-              <label><span>Default variant <span class="optional">(optional)</span></span><input name="brand.variant" placeholder="For example, light"><small>Use a variant offered by that brand, such as light or dark. Leave blank to use the brand’s first variant.</small></label>
+          <section class="card" data-step="1"><h3 class="card-title">Where your work lives</h3><p class="quiet">Keep a Git history on this computer, or share work through a repository.</p>
+            <div class="field"><p class="field-label" id="storage-label">Workspace storage</p><div class="segmented" data-count="2" data-at="0" role="radiogroup" aria-labelledby="storage-label"><span class="seg-thumb" aria-hidden="true"></span><label class="seg-option"><input type="radio" name="storage" value="local" checked>Local Git on this computer</label><label class="seg-option"><input type="radio" name="storage" value="remote">Shared repository</label></div></div>
+            <div id="local-fields" class="field"><label class="field-label" for="local-root">Work folder</label><input id="local-root" class="input" name="local.root" placeholder="~/Studios" aria-describedby="local-root-hint"><p id="local-root-hint" class="field-hint quiet">Each studio keeps a local repository inside this folder.</p></div>
+            <div id="remote-fields" class="field-grid" hidden>
+              <div class="field full"><label class="field-label" for="team-repository">Repository address</label><input id="team-repository" class="input" name="team.repository" placeholder="https://github.com/your-team/studio-work.git" autocomplete="off" aria-describedby="team-repository-hint"><p id="team-repository-hint" class="field-hint quiet">Use an existing repository without credentials in its address.</p></div>
+              <div class="field"><label class="field-label" for="team-branch">Branch</label><input id="team-branch" class="input" name="team.branch" placeholder="main"></div>
+              <div class="field"><label class="field-label" for="share">Share changes</label><select id="share" class="input" name="share"><option value="decision">After each decision</option><option value="asked">When I ask</option></select></div>
             </div>
-            <details class="brand-options"><summary>Brand skill release options</summary><div class="form-grid">
-              <label class="full"><span>Brand skill release <span class="optional">(optional)</span></span><input name="brand.release" placeholder="Newest release"><small>Pin a release tag from the repository, such as v1.4.0, or leave blank for the newest release.</small></label>
-            </div></details>
-            <div class="delivery-options"><h3>Delivery and previews</h3><div class="form-grid">
-              <label>Deliver as<select name="output"><option value="pptx">PowerPoint and Word files</option><option value="google">Google Slides and Docs</option></select></label>
-              <label>Slide previews<select name="render.previews"><option value="">Match delivery format</option><option value="local">Local rendering (LibreOffice)</option><option value="drive">Google Drive</option></select><small>Local rendering needs LibreOffice and image tools; Google Drive needs sign-in. Each studio checks availability.</small></label>
-            </div></div>
+            <p class="field-hint quiet">Finishing setup prepares installed studios that have no workspace yet. Existing work stays where it is.</p>
           </section>
-          <p id="prepare-note" class="field-note" hidden>Finish setup will prepare installed studios with these choices. Your existing workspaces stay in place. For a shared repository, this creates a separate clone for each studio.</p>
-          <div class="form-actions"><button type="button" id="back" class="secondary" hidden>Back</button><button type="submit" id="save">Save settings</button></div>
+          <section class="card" data-step="2"><h3 class="card-title">Brand and delivery</h3><p class="quiet">Choose the brand new work starts with. You can change it for each blog, presentation, or training. Existing work keeps its saved choice.</p>
+            <h4 class="sheet-part">Where is your brand skill?</h4>
+            <div class="bar"><button type="button" id="find-brands" class="button">Find installed brands</button></div>
+            <p id="brand-catalog-status" role="status" class="field-hint quiet">Look up brand and variant IDs from installed skills, or enter them below. This does not install anything.</p>
+            <div id="brand-choices" hidden></div>
+            <p class="field-hint quiet">Give a Git repository address, or choose an installed skill folder. Both are optional. A repository does not need a folder path.</p>
+            <div class="field-grid">
+              <div class="field"><label class="field-label" for="brand-repository">Git repository <span class="quiet">(optional)</span></label><input id="brand-repository" class="input" name="brand.repository" placeholder="https://github.com/your-team/brand-skill.git" autocomplete="off" aria-describedby="brand-repository-hint"><p id="brand-repository-hint" class="field-hint quiet">Use an HTTPS or SSH Git address. Save it here, then install or update the brand skill from a studio’s settings.</p></div>
+              <div class="field"><label class="field-label" for="brand-skill">Installed skill folder <span class="quiet">(optional)</span></label><input id="brand-skill" class="input" name="brand.skill" placeholder="~/path/to/installed-brand-skill" autocomplete="off" aria-describedby="brand-skill-hint"><p id="brand-skill-hint" class="field-hint quiet">For a skill already on this computer. Use an absolute folder path or one beginning with ~/. Leave blank to find installed skills automatically.</p></div>
+              <div class="field"><label class="field-label" for="brand-brand">Default brand <span class="quiet">(optional)</span></label><input id="brand-brand" class="input" name="brand.brand" placeholder="For example, tanzu" aria-describedby="brand-default-help"><p id="brand-default-help" class="field-hint quiet">Use a brand name offered by your installed skill. For example, tanzu starts new work with Tanzu branding.</p></div>
+              <div class="field"><label class="field-label" for="brand-variant">Default variant <span class="quiet">(optional)</span></label><input id="brand-variant" class="input" name="brand.variant" placeholder="For example, light" aria-describedby="brand-variant-hint"><p id="brand-variant-hint" class="field-hint quiet">Use a variant offered by that brand, such as light or dark. Leave blank to use the brand’s first variant.</p></div>
+            </div>
+            <details class="setup-more"><summary class="setup-more-label">Brand skill release options</summary>
+              <div class="field"><label class="field-label" for="brand-release">Brand skill release <span class="quiet">(optional)</span></label><input id="brand-release" class="input" name="brand.release" placeholder="Newest release" aria-describedby="brand-release-hint"><p id="brand-release-hint" class="field-hint quiet">Pin a release tag from the repository, such as v1.4.0, or leave blank for the newest release.</p></div>
+            </details>
+            <div class="setup-part"><h4 class="sheet-part">Delivery and previews</h4>
+              <div class="field-grid">
+                <div class="field"><label class="field-label" for="output">Deliver as</label><select id="output" class="input" name="output"><option value="pptx">PowerPoint and Word files</option><option value="google">Google Slides and Docs</option></select></div>
+                <div class="field"><label class="field-label" for="render-previews">Slide previews</label><select id="render-previews" class="input" name="render.previews" aria-describedby="render-previews-hint"><option value="">Match delivery format</option><option value="local">Local rendering (LibreOffice)</option><option value="drive">Google Drive</option></select><p id="render-previews-hint" class="field-hint quiet">Local rendering needs LibreOffice and image tools; Google Drive needs sign-in. Each studio checks availability.</p></div>
+              </div>
+            </div>
+          </section>
+          <p id="prepare-note" class="field-hint quiet" hidden>Finish setup will prepare installed studios with these choices. Your existing workspaces stay in place. For a shared repository, this creates a separate clone for each studio.</p>
+          <div class="bar form-actions"><button type="button" id="back" class="button" hidden>Back</button><button type="submit" id="save" class="button button-filled">Save settings</button></div>
         </form>
-        <section id="installations" class="form-section" hidden><h2>Studio installations</h2><p>Installed studios and sibling checkouts are found automatically. Set a folder if yours is somewhere else.</p><form id="paths-form"><div id="path-fields" class="form-grid"></div><div class="form-actions"><button type="submit" class="secondary">Save installation folders</button></div></form></section>
+        <section id="installations" class="card" hidden><h3 class="card-title">Studio installations</h3><p class="quiet">Installed studios and sibling checkouts are found automatically. Set a folder if yours is somewhere else.</p><form id="paths-form"><div id="path-fields" class="field-grid"></div><div class="bar form-actions"><button type="submit" class="button">Save installation folders</button></div></form></section>
       </section>
-      <section id="computer" hidden><div class="page-heading"><div><h1>This computer</h1><p>Check the tools available to your studios. Each studio checks sign-in when you use it.</p></div><button id="check" type="button">Check computer</button></div><div id="computer-results" class="check-list"><p>Run a check to see what is installed.</p></div></section>
+      <section id="computer" hidden>
+        <div class="intro"><h2 class="large-title">This computer</h2><p class="lede">Check the tools available to your studios. Each studio checks sign-in when you use it.</p></div>
+        <section class="card"><h3 class="card-title">Tools</h3><ul id="computer-results" class="computer-items"><li class="quiet">Run a check to see what is installed.</li></ul><div class="bar"><button id="check" type="button" class="button button-filled">Check computer</button></div></section>
+      </section>
     </main>
   </div>
 </div>
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 </body>
 </html>

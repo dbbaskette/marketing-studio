@@ -6,31 +6,54 @@ const tokenHeader = document.body.dataset.tokenHeader;
 const sessionKey = standalone ? product.toLowerCase().replaceAll(' ', '-') + '-setup-token' : 'marketing-studio-token';
 const launchOptions = new URLSearchParams(location.hash.slice(1));
 const requestedView = launchOptions.get('view') === 'settings' ? 'settings' : 'home';
-const tokenInLink = launchOptions.get('token') || (standalone && /^[A-Za-z0-9_-]+$/.test(location.hash.slice(1)) ? location.hash.slice(1) : '');
+const tokenInLink = launchOptions.get('token') || (standalone && /^[A-Za-z0-9_-]+$/.test(location.hash.slice(1).split('&')[0]) ? location.hash.slice(1).split('&')[0] : '');
 if (tokenInLink) { sessionStorage.setItem(sessionKey, tokenInLink); history.replaceState(null, '', location.pathname); }
 const token = tokenInLink || sessionStorage.getItem(sessionKey) || '';
+// Studios opened from here link back to this tab by its name.
+if (!standalone) window.name = 'marketing-studio';
+function withHome(link) {
+  return link + (link.includes('#') ? '&' : '#') + 'home=' + encodeURIComponent(location.origin);
+}
 let snapshot, setup = false, step = 0, view = 'home', profileAgent;
 const labels = ['You and your assistant', 'Your workspace', 'Brand and delivery'];
 const form = $('#settings-form');
 const modelPickers = new Map(), catalogs = {};
 const customModel = '__manual model__';
 let modelRequest = 0;
+const calm = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 function inform(message, error = false) {
-  const node = $(error ? '#problem' : '#message');
-  node.textContent = message; node.hidden = false;
-  if (!error) setTimeout(() => { node.hidden = true; }, 5000);
+  if (error) { const node = $('#problem'); node.textContent = message; node.hidden = false; return; }
+  // Toasts are timed as they are in every studio; anything with a link stays in #message.
+  const node = element('p', message, 'toast glass'); $('#toasts').append(node);
+  setTimeout(() => { node.classList.add('toast-leaving'); setTimeout(() => node.remove(), calm() ? 0 : 260); }, 4200);
 }
 async function api(path, body) {
-  const response = await fetch(`${standalone ? "/onboarding" : ""}/api/${path}`, { method: body === undefined ? 'GET' : 'POST',
-    headers: { [tokenHeader]: token, ...(body === undefined ? {} : {'Content-Type': 'application/json'}) },
-    ...(body === undefined ? {} : {body: JSON.stringify(body)}) });
+  let response;
+  try {
+    response = await fetch(`${standalone ? "/onboarding" : ""}/api/${path}`, { method: body === undefined ? 'GET' : 'POST',
+      headers: { [tokenHeader]: token, ...(body === undefined ? {} : {'Content-Type': 'application/json'}) },
+      ...(body === undefined ? {} : {body: JSON.stringify(body)}) });
+  } catch (error) {
+    throw new Error(`This page has lost touch with ${product}, so it cannot read or save anything. Run ${standalone ? 'the studio command' : 'marketing-studio'} again in your terminal and use the new link.`);
+  }
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || 'This request could not be completed.');
   return result;
 }
+function syncSegments() {
+  for (const group of form.querySelectorAll('.segmented')) {
+    const options = [...group.querySelectorAll('input[type="radio"]')];
+    group.dataset.at = String(Math.max(0, options.findIndex(option => option.checked)));
+  }
+}
 function element(tag, text, className) {
   const node = document.createElement(tag); if (text) node.textContent = text;
   if (className) node.className = className; return node;
+}
+function stateLine(kind, text) {
+  const node = element('span', '', 'state'), mark = element('span', '', 'bead');
+  mark.dataset.state = kind; mark.setAttribute('aria-hidden', 'true');
+  node.append(mark, element('span', text)); return node;
 }
 function show(next) {
   window.scrollTo(0, 0);
@@ -39,11 +62,15 @@ function show(next) {
   $('#view-title').textContent = setup ? `Welcome to ${product}` : ({home: 'Studios', settings: 'Shared settings', computer: 'This computer'})[view];
   document.querySelectorAll('[data-view]').forEach(button => {
     if (button.classList.contains('nav-item')) {
-      button.toggleAttribute('disabled', setup);
       if (button.dataset.view === view && !setup) button.setAttribute('aria-current', 'page');
       else button.removeAttribute('aria-current');
     }
   });
+  // Before setup, and in a studio's own setup, there is one screen and no sidebar to leave it by.
+  document.querySelector('.sidebar').hidden = setup || standalone;
+  document.body.classList.toggle('alone', setup || standalone);
+  $('#back-to-studio').hidden = !(standalone && !setup);
+  $('#back-to-studio').textContent = `Back to ${product}`;
   $('#settings-title').textContent = setup ? labels[step] : 'Shared settings';
   $('#settings-intro').textContent = setup ? 'Set up once. Your studios will start with these choices.' : 'New work in every studio starts with these choices.';
   $('#step-label').textContent = setup ? `Step ${step + 1} of 3` : '';
@@ -56,13 +83,15 @@ function show(next) {
   $('#save').textContent = setup ? (step === 2 ? 'Finish setup' : 'Continue') : 'Save settings';
   $('#installations').hidden = setup || standalone;
   if (standalone) {
-    document.querySelectorAll('nav [data-view]').forEach(node => { node.hidden = true; });
-    $('#home-link').textContent = product;
     $('#prepare-note').textContent = 'Finish setup prepares this studio. Other studios will use these settings when you open them.';
     $('#save').textContent = setup && step < 2 ? 'Continue' : `Save and open ${product}`;
   }
   $('#prepare-note').hidden = !setup || step !== 2;
   if (view === 'settings' && (!setup || step === 0)) loadModels();
+  // As in every studio, focus moves to the toolbar title. The step is announced.
+  if (snapshot) $('#view-title').focus({preventScroll: true});
+  // A moment after the focus move, so a screen reader does not drop it behind the title.
+  setTimeout(() => { $('#announce').textContent = setup ? `Step ${step + 1} of 3: ${labels[step]}` : ''; }, 150);
 }
 function efforts(selected) {
   profileLevels(form.elements['assistant.effort'], selected, form.elements['assistant.model'].value);
@@ -71,7 +100,10 @@ function catalogModel(value) {
   return catalogs[form.elements['assistant.agent'].value]?.models.find(model => model.name === value);
 }
 function modelPicker(input, title) {
-  const select = element('select'); select.setAttribute('aria-label', title);
+  const select = element('select', '', 'input');
+  const named = input.id ? document.querySelector(`label[for="${input.id}"]`) : null;
+  if (named) { select.id = `${input.id}-choice`; named.htmlFor = select.id; } else select.setAttribute('aria-label', title);
+  if (input.getAttribute('aria-describedby')) select.setAttribute('aria-describedby', input.getAttribute('aria-describedby'));
   input.setAttribute('aria-label', `Custom model ID for ${title}`);
   input.before(select);
   const picker = {select, input, title, manual: false}; modelPickers.set(input.name, picker);
@@ -126,7 +158,7 @@ async function loadModels(refresh = false) {
 function validateModelChoices() {
   for (const picker of modelPickers.values()) {
     const name = picker.input.name;
-    if (name.startsWith('models.') && ($('#model-mode').value !== 'by_task'
+    if (name.startsWith('models.') && (form.elements['models.mode'].value !== 'by_task'
       || form.elements[name.replace(/model$/, 'selection')].value !== 'explicit')) continue;
     const model = catalogModel(picker.input.value), effort = form.elements[name.replace(/model$/, 'effort')].value;
     if (model && effort && !model.levels.includes(effort)) throw new Error(`Choose a supported reasoning level for ${picker.title}, or use the assistant’s default.`);
@@ -136,6 +168,7 @@ function validateModelChoices() {
 function storage() {
   const local = form.elements.storage.value === 'local';
   $('#local-fields').hidden = !local; $('#remote-fields').hidden = local;
+  syncSegments();
 }
 function fill() {
   const shared = snapshot.shared;
@@ -158,35 +191,45 @@ function profileLevels(select, selected, model = null) {
   select.value = selected || '';
 }
 function profilesChanged() {
-  const byTask = $('#model-mode').value === 'by_task';
+  const byTask = form.elements['models.mode'].value === 'by_task';
   $('#model-profiles').hidden = !byTask;
   $('#profile-review').hidden = !byTask || profileAgent === form.elements['assistant.agent'].value;
   for (const name of profileNames) {
     const explicit = form.elements[`models.${name}.selection`].value === 'explicit';
     document.querySelector(`[data-profile="${name}"] .profile-explicit`).hidden = !explicit;
   }
+  syncSegments();
 }
 function fillProfiles() {
   profileAgent = snapshot.shared.models?.agent || form.elements['assistant.agent'].value;
-  $('#model-mode').value = snapshot.shared.models?.mode || 'single';
+  form.elements['models.mode'].value = snapshot.shared.models?.mode || 'single';
   const cards = $('#profile-cards'); cards.replaceChildren();
   const descriptions = {quick: 'Extraction and classification', main: 'Research, writing and slides', complex: 'Dedicated repair work'};
   for (const name of profileNames) {
     const saved = snapshot.shared.models?.profiles?.[name] || {};
-    const card = element('section', '', 'profile-card'); card.dataset.profile = name;
-    card.append(element('h4', name[0].toUpperCase() + name.slice(1)), element('p', descriptions[name]));
-    const label = element('label', 'Model choice'); const selection = element('select'); selection.name = `models.${name}.selection`;
-    for (const [value, title] of [['inherit', 'Use shared model above'], ['provider_default', 'Assistant’s default'], ['explicit', 'Choose a model']]) selection.add(new Option(title, value));
-    selection.value = saved.selection || 'inherit'; selection.addEventListener('change', profilesChanged); label.append(selection); card.append(label);
+    const title = name[0].toUpperCase() + name.slice(1);
+    const card = element('section', '', 'paper profile-card'); card.dataset.profile = name;
+    card.append(element('h5', title, 'sheet-part'), element('p', descriptions[name], 'field-hint quiet'));
+    const choice = element('div', '', 'field');
+    const choiceLabel = element('label', `${title} model choice`, 'field-label'); choiceLabel.htmlFor = `models-${name}-selection`;
+    const selection = element('select', '', 'input'); selection.id = choiceLabel.htmlFor; selection.name = `models.${name}.selection`;
+    for (const [value, text] of [['inherit', 'Use shared model above'], ['provider_default', 'Assistant’s default'], ['explicit', 'Choose a model']]) selection.add(new Option(text, value));
+    selection.value = saved.selection || 'inherit'; selection.addEventListener('change', profilesChanged);
+    choice.append(choiceLabel, selection); card.append(choice);
     const fields = element('div', '', 'profile-explicit');
-    const modelLabel = element('label', 'Model'); const input = element('input'); input.name = `models.${name}.model`; input.maxLength = 100; input.autocomplete = 'off'; input.value = saved.model || ''; modelLabel.append(input);
-    const effortLabel = element('label', 'Reasoning'); const effort = element('select'); effort.name = `models.${name}.effort`; profileLevels(effort, saved.effort, saved.model); effortLabel.append(effort);
-    fields.append(modelLabel, effortLabel); card.append(fields); cards.append(card);
-    modelPicker(input, `${name[0].toUpperCase() + name.slice(1)} model`);
+    const modelField = element('div', '', 'field'), modelLabel = element('label', `${title} model`, 'field-label');
+    const input = element('input', '', 'input'); input.id = modelLabel.htmlFor = `models-${name}-model`;
+    input.name = `models.${name}.model`; input.maxLength = 100; input.autocomplete = 'off'; input.value = saved.model || '';
+    modelField.append(modelLabel, input);
+    const effortField = element('div', '', 'field'), effortLabel = element('label', `${title} reasoning`, 'field-label');
+    const effort = element('select', '', 'input'); effort.id = effortLabel.htmlFor = `models-${name}-effort`; effort.name = `models.${name}.effort`;
+    profileLevels(effort, saved.effort, saved.model); effortField.append(effortLabel, effort);
+    fields.append(modelField, effortField); card.append(fields); cards.append(card);
+    modelPicker(input, `${title} model`);
   }
   profilesChanged();
 }
-$('#model-mode').addEventListener('change', profilesChanged);
+form.querySelectorAll('[name="models.mode"]').forEach(input => input.addEventListener('change', profilesChanged));
 $('#confirm-profiles').addEventListener('click', () => { profileAgent = form.elements['assistant.agent'].value; profilesChanged(); });
 const drawings = {
   blog: '<path d="M5 4h10l4 4v14H5zM14 4v5h5M8 13h8M8 17h6"/>',
@@ -196,34 +239,38 @@ const drawings = {
 function renderHome() {
   const list = $('#studio-list'); list.replaceChildren();
   for (const studio of snapshot.studios) {
-    const card = element('article', '', 'studio-card');
+    const card = element('article', '', 'card studio-card');
     card.dataset.studio = studio.id;
     const icon = element('div', '', 'studio-icon'); icon.setAttribute('aria-hidden', 'true');
     // Drawings are static application assets; user and repository text use textContent.
     icon.innerHTML = `<svg viewBox="0 0 26 28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${drawings[studio.id]}</svg>`;
-    card.append(icon, element('h3', studio.name), element('p', studio.description));
+    card.append(icon, element('h3', studio.name, 'studio-name'), element('p', studio.description, 'studio-says'));
     const status = element('p', studio.running ? 'Running' : studio.installed ? `Ready${studio.version ? ` · ${studio.version}` : ''}` : 'Not installed', 'studio-status');
     status.dataset.running = String(studio.running); card.append(status);
     if (studio.installed) {
-      const button = element('button', studio.running ? 'Return to studio' : 'Open studio');
-      button.setAttribute('aria-label', `Open ${studio.name}`);
+      const label = studio.running ? `Return to ${studio.name}` : `Open ${studio.name}`;
+      const button = element('button', label, 'button button-filled');
       button.addEventListener('click', async () => {
+        let blocked = false;
         // Reserve the named tab during the click so popup protection does not lose it.
         const tab = window.open('about:blank', `marketing-${studio.id}`);
-        button.disabled = true; button.textContent = 'Opening…'; $('#problem').hidden = true;
+        button.disabled = true; button.textContent = 'Opening…'; $('#problem').hidden = true; $('#message').hidden = true;
         try {
           const result = await api('open', {studio: studio.id});
-          if (tab) tab.location.href = result.link;
+          if (tab) tab.location.href = withHome(result.link);
           else {
-            const link = element('a', `Open ${studio.name}`); link.href = result.link; link.target = `marketing-${studio.id}`; link.rel = 'noreferrer';
+            const link = element('a', `Open ${studio.name}`); link.href = withHome(result.link); link.target = `marketing-${studio.id}`;
             const message = $('#message'); message.replaceChildren(document.createTextNode('Your browser blocked the new tab. '), link); message.hidden = false;
+            link.focus(); blocked = true;
           }
           snapshot = await api('home'); renderHome();
+          // The card was rebuilt, so put focus back on its button, unless the link above has it.
+          if (!blocked) $(`#studio-list [data-studio="${studio.id}"] .button`)?.focus();
         } catch (error) { if (tab && tab.location.href === 'about:blank') tab.close(); inform(error.message, true); }
-        finally { button.disabled = false; button.textContent = 'Open studio'; }
+        finally { button.disabled = false; button.textContent = label; }
       }); card.append(button);
     } else {
-      const link = element('a', 'Install studio'); link.href = studio.repository; link.target = '_blank'; link.rel = 'noreferrer'; card.append(link);
+      const link = element('a', `Install ${studio.name}`, 'button'); link.href = studio.repository; link.target = '_blank'; link.rel = 'noreferrer'; card.append(link);
     }
     list.append(card);
   }
@@ -231,15 +278,18 @@ function renderHome() {
   $('#network-access').hidden = standalone || !network;
   $('#network-link').value = network?.url || '';
   const remote = !['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
-  $('.local-badge').textContent = remote ? 'On your local network' : 'On this computer';
+  $('#where').textContent = remote ? 'On your local network' : 'On this computer';
   const shared = snapshot.shared;
   const assistant = shared.assistant?.agent === 'codex' ? 'Codex' : 'Claude Code';
   const workspace = shared.team?.repository ? `Repository: ${shared.team.repository}` : `Local Git: ${shared.local?.root || '~/Studios'}`;
   $('#summary-text').textContent = `${assistant}${shared.models?.mode === 'by_task' ? ' · Models by task' : ''}${shared.assistant?.model ? ` (${shared.assistant.model})` : ''}. ${workspace}.`;
   const fields = $('#path-fields'); fields.replaceChildren();
   for (const studio of snapshot.studios) {
-    const label = element('label', studio.name, 'full'); const input = element('input'); input.name = studio.id;
-    input.value = studio.configured_path; input.placeholder = studio.path || 'Absolute path to the studio installation'; label.append(input); fields.append(label);
+    const field = element('div', '', 'field full');
+    const label = element('label', studio.name, 'field-label'); label.htmlFor = `path-${studio.id}`;
+    const input = element('input', '', 'input'); input.id = label.htmlFor; input.name = studio.id;
+    input.value = studio.configured_path; input.placeholder = studio.path || 'Absolute path to the studio installation';
+    field.append(label, input); fields.append(field);
   }
 }
 function changesForStep() {
@@ -247,7 +297,7 @@ function changesForStep() {
   const value = name => form.elements[name].value.trim() || null;
   const wanted = {};
   if (!setup || step === 0) {
-    wanted.models = {schema: 1, agent: profileAgent, mode: $('#model-mode').value, profiles: {}};
+    wanted.models = {schema: 1, agent: profileAgent, mode: form.elements['models.mode'].value, profiles: {}};
     for (const name of profileNames) wanted.models.profiles[name] = {selection: value(`models.${name}.selection`), model: value(`models.${name}.model`), effort: value(`models.${name}.effort`)};
     wanted.review = {level: value('review.level')};
     wanted.person = {name: value('person.name')};
@@ -296,19 +346,20 @@ $('#find-brands').addEventListener('click', async () => {
   try {
     const found = await api('brands', {skill: form.elements['brand.skill'].value.trim() || null});
     const holder = $('#brand-choices'); holder.replaceChildren(); holder.hidden = false;
+    let index = 0;
     for (const skill of found.skills || []) for (const brand of skill.brands || []) {
-      const row = element('div', '', 'form-grid');
-      const label = element('label', `${skill.name} · ${brand.name}`);
-      const select = element('select'); select.setAttribute('aria-label', `Variant for ${brand.name}`);
+      const row = element('div', '', 'field-grid brand-choice'), field = element('div', '', 'field');
+      const label = element('label', `${skill.name} · ${brand.name} variant`, 'field-label');
+      const select = element('select', '', 'input'); select.id = label.htmlFor = `brand-choice-${index++}`;
       for (const variant of brand.variants?.length ? brand.variants : ['']) select.add(new Option(variant || 'Default variant', variant));
-      const use = element('button', `Use ${brand.name}`, 'secondary'); use.type = 'button';
+      const use = element('button', `Use ${brand.name}`, 'button'); use.type = 'button';
       use.addEventListener('click', () => {
         form.elements['brand.skill'].value = skill.path;
         form.elements['brand.brand'].value = brand.brand;
         form.elements['brand.variant'].value = select.value;
         $('#brand-catalog-status').textContent = `${brand.name} selected. Save settings to keep this choice.`;
       });
-      label.append(select); row.append(label, use); holder.append(row);
+      field.append(label, select); row.append(field, use); holder.append(row);
     }
     $('#brand-catalog-status').textContent = found.problem || 'Choose a brand and variant. Your saved choices change only when you save.';
   } catch (error) { $('#brand-catalog-status').textContent = `${error.message} Your form is kept; you can enter the IDs below.`; }
@@ -317,14 +368,17 @@ $('#find-brands').addEventListener('click', async () => {
 form.elements['assistant.agent'].addEventListener('change', () => { efforts(''); form.elements['assistant.model'].value = ''; for (const name of profileNames) { const select = form.elements[`models.${name}.effort`]; profileLevels(select, select.value); } for (const picker of modelPickers.values()) renderModelPicker(picker); profilesChanged(); loadModels(); });
 form.querySelectorAll('[name="storage"]').forEach(input => input.addEventListener('change', storage));
 document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => show(button.dataset.view)));
-$('#home-link').addEventListener('click', event => { event.preventDefault(); if (standalone) return openNative(); show('home'); });
+$('#home-link').addEventListener('click', event => { event.preventDefault(); show('home'); });
+$('#back-to-studio').addEventListener('click', () => openNative());
 $('#check').addEventListener('click', async () => {
   $('#check').disabled = true;
   try {
     const result = await api('computer', {}); const list = $('#computer-results'); list.replaceChildren();
     for (const item of result.computer.items) {
-      const row = element('div', '', 'check-row'); const details = element('div'); details.append(element('h2', item.name), element('p', item.detail));
-      row.append(details, element('span', item.ready ? 'Available' : item.optional ? 'Optional' : 'Needs setup', `check-state${item.ready ? '' : ' missing'}`)); list.append(row);
+      const kind = item.ready ? 'done' : item.optional ? 'none' : 'review';
+      const row = element('li', '', 'computer-item'), top = element('div', '', 'computer-top');
+      top.append(element('h4', item.name, 'row-title'), stateLine(kind, item.ready ? 'Available' : item.optional ? 'Optional' : 'Needs setup'));
+      row.append(top, element('p', item.detail, 'facts')); list.append(row);
     }
   } catch (error) { inform(error.message, true); } finally { $('#check').disabled = false; }
 });
@@ -347,6 +401,9 @@ function openNative() {
 modelPicker(form.elements['assistant.model'], 'Shared model');
 $('#refresh-models').addEventListener('click', () => loadModels(true));
 (async () => {
-  try { snapshot = await api('home'); setup = !snapshot.setup.done; fill(); renderHome(); show(setup || standalone ? 'settings' : requestedView); if (snapshot.shared_problem) inform(snapshot.shared_problem, true); }
+  try {
+    if (!token) { $('#loading').hidden = true; inform(`This page needs its private link. Run ${standalone ? 'the studio command' : 'marketing-studio'} in your terminal to open it again.`, true); return; }
+    snapshot = await api('home'); setup = !snapshot.setup.done; fill(); renderHome(); show(setup || standalone ? 'settings' : requestedView); if (snapshot.shared_problem) inform(snapshot.shared_problem, true);
+  }
   catch (error) { $('#loading').hidden = true; inform(error.message, true); }
 })();

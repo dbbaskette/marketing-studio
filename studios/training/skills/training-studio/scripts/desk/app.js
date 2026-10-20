@@ -32,6 +32,7 @@ const ICONS = {
   status: ['M3 12.5h4l2.5-6.5 4.5 12 2.5-5.5H21'],
   settings: ['M4.5 7.5h7', 'M16.5 7.5h3', 'M14 5.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z', 'M4.5 16.5h3',
     'M12.5 16.5h7', 'M10 14.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z'],
+  suite: ['M4 4h6v6H4z', 'M14 4h6v6h-6z', 'M4 14h6v6H4z', 'M14 14h6v6h-6z'],
   back: ['M14.5 5.5 8 12l6.5 6.5'],
   more: ['M6 12h.01', 'M12 12h.01', 'M18 12h.01'],
   check: ['M5.5 12.5 10 17l8.5-10'],
@@ -4070,26 +4071,21 @@ function trainingOptions(label, key, ...children) {
 }
 
 function materialChoices(draft) {
-  const node = make('div', 'material-choices');
+  const node = make('div', 'chips material-choices');
   node.setAttribute('role', 'group');
   node.setAttribute('aria-label', 'Materials to make');
   for (const [id, label] of MATERIALS) {
-    const control = button(label, 'button capsule material-choice', () => {
-      const selected = !draft.materials.includes(id);
+    node.append(chip(label, draft.materials.includes(id), (selected) => {
       draft.materials = MATERIALS.map(([key]) => key)
         .filter((key) => key === id ? selected : draft.materials.includes(key));
-      control.setAttribute('aria-pressed', String(selected));
       // Yoodli's knowledge and scenario dependencies are explicit selections.
       if (!selected && ['brief', 'scenario'].includes(id)) {
         draft.yoodli = false;
-        const yoodli = Array.from(main().querySelectorAll('.chip')).find((node) => node.dataset.key === 'practice yoodli');
+        const yoodli = Array.from(main().querySelectorAll('.chip')).find((item) => item.dataset.key === 'practice yoodli');
         if (yoodli) yoodli.setAttribute('aria-pressed', 'false');
       }
       say(byId('new-problem'), '');
-    }, 'material ' + id);
-    control.setAttribute('aria-pressed', String(draft.materials.includes(id)));
-    control.setAttribute('aria-label', label);
-    node.append(control);
+    }, 'material ' + id));
   }
   return node;
 }
@@ -7257,16 +7253,14 @@ async function catchUp() {
   }
 }
 
-// A highlight on glass that follows the pointer. Not when the person asked for less motion.
-function followPointer() {
-  if (calm()) return;
-  document.addEventListener('pointermove', (event) => {
-    const lit = event.target && event.target.closest ? event.target.closest('.shine') : null;
-    if (!lit) return;
-    const box = lit.getBoundingClientRect();
-    lit.style.setProperty('--mx', (event.clientX - box.left) + 'px');
-    lit.style.setProperty('--my', (event.clientY - box.top) + 'px');
-  }, { passive: true });
+// Marketing Studio names its own address when it opens this studio, so the page can link back
+// to that tab. Only the same scheme and host on another port is accepted.
+function suiteHome(hash, here) {
+  const named = new URLSearchParams(String(hash).replace(/^#/, '')).get('home') || '';
+  const found = /^(https?:)\/\/([^/:?#@\s]+):(\d{1,5})\/?$/.exec(named);
+  return found && found[1] === here.protocol && found[2] === here.hostname && found[3] !== here.port
+    && Number(found[3]) > 0 && Number(found[3]) < 65536
+    ? found[1] + '//' + found[2] + ':' + found[3] : '';
 }
 
 function linkToken() {
@@ -7290,6 +7284,20 @@ function begin() {
     const item = byId(id);
     item.prepend(icon(drawing));
     item.addEventListener('click', () => show(screen));
+  }
+  const suite = byId('go-suite');
+  // The key's fragment is lost when a link changes the address, so the way back is kept for this tab.
+  let home = suiteHome(window.location.hash, window.location);
+  try {
+    home = home || sessionStorage.getItem('marketing-studio-home') || '';
+    if (home) sessionStorage.setItem('marketing-studio-home', home);
+  } catch (failure) {
+    // No tab storage: the address in this link is still used.
+  }
+  if (suite && home) {
+    suite.href = home + '/';
+    suite.prepend(icon('suite'));
+    suite.hidden = false;
   }
   window.addEventListener('popstate', (event) => {
     view.pushed = Math.max(0, view.pushed - 1);
@@ -7332,7 +7340,6 @@ function begin() {
     event.preventDefault();
     main().focus();
   });
-  followPointer();
   if (!view.token) {
     place({ title: 'This page needs its link' }, [], true);
     notify(NOTICES.refused);

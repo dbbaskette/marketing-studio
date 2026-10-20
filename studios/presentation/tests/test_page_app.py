@@ -50,8 +50,11 @@ class ApiTests(unittest.TestCase):
         # Every request goes through one fetch, to the page's own server.
         self.assertEqual(re.findall(r"fetch\(\s*([^,)]+)", self.script), ["'/api/' + endpoint"])
         for elsewhere in ('XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon', 'import(',
-                          'localStorage', 'sessionStorage', 'document.cookie'):
+                          'localStorage', 'document.cookie'):
             self.assertNotIn(elsewhere, self.script)
+        # The one thing kept in the tab is the way back to Marketing Studio.
+        self.assertEqual(re.findall(r"sessionStorage\.(\w+)\('([\w-]+)'", self.script),
+                         [('getItem', 'marketing-studio-home'), ('setItem', 'marketing-studio-home')])
 
     def test_an_upload_is_read_with_filereader_and_sent_in_base64(self):
         self.assertIn('new FileReader()', self.script)
@@ -72,9 +75,13 @@ class LinkTests(unittest.TestCase):
     def test_a_link_out_is_only_a_web_address_the_server_returned(self):
         script = read('app.js')
         # Navigation also opens the fixed local setup page, keeping its token in the
-        # fragment. External links still come only from the server or a downloaded deck.
+        # fragment, and the Marketing Studio tab that opened this page. That address passes
+        # suiteHome, which takes only this host on another port. External links still come
+        # only from the server or a downloaded deck.
         targets = re.findall(r'\.href = ([^;]+);', script)
-        self.assertEqual(sorted(targets), ["'/onboarding/#token=' + view.token", 'address', 'held'])
+        self.assertEqual(sorted(targets), ["'/onboarding/#token=' + view.token", 'address', 'held',
+                                           "home + '/'"])
+        self.assertIn('let home = suiteHome(window.location.hash, window.location);', script)
         out = script[script.index('function outLink('):]
         out = out[:out.index('\n}\n')]
         self.assertIn("WEB_LINK.test(String(address || ''))", out)
