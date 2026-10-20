@@ -72,12 +72,12 @@ async function loadCapabilities() {
 function continuation(command, label='Continue in chat') {
   const box=element('section',undefined,'continuation');
   box.append(element('h3',label),element('p','Copy this request into your Codex or Claude Code chat.'));
-  const field=element('textarea');field.value=command;field.readOnly=true;field.rows=3;
+  const field=element('textarea',undefined,'input');field.value=command;field.readOnly=true;field.rows=3;
   field.setAttribute('aria-label','Article or memory continuation request');
   const copy=button('Copy request',async()=>{
     try {await navigator.clipboard.writeText(command);notice('Request copied. Paste it into your writing chat.');}
     catch(error){field.focus();field.select();notice('Select and copy the request, then paste it into your writing chat.');}
-  },'primary');
+  },'button button-filled');
   box.append(field,copy);return box;
 }
 function readOnlyMemory(result, explanation) {
@@ -125,7 +125,7 @@ function unreadableNote(result) {
   box.append(element('p',count+(one?' blog could not be read and is':' blogs could not be read and are')+' not listed: '+names+'. Ask Blog Studio in chat to inspect '+(one?'it':'them')+'.'));
   return box;
 }
-function button(text, action, cls='secondary') {const b=element('button',text,cls);b.type='button';b.addEventListener('click',()=>Promise.resolve(action()).catch(e=>notice(e.message,true)));return b;}
+function button(text, action, cls='button') {const b=element('button',text,cls);b.type='button';b.addEventListener('click',()=>Promise.resolve(action()).catch(e=>notice(e.message,true)));return b;}
 function textCell(row, text) {const cell=element('td',text??'—');cell.setAttribute('role','cell');row.append(cell);return cell;}
 function sameView(left, right) {
   return left && right && ['view','query','stage','sourceStatus','collection'].every(key=>left[key]===right[key]);
@@ -172,7 +172,7 @@ function render(state, result) {
   const unreadable=view==='board'||view==='inbox'?unreadableNote(result):null;
   if(unreadable)$('results').append(unreadable);
   if(!result.items.length){const box=element('div',undefined,'empty');box.append(element('h3',{board:'Your next blog starts here',inbox:'Nothing in this saved inbox',library:'Build your reference shelf',memory:'Give your team useful context'}[view]),element('p',{board:'Choose New blog to write here, upload a draft, or start a blog in chat.',inbox:'Run a review in chat to collect findings. Google review status is not checked live here.',library:'Choose “Import old blogs” to add a folder, website, feed or export, or upload a single reference.',memory:'Join a Team Hub, then save a note, context, or writing rule.'}[view]));$('results').append(box);return;}
-  const table=element('table'),head=element('tr');table.setAttribute('role','table');head.setAttribute('role','row');table.className='view-'+view;const headings={board:['Blog / author','Stage','Owner / due','Working copy'],inbox:['Blog','Finding','Status','Next action'],library:['Reference / author','Status','Collection / date','Actions'],memory:['Memory','Kind','Applies to','Actions']}[view];headings.forEach(h=>{const th=element('th',h);th.setAttribute('scope','col');head.append(th);});const thead=element('thead');thead.append(head);table.append(thead);const body=element('tbody');
+  const table=element('table'),head=element('tr');table.setAttribute('role','table');head.setAttribute('role','row');table.className='table view-'+view;const headings={board:['Blog / author','Stage','Owner / due','Working copy'],inbox:['Blog','Finding','Status','Next action'],library:['Reference / author','Status','Collection / date','Actions'],memory:['Memory','Kind','Applies to','Actions']}[view];headings.forEach(h=>{const th=element('th',h);th.setAttribute('scope','col');head.append(th);});const thead=element('thead');thead.append(head);table.append(thead);const body=element('tbody');
   for(const item of result.items){const row=element('tr');row.setAttribute('role','row');
     if(view==='board'){const cell=textCell(row,'');cell.append(button(item.title,()=>showBlog(item),'title-button'),element('p',item.author));const stage=textCell(row,'');stage.append(badge(item.stage));if(item.conflict||item.shared_newer)stage.append(element('p',item.conflict?'Competing revisions':'New shared revision'));const owner=textCell(row,item.owner);if(item.due)owner.append(element('p',(item.overdue?'Overdue · ':'Due · ')+item.due,item.overdue?'overdue':''));const doc=textCell(row,'');doc.append(item.google?link(item.google.url,'Open Google Doc ↗'):element('span',item.location==='hub'?'Saved in Team Hub':'Local writing'));if(item.google)doc.append(element('p','Saved link; refresh Google in chat'));}
     if(view==='inbox'){const blog=textCell(row,'');blog.append(button(item.title,()=>showBlog({...item,location:item.location||'local'}),'title-button'));const finding=textCell(row,'');finding.append(button(item.kind,()=>showFinding(item),'title-button'));if(item.finding)finding.append(element('p',item.finding.message||item.finding.detail||item.finding.original||'Inspect this saved finding in chat.'));const status=textCell(row,'');status.append(badge(item.status));const action=textCell(row,'');action.append(button('Inspect finding',()=>showFinding(item)),element('p',item.action));}
@@ -196,11 +196,11 @@ function editorialForm(item, result) {
   // An unknown recorded stage is shown as "follow writing progress", so leaving the select alone posts nothing.
   const saved={owner:data.owner||'',due:data.due||'',publication_url:data.publication_url||'',stage:stages.includes(data.stage)?data.stage:''};
   for(const [key,label]of [['owner','Owner'],['due','Due date'],['publication_url','Publication URL']]) {
-    const field=element('label',label),input=element('input');input.name=key;input.value=saved[key];
+    const field=element('label',label,'field'),input=element('input',undefined,'input');input.name=key;input.value=saved[key];
     input.type=key==='due'?'date':'text';input.maxLength=key==='publication_url'?2000:200;field.append(input);form.append(field);
     saved[key]=key==='owner'?input.value.trim():input.value;  // What an untouched field returns later.
   }
-  const field=element('label','Editorial stage'),select=element('select');select.name='stage';
+  const field=element('label','Editorial stage','field'),select=element('select',undefined,'input');select.name='stage';
   const follow=element('option','Follow writing progress (now: '+result.view.stage+')');follow.value='';select.append(follow);
   for(const stage of stages) {
     const option=element('option',stage);option.value=stage;select.append(option);
@@ -219,7 +219,7 @@ function editorialForm(item, result) {
     return needed;
   };
   select.addEventListener('change',needsConfirmation);needsConfirmation();
-  const actions=element('div',undefined,'form-actions'),save=element('button','Save editorial decision','primary');save.type='submit';actions.append(save);form.append(actions);
+  const actions=element('div',undefined,'bar form-actions'),save=element('button','Save editorial decision','button button-filled');save.type='submit';actions.append(save);form.append(actions);
   form.addEventListener('submit',async event=>{
     event.preventDefault();save.disabled=true;
     try {
@@ -310,11 +310,11 @@ async function curate(item) {
   }
   $('detail-content').append(overview);
   if(!access.actions.edit){$('detail-content').append(element('p',access.message,'context-note'),element('pre',JSON.stringify(result.record.library||{},null,2),'source-excerpt'),element('h3','Saved text excerpt'),element('pre',result.excerpt||'No extracted text yet.','source-excerpt'));$('detail-dialog').showModal();return;}
-  const form=element('form'),metadata=result.record.library||{},l=element('label','Curation'),select=element('select');select.name='curation';
+  const form=element('form'),metadata=result.record.library||{},l=element('label','Curation','field'),select=element('select',undefined,'input');select.name='curation';
   for(const state of ['active','pending','retired']){const option=element('option',state);option.value=state;option.selected=state===(metadata.curation||'active');select.append(option);}l.append(select);form.append(l);
   const fields={curation:select};
-  for(const [key,label]of [['topics','Topics (comma separated)'],['products','Products (comma separated)'],['note','Source note']]){const field=element('label',label),input=element(key==='note'?'textarea':'input');input.name=key;input.value=key==='note'?(result.record.note||''):(metadata[key]||[]).join(', ');fields[key]=input;field.append(input);form.append(field);}
-  const save=element('button','Save curation','primary');save.type='submit';const actions=element('div',undefined,'form-actions');actions.append(save);form.append(actions);
+  for(const [key,label]of [['topics','Topics (comma separated)'],['products','Products (comma separated)'],['note','Source note']]){const field=element('label',label,'field'),input=element(key==='note'?'textarea':'input',undefined,'input');input.name=key;input.value=key==='note'?(result.record.note||''):(metadata[key]||[]).join(', ');fields[key]=input;field.append(input);form.append(field);}
+  const save=element('button','Save curation','button button-filled');save.type='submit';const actions=element('div',undefined,'bar form-actions');actions.append(save);form.append(actions);
   let blocked=false;
   const conflict=element('div',undefined,'curation-conflict');conflict.hidden=true;
   const comparison=element('div');
@@ -424,7 +424,7 @@ function renderImport(result){
   box.append(element('p','Check only the posts you want. Author profiles, category pages and navigation links can appear here. Nothing is selected automatically.','context-note'));
   importChecks=new Map();
   const controls=element('div',undefined,'import-selection-tools'),count=element('span');count.id='import-selection-count';
-  const choose=element('button','Select all','import-select-control'),clear=element('button','Clear selection','import-select-control');
+  const choose=element('button','Select all','button button-quiet import-select-control'),clear=element('button','Clear selection','button button-quiet import-select-control');
   choose.type=clear.type='button';
   choose.addEventListener('click',()=>{for(const check of importChecks.values())if(!check.disabled)check.checked=true;importSelectionControls();});
   clear.addEventListener('click',()=>{for(const check of importChecks.values())check.checked=false;importSelectionControls();});

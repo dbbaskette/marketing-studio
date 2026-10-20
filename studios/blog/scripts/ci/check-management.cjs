@@ -912,8 +912,8 @@ async function guidedRuns(){
   assert.ok(f.get('actions').children.some(e=>e.textContent==='Try again'));
   assert.ok(descendants(content).some(e=>e.textContent==='Synthetic failure'));
   f.set('found',found);f.run('studio.listing=[found];sHome()');
-  assert.equal(f.get('title').textContent,'Blog Studio');assert.equal(f.get('needs-count').textContent,'1');
-  assert.ok(descendants(content).some(e=>e.textContent==='Continue your work'));
+  assert.equal(f.get('title').textContent,'Home');assert.equal(f.get('needs-count').textContent,'1');
+  assert.ok(descendants(content).some(e=>e.textContent==='Needs you'));
   f.run('studio.ordinary=[];sBlogs()');assert.equal(f.get('title').textContent,'Your blogs');
   assert.ok(descendants(content).some(e=>e.textContent==='Synthetic blog'));
   f.run("studio.computer={checks:[{label:'Codex',status:'action',detail:'Sign-in needed',next_step:'Run codex login'}]};studio.settings={workspace:'/synthetic'};sStatusPage()");
