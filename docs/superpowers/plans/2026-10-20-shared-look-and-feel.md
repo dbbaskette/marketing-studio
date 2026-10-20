@@ -264,6 +264,7 @@ summary {
   background: var(--paper);
   color: var(--ink);
   font: inherit;
+  font-weight: 650;
   text-align: left;
   white-space: normal;
   border: 1px solid var(--hair);
@@ -303,6 +304,7 @@ summary {
 .pick-says {
   color: var(--quiet);
   font-size: 0.93rem;
+  font-weight: 400;
 }
 
 /* Where a person is in a short run of steps: setup, a new blog, the beginner page. */
@@ -1284,7 +1286,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `studios/blog/skills/blog-studio/assets/management/index.html:17-75`
 - Replace: `studios/blog/skills/blog-studio/assets/management/blog.css`
 - Modify: `studios/blog/skills/blog-studio/assets/management/app.js` at lines 73-80, 128, 175, 199, 203, 211, 222, 313, 316, 317 and 427
-- Modify: `studios/blog/skills/blog-studio/assets/management/runner.js` at lines 123, 229, 231 and 416
+- Modify: `studios/blog/skills/blog-studio/assets/management/runner.js` at lines 11, 110, 123, 229, 231 and 416
+- Modify: `studios/blog/scripts/ci/check-management.cjs` at lines 915-916
 
 - [ ] **Step 1: Editorial screen and dialogs in `index.html`.** Replace lines 17-75, from `<main id="main" …` through the closing `</dialog>` of `import-dialog`, with:
 
@@ -1416,10 +1419,42 @@ Expected: `0`
 Add the helper right after the `sButton` definition (line 11):
 
 ```js
-function sChoice(title,says,action){const node=sNode('button','pick-card');node.type='button';node.append(sNode('span','pick-title',title),sNode('span','pick-says',says));node.addEventListener('click',async()=>{try{await action(node);}catch(error){notice(error.message,true);}});return node;}
+function sChoice(title,says,action){const node=sNode('button','pick-card',title);node.type='button';node.append(sNode('span','pick-says',says));node.addEventListener('click',async()=>{try{await action(node);}catch(error){notice(error.message,true);}});return node;}
 ```
 
+The title is the button's own text, as with Blog Studio's other buttons. `scripts/ci/check-management.cjs` finds a start task by its button text and clicks it. `.pick-card` sets the title weight and `.pick-says` resets its own.
+
 Line 123: in `sNode('a','button button-outlined','Change shared settings')`, replace `'button button-outlined'` with `'button'`. `button-outlined` is defined nowhere.
+
+- [ ] **Step 3b: Blog Studio's home follows the studio home pattern.** Presentation Studio and Training Studio title their home "Home" and greet with a large title that counts what needs the person. They put "New …" and "Review …" in the toolbar and group work as "Needs you" first. Blog Studio titles its toolbar "Blog Studio" and starts straight with cards.
+
+First, let `sButton` make a plain button. Replace the class expression in `sButton` (line 11):
+
+```js
+function sButton(label,action,kind='quiet'){const node=sNode('button','button button-'+kind,label);
+```
+
+with:
+
+```js
+function sButton(label,action,kind='quiet'){const node=sNode('button','button'+(kind?' button-'+kind:''),label);
+```
+
+Then replace `sHome` (line 110) with:
+
+```js
+function sGreeting(needs){const hour=new Date().getHours(),hello=hour<12?'Good morning.':hour<18?'Good afternoon.':'Good evening.',counted=['Nothing needs','One thing needs','Two things need','Three things need','Four things need','Five things need','Six things need','Seven things need','Eight things need','Nine things need','Ten things need'];return hello+' '+(needs<counted.length?counted[needs]:needs+' things need')+' you'+(needs?'.':' right now.');}
+function sHome(){const open=studio.listing.filter(found=>!found.complete),waiting=open.filter(sNeeds),first=waiting[0];sFrame('Home',[sButton('New blog',()=>newBlog(),first?'':'filled'),first?sButton('Review '+first.title,sReview(first),'filled'):null]);sPage(sNode('p','large-title',sGreeting(waiting.length)),sGroup('Needs you',waiting,'card-needs'),sStartTasks(),sGroup('In progress',open.filter(found=>!sNeeds(found))),studio.ordinary.length?sCard('Saved drafts',...studio.ordinary.slice(0,5).map(found=>sAdd(sNode('div','row'),sNode('h3','row-title',found.title),sButton('Continue editing',()=>sRoute('editor',found.id))))):null,sGroup('Finished drafts',studio.listing.filter(found=>found.complete)),sNode('p','foot quiet','Your writing is saved as you work. Google feedback is sent only when you choose Send.'));}
+```
+
+`sReview(found)` already returns the click handler. `newBlog()` is the existing New blog entry point.
+
+Update the two home assertions in `studios/blog/scripts/ci/check-management.cjs`, around lines 915-916. The behaviour changed on purpose:
+
+```js
+  assert.equal(f.get('title').textContent,'Home');assert.equal(f.get('needs-count').textContent,'1');
+  assert.ok(descendants(content).some(e=>e.textContent==='Needs you'));
+```
 
 - [ ] **Step 4: Replace `blog.css`**
 
