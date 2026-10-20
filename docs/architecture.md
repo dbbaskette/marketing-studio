@@ -73,14 +73,14 @@ choices. Content-specific defaults, limits, notifications and update preferences
 remain optional native controls.
 Preparation starts no assistant job and never moves an existing workspace.
 
-Local Git is the default. Separate local repositories avoid contention over an
-index and HEAD. Remote mode retains each studio's native clone and content-folder
-conventions. Native data directories and assistant skill locations are unchanged.
-
 When Marketing Studio opens a studio, it names its own tab and passes its address in
 the link's fragment. The studio accepts that address only for the same host on another
 port, and shows a "Marketing Studio" item that brings the tab forward. A Marketing
 Studio tab without its key asks the person to run `marketing-studio` again.
+
+Local Git is the default. Separate local repositories avoid contention over an
+index and HEAD. Remote mode retains each studio's native clone and content-folder
+conventions. Native data directories and assistant skill locations are unchanged.
 
 Marketing Studio discovers bundled source studios first when run from a checkout.
 A managed suite prefers native installed copies so both launchers run the same
