@@ -32,10 +32,11 @@ sh installer/install.sh install --home /tmp/blog-studio-home --target both --yes
 To use the optional prompt generator locally:
 
 ```sh
-python3 -m http.server 8896 --bind 127.0.0.1 --directory preview
+python3 -m http.server 8896 --bind 127.0.0.1
 ```
 
-Visit `http://127.0.0.1:8896/blog-studio.html`.
+Run it from this directory, so the page can reach the shared stylesheet, and visit
+`http://127.0.0.1:8896/preview/blog-studio.html`.
 
 ## Verify
 
