@@ -126,6 +126,22 @@ def generate(directory, run, payload, worker, *, seconds, stop):
                 except ValueError as error:
                     gaps.append({'url': url, 'reason': str(error)})
 
+        def validate_author(value, data):
+            # Validate with the actual pinned helper, in a disposable case. Never
+            # coerce malformed prose or weaken citation/source checks to accept it.
+            if not isinstance(value, dict):
+                raise ValueError('Return a complete schema-2 dossier object.')
+            for key in ('topic', 'audience', 'purpose', 'scope', 'source_mode'):
+                value[key] = task[key]
+            if any(f.get('author') != data['worker'] for f in value.get('facts', [])):
+                raise ValueError('Every fact must identify the supplied author worker.')
+            with tempfile.TemporaryDirectory(prefix='blog-research-validation-') as temp:
+                case = Path(temp)
+                for source in sources:
+                    research_contract.write(case, source['file'], source['path'].read_bytes())
+                research_contract.write(case, 'dossier.json', json.dumps(value))
+                research_contract.Workflow().command(case, 'save', 'dossier.json', data['worker'])
+
         def invoke(phase, guidance, data, offered, fetch):
             # Only the parent fetches and pins bytes; generated source text is never evidence.
             data['sources'] = [
@@ -136,6 +152,16 @@ def generate(directory, run, payload, worker, *, seconds, stop):
                 for s in sources
             ]
             data['source_limits'] = gaps
+            if phase == 'author':
+                guidance += (
+                    '\nDossier format: schema=2; sources, facts, findings, sections and brief '
+                    'are arrays. sections and brief contain {id,title,blocks:[{text,kind,refs}]}. '
+                    'kind is summary, inference, recommendation or gap. refs are fact/finding IDs. '
+                    'Each fact has id, statement, author and citations:[{source,quote}]. '
+                    'Each finding has id,title,summary:{text,kind,refs},support:[],counter:[], '
+                    'implications:[],conditions:[],gaps:[]. Sources have id,file,origin,title,'
+                    'publisher,permission,context (full or partial). Use exact captured quotes.'
+                )
             answer = call(
                 phase,
                 data,
@@ -159,17 +185,22 @@ def generate(directory, run, payload, worker, *, seconds, stop):
                                 entry.get(k) != captured[k] for k in ('permission', 'origin')
                             ):
                                 raise ValueError('Invalid captured source metadata')
+                        validate_author(value, data)
                         break
-                    except (ValueError, KeyError, TypeError, AttributeError):
+                    except (ValueError, KeyError, TypeError, AttributeError) as error:
                         if attempt:
                             raise ValueError(
-                                'Research returned invalid source metadata after retrying. Your manuscript and source access are unchanged. Retry research or continue editing locally.'
+                                'Research could not produce valid evidence and report data after one correction attempt. Your manuscript and source access are unchanged. Retry research or continue editing locally.'
                             ) from None
                         answer = call(
                             phase,
-                            data,
+                            {
+                                **data,
+                                'validation_error': str(error),
+                                'previous_output': answer['content'],
+                            },
                             guidance
-                            + '\nReturn the complete dossier again. Copy file, origin and permission exactly from each supplied capture; do not invent or reclassify sources.',
+                            + '\nCorrect the validation_error in previous_output and return the complete dossier again. Copy file, origin and permission exactly from each supplied capture; do not invent or reclassify sources.',
                         )
             return answer['content'], sources
 

@@ -136,3 +136,69 @@ class SynthesisIntegrationTests(Fixture):
         self.assertEqual(engine.describe(ident)['next'], 'outline', engine.local(ident))
         directory, _, _ = blog_runner.load(self.root, ident)
         research_contract.read_bundle(directory / 'research')
+
+    def test_malformed_sections_are_repaired_using_real_helper_validation(self):
+        for repair in (True, False):
+            with self.subTest(repair=repair):
+                directory = self.base / ('repaired' if repair else 'refused')
+                directory.mkdir()
+                run = {
+                    'engine': 'codex',
+                    'brief': {},
+                    'research_contract': research_contract.snapshot(),
+                }
+                payload = {
+                    'title': 'Synthetic',
+                    'documents': {},
+                    'research_policy': 'supplied-only',
+                    'sources': [
+                        {
+                            'id': 'one',
+                            'origin': 'https://example.invalid/docs',
+                            'name': 'Synthetic',
+                            'purposes': ['reference'],
+                            'status': 'ready',
+                            'text': TEXT,
+                        }
+                    ],
+                }
+                authors = []
+                reviewers = []
+
+                def worker(
+                    engine,
+                    data,
+                    guidance,
+                    *,
+                    authors=authors,
+                    reviewers=reviewers,
+                    repair=repair,
+                    **options,
+                ):
+                    if 'review_template' in data:
+                        reviewers.append(data['worker'])
+                        return {'content': json.dumps(review(data['review_template']))}
+                    authors.append(data)
+                    capture = data['sources'][0]
+                    value = dossier(data['worker'], capture['file'], capture['origin'], 'selected')
+                    if len(authors) == 1 or not repair:
+                        value['sections'] = {'wrong': 'an object instead of an array'}
+                    return {'content': json.dumps(value)}
+
+                if repair:
+                    synthesis_research.generate(
+                        directory, run, payload, worker, seconds=60, stop=threading.Event()
+                    )
+                    research_contract.read_bundle(directory / 'research')
+                    self.assertEqual(len(reviewers), 1)
+                    self.assertNotEqual(authors[0]['worker'], reviewers[0])
+                else:
+                    with self.assertRaisesRegex(ValueError, 'one correction attempt'):
+                        synthesis_research.generate(
+                            directory, run, payload, worker, seconds=60, stop=threading.Event()
+                        )
+                    self.assertEqual(reviewers, [])
+                    self.assertFalse((directory / 'research').exists())
+                self.assertEqual(len(authors), 2)
+                self.assertIn('sections must be an array', authors[1]['validation_error'])
+                self.assertIn('previous_output', authors[1])

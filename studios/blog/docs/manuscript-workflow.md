@@ -9,12 +9,12 @@ specific delivery.
 
 | Starting material | Route | Next decision |
 | --- | --- | --- |
-| A topic and point of view | New blog → Write a blog | Review the outline and draft at the selected review level |
-| A supplied outline | New blog → Use my outline | Paste the outline; headings and order guide drafting |
-| An unclear angle | New blog → Explore ideas | Read three angles, then choose Develop into a blog |
+| A topic and point of view | Home → Write from a brief | Review the outline and draft at the selected review level |
+| A supplied outline | Home → Use my outline | Paste the outline; headings and order guide drafting |
+| An unclear angle | Home → Explore ideas | Read three angles, then choose Develop into a blog |
 | An outline to develop | Outline only → Develop into a blog | State which argument or structure to develop |
-| A saved or uploaded draft | Edit manuscript, or Revise/Review a draft | Choose the precise editing scope |
-| Someone else's Google Doc | Open Google Doc → Preview → Import and continue | Edit locally or select a focused review |
+| A saved or uploaded draft | Home → Polish a document → Paste text or Upload a file, or Your blogs → Continue editing | Choose the precise editing scope |
+| Someone else's Google Doc | Home → Polish a document → Google Doc → Read Google Doc → Open for editing | Edit locally or select a focused review |
 
 The brief's audience and purpose matter for technical/product marketing: a
 practitioner tutorial, product explanation, comparison, and executive argument
@@ -32,19 +32,19 @@ Stale pages cannot overwrite a newer saved manuscript.
 
 Choose one focused action:
 
-- **Review grammar and writing rules:** clarity, explicit author rules, house
-  style and voice. It produces findings, not an unsolicited rewrite.
+- **Polish writing — no research:** one pass for proofreading, copy editing and
+  natural wording. It applies author rules and house style, addresses repetitive
+  or formulaic phrasing, and preserves voice, facts and technical qualifiers.
+  Choose which suggestions to apply; this is editorial guidance, not AI detection.
 - **Check facts:** exact claims and selected evidence, including unsupported or
   contradicted claims. No readable evidence means unavailable, not passed.
-- **Review formulaic or AI-like wording:** repetitive patterns, generic phrasing
-  and rhythm, preserving facts and personality. This is editorial guidance, not
-  an AI detector or an authorship claim.
 - **Review argument and structure:** audience, reasoning, section contribution,
   qualifications, and technical/product relevance.
 - **Make a scoped revision:** apply the requested changes while preserving the
   author's stance and voice, then return feedback.
 
-Select saved evidence sources beside the check. The default uses saved evidence
+Polish writing always skips research, including when replacing a stopped
+research run. From that run, open **Edit manuscript** and choose **Polish writing**. For other checks, select saved evidence sources beside the check. The default uses saved evidence
 without starting a new research pipeline. Choose selected-source research or
 public research explicitly when needed. Research receives the manuscript's claims
 and requested scope. It cannot reclassify private source permissions.
@@ -55,24 +55,28 @@ assistant assessments unless the record identifies a performed mechanical check.
 
 ## Edit another author's Google Doc
 
-1. Open the Doc link and inspect the import preview. Pending Google suggestions
-   remain in Google; the local manuscript contains the accepted text.
-2. Choose an editing scope. For a light edit, request grammar/clarity without
-   changing stance, structure, technical qualifiers or voice. For a marketing
-   review, ask about audience relevance, claim strength and missing evidence.
-3. Select useful findings into **Suggestions for the author**, or add an exact
-   original quote, replacement and explanation. Use a comment for a question or
-   a claim the author needs to substantiate.
-4. Optionally **Apply to local draft**. This keeps the original quote in the
-   proposal for Google while updating the local manuscript. Missing or ambiguous
-   local quotes are refused instead of guessing.
-5. Alternatively, save your own local wording edits and choose **Prepare
-   suggestions from local edits**. Ordinary single-paragraph wording changes are
-   converted into precise replacements. Structural, formatting and insertion-only
-   changes may need individually quoted suggestions or comments; conversion does
-   not silently send a flattened document.
-6. Choose the delivery mode, preview the target and selected feedback, then
-   confirm **Send this feedback**.
+1. Choose **Polish a document** on Home, then **Google Doc**. Paste the link, read the preview,
+   and confirm the accepted text matches the original. Importing starts no model.
+2. In **Polish**, optionally name a concern, then choose **Polish writing**.
+   This combines proofreading, copy editing and natural wording without research.
+   Other editing actions, including fact checking, are in a disclosure.
+3. **Choose changes** shows each original passage, its proposed replacement and
+   the reason together. Use all the changes in one click, or select individual changes. You can adjust
+   a suggested replacement before continuing.
+   Questions can be selected as comments. Manual feedback is a secondary tool.
+4. In **Finish**, the page checks the current Google Doc and shows the destination
+   and selected feedback. Choose **Send feedback to Google** when ready. The result reports the
+   actual Google delivery state. Successful delivery replaces the send prompt.
+5. Alternatively save the selected edits to your local draft and download the
+   revised manuscript. The whole batch is refused if quotes are ambiguous,
+   missing or overlapping; no partial changes are saved. Previous versions remain.
+
+The manuscript stays available under **Read or edit the manuscript**. Saved
+manual edits can become proposals through **I edited the manuscript myself**.
+Structural or formatting changes may still need individually quoted feedback.
+Focused editing remains on these screens while the worker runs and when it
+finishes. There is no pipeline approval between receiving suggestions and choosing
+which to keep. Old focused-review links open the same editor.
 
 | Delivery mode | Behavior |
 | --- | --- |

@@ -49,9 +49,24 @@ class ManuscriptTests(Fixture):
         self.assertIn('Factual support capability', guidance)
         self.assertIn('JSON in content', guidance)
 
+    def test_proofread_and_copyedit_replace_failed_research_without_research(self):
+        for check in ('polish', 'proofread', 'copyedit'):
+            with self.subTest(check=check), patch.object(runner.Engine, 'control', return_value={}):
+                self.action('check', check=check, research='web-allowed')
+                _, record, run = runner.load(self.root, self.ident)
+                self.assertEqual(run['pipeline'], ['review'])
+                self.assertEqual(run['editor_check'], check)
+                self.assertEqual(record['author'], 'Avery')
+                self.assertEqual(run['mode'], 'review')
+                if check == 'polish':
+                    _, payload, guidance = runner.job(self.root, self.ident)
+                    self.assertIn('humanize formulaic wording', payload['changes'])
+                    self.assertIn('AI', guidance)
+                    self.assertIn('Do not research', payload['changes'])
+
     def test_scoped_findings_are_saved_and_become_stale_after_edit(self):
         with patch.object(runner.Engine, 'control', return_value={}):
-            self.action('check', check='proofread')
+            self.action('check', check='polish')
         found = runner.survey(self.root, self.ident)
         value = {
             'summary': 'Opening checked; editorial assessment only.',
@@ -76,12 +91,100 @@ class ManuscriptTests(Fixture):
             page=True,
         )
         self.assertEqual(
-            editor.read(self.root, self.ident)['checks']['proofread']['status'], 'current'
+            editor.read(self.root, self.ident)['checks']['polish']['status'], 'current'
         )
         self.action('save', content='A changed manuscript.')
-        self.assertEqual(
-            editor.read(self.root, self.ident)['checks']['proofread']['status'], 'stale'
+        self.assertEqual(editor.read(self.root, self.ident)['checks']['polish']['status'], 'stale')
+
+    def test_polish_repairs_invalid_feedback_once_without_research_or_draft_changes(self):
+        for repair in (True, False):
+            with self.subTest(repair=repair):
+                with patch.object(runner.Engine, 'control', return_value={}):
+                    self.action('check', check='polish')
+                original = editor.read(self.root, self.ident)['content']
+                calls = []
+
+                def worker(engine, data, guidance, *, calls=calls, repair=repair, **options):
+                    calls.append(options)
+                    quoted = (
+                        'Clients send requests to a gateway.'
+                        if repair and len(calls) == 2
+                        else 'Missing passage.'
+                    )
+                    return {
+                        'content': json.dumps(
+                            {
+                                'summary': 'Writing polish only.',
+                                'findings': [
+                                    {
+                                        'id': 'opening',
+                                        'kind': 'edit',
+                                        'before': quoted,
+                                        'after': 'Clients call a gateway.',
+                                        'reason': 'Concise wording.',
+                                        'evidence': 'Editorial judgment',
+                                        'verdict': 'editorial',
+                                    }
+                                ],
+                            }
+                        ),
+                        'notes': '',
+                    }
+
+                engine = runner.Engine(self.root, worker)
+                engine.control(self.ident, 'resume')
+                engine._once(self.ident)
+                self.assertEqual(len(calls), 2)
+                self.assertTrue(all(not c['web'] for c in calls))
+                self.assertEqual(editor.read(self.root, self.ident)['content'], original)
+                self.assertEqual(
+                    engine.local(self.ident)['status'],
+                    'waiting-for-approval' if repair else 'failed',
+                )
+
+    def test_applying_feedback_finishes_without_requeuing_the_review(self):
+        with patch.object(runner.Engine, 'control', return_value={}):
+            self.action('check', check='polish')
+
+        def worker(*args, **kwargs):
+            return {
+                'content': json.dumps(
+                    {
+                        'summary': 'Synthetic polish',
+                        'findings': [
+                            {
+                                'id': 'one',
+                                'kind': 'edit',
+                                'before': 'Clients send',
+                                'after': 'Clients route',
+                                'reason': 'Precise wording.',
+                                'verdict': 'editorial',
+                                'evidence': 'Editorial judgment',
+                            }
+                        ],
+                    }
+                ),
+                'notes': '',
+            }
+
+        engine = runner.Engine(self.root, worker)
+        runner.ENGINES[str(self.root)] = engine
+        engine.control(self.ident, 'resume')
+        engine._once(self.ident)
+        self.assertFalse(engine.local(self.ident)['enabled'])
+        # Simulate a completed pass saved by an older page version.
+        engine.keep_local(self.ident, {**engine.local(self.ident), 'enabled': True})
+        finding = editor.read(self.root, self.ident)['findings'][0]
+        self.action(
+            'proposals',
+            proposals=[{k: v for k, v in finding.items() if k not in ('evidence', 'verdict')}],
         )
+        result = self.action('apply-selected', proposals=['one'])
+        self.assertFalse(result['working'])
+        self.assertEqual(
+            result['content'], 'Clients route requests to a gateway. The gateway calls the service.'
+        )
+        self.assertFalse(engine.local(self.ident)['enabled'])
 
     def test_invalid_located_findings_do_not_replace_the_manuscript(self):
         with patch.object(runner.Engine, 'control', return_value={}):
@@ -105,6 +208,80 @@ class ManuscriptTests(Fixture):
                 proposals=[{'kind': 'comment', 'before': 'Clients', 'reason': 'Which clients?'}],
             )
         self.assertEqual(len(result['proposals']), 1)
+
+    def test_batch_application_applies_only_selected_edits_and_retains_history(self):
+        self.action(
+            'proposals',
+            proposals=[
+                {
+                    'id': 'first',
+                    'kind': 'edit',
+                    'before': 'Clients send',
+                    'after': 'Clients route',
+                    'reason': 'Precise verb.',
+                },
+                {
+                    'id': 'second',
+                    'kind': 'edit',
+                    'before': 'calls the service',
+                    'after': 'invokes the service',
+                    'reason': 'Consistent verb.',
+                },
+                {
+                    'id': 'question',
+                    'kind': 'comment',
+                    'before': 'gateway',
+                    'reason': 'Which gateway?',
+                },
+            ],
+        )
+        saved = self.action('apply-selected', proposals=['first', 'second'])
+        self.assertEqual(saved['applied'], 2)
+        self.assertEqual(
+            saved['content'],
+            'Clients route requests to a gateway. The gateway invokes the service.',
+        )
+        directory, _ = studio.item(self.root, 'articles', self.ident)
+        self.assertTrue(list((directory / 'history').glob('draft-*.md')))
+
+    def test_batch_refuses_overlaps_ambiguous_and_missing_quotes_without_partial_save(self):
+        original = editor.read(self.root, self.ident)['content']
+        for before in ('Clients send requests', 'gateway', 'Missing text'):
+            with self.subTest(before=before):
+                self.action(
+                    'proposals',
+                    proposals=[
+                        {
+                            'id': 'one',
+                            'kind': 'edit',
+                            'before': 'Clients send',
+                            'after': 'Clients route',
+                            'reason': 'One.',
+                        },
+                        {
+                            'id': 'two',
+                            'kind': 'edit',
+                            'before': before,
+                            'after': 'Another wording',
+                            'reason': 'Two.',
+                        },
+                    ],
+                )
+                with self.assertRaises(ValueError):
+                    self.action('apply-selected', proposals=['one', 'two'])
+                self.assertEqual(editor.read(self.root, self.ident)['content'], original)
+
+    def test_queued_editing_operation_blocks_mutation_and_exposes_recovery_state(self):
+        with patch.object(runner.Engine, 'control', return_value={}):
+            self.action('check', check='polish')
+        engine = runner.engine(self.root)
+        engine.keep_local(self.ident, {'enabled': True, 'status': 'queued'})
+        shown = editor.read(self.root, self.ident)
+        self.assertTrue(shown['working'])
+        self.assertEqual(shown['operation']['editor_check'], 'polish')
+        self.assertEqual(runner.catalog(self.root)['items'][0]['editor_check'], 'polish')
+        with self.assertRaisesRegex(ValueError, 'Pause or stop'):
+            self.action('save', content='An unsafe concurrent edit.')
 
     def test_from_outline_starts_at_draft_and_ideas_stop_before_draft(self):
         found = runner.create(
@@ -350,7 +527,9 @@ class ResearchMetadataTests(Fixture):
 
         def workflow(root, task, invoke, sources):
             self.assertEqual(task['manuscript'], 'A claim to check.')
-            text, _ = invoke('author', 'Synthetic guidance', {}, sources, False)
+            text, _ = invoke(
+                'author', 'Synthetic guidance', {'worker': 'author-test'}, sources, False
+            )
             self.assertEqual(json.loads(text)['sources'][0]['permission'], 'selected')
             (root / 'research').mkdir()
             (root / 'research/report.md').write_text('Synthetic research')
@@ -364,6 +543,7 @@ class ResearchMetadataTests(Fixture):
                 synthesis_research.research_contract.Workflow, 'run', side_effect=workflow
             ),
             patch.object(synthesis_research.research_contract, 'publish'),
+            patch.object(synthesis_research.research_contract.Workflow, 'command'),
         ):
             synthesis_research.generate(
                 directory, run, payload, worker, seconds=30, stop=threading.Event()

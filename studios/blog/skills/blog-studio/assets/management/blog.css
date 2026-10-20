@@ -67,3 +67,26 @@ dialog::backdrop{background:rgb(15 20 40/.35);backdrop-filter:blur(4px)}
 .manuscript-input { width:100%; min-height:22rem; resize:vertical; font:inherit; line-height:1.6; box-sizing:border-box; }
 .manuscript-original { white-space:pre-wrap; overflow-wrap:anywhere; max-height:24rem; overflow:auto; }
 .editor-suggestions { display:grid; gap:1rem; }
+
+/* Task-first writing: quiet reading surfaces, one next action per step. */
+.task-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 1.5rem}
+.task-choice.button{display:block;text-align:left;white-space:normal;border:0;border-bottom:1px solid var(--hair);border-radius:0;background:transparent;box-shadow:none;padding:1.15rem .25rem;font-size:1.05rem;min-height:5.5rem}
+.task-choice span{display:block;font-weight:400;font-size:.93rem;line-height:1.5;margin-top:.35rem}
+.task-choice:hover{background:var(--selection)}
+.workflow-steps{display:flex;gap:.35rem;flex-wrap:wrap;border-bottom:1px solid var(--hair);padding-bottom:.6rem;margin-bottom:1.2rem}
+.workflow-steps .button,.workflow-step{padding:.5rem .7rem;min-height:2.75rem;font-size:.88rem;border:0;border-radius:8px;box-shadow:none;background:transparent;flex:1;text-align:center}
+.workflow-steps [aria-current=step]{background:var(--selection);color:var(--link);font-weight:700}
+.workflow-next{border-top:1px solid var(--hair);padding-top:1rem;display:flex;justify-content:flex-end}
+.writing-changes{background:var(--paper);border:1px solid var(--hair);border-radius:12px;overflow:hidden}
+.writing-change{padding:1.2rem;border-bottom:1px solid var(--hair);overflow-wrap:anywhere}
+.writing-change:last-child{border-bottom:0}
+.change-select{display:flex;align-items:center;gap:.65rem;font-weight:650;margin-bottom:1rem}
+.change-select input{width:1.25rem;height:1.25rem;accent-color:var(--accent);flex:none}
+.change-caption{font-size:.8rem;color:var(--quiet);margin:.8rem 0 .3rem}
+.change-before{margin:0;padding:.5rem .8rem;border-left:3px solid var(--hair);white-space:pre-wrap}
+.change-after{padding:.65rem .8rem;background:var(--selection);border-radius:6px;white-space:pre-wrap}
+.change-reason{margin-top:.75rem;font-size:.95rem}
+.finish-summary{padding-left:1.25rem}.finish-summary li{padding:.5rem 0;border-bottom:1px solid var(--hair);overflow-wrap:anywhere}
+@media(max-width:600px){.task-list{grid-template-columns:1fr}.task-choice.button{min-height:5rem}.workflow-next .button{width:100%}.workflow-steps .button,.workflow-step{padding:.5rem .3rem;font-size:.82rem}.writing-change{padding:1rem}}
+.finish-selection{display:grid;gap:.8rem}.finish-change{padding:.8rem 0;border-bottom:1px solid var(--hair);overflow-wrap:anywhere}
+.writing-change details{margin-top:.8rem}.finish-change:last-child{border-bottom:0}

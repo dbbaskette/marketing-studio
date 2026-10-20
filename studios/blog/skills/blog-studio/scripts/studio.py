@@ -23,7 +23,7 @@ PURPOSES = (
     'author-background',
 )
 MODES = ('existing', 'first-draft', 'outline-only', 'from-outline', 'interview', 'discover')
-CHECKS = ('proofread', 'factual-support', 'shape', 'humanization', 'geo')
+CHECKS = ('polish', 'proofread', 'factual-support', 'shape', 'humanization', 'geo')
 SOURCE_CHECKS = ('factual-support', 'geo')
 SHARED_README = b'# Shared Blog Studio material\n\nreferences/ holds selected sources; voices/ holds author profiles; memory/ holds rules and context.\n'
 
