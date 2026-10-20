@@ -41,6 +41,7 @@
   --glass: rgb(242 246 252 / 0.82);
   --card: #ffffff;
   --sheet-fill: rgb(250 251 253 / 0.96);
+  --scrim: rgb(15 20 40 / 0.35);
   --solid: #f5f7fa;
   --paper: #ffffff;
   --paper-line: rgb(20 24 40 / 0.12);
@@ -100,6 +101,7 @@
     --glass: rgb(30 36 46 / 0.86);
     --card: #1c222d;
     --sheet-fill: rgb(32 39 50 / 0.97);
+    --scrim: rgb(0 0 0 / 0.6);
     --solid: #202732;
     --paper: #191f29;
     --paper-line: rgb(255 255 255 / 0.12);
@@ -1519,10 +1521,6 @@ p.fact > .bead {
   color: var(--quiet);
 }
 
-summary {
-  cursor: pointer;
-}
-
 .review-notes > summary {
   color: var(--link);
   font-weight: 600;
@@ -2027,7 +2025,6 @@ summary {
 }
 
 .md a {
-  color: var(--link);
   text-underline-offset: 0.16em;
 }
 
@@ -2339,6 +2336,7 @@ summary {
 }
 
 .pick-card:disabled {
+  border-color: var(--hair);
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -2355,7 +2353,7 @@ summary {
   gap: 0.4rem;
 }
 
-.pick-card[aria-pressed="false"] .icon {
+.pick-card[aria-pressed="false"] > .pick-top > .icon {
   display: none;
 }
 
@@ -2412,6 +2410,7 @@ label.field {
 
 label.field > .input,
 label.field > .field-hint {
+  display: block;
   margin-top: 0.4rem;
   font-weight: 400;
 }
@@ -2448,6 +2447,12 @@ label.seg-option {
   font-size: 0.85rem;
 }
 
+@media (max-width: 52rem) {
+  .input-typed {
+    font-size: 1rem;
+  }
+}
+
 /* The brand in the sidebar can also be the way home. */
 a.brand {
   text-decoration: none;
@@ -2456,6 +2461,8 @@ a.brand {
 /* A dialog the browser keeps: on the sheet's surface, its title bar held at the top. */
 .dialog {
   width: min(46rem, calc(100% - 1.5rem));
+  max-width: calc(100% - 1.5rem);
+  max-height: calc(100vh - 1.5rem);
   max-height: calc(100dvh - 1.5rem);
   padding: 0;
   overflow: auto;
@@ -2466,9 +2473,10 @@ a.brand {
   box-shadow: var(--edge), var(--lift);
 }
 
-/* Dimmed, not blurred: only the shell's material blurs what is behind it. */
+/* Dimmed, not blurred: only the shell's material blurs what is behind it. The fallback is
+   for browsers where the backdrop does not inherit custom properties. */
 .dialog::backdrop {
-  background: rgb(15 20 40 / 0.35);
+  background: var(--scrim, rgb(15 20 40 / 0.35));
 }
 
 .dialog-header {
@@ -2506,29 +2514,12 @@ a.brand {
   margin-top: 0.9rem;
 }
 
+/* Blog Studio's writing steps tighten below 600px, as they did before they were shared. */
 @media (max-width: 37.5rem) {
   .workflow-steps .button,
   .workflow-step {
     padding: 0.5rem 0.3rem;
     font-size: 0.82rem;
-  }
-}
-
-@media (forced-colors: active) {
-  .card,
-  .paper,
-  .sheet,
-  .dialog,
-  .pick-card {
-    border-color: CanvasText;
-  }
-
-  .sidebar {
-    border-right-color: CanvasText;
-  }
-
-  .toolbar {
-    border-bottom-color: CanvasText;
   }
 }
 
@@ -2570,6 +2561,38 @@ a.brand {
   body:is([data-product="Blog Studio"], [data-product="Presentation Studio"],
       [data-product="Training Studio"]) {
     --selection-line: var(--quiet);
+  }
+}
+
+/* Windows high contrast: the system picks the colours, so what is picked must show by its edge. */
+@media (forced-colors: active) {
+  .card,
+  .paper,
+  .sheet,
+  .dialog,
+  .pick-card {
+    border-color: CanvasText;
+  }
+
+  .sidebar {
+    border-right-color: CanvasText;
+  }
+
+  .toolbar {
+    border-bottom-color: CanvasText;
+  }
+
+  .seg-thumb {
+    border: 2px solid Highlight;
+  }
+
+  .pick-card[aria-pressed="true"] {
+    border-color: Highlight;
+  }
+
+  .workflow-steps [aria-current="step"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
   }
 }
 
