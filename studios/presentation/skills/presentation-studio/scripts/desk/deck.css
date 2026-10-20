@@ -2,56 +2,6 @@
    Discrete slide choices keep their boundary; review findings use quiet dividers.
    Every colour comes from style.css. */
 
-/* A card that is a button: one of several to pick from. The tick and its words say it is
-   picked, not colour alone. */
-.pick-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
-  gap: 0.8rem;
-  margin-top: 0.6rem;
-}
-
-.pick-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.35rem;
-  width: 100%;
-  padding: 0.9rem 1rem;
-  background: var(--paper);
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-  border: 1px solid var(--hair);
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-.pick-card[aria-pressed="true"] {
-  background: var(--selection);
-  border-color: var(--focus);
-  box-shadow: inset 0 0 0 1px var(--focus);
-}
-
-.pick-top {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.pick-card[aria-pressed="false"] .icon {
-  display: none;
-}
-
-.pick-title {
-  font-weight: 650;
-}
-
-.pick-says {
-  color: var(--quiet);
-  font-size: 0.93rem;
-}
-
 /* What is said of the slide on the stage, under it. */
 .slide-about {
   margin-top: 0.7rem;
@@ -79,10 +29,6 @@
 
 .bead-later {
   font-size: 0.72rem;
-}
-
-.steps > summary {
-  cursor: pointer;
 }
 
 /* A deck's contact sheet, small, in a list and on its own screen. */
@@ -177,5 +123,22 @@
 .outline-slide > details > * + * {
   margin-top: 0.55rem;
 }
-/* The outline engine's self-contained wireframe is isolated from application DOM. */
-.storyboard { width: 100%; height: min(72vh, 48rem); border: 1px solid var(--hair); border-radius: 8px; background: var(--paper); margin-top: 12px; }
+
+/* The outline engine's self-contained wireframe is isolated from the page, so it cannot
+   report its own height. It fills the reading column, and on a phone the screen above the
+   bottom bar, rather than nesting a short scroll area. */
+.storyboard {
+  display: block;
+  width: 100%;
+  height: min(80vh, 56rem);
+  margin-top: 0.75rem;
+  background: var(--paper);
+  border: 1px solid var(--paper-line);
+  border-radius: 14px;
+}
+
+@media (max-width: 52rem) {
+  .storyboard {
+    height: calc(100dvh - 12rem);
+  }
+}

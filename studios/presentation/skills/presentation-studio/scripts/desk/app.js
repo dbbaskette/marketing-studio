@@ -6024,18 +6024,6 @@ async function catchUp() {
   }
 }
 
-// A highlight on glass that follows the pointer. Not when the person asked for less motion.
-function followPointer() {
-  if (calm()) return;
-  document.addEventListener('pointermove', (event) => {
-    const lit = event.target && event.target.closest ? event.target.closest('.shine') : null;
-    if (!lit) return;
-    const box = lit.getBoundingClientRect();
-    lit.style.setProperty('--mx', (event.clientX - box.left) + 'px');
-    lit.style.setProperty('--my', (event.clientY - box.top) + 'px');
-  }, { passive: true });
-}
-
 function linkToken() {
   const found = /(?:^#|&)token=([A-Za-z0-9_-]+)/.exec(window.location.hash);
   return found ? found[1] : '';
@@ -6087,7 +6075,6 @@ function begin() {
     event.preventDefault();
     main().focus();
   });
-  followPointer();
   if (!view.token) {
     place({ title: 'This page needs its link' }, [], true);
     notify(NOTICES.refused);

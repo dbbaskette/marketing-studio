@@ -99,7 +99,7 @@ class PageFileTests(unittest.TestCase):
         self.assertEqual(len(re.findall(r'class="[^"]*\bglass\b', page)), 3)
         self.assertEqual(re.findall(r"'([\w -]*\bglass\b[\w -]*)'", script), ['toast glass'])
         self.assertIn('if (document.startViewTransition && !calm())', script)
-        self.assertRegex(script, r'function followPointer\(\) \{\n  if \(calm\(\)\) return;')
+        self.assertNotIn('followPointer', script)
 
     def test_the_deck_stylesheet_uses_only_the_vendored_colours(self):
         styles = self.read('deck.css')
