@@ -247,11 +247,6 @@ a.brand {
   text-decoration: none;
 }
 
-.large-title:focus {
-  outline: none;
-  box-shadow: none;
-}
-
 /* A dialog the browser keeps: on the sheet's surface, its title bar held at the top. */
 .dialog {
   width: min(46rem, calc(100% - 1.5rem));
@@ -265,10 +260,9 @@ a.brand {
   box-shadow: var(--edge), var(--lift);
 }
 
+/* Dimmed, not blurred: only the shell's material blurs what is behind it. */
 .dialog::backdrop {
   background: rgb(15 20 40 / 0.35);
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
 }
 
 .dialog-header {
@@ -333,14 +327,10 @@ a.brand {
 }
 ```
 
-- [ ] **Step 3: Let the dialog backdrop follow reduced transparency.** In the existing `@media (prefers-reduced-transparency: reduce), (prefers-contrast: more)` block, after the `.glass { … }` rule, add:
+- [ ] **Step 3: Keep the existing design tests true.** Training Studio's `tests/test_desk.py` checks two rules. Only `.glass` may blur what is behind it. Only `.page:focus`, `.sheet:focus` and `.title:focus` may hide the focus ring. The dialog backdrop therefore dims without blurring, and no new rule hides focus.
 
-```css
-  .dialog::backdrop {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-```
+  Run: `(cd studios/training && python3 scripts/ci/run_tests.py test_desk) 2>&1 | tail -3`
+  Expected: no failures, apart from tests that need a local port.
 
 - [ ] **Step 4: Run the component test**
 
@@ -550,7 +540,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
         <p class="quiet launch-note">Leave the Marketing Studio terminal open while you work. You can also open each studio with its own launcher.</p>
       </section>
       <section id="settings" hidden>
-        <div class="intro"><p id="step-label" class="quiet"></p><h2 id="settings-title" class="large-title" tabindex="-1">Shared settings</h2><p id="settings-intro" class="lede">New work in every studio starts with these choices.</p></div>
+        <div class="intro"><p id="step-label" class="quiet"></p><h2 id="settings-title" class="large-title">Shared settings</h2><p id="settings-intro" class="lede">New work in every studio starts with these choices.</p></div>
         <ol id="setup-progress" class="workflow-steps" aria-label="Setup progress" hidden><li class="workflow-step">You and your assistant</li><li class="workflow-step">Your workspace</li><li class="workflow-step">Brand and delivery</li></ol>
         <form id="settings-form" class="setup-form">
           <section class="card" data-step="0"><h3 class="card-title">You and your assistant</h3><p class="quiet">Use your signed-in assistant for research, writing, and slide work.</p>
@@ -953,7 +943,8 @@ function syncSegments() {
 - Append these two lines as the last statements of `show()`, after `if (view === 'settings' && …) loadModels();`:
 
 ```js
-  if (snapshot) (setup ? $('#settings-title') : $('#view-title')).focus({preventScroll: true});
+  // As in every studio, focus moves to the toolbar title. The step is announced.
+  if (snapshot) $('#view-title').focus({preventScroll: true});
   $('#announce').textContent = setup ? `Step ${step + 1} of 3: ${labels[step]}` : '';
 ```
 
