@@ -57,6 +57,32 @@ class CliTests(Disposable):
             with mock.patch.object(cli.computer, 'check', return_value={'ready': True, 'items': []}), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(cli.main(['doctor']), 0)
 
+    def test_status_shows_paths_versions_and_checkout_copies(self):
+        root = Path(self.tmp.name)
+        (root / 'repository/.git').mkdir(parents=True)
+        checkout = root / 'repository/studios/training'
+        (checkout / 'runner').mkdir(parents=True)
+        (checkout / 'runner/studio.py').write_text('# fixture')
+        (checkout / 'VERSION').write_text('7.6.5\n')
+        cli.state.save({'schema': 1, 'done': False,
+                        'paths': {'training': str(checkout), 'blog': str(root / 'missing'),
+                                  'presentation': str(root / 'missing')}})
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(cli.main(['status']), 0)
+        printed = output.getvalue()
+        self.assertIn('Training Studio 7.6.5: ' + str(checkout.resolve()), printed)
+        self.assertIn('checkout', printed.split('Training Studio', 1)[1].splitlines()[0])
+        self.assertIn('Blog Studio: not installed', printed)
+        self.assertIn('Git checkout', printed)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(cli.main(['status', '--json']), 0)
+        found = json.loads(output.getvalue())
+        self.assertEqual(found['version'], (cli.ROOT / 'VERSION').read_text().strip())
+        training = [row for row in found['studios'] if row['id'] == 'training'][0]
+        self.assertEqual((training['version'], training['checkout']), ('7.6.5', True))
+
     def test_help_uses_simple_commands(self):
         output = cli.parser().format_help()
         for name in ('open', 'setup', 'doctor', 'status', 'update'):

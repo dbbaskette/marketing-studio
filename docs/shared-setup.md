@@ -60,7 +60,9 @@ unlisted IDs. Saved IDs remain selectable when a catalog changes or cannot load.
 Codex choices come from its read-only CLI model list. Claude Code uses the studios’
 existing bundled model reference, with its source and date shown; that list does
 not establish availability in your account. **Refresh models** retries a failed
-listing without changing saved settings or starting a provider job.
+listing without changing saved settings or starting a provider job. A failed listing
+says why when the reason is known, such as Codex not being found or not finishing;
+the CLI's own output is not shown.
 Changing assistants requires reviewing the profiles before saving them.
 
 | Profile | Tasks |

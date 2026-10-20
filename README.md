@@ -153,7 +153,7 @@ marketing-studio open training
 | `marketing-studio serve` | Runs the home server in this terminal without opening a browser, for example over SSH |
 | `marketing-studio serve --lan` | Enables private phone access on your trusted local network |
 | `marketing-studio setup` | Opens shared settings, or first-run setup |
-| `marketing-studio status` | Shows which studios are installed and whether shared setup is complete |
+| `marketing-studio status` | Shows each studio's version and folder, marks Git checkout copies, and says whether shared setup is complete |
 | `marketing-studio doctor` | Checks the tools on this computer, including that your assistant is installed, without contacting providers |
 | `marketing-studio --help` | Shows the command guide |
 | `marketing-studio --version` | Shows the installed suite version |

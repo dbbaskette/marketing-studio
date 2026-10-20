@@ -79,13 +79,25 @@ def offline(args):
         return 0 if report['ready'] else 1
     preferences = state.read()
     studios = catalog.describe(preferences.get('paths', {}), lambda _: False)
-    result = {'setup_complete': Home.configured(shared.read()[0]), 'studios': studios}
+    result = {'version': (ROOT / 'VERSION').read_text().strip(), 'path': str(ROOT),
+              'checkout': catalog.checkout(ROOT),
+              'setup_complete': Home.configured(shared.read()[0]), 'studios': studios}
     if args.json:
         print(json.dumps(result, indent=2))
     else:
-        print('Marketing Studio · ' + ('Ready' if result['setup_complete'] else 'Setup needed'))
+        print(f"Marketing Studio {result['version']} · " + ('Ready' if result['setup_complete'] else 'Setup needed'))
+        if result['checkout']:
+            print('Running from the Git checkout at ' + result['path'])
         for studio in studios:
-            print(f"  {studio['name']}: {'installed' if studio['installed'] else 'not installed'}")
+            if not studio['installed']:
+                print(f"  {studio['name']}: not installed")
+                continue
+            label = ' '.join(filter(None, (studio['name'], studio['version'])))
+            print(f"  {label}: {studio['path']}" + (' (Git checkout)' if studio['checkout'] else ''))
+        copies = [studio['name'] for studio in studios if studio['checkout']]
+        if copies:
+            print('\nRunning Git checkout copies, not installed releases: ' + ', '.join(copies) + '.'
+                  '\nTo run installed releases, use the installed marketing-studio command or set each folder in Settings.')
         print('\nOpen a studio: marketing-studio open blog')
     return 0
 

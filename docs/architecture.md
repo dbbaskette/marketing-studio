@@ -77,7 +77,8 @@ Local Git is the default. Separate local repositories avoid contention over an
 index and HEAD. Remote mode retains each studio's native clone and content-folder
 conventions. Native data directories and assistant skill locations are unchanged.
 
-Marketing Studio discovers bundled source studios first when run from a checkout.
+Marketing Studio discovers bundled source studios first when run from a checkout;
+`status` names each studio's folder and version and marks Git checkout copies.
 A managed suite prefers native installed copies so both launchers run the same
 version. Explicit installation paths remain authoritative. Child links stay in
 memory and travel through private pipes. Closing Marketing Studio stops only

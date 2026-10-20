@@ -133,6 +133,37 @@ time.sleep(60)
         (installed / 'scripts/start_studio.py').write_text('# fixture')
         self.assertEqual(catalog.locate('blog', {'blog': str(installed)}), installed.resolve())
 
+    def test_blog_version_is_read_from_its_skill_in_a_checkout(self):
+        checkout = self.root / 'blog-checkout'
+        skill = checkout / 'skills/blog-studio'
+        (skill / 'scripts').mkdir(parents=True)
+        (skill / 'scripts/start_studio.py').write_text('# fixture')
+        (skill / 'VERSION').write_text('9.8.7\n')
+        installed = self.root / 'installed-blog'
+        (installed / 'scripts').mkdir(parents=True)
+        (installed / 'scripts/start_studio.py').write_text('# fixture')
+        (installed / 'VERSION').write_text('1.2.3\n')
+        for root, expected in ((checkout, '9.8.7'), (installed, '1.2.3')):
+            with self.subTest(root=root.name):
+                rows = catalog.describe({'blog': str(root)}, lambda _: False)
+                self.assertEqual(rows[0]['version'], expected)
+
+    def test_checkout_copies_are_told_apart_from_installed_releases(self):
+        home = self.root / 'home'
+        installed = home / '.local/share/training-studio/current'
+        (installed / 'runner').mkdir(parents=True)
+        (installed / 'runner/studio.py').write_text('# fixture')
+        (home / '.git').mkdir()  # a home folder kept in Git is still not a checkout copy
+        (self.root / 'repository/.git').mkdir(parents=True)
+        checkout = self.root / 'repository/studios/training'
+        (checkout / 'runner').mkdir(parents=True)
+        (checkout / 'runner/studio.py').write_text('# fixture')
+        with mock.patch.dict(os.environ, {'HOME': str(home)}):
+            for root, expected in ((installed, False), (checkout, True), (self.install, False)):
+                with self.subTest(root=str(root)):
+                    row = catalog.describe({'training': str(root)}, lambda _: False)[2]
+                    self.assertEqual(row['checkout'], expected)
+
     def test_configured_path_is_authoritative(self):
         self.assertEqual(catalog.locate('training', self.preferences['paths']), self.install.resolve())
         self.assertIsNone(catalog.locate('training', {'training': '/does-not-exist'}))
