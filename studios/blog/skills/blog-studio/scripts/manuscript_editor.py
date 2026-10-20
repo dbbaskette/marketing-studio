@@ -383,31 +383,48 @@ def dispatch(root, action, data):
 
 def validate_review(result, manuscript):
     """Validate generated feedback without changing the manuscript or review records."""
+    prefix = 'The editing review did not return valid, located findings: '
+
+    def invalid(detail):
+        return ValueError(prefix + detail + ' Your manuscript is unchanged.')
+
     try:
         value = json.loads(result['content'])
-        if (
-            not isinstance(value['summary'], str)
-            or not isinstance(value['findings'], list)
-            or len(value['findings']) > 100
-        ):
-            raise ValueError()
-        findings = []
-        for item in value['findings']:
+    except (ValueError, KeyError, TypeError):
+        raise invalid('the response must contain a JSON review object.') from None
+    if (
+        not isinstance(value, dict)
+        or not isinstance(value.get('summary'), str)
+        or not value['summary'].strip()
+    ):
+        raise invalid('provide a nonempty summary of coverage and limits.')
+    if not isinstance(value.get('findings'), list) or len(value['findings']) > 100:
+        raise invalid('findings must be an array of at most 100 changes.')
+    findings, issues, ids = [], [], set()
+    for index, item in enumerate(value['findings'], 1):
+        try:
+            if not isinstance(item, dict):
+                raise ValueError('the finding must be an object.')
             if item.get('verdict') not in (
                 'supported',
                 'unsupported',
                 'contradicted',
                 'editorial',
             ) or not isinstance(item.get('evidence'), str):
-                raise ValueError()
+                raise ValueError('provide a listed verdict and an evidence explanation.')
             finding = proposal({k: v for k, v in item.items() if k not in ('evidence', 'verdict')})
             if finding['before'] not in manuscript:
-                raise ValueError()
+                raise ValueError(
+                    'before is not an exact manuscript quote; copy its punctuation, whitespace and Markdown exactly, or choose a shorter contiguous passage.'
+                )
+            if finding['id'] in ids:
+                raise ValueError('use a unique finding ID.')
+            ids.add(finding['id'])
             findings.append({**finding, 'evidence': item['evidence'], 'verdict': item['verdict']})
-    except (ValueError, KeyError, TypeError, AttributeError):
-        raise ValueError(
-            'The editing review did not return valid, located findings. Your manuscript is unchanged; retry this check.'
-        ) from None
+        except (ValueError, KeyError, TypeError, AttributeError) as error:
+            issues.append('Change ' + str(index) + ': ' + str(error))
+    if issues:
+        raise invalid(' '.join(issues))
     return value, findings
 
 

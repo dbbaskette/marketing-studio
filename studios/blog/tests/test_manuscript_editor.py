@@ -1,11 +1,13 @@
 """Manuscript workflows with synthetic writing and provider boundaries."""
 
 import json
+import sys
 import unittest
 from unittest.mock import patch
 
 from test_editorial_tools import Fixture
 import blog_runner as runner
+import blog_worker
 import manuscript_editor as editor
 import studio
 import team_workspace
@@ -47,7 +49,8 @@ class ManuscriptTests(Fixture):
         self.assertIn('repetitive openings', payload['changes'])
         self.assertIn('Humanization capability', guidance)
         self.assertIn('Factual support capability', guidance)
-        self.assertIn('JSON in content', guidance)
+        self.assertEqual(payload['response_kind'], 'editing-review')
+        self.assertIn('structured editing review', guidance)
 
     def test_proofread_and_copyedit_replace_failed_research_without_research(self):
         for check in ('polish', 'proofread', 'copyedit'):
@@ -102,10 +105,19 @@ class ManuscriptTests(Fixture):
                 with patch.object(runner.Engine, 'control', return_value={}):
                     self.action('check', check='polish')
                 original = editor.read(self.root, self.ident)['content']
+                directory, record = studio.item(self.root, 'articles', self.ident)
+                prior_reviews = json.dumps(record['reviews'], sort_keys=True)
+                review_path = directory / 'derived/blog-review.md'
+                prior_review = review_path.read_text() if review_path.exists() else None
                 calls = []
 
                 def worker(engine, data, guidance, *, calls=calls, repair=repair, **options):
                     calls.append(options)
+                    self.assertEqual(data['response_kind'], 'editing-review')
+                    if len(calls) == 2:
+                        self.assertIn('Change 1', data['validation_error'])
+                        self.assertIn('not an exact manuscript quote', data['validation_error'])
+                        self.assertIn('Missing passage.', data['previous_output'])
                     quoted = (
                         'Clients send requests to a gateway.'
                         if repair and len(calls) == 2
@@ -141,6 +153,148 @@ class ManuscriptTests(Fixture):
                     engine.local(self.ident)['status'],
                     'waiting-for-approval' if repair else 'failed',
                 )
+                diagnostic = self.root / '.blog-runs/diagnostics' / (self.ident + '.json')
+                self.assertEqual(diagnostic.exists(), not repair)
+                if not repair:
+                    saved = studio.read_json(diagnostic)
+                    self.assertEqual(len(saved['attempts']), 2)
+                    self.assertIn('not an exact manuscript quote', saved['attempts'][1]['error'])
+                    self.assertEqual(saved['manuscript_sha256'], studio.digest(original.encode()))
+                    self.assertEqual(diagnostic.stat().st_mode & 0o777, 0o600)
+                    self.assertEqual(diagnostic.parent.stat().st_mode & 0o777, 0o700)
+                    directory, record = studio.item(self.root, 'articles', self.ident)
+                    self.assertEqual(json.dumps(record['reviews'], sort_keys=True), prior_reviews)
+                    self.assertEqual(
+                        review_path.read_text() if review_path.exists() else None, prior_review
+                    )
+
+    def test_validation_explains_each_rejected_change_without_dropping_valid_ones(self):
+        finding = {
+            'id': 'one',
+            'kind': 'edit',
+            'before': 'Use this phrase.',
+            'after': 'Use this.',
+            'reason': 'Be concise.',
+            'evidence': 'Editorial judgment',
+            'verdict': 'editorial',
+        }
+        body = 'Use this phrase. Keep the [technical term](https://example.invalid).'
+        review = {
+            'summary': 'Grammar and clarity checked; no research.',
+            'findings': [
+                finding,
+                {**finding, 'id': 'two', 'before': 'Keep the technical term.'},
+                {**finding, 'id': 'three', 'reason': ''},
+            ],
+        }
+        with self.assertRaises(ValueError) as error:
+            editor.validate_review({'content': json.dumps(review)}, body)
+        self.assertIn('Change 2: before is not an exact manuscript quote', str(error.exception))
+        self.assertIn(
+            'Change 3: Provide the original quote and a concise reason', str(error.exception)
+        )
+        self.assertNotIn('Change 1:', str(error.exception))
+        review['findings'] = [finding, {**finding, 'after': 'Another choice.'}]
+        with self.assertRaisesRegex(ValueError, 'unique finding ID'):
+            editor.validate_review({'content': json.dumps(review)}, body)
+
+    def test_polish_roundtrip_through_cli_schema_repairs_an_exact_quote(self):
+        with patch.object(runner.Engine, 'control', return_value={}):
+            self.action('check', check='polish')
+        original = editor.read(self.root, self.ident)['content']
+        capture = self.base / 'schema-attempts.json'
+        binary = self.base / 'synthetic-review-cli'
+        binary.write_text(
+            '#!' + sys.executable + '\nimport sys,json\nfrom pathlib import Path\n'
+            'capture=Path(' + repr(str(capture)) + ')\n'
+            "args=sys.argv[1:]\nschema=json.loads(Path(args[args.index('--output-schema')+1]).read_text())\n"
+            "payload=json.loads(sys.stdin.read().split('DOCUMENT DATA:\\n')[-1])\n"
+            'attempts=json.loads(capture.read_text()) if capture.exists() else []\n'
+            "attempts.append({'required':schema['required'],'kind':payload['response_kind'],'error':payload.get('validation_error'),'web':args[args.index('web_search=\"disabled\"')]})\n"
+            'capture.write_text(json.dumps(attempts))\n'
+            "before='Clients send requests to a gateway.' if len(attempts)==2 else 'A paraphrased passage.'\n"
+            "value={'summary':'Proofread, copy edited and checked natural wording. No research.','findings':[{'id':'opening','kind':'edit','before':before,'after':'Clients call a gateway.','context':'','reason':'Use concise wording.','verdict':'editorial','evidence':'Editorial judgment'}],'notes':'Synthetic CLI only.'}\n"
+            "Path(args[args.index('--output-last-message')+1]).write_text(json.dumps(value))\n"
+        )
+        binary.chmod(0o700)
+        with (
+            patch.object(blog_worker.source_curator, 'executable', return_value=str(binary)),
+            patch.object(blog_worker.source_curator, 'codex_options', return_value=[]),
+        ):
+            engine = runner.Engine(self.root, blog_worker.generate)
+            engine.control(self.ident, 'resume')
+            engine._once(self.ident)
+        attempts = json.loads(capture.read_text())
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(set(attempts[0]['required']), {'summary', 'findings', 'notes'})
+        self.assertEqual(attempts[1]['kind'], 'editing-review')
+        self.assertIn('not an exact manuscript quote', attempts[1]['error'])
+        current = editor.read(self.root, self.ident)
+        self.assertEqual(engine.local(self.ident)['status'], 'waiting-for-approval')
+        self.assertEqual(current['content'], original)
+        self.assertEqual(current['findings'][0]['after'], 'Clients call a gateway.')
+
+    def test_invalid_response_shape_and_empty_review_are_distinct(self):
+        for content, detail in [
+            ('not JSON', 'JSON review object'),
+            ('[]', 'nonempty summary'),
+            ('{"summary":"Checked","findings":{}}', 'array'),
+        ]:
+            with self.subTest(content=content), self.assertRaisesRegex(ValueError, detail):
+                editor.validate_review({'content': content}, 'Synthetic manuscript.')
+        review = {
+            'summary': 'Checked grammar and clarity; no changes suggested. No research.',
+            'findings': [],
+        }
+        value, findings = editor.validate_review(
+            {'content': json.dumps(review)}, 'Synthetic manuscript.'
+        )
+        self.assertEqual(findings, [])
+        self.assertEqual(value['summary'], review['summary'])
+
+    def test_polish_omits_image_payloads_but_validates_against_the_saved_manuscript(self):
+        original = (
+            'Keep this text. ![Diagram](data:image/png;base64,' + 'a' * 50000 + ') And this text.'
+        )
+        self.action('save', content=original)
+        with patch.object(runner.Engine, 'control', return_value={}):
+            self.action('check', check='polish')
+        calls = []
+
+        def worker(engine, payload, guidance, **options):
+            calls.append(payload)
+            self.assertNotIn('data:image', json.dumps(payload))
+            return {
+                'content': json.dumps(
+                    {
+                        'summary': 'Text-only polish. Images were not reviewed.',
+                        'findings': [
+                            {
+                                'id': 'one',
+                                'kind': 'edit',
+                                'before': 'Keep this text.  And this text.'
+                                if len(calls) == 1
+                                else 'Keep this text.',
+                                'after': 'Keep the text.',
+                                'reason': 'Be specific.',
+                                'evidence': 'Editorial judgment',
+                                'verdict': 'editorial',
+                            }
+                        ],
+                    }
+                ),
+                'notes': '',
+            }
+
+        engine = runner.Engine(self.root, worker)
+        engine.control(self.ident, 'resume')
+        engine._once(self.ident)
+        self.assertEqual(
+            len(calls), 2, 'a quote across an omitted image must be repaired, not applied'
+        )
+        self.assertIn('not an exact manuscript quote', calls[1]['validation_error'])
+        self.assertEqual(editor.read(self.root, self.ident)['content'], original)
+        self.assertEqual(engine.local(self.ident)['status'], 'waiting-for-approval')
 
     def test_applying_feedback_finishes_without_requeuing_the_review(self):
         with patch.object(runner.Engine, 'control', return_value={}):
