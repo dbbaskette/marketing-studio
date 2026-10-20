@@ -1583,5 +1583,29 @@ class ReviewToolTests(ToolCase):
         Path(review['slides'][0]['image']).write_bytes(png(2))
         self.assertIn('reused preview changed', self.refused(tools.submit_assessment([])))
 
+class ResearchCitationTests(JobCase):
+    """A research author learns inside its job when it cites a source the job did not save."""
+
+    def research(self):
+        return self.tools(fetch=True, ask=False,
+                          artifacts={'research-result': {'kind': 'research-json'}})
+
+    def dossier(self, file, origin):
+        return json.dumps({'schema': 2, 'facts': [], 'sources': [
+            {'id': 's1', 'title': 'Rolling restarts', 'file': file, 'origin': origin,
+             'permission': 'public'}]})
+
+    def test_a_dossier_citing_an_unsaved_file_is_refused_with_the_saved_ones(self):
+        tools = self.research()
+        self.web.page(DOCS, PAGE)
+        self.ok(tools.save_source(DOCS))
+        saved = worker_tools.collect(self.job)['sources'][0]
+        said = self.refused(tools.submit_artifact(
+            'research-result', self.dossier('research/sources/restarts.md', saved['url'])))
+        self.assertIn('research/sources/restarts.md', said)
+        self.assertIn(saved['file'], said)
+        self.ok(tools.submit_artifact('research-result', self.dossier(saved['file'], saved['url'])))
+
+
 if __name__ == '__main__':
     unittest.main()

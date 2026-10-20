@@ -288,7 +288,9 @@ class Workflow:
                                       for name in ('investigate.md', 'synthesize.md', 'studio-handoff.md'))
                 payload = {'task': task, 'worker': worker,
                            'return': 'A complete schema-2 dossier as JSON, including authored brief sections. '
-                                     'Use only saved source file paths supplied by the tools. '
+                                     'Use only saved source file paths supplied by the tools: copy each '
+                                     "source's file and origin exactly from the capture the tools showed, "
+                                     'and never invent paths such as research/sources/. '
                                      'Set every fact author to this worker ID. Do not write finished studio content.'}
                 previous = case / '.harness-research/synthesis.json'
                 if previous.is_file():
@@ -306,7 +308,7 @@ class Workflow:
                 for source in dossier.get('sources', []):
                     captured = allowed.get(source.get('file'))
                     if captured is None:
-                        raise ValueError('Research cited a source that the studio did not capture.')
+                        raise ValueError(f"Research cited {source.get('file')!r}, a source that the studio did not capture.")
                     permission = captured.get('permission') or ('selected' if captured.get('offered', True) else 'public')
                     if source.get('permission') != permission:
                         raise ValueError('Research changed a source permission.')
@@ -357,10 +359,35 @@ def check_json(text, spec):
         value = json.loads(text)
         if not isinstance(value, dict) or value.get('schema') != 2:
             problems.append('Return a schema-2 JSON object.')
+        elif 'captures' in spec and isinstance(value.get('sources'), list):
+            problems += uncaptured(value['sources'], spec['captures'])
     except (TypeError, ValueError):
         problems.append('Return valid JSON, without Markdown fences.')
     return problems, [{'check': 'research.json', 'status': 'failed' if problems else 'passed',
                        'problems': problems}], [], text
+
+
+def uncaptured(sources, captures):
+    """Why sources a dossier cites differ from what its job saved. The parent refuses the same
+    after the job; saying it while the author can still correct it keeps the research step."""
+    saved = {entry['file']: entry for entry in captures if entry.get('file')}
+    listed = ', '.join(sorted(saved)[:40]) or 'none yet'
+    problems = []
+    for source in sources:
+        name = source.get('file') if isinstance(source, dict) else None
+        entry = saved.get(name)
+        if entry is None:
+            problems.append(f'Source file {name!r} is not one this job saved. Save a page with '
+                            'save_source first, then copy its "Capture file" exactly. Saved '
+                            f'files: {listed}.')
+            continue
+        origin = entry.get('origin', entry.get('url'))
+        if source.get('origin') != origin:
+            problems.append(f'Source {name}: copy its origin exactly as {origin!r}.')
+        permission = entry.get('permission') or ('selected' if entry.get('offered', True) else 'public')
+        if source.get('permission') != permission:
+            problems.append(f'Source {name}: its permission is {permission!r}.')
+    return problems
 
 
 def native(engine, root, run, task, sources, product):

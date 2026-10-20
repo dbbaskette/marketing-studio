@@ -1100,6 +1100,9 @@ class WorkerTools:
         if check is None:
             raise Refusal(f"Nothing here can check a {spec['kind']}, so it was not kept.")
         if not drawn(spec['kind']):
+            if spec['kind'] == 'research-json':
+                # A dossier may cite only what this job saved; the author can correct it here.
+                spec = {**spec, 'captures': self._index()}
             return check(text, spec)
         problems, ran, warnings, kept = check(text, spec, self.slides(), self.folder / 'drafts')
         for outcome in ran:
