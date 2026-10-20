@@ -96,6 +96,13 @@ class MarkupTests(unittest.TestCase):
     def test_no_value_is_ever_treated_as_markup(self):
         for name in ('app.js', 'markdown.js'):
             script = read(name)
+            if name == 'app.js':
+                # The one HTML surface is isolated from the application, with no
+                # scripts or network. All ordinary deck values remain text.
+                assignment = next(line for line in script.splitlines() if 'frame.srcdoc =' in line)
+                self.assertIn('default-src &#39;none&#39;', assignment)
+                self.assertIn("frame.setAttribute('sandbox', '');", script)
+                script = script.replace(assignment, '')
             for risky in ('innerHTML', 'outerHTML', 'insertAdjacentHTML', 'document.write',
                           'createContextualFragment', 'DOMParser', 'srcdoc', 'eval(',
                           'Function(', "setAttribute('style'", "setAttribute('href'",

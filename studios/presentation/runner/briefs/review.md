@@ -7,11 +7,11 @@ You are reviewing a finished slide deck that someone else drew. You see what is 
 Your task says which deck this is. `list_inputs` shows your inputs; read each with `read_input`.
 
 - **The review** has the questions to ask of every slide, how grave a "no" is, and the slides by number. After the slides have been drawn again it also lists what an earlier review found.
-- `look_at_slide` shows one slide at full size, by its number. Look at every slide, in order, before you hand anything in.
+- `look_at_deck`, when offered, shows the current whole deck. Check consistency and regressions. `look_at_slide` shows a slide at full size. Inspect every ID your task names; other clear slides may retain verified unchanged native inspection, with provenance. Inspect any additional slide when the whole-deck view raises a concern. Reused inspection is never user approval.
 
 ## The assessment
 
-Ask every question of every slide. Each "no" is one finding:
+Ask every question of every inspected slide and check whole-deck consistency. Each "no" is one finding:
 
 - `slide`: the ID of the slide.
 - `question`: the number of the question.

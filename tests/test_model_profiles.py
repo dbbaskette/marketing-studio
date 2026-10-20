@@ -80,7 +80,8 @@ class ProfileTests(IsolatedHome):
                 ('Presentation Studio', 'classify', 'quick'),
                 ('Presentation Studio', 'extract', 'quick'),
                 ('Presentation Studio', 'build-review:1', 'main'),
-                ('Presentation Studio', 'build-repair:2', 'complex'),
+                ('Presentation Studio', 'build-repair:2', 'main'),
+                ('Presentation Studio', 'outline', 'quick'),
                 ('Training Studio', 'research:question-2', 'main'),
                 ('Training Studio', 'deck-review@301', 'main'),
                 ('Training Studio', 'deck-repair@301:2', 'complex')):
@@ -91,6 +92,9 @@ class ProfileTests(IsolatedHome):
                         'main': 'shared-model', 'complex': 'complex-model'}[profile])
                     self.assertIsNone(choice['actual_model'])
             self.assertEqual(models.route(record, 'Blog Studio', 'draft', purpose='repair')['profile'], 'complex')
+            self.assertEqual(models.route(record, 'Presentation Studio', 'build-repair:section-1', purpose='repair-escalated')['profile'], 'complex')
+            record['model_profiles']['policy'] = 1
+            self.assertEqual(models.route(record, 'Presentation Studio', 'build-repair:section-1')['profile'], 'complex')
 
     def test_snapshot_is_immutable_and_work_override_stays_single(self):
         values = configuration()

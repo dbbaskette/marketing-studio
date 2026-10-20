@@ -100,6 +100,8 @@ class Deck(unittest.TestCase):
         work = build.review_work(self.root, self.run_)
         tools = self.job(work)
         listed = work.prepared['review']['slides']
+        if work.prepared['review'].get('sheet'):
+            self.assertTrue(tools.look_at_deck()[0])
         for slide in listed:
             self.assertTrue(tools.look_at_slide(slide['number'])[0])
         outcome = tools.submit_assessment(json.dumps(findings(listed)), '[]')
@@ -170,6 +172,28 @@ class StartTests(Deck):
 
 
 class LoopTests(Deck):
+    def test_local_repair_freezes_other_slides_and_tracks_persistent_findings(self):
+        self.built()
+        first = self.review(grave)
+        state = build.read_state(self.root)
+        section = state['repair'][0]
+        work = build.section_work(self.root, self.run_, section, None, None)
+        spec = work.prepared['artifacts']['section']
+        self.assertTrue(spec['unchanged_slides'])
+        earlier = json.loads(work.prepared['inputs']['your earlier section'])
+        changed = copy.deepcopy(earlier)
+        frozen = next(iter(spec['unchanged_slides']))
+        next(slide for slide in changed['slides'] if slide['id'] == frozen)['notes'] = 'Changed without permission'
+        self.assertTrue(any('no requested repair' in error for error in build.kept(changed, spec)))
+        for part in build.to_draw(self.root): self.draw(part)
+        build.whole(self.root, self.run_, self.slides, 'local')
+        again = self.review(grave)
+        self.assertEqual(first[0]['id'], again[0]['id'])
+        self.assertTrue(again[0]['persistent'])
+        repair = build.section_work(self.root, self.run_, section, None, None)
+        self.assertEqual(repair.purpose, 'repair-escalated')
+        self.assertIn(first[0]['id'], repair.prepared['artifacts']['section']['escalation_reason'])
+
     def test_sections_are_drawn_put_together_and_pictured(self):
         made = self.built()
         self.assertEqual(build.to_draw(self.root), [])
@@ -244,7 +268,9 @@ class LoopTests(Deck):
         for section in build.to_draw(self.root):
             work = build.section_work(self.root, self.run_, section, None, None)
             tools = self.job(work)
-            again = drawn(work.prepared['artifacts']['section'], extra=[{'type': 'rule'}])
+            spec = work.prepared['artifacts']['section']
+            again = json.loads(drawn(spec, extra=[{'type': 'rule'}]))
+            again['slides'] = [spec.get('unchanged_slides', {}).get(slide['id'], slide) for slide in again['slides']]
             outcome = tools.preview_section(again)
             self.assertTrue(outcome[0], outcome[1])
             self.assertTrue(tools.submit_section(again)[0])
@@ -729,3 +755,38 @@ class WordlessTests(Deck):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ReviewReuseTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / 'sheet.png').write_bytes(b'synthetic contact sheet')
+        slides = [{'id': 'slide-' + str(i), 'number': i, 'sha256': 'c' * 64} for i in range(1, 7)]
+        evidence = [{'id': s['id'], 'number': s['number'], 'imageSha256': s['sha256'], 'fingerprint': str(s['number']) * 64} for s in slides]
+        coverage = {'questions': list(build.QUESTIONS), 'slides': [{'id': s['id'], 'image_sha256': s['sha256'], 'answers': [True] * 8} for s in slides]}
+        self.state = {'rounds': [{'deck': 'a' * 64, 'render_evidence': {'schema': 1, 'shared': 'd' * 64, 'deckSha256': 'a' * 64, 'slides': evidence}, 'review': {'findings': [], 'coverage': coverage}},
+            {'deck': 'b' * 64, 'render_evidence': {'schema': 1, 'shared': 'd' * 64, 'deckSha256': 'b' * 64, 'slides': copy.deepcopy(evidence)}, 'slides': slides, 'sheet': 'sheet.png'}]}
+
+    def test_one_changed_slide_inspects_it_and_neighbors_and_retains_verified_clear_coverage(self):
+        self.state['rounds'][-1]['render_evidence']['slides'][2]['fingerprint'] = 'e' * 64
+        reused = build.reusable_review(self.root, self.state)
+        self.assertEqual(set(reused), {'slide-1', 'slide-5', 'slide-6'})
+        self.assertEqual(reused['slide-1']['from_deck'], 'a' * 64)
+        self.assertNotIn('approved', reused['slide-1'])
+
+    def test_shared_dependency_order_image_and_unresolved_findings_invalidate_coverage(self):
+        for mutate in (
+            lambda state: state['rounds'][-1]['render_evidence'].update(shared='e' * 64),
+            lambda state: state['rounds'][-1]['render_evidence'].update(deckSha256='f' * 64),
+            lambda state: state['rounds'][-2]['review']['coverage'].update(questions=['changed']),
+            lambda state: state['rounds'][-1]['slides'].reverse(),
+        ):
+            state = copy.deepcopy(self.state)
+            mutate(state)
+            self.assertEqual(build.reusable_review(self.root, state), {})
+        self.state['rounds'][-2]['review']['findings'] = [{'slide': 'slide-3'}]
+        self.assertEqual(set(build.reusable_review(self.root, self.state)), {'slide-1', 'slide-5', 'slide-6'})
+        self.state['rounds'][-1]['render_evidence']['slides'][5]['imageSha256'] = 'f' * 64
+        self.assertNotIn('slide-6', build.reusable_review(self.root, self.state))

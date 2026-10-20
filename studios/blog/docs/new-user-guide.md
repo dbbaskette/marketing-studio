@@ -247,3 +247,15 @@ for review work, or **“Find our previous blogs about [topic]”** for earlier 
 
 The desk runs privately on your computer. Its Google links show saved information;
 ask in chat to pull current content or refresh feedback. [Desk guide](editorial-desk.md).
+
+## More tools when you need them
+
+Open a manuscript's **More tools** to recover revisions, compare Google edits,
+learn or audition an author voice, interview an expert, prepare channel copies,
+check citation readiness or workshop an opening. Tools explain their input and
+next step. Generated results wait for review; none publish or change defaults.
+See the [capability map](capabilities.md) for coverage and limits.
+
+For installed-app maintenance, open **Status → Installation maintenance**. Use
+`marketing-studio doctor` for a read-only check; downloaded-release updates,
+rollback and removal are explicit commands. Workspaces remain preserved.

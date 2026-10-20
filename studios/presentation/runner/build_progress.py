@@ -110,6 +110,7 @@ class Preview:
                                             'buildRevision': self.build_revision,
                                             'ready_at': home.now(), 'reused': bool(event.get('reused'))}
             entry.setdefault('first_ready_at', home.now())
+            index.setdefault('timings', {}).setdefault('first_whole_preview_at' if spec['part'] == 'whole' else 'first_section_ready_at', home.now())
             home.write_json(folder / 'index.json', index)
             return True
 
@@ -163,6 +164,17 @@ class Preview:
         self._update(lambda entry: entry.update(status='incomplete'))
 
 
+def invalidate(root, basis, part):
+    with locked(root) as folder:
+        if folder is None:
+            return
+        index = home.read_json(folder / 'index.json', {})
+        if index.get('basis') == basis and part in (index.get('parts') or {}):
+            entry = index['parts'][part]
+            entry.update(owner='superseded-' + secrets.token_hex(16), status='needs-changes')
+            home.write_json(folder / 'index.json', index)
+
+
 def view(root, basis):
     index = home.read_json(Path(root) / FOLDER / 'index.json', {})
     if index.get('basis') != basis:
@@ -190,3 +202,27 @@ def image(root, basis, ref):
     if path.is_symlink() or (Path(root) / FOLDER).resolve() not in path.resolve().parents:
         raise FileNotFoundError('No current build preview has that name.')
     return picture(path)
+
+
+def mark(root, basis, name, ref=None):
+    """Local display measurements, never review or approval receipts."""
+    with locked(root) as folder:
+        if folder is None:
+            return {}
+        index = home.read_json(folder / 'index.json', {})
+        if index.get('basis') != basis:
+            return {}
+        if ref is not None:
+            images = [image for part, entry in (index.get('parts') or {}).items()
+                      if part != 'whole' for image in (entry.get('images') or {}).values()]
+            if not any(image['ref'] == ref for image in images):
+                return {}
+        timings = index.setdefault('timings', {})
+        if name not in timings:
+            timings[name] = home.now()
+            home.write_json(folder / 'index.json', index)
+        return dict(timings)
+
+
+def timings(root):
+    return home.read_json(Path(root) / FOLDER / 'index.json', {}).get('timings', {})

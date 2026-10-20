@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest import mock
 
 import helpers  # noqa: F401
+import home
 import runner_support
 from runner_support import OUTLINE, PAGE, PLAN, PUBLIC, Brand, JobCase, Slides, drawn, png
 
@@ -903,7 +904,7 @@ class ServerTests(JobCase):
             self.assertTrue(entry['description'])
             self.assertLessEqual(set(entry['inputSchema']['required']),
                                  set(entry['inputSchema']['properties']))
-        self.assertEqual(len(worker_tools.NAMES), 17)
+        self.assertEqual(len(worker_tools.NAMES), 18)
 
     def answer(self, tools, method, params=None, ident=1):
         message = {'jsonrpc': '2.0', 'method': method, 'params': params or {}}
@@ -1290,6 +1291,17 @@ class SectionToolTests(ToolCase):
             else:
                 self.assertEqual(said, [])
 
+    def test_first_draft_renders_without_returning_images_for_author_review(self):
+        tools, good = self.composer(), drawn(self.spec)
+        job = home.read_json(tools.folder / 'job.json')
+        job['artifacts']['section']['user_first'] = True
+        home.write_json(tools.folder / 'job.json', job)
+        tools = worker_tools.WorkerTools(tools.folder, slides=self.slides, brand=self.brand)
+        shown = tools.preview_section(json.dumps(good))
+        self.assertTrue(shown[0], shown[1])
+        self.assertNotIsInstance(shown, worker_tools.Shown)
+        self.assertTrue(tools.submit_section(json.dumps(good))[0])
+
     def test_a_preview_returns_a_picture_of_every_slide_with_what_the_renderer_found(self):
         tools, good = self.composer(), drawn(self.spec)
         self.slides.findings['when-capacity-holds'] = [
@@ -1492,7 +1504,10 @@ class ReviewToolTests(ToolCase):
         self.assertEqual((sent['deckSha256'], sent['reviewer'], sent['findings'][1]), (
             self.shown['deckSha256'], 'independent',
             {key: SAID[key] for key in ('slide', 'question', 'severity', 'note')}))
+        self.assertEqual(len(sent['slides']), 6)
+        self.assertTrue(all(len(slide['answers']) == 8 for slide in sent['slides']))
         kept = worker_tools.collect(self.job)['assessment']
+        self.assertEqual(kept['coverage']['questions'], list(build.QUESTIONS))
         self.assertEqual([(finding['number'], finding['about']) for finding in kept['findings']],
                          [(2, 'drawing'), (4, 'content')])
 
@@ -1544,6 +1559,29 @@ class ReviewToolTests(ToolCase):
             worker_tools.pictures({'slides': [{'number': 1, 'id': 'a',
                                                'image': str(self.base / 'elsewhere.png')}]},
                                   self.base / 'whole' / 'preview', self.base / 'kept')
+
+    def test_reused_inspection_still_requires_changed_pixels_and_the_current_whole_deck(self):
+        import hashlib
+
+        tools = self.reviewer()
+        review = tools.job['review']
+        sheet = self.base / 'sheet.png'
+        sheet.write_bytes(png(1))
+        review.update(sheet=str(sheet), inspect=[s['id'] for s in review['slides'][1:4]],
+                      reused={s['id']: {'image_sha256': hashlib.sha256(Path(s['image']).read_bytes()).hexdigest(),
+                                       'from_deck': 'a' * 64}
+                              for s in (review['slides'][0], *review['slides'][4:])})
+        for number in (2, 3, 4):
+            self.ok(tools.look_at_slide(number))
+        self.assertIn('current whole deck', self.refused(tools.submit_assessment([])))
+        self.ok(tools.look_at_deck())
+        self.ok(tools.submit_assessment([]))
+        coverage = worker_tools.collect(self.job)['assessment']['coverage']['slides']
+        self.assertEqual(len(coverage), 6)
+        self.assertEqual([s['number'] for s in coverage if s.get('reused_from')], [1, 5, 6])
+        self.assertTrue(all(s['answers'] == [True] * 8 for s in coverage))
+        Path(review['slides'][0]['image']).write_bytes(png(2))
+        self.assertIn('reused preview changed', self.refused(tools.submit_assessment([])))
 
 if __name__ == '__main__':
     unittest.main()

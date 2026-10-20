@@ -50,6 +50,19 @@ class SharedSetupTests(IsolatedHome):
                                None if sent is None else json.dumps(sent).encode())
         return response[0], json.loads(response[2])
 
+    def test_installed_brand_lookup_requires_auth_and_never_saves_or_installs(self):
+        expected = {'skills': [{'name': 'example-brand', 'path': str(self.root / 'brand'), 'brands': [{'brand': 'example', 'name': 'Example', 'variants': ['light']}]}], 'problem': None}
+        for product in ('Blog Studio', 'Presentation Studio', 'Training Studio'):
+            page = onboarding.Controller(8000, 'a' * 40, product, 'X-Test-Token', lambda _: None, shared)
+            before = shared.read()[0]
+            with mock.patch('studio_core.brand_catalog.choices', return_value=expected) as lookup:
+                self.assertEqual(self.request(page, 'brands', {}, self.headers('wrong'))[0], 403)
+                lookup.assert_not_called()
+                self.assertEqual(self.request(page, 'brands', {})[1], expected)
+                self.assertEqual(self.request(page, 'brands', {'skill': 'relative-folder'})[0], 409)
+                self.assertEqual(self.request(page, 'brands', {'skill': str(self.root / 'brand')})[0], 200)
+            self.assertEqual(shared.read()[0], before)
+
     def test_standalone_setup_completes_marketing_and_other_studios(self):
         for product in ('Blog Studio', 'Presentation Studio', 'Training Studio'):
             with self.subTest(product=product):

@@ -177,3 +177,5 @@
 .outline-slide > details > * + * {
   margin-top: 0.55rem;
 }
+/* The outline engine's self-contained wireframe is isolated from application DOM. */
+.storyboard { width: 100%; height: min(72vh, 48rem); border: 1px solid var(--hair); border-radius: 8px; background: var(--paper); margin-top: 12px; }

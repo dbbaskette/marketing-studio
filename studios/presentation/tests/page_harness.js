@@ -219,6 +219,7 @@ class FakeElement extends FakeNode {
   }
 
   dispatch(type, event) {
+    if (event) event.currentTarget = this;
     for (const listener of this.listeners[type] || []) listener(event);
   }
 
@@ -421,7 +422,10 @@ function see(words) {
 
 // A picture is the page's own when it is shown from memory. Any other is from somewhere else.
 function own(node) {
-  return node.tagName === 'IMG' && kept.has(node.src);
+  return node.tagName === 'IMG' && kept.has(node.src)
+    || node.tagName === 'IFRAME' && node.className === 'storyboard'
+      && node.getAttribute('sandbox') === '' && typeof node.srcdoc === 'string'
+      && node.srcdoc.startsWith('<meta http-equiv="Content-Security-Policy"');
 }
 
 function snapshot() {
@@ -637,6 +641,7 @@ async function app(file) {
         body: options && options.body ? JSON.parse(options.body) : null });
       // An answer can be kept for one address, query and all, or for every query of it.
       const held = answers[method + ' ' + address] || answers[key];
+      if (!held && key === 'GET /api/storyboard') return {ok: true, status: 200, json: async () => ({html:'<h1>Fixture storyboard</h1>'})};
       if (!held) return { ok: false, status: 404, json: async () => ({ error: 'No answer for ' + key }) };
       const answer = held.length > 1 ? held.shift() : held[0];
       if (answer.picture === undefined) {

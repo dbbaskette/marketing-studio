@@ -42,6 +42,8 @@ NOTE = 4000
 
 def _title(run: dict, revision: int) -> str:
     title = run.get('title') or (run.get('form') or {}).get('title') or 'Deck'
+    if decks.user_first(run):
+        title += ' — Unreviewed first draft'
     return title if revision == 1 else f'{title} (revision {revision})'
 
 
@@ -65,7 +67,7 @@ def upload(root, run: dict, slides) -> dict:
     revision, at = len(run.get('revisions') or []) + 1, home.now()
     output = (run.get('form') or {}).get('output') or 'google'
     record = {'output': output, 'url': None, 'fileId': None, 'pptx': None,
-              'revision': revision, 'at': at}
+              'revision': revision, 'at': at, **({'review_status': 'unreviewed'} if decks.user_first(run) else {})}
     if output == 'google':
         if slides.drive_check():
             made = slides.drive_import(deck, _title(run, revision))

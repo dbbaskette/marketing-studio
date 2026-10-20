@@ -881,11 +881,11 @@ class ModelProfileTests(StudioCase):
         self.assertEqual(setup.describe(self.engine)['shared']['models']['mode'], 'by_task')
         self.workers.found = [grave]
         root = self.start()
-        self.assertEqual(self.workers.of('outline')[0].model, 'main-model')
+        self.assertEqual(self.workers.of('outline')[0].model, 'quick-model')
         studios_config.update({'models': {'profiles': {'main': {'model': 'later'}}}})
         self.to_gate(root, 'gate:build')
         choices = self.record(root)['model_jobs']
-        self.assertTrue(any(c['profile'] == 'complex' and c['model'] == 'complex-model' for c in choices))
+        self.assertTrue(any(c['profile'] == 'main' and c['model'] == 'main-model' for c in choices))
         self.assertTrue(all(c['model'] != 'later' for c in choices))
         for choice in choices:
             self.assertIsNone(choice['actual_model'])
@@ -899,7 +899,7 @@ class ModelProfileTests(StudioCase):
         self.configure('codex')
         root = self.start(title='By task')
         self.assertEqual(self.record(root)['model_profiles']['mode'], 'by_task')
-        self.assertEqual(self.workers.of('outline')[-1].model, 'main-model')
+        self.assertEqual(self.workers.of('outline')[-1].model, 'quick-model')
         other = self.start(title='Work override', agent='codex', model='own-model', effort='high')
         self.assertEqual(self.record(other)['model_profiles']['mode'], 'single')
         self.assertEqual(self.workers.of('outline')[-1].model, 'own-model')

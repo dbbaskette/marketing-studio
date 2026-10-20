@@ -73,6 +73,7 @@ async function check(){
   await revisionCompletion();
   await deliveryRecovery();
   await brandInputs();
+  await contextualTools();
   await sharedSettings();
   await staleSharedForms();
   pageDefinesEveryElement();
@@ -948,4 +949,42 @@ async function guidedRuns(){
   const creating=g.run("sStartBlog(studio.draft,document.createElement('button'),document.createElement('p'))");
   g.run("studio.turn++;studio.screen='blogs'");pending.resolve(found);await creating;
   assert.equal(g.run('studio.screen'),'blogs');
+}
+
+
+async function contextualTools(){
+  const calls=[];
+  const f=fixture((url,options)=>{
+    calls.push([url,options?.body]);
+    if(url.startsWith('/api/tools'))return {id:'fixture',title:'Synthetic draft',has_manuscript:true,working:false,google:{document_id:'doc'},history:[{revision:'draft-1.md'}],next_offset:null,jobs:[{id:'a'.repeat(32),kind:'repurpose',status:'ready'}]};
+    if(url.startsWith('/api/voices'))return {profiles:[{id:'voice',name:'Synthetic Author',revision:1,status:'provisional'}],samples:[{id:'sample',name:'Authored passage',author:'Synthetic Author'}]};
+    if(url.startsWith('/api/voice?'))return {id:'voice',name:'Synthetic Author',revision:1,status:'provisional',guide:'A short synthetic voice guide.',sample_ids:['sample'],expected:'profile-version'};
+    if(url.startsWith('/api/tool-history'))return {scope:'Local manuscript only',expected:'restore-version',changes:{changes:[{section:'Opening',before:'Current',after:'Earlier'}],truncated:false}};
+    if(url.startsWith('/api/prepublish'))return {findings:[],coverage:'Remote claims not verified.'};
+    if(url.startsWith('/api/interview'))return {id:'fixture',title:'Synthetic interview',expected:'interview-version',answers:[{id:'answer',question:'Main point?',answer:'Synthetic answer'}],question:'Example?',outline:false};
+    if(url.startsWith('/api/variant?'))return {id:'fixture',name:'launch-copy',content:'Human-edited copy',expected:'copy-version',provenance:{format:'summary',source_sha256:'a'.repeat(64)}};
+    if(url.startsWith('/api/variants'))return {id:'fixture',variants:[{name:'launch-copy',content:'Human-edited copy',provenance:{format:'summary',source_sha256:'a'.repeat(64)}}]};
+    return {};
+  });f.loadRunner();
+  await f.run("sMoreTools('fixture')");
+  const sheet=()=>descendants(f.get('sheet'));
+  assert.ok(sheet().some(node=>node.textContent==='Compare Google and local text'));
+  assert.ok(sheet().some(node=>node.textContent==='Saved manuscript revisions'));
+  assert.ok(sheet().some(node=>node.textContent==='Resume repurpose · ready'));
+  assert.equal(calls.some(([url,body])=>body),false);
+  await f.run("sVoiceTools('fixture')");assert.ok(sheet().some(node=>node.textContent==='Learn a voice from samples'));
+  await f.run("sVoiceProfile('voice','fixture')");assert.ok(sheet().some(node=>node.textContent==='Use this revision for this article'));
+  assert.ok(sheet().some(node=>node.textContent==='Export voice guide'));
+  await f.run("sInterview('fixture')");assert.ok(sheet().some(node=>node.textContent==='Save revised answer'));
+  assert.ok(sheet().some(node=>node.textContent==='I have enough — prepare an outline'));
+  await f.run("sVariants('fixture')");assert.ok(sheet().some(node=>node.textContent==='Open launch-copy'));
+  await f.run("sVariant('fixture','launch-copy')");assert.ok(sheet().some(node=>node.id==='saved-copy-text'&&node.value==='Human-edited copy'));
+  assert.ok(sheet().some(node=>node.textContent==='Save this copy locally'));
+  f.set('job',{id:'a'.repeat(32),kind:'repurpose',status:'ready',metadata:{article:'fixture',words:150},result:{content:'Prepared copy',notes:'No posting'},source_changed:true});
+  await f.run('sToolJob(job)');assert.ok(sheet().some(node=>node.textContent==='Return to current source'));
+  assert.equal(sheet().some(node=>node.textContent==='Save named copy'),false);
+  const pending=deferred(),g=fixture(()=>pending.promise);g.loadRunner();
+  const read=g.run("sHistoryPreview({id:'fixture'},'draft-1.md')");g.run('sCloseSheet()');pending.resolve({changes:{changes:[]},scope:'Local'});await read;
+  assert.equal(g.run('studio.sheet'),null);
+  const slow=deferred(),h=fixture(()=>slow.promise);h.loadRunner();const reading=h.run("sPrepublishTool('fixture')");h.run('sCloseSheet()');slow.resolve({findings:[],coverage:'Local'});await reading;assert.equal(h.run('studio.sheet'),null);
 }

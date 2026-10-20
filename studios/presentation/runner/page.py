@@ -95,12 +95,12 @@ from runner import engine as engines
 
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
          '/api/run', '/api/slide', '/api/download', '/api/status', '/api/published',
-         '/api/delete', '/api/file')
+         '/api/delete', '/api/file', '/api/known-decks', '/api/storyboard')
 WRITES = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
           '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
           '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
           '/api/versions', '/api/brand', '/api/brand/install', '/api/shared',
-          '/api/deliver')
+          '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen')
 PNG = 'image/png'
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
@@ -146,12 +146,18 @@ class RunnerPage(server.Page):
             return server.as_json(HTTPStatus.OK, shaped(self.engine.models, one('agent')))
         if path == '/api/decks':
             return server.as_json(HTTPStatus.OK, self.engine.decks())
+        if path == '/api/known-decks':
+            return server.as_json(HTTPStatus.OK, {'decks': [entry for entry in home.decks()
+                if self.engine.driven(entry['path']) is None]})
         if path == '/api/run':
             return server.as_json(HTTPStatus.OK, self.run(one('path')))
         if path == '/api/slide':
             return HTTPStatus.OK, PNG, self.slide(one)
         if path == '/api/download':
             return self.download(one('path'))
+        if path == '/api/storyboard':
+            return server.as_json(HTTPStatus.OK, self.engine.storyboard(
+                self.deck(one('path')), None, one('expected')))
         if path == '/api/file':
             return server.as_json(HTTPStatus.OK, self.file(one('path'), one('name')))
         if path == '/api/status':
@@ -286,6 +292,19 @@ class RunnerPage(server.Page):
             return server.as_json(HTTPStatus.OK, self.start(sent))
         if path == '/api/run':
             return server.as_json(HTTPStatus.OK, self.act(sent))
+        if path == '/api/storyboard':
+            return server.as_json(HTTPStatus.OK, self.engine.storyboard(
+                self.deck(server.text(sent, 'path')), sent.get('slides'),
+                server.text(sent, 'expected')))
+        if path == '/api/review-draft':
+            return server.as_json(HTTPStatus.OK, self.engine.review_draft(
+                self.deck(server.text(sent, 'path')), server.text(sent, 'expected')))
+        if path == '/api/progress-seen':
+            return server.as_json(HTTPStatus.OK, self.engine.progress_seen(
+                self.deck(server.text(sent, 'path')), server.text(sent, 'ref')))
+        if path == '/api/build-feedback':
+            return server.as_json(HTTPStatus.OK, self.engine.build_feedback(
+                self.deck(server.text(sent, 'path')), server.text(sent, 'ref'), server.text(sent, 'note')))
         if path == '/api/decide':
             return server.as_json(HTTPStatus.OK, self.decide(sent))
         if path == '/api/answer':

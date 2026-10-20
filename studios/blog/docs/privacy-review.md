@@ -1,4 +1,4 @@
-# Data exposure review — October 1, 2026 (updated October 12, 2026)
+# Data exposure review — updated October 20, 2026
 
 Reviewed the packaged five-source-skill library (claude-blog: blog/blog-write;
 marketingskills: content-strategy/copywriting/copy-editing), nine BlogForge-derived
@@ -63,3 +63,35 @@ live verification is tracked in
 
 See [the operational boundary](../skills/blog-studio/references/privacy.md),
 [Team Hub usage](team-hub.md) and [Google Docs](google-docs.md).
+
+## Current page and contextual tasks
+
+Shared setup uses one studios-config file and adjacent lock. A brand repository
+is a saved installation choice; lookup reads installed brand metadata only.
+Installing a brand requires a separate explicit action and runs its trusted
+installer. The shared Git workspace stores selected writing decisions in readable
+folders; local jobs, indexes and raw Google captures are excluded from sharing.
+Repository access is not per-author isolation, and Git history/clones retain
+previously shared material.
+
+Voice learning/audition, interview generation and channel copy send only the
+selected samples, guide, answers or manuscript plus requested settings through
+the existing signed-in assistant. They start on explicit requests, use saved
+model choices and the existing one-worker scheduler, and wait for review before
+saving into profile/article records. Job payloads/results are retained privately
+under .blog-runs/tools with private directory/file permissions for resume and
+retry; they are not covered by the derived-index cache clearer. Deleting or
+retiring a shared profile does not erase its history or another article's pin.
+No retention/purge change is implicit in this update.
+
+Google comparison stages a capture locally and performs a fresh read before
+accepting text locally. It sends no Google edit and resolves no pending review.
+Successful checkpoints remove staged capture inputs; failed comparisons remain
+for inspection/retry until local staging cleanup. Private comparison receipts
+contain identities/account choices, not access tokens. The OAuth grant remains
+the broader gcloud/Drive grant described above; selecting a Doc is an application
+write boundary, not a narrower OAuth scope. HTTP remains loopback/session guarded,
+no-store and no-referrer, with the existing restrictive CSP and origin checks.
+
+These statements are based on source inspection and synthetic regressions. The
+new contextual tasks have no new live Google or model-provider acceptance claim.

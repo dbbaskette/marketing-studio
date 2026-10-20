@@ -372,6 +372,151 @@ class GoogleIntakeTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn('Google sign-in', response['error'])
 
+    def compare(self, ident):
+        import manuscript_editor
+
+        return management.dispatch(
+            self.root,
+            'tool-action',
+            {
+                'action': 'google-compare',
+                'id': ident,
+                'expected': manuscript_editor.read(self.root, ident)['expected'],
+            },
+        )
+
+    def accept(self, found, **extra):
+        return management.dispatch(
+            self.root,
+            'tool-action',
+            {
+                'action': 'google-accept',
+                'id': found['id'],
+                'expected': found['expected'],
+                'preview': found['preview'],
+                'comparison': found['comparison'],
+                'confirmed': True,
+                **extra,
+            },
+        )
+
+    def test_compared_accepted_text_keeps_pending_suggestions_and_never_writes_google(self):
+        from test_google_suggestions import add_teammate_suggestion
+
+        add_teammate_suggestion(self.client)
+        writes = self.client.writes
+        imported = self.start(self.preview())
+        found = self.compare(imported['id'])
+        self.assertEqual(found['status'], 'unchanged')
+        self.assertGreater(found['summary']['pending_suggestions'], 0)
+        result = self.accept(found)
+        self.assertEqual(result['status'], 'accepted')
+        self.assertFalse(result['google_written'])
+        self.assertEqual(self.client.writes, writes)
+
+    def test_changed_remote_or_local_text_blocks_old_preview_and_keeps_both(self):
+        import manuscript_editor
+
+        imported = self.start(self.preview())
+        found = self.compare(imported['id'])
+        self.client.doc['revisionId'] = 'later-revision'
+        with self.assertRaisesRegex(ValueError, 'Google changed'):
+            self.accept(found)
+        found = self.compare(imported['id'])
+        current = manuscript_editor.read(self.root, imported['id'])
+        manuscript_editor.dispatch(
+            self.root,
+            'save',
+            {
+                'id': imported['id'],
+                'expected': current['expected'],
+                'content': current['content'] + '\n\nA local correction.',
+            },
+        )
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            self.accept(found)
+        self.assertEqual(self.client.writes, 0)
+
+    def test_comparison_previews_omit_images_without_changing_the_saved_text(self):
+        import manuscript_editor
+
+        imported = self.start(self.preview())
+        current = manuscript_editor.read(self.root, imported['id'])
+        content = (
+            current['content']
+            + '\n\n![Diagram][image1]\n\n[image1]: <data:image/png;base64,SYNTHETIC>\n'
+        )
+        manuscript_editor.dispatch(
+            self.root,
+            'save',
+            {'id': imported['id'], 'expected': current['expected'], 'content': content},
+        )
+        found = self.compare(imported['id'])
+        self.assertEqual(found['local'], content)
+        self.assertNotIn('data:image', found['local_preview'])
+        self.assertNotIn('![Diagram]', found['local_preview'])
+        self.assertEqual(manuscript_editor.read(self.root, imported['id'])['content'], content)
+        self.assertEqual(self.client.writes, 0)
+
+    def test_pending_local_proposals_are_kept_and_prevent_baseline_replacement(self):
+        import manuscript_editor
+
+        imported = self.start(self.preview())
+        current = manuscript_editor.read(self.root, imported['id'])
+        body = current['content']
+        manuscript_editor.dispatch(
+            self.root,
+            'proposals',
+            {
+                'id': imported['id'],
+                'expected': current['expected'],
+                'proposals': [
+                    {
+                        'kind': 'comment',
+                        'before': body.splitlines()[0],
+                        'reason': 'Synthetic review question',
+                    }
+                ],
+            },
+        )
+        found = self.compare(imported['id'])
+        self.assertTrue(found['has_proposals'])
+        with self.assertRaisesRegex(ValueError, 'saved wording suggestions'):
+            self.accept(found)
+        self.assertEqual(len(manuscript_editor.read(self.root, imported['id'])['proposals']), 1)
+        self.assertEqual(self.client.writes, 0)
+
+    def test_one_shot_pull_command_keeps_read_compare_and_explicit_local_accept_distinct(self):
+        import google_workflow
+
+        imported = self.start(self.preview())
+        args = studio.parser().parse_args(
+            ['--root', str(self.root), 'google', 'pull', '--id', imported['id']]
+        )
+        found = google_workflow.command(self.root, args)
+        self.assertEqual(found['status'], 'unchanged')
+        self.assertFalse(found['google_written'])
+        accept = studio.parser().parse_args(
+            [
+                '--root',
+                str(self.root),
+                'google',
+                'pull',
+                '--id',
+                imported['id'],
+                '--accept',
+                found['preview'],
+                '--expected',
+                found['expected'],
+                '--comparison',
+                found['comparison'],
+                '--confirmed',
+            ]
+        )
+        result = google_workflow.command(self.root, accept)
+        self.assertEqual(result['status'], 'accepted')
+        self.assertEqual(self.client.writes, 0)
+
 
 if __name__ == '__main__':
     unittest.main()

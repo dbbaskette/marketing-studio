@@ -10,6 +10,7 @@ import blog_runner
 from text_checks import preserve
 
 CHECKS = {
+    'geo': 'Review clarity and citation readiness: point-first openings, consistent entity names, useful definitions, precise citations and self-contained explanations. Locate each finding and explain its practical benefit. Use only supplied evidence; missing evidence becomes a comment, never an invented citation. Preserve qualifiers. Do not promise rankings or citations or force FAQs, keyword density, tables or branded mentions.',
     'polish': 'Proofread and copy edit the manuscript together: correct spelling, grammar, punctuation and consistency; improve clarity and concision; humanize formulaic wording, repetition and unnatural rhythm using the pinned author rules, house style and humanization guidance. Preserve the author voice, stance, facts, quotations, links and meaningful technical qualifiers. Never invent experience or new claims. Return selected, located suggestions rather than rewriting the whole manuscript. Do not research. This is editorial review, not AI detection.',
     'proofread': 'Proofread for clarity, grammar and the pinned author and house rules. Preserve the author voice.',
     'copyedit': 'Suggest precise copy edits for grammar, clarity, concision, consistency and natural wording using the pinned author and house rules. Preserve voice, stance, facts, quotations and technical qualifiers. Do not research or introduce new claims.',
@@ -434,14 +435,14 @@ def record_review(root, directory, record, run, result):
     check = 'proofread' if run['editor_check'] in ('revise', 'copyedit') else run['editor_check']
     status = 'current'
     if (
-        check == 'factual-support'
+        check in ('factual-support', 'geo')
         and not studio.ready_evidence(root, record)
         and not run['stages'].get('research')
     ):
         status = 'unavailable'
     research_digest = None
     if (
-        check == 'factual-support'
+        check in ('factual-support', 'geo')
         and run['stages'].get('research')
         and run.get('research_contract')
     ):

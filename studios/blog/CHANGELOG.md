@@ -3,6 +3,22 @@
 Releases are published from `skills/blog-studio/VERSION`. Each entry says what
 changes for authors first, then what changes for maintainers.
 
+## 4.3.0 — 2026-10-20
+
+- Manuscript **More tools** adds voice learning, auditions and revisions; resumable
+  interviews; channel copy; Google/local comparison; text history; citation/title
+  workshops; local pre-publish reports and topic-overlap advice.
+- Results remain reviewable. Local saves, shared delivery, Google sends, profile
+  confirmation and draft approval stay separate. Source changes reject older output.
+- Library status/collection filters and retirement undo improve recovery. Long
+  sheets keep Close reachable, with the existing keyboard focus and phone layout.
+- Optional `--compact` command results and a generated command inventory make CLI
+  outcomes easier to consume without changing compatible full JSON.
+- Git tree reads reuse exact immutable revisions within one bounded operation;
+  nothing caches remote freshness or changes published history.
+- See [capabilities](docs/capabilities.md), [privacy](docs/privacy-review.md) and
+  [optional proposals](docs/optional-extensions.md) for limits and future scope.
+
 ## 3.0.0 — 2026-10-15
 
 **For authors**

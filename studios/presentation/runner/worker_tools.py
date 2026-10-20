@@ -1006,6 +1006,8 @@ class WorkerTools:
         if job.get('look'):
             names.append('look_at_slide')
         if job.get('review'):
+            if job['review'].get('sheet'):
+                names.append('look_at_deck')
             names.append('submit_assessment')
         if job['fetch']:
             names.append('save_source')
@@ -1231,6 +1233,8 @@ class WorkerTools:
         lines.append('The pictures follow in slide order. What the renderer found is a '
                      'prompt to look, not approval: a slide with no finding is not '
                      'thereby a good one.')
+        if spec.get('user_first'):
+            return True, '\n'.join(lines[:-1]) + '\nRendered for the person. Submit this version without AI pixel review.'
         return Shown(True, '\n'.join(lines),
                      [self.folder / 'shown' / f"{slide['number']}.png" for slide in slides])
 
@@ -1292,12 +1296,25 @@ class WorkerTools:
         if slide is None:
             raise Refusal('The slides you can look at are numbered '
                           + ', '.join(str(slide['number']) for slide in slides) + '.')
-        picture(slide['image'])
+        data = picture(slide['image'])
         state = self._state()
+        hashes = dict(state.get('looked_hashes') or {})
+        hashes[str(wanted)] = hashlib.sha256(data).hexdigest()
         home.write_json(self.folder / 'state.json', {
-            **state, 'looked': sorted({*state.get('looked', []), wanted})})
+            **state, 'looked': sorted({*state.get('looked', []), wanted}), 'looked_hashes': hashes})
         return Shown(True, f"Slide {wanted}, `{slide['id']}`: \"{slide['title']}\".",
                      [slide['image']])
+
+    @tool
+    def look_at_deck(self):
+        """The current contact sheet, for a fresh whole-deck consistency check."""
+        review = self._review()
+        if not review.get('sheet'):
+            raise Refusal('This render has no whole-deck picture. Inspect every slide instead.')
+        data = picture(review['sheet'])
+        state = self._state()
+        home.write_json(self.folder / 'state.json', {**state, 'looked_deck': hashlib.sha256(data).hexdigest()})
+        return Shown(True, 'The current whole deck. Check consistency and regressions.', [review['sheet']])
 
     def _review(self) -> dict:
         review = self.job.get('review')
@@ -1335,33 +1352,55 @@ class WorkerTools:
         if problems:
             return self._refused(problems, left)
         home.write_json(self.folder / 'accepted' / 'assessment.json',
-                        {'findings': kept, 'weakest': named})
+                        {'findings': kept, 'weakest': named, 'coverage': home.read_json(recorded, {}).get('coverage')})
         return True, f'Recorded: {len(kept)} finding{"" if len(kept) == 1 else "s"}.{said}'
 
     def _looked(self, review: dict) -> None:
-        """An assessment is handed in only once every slide was looked at."""
+        """Every changed/neighbor slide and the current whole deck must actually be shown."""
         self._allowed('assessment', 'The assessment')
-        unseen = [str(slide['number']) for slide in review['slides']
-                  if slide['number'] not in self._state().get('looked', [])]
+        state = self._state()
+        required = review.get('inspect', [slide['id'] for slide in review['slides']])
+        unseen = [str(slide['number']) for slide in review['slides'] if slide['id'] in required
+                  and (slide['number'] not in state.get('looked', []) or
+                       (state.get('looked_hashes') or {}).get(str(slide['number'])) != hashlib.sha256(picture(slide['image'])).hexdigest())]
         if unseen:
-            raise Refusal('Look at every slide first. Not looked at yet: '
-                          + ', '.join(unseen) + '.')
+            raise Refusal('Look at every slide first. Not looked at yet: ' + ', '.join(unseen) + '.')
+        for slide in review['slides']:
+            reused = (review.get('reused') or {}).get(slide['id'])
+            if reused and reused['image_sha256'] != hashlib.sha256(picture(slide['image'])).hexdigest():
+                raise Refusal('A reused preview changed. Rebuild the preview before reviewing again.')
+        if review.get('sheet') and state.get('looked_deck') != hashlib.sha256(picture(review['sheet'])).hexdigest():
+            raise Refusal('Look at the current whole deck with look_at_deck before handing in its review.')
 
     def _record(self, review: dict, kept: list, named: list, recorded: Path) -> list[str]:
         """Record an assessment with the slides tool, against the render it is of. Returns
         what the tool refused in it."""
-        assessment = {'deckSha256': review['deck'], 'reviewer': 'independent',
+        coverage = []
+        for slide in review['slides']:
+            reused = (review.get('reused') or {}).get(slide['id'])
+            note = ('Reused verified native inspection from deck ' + reused['from_deck'] + '; checked current whole-deck consistency. ' if reused else 'Inspected native pixels and all review questions. ') + f"Slide {slide['number']}: {slide['title']}"
+            coverage.append({'id': slide['id'], 'number': slide['number'],
+                'answers': [not any(f['slide'] == slide['id'] and f['question'] == n for f in kept) for n in range(1, len(build.QUESTIONS) + 1)],
+                'note': note, 'image_sha256': hashlib.sha256(picture(slide['image'])).hexdigest(),
+                **({'reused_from': reused['from_deck']} if reused else {})})
+        assessment = {'slides': [{key: value[key] for key in ('id', 'answers', 'note')} for value in coverage], 'deckSha256': review['deck'], 'reviewer': 'independent',
                       'weakest': named, 'findings': [
                           {key: finding[key] for key in ('slide', 'question', 'severity',
                                                          'note', 'fix')
                            if finding[key] is not None} for finding in kept]}
+        packet = home.read_json(Path(review['preview']) / 'critic.json', {})
+        if packet.get('schema') == 1:
+            # Older runtimes accept only negative findings. Keep complete local coverage,
+            # while preserving their original wire contract; render reuse stays disabled.
+            assessment.pop('slides')
         path = _draft(self.folder / 'drafts', 'assessment',
                       json.dumps(assessment, indent=2, ensure_ascii=False) + '\n')
         try:
             self.slides().critique(Path(review['preview']), path)
         except WorkspaceError as refusal:
             return [self._plainly(line) for line in said_no(refusal)]
-        home.write_json(recorded, {'findings': kept, 'weakest': named})
+        home.write_json(recorded, {'findings': kept, 'weakest': named,
+            'coverage': {'questions': list(build.QUESTIONS), 'slides': coverage}})
         return []
 
     # --- sources ---
@@ -1672,6 +1711,7 @@ TOOLS = [
                'last previewed. Say what you changed after looking at the pictures, and '
                'what still bothers you.',
                {'section': TEXT, 'changed': TEXT, 'bothers': TEXT}, ['section']),
+    _described('look_at_deck', 'Look at the current whole deck to check consistency and regressions.', {}, []),
     _described('look_at_slide', 'Look at one rendered slide at full size, by its number.',
                {'number': NUMBER}, ['number']),
     _described('submit_assessment', 'Hand in your review: one finding for each question '

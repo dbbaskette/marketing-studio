@@ -290,6 +290,30 @@ form.addEventListener('submit', async event => {
   finally { $('#save').disabled = false; }
 });
 $('#back').addEventListener('click', () => { step--; show('settings'); });
+$('#find-brands').addEventListener('click', async () => {
+  const button = $('#find-brands'); button.disabled = true;
+  $('#brand-catalog-status').textContent = 'Looking up installed brands… Your form is kept.';
+  try {
+    const found = await api('brands', {skill: form.elements['brand.skill'].value.trim() || null});
+    const holder = $('#brand-choices'); holder.replaceChildren(); holder.hidden = false;
+    for (const skill of found.skills || []) for (const brand of skill.brands || []) {
+      const row = element('div', '', 'form-grid');
+      const label = element('label', `${skill.name} · ${brand.name}`);
+      const select = element('select'); select.setAttribute('aria-label', `Variant for ${brand.name}`);
+      for (const variant of brand.variants?.length ? brand.variants : ['']) select.add(new Option(variant || 'Default variant', variant));
+      const use = element('button', `Use ${brand.name}`, 'secondary'); use.type = 'button';
+      use.addEventListener('click', () => {
+        form.elements['brand.skill'].value = skill.path;
+        form.elements['brand.brand'].value = brand.brand;
+        form.elements['brand.variant'].value = select.value;
+        $('#brand-catalog-status').textContent = `${brand.name} selected. Save settings to keep this choice.`;
+      });
+      label.append(select); row.append(label, use); holder.append(row);
+    }
+    $('#brand-catalog-status').textContent = found.problem || 'Choose a brand and variant. Your saved choices change only when you save.';
+  } catch (error) { $('#brand-catalog-status').textContent = `${error.message} Your form is kept; you can enter the IDs below.`; }
+  finally { button.disabled = false; }
+});
 form.elements['assistant.agent'].addEventListener('change', () => { efforts(''); form.elements['assistant.model'].value = ''; for (const name of profileNames) { const select = form.elements[`models.${name}.effort`]; profileLevels(select, select.value); } for (const picker of modelPickers.values()) renderModelPicker(picker); profilesChanged(); loadModels(); });
 form.querySelectorAll('[name="storage"]').forEach(input => input.addEventListener('change', storage));
 document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => show(button.dataset.view)));

@@ -33,6 +33,18 @@ class ProgressTests(unittest.TestCase):
                 'revision': 'a' * 64, 'buildRevision': 'b' * 64, 'slide': 'first',
                 'number': 1, 'path': str(self.png), **changes}
 
+    def test_feedback_closes_only_the_affected_progress_writer(self):
+        other = build_progress.begin(self.root, 'current', 'section-2',
+            [{'id': 'second', 'title': 'Second', 'number': 4}])
+        writer = build_progress.Preview(other, self.output)
+        self.assertTrue(self.preview.event(self.event()))
+        build_progress.invalidate(self.root, 'current', 'section-1')
+        self.assertFalse(self.preview.event(self.event(sequence=2)))
+        self.assertTrue(writer.event(self.event(slide='second', sequence=2)))
+        shown = build_progress.view(self.root, 'current')['slides']
+        self.assertEqual(shown[0]['status'], 'needs-changes')
+        self.assertEqual(shown[1]['id'], 'second')
+
     def test_live_and_partial_previews_survive_reconnect_without_worker_restart(self):
         self.assertTrue(self.preview.event(self.event()))
         shown = build_progress.view(self.root, 'current')['slides'][0]

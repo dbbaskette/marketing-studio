@@ -49,6 +49,7 @@ bash -n 'installer/Install Blog Studio.command'
 "$python_bin" skills/blog-writing-toolkit/scripts/validate_package.py >> "$results/package.txt"
 "$python_bin" scripts/build.py --check > "$results/build.json"
 node scripts/ci/check-newcomer.cjs > "$results/newcomer-prompts.json"
+"$python_bin" scripts/command_reference.py --check > "$results/commands.txt"
 "$python_bin" scripts/measure_guidance.py --check > "$results/guidance.json"
 # One process by default, which is what the workflows use. BLOG_STUDIO_TEST_JOBS=N runs the same
 # test files N at a time, each in its own process, for a faster local run.

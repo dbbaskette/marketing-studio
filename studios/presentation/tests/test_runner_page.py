@@ -31,20 +31,20 @@ from runner_support import FORM, StudioCase, TeamCase, asks
 import computer
 import home
 import server
-from runner import agents, engine as engines, page, settings
+from runner import agents, decks, engine as engines, page, settings
 from runner.steps import deliver
 from workspace import WorkspaceError
 
 VERSION = (helpers.SKILL / 'VERSION').read_text().strip()
 GETS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
         '/api/run', '/api/slide', '/api/download', '/api/status', '/api/published',
-        '/api/delete', '/api/file', '/api/computer')
+        '/api/delete', '/api/file', '/api/computer', '/api/known-decks', '/api/storyboard')
 POSTS = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
          '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
          '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
          '/api/versions', '/api/computer', '/api/brand', '/api/brand/install',
-         '/api/shared', '/api/deliver')
-BOTH = ('/api/setup', '/api/decks', '/api/run', '/api/delete', '/api/computer')
+         '/api/shared', '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen')
+BOTH = ('/api/setup', '/api/decks', '/api/run', '/api/delete', '/api/computer', '/api/storyboard')
 LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None,
            'about': 'Previous generation workhorse model.', 'default_level': 'medium',
            'levels': ['low', 'medium', 'high', 'xhigh']}]
@@ -594,7 +594,115 @@ class RunTests(PageCase):
                                    409)['error'], engines.NO_DRIVERS)
 
 
+class BuildFeedbackTests(PageCase):
+    def test_feedback_survives_a_late_section_result_and_a_duplicate_click(self):
+        seen = {}
+        def section(tools, job):
+            self.workers.section(tools, job)
+            root = self.engine.every()[0]
+            slide = self.engine.view(root)['build_progress']['slides'][0]
+            seen['ref'] = slide['ref']
+            body = {'path': str(root), 'ref': slide['ref'], 'note': 'Move the label beside its connector.'}
+            self.post('progress-seen', {'path': str(root), 'ref': slide['ref']})
+            self.post('build-feedback', body)
+            self.post('build-feedback', body)
+            # The older worker then fails without a valid hand-in. It must not halt the newer direction.
+            home.write_json(tools.folder / 'accepted/artifacts.json', {})
+        self.workers.then('section', section)
+        path = self.started(output='pptx')
+        for _ in range(8):
+            gate = self.run_of(path).get('gate')
+            if not gate or gate['name'] == 'gate:build': break
+            self.decided(path)
+        shown = self.run_of(path)
+        self.assertEqual(shown['gate']['name'], 'gate:build')
+        self.assertEqual(len(shown['build_feedback']), 1)
+        self.assertIn('first_section_ready_at', shown['build_timing'])
+        self.assertIn('first_section_visible_at', shown['build_timing'])
+        self.assertIn('final_review_ready_at', shown['build_timing'])
+        self.assertIn('Move the label', self.workers.of('section')[-1].task)
+        record = decks.read_run(Path(path))
+        self.assertTrue(any(attempt['outcome'] == 'superseded' for step in record['steps'].values()
+                            for attempt in step.get('tries', [])))
+        self.post('build-feedback', {'path': path, 'ref': seen['ref'], 'note': 'Another old request'}, 409)
+
+
+class FirstDraftTests(PageCase):
+    def test_only_explicit_first_draft_requests_change_review_mode(self):
+        for text, expected in [('A quick draft', False), ('Skip AI review on the first build', True)]:
+            from runner_support import FORM
+            checked = decks.check_form({**FORM, 'goal': text}, self.engine.brands())
+            self.assertEqual(decks.user_first({'form': checked}), expected)
+        from runner_support import FORM
+        checked = decks.check_form({**FORM, 'goal': 'Skip AI review on the first build', 'initial_review': 'standard'}, self.engine.brands())
+        self.assertFalse(decks.user_first({'form': checked}))
+
+    def build_draft(self):
+        path = self.started(initial_review='user-first', output='pptx')
+        for _ in range(8):
+            gate = self.run_of(path).get('gate')
+            if not gate or gate['name'] == 'gate:build':
+                break
+            self.decided(path)
+        return path
+
+    def test_first_draft_defers_review_and_exports_with_honest_status(self):
+        path = self.build_draft()
+        gate = self.run_of(path)['gate']
+        self.assertEqual(gate['name'], 'gate:build')
+        self.assertTrue(gate['unreviewed'])
+        from runner.steps import build
+        state = build.read_state(Path(path))
+        self.assertIsNone(state['rounds'][-1]['review'])
+        name, data = self.engine.download(path)
+        self.assertIn('unreviewed-first-draft', name)
+        self.assertTrue(data)
+        self.assertIsNone(build.read_state(Path(path))['rounds'][-1]['review'])
+        self.decided(path)
+        delivered = self.run_of(path)
+        self.assertEqual(delivered['state'], 'finished')
+        self.assertEqual(delivered['deliver']['review_status'], 'unreviewed')
+        self.assertTrue(delivered['unreviewed'])
+
+    def test_review_on_demand_reuses_native_draft_and_cannot_accept_a_stale_request(self):
+        path = self.build_draft()
+        gate = self.run_of(path)['gate']
+        self.post('review-draft', {'path': path, 'expected': 'old'}, 409)
+        shown = self.post('review-draft', {'path': path, 'expected': gate['expected_deck']})
+        self.assertFalse(shown['gate']['unreviewed'])
+        from runner.steps import build
+        state = build.read_state(Path(path))
+        self.assertEqual(len(state['rounds']), 1)
+        self.assertIsNotNone(state['rounds'][-1]['review'])
+        self.post('review-draft', {'path': path, 'expected': gate['expected_deck']})
+        self.assertEqual(len(build.read_state(Path(path))['rounds']), 1)
+
+
+class StoryboardTests(PageCase):
+    def test_preview_unsaved_outline_keeps_original_and_decisions_and_rejects_old_source(self):
+        path = self.started()
+        shown = self.run_of(path)['gate']
+        root = Path(path)
+        before = (root / 'outline.json').read_bytes(), (root / 'run.json').read_bytes()
+        slides = json.loads(json.dumps(shown['slides']))
+        slides[0]['title'] = 'A new proposed title'
+        preview = self.post('storyboard', {'path': path, 'expected': shown['expected'], 'slides': slides})
+        self.assertIn('A new proposed title', preview['html'])
+        self.assertEqual(before, ((root / 'outline.json').read_bytes(), (root / 'run.json').read_bytes()))
+        self.post('storyboard', {'path': path, 'expected': 'old', 'slides': slides}, 409)
+        self.post('storyboard', {'path': path, 'expected': shown['expected'], 'slides': []}, 409)
+        self.post('storyboard', {'path': str(self.base), 'expected': shown['expected']}, 404)
+
+
 class BringTests(PageCase):
+    def test_remembered_decks_list_omits_current_workspace(self):
+        path = Path(self.started())
+        self.assertEqual(self.get('known-decks'), {'decks': []})
+        outside = self.base / 'conversation' / 'restarts'
+        shutil.copytree(path, outside, ignore=shutil.ignore_patterns('work', 'sources'))
+        home.remember(outside, 'Rolling restarts')
+        self.assertEqual([d['path'] for d in self.get('known-decks')['decks']], [str(outside)])
+
     def test_only_a_deck_this_computer_knows_is_brought_in(self):
         path = Path(self.started())
         outside = self.base / 'outside' / 'restarts'
@@ -910,7 +1018,7 @@ class WireTests(WireCase):
         self.assertEqual((status, json.loads(body)), (200, {'runner': True,
                                                             'version': VERSION}))
         self.assertEqual(headers['Content-Security-Policy'],
-                         "default-src 'self'; img-src 'self' blob:")
+                         "default-src 'self'; img-src 'self' blob:; style-src 'self' 'unsafe-inline'")
         self.assertEqual(self.ask('/api/capabilities', token=False)[0], 403)
         self.assertTrue(self.server.url.endswith(f'#token={self.server.token}'))
 
@@ -936,7 +1044,7 @@ class WireTests(WireCase):
         self.assertEqual(headers['Content-Disposition'],
                          'attachment; filename="rolling-restarts.pptx"')
         self.assertEqual(headers['Content-Security-Policy'],
-                         "default-src 'self'; img-src 'self' blob:")
+                         "default-src 'self'; img-src 'self' blob:; style-src 'self' 'unsafe-inline'")
         self.assertTrue(deck.startswith(b'PK\x03\x04'))
 
     def test_something_that_cannot_be_done_is_answered_with_a_sentence_and_409(self):

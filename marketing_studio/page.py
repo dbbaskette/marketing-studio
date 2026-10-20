@@ -1,7 +1,9 @@
 """The home API: shared settings, first-run setup, inventory, and launch."""
 import threading
+from pathlib import Path
 
 from studio_core import preferences as shared_preferences
+from studio_core import brand_catalog
 from studio_core.model_catalog import Catalog
 
 from . import catalog, server, shared, state, validation
@@ -10,7 +12,7 @@ from .errors import WorkspaceError
 
 class Home(server.Page):
     reads = ('/api/home', '/api/computer', '/api/models')
-    writes = ('/api/shared', '/api/setup', '/api/open', '/api/computer', '/api/paths', '/api/models')
+    writes = ('/api/shared', '/api/setup', '/api/open', '/api/computer', '/api/paths', '/api/models', '/api/brands')
 
     def __init__(self, port, launcher):
         super().__init__(port)
@@ -51,6 +53,12 @@ class Home(server.Page):
                                   else {'computer': self.computer(False)})
 
     def write(self, path, sent):
+        if path == '/api/brands':
+            skill = sent.get('skill')
+            if skill is not None and (not isinstance(skill, str) or len(skill) > 2000
+                                     or not Path(skill).expanduser().is_absolute()):
+                raise WorkspaceError('Choose an absolute installed brand skill folder, or leave it blank.')
+            return server.as_json(200, brand_catalog.choices(skill))
         if path == '/api/models':
             try:
                 return server.as_json(200, self.models.get(sent.get('agent'), refresh=True))

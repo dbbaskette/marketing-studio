@@ -37,6 +37,10 @@ SCHEMA = 1
 SOURCES = {'document': ('upload', 'paste', 'google'), 'existing': ('upload', 'google')}
 
 
+def user_first(run: dict) -> bool:
+    return (run.get('form') or {}).get('initial_review') == 'user-first' and not run.get('review_requested')
+
+
 # --- the form ------------------------------------------------------------------------------
 
 def _text(sent: dict, key: str, label: str, required: bool = False) -> str:
@@ -124,6 +128,19 @@ def check_form(sent: dict, brands: list | None) -> dict:
     checked = {'route': route, 'title': title, 'audience': audience, 'goal': goal,
                'minutes': minutes, 'brand': brand, 'variant': variant, 'output': output,
                'research': research}
+    mode = sent.get('initial_review')
+    prompt = next((phrase for phrase in (
+        'skip ai review on the first build', 'show me the first draft without reviewing it',
+        'show first draft before ai review') if phrase in goal.lower()), None)
+    if mode is not None or prompt:
+        mode = mode if mode is not None else 'user-first'
+        if mode not in ('standard', 'user-first'):
+            raise WorkspaceError('Choose normal AI review or show the first draft before AI review.')
+        if route == 'existing' and sent.get('level') == 'selected' and mode == 'user-first':
+            raise WorkspaceError('First-draft mode applies to a full build, not a selected-slide patch.')
+        checked.update(initial_review=mode, initial_review_source='form' if 'initial_review' in sent else 'prompt')
+        if prompt and 'initial_review' not in sent:
+            checked['initial_review_prompt'] = goal
     if route == 'existing':
         if research:
             raise WorkspaceError('Research is not offered when improving an existing deck.')

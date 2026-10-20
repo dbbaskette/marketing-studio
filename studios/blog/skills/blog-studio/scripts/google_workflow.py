@@ -961,6 +961,27 @@ def start(root, args):
 
 
 def command(root, args):
+    if args.action == 'pull':
+        import google_reconcile
+        import manuscript_editor
+
+        if not args.accept:
+            current = manuscript_editor.read(root, args.id)
+            return google_reconcile.preview(root, {'id': args.id, 'expected': current['expected']})
+        return google_reconcile.accept(
+            root,
+            {
+                'id': args.id,
+                'preview': args.accept,
+                'expected': args.expected,
+                'comparison': args.comparison,
+                'confirmed': args.confirmed,
+                'resolution': studio.read_text(args.resolution_file)
+                if args.resolution_file
+                else None,
+                'discard_remote': args.discard_remote,
+            },
+        )
     if args.action == 'start':
         return start(root, args)
     if args.action == 'capabilities':
@@ -1188,6 +1209,16 @@ def add_parser(groups):
     commands = groups.add_parser(
         'google', help='Local Google Docs checkpoints; provider calls stay in the harness'
     ).add_subparsers(dest='action', required=True)
+    pull = commands.add_parser(
+        'pull', help='Read and compare the linked Doc; explicitly accept compared text locally'
+    )
+    pull.add_argument('--id', required=True)
+    pull.add_argument('--accept', metavar='PREVIEW_ID')
+    pull.add_argument('--expected')
+    pull.add_argument('--comparison')
+    pull.add_argument('--confirmed', action='store_true')
+    pull.add_argument('--resolution-file')
+    pull.add_argument('--discard-remote', action='store_true')
     intake = commands.add_parser('start', help='Start a blog from an inspected existing Google Doc')
     intake.add_argument('--title', required=True)
     intake.add_argument(

@@ -262,11 +262,19 @@ class Jobs:
         if outcome.reason == 'stopped':
             self._stopped(root, name, outcome, started_at)
             raise Halted()
+        with self.files:
+            record = self._load(root)
+            if self._superseded(root, record, work.guard, name, started_at, outcome):
+                shutil.rmtree(folder, ignore_errors=True)
+                return False
         kept = handed['assessment'] if 'review' in work.prepared \
             else handed['artifacts'].get(work.name)
         if kept is not None:
             with self.files:
                 record = self._load(root)
+                if self._superseded(root, record, work.guard, name, started_at, outcome):
+                    shutil.rmtree(folder, ignore_errors=True)
+                    return False
                 keep(record, handed)
                 record = self._load(root)
                 self._tried(record, name, started_at, outcome.seconds, 'kept',
@@ -283,6 +291,9 @@ class Jobs:
         if handed['question']:
             with self.files:
                 record = self._load(root)
+                if self._superseded(root, record, work.guard, name, started_at, outcome):
+                    shutil.rmtree(folder, ignore_errors=True)
+                    return False
                 self._tried(record, name, started_at, outcome.seconds, 'question',
                             **self._cost(outcome))
                 record['question'] = {
@@ -293,7 +304,7 @@ class Jobs:
                 self._commit(root, f'a worker asks a question: {step.label}')
             raise Halted()
         self._failed(root, name, label or step.label, outcome, started_at,
-                     self._why_not(handed, outcome.detail))
+                     self._why_not(handed, outcome.detail), guard=work.guard)
         return False
 
     @staticmethod
@@ -362,7 +373,10 @@ class Jobs:
         try:
             choice = model_profiles.route(record, 'Presentation Studio', name,
                                           effort_key='level_of_effort',
-                                          purpose='review' if 'review' in work.prepared else None)
+                                          purpose='review' if 'review' in work.prepared else work.purpose or None)
+            if work.purpose == 'repair-escalated':
+                choice['reason'] = next((spec.get('escalation_reason') for spec in
+                    work.prepared.get('artifacts', {}).values() if spec.get('escalation_reason')), None)
             settings.check_effort(choice['effort'], record.get('agent') or settings.load().agent,
                                   choice['model'])
             job = replace(job, model=choice['model'], effort=choice['effort'])
@@ -395,12 +409,23 @@ class Jobs:
                     + (' And more.' if len(refused) > 3 else ''))
         return said or 'It ended without handing anything back.'
 
+    def _superseded(self, root, record, guard, name, started_at, outcome) -> bool:
+        """Called under files for every outcome, including invalid/failed late hand-ins."""
+        if guard is None or (record.get('build_feedback_revisions') or {}).get(guard[0], 0) == guard[1]:
+            return False
+        self._tried(record, name, started_at, outcome.seconds, 'superseded', **self._cost(outcome))
+        self._store(root, record)
+        self._commit(root, 'keep newer slide feedback instead of an older worker result')
+        return True
+
     def _failed(self, root: Path, name: str, label: str, outcome: agents.Outcome,
-                started_at: str, detail: str, question: bool = False) -> None:
+                started_at: str, detail: str, question: bool = False, guard=None) -> None:
         """Note a try that did not work. After the last one a step may have, or when the
         agent cannot be used at all, the deck stops and says so."""
         with self.files:
             record = self._load(root)
+            if self._superseded(root, record, guard, name, started_at, outcome):
+                return
             entry = self._tried(record, name, started_at, outcome.seconds, 'failed', detail,
                                 **self._cost(outcome))
             self._store(root, record)

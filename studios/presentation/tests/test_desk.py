@@ -680,6 +680,33 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn(f"- Slide `{second['id']}`: Shorter.", said)
         self.assertNotIn(fourth['id'], said)
 
+    def test_storyboard_preview_sends_the_current_unsaved_outline(self):
+        path = self.started()
+        gate = self.run_of(path)['gate']
+        result = self.deck_screen(path, [
+            {'fill': 'Title of slide 2', 'value': 'A clearer proposed title'},
+            {'click': 'Preview storyboard'}, {'snapshot': 'shown'}],
+            **{'POST /api/storyboard': [ok({'html': '<h1>Wireframe</h1>', 'expected': gate['expected']})]})
+        (_, body), = self.posts(result)
+        self.assertEqual(body['slides'][1]['title'], 'A clearer proposed title')
+        self.assertEqual(body['expected'], gate['expected'])
+        self.assertIn('A clearer proposed title', result['snapshots']['shown']['fields'].values())
+
+    def test_unreviewed_native_draft_offers_review_or_explicit_as_is_export(self):
+        path = self.started(initial_review='user-first', output='pptx')
+        for _ in range(8):
+            gate = self.run_of(path)['gate']
+            if gate['name'] == 'gate:build': break
+            self.decided(path)
+        shown = self.run_of(path)
+        result = self.deck_screen(path, [{'snapshot': 'draft'}, {'click': 'Run AI review'}],
+            **{'POST /api/review-draft': [ok(shown)]})
+        self.assertIn('Unreviewed first draft', result['snapshots']['draft']['text'])
+        self.assertIn('Use/export draft as-is', result['snapshots']['draft']['buttons'])
+        self.assertNotIn('The review has nothing left to raise', result['snapshots']['draft']['text'])
+        (_, body), = self.posts(result)
+        self.assertEqual(body, {'path': path, 'expected': shown['gate']['expected_deck']})
+
     def test_an_outline_put_back_as_drafted_is_approved_as_it_was(self):
         path = self.started()
         second = self.run_of(path)['gate']['slides'][1]

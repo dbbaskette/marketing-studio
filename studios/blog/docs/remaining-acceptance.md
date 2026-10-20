@@ -18,7 +18,7 @@ The first set is implemented in this change. Its plan covers displayed-value
 checks before joining, a second check before activation, explicit form reload,
 unsupported-assistant preservation, and regressions for migration concurrency
 and a missing clone. See [the verification record](shared-settings-validation.md).
-The later sets remain planned work, not delivered features.
+The compact outcome contract and contextual Google comparison are now implemented as documented in the [capability map](capabilities.md). Optional provider/platform work remains separately scoped in [extension proposals](optional-extensions.md).
 
 The [reliability epic](https://github.com/dbbaskette/blog-studio/issues/74) tracks
 remaining page, sync, installer, privacy and guidance refinements. The

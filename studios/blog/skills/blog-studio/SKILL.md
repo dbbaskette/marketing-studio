@@ -5,6 +5,8 @@ description: Write and revise blogs, learn author voices, resume work, browse an
 
 # Blog Studio
 
+For contextual browser tasks and their limits, read [page tools](references/page-tools.md) only when needed.
+
 For a shared studios repository, drivers, handovers or migration, read
 [team workspace](references/workspace/team-workspace.md).
 
