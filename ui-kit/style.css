@@ -192,6 +192,19 @@ textarea {
   color: inherit;
 }
 
+a {
+  color: var(--link);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+summary {
+  cursor: pointer;
+}
+
 /* A ring in two tones, so it shows on glass whatever is behind it. */
 :focus-visible {
   outline: 3px solid var(--focus);
@@ -2292,6 +2305,239 @@ summary {
   }
 }
 
+/* --- shared choices, steps, fields and dialogs ------------------------------------------- */
+
+/* A card that is a button: one of several to pick from. The tick and its words say it is
+   picked, not colour alone. */
+.pick-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  gap: 0.8rem;
+  margin-top: 0.6rem;
+}
+
+.pick-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.9rem 1rem;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 650;
+  text-align: left;
+  white-space: normal;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.pick-card:hover {
+  border-color: var(--selection-line);
+}
+
+.pick-card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pick-card[aria-pressed="true"] {
+  background: var(--selection);
+  border-color: var(--focus);
+  box-shadow: inset 0 0 0 1px var(--focus);
+}
+
+.pick-top {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pick-card[aria-pressed="false"] .icon {
+  display: none;
+}
+
+.pick-title {
+  font-weight: 650;
+}
+
+.pick-says {
+  color: var(--quiet);
+  font-size: 0.93rem;
+  font-weight: 400;
+}
+
+/* Where a person is in a short run of steps: setup, a new blog, the beginner page. */
+.workflow-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0 0 1.2rem;
+  padding: 0 0 0.6rem;
+  list-style: none;
+  border-bottom: 1px solid var(--hair);
+}
+
+.workflow-steps .button,
+.workflow-step {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.7rem;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: none;
+  font-size: 0.88rem;
+  line-height: 1.3;
+  text-align: center;
+  white-space: normal;
+}
+
+.workflow-steps [aria-current="step"] {
+  background: var(--selection);
+  color: var(--link);
+  font-weight: 700;
+}
+
+/* A label that holds its own control: its words, then the box. */
+label.field {
+  display: block;
+  font-weight: 650;
+}
+
+label.field > .input,
+label.field > .field-hint {
+  margin-top: 0.4rem;
+  font-weight: 400;
+}
+
+/* Radio buttons drawn as a segmented control. The radios stay real for the keyboard. */
+label.seg-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.seg-option > input[type="radio"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.seg-option:has(> input:checked) {
+  color: var(--link);
+}
+
+.seg-option:has(> input:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 7px var(--focus-halo);
+}
+
+/* A box holding something to copy exactly, such as a private link. */
+.input-typed {
+  font-family: var(--typed);
+  font-size: 0.85rem;
+}
+
+/* The brand in the sidebar can also be the way home. */
+a.brand {
+  text-decoration: none;
+}
+
+.large-title:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* A dialog the browser keeps: on the sheet's surface, its title bar held at the top. */
+.dialog {
+  width: min(46rem, calc(100% - 1.5rem));
+  max-height: calc(100dvh - 1.5rem);
+  padding: 0;
+  overflow: auto;
+  background: var(--sheet-fill);
+  color: var(--ink);
+  border: 1px solid var(--glass-line);
+  border-radius: 22px;
+  box-shadow: var(--edge), var(--lift);
+}
+
+.dialog::backdrop {
+  background: rgb(15 20 40 / 0.35);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+.dialog-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.3rem;
+  background: var(--sheet-fill);
+  border-bottom: 1px solid var(--hair);
+}
+
+.dialog-header > h2 {
+  font-size: 1.12rem;
+  font-weight: 700;
+}
+
+.dialog-content {
+  padding: 1.3rem;
+}
+
+.dialog-form {
+  padding: 0 1.3rem 1.3rem;
+}
+
+.dialog-form > .dialog-header {
+  margin: 0 -1.3rem;
+}
+
+.dialog-content > * + *,
+.dialog-form > * + * {
+  margin-top: 0.9rem;
+}
+
+@media (max-width: 37.5rem) {
+  .workflow-steps .button,
+  .workflow-step {
+    padding: 0.5rem 0.3rem;
+    font-size: 0.82rem;
+  }
+}
+
+@media (forced-colors: active) {
+  .card,
+  .paper,
+  .sheet,
+  .dialog,
+  .pick-card {
+    border-color: CanvasText;
+  }
+
+  .sidebar {
+    border-right-color: CanvasText;
+  }
+
+  .toolbar {
+    border-bottom-color: CanvasText;
+  }
+}
+
 /* --- fallbacks: each one swaps the glass for something solid --------------------------- */
 
 /* No blur to be had: glass would be see-through and nothing more. */
@@ -2323,6 +2569,11 @@ summary {
   }
 
   .glass {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .dialog::backdrop {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
