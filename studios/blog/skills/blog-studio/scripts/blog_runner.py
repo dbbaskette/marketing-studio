@@ -264,6 +264,9 @@ def inputs(root, record, run):
         raise ValueError(MATERIAL_ELSEWHERE)  # A Team Hub copy carries no uploaded files.
     if run.get('mode') == 'from-files':
         sources = excerpted(sources, SOURCE_BUDGET, run_terms(record, run))
+    # An example of the kind of post shows its shape; it has no citable source ID.
+    examples = [source for source in sources if 'inspiration' in source['purposes']]
+    sources = [source for source in sources if 'inspiration' not in source['purposes']]
     payload = {
         'title': record['title'],
         'author': record.get('author', ''),
@@ -276,6 +279,8 @@ def inputs(root, record, run):
         'research_policy': record['research_policy'],
         'guidance': (record.get('guidance') or {}).get('revision'),
     }
+    if examples:
+        payload['examples'] = examples  # Only when there are any, so saved pins hold.
     if run.get('brand'):
         payload['brand'] = run['brand']
     if len(json.dumps(payload)) > 300_000:
@@ -523,7 +528,11 @@ def survey(root, ident, listing=False):
         'decisions': run.get('decisions', [])[-30:],
         'publication': (record.get('editorial') or {}).get('publication_url') or None,
         # Files cut to the run's budget, by name, so the page and chat can say so.
-        'excerpted': [source['name'] for source in payload['sources'] if source.get('excerpted')],
+        'excerpted': [
+            source['name']
+            for source in payload['sources'] + payload.get('examples', [])
+            if source.get('excerpted')
+        ],
     }
 
 
@@ -922,6 +931,8 @@ def job(root, ident):
     check = run.get('editor_check')
     if stage == 'package' or (stage == 'review' and check and check not in studio.SOURCE_CHECKS):
         payload['sources'] = []
+    if stage == 'package':
+        payload['examples'] = []
     if (
         run.get('research_contract')
         and stage not in ('research-plan', 'research')
@@ -1019,6 +1030,8 @@ def job(root, ident):
                 '\nThe author set aside the saved angles in documents.angles. Propose three '
                 'different angles that honor the author’s request; do not repeat the earlier ones.'
             )
+    if payload.get('examples') and stage in ('outline', 'draft'):
+        guidance += '\nThe documents in examples show the kind of post wanted; take their shape, not their facts.'
     if run.get('mode') == 'ideas' and stage == 'outline':
         guidance += '\nReturn three distinct blog angles with audience, thesis, evidence needed and tradeoffs. Stop for the author to choose; do not draft the blog.'
     if run.get('mode') == 'from-outline':

@@ -1955,3 +1955,94 @@ class FromFilesReviewTests(FilesCase):
         self.assertTrue((material / ours / 'content.md').is_file())
         _, payload, _ = runner.job(self.root, found['id'])
         self.assertEqual(len(payload['sources']), 3)
+
+
+class ExampleTests(FilesCase):
+    """An example of the kind of post shows its shape and never supplies facts."""
+
+    def example(self, *files):
+        idents = self.material(*files)
+        for ident in idents:
+            folder, record = studio.item(self.root, 'sources', ident)
+            record['purposes'] = ['material', 'inspiration']
+            studio.persist(folder, 'sources', record)
+        return idents
+
+    def develop(self, found, angle='The gateway is a contract'):
+        found = self.submit(found, self.ANGLES, page=True)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {'id': found['id'], 'expected': found['expected'], 'request': angle},
+            )
+        return runner.survey(self.root, found['id'])
+
+    def test_examples_leave_the_sources_and_reach_the_worker_as_examples(self):
+        facts = self.material(('notes.md', 'Retries cost money. ' * 40))
+        examples = self.example(('launch.md', 'We shipped the gateway in March. ' * 40))
+        found = self.from_files(sources=facts + examples)
+        _, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(set(record['material']), set(facts + examples))
+        payload = runner.inputs(self.root, record, run)
+        self.assertEqual([source['name'] for source in payload['sources']], ['notes'])
+        self.assertEqual([source['name'] for source in payload['examples']], ['launch'])
+        self.assertEqual(set(payload['examples'][0]), set(payload['sources'][0]))
+        self.assertEqual(payload['examples'][0]['purposes'], ['material', 'inspiration'])
+        # A run without examples keeps its payload, and its saved pins, as they were.
+        plain = self.from_files()
+        _, record, run = runner.load(self.root, plain['id'])
+        self.assertNotIn('examples', runner.inputs(self.root, record, run))
+        found = self.develop(found)
+        self.assertEqual(found['next'], 'outline')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual([source['name'] for source in payload['examples']], ['launch'])
+        self.assertIn('take their shape, not their facts', guidance)
+        while found['next'] != 'package':
+            _, payload, guidance = runner.job(self.root, found['id'])
+            self.assertEqual(len(payload['examples']), 1, found['next'])
+            self.assertEqual(
+                'take their shape, not their facts' in guidance,
+                found['next'] in ('outline', 'draft'),
+                found['next'],
+            )
+            found = self.approve(self.submit(found, page=True), page=True)
+        _, payload, _ = runner.job(self.root, found['id'])
+        self.assertEqual(payload['examples'], [])
+        self.assertEqual(payload['sources'], [])
+        self.assertIn('shape, length, moves and register', blog_worker.POLICY)
+
+    def test_examples_are_excerpted_under_the_same_budget_and_named(self):
+        big = 'We shipped the gateway in March. ' * 10_000  # 330,000 characters
+        facts = self.material(('small.txt', 'Hops add latency.'))
+        examples = self.example(('big.md', big))
+        found = self.from_files(sources=facts + examples)
+        self.assertEqual(found['excerpted'], ['big'])
+        _, record, run = runner.load(self.root, found['id'])
+        payload = runner.inputs(self.root, record, run)
+        self.assertLess(len(json.dumps(payload)), 300_000)
+        example = payload['examples'][0]
+        self.assertTrue(example['excerpted'])
+        self.assertEqual(example['total_chars'], len(big))
+        self.assertNotIn('excerpted', payload['sources'][0])
+        self.assertIn('big', runner.engine(self.root).describe(found['id'])['excerpted'])
+
+    def test_research_reads_facts_and_references_but_never_an_example(self):
+        import synthesis_research
+
+        for purposes, expected in (
+            (['reference'], True),
+            (['material'], True),
+            (['material', 'inspiration'], False),
+            (['reference', 'inspiration'], False),
+            (['inspiration'], False),
+            (['voice-sample'], False),
+        ):
+            with self.subTest(purposes=purposes):
+                self.assertEqual(
+                    synthesis_research.offered({'purposes': purposes, 'status': 'ready'}),
+                    expected,
+                )
+        self.assertFalse(
+            synthesis_research.offered({'purposes': ['material'], 'status': 'pending'})
+        )

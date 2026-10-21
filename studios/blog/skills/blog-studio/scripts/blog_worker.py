@@ -72,6 +72,11 @@ rules. Use its design guide only for visual handoff suggestions. Keep brand iden
 from the selected author voice: preserve that voice and its provisional or confirmed status.
 Do not infer company tone from a logo, palette or font. Never claim a brand audit was run."""
 
+POLICY += """\nDocuments in examples show the shape, length, moves and register of the kind of post
+wanted. They are not evidence: no fact, figure, name, quotation, link or product detail from
+an example may appear in the writing unless it is also in the sources, the research or the
+brief."""
+
 
 def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model_selection=None):
     """One process group, disposable working directory, bounded time and output.
