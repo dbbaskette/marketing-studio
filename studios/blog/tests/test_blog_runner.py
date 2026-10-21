@@ -1126,8 +1126,9 @@ class SharedPatternTests(RunnerCase):
         engine.once(found['id'])
         self.assertEqual(seen[0]['status'], 'working')
         self.assertRegex(seen[0]['started_at'], r'^\d{4}-\d\d-\d\dT')
-        self.assertIsNone(engine.describe(found['id'])['started_at'],
-                          'a job that ended is not still timed')
+        self.assertIsNone(
+            engine.describe(found['id'])['started_at'], 'a job that ended is not still timed'
+        )
 
     def test_the_listing_puts_the_blog_that_changed_last_first(self):
         first = self.create(page=True)
@@ -1143,21 +1144,30 @@ class SharedPatternTests(RunnerCase):
         found = self.create(page=True, stop='draft')
         engine = runner.engine(self.root)
         self.addCleanup(engine.close)
-        engine.keep_local(found['id'], {'enabled': False, 'status': 'failed',
-                                        'error': 'This step reached its time limit.'})
+        engine.keep_local(
+            found['id'],
+            {'enabled': False, 'status': 'failed', 'error': 'This step reached its time limit.'},
+        )
         shown = engine.describe(found['id'])
-        again = runner.dispatch(self.root, 'retry',
-                                {'id': found['id'], 'expected': shown['expected'], 'seconds': 1200})
+        again = runner.dispatch(
+            self.root, 'retry', {'id': found['id'], 'expected': shown['expected'], 'seconds': 1200}
+        )
         self.assertEqual(again['seconds'], 1200)
         self.assertEqual(again['status'], 'queued')
         self.assertEqual(runner.load(self.root, found['id'])[2]['seconds'], 1200)
         shown = engine.describe(found['id'])
         with self.assertRaisesRegex(ValueError, 'between 30 and 3600'):
-            runner.dispatch(self.root, 'retry',
-                            {'id': found['id'], 'expected': shown['expected'], 'seconds': 9999})
+            runner.dispatch(
+                self.root,
+                'retry',
+                {'id': found['id'], 'expected': shown['expected'], 'seconds': 9999},
+            )
         with self.assertRaisesRegex(ValueError, 'Unknown run field'):
-            runner.dispatch(self.root, 'approve',
-                            {'id': found['id'], 'expected': shown['expected'], 'seconds': 1200})
+            runner.dispatch(
+                self.root,
+                'approve',
+                {'id': found['id'], 'expected': shown['expected'], 'seconds': 1200},
+            )
 
     def test_a_note_goes_with_the_next_job_without_stopping_it(self):
         calls = []
@@ -1169,24 +1179,47 @@ class SharedPatternTests(RunnerCase):
         engine.once(found['id'])
         found = self.approve(engine.describe(found['id']), page=True)
         self.assertEqual(engine.describe(found['id'])['status'], 'queued')
-        noted = runner.dispatch(self.root, 'note', {'id': found['id'], 'expected': found['expected'],
-                                                     'request': 'Mention the fictional gateway.'})
+        noted = runner.dispatch(
+            self.root,
+            'note',
+            {
+                'id': found['id'],
+                'expected': found['expected'],
+                'request': 'Mention the fictional gateway.',
+            },
+        )
         self.assertEqual(noted['status'], 'queued', 'a note stops nothing')
         self.assertEqual(noted['noted'], 'draft')
-        self.assertEqual(next(row['request'] for row in noted['stages'] if row['stage'] == 'draft'),
-                         'Mention the fictional gateway.')
-        noted = runner.dispatch(self.root, 'note', {'id': found['id'], 'expected': noted['expected'],
-                                                     'request': 'Keep it short.'})
-        self.assertEqual(next(row['request'] for row in noted['stages'] if row['stage'] == 'draft'),
-                         'Mention the fictional gateway.\nKeep it short.')
+        self.assertEqual(
+            next(row['request'] for row in noted['stages'] if row['stage'] == 'draft'),
+            'Mention the fictional gateway.',
+        )
+        noted = runner.dispatch(
+            self.root,
+            'note',
+            {'id': found['id'], 'expected': noted['expected'], 'request': 'Keep it short.'},
+        )
+        self.assertEqual(
+            next(row['request'] for row in noted['stages'] if row['stage'] == 'draft'),
+            'Mention the fictional gateway.\nKeep it short.',
+        )
         engine.once(found['id'])
-        self.assertEqual(calls[-1]['payload']['changes'] if 'payload' in calls[-1] else
-                         runner.job(self.root, found['id'])[1]['changes'],
-                         'Mention the fictional gateway.\nKeep it short.')
+        self.assertEqual(
+            calls[-1]['payload']['changes']
+            if 'payload' in calls[-1]
+            else runner.job(self.root, found['id'])[1]['changes'],
+            'Mention the fictional gateway.\nKeep it short.',
+        )
         with self.assertRaisesRegex(ValueError, 'up to 8000'):
-            runner.dispatch(self.root, 'note', {'id': found['id'],
-                                                 'expected': engine.describe(found['id'])['expected'],
-                                                 'request': ''})
+            runner.dispatch(
+                self.root,
+                'note',
+                {
+                    'id': found['id'],
+                    'expected': engine.describe(found['id'])['expected'],
+                    'request': '',
+                },
+            )
 
 
 class FinishTests(RunnerCase):
@@ -1289,7 +1322,9 @@ class DeleteTests(RunnerCase):
         import tool_jobs
 
         self.assertEqual(tool_jobs.read(self.root, 'd' * 32)['status'], 'queued')
-        self.assertFalse(studio.inside(self.root, '.blog-runs', 'tools', 'c' * 32 + '.json').exists())
+        self.assertFalse(
+            studio.inside(self.root, '.blog-runs', 'tools', 'c' * 32 + '.json').exists()
+        )
         self.assertIsNone(engine.current)
         listing = runner.catalog(self.root)
         self.assertEqual([row['id'] for row in listing['items']], [])
@@ -1365,3 +1400,208 @@ class DeleteTests(RunnerCase):
             runner.engine(self.root).describe(found['id'])['publication'],
             'https://example.com/post',
         )
+
+
+class FromFilesTests(RunnerCase):
+    """Write from my files: uploaded material, three angles, then the normal run."""
+
+    ANGLES = (
+        '# Three angles\n\n'
+        '## Retries are a budget\n\n'
+        'Platform engineers · Retries cost more than they save without a budget · Leans on notes.md\n\n'
+        '## The gateway is a contract\n\n'
+        'API authors · Treat the gateway as the public contract · Leans on notes.md, plain.txt\n\n'
+        '## Fewer hops, fewer surprises\n\n'
+        'Team leads · Every hop is a failure mode · Leans on plain.txt\n'
+    )
+
+    def material(self, *files, keep=False):
+        import base64
+        import blog_library
+
+        with patch.object(blog_library.shutil, 'which', return_value=None):
+            result = management.dispatch(
+                self.root,
+                'upload',
+                {
+                    'operation': studio.digest(repr(files).encode())[:32],
+                    'purpose': 'material',
+                    'keep': keep,
+                    'analyze': False,
+                    'files': [
+                        {'filename': name, 'content': base64.b64encode(body.encode()).decode()}
+                        for name, body in files
+                    ],
+                },
+            )
+        return [row['source']['id'] for row in result['files']]
+
+    def from_files(self, page=True, **extra):
+        sources = extra.pop(
+            'sources',
+            self.material(
+                ('notes.md', 'Retries cost money. ' * 40), ('plain.txt', 'Hops add latency. ' * 40)
+            ),
+        )
+        return runner.create(
+            self.root,
+            {'mode': 'from-files', 'sources': sources, 'goal': 'A post for the team blog', **extra},
+            'page' if page else 'conversation',
+        )
+
+    def test_from_files_starts_with_the_angles_step(self):
+        found = self.from_files()
+        self.assertEqual([row['stage'] for row in found['stages']], ['angles'])
+        self.assertEqual(found['mode'], 'from-files')
+        self.assertEqual(found['next'], 'angles')
+        _, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(record['research_policy'], 'supplied-only')
+        self.assertNotIn('research_contract', run)
+        self.assertEqual(run['after_angles'], {'research': 'none', 'stop': 'package'})
+        self.assertEqual(len(record['sources']), 2)
+        self.assertEqual(record['title'], 'From my files')
+        self.assertEqual(run['brief']['goal'], 'A post for the team blog')
+        # The files, not the empty brief, are what the worker reads.
+        found, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual([source['name'] for source in payload['sources']], ['notes', 'plain'])
+        self.assertIn('## ', guidance)
+        self.assertIn('three', guidance.lower())
+        self.assertIn('Leans on', guidance)
+        with self.assertRaisesRegex(ValueError, 'file'):
+            self.from_files(sources=[])
+        pending = self.material(('scan.pdf', '%PDF-fixture'))
+        with self.assertRaisesRegex(ValueError, 'text'):
+            self.from_files(sources=pending)
+        web = self.from_files(research='web-allowed', stop='draft')
+        _, _, run = runner.load(self.root, web['id'])
+        self.assertEqual(run['after_angles'], {'research': 'web-allowed', 'stop': 'draft'})
+        self.assertEqual([row['stage'] for row in web['stages']], ['angles'])
+
+    def test_the_angles_always_wait_for_the_person(self):
+        import studios_config
+
+        studios_config.update({'review': {'level': 'automatic'}})
+        found = self.from_files()
+        found = self.submit(found, self.ANGLES, page=True)
+        self.assertEqual(found['awaits'], 'decision')
+        self.assertEqual(found['stages'][0]['status'], 'draft')
+        self.assertFalse(found['stages'][0]['auto_accepted'])
+
+    def test_picking_an_angle_starts_the_normal_run_from_the_outline(self):
+        found = self.submit(self.from_files(), self.ANGLES, page=True)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {
+                    'id': found['id'],
+                    'expected': found['expected'],
+                    'request': 'The gateway is a contract\nKeep it under 900 words.',
+                },
+            )
+        directory, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(record['title'], 'The gateway is a contract')
+        self.assertEqual(run['brief']['audience'], 'API authors')
+        self.assertIn('Treat the gateway as the public contract', run['brief']['goal'])
+        self.assertEqual(record['writing_preferences']['audience'], 'API authors')
+        self.assertEqual(run['pipeline'], ['outline', 'draft', 'review', 'package'])
+        self.assertEqual(run['mode'], 'from-files')
+        self.assertEqual(run['stages']['outline']['status'], 'pending')
+        self.assertIn('Keep it under 900 words.', run['stages']['outline']['request'])
+        self.assertIn('notes.md, plain.txt', run['stages']['outline']['request'])
+        self.assertTrue((directory / 'derived/blog-angles.md').is_file())
+        found = runner.survey(self.root, found['id'])
+        self.assertEqual(found['next'], 'outline')
+        self.assertEqual(found['title'], 'The gateway is a contract')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(len(payload['sources']), 2)
+        self.assertIn('The gateway is a contract', guidance)
+        self.assertNotIn('minimal edit', guidance)
+        # A heading that is not one of the saved angles is refused.
+        other = self.submit(self.from_files(), self.ANGLES, page=True)
+        with studio.locked(self.root), self.assertRaisesRegex(ValueError, 'one of the'):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {'id': other['id'], 'expected': other['expected'], 'request': 'Something else'},
+            )
+
+    def test_web_research_comes_before_the_outline_when_asked(self):
+        found = self.submit(self.from_files(research='web-allowed'), self.ANGLES, page=True)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {
+                    'id': found['id'],
+                    'expected': found['expected'],
+                    'request': 'Retries are a budget',
+                },
+            )
+        _, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(
+            run['pipeline'], ['research-plan', 'research', 'outline', 'draft', 'review', 'package']
+        )
+        self.assertEqual(record['research_policy'], 'web-allowed')
+        self.assertEqual(runner.survey(self.root, found['id'])['next'], 'research-plan')
+
+    def test_none_of_these_asks_for_three_different_angles(self):
+        found = self.submit(self.from_files(), self.ANGLES, page=True)
+        found = runner.decide(
+            self.root,
+            found['id'],
+            found['expected'],
+            'changes',
+            'Closer to the on-call experience.',
+            page=True,
+            target='angles',
+        )
+        self.assertEqual(found['next'], 'angles')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(payload['documents']['angles'], self.ANGLES)
+        self.assertIn('three different angles', guidance)
+        self.assertNotIn('minimal edit', guidance)
+        self.assertIn('Closer to the on-call experience.', guidance)
+
+    def test_oversized_files_are_excerpted_and_named_instead_of_refused(self):
+        big = 'Retries cost money. ' * 16_000  # 320,000 characters
+        sources = self.material(('big.md', big), ('small.txt', 'Hops add latency.'))
+        found = self.from_files(sources=sources)
+        self.assertEqual(found['excerpted'], ['big'])
+        _, record, run = runner.load(self.root, found['id'])
+        payload = runner.inputs(self.root, record, run)
+        self.assertLess(len(json.dumps(payload)), 300_000)
+        big_source = next(source for source in payload['sources'] if source['name'] == 'big')
+        self.assertTrue(big_source['excerpted'])
+        self.assertEqual(big_source['total_chars'], len(big))
+        self.assertLess(len(big_source['text']), len(big))
+        self.assertTrue(big_source['text'].startswith('Retries cost money.'))
+        small = next(source for source in payload['sources'] if source['name'] == 'small')
+        self.assertNotIn('excerpted', small)
+        self.assertEqual(small['text'], 'Hops add latency.')
+        self.assertIn('big', runner.engine(self.root).describe(found['id'])['excerpted'])
+        # Other modes still refuse rather than silently cutting a source.
+        with self.assertRaisesRegex(ValueError, 'too large'):
+            self.create(sources=sources)
+
+    def test_a_chat_run_can_write_from_files_too(self):
+        sources = self.material(('notes.md', 'Retries cost money.'))
+        args = studio.parser().parse_args(
+            [
+                '--root',
+                str(self.root),
+                'run',
+                'create',
+                '--mode',
+                'from-files',
+                '--source',
+                sources[0],
+                '--goal',
+                'A short post',
+                '--audience',
+                '',
+            ]
+        )
+        found = runner.command(self.root, args)
+        self.assertEqual(found['next'], 'angles')
+        self.assertEqual(found['approval'], 'conversation')
