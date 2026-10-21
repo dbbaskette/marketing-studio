@@ -1209,9 +1209,13 @@ function noteSheet(kind) {
   const listed = !gate || !REVIEWED.includes(gate.name) || !reviewOf(gate).extra ? ''
     : gate.name === 'gate:outline' ? ' What you marked or edited in the outline goes with '
       + 'your note.' : ' What you marked in the list goes with your note.';
+  // On a delivered deck with nothing marked, every part is drawn again: it says what that
+  // took last time, before it is asked for.
+  const whole = !gate && view.run && view.run.deliver && !marked.length
+    ? ' ' + wholeDeckSays(view.run.deliver.last_build) : '';
   const hint = make('p', 'quiet', spec.hint + (marked.length ? ' The parts of the deck '
     + 'that hold ' + slidesNamed(marked) + ', which you marked, are drawn again.' : '')
-    + listed);
+    + whole + listed);
   hint.id = 'note-hint';
   const problem = problemLine();
   const submit = submitButton(spec.send, 'send');
@@ -3015,9 +3019,20 @@ async function startDeck(pressed) {
 function chosenFor(gate) {
   const key = [view.path, gate ? gate.name : 'deliver', gate ? gate.round : ''].join('\n');
   if (!view.chosen[key]) view.chosen[key] = { wrong: false, work: null, edited: false,
-    marked: [], adding: '', brand: '', variant: '', dropped: [], reword: {}, again: {},
-    leftOut: null, added: [], asking: '', slideNotes: {} };
+    marked: [], saying: [], prefilled: false, adding: '', brand: '', variant: '',
+    dropped: [], reword: {}, again: {}, leftOut: null, added: [], asking: '', slideNotes: {} };
   return view.chosen[key];
+}
+
+// Whether the open deck's slides can be marked here: at the deck's gate, or once delivered.
+function marking() {
+  const run = view.run;
+  const gate = run && run.gate;
+  return gate ? gate.name === 'gate:build' : Boolean(run && run.deliver);
+}
+
+function numbered(held) {
+  return held.slice().sort((one, other) => one - other);
 }
 
 function forget(gate) {
@@ -3025,11 +3040,84 @@ function forget(gate) {
     .join('\n')];
 }
 
-// The slides marked for changes at the deck's gate, by number, in order.
+// The slides marked for changes at the deck's gate, or on the delivered deck, by number, in
+// order.
 function markedSlides() {
-  const gate = view.run && view.run.gate;
-  if (!gate || gate.name !== 'gate:build') return [];
-  return chosenFor(gate).marked.slice().sort((one, other) => one - other);
+  return marking() ? numbered(chosenFor(view.run.gate).marked) : [];
+}
+
+// The slides whose words are to change: they go back to the outline, marked.
+function sayingSlides() {
+  return marking() ? numbered(chosenFor(view.run.gate).saying) : [];
+}
+
+// The lines written against the marked slides, by number, where one was written.
+function slideLines() {
+  return marking() ? filled(chosenFor(view.run.gate).slideNotes) : {};
+}
+
+// What a request for changes to a built deck carries: the slides marked and their lines.
+function deckChanges() {
+  const slides = markedSlides();
+  const lines = slideLines();
+  if (!slides.length && !sized(lines)) return null;
+  return { slides, ...(sized(lines) ? { slide_notes: lines } : {}) };
+}
+
+// What a whole deck drawn again costs, as its last build did, said before it is asked for.
+function wholeDeckSays(last) {
+  const took = last || {};
+  const minutes = took.seconds ? count(Math.max(1, Math.round(took.seconds / 60)), 'minute',
+    'minutes') : '';
+  const dollars = typeof took.dollars === 'number' ? money(took.dollars) : '';
+  const cost = [dollars, minutes].filter(Boolean).join(' and ');
+  return 'No slides marked: the whole deck is drawn again' + (cost ? ' (about ' + cost
+    + ', as the last build took).' : '.');
+}
+
+// Send the slides whose words should change back to the outline, marked.
+function sayAgain(problem, pressed) {
+  const slides = sayingSlides();
+  if (!slides.length) {
+    say(problem, 'Mark a slide with “Change what it says” first.');
+    return;
+  }
+  decide('changes', '', problem, pressed, { direction_target: 'gate:outline', slides });
+}
+
+// The status line under a deck's slides: what is marked, and what goes back to the outline.
+function tellMarks(status, go) {
+  const marked = markedSlides();
+  const saying = sayingSlides();
+  const said = [marked.length ? 'Marked for changes: ' + slidesNamed(marked) + '. Ask for '
+    + 'changes, and the parts of the deck that hold them are drawn again.' : '',
+  saying.length ? 'Words to change: ' + slidesNamed(saying) + '. Change what they say, and '
+    + 'the outline comes back with them marked; once it is approved, only the parts that '
+    + 'hold them are drawn again.' : ''].filter(Boolean).join(' ');
+  status.textContent = said;
+  status.hidden = !said;
+  if (go) go.hidden = !saying.length;
+}
+
+// The two marks on one built slide: drawn again as it is, or its words changed.
+function slideMarks(one, held, repaint) {
+  const marked = held.marked.includes(one.number);
+  const parts = [chip('Ask for changes to this slide', marked, (on) => {
+    held.marked = held.marked.filter((number) => number !== one.number);
+    if (on) held.marked.push(one.number);
+    repaint();
+  }, 'mark ' + one.number)];
+  if (marked) {
+    parts.push(field('slide-note-' + one.number, 'What should change on slide ' + one.number,
+      held.slideNotes, String(one.number), { long: true, limit: LINE, hint: 'Optional: it goes '
+        + 'to the worker that draws this slide again, with your note.' }));
+  }
+  parts.push(chip('Change what it says', held.saying.includes(one.number), (on) => {
+    held.saying = held.saying.filter((number) => number !== one.number);
+    if (on) held.saying.push(one.number);
+    repaint();
+  }, 'say ' + one.number));
+  return parts;
 }
 
 function slideName(slide) {
@@ -3583,10 +3671,28 @@ function outlineWork(gate) {
 
 function outlineEdited(gate) {
   chosenFor(gate).edited = true;
-  chosenFor(gate).storyboard = null;
-  byId('storyboard-surface')?.replaceChildren(make('p', 'quiet', 'Outline changed. Preview the storyboard again.'));
+  storyboardSoon(gate);
   paintOutline(gate, byId('outline-list'), byId('outline-said'));
   reviewChanged(gate);
+}
+
+// How long after the last edit the storyboard is drawn again, in milliseconds.
+const STORYBOARD_PAUSE = 1500;
+
+// The storyboard follows the outline: a while after the last edit it is drawn again by
+// itself. Until the new one comes, the old one stays, greyed, so nothing jumps.
+function storyboardSoon(gate) {
+  const held = chosenFor(gate);
+  if (!held.redraw) return;
+  const holder = byId('storyboard-surface');
+  if (holder) holder.classList.add('waiting');
+  const waiting = byId('storyboard-waiting');
+  if (waiting) waiting.hidden = false;
+  clearTimeout(held.storyboardTimer);
+  held.storyboardTimer = setTimeout(function redrawStoryboard() {
+    held.storyboardTimer = 0;
+    held.redraw();
+  }, STORYBOARD_PAUSE);
 }
 
 // A name for a slide that is added, unlike every other slide's.
@@ -3616,6 +3722,7 @@ function outlineRow(gate, slides, index, readonly) {
           chosen.edited = true;
           paintOutlineSaid(gate, byId('outline-said'));
         }
+        storyboardSoon(gate);
         reviewChanged(gate);
       } }));
   }
@@ -3707,8 +3814,50 @@ function paintOutline(gate, holder, said) {
   paintOutlineSaid(gate, said);
 }
 
+// The reading of a document, in the direction review where it was not stopped at: one
+// line, and the way to say it is wrong.
+function classifyLine(gate, readonly) {
+  const read = gate.classify;
+  if (!read || read.kind !== 'document') return null;
+  const verdict = KINDS[read.verdict] ? read.verdict : 'material';
+  const other = verdict === 'spec' ? 'material' : 'spec';
+  const node = make('div', 'card-part');
+  const problem = alertLine('direction-classify-problem');
+  const wrong = capsule('That’s wrong', 'quiet', (event) => decide('changes', '', problem,
+    event.currentTarget, { direction_target: 'gate:classify', kind: other }),
+  'direction-classify');
+  wrong.setAttribute('aria-label', 'That’s wrong: it is ' + KINDS[other]);
+  return add(node, add(make('p', ''), 'Your document was read as ' + KINDS[verdict] + '.'
+    + (read.corrected ? ' You said so.' : '')), make('p', 'quiet', 'If it is really '
+    + KINDS[other] + ', say so: the outline is drafted again from the right reading.'),
+  readonly ? null : add(make('div', 'bar'), wrong), problem);
+}
+
+// The slides a person came back from the deck to change the words of: each is marked on
+// the outline when it is first drawn, with the line they wrote.
+function sayingLine(gate, readonly) {
+  const saying = gate.saying && typeof gate.saying === 'object' ? gate.saying : null;
+  if (!saying) return null;
+  const held = chosenFor(gate);
+  if (!readonly && !held.prefilled) {
+    held.prefilled = true;
+    for (const [id, line] of Object.entries(saying)) {
+      if (!owns(held.slideNotes, id)) held.slideNotes[id] = typeof line === 'string' ? line : '';
+    }
+  }
+  const numbers = list(gate.slides).map((one, index) => (owns(saying, one.id) ? index + 1 : 0))
+    .filter(Boolean);
+  const named = numbers.length ? slidesNamed(numbers) : 'a slide';
+  return callout('yours', make('p', '', 'Back from the deck: ' + named
+    + (numbers.length === 1 ? ' says' : ' say') + ' the wrong thing.'),
+  make('p', 'quiet', 'Say what each should say instead, or retitle it, and send your '
+    + 'changes. Once the outline is approved again, only the parts of the deck that hold '
+    + 'the slides that changed are drawn again.'));
+}
+
 function outlinePanel(gate, readonly) {
   const node = card(gate.look ? 'Review the direction' : 'The outline');
+  add(node, sayingLine(gate, readonly), classifyLine(gate, readonly));
   if (gate.research?.text) add(node, documentPart('Research findings', gate.research.text));
   if (gate.look) add(node, lookPanel(gate.look, true));
   if (gate.look && !readonly) {
@@ -3793,6 +3942,11 @@ function storyboardPanel(gate, readonly) {
   const problem = problemLine();
   const holder = make('div', 'storyboard-holder');
   holder.id = 'storyboard-surface';
+  const waiting = make('p', 'quiet');
+  waiting.id = 'storyboard-waiting';
+  waiting.setAttribute('role', 'status');
+  waiting.textContent = 'The storyboard is redrawn once you stop editing.';
+  waiting.hidden = true;
   const render = () => {
     if (!held.storyboard) return;
     const frame = make('iframe', 'storyboard');
@@ -3800,25 +3954,47 @@ function storyboardPanel(gate, readonly) {
     frame.setAttribute('sandbox', '');
     frame.srcdoc = '<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; style-src &#39;unsafe-inline&#39;">' + held.storyboard;
     holder.replaceChildren(frame);
+    holder.classList.remove('waiting');
+    waiting.hidden = true;
   };
-  const preview = capsule('Preview storyboard', '', async (event) => {
-    const pressed = event.currentTarget;
-    if (held.previewing) return;
-    held.previewing = true; pressed.disabled = true; say(problem, '');
+  // The outline as it is here, drawn as a storyboard: by the button, and by itself a while
+  // after the last edit. An edit made while one is drawn asks for another once it comes.
+  const redraw = async (pressed) => {
+    if (held.previewing) {
+      held.redrawAgain = true;
+      return;
+    }
+    held.previewing = true;
+    if (pressed) pressed.disabled = true;
+    say(problem, '');
     const path = view.path;
     const slides = readonly ? null : JSON.parse(JSON.stringify(outlineWork(gate)));
-    const before = JSON.stringify(slides);
     try {
       const found = await send('storyboard', {path, expected: gate.expected, slides});
       if (path !== view.path) return;
-      if (!readonly && before !== JSON.stringify(outlineWork(gate))) {
-        say(problem, 'Your outline changed while the preview was drawn. Preview it again.'); return;
-      }
-      held.storyboard = found.html; render();
+      held.storyboard = found.html;
+      render();
     } catch (failure) { say(problem, failure.message); }
-    finally { held.previewing = false; pressed.disabled = false; }
+    finally {
+      held.previewing = false;
+      if (pressed) pressed.disabled = false;
+      if (held.redrawAgain) {
+        held.redrawAgain = false;
+        if (path === view.path) storyboardSoon(gate);
+      }
+    }
+  };
+  held.redraw = () => redraw(null);
+  const preview = capsule('Refresh now', '', (event) => {
+    clearTimeout(held.storyboardTimer);
+    held.storyboardTimer = 0;
+    redraw(event.currentTarget);
   }, 'storyboard-preview');
   render();
+  if (held.storyboardTimer) {
+    holder.classList.add('waiting');
+    waiting.hidden = false;
+  }
   if (!held.storyboard && !held.previewing) {
     held.previewing = true;
     const path = view.path;
@@ -3828,7 +4004,7 @@ function storyboardPanel(gate, readonly) {
       held.storyboard = found.html; render();
     }).catch(failure => say(problem, failure.message)).finally(() => { held.previewing = false; });
   }
-  return add(node, preview, problem, holder);
+  return add(node, add(make('div', 'bar'), preview), waiting, problem, holder);
 }
 
 // The brand: the deck's cover drawn in the brand it is made in, so the person can see it is
@@ -3920,7 +4096,9 @@ function progressFeedback(one) {
     if (!note) { say(problem, 'Say what should change first.'); return; }
     held.sending = true; submit.disabled = true; say(problem, '');
     try {
-      const found = await send('build-feedback', {path, ref: one.ref, note});
+      // Its number too: feedback that comes after the section is drawn is kept for the deck
+      // review, as this slide's mark.
+      const found = await send('build-feedback', {path, ref: one.ref, note, number: one.number});
       if (held.note.trim() === note) held.note = '';
       if (path === view.path) { view.run = found; paintDeck(false); }
       notify('Slide feedback saved.');
@@ -3979,8 +4157,19 @@ function buildPanel(gate, readonly) {
   const slides = list(gate.slides).map((one) => ({ number: one.number, title: one.title,
     findings: list(one.findings), changed: changed.includes(one.number),
     note: typeof one.note === 'string' ? one.note : null,
+    feedback: list(one.feedback).filter((said) => typeof said === 'string'),
+    kept: typeof one.kept === 'string' ? one.kept : null,
     where: pictureOf(view.path, one.image || { kind: 'build', ref: one.number }),
     mark: gate.round }));
+  // Feedback that came after its section was drawn is this slide's mark, until it is sent.
+  if (!readonly && !held.prefilled) {
+    held.prefilled = true;
+    for (const one of slides) {
+      if (one.kept === null || held.marked.includes(one.number)) continue;
+      held.marked.push(one.number);
+      held.slideNotes[String(one.number)] = one.kept;
+    }
+  }
   const findings = slides.reduce((all, one) => all + one.findings.length, 0);
   const serious = slides.reduce((all, one) => all + one.findings.filter((finding) => SERIOUS
     .includes(finding.severity)).length, 0);
@@ -3994,12 +4183,9 @@ function buildPanel(gate, readonly) {
     + slidesNamed(changed) + '. They are marked “Changed”.') : null);
   const marked = make('p', 'quiet');
   marked.setAttribute('role', 'status');
-  const tellMarked = () => {
-    const numbers = markedSlides();
-    marked.textContent = numbers.length ? 'Marked for changes: ' + slidesNamed(numbers)
-      + '. Ask for changes, and the parts of the deck that hold them are drawn again.' : '';
-    marked.hidden = !numbers.length;
-  };
+  const problem = alertLine('say-problem');
+  const go = capsule('Change what they say', '', () => sayAgain(problem, go), 'say-again');
+  const tellMarked = () => tellMarks(marked, go);
   tellMarked();
   const about = (one) => {
     const parts = [];
@@ -4013,20 +4199,29 @@ function buildPanel(gate, readonly) {
             gate.round) : make('p', 'quiet', 'There is no picture of it after yet.'))));
     }
     if (one.note) parts.push(make('p', 'quiet', one.note));
+    if (one.feedback.length) {
+      parts.push(make('p', 'quiet', 'Your feedback on it: ' + one.feedback.join(' · ')));
+    }
     if (one.findings.length) parts.push(findingItems(one.findings));
     else parts.push(make('p', 'quiet', 'The review found nothing on this slide.'));
+    if (one.findings.some((finding) => finding.about === 'content')) {
+      parts.push(make('p', 'quiet', 'A finding is about what this slide says, which drawing '
+        + 'it again cannot put right. Change what it says, and its words go back to the '
+        + 'outline for you to change there.'));
+    }
     if (!readonly) {
-      parts.push(chip('Ask for changes to this slide', held.marked.includes(one.number),
-        (on) => {
-          held.marked = held.marked.filter((number) => number !== one.number);
-          if (on) held.marked.push(one.number);
-          tellMarked();
-        }, 'mark ' + one.number));
+      // A mark flipped draws this slide's part again, so its line comes and goes with it.
+      parts.push(...slideMarks(one, held, () => {
+        tellMarked();
+        view.viewer.go(one.number);
+      }));
     }
     return parts;
   };
-  if (slides.length) add(node, pager(slides, about), marked);
-  else add(node, make('p', 'quiet', 'There are no pictures of its slides on this computer.'));
+  if (slides.length) {
+    add(node, pager(slides, about), marked, problem,
+      readonly ? null : add(make('div', 'bar'), go));
+  } else add(node, make('p', 'quiet', 'There are no pictures of its slides on this computer.'));
   if (gate.contactSheet) {
     const sheet = make('details', 'card-part');
     sheet.dataset.key = 'contact-sheet';
@@ -4121,11 +4316,28 @@ function deliverPart(run) {
       { kind: 'build', ref: 'contact-sheet' }), 'Every slide of the deck', found.revision)));
   }
   if (!theirs(run)) {
-    add(node, make('p', 'quiet', 'To change it, ask for changes: the parts that draw the '
-      + 'slides you name are drawn again, and it is delivered as the next revision. The one '
-      + 'before is kept.'),
-    add(make('div', 'bar'), capsule('Ask for changes', '', openSheet('changes', 'changes'),
-      'changes')));
+    const slides = list(found.slides).map((one) => ({ number: one.number, title: one.title,
+      where: pictureOf(view.path, one.image || { kind: 'build', ref: one.number }),
+      mark: found.revision }));
+    const held = chosenFor(null);
+    const marked = make('p', 'quiet');
+    marked.setAttribute('role', 'status');
+    const problem = alertLine('say-problem');
+    const go = capsule('Change what they say', '', () => sayAgain(problem, go), 'say-again');
+    const tellMarked = () => tellMarks(marked, go);
+    tellMarked();
+    add(node, make('p', 'quiet', 'To change it, mark the slides and ask for changes: the '
+      + 'parts that draw them are drawn again, and it is delivered as the next revision. The '
+      + 'one before is kept. A slide that says the wrong thing goes back to the outline '
+      + 'instead.'));
+    if (slides.length) {
+      add(node, pager(slides, (one) => slideMarks(one, held, () => {
+        tellMarked();
+        view.viewer.go(one.number);
+      })), marked);
+    }
+    add(node, problem, add(make('div', 'bar'), capsule('Ask for changes', '',
+      openSheet('changes', 'changes'), 'changes'), go));
   }
   return node;
 }
@@ -4498,9 +4710,7 @@ function extraFor(gate, decision) {
   if (gate.name === 'gate:look' && decision === 'changes') {
     return { brand: held.brand, variant: held.variant || null };
   }
-  if (gate.name === 'gate:build' && decision === 'changes' && held.marked.length) {
-    return { slides: markedSlides() };
-  }
+  if (gate.name === 'gate:build' && decision === 'changes') return deckChanges();
   return null;
 }
 
@@ -4560,7 +4770,9 @@ async function decide(decision, note, problem, pressed, extra) {
   const body = { path: view.path, gate: gate ? gate.name : 'gate:build', decision };
   if (gate?.expected) body.expected = gate.expected;
   if (note) body.note = note;
-  const more = extra !== undefined ? extra : gate ? extraFor(gate, decision) : null;
+  // On a delivered deck there is no gate: what is marked on its slides goes with the note.
+  const more = extra !== undefined ? extra : gate ? extraFor(gate, decision)
+    : decision === 'changes' ? deckChanges() : null;
   if (more) body.extra = more;
   view.busy = true;
   pressed.disabled = true;

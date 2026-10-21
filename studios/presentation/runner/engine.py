@@ -43,13 +43,19 @@ What a caller needs to know
 - A gate is opened by the step that feeds it, or by the engine when the deck reaches it,
   and the run waits. `decide` is the only way a gate moves: it records the decision on the
   gate ({'state', 'note', 'at', 'by', 'round'}), applies what the gate takes beside it
-  (gate:classify {'kind'}, gate:outline {'edited'}, gate:build {'slides'}), commits, shares
-  when the workspace shares after each decision, and wakes the run. Asking for changes sets
-  the gate to 'changes' first and then reopens it (`stages.reopen`), so the step that feeds
-  it runs again with the person's note. Asking for changes at gate:look is choosing another
-  brand or variant ({'brand', 'variant'}, with no note needed): the deck's contract is
-  exported again for it and its cover drawn again. Asking for changes at gate:build once
-  the deck is delivered builds it again (deliver.again).
+  (gate:classify {'kind'}, gate:outline {'edited'}, gate:build {'slides', 'slide_notes'}),
+  commits, shares when the workspace shares after each decision, and wakes the run. Asking
+  for changes sets the gate to 'changes' first and then reopens it (`stages.reopen`), so
+  the step that feeds it runs again with the person's note. Asking for changes at gate:look
+  is choosing another brand or variant ({'brand', 'variant'}, with no note needed): the
+  deck's contract is exported again for it and its cover drawn again. Asking for changes at
+  gate:build once the deck is delivered builds it again (deliver.again). A line against a
+  slide at gate:build ('slide_notes', by number) marks it and goes into its section's brief.
+  "Change what it says" is a request for changes at gate:build, or on a delivered deck, with
+  {'direction_target': 'gate:outline', 'slides'}: the outline is reopened as it is, with
+  those slides marked ('saying' on the gate), and once it is approved again build-start
+  keeps every section whose slides did not change. From the direction review (balanced),
+  {'direction_target': 'gate:classify', 'kind'} corrects how a document was read.
 - At a stop reviewed item by item (`marks.REVIEWED`) the marks are checked, once the stop
   is waiting, before anything is written. Questions dropped at the plan and findings left
   out at the research go with either decision, with no worker. A drop, rewording, new

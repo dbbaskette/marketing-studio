@@ -16,7 +16,7 @@ from unittest import mock
 
 import helpers
 import runner_support
-from runner_support import QUOTE, URL, unsettled
+from runner_support import LONG_OUTLINE, QUOTE, URL, unsettled
 from test_runner_page import PageCase
 
 import server
@@ -685,7 +685,7 @@ class ScreenTests(ScriptedPage, PageCase):
         gate = self.run_of(path)['gate']
         result = self.deck_screen(path, [
             {'fill': 'Title of slide 2', 'value': 'A clearer proposed title'},
-            {'click': 'Preview storyboard'}, {'snapshot': 'shown'}],
+            {'click': 'Refresh now'}, {'snapshot': 'shown'}],
             **{'POST /api/storyboard': [ok({'html': '<h1>Wireframe</h1>', 'expected': gate['expected']})]})
         (_, body), = self.posts(result)
         self.assertEqual(body['slides'][1]['title'], 'A clearer proposed title')
@@ -1069,6 +1069,154 @@ class ScreenTests(ScriptedPage, PageCase):
         # What the page sends is what the server takes, and the deck stops at its brand.
         made = self.post('decks', body)
         self.assertEqual(self.run_of(made['path'])['state'], 'stopped')
+
+    # --- what a slide says, after the deck is built -----------------------------------------
+
+    def test_a_slide_whose_words_are_wrong_goes_back_to_the_outline_marked(self):
+        self.workers.found = [lambda slides: [{
+            'slide': slides[1]['id'], 'question': 1, 'severity': 'major', 'about': 'content',
+            'note': 'The title claims more than the points say.'}]]
+        path = self.started()
+        self.to_gate(Path(path), 'gate:build')
+        second = self.run_of(path)['gate']['slides'][1]
+        result = self.deck_screen(path, [
+            {'click': 'Next slide'}, {'snapshot': 'second'},
+            {'click': 'Change what it says'}, {'snapshot': 'saying'},
+            {'click': 'Change what they say'}],
+            **{'POST /api/decide': [ok(self.run_of(path))]})
+        shot = result['snapshots']['second']
+        self.assertIn('About what it says', shot['text'])
+        self.assertIn('Change what it says, and its words go back to the outline', shot['text'])
+        self.assertIn('Change what it says', shot['buttons'])
+        saying = result['snapshots']['saying']
+        self.assertIn('Words to change: slide 2.', saying['text'])
+        self.assertIn('Change what they say', saying['buttons'])
+        (address, body), = self.posts(result)
+        self.assertEqual((address, body['gate'], body['decision'], body['extra']),
+                         ('/api/decide', 'gate:build', 'changes',
+                          {'direction_target': 'gate:outline', 'slides': [2]}))
+        self.assertNotIn('note', body)
+        # What the page sent reopens the outline for real, with the slide marked on it.
+        self.post('decide', body)
+        gate = self.run_of(path)['gate']
+        self.assertEqual((gate['name'], gate['saying']), ('gate:outline', {second['title'] and
+                                                                           gate['slides'][1]['id']: ''}))
+        result = self.deck_screen(path, [
+            {'snapshot': 'outline'},
+            {'fill': f"What should change on “{gate['slides'][1]['title']}”",
+             'value': 'Claim only what the points say.'},
+            {'click': 'Send 1 change'}],
+            **{'POST /api/decide': [ok(self.run_of(path))]})
+        shot = result['snapshots']['outline']
+        self.assertIn('Back from the deck: slide 2 says the wrong thing.', shot['text'])
+        self.assertIn(f"What should change on “{gate['slides'][1]['title']}”", shot['fields'])
+        self.assertIn(f"Keep it as it is: “{gate['slides'][1]['title']}”", shot['buttons'])
+        (_, body), = self.posts(result)
+        self.assertEqual((body['decision'], body['extra']['slides']),
+                         ('changes', {gate['slides'][1]['id']: 'Claim only what the points say.'}))
+
+    def test_a_delivered_deck_marks_slides_and_says_what_a_whole_build_costs(self):
+        self.workers.cost = 0.25
+        path = self.started()
+        self.to_end(Path(path))
+        result = self.deck_screen(path, [
+            {'snapshot': 'delivered'}, {'click': 'Ask for changes'}, {'snapshot': 'whole'},
+            {'click': 'Cancel'}, {'click': 'Ask for changes to this slide'},
+            {'click': 'Ask for changes'}, {'snapshot': 'marked'}, {'type': 'Tighter.'},
+            {'click': 'Send for changes'}],
+            **{'POST /api/decide': [ok(self.run_of(path))]})
+        shot = result['snapshots']['delivered']
+        self.assertIn('Slide 1 of 6', shot['text'])
+        for name in ('Ask for changes to this slide', 'Change what it says', 'Ask for changes'):
+            self.assertIn(name, shot['buttons'])
+        self.assertIn('No slides marked: the whole deck is drawn again (about $0.50 and '
+                      '1 minute, as the last build took).', result['snapshots']['whole']['sheet'])
+        self.assertIn('slide 1, which you marked', result['snapshots']['marked']['sheet'])
+        self.assertNotIn('No slides marked', result['snapshots']['marked']['sheet'])
+        (_, body), = self.posts(result)
+        self.assertEqual((body['gate'], body['decision'], body['note'], body['extra']),
+                         ('gate:build', 'changes', 'Tighter.', {'slides': [1]}))
+
+    def test_a_delivered_slide_s_words_go_back_to_the_outline(self):
+        path = self.started()
+        self.to_end(Path(path))
+        result = self.deck_screen(path, [
+            {'click': 'Next slide'}, {'click': 'Change what it says'},
+            {'click': 'Change what they say'}],
+            **{'POST /api/decide': [ok(self.run_of(path))]})
+        (_, body), = self.posts(result)
+        self.assertEqual((body['gate'], body['decision'], body['extra']),
+                         ('gate:build', 'changes',
+                          {'direction_target': 'gate:outline', 'slides': [2]}))
+        self.post('decide', body)
+        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:outline')
+
+    def test_the_direction_review_shows_how_the_document_was_read(self):
+        from studio_core import review_policy
+        with mock.patch.object(review_policy, 'capture',
+                               return_value={'schema': 1, 'level': 'balanced'}):
+            path = self.started(route='document', research=True,
+                                source={'kind': 'paste', 'text': 'Notes to build a talk from.'})
+        gate = self.run_of(path)['gate']
+        self.assertEqual((gate['name'], gate['classify']['verdict']), ('gate:outline', 'material'))
+        result = self.deck_screen(path, [{'snapshot': 'direction'}, {'click': 'That’s wrong'}],
+                                  **{'POST /api/decide': [ok(self.run_of(path))]})
+        shot = result['snapshots']['direction']
+        self.assertIn('Your document was read as material to build from.', shot['text'])
+        self.assertIn('That’s wrong: it is a finished script for the slides', shot['buttons'])
+        (_, body), = self.posts(result)
+        self.assertEqual((body['gate'], body['decision'], body['expected'], body['extra']),
+                         ('gate:outline', 'changes', gate['expected'],
+                          {'direction_target': 'gate:classify', 'kind': 'spec'}))
+        self.post('decide', body)
+        self.assertEqual(self.record(Path(path))['classified'], 'spec')
+        self.assertIn('Your document was read as a finished script',
+                      self.deck_screen(path, [{'snapshot': 'again'}])['snapshots']['again']['text'])
+
+    def test_the_storyboard_redraws_itself_after_the_last_edit(self):
+        path = self.started()
+        gate = self.run_of(path)['gate']
+        result = self.deck_screen(path, [
+            {'fill': 'Title of slide 2', 'value': 'A clearer proposed title'},
+            {'snapshot': 'edited'}, {'timer': 'redrawStoryboard'}, {'snapshot': 'redrawn'}],
+            **{'GET /api/storyboard': [ok({'html': '<h1>Before</h1>', 'expected': gate['expected']})],
+               'POST /api/storyboard': [ok({'html': '<h1>After</h1>', 'expected': gate['expected']})]})
+        edited = result['snapshots']['edited']
+        self.assertIn('Refresh now', edited['buttons'])
+        self.assertIn('The storyboard is redrawn once you stop editing.', edited['text'])
+        self.assertEqual(edited['posts'], 0)
+        redrawn = result['snapshots']['redrawn']
+        self.assertNotIn('The storyboard is redrawn once you stop editing.', redrawn['text'])
+        (_, body), = self.posts(result)
+        self.assertEqual(body['slides'][1]['title'], 'A clearer proposed title')
+        self.assertEqual(body['expected'], gate['expected'])
+
+    def test_the_build_gate_shows_saved_feedback_and_takes_a_line_on_each_slide(self):
+        path = self.started()
+        self.to_gate(Path(path), 'gate:build')
+        self.post('build-feedback', {'path': path, 'ref': 'a' * 32,
+                                     'note': 'Name the batch size.', 'number': 3})
+        result = self.deck_screen(path, [
+            {'click': 'Next slide'}, {'click': 'Next slide'}, {'snapshot': 'third'},
+            {'fill': 'What should change on slide 3', 'value': 'Name the batch size, in words.'},
+            {'click': 'Previous slide'}, {'click': 'Ask for changes to this slide'},
+            {'fill': 'What should change on slide 2', 'value': 'More room.'},
+            {'click': 'Ask for changes'}, {'snapshot': 'sheet'}, {'type': 'Calmer overall.'},
+            {'click': 'Send for changes'}],
+            **{'POST /api/decide': [ok(self.run_of(path))]})
+        third = result['snapshots']['third']
+        self.assertIn('Your feedback on it: Name the batch size.', third['text'])
+        self.assertIn('Ask for changes to this slide', third['chosen'])
+        self.assertEqual(third['fields']['What should change on slide 3'], 'Name the batch size.')
+        self.assertIn('slides 2 and 3, which you marked', result['snapshots']['sheet']['sheet'])
+        (_, body), = self.posts(result)
+        self.assertEqual((body['note'], body['extra']),
+                         ('Calmer overall.', {'slides': [2, 3], 'slide_notes': {
+                             '2': 'More room.', '3': 'Name the batch size, in words.'}}))
+        self.post('decide', body)
+        self.assertIn('Slide 3: Name the batch size, in words.',
+                      self.workers.of('section')[-1].task)
+        self.assertEqual(self.record(Path(path))['build_feedback'], [])
 
 if __name__ == '__main__':
     unittest.main()
