@@ -870,6 +870,41 @@ class FinishTests(RunnerCase):
         management.dispatch(self.root, 'blog-restore', {'id': found['id']})
         self.assertEqual(library.written_here(self.root, found['id'])[1]['id'], row['id'])
 
+    def test_a_blog_that_picked_a_finished_blog_keeps_reading_its_first_text(self):
+        first = self.finish(self.create(title='Announcing one'))
+        kept = self.kept()[0]['id']
+        nxt = self.create(title='Announcing two', library=[{'id': kept, 'role': 'example'}])
+        nxt = self.approve(self.submit(nxt))
+        _, record, run = runner.load(self.root, nxt['id'])
+        before = (runner.survey(self.root, nxt['id']), runner.inputs(self.root, record, run))
+        old_text = before[1]['examples'][0]['text']
+        # Blog one is finished again with different words: its library copy gets revision 2.
+        again = runner.decide(
+            self.root, first['id'], first['expected'], 'changes', 'Tighter.', target='draft'
+        )
+        self.finish(self.approve(self.submit(again, '# draft\nA different finished text.')))
+        self.assertEqual(studio.item(self.root, 'sources', kept)[1]['revision'], 2)
+        # Blog two still reads the words it picked, and nothing of it goes stale.
+        after = runner.survey(self.root, nxt['id'])
+        self.assertEqual(
+            (after['stages'], after['expected']), (before[0]['stages'], before[0]['expected'])
+        )
+        self.assertEqual(runner.inputs(self.root, record, run), before[1])
+        self.assertEqual(old_text, '# draft\nSynthetic writing.')
+        self.assertEqual(runner.engine(self.root).describe(nxt['id'])['next'], 'draft')
+        nxt = self.finish(runner.survey(self.root, nxt['id']))
+        self.assertTrue(nxt['complete'])
+        shown = runner.document(self.root, nxt['id'], 'draft')
+        self.assertEqual(shown['status'], 'approved')
+        self.assertEqual(
+            [c['label'] for c in shown['checks']][-1], 'No passage carried over from an example'
+        )
+        # Without the saved copy of the pinned revision it still refuses.
+        directory, _ = studio.item(self.root, 'sources', kept)
+        (directory / 'revisions' / '1' / 'content.md').unlink()
+        with self.assertRaisesRegex(ValueError, 'selected source changed'):
+            runner.survey(self.root, nxt['id'])
+
     def test_a_stop_without_a_draft_keeps_nothing_and_a_draft_stop_keeps_the_draft(self):
         self.finish(self.create(mode='ideas'))
         self.assertEqual(self.kept(), [])

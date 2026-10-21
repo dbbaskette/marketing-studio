@@ -410,10 +410,11 @@ class BlogRunnerTests(RunnerCase):
         self.assertEqual(after['stages'], before['stages'], 'a sample mark is not a change')
         self.assertEqual(after['expected'], before['expected'], 'stage pins hold')
         self.assertEqual(runner.job(self.root, found['id'])[1], payload)
+        # New words in a later revision do not reach the blog: it reads the revision it pinned.
         self.file.write_text('Changed synthetic words.')
         self.command('source', 'update', '--id', source['id'], '--text-file', str(self.file))
-        with self.assertRaisesRegex(ValueError, 'selected source changed'):
-            runner.survey(self.root, found['id'])
+        self.assertEqual(runner.survey(self.root, found['id'])['expected'], before['expected'])
+        self.assertEqual(runner.job(self.root, found['id'])[1], payload)
 
     def test_a_pinned_source_without_its_saved_revision_still_refuses(self):
         import management

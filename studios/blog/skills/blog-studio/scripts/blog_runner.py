@@ -239,6 +239,29 @@ def same_source(folder, source, revision):
     return not now.is_file() or then.read_bytes() == now.read_bytes()
 
 
+def pinned_source(folder, source, revision):
+    """(record, text) of the source revision a blog pinned, for every source a blog reads.
+
+    The current revision, or a newer one with the same words, reads from the source itself.
+    An older revision reads from its saved copy under revisions/<n>/, so a later revision (a
+    finished blog kept again, a corrected text) never changes what a blog already read.
+    Without that copy a run cannot tell what it read, and refuses."""
+    path = folder / 'content.md'
+    if revision == source['revision'] or same_source(folder, source, revision):
+        return source, path.read_text() if path.is_file() else ''
+    saved = folder / 'revisions' / str(revision)
+    if (
+        isinstance(revision, int)
+        and (saved / 'record.json').is_file()
+        and (saved / 'content.md').is_file()
+    ):
+        try:
+            return studio.read_json(saved / 'record.json'), (saved / 'content.md').read_text()
+        except (OSError, ValueError):
+            pass
+    raise ValueError('A selected source changed. Reattach its current revision in chat first.')
+
+
 def inputs(root, record, run):
     """Exact selected context. Never silently replace a pinned voice with its latest revision."""
     sources = []
@@ -253,15 +276,8 @@ def inputs(root, record, run):
                 studio.item(root, 'sources', selected['source_id'])
             except ValueError:
                 raise ValueError(MATERIAL_ELSEWHERE) from None
-        folder, source = studio.item(root, 'sources', selected['source_id'])
-        path = studio.inside(folder, 'content.md')
-        if selected['revision'] != source['revision'] and not same_source(
-            folder, source, selected['revision']
-        ):
-            raise ValueError(
-                'A selected source changed. Reattach its current revision in chat first.'
-            )
-        content = path.read_text() if path.is_file() else ''
+        folder, current = studio.item(root, 'sources', selected['source_id'])
+        source, content = pinned_source(folder, current, selected['revision'])
         sources.append(
             {
                 'id': 'source-' + studio.digest((source['name'] + content).encode())[:12],
