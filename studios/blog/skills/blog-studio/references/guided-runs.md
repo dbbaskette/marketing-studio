@@ -37,7 +37,8 @@ The original and working manuscript are retained. Revision and review omit new r
 unless requested. Use `--mode from-outline --outline-text "..."` to draft from
 a supplied outline, or `--mode ideas` to explore angles and stop before drafting.
 Use `--mode from-files --source <id>...` to write from the person's uploaded files
-(`source add --purpose material` keeps a file out of the reference library; `--goal`
+(`source add --purpose material` keeps a file out of the reference library; on the page a
+Google Doc link is added the same way; `--goal`
 is their one line about it, `--audience` may be empty): the run starts with an
 `angles` stage. Write three angles, each a `## Title` heading over one line of
 `audience · the point it makes · Leans on <file names>` (exactly three), and submit it;
