@@ -26,7 +26,7 @@ from experience import page
 import blog_library
 import source_curator
 from google_drive import GoogleError
-from studio_core.server import Server as LoopbackServer
+from studio_core.server import Server as LoopbackServer, suite_port, with_suite_port
 from hub_store import HubError, TransportError, AuthenticationError, encoded, sha
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets' / 'management'
@@ -2046,7 +2046,11 @@ def server(root, port=0, bind=True, shared_setup=False, keep_workspace=True):
                     return self.reply(status, body, media)
                 if parsed.path in STATIC:
                     name, media = STATIC[parsed.path]
-                    return self.reply(200, (ASSETS / name).read_bytes(), media)
+                    body = (ASSETS / name).read_bytes()
+                    if media.startswith('text/html'):
+                        # Only when Marketing Studio started this desk does its page link back.
+                        body = with_suite_port(body, suite_port())
+                    return self.reply(200, body, media)
                 result = None
                 if parsed.path.startswith('/api/'):
                     with serialized():

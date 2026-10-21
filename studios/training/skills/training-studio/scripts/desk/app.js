@@ -7757,6 +7757,12 @@ function suiteHome(hash, here) {
 function suiteBack(hash) {
   return new URLSearchParams(String(hash).replace(/^#/, '')).get('back') === 'tab';
 }
+// Marketing Studio also names its home page's port on this page when it started this studio, so
+// the way back is found however the page was reached. Marketing Studio shares this page's host.
+function suitePort(port, here) {
+  return /^[1-9][0-9]{0,4}$/.test(String(port || ''))
+    ? suiteHome('#home=' + encodeURIComponent(here.protocol + '//' + here.hostname + ':' + port), here) : '';
+}
 
 function linkToken() {
   const found = /(?:^#|&)token=([A-Za-z0-9_-]+)/.exec(window.location.hash);
@@ -7782,7 +7788,10 @@ function begin() {
   }
   const suite = byId('go-suite');
   // The key's fragment is lost when a link changes the address, so the way back is kept for this tab.
-  let home = suiteHome(window.location.hash, window.location);
+  // The port the server names belongs to the Marketing Studio that started it, so it is preferred
+  // to one kept from an earlier session.
+  let home = suiteHome(window.location.hash, window.location)
+    || suitePort(document.body?.dataset?.suitePort, window.location);
   try {
     home = home || sessionStorage.getItem('marketing-studio-home') || '';
     if (home) sessionStorage.setItem('marketing-studio-home', home);

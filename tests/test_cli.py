@@ -233,6 +233,21 @@ class HomeServerTests(Disposable):
         self.assertIn(desk.url, printed[problem:])
         launcher.close.assert_called_once_with()
 
+    def test_the_first_studio_is_told_the_home_port(self):
+        launcher = mock.Mock()
+        launcher.clean_orphans.return_value = []
+        launcher.home_port = None
+        seen = []
+
+        def opened(*_):
+            seen.append(launcher.home_port)
+            raise WorkspaceError('Training Studio stopped before opening.')
+        launcher.open.side_effect = opened
+        with mock.patch.object(cli, 'Launcher', return_value=launcher), \
+                mock.patch.object(cli.Home, 'configured', return_value=True):
+            self.run_home(['open', 'training'], Terminal())
+        self.assertEqual(seen, [FakeDesk.made[-1].port])
+
     def test_failed_open_for_a_pipe_reports_without_the_key(self):
         code, printed = self.run_home([], io.StringIO())
         desk = FakeDesk.made[-1]

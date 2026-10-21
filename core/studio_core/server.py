@@ -40,6 +40,26 @@ READS = ('/api/computer',)
 WRITES = ('/api/computer',)
 NOT_A_PERSON = ('The link that opens the page carries its key, and the key is shown only to a '
                 'person. To get the link, run this command in a terminal of your own.')
+# Marketing Studio names the port of its home page when it starts a studio, so the studio's
+# page can offer the way back however that page was reached.
+SUITE_PORT = 'MARKETING_STUDIO_HOME_PORT'
+
+
+def suite_port(environ=None) -> int | None:
+    """The Marketing Studio home port this studio was started with, if it is a valid one."""
+    value = (os.environ if environ is None else environ).get(SUITE_PORT, '')
+    if not (isinstance(value, str) and value.isascii() and value.isdigit() and len(value) <= 5):
+        return None
+    port = int(value)
+    return port if 0 < port < 65536 else None
+
+
+def with_suite_port(page: bytes, port: int | None) -> bytes:
+    """The HTML page with the Marketing Studio home port on its body, when there is one."""
+    start = page.find(b'<body')
+    if port is None or start < 0 or page[start + 5:start + 6] not in (b' ', b'>', b'\n', b'\t'):
+        return page
+    return page[:start + 5] + b' data-suite-port="%d"' % port + page[start + 5:]
 
 
 class Refusal(Exception):
@@ -257,9 +277,12 @@ class Page:
         if url.path in PAGE:
             name, kind = PAGE[url.path]
             try:
-                return HTTPStatus.OK, kind, (PAGE_DIR / name).read_bytes()
+                body = (PAGE_DIR / name).read_bytes()
             except OSError:
                 raise Refusal(HTTPStatus.NOT_FOUND, 'Nothing is served here.')
+            if kind.startswith('text/html'):
+                body = with_suite_port(body, suite_port())
+            return HTTPStatus.OK, kind, body
         if url.path == '/favicon.ico':
             return HTTPStatus.NO_CONTENT, None, b''
         if url.path not in self.reads:

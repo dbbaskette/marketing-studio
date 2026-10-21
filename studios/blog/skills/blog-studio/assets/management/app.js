@@ -14,8 +14,17 @@ function suiteHome(hash, here) {
 function suiteBack(hash) {
   return new URLSearchParams(String(hash).replace(/^#/, '')).get('back') === 'tab';
 }
+// Marketing Studio also names its home page's port on this page when it started this studio, so
+// the way back is found however the page was reached. Marketing Studio shares this page's host.
+function suitePort(port, here) {
+  return /^[1-9][0-9]{0,4}$/.test(String(port || ''))
+    ? suiteHome('#home=' + encodeURIComponent(here.protocol + '//' + here.hostname + ':' + port), here) : '';
+}
 const token = location.hash.slice(1).split('&')[0] || sessionStorage.getItem('blog-studio-session') || '';
-const suite = suiteHome(location.hash, location) || sessionStorage.getItem('marketing-studio-home') || '';
+// The port the server names belongs to the Marketing Studio that started it, so it is preferred
+// to one kept from an earlier session.
+const suite = suiteHome(location.hash, location) || suitePort(document.body?.dataset?.suitePort, location)
+  || sessionStorage.getItem('marketing-studio-home') || '';
 if(token)sessionStorage.setItem('blog-studio-session',token);
 if(suite)sessionStorage.setItem('marketing-studio-home',suite);
 const suiteTab = suiteBack(location.hash) || sessionStorage.getItem('marketing-studio-back') === 'tab';
