@@ -76,7 +76,7 @@ function sGooglePreview(found){
 }
 async function sGoogleResult(held,result){
   if(result?.status==='preview'){
-    sGooglePreview(result);held.preview=result;held.title=result.title;held.confirmed=false;studio.google=held;studio.busy=false;return sRoute('google');
+    sGooglePreview(result);held.preview=result;held.title=result.title;studio.google=held;studio.busy=false;return sRoute('google');
   }
   if(!['already-linked','started-from-google'].includes(result?.status)||typeof result.id!=='string'||!result.id)throw new Error('The Google Doc could not be opened. Read the document again.');
   if(result.receipts||result.team_sync)savedNotice(result);

@@ -2245,17 +2245,18 @@ p.fact > .bead {
     top: 0;
   }
 
-  /* A sheet on a phone rises from the bottom edge, above the thumb, not from the toolbar. */
+  /* A sheet on a phone rises from the bottom, just above the navigation bar, not from the
+     toolbar: the thumb reaches it, and the bar (which is inert while it is open) never
+     covers it. */
   .sheet {
     position: fixed;
     top: auto;
     right: 0;
-    bottom: 0;
+    bottom: calc(4rem + env(safe-area-inset-bottom));
     left: 0;
     width: 100%;
-    max-height: calc(100vh - 6rem);
-    max-height: calc(100dvh - 6rem);
-    padding-bottom: calc(1.2rem + env(safe-area-inset-bottom));
+    max-height: calc(100vh - 10rem);
+    max-height: calc(100dvh - 10rem - env(safe-area-inset-bottom));
     border-radius: 22px 22px 0 0;
     transform-origin: bottom center;
     animation: rise 280ms var(--ease);
