@@ -19,6 +19,7 @@ PURPOSES = (
     'reference',
     'inspiration',
     'voice-sample',
+    'style-sample',
     'author-background',
     'material',  # Uploaded for one blog's run; not a library reference unless kept.
 )
@@ -57,13 +58,18 @@ def new_id(name):
 
 def inside(root, *parts):
     # Team work is plain blogs/<id>; reusable references and voices live beside it.
-    if parts and parts[0] in ('articles', 'sources', 'profiles') and (root / 'hub.json').is_file():
+    if (
+        parts
+        and parts[0] in ('articles', 'sources', 'profiles', 'styles')
+        and (root / 'hub.json').is_file()
+    ):
         marker = read_json(root / 'hub.json')
         if marker.get('tool') == 'blog-studio':
             mapped = {
                 'articles': (),
                 'sources': ('.shared', 'references'),
                 'profiles': ('.shared', 'voices'),
+                'styles': ('.shared', 'styles'),
             }
             parts = (*mapped[parts[0]], *parts[1:])
     path = root.joinpath(*parts)
@@ -205,7 +211,7 @@ def _initialize(root):
         write_json(manifest, {'schema_version': 1, 'created_at': now()})
     elif read_json(manifest).get('schema_version') != 1:
         raise ValueError('Unsupported workspace version.')
-    for kind in ('profiles', 'sources', 'articles'):
+    for kind in ('profiles', 'sources', 'articles', 'styles'):
         inside(root, kind).mkdir(parents=True, exist_ok=True)
     if (root / 'hub.json').is_file() and read_json(root / 'hub.json').get('tool') == 'blog-studio':
         shared_readme = inside(root, '.shared', 'README.md')
@@ -239,6 +245,18 @@ def voice_pin(root, profile_id, revision=None):
     if not (version_dir / 'record.json').is_file():
         raise ValueError('Unknown profile revision.')
     return {'profile_id': profile_id, 'revision': version}
+
+
+def style_pin(root, style_id, revision=None):
+    import styles
+
+    return styles.pin(root, style_id, revision)
+
+
+def style_command(root, args):
+    import styles
+
+    return styles.command(root, args)
 
 
 def validate_samples(root, values):
@@ -896,7 +914,7 @@ def parser():
     run_parser(groups)
     groups.add_parser('init')
     listing = groups.add_parser('list')
-    listing.add_argument('kind', choices=('profiles', 'sources', 'articles'))
+    listing.add_argument('kind', choices=('profiles', 'sources', 'articles', 'styles'))
     from blog_library import add_parser as library_parser
 
     library_parser(groups)
@@ -951,6 +969,26 @@ def parser():
     retire = profiles.add_parser(
         'retire', help='Retire a current voice profile; keep existing pinned revisions'
     )
+    retire.add_argument('--id', required=True)
+    retire.add_argument('--expected-revision', required=True, type=int)
+    retire.add_argument('--confirmed', action='store_true', required=True)
+    style_group = groups.add_parser('style').add_subparsers(dest='action', required=True)
+    create = style_group.add_parser('create')
+    create.add_argument('--name', required=True)
+    create.add_argument('--id')
+    create.add_argument('--guide-file')
+    create.add_argument('--status', choices=('provisional', 'confirmed'), default='provisional')
+    create.add_argument('--sample', action='append', default=[])
+    save = style_group.add_parser('save')
+    save.add_argument('--id', required=True)
+    save.add_argument('--name')
+    save.add_argument('--guide-file', required=True)
+    save.add_argument('--status', choices=('provisional', 'confirmed'))
+    save.add_argument('--sample', action='append')
+    show = style_group.add_parser('show')
+    show.add_argument('--id', required=True)
+    show.add_argument('--revision', type=int)
+    retire = style_group.add_parser('retire')
     retire.add_argument('--id', required=True)
     retire.add_argument('--expected-revision', required=True, type=int)
     retire.add_argument('--confirmed', action='store_true', required=True)
@@ -1096,6 +1134,7 @@ def main():
         team_mutation = args.group in (
             'article',
             'profile',
+            'style',
             'source',
             'run',
             'google',
@@ -1209,6 +1248,8 @@ def main():
                     result = command(root, args)
                 elif args.group == 'profile':
                     result = profile_command(root, args)
+                elif args.group == 'style':
+                    result = style_command(root, args)
                 elif args.group == 'source':
                     result = source_command(root, args)
                 elif args.group == 'google':
