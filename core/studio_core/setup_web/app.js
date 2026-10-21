@@ -266,9 +266,17 @@ function connectedWords(done) {
   if (done.stopped) text += ` ${done.name} was stopped to connect it; open it again.`;
   return text;
 }
+// What preparing the studios said that should stay on the page: a join whose first push was refused.
+function showNotices() {
+  const studioName = id => snapshot.studios.find(studio => studio.id === id)?.name || id;
+  const notices = Object.entries(snapshot.prepared || {}).filter(([, result]) => result.notice).map(([id, result]) => `${studioName(id)}: ${result.notice}`);
+  if (snapshot.prepare_problem) inform(snapshot.prepare_problem, true);
+  if (!notices.length) return;
+  const message = $('#message'); message.textContent = notices.join(' '); message.hidden = false;
+}
 function savedWords() {
   const names = Object.entries(snapshot.prepared || {}).filter(([, result]) => result.connect).map(([id]) => snapshot.studios.find(studio => studio.id === id)?.name).filter(Boolean);
-  if (snapshot.prepare_problem) inform(snapshot.prepare_problem, true);
+  showNotices();
   return names.length ? `Shared settings saved. Connect ${names.join(' and ')} from the studio cards to use the new storage.` : 'Shared settings saved.';
 }
 function renderHome() {
@@ -397,7 +405,7 @@ form.addEventListener('submit', async event => {
   try {
     const changes = changesForStep(); snapshot = await api('shared', {changes, seen: snapshot.shared});
     if (setup && step < 2) { step++; show('settings'); }
-    else if (setup) { snapshot = await api('setup', {done: true, prepare: true}); if (standalone) return openNative(); setup = false; renderHome(); show('home'); inform('Your studios are ready.'); }
+    else if (setup) { snapshot = await api('setup', {done: true, prepare: true}); if (standalone) return openNative(); setup = false; renderHome(); show('home'); showNotices(); inform('Your studios are ready.'); }
     else { if (standalone) { await api('setup', {done: true}); return openNative(); } fill(); renderHome(); inform(savedWords()); }
   } catch (error) { inform(error.message, true); }
   finally { $('#save').disabled = false; }

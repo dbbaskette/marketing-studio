@@ -91,6 +91,14 @@ class HomeTests(IsolatedHome):
         self.assertEqual(reply['prepare_problem'], 'Git needs an identity')
         self.assertEqual(shared.read()[0]['share'], 'asked')
 
+    def test_finishing_setup_returns_what_prepare_reported(self):
+        shared.update({'team': {'repository': str(self.root / 'team.git')}})
+        report = {'blog': {'prepared': True, 'workspace': {}, 'notice': 'The shared repository did not accept the changes.'}}
+        with mock.patch.object(self.launcher, 'prepare', return_value=report):
+            reply = self.write('/api/setup', {'done': True, 'prepare': True})
+        self.assertEqual(reply['prepared'], report)
+        self.assertTrue(reply['setup']['done'])
+
     def test_storage_change_before_setup_prepares_nothing(self):
         with mock.patch.object(self.launcher, 'prepare') as prepare:
             self.write('/api/shared', {'changes': {'team': {'repository': str(self.root / 'team.git')}}, 'seen': {}})

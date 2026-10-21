@@ -55,31 +55,39 @@ def describe(workspace):
 
 
 def configure(gitstate, shared, identifier):
+    return set_up(gitstate, shared, identifier)[0]
+
+
+def set_up(gitstate, shared, identifier):
+    """The studio's workspace, set up as the shared settings say when it has none, and the
+    studio's notice when the layout of a fresh join could not be pushed, else None."""
     current = gitstate.current()
     if current is not None:
-        return current
+        return current, None
     team = shared.get('team') or {}
     if team.get('repository'):
         joined = gitstate.join(team['repository'], branch=team.get('branch'), share=shared.get('share'))
         # Share the folder's layout at once, never forced, so an empty repository has the
         # branch the next studio clones and adds its own folder to.
         sync = getattr(gitstate, 'sync', None)
-        if sync is not None:
-            sync(joined)
-        return joined
+        report = sync(joined) if sync is not None else None
+        notice = report.get('notice') if isinstance(report, dict) else None
+        return joined, notice if isinstance(notice, str) and notice else None
     root = Path((shared.get('local') or {}).get('root') or DEFAULT_ROOT).expanduser()
-    return gitstate.local(root / (identifier + '-workspace'), branch=team.get('branch') or 'main')
+    return gitstate.local(root / (identifier + '-workspace'), branch=team.get('branch') or 'main'), None
 
 
 def prepare(gitstate, shared, identifier, carry=None):
     """Set a missing workspace up as the shared settings say, and never move one that exists.
 
-    Returns {'prepared': True, 'workspace': {...}} and, when the workspace is not the storage
-    the settings name, 'connect': {'from', 'to', 'carry'}, where `carry(workspace)` counts
-    the work the Connect action would carry over."""
+    Returns {'prepared': True, 'workspace': {...}}, with 'notice' when a fresh join could not
+    push its layout, and, when the workspace is not the storage the settings name,
+    'connect': {'from', 'to', 'carry'}, where `carry(workspace)` counts the work the
+    Connect action would carry over."""
     current = gitstate.current()
     if current is None:
-        return {'prepared': True, 'workspace': describe(configure(gitstate, shared, identifier))}
+        made, notice = set_up(gitstate, shared, identifier)
+        return {'prepared': True, 'workspace': describe(made), **({'notice': notice} if notice else {})}
     result = {'prepared': True, 'workspace': describe(current)}
     if not matches(current.address, current.branch, shared, identifier):
         wanted = target(shared, identifier)

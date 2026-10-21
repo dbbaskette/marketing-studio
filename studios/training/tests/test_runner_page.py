@@ -668,8 +668,10 @@ class SharedTests(FirstTimeCase):
         found = self.get('setup')
         self.assertEqual(found['team_moved'], {
             'repository': str(other), 'branch': 'main',
-            'says': f'The team repository your studios share is now {other}, and Training '
-                    f'Studio still works in its copy of {remote} until you join the new one.'})
+            'says': f'The team repository your studios share is now {other}, and Training Studio '
+                    f'still works in its copy of {remote}. Marketing Studio can connect this '
+                    'studio: open Marketing Studio and choose Connect on its card, or join the '
+                    'new repository from here.'})
         self.assertEqual(found['workspace']['repository'], str(remote), 'nothing moved')
         # The same repository written another way is the same one.
         self.file.write_text(json.dumps({'schema': 1, 'team': {'repository': f'{remote}/'}}))

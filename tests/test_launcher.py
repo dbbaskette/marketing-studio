@@ -219,10 +219,16 @@ time.sleep(60)
             self.assertEqual(found['to'], {'repository': '/team.git'})
             self.launcher.open('training', self.preferences, shared)
             process = self.launcher.children['training'][0]
-            found = self.launcher.connect('training', self.preferences, shared)
-            self.assertTrue(found['stopped'])
-            self.assertIsNotNone(process.poll())
-            self.assertFalse(self.launcher.running('training'))
+            if PS:
+                found = self.launcher.connect('training', self.preferences, shared)
+                self.assertTrue(found['stopped'])
+                self.assertIsNotNone(process.poll())
+                self.assertFalse(self.launcher.running('training'))
+            else:
+                # Without a process list nobody can say whether it works on a job: it stays.
+                with self.assertRaisesRegex(WorkspaceError, 'cannot say whether'):
+                    self.launcher.connect('training', self.preferences, shared)
+                self.assertTrue(self.launcher.running('training'))
             with self.assertRaises(WorkspaceError):
                 self.launcher.connect('other', self.preferences, shared)
             with mock.patch.dict(os.environ, {'BLOG_STUDIO_INSTALL': str(self.root / 'missing')}):
@@ -236,6 +242,14 @@ time.sleep(60)
             self.assertTrue(waited(lambda: self.launcher.jobs('training')))
             with self.assertRaisesRegex(WorkspaceError, 'is working: codex job'):
                 self.launcher.connect('training', self.preferences, {})
+            self.assertTrue(self.launcher.running('training'))
+
+    def test_connect_refuses_a_running_studio_when_no_process_list_can_say(self):
+        with self.fixture(self.connecting_bridge()):
+            self.launcher.open('training', self.preferences, {})
+            with mock.patch.object(launching.subprocess, 'run', side_effect=FileNotFoundError('ps')):
+                with self.assertRaisesRegex(WorkspaceError, 'cannot say whether it is working.*stop --ts'):
+                    self.launcher.connect('training', self.preferences, {})
             self.assertTrue(self.launcher.running('training'))
 
     def test_connect_failure_and_delay_name_the_studio(self):

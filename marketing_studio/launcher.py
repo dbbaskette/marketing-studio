@@ -496,8 +496,9 @@ class Launcher:
 
     def connect(self, identifier, preferences, shared):
         """Connect one studio to the storage the shared settings name, through the studio's
-        own join, carrying its work over. A studio running an assistant job is refused; an
-        idle running studio is stopped first, and the report says so."""
+        own join, carrying its work over. A studio running an assistant job is refused, and
+        so is a running one when the process list cannot say; an idle running studio is
+        stopped first, and the report says so."""
         with self.lock:
             if not isinstance(identifier, str) or identifier not in catalog.STUDIOS:
                 raise WorkspaceError('Choose one of the studios shown on the home page.')
@@ -508,6 +509,10 @@ class Launcher:
             stopped = False
             pid = self.process(identifier)
             if pid:
+                if ps('-o', 'pid=', '-p', str(pid)) is None:
+                    raise WorkspaceError(f'{name} is running, and this computer cannot say whether it is '
+                                         f'working on a job. Stop it first with: marketing-studio stop '
+                                         f'--{identifier[0]}s, then connect.')
                 jobs = descendant_jobs(pid)
                 if jobs:
                     raise WorkspaceError(f'{name} is working: ' + ', '.join(map(describe_job, jobs))

@@ -100,16 +100,17 @@ class Home(server.Page):
             elif path == '/api/setup':
                 if type(sent.get('done')) is not bool:
                     raise WorkspaceError('Choose whether setup is complete.')
-                kept = state.read()
+                kept, outcome = state.read(), {}
                 try:
                     if sent['done']:
-                        shared_preferences.finish(shared, lambda values: self.launcher.prepare(kept, values)
-                                           if sent.get('prepare') is True else None)
+                        shared_preferences.finish(shared, lambda values: outcome.update(
+                            prepared=self.launcher.prepare(kept, values)) if sent.get('prepare') is True else None)
                     else:
                         shared.update({'setup': {'version': 0}})
                 except ValueError as failure:
                     raise WorkspaceError(str(failure)) from failure
                 state.save({**kept, 'done': sent['done']})
+                return server.as_json(200, {**self.snapshot(), **outcome})
             elif path == '/api/paths':
                 paths = sent.get('paths')
                 if not isinstance(paths, dict) or set(paths) - catalog.STUDIOS.keys():

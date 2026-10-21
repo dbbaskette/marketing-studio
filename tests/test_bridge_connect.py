@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -156,6 +157,106 @@ class BridgeConnectTests(unittest.TestCase):
         self.assertTrue(self.launcher.connect('blog', self.preferences, self.team)['already'])
         self.assertTrue(self.launcher.connect('training', self.preferences, self.team)['already'])
         self.assertEqual(git(self.remote, 'rev-parse', 'main'), before)
+
+    def seed_training(self, name):
+        folder = self.base / 'Studios/training-workspace/trainings' / name / '.training-studio'
+        folder.mkdir(parents=True)
+        (folder / 'run.json').write_text(json.dumps({'schema': 3, 'driver': None, 'steps': {}}))
+        (folder.parent / 'README.md').write_text(f'# {name}\n')
+
+    def test_an_interrupted_carry_switches_nothing_and_the_next_connect_finishes_it(self):
+        self.launcher.prepare(self.preferences, self.settings(self.local), only='training')
+        self.seed_training('alpha')
+        self.seed_training('beta')
+        old = workspaces.remembered('training')
+        self.settings(self.team)
+        # The second copy fails: as if the disk filled while carrying beta over.
+        script = '''
+import importlib.util, json, sys
+from pathlib import Path
+root, shared = Path(sys.argv[1]), json.loads(sys.argv[2])
+spec = importlib.util.spec_from_file_location('bridge', root / 'marketing_studio/bridge.py')
+bridge = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(bridge)
+sys.path.insert(0, str(root / 'studios/training'))
+from runner import team
+copies, original = [], team.copy_in
+def failing(top, target):
+    copies.append(top.name)
+    if len(copies) == 2:
+        raise OSError('no space left while copying ' + top.name)
+    return original(top, target)
+team.copy_in = failing
+try:
+    bridge.connect_runner('training', shared)
+    print(json.dumps({'ok': True}))
+except Exception as failure:
+    print(json.dumps({'error': str(failure), 'copies': copies}))
+'''
+        done = subprocess.run([sys.executable, '-c', script, str(ROOT), json.dumps(self.team)],
+                              capture_output=True, text=True, cwd=ROOT)
+        said = json.loads(done.stdout.splitlines()[-1])
+        self.assertEqual(said['copies'], ['alpha', 'beta'], done.stderr)
+        self.assertIn('Training Studio was not switched', said['error'])
+        self.assertIn('no space left', said['error'])
+        self.assertIn(old['root'], said['error'])
+        self.assertEqual(workspaces.remembered('training'), old, 'the record is as it was')
+        self.assertFalse((self.base / 'training-data/marketing-studio-connect.json').exists())
+        clone = self.base / 'training-data/workspaces/team/trainings'
+        self.assertFalse((clone / 'alpha').exists(), 'the copy that was made is gone again')
+        listed = subprocess.run(['git', 'ls-tree', '-r', '--name-only', 'main'], cwd=self.remote,
+                                capture_output=True, text=True)   # the remote may still have no branch
+        self.assertFalse(set(listed.stdout.split()) & {'trainings/alpha/README.md', 'trainings/beta/README.md'})
+        # Connecting again carries both.
+        done = self.launcher.connect('training', self.preferences, self.team)
+        self.assertEqual((done['carried'], done['left']), ({'trainings': 2}, []))
+        self.assertEqual(self.remote_tree() & {'trainings/alpha/README.md', 'trainings/beta/README.md'},
+                         {'trainings/alpha/README.md', 'trainings/beta/README.md'})
+        # A switch that was made but whose carry was cut short is finished by the next Connect.
+        self.seed_training('gamma')
+        (self.base / 'training-data/marketing-studio-connect.json').write_text(json.dumps({'from': old['root']}))
+        done = self.launcher.connect('training', self.preferences, self.team)
+        self.assertTrue(done['already'])
+        self.assertEqual(done['carried'], {'trainings': 1})
+        self.assertEqual(sorted(item['id'] for item in done['left']), ['alpha', 'beta'])
+        self.assertIn('trainings/gamma/README.md', self.remote_tree())
+        self.assertFalse((self.base / 'training-data/marketing-studio-connect.json').exists())
+
+    def test_a_blank_team_branch_is_left_blank_and_every_studio_still_matches(self):
+        blank = {**self.local, 'team': {'repository': str(self.remote), 'branch': None}}
+        self.launcher.prepare(self.preferences, self.settings(self.local), only='blog')
+        self.seed_local_work()
+        self.settings(blank)
+        done = self.launcher.connect('blog', self.preferences, blank)
+        self.assertEqual(done['carried']['blogs'], 1)
+        written = json.loads(shared.path().read_text())
+        self.assertIsNone(written['team'].get('branch'))
+        self.assertNotIn('share', written)
+        self.assertEqual(workspaces.connection('blog', blank)['state'], 'connected')
+        self.launcher.prepare(self.preferences, blank, only='training')
+        self.assertEqual(workspaces.connection('training', blank)['state'], 'connected')
+        self.assertIsNone(json.loads(shared.path().read_text())['team'].get('branch'))
+
+    def test_a_plain_blog_folder_connects_to_local_git(self):
+        writing = self.base / 'writing'
+        (writing / 'articles/old-post').mkdir(parents=True)
+        (writing / 'articles/old-post/session.json').write_text(json.dumps({'title': 'Old post'}))
+        (writing / 'articles/old-post/DRAFT.md').write_text('Draft.\n')
+        data = self.base / 'blog-data'
+        data.mkdir()
+        (data / 'page.json').write_text(json.dumps({'workspace': str(writing)}))
+        self.settings(self.local)
+        self.assertEqual(workspaces.connection('blog', self.local)['summary'], 'Not using local Git')
+        prepared = self.launcher.prepare(self.preferences, self.local, only='blog')['blog']
+        self.assertEqual(prepared['connect']['carry']['blogs'], 1)
+        self.assertIsNone(prepared['connect']['from']['branch'])
+        done = self.launcher.connect('blog', self.preferences, self.local)
+        self.assertEqual((done['carried'], done['already'] if 'already' in done else False), ({'blogs': 1}, False))
+        root = self.base / 'Studios/blog-workspace/blogs'
+        self.assertTrue((root / 'old-post/DRAFT.md').is_file())
+        self.assertTrue((writing / 'articles/old-post/DRAFT.md').is_file())
+        self.assertEqual(workspaces.connection('blog', self.local)['state'], 'local')
+        self.assertEqual(json.loads((data / 'page.json').read_text())['workspace'], str(root))
 
     def test_studios_without_a_workspace_join_the_empty_repository_on_prepare(self):
         self.settings(self.team)

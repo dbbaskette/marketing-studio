@@ -11,7 +11,10 @@ Workspace setup is durable, so the independent launcher can use it afterward.
 
 Connecting never moves or deletes the workspace a studio used before: its work is copied
 into the new one with the studio's own bring-in checks, the copy is committed and shared,
-and the earlier workspace is left where it was and named in the report.
+and the earlier workspace is left where it was and named in the report. When the carry
+fails, the studio's workspace record is put back as it was, so nothing is switched; the
+carry's source is noted in the studio's data folder until it is complete, so a Connect
+asked again finishes one that was interrupted.
 """
 import argparse
 import json
@@ -33,10 +36,13 @@ ensure_python(Path(__file__).resolve().parents[1])
 from studio_core import workspace_setup
 from studio_core.workspace_setup import configure
 
+NAMES = {'blog': 'Blog Studio', 'training': 'Training Studio', 'presentation': 'Presentation Studio'}
 NOUNS = {'blog': 'blogs', 'training': 'trainings', 'presentation': 'decks'}
 # Blog Studio's kinds of work: the group, the file that marks one, and what the report calls them.
 BLOG_GROUPS = (('articles', 'session.json', 'blogs'), ('sources', 'record.json', 'references'),
                ('profiles', 'record.json', 'voices'))
+# Where a carry came from, kept in the studio's data folder until the carry is complete.
+PENDING = 'marketing-studio-connect.json'
 
 
 def prepare_blog(root):
@@ -93,6 +99,55 @@ def serve_blog(root):
             release_lock(lock)
 
 
+# --- the carry's bookkeeping -------------------------------------------------------------
+
+def read_json(path):
+    try:
+        found = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    return found if isinstance(found, dict) else None
+
+
+def pending_source(data, current_root):
+    """Where an unfinished carry into the current workspace came from, or None."""
+    kept = read_json(data / PENDING)
+    source = kept.get('from') if kept else None
+    if not isinstance(source, str) or not source:
+        return None
+    source = Path(source)
+    return source if source.is_dir() and source != current_root else None
+
+
+def note_pending(data, source):
+    data.mkdir(parents=True, exist_ok=True)
+    (data / PENDING).write_text(json.dumps({'from': str(source)}), encoding='utf-8')
+
+
+class Restoring:
+    """Put a studio's workspace record back as it was when a switch does not complete."""
+
+    def __init__(self, path):
+        self.path = path
+        try:
+            self.held = path.read_bytes()
+        except OSError:
+            self.held = None
+
+    def restore(self):
+        if self.held is None:
+            self.path.unlink(missing_ok=True)
+        else:
+            self.path.write_bytes(self.held)
+
+
+def not_switched(identifier, before, failure):
+    where = f" It still uses {before['root']}." if before else ''
+    return ValueError(f'{NAMES[identifier]} was not switched: connecting did not '
+                      f'finish ({failure}).{where} Nothing was moved or deleted; put the cause '
+                      'right, then connect again.')
+
+
 # --- Blog Studio -------------------------------------------------------------------------
 
 def blog_data():
@@ -101,10 +156,11 @@ def blog_data():
 
 def blog_root(gitstate, shared):
     """The writing folder Blog Studio would open: the workspace it remembers, else the folder
-    its native launcher remembers, else one set up as the shared settings say."""
+    its native launcher remembers, else one set up as the shared settings say. With the
+    notice of a join whose first push was refused, else None."""
     space = gitstate.current()
     if space is not None:
-        return space.root
+        return space.root, None
     previous = blog_data() / 'page.json'
     if previous.is_file():
         if previous.is_symlink():
@@ -114,8 +170,9 @@ def blog_root(gitstate, shared):
             root = Path(kept).expanduser()
             if not root.is_absolute():
                 raise ValueError('Blog Studio needs an absolute workspace path.')
-            return root
-    return configure(gitstate, shared, 'blog').root
+            return root, None
+    made, notice = workspace_setup.set_up(gitstate, shared, 'blog')
+    return made.root, notice
 
 
 def remember_blog_page(root):
@@ -159,12 +216,20 @@ def blog_items(root):
 
 
 def blog_described(root):
-    """A Blog Studio writing folder as Marketing Studio shows it."""
+    """A Blog Studio writing folder as Marketing Studio shows it. A plain folder, which no
+    hub.json marks, has no branch."""
     import team_workspace
     space = team_workspace.space(root)
     if space is not None:
         return workspace_setup.describe(space)
     return {'root': str(root), 'repository': None, 'branch': None}
+
+
+def blog_matches(found, shared):
+    """Whether a writing folder is the storage the settings name. A plain folder is not
+    Git, so it never is: Connect moves its work into local Git or the repository."""
+    return found['branch'] is not None and workspace_setup.matches(
+        found['repository'], found['branch'], shared, 'blog')
 
 
 def blog_carry(root):
@@ -173,15 +238,62 @@ def blog_carry(root):
 
 def prepare_blog_workspace(gitstate, shared):
     """What Marketing Studio shows for Blog Studio, with a missing workspace set up."""
-    root = blog_root(gitstate, shared)
+    root, notice = blog_root(gitstate, shared)
     prepare_blog(root)
     found = blog_described(root)
     result = {'prepared': True, 'workspace': found}
-    if not workspace_setup.matches(found['repository'], found['branch'], shared, 'blog'):
+    if notice:
+        result['notice'] = notice
+    if not blog_matches(found, shared):
         wanted = workspace_setup.target(shared, 'blog')
         result['connect'] = {'from': found, 'to': {key: wanted.get(key) for key in ('repository', 'root', 'branch')},
                              'carry': blog_carry(root)}
     return result, root
+
+
+def carry_blog(source, target):
+    """Copy the blogs, shared references, voices and team memory of one writing folder into
+    another, commit them, and say what was carried and what was left. Or leave nothing:
+    what was copied and never committed is removed again when the copy does not finish."""
+    import studio
+    import team_workspace
+    from studio_sync import gitstate, team
+    found = team_workspace.space(target)
+    carried, left, created, items = {}, [], [], blog_items(source)
+    try:
+        with team_workspace.internal():
+            for group, _, noun in BLOG_GROUPS:
+                for ident in items.get(group, []):
+                    origin, destination = studio.inside(source, group, ident), studio.inside(target, group, ident)
+                    if destination.exists():
+                        left.append({'id': ident, 'why': f'{ident} is already there.'})
+                        continue
+                    why = team.unacceptable(origin)
+                    if why:
+                        left.append({'id': ident, 'why': why})
+                        continue
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    team.copy_in(origin, destination)
+                    created.append(destination)
+                    if group == 'articles' and found.address:
+                        studio.write_json(destination / 'run.json', {'schema': 1, 'driver': team.claim(found)})
+                    carried.setdefault(noun, []).append(ident)
+            memory = source / '.shared/memory'
+            for path in sorted(memory.glob('*.json')) if memory.is_dir() else ():
+                kept = target / '.shared/memory' / path.name
+                if not kept.exists() and not path.is_symlink():
+                    kept.parent.mkdir(parents=True, exist_ok=True)
+                    studio.atomic(kept, path.read_bytes())
+                    created.append(kept)
+        gitstate.commit(found, f'Bring Blog Studio work in from {source}', [*carried.get('blogs', []), '.shared'])
+    except BaseException:
+        for path in created:
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                path.unlink(missing_ok=True)
+        raise
+    return {noun: len(names) for noun, names in carried.items()}, left
 
 
 def connect_blog(gitstate, shared):
@@ -190,64 +302,68 @@ def connect_blog(gitstate, shared):
     import studio
     import team_workspace
     from hub_store import acquire_lock, release_lock
-    from studio_sync import team
-    root = blog_root(gitstate, shared)
+    from studio_sync import support
+    root, _ = blog_root(gitstate, shared)
     before = blog_described(root)
-    if workspace_setup.matches(before['repository'], before['branch'], shared, 'blog'):
-        return {'connected': True, 'already': True, 'workspace': before}
+    data = support.data_root()
+    if blog_matches(before, shared):
+        result = {'connected': True, 'already': True, 'workspace': before}
+        source = pending_source(data, root)
+        if source is not None:
+            # An earlier Connect switched the workspace but did not finish carrying.
+            carried, left = carry_blog(source, root)
+            found = team_workspace.space(root)
+            report = gitstate.sync(found) if found.address and carried else None
+            result.update(carried=carried, left=left, **{'from': {'root': str(source)}},
+                          shared=report['shared'] if report else None,
+                          notice=report['notice'] if report else None)
+        (data / PENDING).unlink(missing_ok=True)
+        return result
     wanted = workspace_setup.target(shared, 'blog')
     lock = acquire_lock(studio.inside(root, '.blog-runner.lock'), wait=0)
     if lock is None:
         raise ValueError('Blog Studio is open for this writing folder. Close its page, then connect again.')
+    record = Restoring(gitstate.settings_path())
     try:
-        if 'repository' in wanted:
-            target = team_workspace.join(wanted['repository'], wanted['branch'] or 'main',
-                                         wanted.get('share') or 'decision')
-        else:
-            target = gitstate.local(Path(wanted['root']), branch=wanted['branch']).root
-            studio.initialize(target)
-        found = team_workspace.space(target)
-        carried, left, items = {}, [], blog_items(root)
-        with team_workspace.internal():
-            for group, _, noun in BLOG_GROUPS:
-                for ident in items.get(group, []):
-                    source, destination = studio.inside(root, group, ident), studio.inside(target, group, ident)
-                    if destination.exists():
-                        left.append({'id': ident, 'why': f'{ident} is already there.'})
-                        continue
-                    why = team.unacceptable(source)
-                    if why:
-                        left.append({'id': ident, 'why': why})
-                        continue
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    team.copy_in(source, destination)
-                    if group == 'articles' and found.address:
-                        studio.write_json(destination / 'run.json', {'schema': 1, 'driver': team.claim(found)})
-                    carried.setdefault(noun, []).append(ident)
-            memory = root / '.shared/memory'
-            for path in sorted(memory.glob('*.json')) if memory.is_dir() else ():
-                kept = target / '.shared/memory' / path.name
-                if not kept.exists() and not path.is_symlink():
-                    kept.parent.mkdir(parents=True, exist_ok=True)
-                    studio.atomic(kept, path.read_bytes())
-        gitstate.commit(found, f'Bring Blog Studio work in from {root}', [*carried.get('blogs', []), '.shared'])
-        report = gitstate.sync(found) if found.address else None
+        note_pending(data, root)
+        try:
+            if 'repository' in wanted:
+                # The branch and when to share go through as the settings have them: blank
+                # means the clone's own branch, and nothing is written back they did not say.
+                target = team_workspace.join(wanted['repository'], wanted['branch'], wanted.get('share'))
+            else:
+                target = gitstate.local(Path(wanted['root']), branch=wanted['branch']).root
+                with team_workspace.internal():
+                    studio.initialize(target)
+            carried, left = carry_blog(root, target)
+            found = team_workspace.space(target)
+            report = gitstate.sync(found) if found.address else None
+        except BaseException as failure:
+            record.restore()
+            (data / PENDING).unlink(missing_ok=True)
+            if isinstance(failure, Exception):
+                raise not_switched('blog', before, failure) from failure
+            raise
         remember_blog_page(target)
+        (data / PENDING).unlink(missing_ok=True)
     finally:
         release_lock(lock)
-    return {'connected': True, 'from': before, 'to': blog_described(target),
-            'carried': {noun: len(names) for noun, names in carried.items()}, 'left': left,
-            'shared': report['shared'] if report else None, 'notice': report['notice'] if report else None}
+    return {'connected': True, 'from': before, 'to': blog_described(target), 'carried': carried,
+            'left': left, 'shared': report['shared'] if report else None,
+            'notice': report['notice'] if report else None}
 
 
 # --- Training Studio and Presentation Studio ---------------------------------------------
 
-def runner_items(space, identifier):
-    """Every training or deck a run record marks in the workspace's folder."""
-    marker = '.training-studio/run.json' if identifier == 'training' else 'run.json'
-    depth = 2 if identifier == 'training' else 1
+def runner_marker(identifier):
+    return '.training-studio/run.json' if identifier == 'training' else 'run.json'
+
+
+def runner_items(root, identifier):
+    """Every training or deck a run record marks in a workspace's folder."""
+    marker, depth = runner_marker(identifier), 2 if identifier == 'training' else 1
     found = []
-    for path in sorted(space.root.glob('*/' + marker)):
+    for path in sorted(Path(root).glob('*/' + marker)):
         top = path.parents[depth - 1]
         if not top.name.startswith('.') and not top.is_symlink():
             found.append(top)
@@ -255,28 +371,18 @@ def runner_items(space, identifier):
 
 
 def runner_carry(identifier):
-    return lambda space: {NOUNS[identifier]: len(runner_items(space, identifier))}
+    return lambda space: {NOUNS[identifier]: len(runner_items(space.root, identifier))}
 
 
-def connect_runner(identifier, shared):
-    """Join the storage the shared settings name through the runner's own join, and carry
-    the trainings or decks of the workspace used before into it, each as its bring-in
-    takes it: a copy, taken by this computer, committed and shared."""
-    from runner import gitstate, setup, studio, team
+def carry_runner(identifier, source, new):
+    """Copy the trainings or decks of one workspace folder into another, each as its
+    bring-in takes it: a copy, taken by this computer, committed. Or leave nothing."""
+    from runner import gitstate, team
     import home
-    marker = '.training-studio/run.json' if identifier == 'training' else 'run.json'
-    current = gitstate.current()
-    if current is not None and workspace_setup.matches(current.address, current.branch, shared, identifier):
-        return {'connected': True, 'already': True, 'workspace': workspace_setup.describe(current)}
-    wanted = workspace_setup.target(shared, identifier)
-    with studio.only_runner():
-        setup.migrate()
-        if 'repository' in wanted:
-            new = gitstate.join(wanted['repository'], branch=wanted['branch'], share=wanted.get('share'))
-        else:
-            new = gitstate.local(Path(wanted['root']), branch=wanted['branch'])
-        carried, left = [], []
-        for top in runner_items(current, identifier) if current is not None else ():
+    marker = runner_marker(identifier)
+    carried, left, created = [], [], []
+    try:
+        for top in runner_items(source, identifier) if source else ():
             ident, destination = top.name, new.root / top.name
             if destination.exists():
                 left.append({'id': ident, 'why': f'{new.folder}/{ident} is already there.'})
@@ -286,18 +392,65 @@ def connect_runner(identifier, shared):
                 left.append({'id': ident, 'why': why})
                 continue
             team.copy_in(top, destination)
+            created.append(destination)
             record = home.read_json(destination / marker, None)
             if not isinstance(record, dict):
                 left.append({'id': ident, 'why': 'Its run record cannot be read.'})
                 shutil.rmtree(destination, ignore_errors=True)
+                created.remove(destination)
                 continue
             home.write_json(destination / marker, {**record, 'driver': team.claim(new)})
             carried.append(ident)
         if carried:
-            gitstate.commit(new, f'Bring {NOUNS[identifier]} in from {current.root}', carried)
-        report = gitstate.sync(new) if new.address else None
-    return {'connected': True, 'from': workspace_setup.describe(current) if current else None,
-            'to': workspace_setup.describe(new), 'carried': {NOUNS[identifier]: len(carried)},
+            gitstate.commit(new, f'Bring {NOUNS[identifier]} in from {source}', carried)
+    except BaseException:
+        for destination in created:
+            shutil.rmtree(destination, ignore_errors=True)
+        raise
+    return {NOUNS[identifier]: len(carried)}, left
+
+
+def connect_runner(identifier, shared):
+    """Join the storage the shared settings name through the runner's own join, and carry
+    the trainings or decks of the workspace used before into it."""
+    from runner import gitstate, setup, studio
+    import home
+    current, data = gitstate.current(), home.data_root()
+    if current is not None and workspace_setup.matches(current.address, current.branch, shared, identifier):
+        result = {'connected': True, 'already': True, 'workspace': workspace_setup.describe(current)}
+        source = pending_source(data, current.root)
+        if source is not None:
+            # An earlier Connect switched the workspace but did not finish carrying.
+            with studio.only_runner():
+                carried, left = carry_runner(identifier, source, current)
+                report = gitstate.sync(current) if current.address and carried[NOUNS[identifier]] else None
+            result.update(carried=carried, left=left, **{'from': {'root': str(source)}},
+                          shared=report['shared'] if report else None,
+                          notice=report['notice'] if report else None)
+        (data / PENDING).unlink(missing_ok=True)
+        return result
+    wanted = workspace_setup.target(shared, identifier)
+    before = workspace_setup.describe(current) if current else None
+    with studio.only_runner():
+        setup.migrate()
+        record = Restoring(gitstate.settings_path())
+        if current is not None:
+            note_pending(data, current.root)
+        try:
+            if 'repository' in wanted:
+                new = gitstate.join(wanted['repository'], branch=wanted['branch'], share=wanted.get('share'))
+            else:
+                new = gitstate.local(Path(wanted['root']), branch=wanted['branch'])
+            carried, left = carry_runner(identifier, current.root if current else None, new)
+            report = gitstate.sync(new) if new.address else None
+        except BaseException as failure:
+            record.restore()
+            (data / PENDING).unlink(missing_ok=True)
+            if isinstance(failure, Exception):
+                raise not_switched(identifier, before, failure) from failure
+            raise
+        (data / PENDING).unlink(missing_ok=True)
+    return {'connected': True, 'from': before, 'to': workspace_setup.describe(new), 'carried': carried,
             'left': left, 'shared': report['shared'] if report else None,
             'notice': report['notice'] if report else None}
 
@@ -339,11 +492,11 @@ def main():
     # lease, so a launch cannot change an already-running studio's workspace.
     with studio.only_runner():
         setup.migrate()
+        if args.prepare:
+            print(json.dumps(workspace_setup.prepare(gitstate, shared, args.studio,
+                                                     runner_carry(args.studio))), flush=True)
+            return 0
         configure(gitstate, shared, args.studio)
-    if args.prepare:
-        print(json.dumps(workspace_setup.prepare(gitstate, shared, args.studio,
-                                                 runner_carry(args.studio))), flush=True)
-        return 0
     os.environ[studio.RESTART] = json.dumps({'token': handoff['token']})
     return studio.main(['serve'])
 

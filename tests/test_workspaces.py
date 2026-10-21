@@ -96,6 +96,11 @@ class RecordTests(unittest.TestCase):
         (data / 'page.json').write_text(json.dumps({'workspace': str(writing)}))
         self.assertEqual(workspaces.remembered('blog'), {'root': str(writing), 'repository': None, 'branch': None})
         self.assertEqual(workspaces.connection('blog', TEAM)['state'], 'disconnected')
+        self.assertIn('a folder on this computer', workspaces.connection('blog', TEAM)['detail'])
+        # A plain folder is not Git, so local Git in the settings is somewhere to connect to.
+        found = workspaces.connection('blog', LOCAL)
+        self.assertEqual((found['state'], found['connect'], found['summary']), ('disconnected', True, 'Not using local Git'))
+        self.assertIn('which is not Git', found['detail'])
         (data / 'page.json').write_text(json.dumps({'workspace': str(self.root / 'gone')}))
         self.assertIsNone(workspaces.remembered('blog'))
 
@@ -144,6 +149,18 @@ class TargetTests(unittest.TestCase):
             'to': {'repository': 'https://example.com/team/hub.git', 'root': None, 'branch': 'main'},
             'carry': {'trainings': 2}})
         self.assertNotIn('connect', workspace_setup.prepare(gitstate, LOCAL, 'training'))
+
+    def test_a_refused_first_push_is_said_in_the_prepare_report(self):
+        gitstate = mock.Mock()
+        gitstate.current.return_value = None
+        joined = gitstate.join.return_value
+        joined.root, joined.address, joined.branch = Path('/clones/hub/blogs'), 'https://example.com/team/hub.git', 'main'
+        gitstate.sync.return_value = {'shared': False, 'notice': 'The shared repository did not accept the changes.'}
+        found = workspace_setup.prepare(gitstate, TEAM, 'blog')
+        self.assertEqual(found['notice'], 'The shared repository did not accept the changes.')
+        gitstate.sync.assert_called_once_with(joined)
+        gitstate.sync.return_value = {'shared': True, 'notice': None}
+        self.assertNotIn('notice', workspace_setup.prepare(gitstate, TEAM, 'blog'))
 
 
 if __name__ == '__main__':
