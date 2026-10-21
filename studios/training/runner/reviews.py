@@ -72,10 +72,13 @@ def group(root, session, run, listed, done):
                                          'Drawing a sample slide', 'review', step.artifact))
             brand = (pipeline.read_built(root, level).get('brand') or {})
             saved = (run.get('review_samples') or {}).get(level or '') or {}
+            # The sample is done when it was drawn from this brand and this outline, or
+            # when drawing it from them failed and the review carries the note instead.
+            drawn = saved.get('image') and saved['image'] == workspace.sha256_file(
+                pipeline.place(root, level, 'work/review-sample/sample.png'))
+            noted = saved.get('problem') and not saved.get('image')
             if saved.get('brand') == brand.get('sha256') and saved.get('outline') == workspace.sha256_file(pipeline.place(root, level, pipeline.OUTLINE)) \
-                    and saved.get('image') == workspace.sha256_file(
-                        pipeline.place(root, level, 'work/review-sample/sample.png')) \
-                    and saved.get('image'):
+                    and (drawn or noted):
                 completed.add(ident)
     boundaries = {}
     for phase in ('direction', 'final'):
@@ -147,8 +150,28 @@ class Reviewing:
             self._commit(root, 'continue the deck direction under the saved review level')
 
     def _review_sample(self, root, found, step):
+        """Draw one sample slide for the combined direction review. A sample that cannot
+        be drawn is a note on the review, not a halt: the direction can be read without
+        it, and the slides are drawn and reviewed after it is approved."""
         level = workspace.split(step.artifact)[1]
         mine = found.decks[level]
+        try:
+            self._draw_sample(root, found, level, mine)
+        except (WorkspaceError, OSError, ValueError) as failure:
+            why = str(failure).strip() or type(failure).__name__
+            shutil.rmtree(contained(root, f'{workspace.prefix(level)}work/review-sample'),
+                          ignore_errors=True)
+            with self.files:
+                record = self._load(root)
+                record.setdefault('review_samples', {})[level or ''] = {
+                    'brand': (mine.built.get('brand') or {}).get('sha256'),
+                    'outline': workspace.sha256_file(pipeline.place(root, level, pipeline.OUTLINE)),
+                    'image': None, 'problem': why}
+                self._store(root, record)
+                self._commit(root, 'note that no sample slide could be drawn for the '
+                                   'combined direction review')
+
+    def _draw_sample(self, root, found, level, mine):
         tool, contract = self.slides(), pipeline.contract(root, mine)
         slides = deck.slides_of(mine.outline)
         cover = next((slide for slide in slides if slide.get('kind') == 'cover'),
@@ -176,7 +199,7 @@ class Reviewing:
             record.setdefault('review_samples', {})[level or ''] = {
                 'brand': (mine.built.get('brand') or {}).get('sha256'),
                 'outline': workspace.sha256_file(pipeline.place(root, level, pipeline.OUTLINE)),
-                'image': workspace.sha256_file(folder / 'sample.png')}
+                'image': workspace.sha256_file(folder / 'sample.png'), 'problem': None}
             self._store(root, record)
             self._commit(root, 'draw a sample for the combined direction review')
 
@@ -197,10 +220,19 @@ class Reviewing:
                           if contained(root, workspace.review_file(name)).is_file() else ''})
         for level, mine in found.decks.items():
             if phase == 'direction':
-                items.append({'target': 'outline:' + (level or ''),
-                              'label': 'Deck direction' + (f' · Level {level}' if level else ''),
-                              'text': outline_text(pipeline.outline_view(root, found, level)),
-                              'sample': {'artifact': mine.name, 'number': 1, 'section': 'review-sample'}})
+                item = {'target': 'outline:' + (level or ''),
+                        'label': 'Deck direction' + (f' · Level {level}' if level else ''),
+                        'text': outline_text(pipeline.outline_view(root, found, level))}
+                saved = (record.get('review_samples') or {}).get(level or '') or {}
+                if saved.get('problem') and not saved.get('image'):
+                    item['sample_note'] = (f"A sample slide could not be drawn: {saved['problem']} "
+                                           'The direction can still be reviewed from what the '
+                                           'deck says; the slides are drawn and reviewed after '
+                                           'you approve it.')
+                else:
+                    item['sample'] = {'artifact': mine.name, 'number': 1,
+                                      'section': 'review-sample'}
+                items.append(item)
             elif phase == 'final':
                 view = pipeline.deck_gate(root, found.session, mine.name)
                 for item in items:

@@ -56,6 +56,10 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(re.findall(r"sessionStorage\.(\w+)\('([\w-]+)'", self.script),
                          [('getItem', 'marketing-studio-home'), ('setItem', 'marketing-studio-home')])
 
+    def test_slide_feedback_names_the_slide_so_a_late_note_is_kept_for_the_deck_review(self):
+        self.assertRegex(self.script, r"send\('build-feedback', \{path, ref: one\.ref, note, "
+                                      r"number: one\.number\}\)")
+
     def test_an_upload_is_read_with_filereader_and_sent_in_base64(self):
         self.assertIn('new FileReader()', self.script)
         self.assertIn('readAsDataURL', self.script)
