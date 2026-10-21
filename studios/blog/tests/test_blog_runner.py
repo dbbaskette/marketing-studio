@@ -1605,3 +1605,26 @@ class FromFilesTests(RunnerCase):
         found = runner.command(self.root, args)
         self.assertEqual(found['next'], 'angles')
         self.assertEqual(found['approval'], 'conversation')
+        found = self.submit(found, self.ANGLES)
+        chosen = studio.parser().parse_args(
+            [
+                '--root',
+                str(self.root),
+                'run',
+                'choose',
+                '--id',
+                found['id'],
+                '--expected',
+                found['expected'],
+                '--angle',
+                'Fewer hops, fewer surprises',
+                '--note',
+                'Name the hops.',
+            ]
+        )
+        found = runner.command(self.root, chosen)
+        self.assertEqual(found['next'], 'outline')
+        self.assertEqual(found['title'], 'Fewer hops, fewer surprises')
+        self.assertEqual(found['brief']['audience'], 'Team leads')
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            runner.command(self.root, chosen)

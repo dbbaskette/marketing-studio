@@ -12,6 +12,7 @@ Generated from `studio.py`; use `--help` on a listed command for required inputs
 | `studio.py run approve` | `--id`, `--expected` |
 | `studio.py run changes` | `--id`, `--expected`, `--request`, `--stage` |
 | `studio.py run handoff` | `--id`, `--expected` |
+| `studio.py run choose` | `--id`, `--expected`, `--angle`, `--note` |
 | `studio.py init` | — |
 | `studio.py list` | — |
 | `studio.py library` | — |

@@ -35,7 +35,17 @@ keep its naming rules separate from the author voice. `--mode write` is the defa
 `--mode review --manuscript <source-id>` to review it without rewriting.
 The original and working manuscript are retained. Revision and review omit new research
 unless requested. Use `--mode from-outline --outline-text "..."` to draft from
-a supplied outline, or `--mode ideas` to explore angles and stop before drafting. `--stop` can be `outline`,
+a supplied outline, or `--mode ideas` to explore angles and stop before drafting.
+Use `--mode from-files --source <id>...` to write from the person's uploaded files
+(`source add --purpose material` keeps a file out of the reference library; `--goal`
+is their one line about it, `--audience` may be empty): the run starts with an
+`angles` stage. Write three angles, each a `## Title` heading over one line of
+`audience · the point it makes · Leans on <file names>`, and submit it; it always
+waits for the person. Then `... run choose --id <id> --expected <latest> --angle
+"<heading>" --note "..."` makes that angle the title, point and reader and starts
+the outline onward (web research first only with `--research web-allowed`); `run
+changes --stage angles` with their note asks for three different ones. Files past
+the run's budget are excerpted and `excerpted` in status names them. `--stop` can be `outline`,
 `draft`, `review` or `package`. For an existing article, use `--id <article-id>`;
 a saved manuscript starts at review, or use `--mode revise --id <article-id>` to
 start with revision.

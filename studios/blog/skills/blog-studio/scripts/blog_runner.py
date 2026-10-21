@@ -1704,11 +1704,14 @@ def add_parser(groups):
     create_cmd.add_argument('--manuscript')
     create_cmd.add_argument('--outline-text')
     commands.add_parser('list')
-    for name in ('status', 'submit', 'approve', 'changes', 'handoff'):
+    for name in ('status', 'submit', 'approve', 'changes', 'handoff', 'choose'):
         cmd = commands.add_parser(name)
         cmd.add_argument('--id', required=True)
         if name != 'status':
             cmd.add_argument('--expected', required=True)
+        if name == 'choose':
+            cmd.add_argument('--angle', required=True)
+            cmd.add_argument('--note', default='')
         if name == 'submit':
             cmd.add_argument('--stage', choices=tuple(STAGES), required=True)
             cmd.add_argument('--file', required=True)
@@ -1740,6 +1743,13 @@ def command(root, args):
                 {'content': Path(args.file).read_text(), 'notes': args.notes},
                 args.expected,
             )
+        if args.action == 'choose':
+            found = guard(root, args.id, args.expected)
+            directory, record, run = load(root, args.id)
+            if run.get('mode') != 'from-files':
+                raise ValueError('Only a blog written from files chooses an angle.')
+            choose_angle(root, directory, record, run, found, args.angle + '\n' + (args.note or ''))
+            return survey(root, args.id)
         return decide(
             root,
             args.id,
