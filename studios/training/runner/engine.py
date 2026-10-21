@@ -3199,7 +3199,8 @@ class Engine(Reviewing):
         if problem:
             return problem.get('state', 'failed'), problem['what']
         if halt == 'stopped':
-            return 'stopped', 'Stopped. Everything kept so far is still here.'
+            return 'stopped', ('Stopped. Everything finished before it is kept; the step '
+                               'that was in hand starts over on resume.')
         if halt == 'paused':
             return 'paused', ('Pausing. The step in hand finishes first.' if run.workers
                               else 'Paused. Nothing new starts until you resume.')

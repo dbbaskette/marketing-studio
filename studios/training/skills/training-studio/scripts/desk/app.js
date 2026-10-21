@@ -129,7 +129,8 @@ const STEP_WORDS = {
 const STEERED = {
   pause: 'Paused. Nothing more is started until you resume it.',
   resume: 'Carrying on.',
-  stop: 'Stopped. Everything made so far is kept.',
+  stop: 'Stopped. The step in hand was ended and its work so far is lost; everything '
+    + 'finished before it is kept.',
   retry: 'Trying again.',
 };
 const AGENTS = ['claude', 'codex'];
@@ -4473,12 +4474,17 @@ function runIntro(run, training, promised) {
       + 'itself, and this page tells you when it needs you.'
       + (next ? ' Next it asks for your decision on '
         + lower(next.label).replace(/^your review of /, '') + '.' : '')));
+    // What the two ways of halting it cost, said before either is pressed.
+    if (!queued(run)) {
+      add(node, make('p', 'quiet', 'Stop ends the step in hand and loses its work so far; '
+        + 'Pause lets it finish first.'));
+    }
   } else if (stands === 'paused') {
     add(node, make('p', 'quiet', 'Nothing more is started until you resume it. Everything '
       + 'made so far is kept.'));
   } else if (stands === 'stopped' && !run.problem) {
-    add(node, make('p', 'quiet', 'Everything made so far is kept. Resume, and it carries on '
-      + 'from where it stopped.'));
+    add(node, make('p', 'quiet', 'Everything finished before the stop is kept. Resume, and '
+      + 'the step that was in hand starts over.'));
   }
   if (promised && run.state !== 'done' && !theirs) {
     add(node, make('p', 'quiet', 'In all, it stops and asks for your decision at least '
@@ -4492,6 +4498,32 @@ function runIntro(run, training, promised) {
   return node;
 }
 
+// The step a problem stopped at: the one it names, or else the one the steps say failed.
+function failedStep(run, found) {
+  const steps = list(run.steps);
+  return (found.step && steps.find((step) => step.id === found.step))
+    || steps.find((step) => step.status === 'failed') || null;
+}
+
+// What the one action a problem offers does, and roughly what it costs, in the way a
+// deck's cost is said before it is drawn: from what the same work took before.
+function actionSays(run, found) {
+  if (found.action === 'resume') return 'Carry on picks up where it stopped; nothing is done again.';
+  if (found.action !== 'retry') return '';
+  const step = failedStep(run, found);
+  const research = /^research(:|$)/.test(String(found.step || (step && step.id) || ''));
+  const taken = [];
+  if (step && given(step.seconds)) taken.push(lasted(step.seconds));
+  if (step && given(step.dollars)) taken.push(money(step.dollars));
+  const before = taken.length ? 'the tries so far took ' + taken.join(' and ') + '.' : '';
+  if (research) {
+    return 'Try again re-runs the research from the start. It is about 5 minutes and the '
+      + 'tokens of a full research job' + (before ? '; ' + before : '.');
+  }
+  return 'Try again re-runs this step from the start' + (step ? ': ' + lower(step.label)
+    : '') + '.' + (before ? ' ' + capital(before) : '');
+}
+
 // What went wrong, what was kept, and the one thing to do about it.
 function problemPart(run, lead) {
   const found = run.problem;
@@ -4503,9 +4535,11 @@ function problemPart(run, lead) {
       'problem-open');
   const title = run.state === 'waiting' ? 'It is waiting for you'
     : theirs ? 'It has stopped' : 'It has stopped, and needs you';
+  const does = theirs ? '' : actionSays(run, found);
   return callout('late', make('h2', 'aside-title', title),
     add(make('p', ''), make('strong', '', 'What happened: '), found.what),
     add(make('p', ''), make('strong', '', 'What was kept: '), found.kept),
+    does ? make('p', 'quiet', does) : null,
     add(make('div', 'bar'), go));
 }
 

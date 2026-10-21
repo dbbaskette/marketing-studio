@@ -3678,6 +3678,10 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       'What happened: The research was tried three times and the agent could '
                       'not be reached.',
                       'What was kept: Your answers and the approved research questions.',
+                      # What trying again does, and roughly what it costs, before it is pressed.
+                      'Try again re-runs the research from the start. It is about 5 minutes '
+                      'and the tokens of a full research job; the tries so far took 13 '
+                      'minutes and $1.28.',
                       'Failed', '3 tries · 13 minutes · $1.28',
                       'The agent could not be reached.'):
             self.assertIn(shown, down['text'])
@@ -3799,6 +3803,10 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         for shown in ('Paused', held, 'Nothing more is started until you resume it. '
                       'Everything made so far is kept.'):
             self.assertIn(shown, paused_shot['text'])
+        # While it works, what Stop costs is said beside the choice; paused, nothing is in hand.
+        self.assertNotIn('Stop ends the step in hand', paused_shot['text'])
+        self.assertIn('Stop ends the step in hand and loses its work so far; Pause lets it '
+                      'finish first.', shots['resumed']['text'])
         self.assertIn('Stop', paused_shot['buttons'])
         self.assertNotIn('Pause', paused_shot['buttons'])
         # An agent that counts tokens and not dollars: the money limit cannot stop it.
@@ -3816,9 +3824,12 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Working on its own', shots['refused']['text'])
         end = shots['stopped']
         self.assertEqual((end['filled'], end['focus']), (['Resume'], 'Resume'))
-        for shown in ('Stopped', ended, 'Everything made so far is kept. Resume, and it '
-                      'carries on from where it stopped.'):
+        for shown in ('Stopped', ended, 'Everything finished before the stop is kept. '
+                      'Resume, and the step that was in hand starts over.'):
             self.assertIn(shown, end['text'])
+        self.assertIn('Stopped. The step in hand was ended and its work so far is lost; '
+                      'everything finished before it is kept.', end['toasts'])
+        self.assertNotIn('Everything made so far is kept', end['text'])
         self.assertNotIn('Nothing was changed.', end['text'])
         self.assertNotIn('Stop', end['buttons'])
 

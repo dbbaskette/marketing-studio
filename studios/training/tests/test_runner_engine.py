@@ -893,7 +893,8 @@ class HaltTests(StudioCase):
         root = self.start()
         stopped = self.engine.act(root, 'stop')
         self.assertEqual((stopped['state'], stopped['sentence']),
-                         ('stopped', 'Stopped. Everything kept so far is still here.'))
+                         ('stopped', 'Stopped. Everything finished before it is kept; the '
+                                     'step that was in hand starts over on resume.'))
         said = self.decide(root, 'research-plan')
         self.assertEqual(said['said'], 'Approved. This training is not running, so nothing '
                          'more happens until you resume it or try again.')
@@ -935,8 +936,8 @@ class HaltTests(StudioCase):
         self.assertEqual(still_running(written(pids)), [])
         view = self.view(root)
         self.assertEqual((said[0]['state'], view['state'], view['sentence'], view['problem']),
-                         ('stopped', 'stopped', 'Stopped. Everything kept so far is still '
-                          'here.', None))
+                         ('stopped', 'stopped', 'Stopped. Everything finished before it is kept; '
+                          'the step that was in hand starts over on resume.', None))
         self.assertEqual(self.engine.act(root, 'resume')['state'], 'waiting')
         self.assertEqual(workspace.status(root)['gate'], 'research-plan')
 
