@@ -260,7 +260,12 @@ class Workspace:
             sources = []
             for selected in record['sources']:
                 source_id = selected['source_id']
-                source_dir, source_record = self.local_item('sources', source_id)
+                try:
+                    source_dir, source_record = self.local_item('sources', source_id)
+                except ValueError:
+                    if 'material' in selected['purposes']:
+                        continue  # Uploaded files that are away, or never came here.
+                    raise
                 if studio.is_material(self.root, source_dir, source_record):
                     continue  # One blog's uploaded files stay on this computer.
                 if selected['revision'] != source_record['revision']:

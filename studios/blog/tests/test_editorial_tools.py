@@ -2426,6 +2426,51 @@ class HubMaterialTests(Fixture):
         self.workspace.publish_selected({'articles': [article['id']]})
         self.assert_unshared()
 
+    def test_a_deleted_blog_written_from_files_restores_to_the_hub_first_time(self):
+        import blog_runner
+
+        ident = self.material()
+        found = blog_runner.create(
+            self.root, {'mode': 'from-files', 'sources': [ident], 'goal': 'A team post'}, 'page'
+        )
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+        item = self.workspace.state['items']['articles/' + found['id']]['item']
+        management.dispatch(
+            self.root,
+            'blog-delete',
+            {'id': found['id'], 'expected': found['expected'], 'title': found['title']},
+        )
+        self.assertFalse(studio.material(self.root, ident).exists())
+        graph = self.hub.graph()
+        self.assertEqual(graph['revisions'][graph['heads'][item][0]]['status'], 'tombstone')
+        restored = management.dispatch(self.root, 'blog-restore', {'id': found['id']})
+        self.assertTrue(restored['restored'])
+        self.assertNotIn('notice', {k: v for k, v in restored.items() if v})
+        self.assertTrue((studio.material(self.root, ident) / 'content.md').is_file())
+        graph = self.hub.graph()
+        self.assertEqual(len(graph['heads'][item]), 1)
+        self.assertNotEqual(graph['revisions'][graph['heads'][item][0]]['status'], 'tombstone')
+        self.assert_unshared()
+
+    def test_a_missing_material_file_does_not_stop_its_blog_being_shared(self):
+        import shutil
+        import blog_runner
+
+        ident = self.material()
+        found = blog_runner.create(
+            self.root, {'mode': 'from-files', 'sources': [ident], 'goal': 'A team post'}
+        )
+        shutil.rmtree(studio.material(self.root, ident))
+        directory, record = studio.item(self.root, 'articles', found['id'])
+        record['title'] = 'Renamed while its files are away'
+        studio.persist(directory, 'articles', record)
+        self.workspace.publish_selected({'articles': [found['id']]})
+        titles = {
+            r['title'] for r in self.hub.graph()['revisions'].values() if r['kind'] == 'article'
+        }
+        self.assertIn('Renamed while its files are away', titles)
+        self.assert_unshared()
+
     def test_material_pins_are_not_published(self):
         import blog_runner
 

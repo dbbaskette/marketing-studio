@@ -412,6 +412,7 @@ def restore(root, data):
                 pass  # kept here because git had nothing of it; it still has nothing
     else:
         raise ValueError('The files of this blog are no longer kept here.')
+    _material_back(root, ident)  # Its uploaded files are back before the Hub reads the blog.
     if adapter and binding:
         if binding.get('tombstone'):
             # The binding points at the tombstone with no fingerprint, so publishing makes a
@@ -431,7 +432,6 @@ def restore(root, data):
         else:
             adapter.state['items']['articles/' + ident] = binding
             adapter.persist()
-    _material_back(root, ident)
     if studio.inside(directory, blog_runner.STATE).is_file():
         state = record.get('local') if isinstance(record.get('local'), dict) else {}
         state.update(enabled=False, status='stopped', error='')
