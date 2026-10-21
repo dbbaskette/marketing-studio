@@ -915,6 +915,9 @@ def import_batch(
             for field in ('topics', 'products'):
                 if field not in entry:
                     metadata[field] = prior_metadata.get(field, [])
+            if 'author' not in entry:
+                # A list of links says nothing about authors: keep the one already saved.
+                metadata['author'] = prior_metadata.get('author')
             metadata['collections'] = sorted(
                 set(prior_metadata.get('collections', []) + metadata['collections'])
             )
@@ -946,7 +949,7 @@ def import_batch(
                     original_path=name,
                     original_sha256=original_hash,
                     content_sha256=sha(text.encode()) if text is not None else None,
-                    author=entry.get('author'),
+                    author=entry['author'] if 'author' in entry else record.get('author'),
                     status=status,
                     retrieved_at=studio.now(),
                     note=record.get('note', '')
@@ -1314,6 +1317,20 @@ def catalog(
     }
 
 
+def save_revision(directory, record):
+    """Keep a source's current record, text and original before it gets a new revision."""
+    history = studio.inside(directory, 'revisions', str(record['revision']))
+    history.mkdir(parents=True, exist_ok=True)
+    studio.write_json(history / 'record.json', record)
+    if (directory / 'content.md').exists():
+        studio.atomic(history / 'content.md', (directory / 'content.md').read_bytes())
+    original = record.get('original_path')
+    if original and studio.inside(directory, original).is_file():
+        studio.atomic(
+            studio.inside(history, original), studio.inside(directory, original).read_bytes()
+        )
+
+
 def curate(root, ident, data):
     """Apply human corrections to a reference.
 
@@ -1350,16 +1367,7 @@ def curate(root, ident, data):
             changed.append('note')
     if not changed:
         return record
-    history = studio.inside(directory, 'revisions', str(record['revision']))
-    history.mkdir(parents=True, exist_ok=True)
-    studio.write_json(history / 'record.json', record)
-    if (directory / 'content.md').exists():
-        studio.atomic(history / 'content.md', (directory / 'content.md').read_bytes())
-    original = record.get('original_path')
-    if original and studio.inside(directory, original).is_file():
-        studio.atomic(
-            studio.inside(history, original), studio.inside(directory, original).read_bytes()
-        )
+    save_revision(directory, record)
     record['curation_overrides'] = sorted(set(record.get('curation_overrides', []) + changed))
     record['library'] = metadata
     record['revision'] += 1
@@ -1521,6 +1529,16 @@ def add_parser(groups):
     p.add_argument('--preview', required=True)
     p.add_argument('--limit', type=int, default=25)
     p.add_argument('--retry', action='store_true')
+    p = commands.add_parser(
+        'voice-links',
+        help='Check, then with --import add published posts from a list of links as voice samples',
+    )
+    p.add_argument('--file', required=True, help='Text file: one link per line; # comments')
+    p.add_argument('--author', help='Whose posts these are (default: from the file name)')
+    p.add_argument('--site', help='The one site to import when the list mixes sites')
+    p.add_argument('--import', dest='do_import', action='store_true')
+    p.add_argument('--keep', action='append', help='A link to keep despite a different byline')
+    p.add_argument('--retry', action='store_true', help='Fetch failed links again')
     p = commands.add_parser('find')
     p.add_argument(
         '--reusable-only',
@@ -1564,6 +1582,10 @@ def command(root, args):
         return source_curator.retry(root, args.id)
     if args.action == 'read':
         return read_source(root, args.id, args.query, args.limit, args.max_chars)
+    if args.action == 'voice-links':
+        import voice_links
+
+        return voice_links.command(root, args)
     if args.action == 'locate':
         return locate(root, args.collection, args.path)
     if args.action == 'collections':

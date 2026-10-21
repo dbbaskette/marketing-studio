@@ -4,8 +4,8 @@ In a manuscript, choose **More tools**. From Blogs, use **Library and team tools
 → More tools** for global tasks. Normal writing and polishing require none of
 these options. Opening a tool starts no model, research or Google write.
 
-- **Author voices:** upload permitted authored samples (separate from references),
-  learn a provisional guide, edit, audition, explicitly confirm, export or retire.
+- **Author voices:** upload permitted authored samples (separate from references)
+  or add published posts from a text file of links, learn a provisional guide, edit, audition, explicitly confirm, export or retire.
   Choosing a revision for an article is separate from changing defaults. Existing
   articles keep their pins. Sparse samples do not establish biography or expertise.
 - **Interview me:** record, revise or skip answers; pause and resume from Blogs.

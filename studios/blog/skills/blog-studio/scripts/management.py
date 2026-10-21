@@ -1364,6 +1364,25 @@ def library_import(root, data):
     return state
 
 
+def voice_links_route(root, route, data):
+    """Published posts from a list of links, through the library import, as voice samples."""
+    import voice_links
+
+    if route == 'voice-links-preview':
+        if set(data) - {'text', 'author', 'site'}:
+            raise ValueError('Unknown voice import field.')
+        return voice_links.preview(root, data)
+    if not isinstance(data.get('expected'), str):
+        raise ValueError('Check the links before importing them.')
+    result = voice_links.run(root, data, reader=blog_library.fetch)
+    sync = result.get('hub_sync', {'status': 'local-only'})
+    result['sharing'] = sync.get('status', 'local-saved-not-shared')
+    result['sharing_message'] = SHARING_MESSAGES.get(
+        result['sharing'], 'Saved locally; Hub sync needs attention. Retry Hub sync in chat.'
+    )
+    return result
+
+
 def curation_changes(record, values):
     """The posted curation fields whose value differs from the inspected reference."""
     library = record.get('library') or {}
@@ -1453,6 +1472,8 @@ def _dispatch(root, route, data):
             return library_preview(root, data)
         if route == 'library-import':
             return library_import(root, data)
+        if route in ('voice-links-preview', 'voice-links-import'):
+            return voice_links_route(root, route, data)
         if route == 'retry-sync':
             return retry_receipt(root, adapter, data)
         if route == 'upload':
