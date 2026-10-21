@@ -1677,6 +1677,10 @@ async function libraryScreen(){
   assert.equal(results().filter(e=>e.type==='checkbox').length,0,'no checkboxes without edit access');
   assert.equal(f.get('library-add-open').hidden,true,'and no Add to library');
   f.run("access.actions.edit=true");await f.run('load()');assert.equal(f.get('library-add-open').hidden,false);
+  // A voice-sample-only item says so, never Facts.
+  rows.push({...rows[1],id:'v',title:'Only a sample',role:'voice-sample',purposes:['voice-sample']});await f.run('load()');
+  assert.ok(results().some(e=>e.textContent==='Voice sample'),'a voice sample is not listed as facts: '+results().map(e=>e.textContent).join('|'));
+  rows.pop();
   rows.push({...rows[0],id:'h',title:'Shared post',location:'hub'});await f.run('load()');
   const shared=results().find(e=>e.attributes?.['aria-label']==='Select Shared post');shared.checked=true;shared.listeners.change();
   await f.run("sLibrarySelection('blog',[...librarySelection.values()])");

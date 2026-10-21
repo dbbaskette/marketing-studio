@@ -76,8 +76,16 @@ def library_fields(root, kind=None, origin_kind=None, article=None):
 
 
 def role_of(record):
-    """facts or example, from a source's purposes; a sample is listed by its own purpose too."""
-    return 'example' if 'inspiration' in (record.get('purposes') or []) else 'facts'
+    """facts or example, from a source's purposes. An item that is only a voice or style
+    sample (no reference) is listed by that purpose, never as facts."""
+    purposes = record.get('purposes') or []
+    if 'inspiration' in purposes:
+        return 'example'
+    if 'reference' not in purposes:
+        for purpose in ('voice-sample', 'style-sample'):
+            if purpose in purposes:
+                return purpose
+    return 'facts'
 
 
 def local_item(root, ident, location='local'):
@@ -1046,6 +1054,8 @@ def import_batch(
                     names = voice_links.bylines(content) if suffix in ('.html', '.htm') else []
                     if names:
                         metadata['bylines'] = names
+                    elif suffix in ('.html', '.htm') and voice_links.organisation(content):
+                        metadata['organisation'] = voice_links.organisation(content)
                     entry = {**entry, 'author': names[0] if len(names) == 1 else None}
                     metadata['author'] = entry['author']
                 elif defaults.get('author'):

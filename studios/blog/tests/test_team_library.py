@@ -387,6 +387,62 @@ class AddTests(RunnerCase):
         with self.assertRaisesRegex(ValueError, 'retry'):
             self.add('library-add', {**data, 'retry': 'yes'}, fixed)
 
+    def test_organisation_bylines_from_meta_or_a_byline_class_are_held(self):
+        reader = Pages(
+            {
+                SITE + 'meta/': (
+                    b'<html><head><title>Meta</title><meta property="og:site_name" '
+                    b'content="Example Publishing"><meta name="author" content="Example Publishing">'
+                    b'</head><body><p>The company speaks.</p></body></html>'
+                ),
+                SITE + 'team/': page('Team', 'The Example Team', 'byline'),
+                SITE + 'person/': page('Person', 'Avery Quinn', 'meta'),
+            }
+        )
+        request = {
+            'links': SITE + 'meta/\n' + SITE + 'team/\n' + SITE + 'person/\n',
+            'role': 'facts',
+            'author': '*each',
+            'kind': '',
+        }
+        shown = self.add('library-add-preview', request)
+        result = self.add(
+            'library-add', {**request, 'operation': 'e' * 32, 'expected': shown['expected']}, reader
+        )
+        self.assertEqual(
+            [(g['author'], g['count']) for g in result['groups']], [('Avery Quinn', 1)]
+        )
+        reasons = {h['url']: h['reason'] for h in result['held']}
+        self.assertEqual(
+            reasons,
+            {
+                SITE + 'meta/': 'The byline is an organisation, Example Publishing, not a person.',
+                SITE + 'team/': 'The byline is an organisation, The Example Team, not a person.',
+            },
+        )
+
+    def test_a_voice_sample_only_item_is_listed_as_a_voice_sample(self):
+        sample = self.command(
+            'source',
+            'add',
+            '--name',
+            'Sample',
+            '--file',
+            str(self._file('Words.')),
+            '--purpose',
+            'voice-sample',
+            '--author',
+            'Avery',
+        )
+        rows = {row['id']: row for row in library.catalog(self.root)['items']}
+        self.assertEqual(rows[sample['id']]['role'], 'voice-sample')
+        self.assertEqual(library.catalog(self.root, role='facts')['total'], 0)
+        self.assertEqual(library.catalog(self.root, role='voice-sample')['total'], 1)
+
+    def _file(self, words):
+        self.file.write_text(words)
+        return self.file
+
     def test_each_posts_own_author_imports_first_then_groups_by_byline(self):
         coauthored = (
             b'<html><head><title>Co</title><script type="application/ld+json">{"author":[{"name":"Avery Quinn"},'
@@ -447,7 +503,11 @@ class AddTests(RunnerCase):
         )
         reasons = {h['url']: h['reason'] for h in result['held']}
         self.assertEqual(reasons[SITE + 'co/'], 'Several bylines: Avery Quinn, Jordan Lee')
-        self.assertEqual(reasons[SITE + 'org/'], 'No byline on the page.')
+        self.assertEqual(
+            reasons[SITE + 'org/'],
+            'The byline is an organisation, Example Publishing, not a person.',
+        )
+        self.assertEqual(reasons[SITE + 'none/'], 'No byline on the page.')
         self.assertEqual(result['groups'][0]['samples'], [])
         self.assertIn('Mark the posts as voice samples', result['next_step'])
         # Rename a group; merge a group into another; set the author of a held post.

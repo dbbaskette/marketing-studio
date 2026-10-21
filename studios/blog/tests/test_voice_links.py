@@ -186,6 +186,22 @@ class BylineTests(Fixture):
             b'"name":"Example Publishing"}}</script><p class="byline">By Avery Quinn</p>'
         )
         self.assertEqual(voice_links.bylines(published), [AUTHOR])
+        self.assertEqual(voice_links.organisation(published), None, 'a person is credited too')
+        # An organisation named in a meta tag or a byline is not a person either: held, by name.
+        site = (
+            b'<meta property="og:site_name" content="Example Publishing">'
+            b'<meta name="author" content="Example Publishing">'
+        )
+        self.assertEqual(voice_links.bylines(site), [])
+        self.assertEqual(voice_links.organisation(site), 'Example Publishing')
+        team = b'<p class="byline">By The Example Team</p>'
+        self.assertEqual(
+            (voice_links.bylines(team), voice_links.organisation(team)), ([], 'The Example Team')
+        )
+        ld = b'<script type="application/ld+json">{"author":{"@type":"Organization","name":"Example Co"}}</script>'
+        self.assertEqual(
+            (voice_links.bylines(ld), voice_links.organisation(ld)), ([], 'Example Co')
+        )
         nested = b'<script type="application/ld+json">' + b'[' * 2000 + b']' * 2000 + b'</script>'
         self.assertEqual(voice_links.bylines(nested), [])
 

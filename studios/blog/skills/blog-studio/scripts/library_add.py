@@ -395,6 +395,7 @@ def _rows(root, state):
                 title=record.get('name'),
                 author=record.get('author') or None,
                 bylines=metadata.get('bylines', []),
+                organisation=metadata.get('organisation'),
                 role=blog_library.role_of(record),
                 sample='voice-sample' in record.get('purposes', []),
                 revision=record['revision'],
@@ -419,6 +420,8 @@ def groups_of(rows):
                     'bylines': names,
                     'reason': 'Several bylines: ' + ', '.join(names)
                     if len(names) > 1
+                    else 'The byline is an organisation, ' + row['organisation'] + ', not a person.'
+                    if row.get('organisation')
                     else 'No byline on the page.'
                     if row['kind'] == 'link'
                     else 'No author.',

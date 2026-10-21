@@ -161,6 +161,8 @@ class Bylines(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.found = {'json-ld': [], 'meta': [], 'rel': [], 'class': []}
+        # The site's own names, and organisations credited as the author in JSON-LD.
+        self.publishers, self.organisations = [], []
         self.open = []  # [tag, kind, text parts] for elements whose text is captured.
         self.script = None
 
@@ -173,6 +175,8 @@ class Bylines(HTMLParser):
             name = (values.get('name') or values.get('property') or '').strip().lower()
             if name in BYLINE_META:
                 self.found['meta'].append(values.get('content', ''))
+            elif name in ('og:site_name', 'application-name'):
+                self.publishers.append(values.get('content', ''))
             return
         if tag in VOID:
             return
@@ -226,6 +230,8 @@ class Bylines(HTMLParser):
                 kinds = author.get('@type')
                 kinds = kinds if isinstance(kinds, list) else [kinds]
                 if any(str(kind).casefold() in NOT_A_PERSON for kind in kinds):
+                    if isinstance(author.get('name'), str):
+                        self.organisations.append(author['name'])
                     return []
                 return [author['name']] if isinstance(author.get('name'), str) else []
             if isinstance(author, list):
@@ -241,6 +247,9 @@ class Bylines(HTMLParser):
             elif isinstance(node, dict):
                 if 'author' in node:
                     self.found['json-ld'].extend(names(node['author']))
+                publisher = node.get('publisher')
+                if isinstance(publisher, dict) and isinstance(publisher.get('name'), str):
+                    self.publishers.append(publisher['name'])
                 for key, entry in node.items():
                     if key != 'author' and isinstance(entry, (dict, list)):
                         walk(entry, depth + 1)
@@ -263,30 +272,78 @@ def plain(name):
     return words
 
 
-def bylines(content):
-    """Distinct author names a fetched page states, from the most reliable place that has any."""
+# The last word of a byline that names an organisation rather than a person.
+ORGANISATION_WORDS = frozenset(
+    'blog company corp corporation editorial editors group inc labs llc ltd media news '
+    'press publishing staff studio studios team'.split()
+)
+
+
+def _parsed(content):
     if not content:
-        return []
+        return None
     parser = Bylines()
     try:
         parser.feed(content.decode('utf-8', 'replace'))
         parser.close()
     except (AssertionError, ValueError):
+        return None
+    return parser
+
+
+def _organisation(value, parser):
+    """True when a byline names the site or an organisation the page credits, or ends in a
+    word an organisation's name does ("The Example Team", "Example Publishing")."""
+    words = plain(value)
+    return bool(words) and (
+        words[-1] in ORGANISATION_WORDS
+        or any(
+            words == plain(name) for name in parser.publishers + parser.organisations if plain(name)
+        )
+    )
+
+
+def _names(parser, kind):
+    names, seen = [], set()
+    for value in parser.found[kind]:
+        value = ' '.join(str(value).split())
+        if value.lower().startswith('by '):
+            value = value[3:].strip()
+        words = tuple(plain(value))
+        if not words or len(value) > 80 or '://' in value or words in seen:
+            continue
+        seen.add(words)
+        names.append(value)
+    return names
+
+
+def bylines(content):
+    """Distinct person names a fetched page states as its author, from the most reliable place
+    that has any. An organisation credited as author (the site's own name, or a name such as
+    "The Example Team") is not a person, wherever the page says it, so it is left out."""
+    parser = _parsed(content)
+    if parser is None:
         return []
     for kind in ('json-ld', 'meta', 'rel', 'class'):
-        names, seen = [], set()
-        for value in parser.found[kind]:
-            value = ' '.join(str(value).split())
-            if value.lower().startswith('by '):
-                value = value[3:].strip()
-            words = tuple(plain(value))
-            if not words or len(value) > 80 or '://' in value or words in seen:
-                continue
-            seen.add(words)
-            names.append(value)
+        names = [n for n in _names(parser, kind) if not _organisation(n, parser)]
         if names:
             return names[:5]
     return []
+
+
+def organisation(content):
+    """The organisation a page credits as its author when it credits no person, else None."""
+    parser = _parsed(content)
+    if parser is None or bylines(content):
+        return None
+    for name in parser.organisations:
+        if plain(name):
+            return ' '.join(str(name).split())
+    for kind in ('meta', 'rel', 'class'):
+        for name in _names(parser, kind):
+            if _organisation(name, parser):
+                return name
+    return None
 
 
 def same_author(byline, author):
