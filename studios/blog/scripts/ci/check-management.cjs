@@ -851,6 +851,7 @@ async function sharedSettings(){
   assert.equal(requests[0].url,'/api/run-settings');assert.equal(requests[0].data.author,'New Author');
   assert.deepEqual(requests[0].data.shared_before,before);assert.equal('for_all_studios' in requests[0].data,false);
   assert.deepEqual(requests[0].data.voice,{profile_id:'mine',revision:3},'the default voice is saved with its revision');
+  assert.deepEqual(requests[0].data.voice_before,{profile_id:'mine',revision:3},'against the voice the form showed');
   f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic',voice:null,voices};sSettings()");
   const none=descendants(f.get('studio-page')).find(e=>e.id==='settings-voice');assert.equal(none.value,'','no default: None');
   none.value='guest';none.listeners.change();

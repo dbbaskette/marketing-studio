@@ -115,9 +115,21 @@ def settings(root, data=None):
     if data is not None:
         data = dict(data)
         # The personal default voice: a confirmed profile at a revision, or none. It lives in
-        # the private writing defaults, beside the other personal values, never in a Hub.
-        if 'voice' in data:
-            voice = data.pop('voice')
+        # the private writing defaults, beside the other personal values, never in a Hub. It
+        # is checked with the rest of the form, against the voice the form showed, and saved
+        # only once the shared settings are, so a refused form changes nothing.
+        voice_given = 'voice' in data
+        voice = data.pop('voice', None)
+        if voice_given:
+            if 'voice_before' not in data:
+                raise ValueError('Reload the displayed settings before saving the default voice.')
+            shown = data.pop('voice_before')
+            current = writing_defaults.personal(root)['values'].get('voice')
+            if shown != (current if isinstance(current, dict) else None):
+                raise ValueError(
+                    'The default voice changed since these settings were shown. Reload the '
+                    'settings before saving.'
+                )
             if voice is not None and not (
                 isinstance(voice, dict) and set(voice) == {'profile_id', 'revision'}
             ):
@@ -127,7 +139,8 @@ def settings(root, data=None):
                 for found in writing_defaults.confirmed_voices(root)
             ):
                 raise ValueError('Choose a confirmed voice for the default, or none.')
-            writing_defaults.set_personal(root, 'voice', voice)
+        elif 'voice_before' in data:
+            raise ValueError('Save the displayed writing settings only.')
         before = data.pop(
             'shared_before',
             {
@@ -167,6 +180,8 @@ def settings(root, data=None):
         shared = studios_config.update(changes, expected=expected)
         private = {key: value for key, value in data.items() if key not in ('engine', 'author')}
         studio.write_json(path, {'schema': 1, 'defaults': private})
+        if voice_given:
+            writing_defaults.set_personal(root, 'voice', voice)
         base = {
             **data,
             'engine': shared.get('assistant', {}).get('agent')

@@ -805,7 +805,7 @@ class DefaultVoiceTests(RunnerCase):
         saved = management.dispatch(
             self.root,
             'run-settings',
-            {**defaults, 'voice': {'profile_id': mine['id'], 'revision': 1}},
+            {**defaults, 'voice': {'profile_id': mine['id'], 'revision': 1}, 'voice_before': None},
         )
         self.assertEqual(saved['voice'], {'profile_id': mine['id'], 'revision': 1})
         self.assertEqual(
@@ -824,7 +824,11 @@ class DefaultVoiceTests(RunnerCase):
             {'mode': 'profile', 'profile_id': mine['id'], 'revision': 1},
         )
         self.assertIsNone(
-            management.dispatch(self.root, 'run-settings', {**defaults, 'voice': None})['voice']
+            management.dispatch(
+                self.root,
+                'run-settings',
+                {**defaults, 'voice': None, 'voice_before': saved['voice']},
+            )['voice']
         )
         self.assertNotIn('voice', writing_defaults.personal(self.root)['values'])
         for bad in (
@@ -833,10 +837,68 @@ class DefaultVoiceTests(RunnerCase):
             'avery',
         ):
             with self.assertRaisesRegex(ValueError, 'voice'):
-                management.dispatch(self.root, 'run-settings', {**defaults, 'voice': bad})
+                management.dispatch(
+                    self.root, 'run-settings', {**defaults, 'voice': bad, 'voice_before': None}
+                )
         self.assertEqual(
             management.dispatch(self.root, 'run-settings', defaults)['defaults'], defaults
         )
+
+    def test_a_refused_or_outdated_settings_form_leaves_the_default_voice(self):
+        import studios_config
+        import writing_defaults
+
+        mine, other = self.voice(), self.voice('Sam')
+        shown = runner.settings(self.root)
+        defaults, before = dict(shown['defaults']), dict(shown['shared_before'])
+        pin = {'profile_id': mine['id'], 'revision': 1}
+        voice = lambda: writing_defaults.personal(self.root)['values'].get('voice')  # noqa: E731
+        # Another studio changed the shared author since this form was shown.
+        studios_config.update({'person': {'name': 'Someone Else'}})
+        with self.assertRaisesRegex(ValueError, 'Shared settings changed'):
+            management.dispatch(
+                self.root,
+                'run-settings',
+                {
+                    **defaults,
+                    'author': 'My Name',
+                    'voice': pin,
+                    'voice_before': None,
+                    'shared_before': before,
+                },
+            )
+        self.assertIsNone(voice(), 'a refused save keeps the default voice')
+        # An invalid form saves nothing either.
+        with self.assertRaisesRegex(ValueError, 'step limit'):
+            management.dispatch(
+                self.root,
+                'run-settings',
+                {**defaults, 'seconds': 5, 'voice': pin, 'voice_before': None},
+            )
+        self.assertIsNone(voice())
+        # A form shown before another window set the default voice is refused, and the
+        # shared settings it carried are not saved either.
+        writing_defaults.set_personal(
+            self.root, 'voice', {'profile_id': other['id'], 'revision': 1}
+        )
+        shown = runner.settings(self.root)
+        with self.assertRaisesRegex(ValueError, 'default voice changed'):
+            management.dispatch(
+                self.root,
+                'run-settings',
+                {
+                    **shown['defaults'],
+                    'author': 'Changed',
+                    'voice': pin,
+                    'voice_before': None,
+                    'shared_before': shown['shared_before'],
+                },
+            )
+        self.assertEqual(voice(), {'profile_id': other['id'], 'revision': 1})
+        self.assertEqual(runner.settings(self.root)['defaults']['author'], 'Someone Else')
+        with self.assertRaisesRegex(ValueError, 'Reload'):
+            management.dispatch(self.root, 'run-settings', {**shown['defaults'], 'voice': pin})
+        self.assertEqual(voice(), {'profile_id': other['id'], 'revision': 1})
 
     def test_interview_me_writes_as_the_chosen_voice(self):
         import article_tools
@@ -880,6 +942,7 @@ class DefaultVoiceTests(RunnerCase):
             {
                 **runner.settings(self.root)['defaults'],
                 'voice': {'profile_id': mine['id'], 'revision': 1},
+                'voice_before': None,
             },
         )
         defaulted = article_tools.start_interview(self.root, {'operation': 'd' * 32, **brief})
