@@ -15,9 +15,9 @@ it does not claim every low-level CLI flag is a browser control.
 | Choose the voice and kind of post for a new blog | New blog → Write as; Kind of post | `run create --profile`, `--style`; no profile means the default voice, or a manuscript's own voice |
 | Learn/edit/confirm/audition/export/retire voices | Tools → Voices and styles (also Library and team tools, Settings) | Existing profile revisions and voice guidance |
 | Learn/edit/confirm/export/retire styles (kinds of writing) | Tools → Voices and styles → Styles | `style` commands and the `style-learn` job; starters are editable |
-| Mark a library source as a voice or style sample | Learn a voice or a style → Use as a sample | Source purpose in a new source revision; a voice sample names its author |
+| Mark a library source as a voice or style sample | Learn a voice → Use as a sample; Learn a style → Use as an example | Source purpose in a new source revision; a voice sample names its author |
 | Import a LinkedIn export as voice samples | Voices and styles → Import a LinkedIn export | One export per upload; About text as author background, articles as samples |
-| Add published posts as voice or style samples from a list of links | Tools → Voices and styles → Add links to posts; Add links to examples | `library voice-links --file LIST --author NAME`, then `--import`; the library's `urls` import, byline check and voice-sample classification |
+| Add published posts as voice or style samples from a list of links | Tools → Voices and styles → Add links to posts (voice samples); Add links to examples (style samples) | `library voice-links --file LIST --author NAME [--purpose style-sample]`, then `--import`; the library's `urls` import, a byline check for voice samples, and voice- or style-sample classification |
 | Apply a voice revision to this article | Voice → Use this revision; Run → About this blog → Change the voice | Explicit article voice pin, confirmed once an outline or draft exists; no default mutation |
 | Interview → reviewed outline → requested draft | Tools / creation → Interview me | Existing interview notes, outline and from-outline runner |
 | Compare/restore manuscript checkpoints | Tools → Saved manuscript revisions | `article restore` and `author_workflow.restore` |
