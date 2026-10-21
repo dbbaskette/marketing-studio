@@ -2350,7 +2350,7 @@ MODELS = {'GET /api/models?agent=claude': [ok(CLAUDE_MODELS)],
           'GET /api/models?agent=codex': [ok(CODEX_MODELS)]}
 RUN_FIELDS = {'state', 'sentence', 'agent', 'model', 'effort', 'steps', 'workers', 'spent',
               'question', 'problem', 'documents', 'copies', 'deck_left', 'finished', 'outline',
-              'deck', 'redesign'}
+              'deck', 'redesign', 'controls'}
 OUTLINE_FIELDS = {'level', 'waiting', 'slides', 'sha256', 'checked', 'worth', 'note',
                   'design'}
 OUTLINE_SLIDE_FIELDS = {'id', 'kind', 'title', 'subtitle', 'understand', 'points', 'caveat',
@@ -2387,7 +2387,8 @@ def a_run(state: str, sentence: str, **more) -> dict:
            'effort': None, 'steps': [], 'workers': [], 'spent': {'dollars': None, 'tokens': None},
            'question': None, 'problem': None, 'documents': None, 'copies': [],
            'deck_left': None, 'finished': None, 'outline': None, 'deck': None,
-           'redesign': [], **more}
+           'redesign': [], 'controls': {'finish_level': None, 'finishing': None,
+                                        'skip_deck': False}, **more}
     assert set(run) == RUN_FIELDS, run
     return ok(run)
 
@@ -4495,6 +4496,42 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('Not made', made['text'])
         self.assertEqual(made['focus'], 'title')
         self.assertEqual(self.posts(result), [('/api/copies', {'path': str(self.root)})] * 3)
+
+    def test_a_run_can_finish_its_level_first_or_leave_the_deck_out_before_it_is_drawn(self):
+        self.started()
+        drawing = 'Writing the level 201 learner guide.'
+        reason = 'No brand is set yet.'
+        skip = {'path': str(self.root), 'artifact': 'deck', 'decision': 'skip', 'note': reason}
+        offered = a_run('working', drawing, controls={'finish_level': '201', 'finishing': None,
+                                                       'skip_deck': True})
+        finishing = a_run('working', drawing, controls={'finish_level': None, 'finishing': '201',
+                                                         'skip_deck': True})
+        decided = self.captured('POST', '/api/decide', skip)
+        decided['body']['said'] = 'This stage is left out. Writing the level 201 learner guide.'
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('working', drawing)],
+            'GET /api/training': [self.detail('working', drawing)],
+            'GET /api/run': [offered, finishing], 'POST /api/run': [finishing],
+            'POST /api/decide': [decided]})
+        result = self.run_page(answers, [
+            {'click': 'Open Rolling restarts'}, {'snapshot': 'offered'},
+            {'click': 'Finish this level, then wait'}, {'snapshot': 'finishing'},
+            {'click': 'Skip the deck for now'}, {'snapshot': 'sheet'},
+            {'type': reason}, {'click': 'Skip this stage'}, {'snapshot': 'left out'}])
+        shots = result['snapshots']
+        for shown in ('Steer it', 'Level 201 is in hand', 'Nothing of the deck is drawn yet'):
+            self.assertIn(shown, shots['offered']['text'])
+        self.assertIn('Finish this level, then wait', shots['offered']['buttons'])
+        self.assertIn('Skip the deck for now', shots['offered']['buttons'])
+        self.assertEqual(shots['offered']['filled'], [])
+        self.assertIn('It finishes level 201, then waits.', shots['finishing']['text'])
+        self.assertNotIn('Finish this level, then wait', shots['finishing']['buttons'])
+        self.assertIn('It finishes this level, then waits.', ' '.join(shots['finishing']['toasts']))
+        self.assertIn('Why leave this stage out?', shots['sheet']['sheet'])
+        self.assertEqual(self.posts(result), [
+            ('/api/run', {'path': str(self.root), 'action': 'finish-level'}),
+            ('/api/decide', skip)])
+        self.assertIn('This stage is left out.', shots['left out']['sheet'])
 
     def test_the_deck_is_left_out_from_the_run_with_a_reason(self):
         self.started()

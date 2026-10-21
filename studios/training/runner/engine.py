@@ -218,7 +218,7 @@ MODELS_FOR = 3600       # seconds a list of an agent's models is reused
 MODELS_MISSED = 60      # seconds before a list that could not be made is asked for again
 LOOKED_FOR = 300        # seconds a look at what this computer has for a deck is reused
 BUSY_TRIES = 20         # times a finding is offered while another save holds the lock
-ACTIONS = ('pause', 'resume', 'stop', 'retry')
+ACTIONS = ('pause', 'resume', 'stop', 'retry', 'finish-level')
 DRIVING = ('take', 'hand-over')
 FETCH_EVERY = 180       # seconds between fetches while the runner serves
 TICK = 15               # seconds between looks at whether to notify
@@ -1138,6 +1138,11 @@ class Engine(Reviewing):
                     continue
                 if self._resting(record) or step.kind not in (*WORK, 'deck'):
                     return
+                # Asked to finish one level and then wait: work for another level waits.
+                if record.get('halt_after') is not None and step.kind in ('agent', 'code') \
+                        and self._level(step.step) != record['halt_after']:
+                    self._level_finished(root)
+                    continue
                 if self._away(found) and step.step.id != 'package':
                     return  # a conversation is driving it; only the index is still ours
                 if step.kind == 'deck':
@@ -1193,6 +1198,15 @@ class Engine(Reviewing):
             self._own(root, found, step.step)
         else:
             self._draft(root, run, found, step)
+
+    def _level_finished(self, root: Path) -> None:
+        """Pause, as the person asked once the level in hand was finished."""
+        with self.files:
+            record = self._load(root)
+            level = record.get('halt_after')
+            record['halt'], record['halt_after'] = 'paused', None
+            self._store(root, record)
+            self._commit(root, f'level {level} finished; paused as asked on the page')
 
     def _trouble(self, root: Path, failure: Exception) -> None:
         """Stop a training on something the runner did not expect, and say what."""
@@ -2918,12 +2932,21 @@ class Engine(Reviewing):
                 if state != 'working':
                     raise WorkspaceError('Only a training that is working can be paused. '
                                          f'This one is {STATES[state]}.')
-                record['halt'] = 'paused'
+                record['halt'], record['halt_after'] = 'paused', None
+            elif action == 'finish-level':
+                if state != 'working':
+                    raise WorkspaceError('Only a training that is working can finish its '
+                                         f'level first. This one is {STATES[state]}.')
+                level = self._level(self._survey(root, record).next.step)
+                if level is None:
+                    raise WorkspaceError('What is in hand is for the whole training, not for '
+                                         'one level, so there is no level to finish first.')
+                record['halt_after'] = level
             elif action == 'stop':
                 if state not in ('working', 'waiting', 'paused'):
                     raise WorkspaceError(f'This training is {STATES[state]}, so there is '
                                          'nothing to stop.')
-                record['halt'] = 'stopped'
+                record['halt'], record['halt_after'] = 'stopped', None
                 run.stop.set()
             elif action == 'resume':
                 if state not in ('paused', 'stopped') and problem.get('action') != 'resume':
@@ -2944,7 +2967,8 @@ class Engine(Reviewing):
             self._store(root, record)
             self._commit(root, {'pause': 'paused on the page', 'stop': 'stopped on the page',
                                 'resume': 'resumed on the page',
-                                'retry': 'asked to try again on the page'}[action])
+                                'retry': 'asked to try again on the page',
+                                'finish-level': 'asked to finish the level, then wait'}[action])
         if action in ('resume', 'retry'):
             run.stop.clear()
             self.wake(root)
@@ -3554,10 +3578,27 @@ class Engine(Reviewing):
             'deck_left': ({'says': pipeline.deck_says(found), 'artifact': 'deck'}
                           if ending == 'deck' and not resting else None),
             'redesign': self._redesigns(found) if mine else [],
+            'controls': self._controls(record, found, state, mine),
             'finished': ({'ready': bool(report['ready']),
                           'limitations': list(report['limitations']),
                           'blocking': list(report['blocking']), 'index': report['file']}
                          if report and not resting else None)}
+
+    def _controls(self, record: dict, found: pipeline.Survey, state: str, mine: bool) -> dict:
+        """The soft controls a run offers: `finish_level` names the level in hand when it
+        can be finished before the run waits, `finishing` the level it was asked to finish,
+        and `skip_deck` says the deck is wanted and nothing of it is drawn yet, so it can be
+        left out from here."""
+        level = self._level(found.next.step) if found.next.step else None
+        wanted = 'deck' in pipeline.wanted(found.session)
+        started = any(name.startswith('deck-start') for name in found.done) or any(
+            found.state.get(workspace.qualify('deck', each), 'not-started') != 'not-started'
+            for each in found.session['levels'] or [None])
+        return {'finish_level': (level if mine and state == 'working'
+                                 and record.get('halt_after') is None else None),
+                'finishing': record.get('halt_after') if mine else None,
+                'skip_deck': bool(mine and wanted and not started and found.next.kind != 'deck'
+                                  and state in ('working', 'waiting', 'paused'))}
 
     def _redesigns(self, found: pipeline.Survey) -> list[dict]:
         """The decks of a training that were drawn without a design, each offered to be drawn

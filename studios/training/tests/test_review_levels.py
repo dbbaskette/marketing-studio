@@ -63,6 +63,28 @@ class ReviewLevelsTests(DeckCase):
         self.assertEqual(shown['state'], 'done')
         self.assertIsNone(self.gate(root, 'research')['combined'])
 
+    def test_the_deck_can_be_left_out_from_the_direction_review_before_it_is_drawn(self):
+        root, shown = self.choose('balanced')
+        self.assertEqual(shown['review']['phase'], 'direction')
+        self.assertEqual(shown['controls'], {'finish_level': None, 'finishing': None,
+                                             'skip_deck': True})
+        self.assertIn('outline:', [item['target'] for item in shown['review']['items']])
+        since = len(self.workers.jobs)
+        # Leaving the deck out is about the training, not one file: the review lets it through.
+        self.decide(root, 'deck', 'skip', 'We present from the guide.')
+        shown = self.view(root)
+        self.assertIsNone(shown['problem'], shown)
+        self.assertEqual(shown['review']['phase'], 'direction')
+        self.assertNotIn('outline:', [item['target'] for item in shown['review']['items']])
+        self.assertFalse(shown['controls']['skip_deck'])
+        self.assertFalse(shown['review']['commits']['deck'])
+        shown = self.approve_review(root, shown)
+        self.assertEqual(shown['review']['phase'], 'final')
+        shown = self.approve_review(root, shown)
+        self.assertEqual(shown['state'], 'done')
+        self.assertNotIn('section', self.kinds(since))
+        self.assertNotIn('deck', workspace.load(root)['settings']['stages'])
+
     def test_automatic_continues_past_the_research_plan(self):
         root, shown = self.choose('automatic')
         plan = self.steps(root)['gate:research-plan']

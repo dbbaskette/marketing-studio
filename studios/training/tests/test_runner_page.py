@@ -46,7 +46,7 @@ POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/a
          '/api/documents', '/api/copies', '/api/share', '/api/companions', '/api/asset',
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
-RUN_KEYS = ['agent', 'clash', 'copies', 'deck', 'deck_left', 'documents', 'driver', 'effort',
+RUN_KEYS = ['agent', 'clash', 'controls', 'copies', 'deck', 'deck_left', 'documents', 'driver', 'effort',
             'finished', 'kept', 'last_shared', 'mine', 'model', 'model_mode', 'notice', 'outline', 'problem',
             'question', 'queue', 'redesign', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
             'workers']
@@ -1694,7 +1694,7 @@ class RunTests(PageCase):
         path = self.started()
         for sent, expect, said in (
                 ({'path': path, 'action': 'restart'}, 400,
-                 'A run can be asked to: pause, resume, stop, retry.'),
+                 'A run can be asked to: pause, resume, stop, retry, finish-level.'),
                 ({'path': path}, 400, 'Give action as text.'),
                 ({'action': 'pause'}, 400, 'Give path as text.'),
                 ({'path': path, 'action': 'pause'}, 409, 'Only a training that is working '

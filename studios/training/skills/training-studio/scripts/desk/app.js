@@ -132,6 +132,7 @@ const STEERED = {
   stop: 'Stopped. The step in hand was ended and its work so far is lost; everything '
     + 'finished before it is kept.',
   retry: 'Trying again.',
+  'finish-level': 'It finishes this level, then waits. Resume it when you are ready for the next.',
 };
 const AGENTS = ['claude', 'codex'];
 const AGENT_NAMES = { claude: 'Claude Code', codex: 'Codex' };
@@ -5039,6 +5040,34 @@ function deckLeftPart(run) {
     add(make('div', 'bar'), leave));
 }
 
+// The soft controls: finish the level in hand and then wait, and leave the deck out before
+// anything of it is drawn. Neither stops what is in hand.
+function controlsPart(run) {
+  const found = run.controls;
+  const node = callout('', make('h2', 'aside-title', 'Steer it'));
+  const bar = make('div', 'bar');
+  if (found.finishing) {
+    add(node, make('p', '', 'It finishes level ' + found.finishing + ', then waits. Resume it '
+      + 'when you are ready for the next level.'));
+  } else if (found.finish_level) {
+    add(node, make('p', 'quiet', 'Level ' + found.finish_level + ' is in hand. You can have it '
+      + 'finished, and nothing started for another level until you resume.'));
+    const finish = capsule('Finish this level, then wait', '', () => steer('finish-level', finish),
+      'finish-level');
+    add(bar, finish);
+  }
+  if (found.skip_deck) {
+    add(node, make('p', 'quiet', 'Nothing of the deck is drawn yet. Leaving it out takes a '
+      + 'reason, which is kept with the training; you can bring the deck back later.'));
+    add(bar, capsule('Skip the deck for now', '', () => {
+      view.deciding = 'deck';
+      openSheet('skip', 'skip-deck')();
+      paintRun(false);
+    }, 'skip-deck'));
+  }
+  return add(node, bar.childNodes.length ? bar : null);
+}
+
 function finishedPart(run, lead) {
   const found = run.finished;
   const limits = list(found.limitations);
@@ -5590,6 +5619,8 @@ function paintRun(fresh) {
       () => outlinePart(run)] : null,
     run.deck_left ? ['deck-left', [run.deck_left, run.sentence, theirs],
       () => deckLeftPart(run)] : null,
+    !theirs && run.controls && (run.controls.finish_level || run.controls.finishing
+      || run.controls.skip_deck) ? ['controls', [run.controls], () => controlsPart(run)] : null,
     run.finished ? ['finished', [run.finished, lead],
       () => finishedPart(run, lead === 'finished')] : null,
     theirs && !driver && run.finished ? ['free', [title], () => finishedFreePart()] : null,
