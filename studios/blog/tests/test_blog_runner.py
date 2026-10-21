@@ -4,6 +4,7 @@ import json
 import http.client
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import threading
@@ -1379,7 +1380,9 @@ class DeleteTests(RunnerCase):
         import tool_jobs
 
         self.assertEqual(tool_jobs.read(self.root, 'd' * 32)['status'], 'queued')
-        self.assertFalse(studio.inside(self.root, '.blog-runs', 'tools', 'c' * 32 + '.json').exists())
+        self.assertFalse(
+            studio.inside(self.root, '.blog-runs', 'tools', 'c' * 32 + '.json').exists()
+        )
         self.assertIsNone(engine.current)
         listing = runner.catalog(self.root)
         self.assertEqual([row['id'] for row in listing['items']], [])
@@ -1420,6 +1423,151 @@ class DeleteTests(RunnerCase):
         self.assertFalse(record_path.exists())
         self.assertFalse(studio.inside(self.root, '.blog-runs', 'deleted', ident).exists())
         self.assertEqual(blog_delete.KEEP_DAYS, 30)
+
+    def test_delete_waits_for_a_working_tool_job_and_the_loop_goes_on(self):
+        import tool_jobs
+
+        entered = threading.Event()
+
+        def worker(*args, **kwargs):
+            entered.set()
+            kwargs['stop'].wait(5)  # the tool job ends once the delete cancels it
+            return {'content': 'late copy', 'notes': ''}
+
+        found = self.create(page=True)
+        ident = found['id']
+        engine = runner.Engine(self.root, worker)
+        runner.ENGINES[str(self.root)] = engine
+        tool_jobs.write(
+            self.root,
+            {
+                'id': 'c' * 32,
+                'kind': 'repurpose',
+                'status': 'queued',
+                'attempts': 0,
+                'created_at': studio.now(),
+                'metadata': {'article': ident},
+                'result': None,
+                'error': '',
+                'engine': 'codex',
+                'payload': {},
+                'guidance': '',
+                'seconds': 5,
+            },
+        )
+        outcome = {}
+
+        def serve_once():
+            try:
+                tool_jobs.once(engine)
+                outcome['ok'] = True
+            except Exception as exc:  # noqa: BLE001 - the loop must never see one
+                outcome['error'] = repr(exc)
+
+        thread = threading.Thread(target=serve_once)
+        thread.start()
+        try:
+            self.assertTrue(entered.wait(3))
+            self.assertEqual(engine.current, 'tool:' + 'c' * 32)
+            result = self.delete(engine.describe(ident))
+        finally:
+            engine.stop.set()
+            thread.join(5)
+        self.assertTrue(result['deleted'])
+        self.assertEqual(outcome, {'ok': True}, 'the serve loop survives the deletion')
+        self.assertIsNone(engine.current)
+        self.assertFalse(tool_jobs.path(self.root, 'c' * 32).exists())
+        self.assertFalse(studio.inside(self.root, 'articles', ident).exists())
+        # A job whose file went while it worked is let go of without a word.
+        tool_jobs.write(
+            self.root,
+            {
+                'id': 'e' * 32,
+                'kind': 'repurpose',
+                'status': 'queued',
+                'attempts': 0,
+                'created_at': studio.now(),
+                'metadata': {'article': 'elsewhere'},
+                'result': None,
+                'error': '',
+                'engine': 'codex',
+                'payload': {},
+                'guidance': '',
+                'seconds': 5,
+            },
+        )
+        engine.stop.clear()
+        engine.worker = lambda *a, **k: (
+            tool_jobs.path(self.root, 'e' * 32).unlink(),
+            {'content': 'copy', 'notes': ''},
+        )[1]
+        tool_jobs.once(engine)
+        self.assertIsNone(engine.current)
+
+    def test_a_worker_that_does_not_end_in_time_leaves_the_blog_stopped_and_kept(self):
+        import blog_delete
+
+        entered, release = threading.Event(), threading.Event()
+
+        def worker(*args, **kwargs):
+            entered.set()
+            release.wait(5)  # ignores the stop
+            return {'content': 'late', 'notes': ''}
+
+        found = self.create(page=True)
+        ident = found['id']
+        engine = runner.Engine(self.root, worker)
+        runner.ENGINES[str(self.root)] = engine
+        engine.control(ident, 'resume')
+        thread = threading.Thread(target=engine.once, args=(ident,))
+        thread.start()
+        try:
+            self.assertTrue(entered.wait(2))
+            with patch.object(blog_delete, 'STOP_WAIT', 0.2):
+                with self.assertRaisesRegex(ValueError, 'not ended yet'):
+                    self.delete(engine.describe(ident))
+        finally:
+            release.set()
+            thread.join(5)
+        self.assertTrue(studio.inside(self.root, 'articles', ident, 'session.json').is_file())
+        self.assertFalse(engine.local(ident)['enabled'], 'it was stopped all the same')
+        self.assertEqual(runner.catalog(self.root)['deleted'], [])
+
+    def test_restore_finds_the_blog_already_back_and_drops_the_record(self):
+        import blog_delete
+
+        found = self.create(page=True)
+        ident = found['id']
+        self.delete(found)
+        kept = studio.inside(self.root, '.blog-runs', 'deleted', ident)
+        shutil.copytree(kept / 'blog', studio.inside(self.root, 'articles', ident))
+        restored = management.dispatch(self.root, 'blog-restore', {'id': ident})
+        self.assertEqual((restored['id'], restored['notice']), (ident, blog_delete.ALREADY_BACK))
+        self.assertFalse(kept.exists())
+        self.assertEqual(runner.catalog(self.root)['deleted'], [])
+        # A different blog under the same ID is never overwritten.
+        other = self.create(page=True)
+        self.delete(other)
+        session = studio.inside(self.root, 'articles', other['id'], 'session.json')
+        studio.write_json(session, {'id': other['id'], 'title': 'Another blog'})
+        with self.assertRaisesRegex(ValueError, 'different blog'):
+            management.dispatch(self.root, 'blog-restore', {'id': other['id']})
+
+    def test_a_kept_copy_refuses_a_second_delete_and_a_bad_record_is_left_out(self):
+        found = self.create(page=True)
+        studio.inside(self.root, '.blog-runs', 'deleted', found['id'], 'blog').mkdir(parents=True)
+        with self.assertRaisesRegex(ValueError, 'still kept'):
+            self.delete(found)
+        self.assertTrue(studio.inside(self.root, 'articles', found['id']).is_dir())
+        folder = studio.inside(self.root, '.blog-runs', 'deleted')
+        (folder / 'broken.json').write_text('{"deleted_at": "yesterday", "title": "Broken"}')
+        (folder / 'naive.json').write_text(
+            '{"deleted_at": "2099-01-01T00:00:00", "title": "Naive"}'
+        )
+        (folder / 'list.json').write_text('[1, 2]')
+        listed = runner.catalog(self.root)['deleted']
+        self.assertEqual([row['title'] for row in listed], ['Naive'])
+        self.assertTrue((folder / 'broken.json').exists(), 'what cannot be read is left alone')
 
     def test_a_saved_draft_without_a_run_is_deleted_against_its_detail_version(self):
         ident = self.article()

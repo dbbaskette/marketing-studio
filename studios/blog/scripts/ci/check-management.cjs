@@ -1092,6 +1092,7 @@ async function finishAndDelete(){
   const papers=descendants(f.get('studio-page')).filter(e=>e.tagName==='article');
   assert.equal(papers[0].attributes['aria-label'],'Draft','the draft is the open document at the final stop');
   assert.ok(text().some(t=>t==='Handoff notes'),text().join('|'));
+  assert.ok(descendants(f.get('studio-page')).some(e=>e.textContent==='Download draft'),'the download at the final stop is the draft');
   await finish.listeners.click();
   assert.ok(sheet().some(e=>e.textContent==='Finish this blog?'),sheet().map(e=>e.textContent).join('|'));
   f.run('sCloseSheet()');
@@ -1136,7 +1137,11 @@ async function finishAndDelete(){
   assert.deepEqual(picks.map(e=>e.textContent),['The first angle','The second angle','A third angle']);
   const go=sheet().find(e=>e.textContent==='Develop this choice');assert.equal(go.disabled,true);
   await picks[1].listeners.click();assert.equal(go.disabled,false);
-  const note=sheet().find(e=>e.id==='develop-note');note.value='Keep it short.';note.listeners.input();
+  const note=sheet().find(e=>e.id==='develop-note');note.value='x'.repeat(8000);note.listeners.input();
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.equal(requests.some(r=>r.url==='/api/run-develop'),false,'an over-long note is refused before it is sent');
+  assert.ok(sheet().some(e=>/Keep the note under/.test(e.textContent)));
+  note.value='Keep it short.';note.listeners.input();
   await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   assert.deepEqual(requests.find(r=>r.url==='/api/run-develop').data,{id:'synthetic',expected:'version-i',request:'The second angle\nKeep it short.'});
 }

@@ -1190,7 +1190,11 @@ class Engine:
                         state.update(enabled=False, status='failed', error=str(exc)[:500])
                         self.keep_local(path.stem, state)
             if not self.closed.is_set():
-                tool_jobs.once(self)
+                try:
+                    tool_jobs.once(self)
+                except Exception:
+                    # A tool job that failed to be recorded never takes the loop down with it.
+                    self.current = None
             self.wake.wait(1)
             self.wake.clear()
 
