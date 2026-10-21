@@ -9,6 +9,7 @@ Your task names your section and your inputs. `list_inputs` shows them all. Read
 - **The brief** is your section: its slides in order with every word they must carry, the direction of the deck, the house rules, and what you hand in. Read it first.
 - **The composition contract** is the exact format of what you write, with this brand's names for its colours and its type, and its sizes.
 - **The design guidance** and **the composition guidance** are the slides tool's own: how a slide is designed from what it says, and how a drawing is put together. Read both before you draw.
+- **The brand's worker guidance**, when it is given, is the brand's own word on how its slides look: the deck's direction, how cards are filled, what each colour means and how icons are found. Follow it as it is written. Without it, **the brand design** says what the brand's colours and type are.
 - **The gallery** says what the examples are for. Each **example** is one slide drawn for one relation, for each relation your own slides have. Copy the reasoning, never the layout.
 
 An input that is not listed for you was not to be had on this computer: work from the brief and the contract.
@@ -28,11 +29,11 @@ Each slide comes from the approved outline (version 1) with its title, what the 
 ## How to design
 
 - Design each slide from what it must make the audience understand, not from the nearest row of boxes. A brief that lists points is not asking for one box a point.
-- Equals share one size and weight. Never set one of several peers larger, bolder or in another colour, even where the brief names it as the point of the slide.
+- How each slide looks is the brand's: its colours, what each one means, how cards are filled and which icons are used come from the brand's worker guidance and the house style in your brief, in the look the person chose.
 - The focal point is what the title singles out, and never one of several peers. On a slide that lists equals, the focal is what joins them, not one of them.
 - Draw nothing the title does not announce.
 - Keep the brand's body size. Text is never shrunk to fit, and you may not reword what a slide says: change the drawing instead. If the approved words of a slide cannot fit however you draw them, say so when you hand in.
-- Use an icon only where it names a recognisable thing. Find one with `search_icons`, which takes one or two plain words.
+- Find an icon with `search_icons`, which takes one or two plain words, where the brand's guidance asks for one.
 - Make your slides differ from each other in layout, and do not echo the slide before or after your section.
 
 ## How to work

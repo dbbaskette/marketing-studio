@@ -84,7 +84,7 @@ from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import home
-from studio_core import deck_direction
+from studio_core import brand_guidance, deck_direction
 from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, build_progress, decks, slides as slides_tool
@@ -383,7 +383,84 @@ def export_brand(root, run: dict, brand_skill) -> Path:
     brand_skill.export(root / BRAND, form.get('brand'), form.get('variant'),
                        delivery=DELIVERY)
     write_atomic(root / VERSION, _revision(contract) + '\n')
+    guide(root, run, brand_skill)
     return contract
+
+
+# --- the brand's slide guidance --------------------------------------------------------------
+
+GUIDED = Path('work') / 'guidance'     # the brand's slide guidance for this deck: never shared
+ENTRY = GUIDED / 'entry.json'          # what is kept of the brand's answer
+WORKER = GUIDED / 'worker.md'          # what the brand asks to be forwarded to every composer
+READING = GUIDED / 'reading.json'      # the slides tool's guidance, as the brand pinned it
+NO_ENTRY = ("This brand skill is not the entry to slide building yet, so the deck's workers "
+            "are given the installed slides tool's own guidance and the brand's DESIGN.md.")
+
+
+def guide(root, run: dict, brand_skill) -> dict:
+    """Start the deck's slide task through its brand, or resume the one kept for the same
+    brand and variant, and keep in work/guidance/ (never shared: it names this computer's
+    runtime) the guidance its workers are handed: the slides tool's, pinned to the task,
+    and the brand's worker guidance. A brand without the entry, or one that cannot be
+    reached, is noted and the deck carries on with the installed tool's own guidance.
+    Returns what is kept."""
+    root = Path(root)
+    form = run.get('form') or {}
+    chosen = (form.get('brand'), form.get('variant'))
+    earlier = home.read_json(root / ENTRY, {})
+    earlier = earlier if isinstance(earlier, dict) else {}
+    same = earlier.get('task') and (earlier.get('brand'), earlier.get('variant')) == chosen
+    try:
+        how = brand_skill.guides()
+    except (WorkspaceError, OSError):
+        how = None
+    kept = {'brand': chosen[0], 'variant': chosen[1], 'at': home.now()}
+    if how is None:
+        kept['problem'] = NO_ENTRY
+    else:
+        project = root / 'work'
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            answer = brand_skill.guidance(project, *chosen, task=earlier['task'] if same
+                                          else None, branded=how == 'brand')
+        except WorkspaceError as refusal:
+            answer, kept['problem'] = None, (
+                f"The brand's slide guidance could not be {'resumed' if same else 'started'}: "
+                f'{refusal} The installed slides tool\'s own guidance is used instead.')
+        if answer is not None:
+            home.write_json(root / READING, brand_guidance.snapshot(answer))
+            worker = brand_guidance.worker(answer)
+            if worker:
+                write_atomic(root / WORKER, worker)
+            else:
+                (root / WORKER).unlink(missing_ok=True)
+            kept.update(brand_guidance.recorded(answer),
+                        checkpoints=brand_guidance.checkpoints(answer), worker=bool(worker))
+    home.write_json(root / ENTRY, kept)
+    return kept
+
+
+def guided(root) -> dict:
+    """What is kept of the brand's slide guidance for this deck, or nothing."""
+    found = home.read_json(Path(root) / ENTRY, {})
+    return found if isinstance(found, dict) else {}
+
+
+def guided_reading(root) -> dict:
+    """The slides tool's guidance as the brand returned it for this deck, {name: text}."""
+    found = home.read_json(Path(root) / READING, {})
+    return {name: text for name, text in found.items() if isinstance(name, str)
+            and isinstance(text, str) and text.strip()} if isinstance(found, dict) else {}
+
+
+def brand_for_workers(root, brand: Path) -> dict:
+    """What every composer and the outline's writer are handed of the brand, unchanged:
+    its worker guidance, or, from a brand that gives none, its DESIGN.md."""
+    worker = _read(Path(root) / WORKER)
+    if worker.strip():
+        return {'brand worker guidance': worker}
+    design = brand_guidance.brand_texts(brand).get('brand design')
+    return {'brand design': design} if design else {}
 
 
 # --- where a build is kept -----------------------------------------------------------------
@@ -402,6 +479,8 @@ PPTX = b'PK\x03\x04'
 EMPTY = {'start': None, 'sections': {}, 'rounds': [], 'repair': [], 'asked': None,
          'repaired': 0, 'audit': None, 'auditNote': None, 'deck': None}
 COMPOSING = ('design guidance', 'composition guidance', 'gallery')
+# What every composer is handed of the brand, unchanged: one or the other.
+BRANDED = ('brand worker guidance', 'brand design')
 
 
 def _tools():
@@ -518,12 +597,33 @@ def complete(outline: dict, listed, words: list[str], rules: list[str],
              direction: dict | None = None) -> dict:
     """An approved outline as the slides tool starts a deck from: with its direction, a
     layout for each kind of lead slide, the house rules, and the person's own words of
-    approval. `direction` is the one the brand gives, as `deck_direction.of_file` reads it;
-    without it the outline's own, or DIRECTION."""
+    approval. The outline's own direction, house style and lead layouts are the look the
+    person chose, put there when the brand was approved; `direction` is the brand's default
+    for a deck without one, and DIRECTION the last resort. The house rules are the look's,
+    then the studio's `rules`."""
+    styled = [line for line in outline.get('house') or () if isinstance(line, str)
+              and line.strip() and line not in rules]
     return {**outline, 'delivery': outline.get('delivery') or DELIVERY,
-            'direction': dict(direction or outline.get('direction') or DIRECTION),
-            'layouts': layouts(listed, slides_of(outline)), 'house': list(rules),
-            'approval': list(words)}
+            'direction': dict(outline.get('direction') or direction or DIRECTION),
+            'layouts': chosen_layouts(listed, slides_of(outline), outline.get('layouts')),
+            'house': [*styled, *rules], 'approval': list(words)}
+
+
+def chosen_layouts(listed, slides: list[dict], wanted) -> dict:
+    """The layout for each kind of lead slide: the one the chosen look names where the
+    template has it and it holds the slide (a title, and room for a subtitle where one is
+    written), else the one `layouts` finds."""
+    found = layouts(listed, slides)
+    named = {layout['name']: layout for layout in listed or () if isinstance(layout, dict)
+             and isinstance(layout.get('name'), str)}
+    for kind, name in (wanted or {}).items() if isinstance(wanted, dict) else ():
+        layout = named.get(name)
+        mine = [slide for slide in slides if slide.get('kind') == kind]
+        need = 1 if any(slide.get('subtitle') for slide in mine) else 0
+        if kind in found and layout and layout.get('title') \
+                and (layout.get('subtitles') or 0) >= need:
+            found[kind] = name
+    return found
 
 
 def lead(part: dict) -> dict:
@@ -711,7 +811,10 @@ def start(root, run: dict, slides, brand) -> dict:
         home.write_json(folder / 'given' / 'outline.json', whole)
         told = root / TOLD
         write_atomic(told / 'compose-contract.txt', composing)
-        for name, text in slides.reading(brand).items():
+        # The slides tool's guidance as the brand pinned it for this deck, where it did.
+        for name, text in (guided_reading(root) or slides.reading(brand)).items():
+            write_atomic(told / reading_file(name), text)
+        for name, text in brand_for_workers(root, brand).items():
             write_atomic(told / reading_file(name), text)
     except (WorkspaceError, OSError, KeyError, ValueError, TypeError) as refusal:
         shutil.rmtree(folder, ignore_errors=True)
@@ -855,7 +958,8 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
               'composition contract': _read(told / 'compose-contract.txt')}
     relations = sorted({slide.get('relation') for slide in slides_of(whole)
                         if slide.get('id') in ids and isinstance(slide.get('relation'), str)})
-    for name in (*COMPOSING, *(slides_tool.example(relation) for relation in relations)):
+    for name in (*BRANDED, *COMPOSING,
+                 *(slides_tool.example(relation) for relation in relations)):
         text = _read(told / reading_file(name))
         if text.strip():
             inputs[name] = text

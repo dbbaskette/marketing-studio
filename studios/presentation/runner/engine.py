@@ -1009,7 +1009,7 @@ class Engine(Jobs, Researching):
                 and (lacks or not self._shots(root / existing.ORIGINAL_SHOTS)):
             again.append('inventory')
         if gate_state(record, 'gate:look') != 'approved' and did('look-preview') \
-                and not (root / looks.SAMPLE).is_file():
+                and not (root / looks.SAMPLE).is_file() and looks.shown_looks(root) is None:
             again.append('look-preview')
         if did('patch') and (lacks or not (root / existing.PATCH).is_file()):
             again += ['patch', 'build-render']
@@ -1084,6 +1084,9 @@ class Engine(Jobs, Researching):
                 raise WorkspaceError('This step needs your review.')
             evidence = getattr(self, f"_show_{step.name.partition(':')[2].replace('-', '_')}")(root, record)
             if step.name == 'gate:look':
+                # Automatic draft: the brand's default look, recorded with why. A Balanced
+                # direction review has had the person choose already.
+                looks.choose_default(root, self._skill())
                 looks.approve(root, record, 'Continued under the saved review level.',
                               by='review-policy')
                 record = self._load(root)
@@ -1378,12 +1381,20 @@ class Engine(Jobs, Researching):
             self._done(root, step, clock, 'load the brand')
 
     def _look_preview(self, root: Path, run: _Run, step: stages.Step) -> None:
+        """The brand's look step: a slide of the outline in each of the brand's looks, for
+        the person to choose from. A brand too old to offer looks has its cover drawn, to
+        show it is the brand they meant, as it always had."""
         how = self._renderer(root, step)
         self._contract(root)
         clock = time.monotonic()
-        looks.draw_sample(root, self._load(root), self.slides(), how)
+        skill = self._skill()
+        if skill.looks():
+            looks.draw_looks(root, self._load(root), skill, how)
+        else:
+            looks.draw_sample(root, self._load(root), self.slides(), how)
         with self.files:
             record = self._load(root)
+            record.pop('look_choice', None)   # a pick of earlier looks is not one of these
             looks.show_sample(root, record)
             self._done(root, step, clock, 'draw your cover in your brand', record)
 
@@ -2031,9 +2042,30 @@ class Engine(Jobs, Researching):
             if not record.get('research_contract'):
                 write_atomic(root / REPORT, self._report_text(root, record))
         elif gate == 'gate:look':
+            self._look_chosen(root, extra, note)
             looks.approve(root, record, note)
             record = self._load(root)
+        if gate == 'gate:outline' and review_policy.level(record) == 'balanced':
+            # The direction review shows the looks: the person's pick is part of approving it,
+            # and is kept in the run, so that whichever computer goes on draws the deck in it.
+            picked = self._look_chosen(root, extra, note)
+            if picked:
+                record['look_choice'] = {key: picked[key] for key in (
+                    'choice', 'name', 'words', 'direction', 'layouts', 'house')}
         return record
+
+    def _look_chosen(self, root: Path, extra: dict, note: str | None) -> dict | None:
+        """The look the person picked on the page, recorded with the brand in their words,
+        where the brand offered looks and none is chosen yet. A pick is needed to approve."""
+        shown = looks.shown_looks(root)
+        if shown is None or looks.chosen(root) is not None:
+            return looks.chosen(root)
+        choice = extra.get('look')
+        picked = next((look for look in shown['looks'] if look['id'] == choice), None)
+        if picked is None:
+            raise WorkspaceError(looks.NO_LOOK)
+        words = (note or '').strip() or f"Picked {picked['name']} on the page, with no comment."
+        return looks.choose(root, self._skill(), choice, words)
 
     def _edit_outline(self, root: Path, record: dict, edited) -> None:
         """The outline as the person edited it on the page, checked and saved."""
@@ -2209,7 +2241,11 @@ class Engine(Jobs, Researching):
         if kind == 'build' and ref == SHEET:
             within, file = root.resolve(), root / build.SHEET
         elif kind == 'look':
-            file = root / looks.SAMPLE if str(ref) == 'sample' else None
+            shown = looks.shown_looks(root) or {}
+            numbers = {str(look['picture']) for look in shown.get('looks') or ()}
+            file = root / looks.SAMPLE if str(ref) == 'sample' else root / looks.SHEET \
+                if str(ref) == 'sheet' else root / looks.FOLDER / f'{ref}.png' \
+                if str(ref) in numbers else None
         else:
             try:
                 number = int(ref)
@@ -2501,7 +2537,8 @@ class Engine(Jobs, Researching):
     def _direction_signature(self, root: Path, record: dict) -> str:
         return review_policy.fingerprint({'form': record.get('form'), 'files': {
             str(file): sha256_of(root / file) for file in
-            (PLAN, REPORT, outlines.OUTLINE, looks.SAMPLE, build.CONTRACT)}})
+            (PLAN, REPORT, outlines.OUTLINE, looks.SAMPLE, looks.SHOWN, looks.SHEET,
+             build.CONTRACT)}})
 
     def _show_classify(self, root: Path, record: dict) -> dict:
         if record['route'] == 'document':
@@ -2582,10 +2619,26 @@ class Engine(Jobs, Researching):
 
     def _show_look(self, root: Path, record: dict) -> dict:
         form = record.get('form') or {}
+        shown = looks.shown_looks(root)
+        picked = looks.chosen(root)
+        offered = None
+        if shown:
+            offered = {
+                'looks': [{'id': look['id'], 'name': look['name'], 'useWhen': look['useWhen'],
+                           'default': look['id'] == shown.get('default'),
+                           'picture': {'kind': 'look', 'ref': look['picture']}}
+                          for look in shown['looks']],
+                'sheet': {'kind': 'look', 'ref': 'sheet'}
+                if (root / looks.SHEET).is_file() else None,
+                'route': looks.THROUGH_DRIVE if shown.get('route') == 'google' else None,
+                'chosen': {key: picked[key] for key in ('choice', 'name', 'words')}
+                if picked else None}
         return {'text': text_of(root / looks.LOOK_MD) or '', 'brand': form.get('brand'),
                 'variant': form.get('variant'), 'made_in': decks.brand_words(form),
                 'picture': {'kind': 'look', 'ref': 'sample'}
-                if (root / looks.SAMPLE).is_file() else None}
+                if (root / looks.SAMPLE).is_file() else None,
+                'offered': offered,
+                'older': looks.OLDER if not shown else None}
 
     def _show_build(self, root: Path, record: dict) -> dict:
         """build.gate_view, with each picture named as `picture` takes it, never by path."""

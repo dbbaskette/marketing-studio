@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 import runner_support
+from stand_ins import brand as brand_stand_in
 from runner_support import LONG_OUTLINE, OUTLINE, StudioCase, asks, fails, unsettled
 from workspace import WorkspaceError
 
@@ -1198,6 +1199,82 @@ class SayingTests(StudioCase):
         # section kept from the build before counts as it did then.
         self.assertEqual(shown['last_build']['dollars'], 0.75)
         self.assertEqual(shown['last_build']['sections'], 2)
+
+
+class LookStepTests(StudioCase):
+    """A brand that is the entry to slide building and offers looks: the deck's look is
+    chosen by the person from the brand's rendered samples, at each review level."""
+
+    def setUp(self):
+        super().setUp()
+        self.brand.run.offers_looks = True
+        self.brand.run.guides = True
+
+    def begin(self, level):
+        from studio_core import review_policy
+        with mock.patch.object(review_policy, 'capture',
+                               return_value={'schema': 1, 'level': level}):
+            return self.start()
+
+    def test_step_by_step_shows_the_looks_and_waits_for_the_persons_pick(self):
+        root = self.begin('step_by_step')
+        self.decide(root, 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:look')
+        shown = self.view(root)['gate']
+        offered = shown['offered']
+        self.assertEqual([one['id'] for one in offered['looks']],
+                         [entry['id'] for entry in brand_stand_in.DIRECTIONS])
+        self.assertTrue(offered['looks'][0]['default'])
+        self.assertEqual(offered['sheet'], {'kind': 'look', 'ref': 'sheet'})
+        self.assertIsNone(offered['route'], 'this computer renders locally')
+        self.assertIsNone(shown['older'])
+        self.assertTrue(self.engine.picture(root, 'look', 'sheet').startswith(b'\x89PNG'))
+        self.assertTrue(self.engine.picture(root, 'look', 2).startswith(b'\x89PNG'))
+        with self.assertRaises(FileNotFoundError):
+            self.engine.picture(root, 'look', '../../outline')
+        with self.assertRaisesRegex(WorkspaceError, 'Choose one of the looks'):
+            self.decide(root, 'gate:look')
+        self.decide(root, 'gate:look', 'approve', 'Bold, for the launch.',
+                    {'look': 'example-bold'})
+        self.assertEqual(self.waiting(root), 'gate:build')
+        bold = brand_stand_in.DIRECTIONS[1]
+        started = json.loads((root / build.START / 'outline.json').read_text())
+        self.assertEqual(started['direction'], bold['direction'])
+        self.assertEqual(started['house'][:2], list(brand_stand_in.LOOK_HOUSE))
+        self.assertEqual(started['layouts']['closing'], 'Big Statement')
+        self.assertIn('In their words: "Bold, for the launch."', ' '.join(started['approval']))
+        chose = [call for call in self.brand.run.calls if call[:2] == ['look', 'choose']]
+        self.assertEqual(chose[-1][chose[-1].index('--words') + 1], 'Bold, for the launch.')
+        # Every composer was handed the brand's worker guidance unchanged.
+        composer = [spec for seen, job, spec in self.workers.jobs if seen == 'section'][0]
+        self.assertIn('brand worker guidance', [entry['name'] for entry in composer['inputs']])
+
+    def test_balanced_asks_for_the_pick_in_the_direction_review(self):
+        root = self.begin('balanced')
+        self.assertEqual(self.waiting(root), 'gate:outline')
+        shown = self.view(root)['gate']
+        self.assertEqual(shown['label'], 'Review the direction')
+        self.assertEqual(len(shown['look']['offered']['looks']), 2)
+        with self.assertRaisesRegex(WorkspaceError, 'Choose one of the looks'):
+            self.decide(root, 'gate:outline')
+        self.decide(root, 'gate:outline', 'approve', None, {'look': 'example-clear'})
+        self.assertEqual(self.waiting(root), 'gate:build')
+        kept = decks.read_run(root)['look_choice']
+        self.assertEqual((kept['choice'], kept['direction']),
+                         ('example-clear', brand_stand_in.DIRECTIONS[0]['direction']))
+        self.assertNotIn(str(root), json.dumps(kept), 'shared: it names no path')
+        started = json.loads((root / build.START / 'outline.json').read_text())
+        self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[0]['direction'])
+        self.assertIn('Picked Clear on the page, with no comment.',
+                      ' '.join(started['approval']))
+
+    def test_automatic_draft_takes_the_brands_default_and_records_why(self):
+        root = self.begin('automatic')
+        self.assertEqual(self.waiting(root), 'gate:build')
+        started = json.loads((root / build.START / 'outline.json').read_text())
+        self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[0]['direction'])
+        self.assertIn("Automatic draft: the brand's default look, Clear, was used.",
+                      ' '.join(started['approval']))
 
 
 class SlideNoteTests(StudioCase):

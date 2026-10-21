@@ -263,12 +263,30 @@ def _tail(run: dict, request, error) -> list[str]:
     return lines
 
 
+def one_line_titles(outline) -> list[str]:
+    """A cover, section or closing slide's title is one line: the brand's lead layouts hold
+    one, and a second line packed into it is drawn over the artwork. Words that should be
+    read go in its subtitle, or on a content slide before a closing."""
+    return [f"{slide.get('id') or 'a slide'}: the title of a {slide.get('kind')} slide is one "
+            'line. Put a second line in its subtitle, or on a content slide before it.'
+            for slide in outline.get('slides') or () if isinstance(slide, dict)
+            and slide.get('kind') in ('cover', 'section', 'closing')
+            and '\n' in str(slide.get('title') or '').strip()]
+
+
 def _job(root, run, request, error, brand, slides, brief_kind, level, inputs, rules, intro,
          ask):
     root = Path(root)
     form = run.get('form') or {}
     contract = (slides or slides_tool.Slides()).outline_contract(Path(brand))
     inputs = {'Outline contract': contract, **inputs}
+    # The brand's worker guidance, unchanged, and the slides tool's drafting guidance as the
+    # brand pinned it for this deck, where the brand is the entry to slide building.
+    from runner.steps import build
+    inputs.update(build.brand_for_workers(root, Path(brand)))
+    drafting = build.guided_reading(root).get('drafting guidance')
+    if drafting:
+        inputs['drafting guidance'] = drafting
     current = Path(root) / OUTLINE
     if current.exists():
         inputs['The current outline'] = current.read_text(encoding='utf-8')
@@ -323,7 +341,8 @@ def outline_work(root, run: dict, request: dict | None, error: str | None, brand
         inputs['Research selection'] = ('Use only retained findings to shape this presentation. '
             'The report and brief preserve the full reviewed research; do not reintroduce excluded '
             'finding claims through paraphrase. Excluded finding IDs: ' + ', '.join(sorted(excluded)))
-    return _job(root, run, request, error, brand, slides, kind, None, inputs, [], intro, True)
+    return _job(root, run, request, error, brand, slides, kind, None, inputs,
+                [one_line_titles], intro, True)
 
 
 def extract_work(root, run: dict, request: dict | None, error: str | None, brand: Path,

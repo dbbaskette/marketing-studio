@@ -4076,7 +4076,7 @@ function outlinePanel(gate, readonly) {
   const node = card(gate.look ? 'Review the direction' : 'The outline');
   add(node, sayingLine(gate, readonly), classifyLine(gate, readonly));
   if (gate.research?.text) add(node, documentPart('Research findings', gate.research.text));
-  if (gate.look) add(node, lookPanel(gate.look, true));
+  if (gate.look) add(node, lookPanel(gate.look, readonly || !gate.look.offered, chosenFor(gate)));
   if (gate.look && !readonly) {
     add(node, capsule('Choose another brand', '', openSheet('rebrand', 'direction-brand'), 'direction-brand'));
     if (gate.research?.text) {
@@ -4227,7 +4227,8 @@ function storyboardPanel(gate, readonly) {
 // The brand: the deck's cover drawn in the brand it is made in, so the person can see it is
 // the one they meant. No layout is chosen here: each slide is designed on its own as it is
 // built.
-function lookPanel(gate, readonly) {
+function lookPanel(gate, readonly, held) {
+  if (gate.offered) return looksPanel(gate, readonly, held || chosenFor(gate));
   const node = card('The brand');
   const made = gate.made_in || 'your brand';
   add(node, make('p', 'lede', 'Made in ' + made + '.'),
@@ -4236,8 +4237,63 @@ function lookPanel(gate, readonly) {
       + 'brand.'),
     gate.picture ? pictureAt(pictureOf(view.path, gate.picture), 'The cover in ' + made,
       gate.round) : make('p', 'quiet', 'There is no picture of it on this computer.'),
-    make('p', 'quiet', 'No layout is chosen here. When the deck is built, each slide is '
-      + 'designed on its own from what it says.'));
+    gate.older ? make('p', 'quiet', gate.older) : null);
+  return add(node, ...gateSaid(gate));
+}
+
+// The brand's looks: one slide of the outline drawn in each, on one sheet and one by one.
+// The person picks the look the whole deck is drawn in, and may say why in their words; the
+// brand records both. `held` is where the pick is kept until it is sent.
+function looksPanel(gate, readonly, held) {
+  const offered = gate.offered;
+  const made = gate.made_in || 'your brand';
+  const node = card('Choose the look');
+  add(node, make('p', 'lede', 'Made in ' + made + '.'),
+    make('p', '', 'The brand drew one slide of your outline in each of its looks. The look '
+      + 'you choose sets the colours, what each colour means and how cards are drawn on every '
+      + 'slide.'));
+  if (offered.route) add(node, make('p', 'quiet', offered.route));
+  if (offered.sheet) {
+    add(node, pictureAt(pictureOf(view.path, offered.sheet), 'Every look on one sheet',
+      gate.round));
+  }
+  if (offered.chosen) {
+    add(node, state('done', 'Chosen: ' + offered.chosen.name + '.'),
+      offered.chosen.words ? make('p', 'quiet', '“' + offered.chosen.words + '”') : null);
+    return add(node, ...gateSaid(gate));
+  }
+  if (!held.look) held.look = (list(offered.looks).find((look) => look.default) || {}).id || '';
+  const choices = make('fieldset', 'looks');
+  add(choices, make('legend', '', readonly ? 'The looks' : 'Which look should the deck be drawn in?'));
+  for (const look of list(offered.looks)) {
+    const id = 'look-' + look.id;
+    const pick = make('input');
+    pick.type = 'radio';
+    pick.name = 'look';
+    pick.id = id;
+    pick.value = look.id;
+    pick.checked = held.look === look.id;
+    pick.disabled = Boolean(readonly);
+    pick.addEventListener('change', () => { held.look = look.id; });
+    const label = add(make('label'), make('strong', '', look.name),
+      look.default ? make('span', 'tag', 'The brand’s default') : null);
+    label.htmlFor = id;
+    add(choices, add(make('div', 'look-choice'), pick, label,
+      look.useWhen ? make('p', 'quiet', look.useWhen) : null,
+      pictureAt(pictureOf(view.path, look.picture), look.name + ', drawn on one slide',
+        gate.round)));
+  }
+  add(node, choices);
+  if (!readonly) {
+    const words = make('textarea');
+    words.id = 'look-words';
+    words.maxLength = 4000;
+    words.value = held.lookWords || '';
+    words.addEventListener('input', () => { held.lookWords = words.value; });
+    const said = add(make('label', 'quiet'), 'Why this look, in your words (optional)');
+    said.htmlFor = 'look-words';
+    add(node, said, words);
+  }
   return add(node, ...gateSaid(gate));
 }
 
@@ -4480,8 +4536,8 @@ const APPROVING = {
     + 'changes.',
   'gate:outline': 'Approve, and every slide is designed and built from this outline, with '
     + 'any edits you made here. Or ask for changes.',
-  'gate:look': 'Approve, and every slide is designed in this brand, each on its own. Or '
-    + 'choose another brand.',
+  'gate:look': 'Approve, and every slide is designed in this brand, in the look you chose. '
+    + 'Or choose another brand.',
   'gate:build': 'Approve, and the deck is delivered as it is. Or mark slides and ask for '
     + 'changes.',
 };
@@ -4814,14 +4870,19 @@ function reviewOf(gate) {
     return { label: 'Send ' + count(slides, 'change', 'changes'), approve: false,
       extra: changesOf(gate), tally };
   }
-  return { label: 'Approve', approve: true, extra: edited, tally };
+  // In the direction review the look picked here goes with the approval.
+  const look = gate.look?.offered && !gate.look.offered.chosen && held.look
+    ? { look: held.look } : null;
+  return { label: 'Approve', approve: true,
+    extra: edited || look ? { ...(edited || {}), ...(look || {}) } : null, tally };
 }
 
 // Do what a reviewed stop's button says. What refuses it is said in `problem` where one is
 // given, or else at the head of the deck.
 function sendReview(gate, pressed, problem) {
   const made = reviewOf(gate);
-  decide(made.approve ? 'approve' : 'changes', '', problem || null, pressed, made.extra);
+  const words = made.approve && made.extra?.look ? (chosenFor(gate).lookWords || '').trim() : '';
+  decide(made.approve ? 'approve' : 'changes', words, problem || null, pressed, made.extra);
 }
 
 // Two to four numbers in a row, each with what it counts.
@@ -4935,6 +4996,10 @@ function extraFor(gate, decision) {
   }
   if (gate.name === 'gate:look' && decision === 'changes') {
     return { brand: held.brand, variant: held.variant || null };
+  }
+  if (gate.name === 'gate:look' && decision === 'approve' && gate.offered
+      && !gate.offered.chosen) {
+    return { look: held.look };
   }
   if (gate.name === 'gate:build' && decision === 'changes') return deckChanges();
   return null;
@@ -5094,7 +5159,9 @@ function deckActions(run, lead) {
       : run.gate.unreviewed ? 'Use/export draft as-is' : 'Approve', lead === 'approve' ? 'filled' : '', () => {
       const gate = view.run.gate;
       if (gate && REVIEWED.includes(gate.name)) sendReview(gate, approve);
-      else decide('approve', '', null, approve);
+      else if (gate && gate.name === 'gate:look' && gate.offered) {
+        decide('approve', (chosenFor(gate).lookWords || '').trim(), null, approve);
+      } else decide('approve', '', null, approve);
     }, 'approve');
     const brand = run.gate.name === 'gate:look';
     actions.push(approve, capsule(brand ? 'Choose another brand' : 'Ask for changes', '',

@@ -92,6 +92,20 @@ class BriefTests(Case):
             self.assertIn('Capacity holds', work.prepared['inputs']['Inventory'])
 
 
+    def test_a_lead_slides_title_is_one_line(self):
+        work = self.work()
+        self.assertEqual(work.prepared['artifacts']['outline']['rules'],
+                         [outline.one_line_titles])
+        two = {'slides': [{'id': 'end', 'kind': 'closing',
+                           'title': 'Thank you\nNext: try it on a test app'},
+                          {'id': 'body', 'kind': 'content', 'title': 'One\nTwo'}]}
+        self.assertEqual(outline.one_line_titles(two), [
+            'end: the title of a closing slide is one line. Put a second line in its '
+            'subtitle, or on a content slide before it.'])
+        self.assertEqual(outline.one_line_titles({'slides': [
+            {'id': 'end', 'kind': 'closing', 'title': 'Thank you'}]}), [])
+
+
 class RuleTests(Case):
     def test_verbatim_passes_copied_text_and_refuses_a_changed_word(self):
         rule = outline.verbatim_rule(INVENTORY)

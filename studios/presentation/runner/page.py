@@ -20,7 +20,8 @@ What a caller needs to know
   - `/api/decks`, every deck in the engine's four lists {"needs", "working", "finished",
     "elsewhere"}; `/api/run?path=` one deck's view (`engine.view`).
   - `/api/slide?path=&kind=build|look|original&number=` (or `&name=sample` for the cover
-    drawn in the deck's brand, or `contact-sheet` for the build's sheet): one picture as
+    drawn in the deck's brand, `&name=sheet` for the brand's looks on one sheet and
+    `kind=look&number=` for one look, or `contact-sheet` for the build's sheet): one picture as
     image/png, only what `engine.picture` gives. Nothing is ever read from a place the
     request names.
   - `/api/download?path=`: the rendered deck, only what `engine.download` gives, as an

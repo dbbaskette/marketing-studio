@@ -38,12 +38,23 @@ from studio_core import deck_direction
 from workspace import WorkspaceError, write_atomic
 
 from runner import decks, worker_tools
+from runner.jobs import sha256_of
 from runner.steps import build, outline as outline_step
 
 GATE = 'gate:look'
 OUTLINE = outline_step.OUTLINE
 FOLDER = Path('work') / 'look'
 SAMPLE = FOLDER / 'sample.png'
+SAMPLES = FOLDER / 'samples'     # the brand's look samples, as it rendered them
+SHOWN = FOLDER / 'shown.json'    # what the gate shows of them
+SHEET = FOLDER / 'sheet.png'     # every look on one sheet
+CHOSEN = FOLDER / 'chosen.json'  # the look the person chose, as the brand recorded it
+OLDER = ('This brand skill is too old to offer looks to choose from, so the deck is drawn '
+         "in the brand's default direction, or in the slides tool's own where the brand "
+         'gives none.')
+THROUGH_DRIVE = ('The looks were rendered through Google Drive, the way this computer '
+                 'renders every preview: there is no local renderer here.')
+NO_LOOK = 'Choose one of the looks to draw the deck in.'
 LOOK_MD = 'look.md'
 COVER = 'cover'
 
@@ -104,20 +115,118 @@ def draw_sample(root, run: dict, slides, renderer) -> Path:
     return root / SAMPLE
 
 
-def _markdown(form: dict) -> str:
+def draw_looks(root, run: dict, brand_skill, renderer) -> dict:
+    """Have the brand render a slide of the outline in each of its deck directions, in
+    work/look/, and keep a picture of each and the sheet of them all for the gate. Previews
+    are taken locally where this computer renders locally, and otherwise through Google
+    Drive, as every preview here is; one at a time either way. Returns what the gate shows."""
+    root = Path(root)
+    form = run.get('form') or {}
+    how = build.how(root, run, renderer)
+    preview = 'local' if how.get('renderer') == 'local' else 'google'
+    shutil.rmtree(root / FOLDER, ignore_errors=True)
+    folder = root / FOLDER
+    try:
+        folder.mkdir(parents=True)
+        with worker_tools.one_at_a_time(Path(how['lock'])):
+            made = brand_skill.look_samples(root / OUTLINE, root / SAMPLES, form.get('brand'),
+                                            form.get('variant'), preview=preview,
+                                            delivery=build.DELIVERY)
+        manifest = home.read_json(root / SAMPLES / 'looks.json', {})
+        inside = (root / SAMPLES).resolve()
+        looks = []
+        for number, sample in enumerate(manifest.get('samples') or (), start=1):
+            image = Path(str(sample.get('image'))).resolve()
+            if inside not in image.parents:
+                raise WorkspaceError('The brand drew no picture of a look.')
+            (folder / f'{number}.png').write_bytes(worker_tools.picture(image))
+            looks.append({'id': str(sample['id']), 'name': str(sample.get('name') or ''),
+                          'useWhen': str(sample.get('useWhen') or ''), 'picture': number,
+                          'direction': sample.get('direction'),
+                          'layouts': sample.get('layouts') or {}})
+        if not looks:
+            raise WorkspaceError('The brand offered no look to choose from.')
+        sheet = Path(str(made.get('sheet') or manifest.get('sheet'))).resolve()
+        if inside in sheet.parents and sheet.is_file():
+            (root / SHEET).write_bytes(worker_tools.picture(sheet))
+        shown = {'looks': looks, 'default': manifest.get('default') or made.get('default'),
+                 'slide': manifest.get('slide'), 'house': manifest.get('house') or [],
+                 'route': preview, 'outline': sha256_of(root / OUTLINE)}
+        home.write_json(root / SHOWN, shown)
+    except (WorkspaceError, OSError, KeyError, TypeError, ValueError) as refusal:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise WorkspaceError(f"The brand's looks could not be drawn. {refusal}") from None
+    return shown
+
+
+def shown_looks(root) -> dict | None:
+    """What the gate shows of the brand's looks, or None when there are none here."""
+    found = home.read_json(Path(root) / SHOWN, None)
+    return found if isinstance(found, dict) and found.get('looks') else None
+
+
+def chosen(root) -> dict | None:
+    """The look the person chose, as the brand recorded it, or None."""
+    found = home.read_json(Path(root) / CHOSEN, None)
+    return found if isinstance(found, dict) and found.get('choice') else None
+
+
+def choose(root, brand_skill, choice, words: str) -> dict:
+    """Record the person's pick of a look, in their words, with the brand, and keep it."""
+    root = Path(root)
+    shown = shown_looks(root)
+    if shown is None:
+        raise WorkspaceError('There are no looks to choose from here.')
+    if not isinstance(choice, str) or choice not in [look['id'] for look in shown['looks']]:
+        raise WorkspaceError(NO_LOOK)
+    if chosen(root) is not None:
+        return chosen(root)
+    picked = next(look for look in shown['looks'] if look['id'] == choice)
+    made = brand_skill.look_choose(root / SAMPLES, choice, words)
+    record = {'choice': choice, 'name': picked['name'], 'words': words.strip(),
+              'direction': made.get('direction') or picked['direction'],
+              'layouts': made.get('layouts') or picked['layouts'],
+              'house': list(shown.get('house') or ()), 'at': home.now()}
+    home.write_json(root / CHOSEN, record)
+    return record
+
+
+def choose_default(root, brand_skill) -> dict | None:
+    """Under Automatic draft: the brand's default look, recorded with why. None where the
+    brand offered no looks."""
+    shown = shown_looks(root)
+    if shown is None:
+        return None
+    if chosen(root) is not None:
+        return chosen(root)
+    default = next((look for look in shown['looks'] if look['id'] == shown.get('default')),
+                   shown['looks'][0])
+    return choose(root, brand_skill, default['id'],
+                  f"Automatic draft: the brand's default look, {default['name']}, was used.")
+
+
+def _markdown(form: dict, shown: dict | None = None) -> str:
+    if shown:
+        lines = ['# The look', '',
+                 f'This deck is made in {decks.brand_words(form)}. The brand drew one of its '
+                 'slides in each of its looks. The look chosen sets the colours, what each '
+                 'one means and how cards are drawn on every slide.', '']
+        lines += [f"- {look['name']}" + (' (the brand\'s default)' if look['id']
+                                          == shown.get('default') else '')
+                  + (f": {look['useWhen']}" if look['useWhen'] else '')
+                  for look in shown['looks']]
+        return '\n'.join([*lines, ''])
     return '\n'.join([
         '# The brand', '',
         f'This deck is made in {decks.brand_words(form)}. Its cover is drawn here in that '
-        'brand, so you can see it is the one you meant.', '',
-        'No layout is chosen here. When the deck is built, each slide is designed on its own '
-        'from what it says.', ''])
+        'brand, so you can see it is the one you meant.', '', OLDER, ''])
 
 
 def show_sample(root, run: dict) -> None:
     """Write look.md, which names the brand the sample is drawn in, and set the gate
     waiting."""
     root = Path(root)
-    write_atomic(root / LOOK_MD, _markdown(run.get('form') or {}))
+    write_atomic(root / LOOK_MD, _markdown(run.get('form') or {}, shown_looks(root)))
     gate = (run.setdefault('gates', {})).get(GATE) or {}
     run['gates'][GATE] = {**gate, 'state': 'waiting', 'round': int(gate.get('round') or 0) + 1}
     decks.write_run(root, run)
@@ -160,8 +269,23 @@ def approve(root, run: dict, note: str | None = None, by: str = 'page') -> None:
     outline = _outline(root)
     said = (((run.get('gates') or {}).get('gate:outline') or {}).get('note'))
     words = [f'{"Continued automatically" if by == "review-policy" else "Approved on the page"}, {at}, in {decks.brand_words(run.get("form") or {})}.']
+    picked = chosen(root) or (run.get('look_choice') if isinstance(run.get('look_choice'), dict)
+                              and run['look_choice'].get('direction') else None)
+    if picked:
+        words.append(f"Look chosen: {picked['name']} ({picked['choice']}). In their words: "
+                     f"\"{picked['words']}\"")
     words += [line for line in (said, note) if line]
-    outline.pop('direction', None)
+    # The look the person chose, or the brand's default where it offered none to choose.
+    look = picked or deck_direction.default_look(root / build.CONTRACT)
+    for key in ('direction', 'house', 'layouts'):
+        outline.pop(key, None)
+    if look:
+        outline['direction'] = look['direction']
+        if look.get('house'):
+            outline['house'] = list(look['house'])
+        if look.get('layouts'):
+            outline['layouts'] = {kind: look['layouts'][kind] for kind in
+                                  ('cover', 'section', 'closing') if look['layouts'].get(kind)}
     outline['approval'] = words
     write_atomic(root / OUTLINE, json.dumps(outline, indent=2, ensure_ascii=False) + '\n')
     gate = (run.setdefault('gates', {})).get(GATE) or {}

@@ -532,7 +532,7 @@ class ScreenTests(ScriptedPage, PageCase):
                 self.assertIn('research', shot['text'].lower())
             if name == 'gate:look':
                 self.assertIn('Made in example (light).', shot['text'])
-                self.assertIn('each slide is designed on its own', shot['text'])
+                self.assertIn('too old to offer looks', shot['text'])
                 self.assertTrue(any('kind=look&name=sample' in picture['of']
                                     for picture in shot['pictures']), shot['pictures'])
                 asked = result['snapshots']['rebrand']['sheet']
@@ -1007,6 +1007,61 @@ class ScreenTests(ScriptedPage, PageCase):
         gate = self.run_of(path)['gate']
         self.assertEqual((gate['name'], gate['made_in'], gate['round']),
                          ('gate:look', 'example (dark)', 2))
+
+    def test_the_brands_looks_are_shown_and_the_pick_is_sent_in_the_persons_words(self):
+        self.brand.run.offers_looks = True
+        path = self.started()
+        self.decided(path, 'gate:outline')
+        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:look')
+        result = self.deck_screen(path, [
+            {'see': 'Every look'}, {'see': 'Clear, drawn'}, {'see': 'Bold, drawn'},
+            {'fill': 'Bold', 'value': 'example-bold'},
+            {'fill': 'Why this look, in your words (optional)', 'value': 'Bold for a launch.'},
+            {'snapshot': 'looks'}, {'click': 'Approve'}, {'snapshot': 'sent'}],
+            **{'POST /api/decide': [ok(self.run_of(path))], 'GET /api/slide': [PICTURE] * 3})
+        shot = result['snapshots']['looks']
+        for shown in ('Choose the look', 'Which look should the deck be drawn in?', 'Clear',
+                      'The brand’s default', 'Bold', 'Launches and keynotes.'):
+            self.assertIn(shown, shot['text'])
+        self.assertNotIn('too old to offer looks', shot['text'])
+        refs = {picture['of'].split('kind=look&')[1] for picture in shot['pictures']
+                if 'kind=look' in picture['of']}
+        self.assertTrue({'name=sheet', 'number=1', 'number=2'} <= refs, refs)
+        (address, body), = self.posts(result)
+        self.assertEqual((address, body['gate'], body['decision'], body['extra'], body['note']),
+                         ('/api/decide', 'gate:look', 'approve', {'look': 'example-bold'},
+                          'Bold for a launch.'))
+        # What the page sent is what the runner takes: the deck goes on in the bold look.
+        self.post('decide', body)
+        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:build')
+
+    def test_the_direction_review_hosts_the_look_pick(self):
+        from unittest import mock
+        from studio_core import review_policy
+        self.brand.run.offers_looks = True
+        with mock.patch.object(review_policy, 'capture',
+                               return_value={'schema': 1, 'level': 'balanced'}):
+            path = self.started()
+        gate = self.run_of(path)['gate']
+        self.assertEqual((gate['name'], gate['label']), ('gate:outline', 'Review the direction'))
+        result = self.deck_screen(path, [
+            {'see': 'Every look'}, {'see': 'Clear, drawn'}, {'see': 'Bold, drawn'},
+            {'fill': 'Bold', 'value': 'example-bold'}, {'snapshot': 'review'},
+            {'click': 'Approve'}],
+            **{'POST /api/decide': [ok(self.run_of(path))], 'GET /api/slide': [PICTURE] * 3})
+        self.assertIn('Which look should the deck be drawn in?',
+                      result['snapshots']['review']['text'])
+        (address, body), = self.posts(result)
+        self.assertEqual((body['gate'], body['decision'], body['extra']),
+                         ('gate:outline', 'approve', {'look': 'example-bold'}))
+        self.post('decide', body)
+        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:build')
+
+    def test_an_older_brand_says_it_offers_no_looks(self):
+        path = self.started()
+        self.decided(path, 'gate:outline')
+        result = self.deck_screen(path, [{'snapshot': 'look'}])
+        self.assertIn('too old to offer looks', result['snapshots']['look']['text'])
 
     def test_an_approval_that_is_refused_is_said_on_the_deck_s_screen(self):
         path = self.started()

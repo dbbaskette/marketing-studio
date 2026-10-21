@@ -105,6 +105,45 @@ PLACEHOLDER = re.compile(r'lorem ipsum|click to add', re.IGNORECASE)
 FLAGS = ('json', 'compact', 'no-previews', 'strict')
 
 
+# The deck directions a brand that offers looks gives, as a brand that is the entry to slide building writes them.
+DIRECTIONS = (
+    {'id': 'example-clear', 'name': 'Clear', 'useWhen': 'Most decks: one product explained.',
+     'direction': {'focal': 'headingPrimary', 'neutral': 'canvasSecondary',
+                   'meanings': {'accentAqua': 'Example Platform: the product this deck is about'},
+                   'motif': 'A strip on each card says what it is about.'},
+     'layouts': {'cover': 'Title Slide', 'section': 'Section Header',
+                 'closing': 'Big Statement', 'thanks': 'Thank You'}},
+    {'id': 'example-bold', 'name': 'Bold', 'useWhen': 'Launches and keynotes.',
+     'direction': {'focal': 'accentAqua', 'neutral': 'canvasSecondary',
+                   'meanings': {'headingPrimary': 'Example Platform'},
+                   'motif': 'One large solid card carries the point.'},
+     'layouts': {'cover': 'Title Slide', 'section': 'Section Header',
+                 'closing': 'Big Statement', 'thanks': 'Thank You'}})
+DEFAULT_LOOK = 'example-clear'
+LOOK_HOUSE = ('Fill cards: a supporting card is a solid neutral box or a bar card.',
+              'Icons: each card that names a concrete concept gets one approved icon.')
+CLOSING = {'withWords': {'layout': 'Big Statement', 'title': True, 'subtitles': 0,
+                         'use': 'A closing whose words matter.'},
+           'thanks': {'layout': 'Thank You', 'title': False, 'subtitles': 0,
+                      'use': 'A closing that only thanks the audience.'}}
+WORKER = '# Example Co slides: worker guidance\n\nUse the chosen direction. Fill cards.\n'
+GUIDANCE_USAGE = ('Usage: example-brand guidance locate|start|resume|cached --skill '
+                  'slides|research [--project DIR] [--task ID] [--brand BRAND [--variant '
+                  'VARIANT]]')
+OLD_GUIDANCE_USAGE = ('Usage: example-brand guidance locate|start|resume|cached --skill '
+                      'slides|research [--project DIR] [--task ID]')
+
+
+def deck_record(contract: dict) -> dict:
+    """deck-direction.json, as a brand that offers looks writes it beside its contract."""
+    chosen = next(entry for entry in DIRECTIONS if entry['id'] == DEFAULT_LOOK)
+    return {'schema': 1, 'identity': contract['identity'],
+            'contractRevision': contract['revision'], 'default': DEFAULT_LOOK,
+            'direction': chosen['direction'],
+            'layouts': {key: chosen['layouts'][key] for key in ('cover', 'section', 'closing')},
+            'closing': CLOSING, 'house': list(LOOK_HOUSE), 'directions': list(DIRECTIONS)}
+
+
 def _digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -128,6 +167,12 @@ class StandIn:
     line is, and on more than 60 words on a slide. Starter text left in a slide ("Lorem
     ipsum", "Click to add") blocks it. `calls` lists the arguments of every call made.
     """
+
+    # A newer brand skill is the entry to slide building, with looks to choose
+    # from. Off, it is an older brand that has neither. `guides` may also be 'plain', a
+    # brand whose guidance entry does not take the deck's brand.
+    guides: bool | str = False
+    offers_looks = False
 
     def __init__(self, home: Path | None = None):
         self.calls: list[list[str]] = []
@@ -192,6 +237,10 @@ class StandIn:
             raise _Said('Use contract export|check')
         if name == 'icons':
             return 0, self._search(options)
+        if name == 'guidance' and self.guides:
+            return self._guidance(args[1:])
+        if name == 'look' and self.offers_looks:
+            return self._look(args[1:])
         if name == 'presentation':
             return self._audit(options)
         if name == 'doctor':
@@ -209,6 +258,130 @@ class StandIn:
                        'manual': ['Having the tools is not the same as a deck that is '
                                   'ready.']}
         raise _Said(f'Unknown command: {name}. Run example-brand --help.', 2)
+
+    @staticmethod
+    def _options(rest: list[str]) -> tuple[list[str], dict]:
+        words, options = [], {}
+        while rest:
+            part = rest.pop(0)
+            if part.startswith('--'):
+                options[part[2:]] = rest.pop(0) if rest else None
+            else:
+                words.append(part)
+        return words, options
+
+    def _guidance(self, rest: list[str]):
+        """The brand's entry to slide building: the slides tool's guidance pinned to a task
+        under the project, and with --brand the brand's own block."""
+        words, options = self._options(list(rest))
+        if not words:
+            return 0, GUIDANCE_USAGE if self.guides is True else OLD_GUIDANCE_USAGE
+        action = words[0]
+        if action not in ('start', 'resume') or options.get('skill') != 'slides' \
+                or not options.get('project'):
+            raise _Said('Invalid guidance action options.')
+        if 'brand' in options and self.guides is not True:
+            raise _Said("Unknown option '--brand'")
+        cache = Path(options['project']) / '.harness-slides' / 'guidance' / 'tasks'
+        if action == 'resume':
+            task = str(options.get('task') or '')
+            if not (cache / task / 'SKILL.md').is_file():
+                raise _Said('Saved guidance changed; reopen an intact task or start new work.')
+            fresh = 'pinned'
+        else:
+            task = _digest(str(len(self.calls)).encode())[:32]
+            folder = cache / task
+            (folder / 'references' / 'gallery').mkdir(parents=True)
+            for name, text in (('SKILL.md', '# Harness Slides\n'),
+                               ('references/draft.md', 'Choose the look from real slides.\n'),
+                               ('references/design.md', 'Design from the content.\n'),
+                               ('references/compositions.md', 'Compose from containers.\n'),
+                               ('references/gallery.md', 'What the examples are for.\n'),
+                               ('references/review.md', 'Review every slide.\n'),
+                               ('references/gallery/order.json', '{"slides": []}\n')):
+                (folder / name).write_text(text, encoding='utf-8')
+            fresh = 'current-at-start'
+        answer = {'freshness': fresh, 'revision': 'f' * 40, 'task': task,
+                  'guidance': str(cache / task / 'SKILL.md'),
+                  'runtime': str(self.home / 'slides-runtime'), 'runtimeVersion': '0.15.1'}
+        if options.get('brand'):
+            self._chosen(options)
+            answer['brand'] = {'entry': str(self.home / 'references/harness-slides.md'),
+                               'checkpoints': ['Draft approval.', 'Look.', 'Final acceptance.'],
+                               'worker': WORKER}
+        return 0, answer
+
+    def _look(self, rest: list[str]):
+        """Look samples a runner can show, and the person's pick recorded in their words."""
+        words, options = self._options(list(rest))
+        if not words or words[0] not in ('samples', 'choose', 'status'):
+            raise _Said('Use look samples|choose|status')
+        action = words[0]
+        if action == 'samples':
+            self._chosen(options)
+            outline = json.loads(Path(options['outline']).read_text(encoding='utf-8'))
+            content = [one for one in outline.get('slides') or ()
+                       if one.get('kind') == 'content']
+            if not content:
+                raise _Said('The outline has no content slide to show a look on')
+            output = Path(options['output']).resolve()
+            if output.exists():
+                raise _Said(f'Look samples output {output} exists; choose a new directory')
+            output.mkdir(parents=True)
+            preview, samples = options.get('preview'), []
+            from stand_ins import assets
+            for shade, entry in enumerate(DIRECTIONS):
+                folder = output / entry['id']
+                folder.mkdir()
+                (folder / 'look.pptx').write_bytes(b'PK\x03\x04 a look')
+                image = None
+                if preview:
+                    image = folder / 'preview' / 'slide-01.png'
+                    image.parent.mkdir()
+                    image.write_bytes(assets.png(shade=40 + 60 * shade))
+                samples.append({'id': entry['id'], 'name': entry['name'],
+                                'useWhen': entry['useWhen'], 'direction': entry['direction'],
+                                'layouts': entry['layouts'], 'pptx': str(folder / 'look.pptx'),
+                                'image': str(image) if image else None})
+            sheet = None
+            if preview:
+                sheet = output / 'looks.png'
+                sheet.write_bytes(assets.png(width=32, shade=10))
+            manifest = {'schema': 1, 'status': 'awaiting-choice', 'slide': content[0]['id'],
+                        'outlineSha256': _digest(Path(options['outline']).read_bytes()),
+                        'default': DEFAULT_LOOK, 'house': list(LOOK_HOUSE),
+                        'preview': preview, 'samples': samples,
+                        'sheet': str(sheet) if sheet else None}
+            (output / 'looks.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+            return 0, {'status': 'awaiting-choice', 'output': str(output),
+                       'slide': manifest['slide'], 'default': DEFAULT_LOOK,
+                       'samples': [{key: one[key] for key in ('id', 'name', 'pptx', 'image')}
+                                   for one in samples], 'sheet': manifest['sheet']}
+        folder = Path(options['samples'])
+        manifest = json.loads((folder / 'looks.json').read_text(encoding='utf-8'))
+        made = folder / 'choice.json'
+        if action == 'status':
+            choice = json.loads(made.read_text()) if made.is_file() else None
+            return 0, {'status': 'chosen' if choice else manifest['status'],
+                       'default': manifest['default'], 'samples': manifest['samples'],
+                       **({'choice': choice} if choice else {})}
+        if not str(options.get('words') or '').strip():
+            raise _Said('Record what the person said when they chose the look with --words '
+                        'or --words-file; a choice needs their words')
+        picked = next((one for one in manifest['samples']
+                       if one['id'] == options.get('choice')), None)
+        if picked is None:
+            raise _Said(f"{options.get('choice')} is not one of the samples")
+        if made.is_file():
+            raise _Said('A look is already chosen for these samples; take new samples to '
+                        'change it')
+        record = {'schema': 1, 'choice': picked['id'], 'name': picked['name'],
+                  'direction': picked['direction'], 'layouts': picked['layouts'],
+                  'house': manifest['house'], 'words': options['words'].strip()}
+        made.write_text(json.dumps(record, indent=2), encoding='utf-8')
+        return 0, {'status': 'chosen', 'choice': picked['id'], 'name': picked['name'],
+                   'direction': picked['direction'], 'layouts': picked['layouts'],
+                   'record': str(made)}
 
     def _chosen(self, options: dict) -> tuple[str, str]:
         """The brand and variant a call names: by its ID or its name, in any case."""
@@ -272,6 +445,9 @@ class StandIn:
                  'are named, not how to sound.\n')):
             (output / name).write_text(text, encoding='utf-8')
             (output / name).chmod(0o600)
+        if self.offers_looks:
+            (output / 'deck-direction.json').write_text(
+                json.dumps(deck_record(contract), indent=2) + '\n', encoding='utf-8')
         return {'output': str(output), 'revision': contract['revision'],
                 'identity': contract['identity'], 'medium': contract['medium'],
                 'authorVoice': 'unselected'}

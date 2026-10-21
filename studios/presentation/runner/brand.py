@@ -26,7 +26,8 @@ What a caller needs to know
   HARNESS_SLIDES_ROOT and HARNESS_RESEARCH_ROOT, as harness-slides tells a brand adapter to
   be told, so that the skill draws with the same copy wherever it was found.
 - When the skill says no, Refused is raised: a WorkspaceError that carries its lines.
-- No call here uses the network. Nothing a brand skill prints is ever run.
+- Only `guidance` start uses the network: the brand fetches the slides tool's public
+  guidance, as its own handoff says. Nothing a brand skill prints is ever run.
 - `Brand(run=...)` replaces how the command is run. The tests' stand-in, in
   tests/stand_ins/brand.py, has one made-up brand and needs neither Node nor an installed
   skill.
@@ -54,6 +55,12 @@ Added to the above
   `status` is the skill's own word: PASS, WARN or BLOCKED.
 - `ready()` returns the readiness check's own JSON, whatever it found: `ok`, and its
   `checks` and `capabilities`, each with a name and how it stands.
+- A brand that is the entry to slide building (`guides()`) starts a deck's slide task with
+  `guidance(project, brand, variant)` and resumes it with the saved `task`: the answer is
+  the brand's, which studio_core.brand_guidance reads. One that renders looks (`looks()`)
+  draws a slide of the outline in each of its deck directions with `look_samples`, and
+  records the person's pick, in their words, with `look_choose`. Both are asked of the
+  skill, so an older one is used as it always was.
 """
 from __future__ import annotations
 
@@ -327,6 +334,53 @@ class Brand:
 
         return {'status': report.get('status'), 'blockers': said('blockers'),
                 'warnings': said('warnings')}
+
+    def guides(self) -> str | None:
+        """Whether the skill is the entry to slide building: 'brand' when its `guidance`
+        command takes the deck's brand and answers with the brand's own block, 'plain' when
+        it only fetches the slides tool's guidance, None when it has no such command. Asked
+        with `guidance` alone, which prints its usage and fetches nothing."""
+        _, out, err = self.run([self.node, str(self.script), 'guidance'])
+        said = f'{out}\n{err}'
+        if not re.search(r'\bstart\b', said) or not re.search(r'\bresume\b', said):
+            return None
+        return 'brand' if '--brand' in said else 'plain'
+
+    def guidance(self, project: Path, brand_id: str, variant: str | None,
+                 task: str | None = None, branded: bool = True) -> dict:
+        """Start the deck's slide task through the brand, or resume the one saved with it:
+        the slides tool's guidance pinned to the task, its runtime, and with `branded` the
+        brand's own block. `project` is where the guidance is kept: never a shared folder."""
+        return self._answer('guidance', 'resume' if task else 'start', '--skill', 'slides',
+                            '--project', str(project), *(['--task', task] if task else []),
+                            *(['--brand', brand_id, *_variant(variant)] if branded else []))
+
+    def looks(self) -> bool:
+        """Whether the skill renders look samples a person can choose from. Asked with
+        `look` alone, which a skill that has it answers with its actions and which renders
+        nothing. An older skill does not know the command."""
+        _, out, err = self.run([self.node, str(self.script), 'look'])
+        said = f'{out}\n{err}'
+        return bool(re.search(r'\bsamples\b', said) and re.search(r'\bchoose\b', said)
+                    and 'Unknown command' not in said)
+
+    def look_samples(self, outline: Path, output: Path, brand_id: str, variant: str | None,
+                     preview: str | None = None, delivery: str = 'reading') -> dict:
+        """Render one slide of an approved outline in each of the brand's deck directions,
+        into a new folder: each look's deck, and with `preview` ('local' or 'google') its
+        picture and a sheet of them all."""
+        return self._answer('look', 'samples', '--brand', brand_id, *_variant(variant),
+                            '--delivery', delivery, '--outline', str(outline), '--output',
+                            str(output), *(['--preview', preview] if preview else []))
+
+    def look_choose(self, samples: Path, choice: str, words: str) -> dict:
+        """Record the look a person chose, in their own words. A second choice is refused."""
+        return self._answer('look', 'choose', '--samples', str(samples), '--choice', choice,
+                            '--words', words)
+
+    def look_status(self, samples: Path) -> dict:
+        """Where a set of look samples stands: awaiting a choice, or chosen."""
+        return self._answer('look', 'status', '--samples', str(samples))
 
     def ready(self) -> dict:
         """What the skill's own readiness check finds on this computer. It asks Google

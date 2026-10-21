@@ -12,12 +12,14 @@ from pathlib import Path
 from unittest import mock
 
 import runner_support
+from stand_ins import brand as brand_stand_in
 from runner_support import LONG_OUTLINE, OUTLINE
 from workspace import WorkspaceError
 
 from runner import decks, worker_tools
 from runner.steps import build, existing
 from studio_core import deck_direction
+from runner import brand as brand_skill
 from stand_ins.slides import sketch
 
 BY_ID = {slide['id']: slide for slide in OUTLINE['slides']}
@@ -137,6 +139,69 @@ class BrandTests(Deck):
         self.assertIn('The brand changed since this deck began', str(caught.exception))
         halted = decks.read_run(self.root)['halted']
         self.assertTrue(halted['why'].startswith('The brand changed since this deck began'))
+
+
+class GuidanceTests(Deck):
+    """The brand as the entry to slide building: the deck's slide task is started through
+    it, and its guidance, not only the slides tool's own, is what the workers are handed."""
+
+    def entered(self, guides=True):
+        import shutil
+        self.brand.run.guides = guides
+        shutil.rmtree(self.root / build.BRAND)
+        return build.export_brand(self.root, self.run_, self.brand)
+
+    def test_an_older_brand_is_noted_and_the_tools_own_guidance_is_used(self):
+        kept = build.guided(self.root)
+        self.assertEqual(kept['problem'], build.NO_ENTRY)
+        self.assertEqual(build.guided_reading(self.root), {})
+        self.assertEqual(set(build.brand_for_workers(self.root, self.contract)), {'brand design'})
+
+    def test_the_deck_task_is_started_through_the_brand_and_kept_out_of_the_share(self):
+        self.entered()
+        kept = build.guided(self.root)
+        self.assertEqual((kept['brand'], kept['variant'], kept['worker']),
+                         ('example', 'light', True))
+        self.assertIn('task', kept)
+        self.assertNotIn('problem', kept)
+        start = [call for call in self.brand.run.calls if call[:2] == ['guidance', 'start']]
+        self.assertEqual(start[-1][start[-1].index('--project') + 1], str(self.root / 'work'))
+        self.assertTrue(str(build.ENTRY).startswith('work/'), 'never shared: it names a runtime')
+        self.assertEqual(build.guided_reading(self.root)['drafting guidance'],
+                         'Choose the look from real slides.\n')
+        self.assertEqual(build.brand_for_workers(self.root, self.contract),
+                         {'brand worker guidance': brand_stand_in.WORKER})
+        # Exported again for the same brand, the task is resumed, not started again.
+        task = kept['task']
+        self.entered()
+        self.assertEqual(build.guided(self.root)['task'], task)
+        self.assertEqual(self.brand.run.calls[-1][:2], ['guidance', 'resume'])
+
+    def test_every_composer_and_the_outline_writer_get_the_brands_worker_guidance(self):
+        from runner.steps import outline as outlines
+        self.entered()
+        build.start(self.root, self.run_, self.slides, self.contract)
+        work = build.section_work(self.root, self.run_, 'section-1', None, None)
+        inputs = work.prepared['inputs']
+        self.assertEqual(inputs['brand worker guidance'], brand_stand_in.WORKER)
+        self.assertEqual(inputs['composition guidance'], 'Compose from containers.\n')
+        written = outlines.outline_work(self.root, self.run_, None, None, self.contract,
+                                        self.slides)
+        self.assertEqual(written.prepared['inputs']['brand worker guidance'],
+                         brand_stand_in.WORKER)
+        self.assertIn('drafting guidance', written.prepared['inputs'])
+
+    def test_a_brand_whose_entry_fails_is_noted_and_the_deck_carries_on(self):
+        self.brand.run.guides = True
+        original = self.brand.guidance
+
+        def refused(*given, **named):
+            raise brand_skill.Refused(['Guidance fetch failed: offline.'])
+        self.brand.guidance = refused
+        kept = build.guide(self.root, self.run_, self.brand)
+        self.brand.guidance = original
+        self.assertIn('could not be started', kept['problem'])
+        self.assertIn('offline', kept['problem'])
 
 
 class StartTests(Deck):
