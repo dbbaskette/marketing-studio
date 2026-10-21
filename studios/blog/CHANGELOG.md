@@ -13,7 +13,9 @@ changes for authors first, then what changes for maintainers.
   point and the reader, instead of three angles. **Write as** chooses the voice on
   the files screen and on the wizard's second step: you, a saved profile or none.
 - Under Balanced, a blog that starts from your outline stops for you at the draft
-  before its package.
+  before its package; so does a revision, and an existing blog after changes to its draft.
+  A run that selected an inspiration source before this change goes stale, because
+  its saved input pins change; review its saved version or ask for changes to go on.
 - For maintainers: `upload` file entries take `purpose`; the `source-role` desk route;
   `run create --point`; `review_policy.automatic(..., first=)`;
   `text_checks.carried_over`; `synthesis_research.offered`.

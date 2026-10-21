@@ -78,8 +78,10 @@ This creates no model process in chat: you do the writing here.
    accepted that stage (its row shows `auto_accepted`): do not approve it, and
    write the next stage. The default Balanced level waits for the person only at
    the first writing stage (the outline, or the draft when the run has no outline
-   stage) and the final stage; Automatic draft only at the final stage;
-   Step by step at every stage. `decision` means show the saved document, any
+   stage: a run from an outline, a revision, or an existing blog after changes to
+   its draft) and the final stage; Automatic draft only at the final stage;
+   Step by step at every stage. A run that selected an inspiration source before
+   examples were separated goes stale, since its input pins change. `decision` means show the saved document, any
    stages accepted since the last decision, and their limits, then wait for the
    person. Only their explicit approval authorizes
    `... run approve --id <id> --expected <latest>`. A request to make the whole

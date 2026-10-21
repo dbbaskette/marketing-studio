@@ -523,6 +523,47 @@ class StudioTests(unittest.TestCase):
         huge = [{'name': 'n' + str(n), 'text': example * 2000} for n in range(70)]
         self.assertTrue(text_checks.carried_over(draft, huge, allowed)['findings'])
 
+    def test_carried_over_flags_facts_and_quotations_but_not_shared_shape(self):
+        example = (
+            '## Next Steps\n\nIn 2024 and after, 3 of the 10 of our teams moved. Read More below.\n\n'
+            '## Getting Started\n\nWe moved 3 GB a day through Gateway Prime at 40 percent less cost. '
+            '"Every retry has a price, and the budget pays it twice," the on-call lead told us. '
+            'See https://example.invalid/prime.\n'
+        )
+        draft = (
+            '# Launch\n\n## Next Steps\n\nIn 2024 and after, 3 of our 10 of teams moved on. Read More below.\n\n'
+            '## Getting Started\n\nWe ran Gateway Prime, which now moves 3 GB a day at 40 percent less cost, '
+            'and the lead said "Every retry has a price, and the budget pays it twice," which we took '
+            'to heart; see https://example.invalid/prime.\n\n'
+            'Next Steps are listed above. Acme Networks is not here.\n'
+        )
+        targets = [
+            f['target']
+            for f in text_checks.carried_over(draft, [{'name': 'x', 'text': example}], [])[
+                'findings'
+            ]
+        ]
+        for shape in ('2024 and', '3 of', '10 of', 'Next Steps', 'Getting Started', 'Read More'):
+            self.assertFalse(any(shape in t for t in targets), (shape, targets))
+        for fact in (
+            'Gateway Prime',
+            '3 GB',
+            '40 percent',
+            'https://example.invalid/prime',
+            'Every retry has a price',
+        ):
+            self.assertTrue(any(fact in t for t in targets), (fact, targets))
+        # A sentence start is not a name; mid-sentence, a product name is.
+        self.assertFalse(any(t.startswith('Next Steps') for t in targets), targets)
+        self.assertEqual(
+            text_checks.carried_over(
+                'Read Gateway Prime notes.', [{'name': 'x', 'text': example}], []
+            )['findings'][0]['target'],
+            'Gateway Prime',
+        )
+        # Quotations are still protected from the lint rules.
+        self.assertEqual(text_checks.lint('"delve"', {'banished_words': ['delve']})['findings'], [])
+
     def test_fact_tokens_flag_changes_but_are_not_semantic_certification(self):
         before = 'We saved 20 hours. "A quote" https://example.com/source'
         changed = 'We saved 30 hours. "Another quote" https://example.com/other'

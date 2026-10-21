@@ -2003,7 +2003,7 @@ class ExampleTests(FilesCase):
         payload = runner.inputs(self.root, record, run)
         self.assertEqual([source['name'] for source in payload['sources']], ['notes'])
         self.assertEqual([source['name'] for source in payload['examples']], ['launch'])
-        self.assertEqual(set(payload['examples'][0]), set(payload['sources'][0]))
+        self.assertEqual(set(payload['examples'][0]), set(payload['sources'][0]) - {'id'})
         self.assertEqual(payload['examples'][0]['purposes'], ['material', 'inspiration'])
         # A run without examples keeps its payload, and its saved pins, as they were.
         plain = self.from_files()
@@ -2265,8 +2265,23 @@ class WriteAsTests(RunnerCase):
         )
         writing_defaults.command(self.root, args)
         found = runner.options(self.root)
-        self.assertEqual(found['default_voice'], {'profile_id': profile['id'], 'name': 'Avery'})
+        self.assertEqual(
+            found['default_voice'],
+            {'profile_id': profile['id'], 'revision': 1, 'name': 'Avery'},
+        )
         self.assertEqual([p['status'] for p in found['profiles']], ['provisional'])
+        # Me writes with the pinned revision; an unknown or malformed one is refused.
+        pinned = self.create(profile=profile['id'], revision=1)
+        _, record, _ = runner.load(self.root, pinned['id'])
+        self.assertEqual(
+            record['voice'], {'mode': 'profile', 'profile_id': profile['id'], 'revision': 1}
+        )
+        with self.assertRaisesRegex(ValueError, 'revision'):
+            self.create(profile=profile['id'], revision=99)
+        with self.assertRaisesRegex(ValueError, 'revision'):
+            self.create(profile=profile['id'], revision='1')
+        with self.assertRaisesRegex(ValueError, 'profile'):
+            self.create(revision=1)
         # A default that no longer resolves is simply no default.
         import shutil
 

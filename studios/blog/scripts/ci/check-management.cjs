@@ -1078,12 +1078,13 @@ async function sharedPattern(){
 // New blog from my files: one screen uploads every file at once with its role and says what each has,
 // the run starts from the readable ones, and the angles gate offers picks or none of these.
 async function filesJourney(){
-  const requests=[];
+  const requests=[];let refuseRole=false;
   const defaults={engine:'codex',seconds:600,research:'supplied-only',stop:'package',tone:'Clear',author:''};
   const uploaded={files:[{filename:'notes.md',source:{id:'s1',name:'notes'},state:'ready',chars:1200,note:''},{filename:'scan.pdf',source:{id:'s2',name:'scan'},state:'pending',chars:0,note:'This computer has no PDF reader (pdftotext), so this PDF needs text.'}],receipts:[],state:'saved',next_step:'1 of 2 files have text.'};
   const found={id:'files',title:'From my files',status:'queued',next:'angles',approval:'page',expected:'a1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',mode:'from-files',review_level:'balanced',decisions:[],brief:{goal:'A team post',audience:'To be chosen with the angle.'},stages:[{stage:'angles',label:'Angles',path:'derived/blog-angles.md',status:'pending'}],excerpted:[]};
   const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});
-    if(url==='/api/run-options')return {settings:{defaults,review_level:'balanced'},sources:[],profiles:[{id:'p1',name:'Avery',status:'confirmed'},{id:'p2',name:'Sam',status:'provisional'}],default_voice:{profile_id:'p1',name:'Avery'},agents:{codex:true}};
+    if(url==='/api/run-options')return {settings:{defaults,review_level:'balanced'},sources:[],profiles:[{id:'p1',name:'Avery',status:'confirmed'},{id:'p2',name:'Sam',status:'provisional'}],default_voice:{profile_id:'p1',revision:3,name:'Avery'},agents:{codex:true}};
+    if(url==='/api/source-role'&&refuseRole)return {__http:400,error:'A started blog read this file as facts; its role stays.'};
     if(url==='/api/upload')return (JSON.parse(options.body).files||[]).some(e=>e.google)?{files:[{filename:'Messaging Doc',source:{id:'s9',name:'Messaging Doc'},state:'ready',chars:4200,note:'',link:'https://docs.google.com/document/d/abc/edit'}]}:uploaded;
     if(url==='/api/source-role')return {id:JSON.parse(options.body).id,role:JSON.parse(options.body).role};
     if(url==='/api/run-create'||url.startsWith('/api/run?'))return found;
@@ -1139,6 +1140,12 @@ async function filesJourney(){
   assert.equal(byId('files-role-s1').value,'inspiration','the row keeps the new role');
   byId('files-role-s1').value='material';await byId('files-role-s1').listeners.change();
   assert.deepEqual(requests.filter(r=>r.url==='/api/source-role').at(-1).data,{id:'s1',role:'facts'});
+  assert.equal(f.run('studio.busy'),false,'the screen is free again after a role change');assert.equal(start().disabled,false);
+  // A refused role change goes back to what it was and says why.
+  refuseRole=true;byId('files-role-s1').value='inspiration';await byId('files-role-s1').listeners.change();refuseRole=false;
+  assert.equal(byId('files-role-s1').value,'material','the row shows the role the file kept');
+  assert.ok(text().some(t=>/its role stays/.test(t)),'and says why: '+text().join('|'));
+  assert.equal(f.run('studio.busy'),false);assert.equal(start().disabled,false);
   // Example files go up with inspiration; the select applies to the next upload.
   role().value='inspiration';role().listeners.change();
   byId('files-input').files=[{name:'earlier.md',size:4,arrayBuffer:async()=>new TextEncoder().encode('Post').buffer}];
@@ -1184,7 +1191,7 @@ async function filesJourney(){
   assert.equal(creation.mode,'from-files');assert.equal(creation.research,'web-allowed');assert.equal(creation.goal,'A team post');
   assert.deepEqual(creation.sources,['s1','s9'],'only files with text are pinned, once, the Google Doc among them');
   assert.equal(creation.title,'');assert.equal(creation.stop,'package');
-  assert.equal(creation.point,false);assert.equal(creation.profile,'p1','Write as reaches the run');
+  assert.equal(creation.point,false);assert.equal(creation.profile,'p1','Write as reaches the run');assert.equal(creation.revision,3,'Me writes with the default voice\'s pinned revision');
   // I know the point: a title, the point and the reader; the run starts at the outline.
   f.run("studio.screen='new';studio.draft={...studio.options.settings.defaults,mode:'from-files',research:'supplied-only',stop:'package',files:[{id:'s1',filename:'notes.md',state:'ready',chars:1200,note:'',link:'',role:'material'}],web:false,keep:false,profile:'p1',tone:'',goal:'',title:'',audience:'',sources:[],minutes:'10',operation:'b'.repeat(32)};sWizard()");
   const how=()=>nodes().find(e=>e.attributes['aria-label']==='How to start');
@@ -1203,7 +1210,7 @@ async function filesJourney(){
   byId('files-audience').value='Platform engineers';byId('files-audience').listeners.input();
   await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   const pointed=requests.filter(r=>r.url==='/api/run-create').at(-1).data;
-  assert.equal(pointed.point,true);assert.equal(pointed.title,'Announcing the gateway');assert.equal(pointed.goal,'It is generally available.');assert.equal(pointed.audience,'Platform engineers');assert.equal(pointed.mode,'from-files');
+  assert.equal(pointed.point,true);assert.equal(pointed.revision,3);assert.equal(pointed.title,'Announcing the gateway');assert.equal(pointed.goal,'It is generally available.');assert.equal(pointed.audience,'Platform engineers');assert.equal(pointed.mode,'from-files');
   // The angles gate: picks, a note, or none of these.
   const waiting={...found,status:'waiting-for-approval',expected:'a2',stages:[{...found.stages[0],status:'draft'}],excerpted:['notes']};
   const shown={id:'files',title:'From my files',name:'blog-angles.md',stage:'angles',label:'Angles',expected:'a2',status:'draft',content:'# Angles\n\n## Retries are a budget\n\nPlatform engineers · Retries cost · Leans on notes.md\n\n## The gateway is a contract\n\nAPI authors · The contract · Leans on notes.md\n\n## Fewer hops\n\nTeam leads · Hops · Leans on notes.md',notes:'',checks:[],previous:null,diff:[],bundle:[]};

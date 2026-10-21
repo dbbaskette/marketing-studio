@@ -2267,7 +2267,7 @@ class MaterialUploadTests(Fixture):
             },
         )
         _, record = studio.item(self.root, 'sources', result['source']['id'])
-        self.assertEqual(record['purposes'], ['inspiration'])
+        self.assertEqual(record['purposes'], ['reference', 'inspiration'])
         self.assertTrue((self.root / 'sources' / record['id']).is_dir())
         self.assertEqual([r['label'] for r in result['receipts']], ['Uploaded reference'])
         self.assertEqual(

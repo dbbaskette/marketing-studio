@@ -569,8 +569,14 @@ def upload(root, data):
         studio.checked_author(data['author'])
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
     # An unchecked "Summarize and tag" keeps this file's text away from the analysis CLI.
+    # An example of the kind of post is a kept reference with inspiration, as on the files screen.
     source = save_upload(
-        root, staging, checked, purpose, data.get('author'), data.get('analyze', True)
+        root,
+        staging,
+        checked,
+        ['reference', 'inspiration'] if purpose == 'inspiration' else purpose,
+        data.get('author'),
+        data.get('analyze', True),
     )
     result = {
         'source': share(root, 'source', source) if purpose != 'material' else source,

@@ -265,7 +265,11 @@ def inputs(root, record, run):
     if run.get('mode') == 'from-files':
         sources = excerpted(sources, SOURCE_BUDGET, run_terms(record, run))
     # An example of the kind of post shows its shape; it has no citable source ID.
-    examples = [source for source in sources if 'inspiration' in source['purposes']]
+    examples = [
+        {key: value for key, value in source.items() if key != 'id'}
+        for source in sources
+        if 'inspiration' in source['purposes']
+    ]
     sources = [source for source in sources if 'inspiration' not in source['purposes']]
     payload = {
         'title': record['title'],
@@ -594,6 +598,7 @@ def create(root, data, approval='conversation'):
         'brand',
         'variant',
         'point',
+        'revision',
     }
     if set(data) - allowed:
         raise ValueError('Unknown new-blog field.')
@@ -667,8 +672,13 @@ def create(root, data, approval='conversation'):
         if data.get('id') or manuscript or outline_text:
             raise ValueError('Write from my files starts a new blog from uploaded files.')
     profile = data.get('profile') or None
+    revision = data.get('revision')
+    if revision is not None and (type(revision) is not int or revision < 1):
+        raise ValueError('Choose a saved revision of the voice profile.')
     if profile:
-        studio.voice_pin(root, profile)
+        studio.voice_pin(root, profile, revision)
+    elif revision is not None:
+        raise ValueError('A voice revision needs its profile.')
     sources = data.get('sources', [])
     if not isinstance(sources, list) or len(sources) > 50 or len(set(sources)) != len(sources):
         raise ValueError('Select at most 50 different sources.')
@@ -728,7 +738,7 @@ def create(root, data, approval='conversation'):
             }
         ]
     if profile:
-        record['voice'] = {'mode': 'profile', **studio.voice_pin(root, profile)}
+        record['voice'] = {'mode': 'profile', **studio.voice_pin(root, profile, revision)}
     record['research_policy'] = 'supplied-only' if research == 'none' else research
     research = research_scope(research, record['sources'])
     if from_files and research == 'supplied-only':
@@ -946,15 +956,28 @@ def carried(directory, run, payload, writing):
         return []
     from text_checks import carried_over
 
-    allowed = [source['text'] for source in payload['sources']] + [
-        str(value) for value in run['brief'].values()
-    ]
+    def strings(value):
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, dict):
+            for item in value.values():
+                yield from strings(item)
+        elif isinstance(value, list):
+            for item in value:
+                yield from strings(item)
+
+    allowed = (
+        [source['text'] for source in payload['sources']]
+        + [str(value) for value in run['brief'].values()]
+        + [payload.get('title', '')]
+        + [str(item.get('body', '')) for item in payload.get('team_context', [])]
+    )
     outline = directory / 'OUTLINE.md'
     if outline.is_file():
         allowed.append(outline.read_text())
     if run.get('research_contract') and run['stages'].get('research'):
         facts, _ = research_contract.read_bundle(directory / 'research')
-        allowed += [str(fact.get('statement', '')) for fact in facts['facts']]
+        allowed += list(strings([facts['facts'], facts['findings'], facts.get('sections', [])]))
         allowed.append((directory / 'research/brief.md').read_text())
     return carried_over(writing, payload['examples'], allowed)['findings']
 
@@ -1551,7 +1574,11 @@ def options(root):
             pin = studio.voice_pin(root, voice['profile_id'], voice['revision'])
             _, profile = studio.item(root, 'profiles', pin['profile_id'])
             if profile.get('status') != 'retired':
-                default_voice = {'profile_id': profile['id'], 'name': profile['name']}
+                default_voice = {
+                    'profile_id': profile['id'],
+                    'revision': pin['revision'],
+                    'name': profile['name'],
+                }
     except (ValueError, KeyError, TypeError, OSError):
         default_voice = None
     return {

@@ -22,6 +22,20 @@ PROTECTED = (
 )
 # The carried-over check reads at most this many examples, this much of each.
 EXAMPLE_LIMIT, EXAMPLE_CHARS, SHINGLE = 60, 200_000, 8
+# A number followed by one of these is a count in a sentence, not a figure with a unit.
+FUNCTION_WORDS = frozenset(
+    'a an and are as at be but by can for from had has have if in into is it its no not of on '
+    'or our so than that the their then there these they this those to was we were which who '
+    'will with you your'.split()
+)
+# Two capitalised words with one of these are a heading or a phrase, not a name.
+COMMON_WORDS = frozenset(
+    'a about after all also an and any are as at be before but by each every first for from '
+    'getting go how in into is it last learn more most new next no not note of on one or other '
+    'our over part read results section see some started step steps such summary than that the '
+    'their then there these they this those three to two under use used using what when where '
+    'which who why will with your'.split()
+)
 
 
 def mask_protected(text, patterns=PROTECTED):
@@ -97,21 +111,53 @@ def _words(text):
     return [(m.start(), m.end(), m.group().casefold()) for m in re.finditer(r'[^\W_]+', text)]
 
 
+def _paragraphs(text):
+    """The words of each paragraph, with where they are: a run of words never crosses a
+    blank line or a heading, since shared headings are the shape an example is for."""
+    prose = re.sub(r'(?m)^\s*#[^\n]*', lambda m: ' ' * len(m.group()), text)
+    return [
+        [(para.start() + a, para.start() + b, word) for a, b, word in _words(para.group())]
+        for para in re.finditer(r'\S[\s\S]*?(?=\n\s*\n|\Z)', prose)
+    ]
+
+
+def _figure_or_name(clean, match):
+    """Whether a matched number or two-word name is worth comparing: a figure with a real
+    unit, or a name mid-sentence off a heading line, with no common word in it."""
+    unit, name = match.group('unit'), match.group('name')
+    if unit is not None:
+        return unit.casefold() not in FUNCTION_WORDS
+    if name is None:
+        return True
+    if any(word.casefold() in COMMON_WORDS for word in name.split()):
+        return False
+    before = clean[: match.start(1)]
+    line = before.rsplit('\n', 1)[-1]
+    if line.lstrip().startswith('#'):
+        return False  # A shared section heading is the shape an example is for.
+    return bool(before.rstrip()) and before.rstrip()[-1] not in '.!?:' and not before.endswith('\n')
+
+
 def carried_over(text, examples, allowed):
     """Passages in `text` that come from one of `examples` ({name, text}) and from none of
     the `allowed` texts: runs of eight words, numbers with a unit or a percent, URLs and
-    capitalised two-word names. Advisory: it flags, never rewrites, and reads for meaning
-    is still the person's. Code, URLs in code and quotations in `text` are left alone."""
+    capitalised two-word names. Advisory: it flags, never rewrites, and reading for meaning
+    is still the person's. Code and blockquotes in `text` are left alone; a quotation is
+    not, since a quotation copied from an example is exactly what this finds."""
     text = text[:EXAMPLE_CHARS]
-    clean = mask_protected(text)
-    linkable = mask_protected(text, tuple(p for p in PROTECTED if p != URL))
+    code = tuple(p for p in PROTECTED if '"' not in p and '“' not in p)
+    clean = mask_protected(text, code)
+    linkable = mask_protected(text, tuple(p for p in code if p != URL))
     permitted = '\n'.join(str(value or '') for value in allowed).casefold()
-    words = _words(clean)
-    runs = {}
-    for index in range(len(words) - SHINGLE + 1):
-        runs.setdefault(tuple(word for _, _, word in words[index : index + SHINGLE]), []).append(
-            index
-        )
+    words, groups, runs = [], [], {}
+    for number, group in enumerate(_paragraphs(clean)):
+        base = len(words)
+        words += group
+        groups += [number] * len(group)
+        for index in range(len(group) - SHINGLE + 1):
+            runs.setdefault(
+                tuple(word for _, _, word in group[index : index + SHINGLE]), []
+            ).append(base + index)
     allowed_words = [word for _, _, word in _words(permitted)]
     permitted_runs = {
         run
@@ -121,9 +167,10 @@ def carried_over(text, examples, allowed):
     tokens = [
         (m.start(1), m.end(1))
         for m in re.finditer(
-            r'(?=((?<!\w)\d[\d,]*(?:\.\d+)?(?:\s?%|\s?percent\b|\s+[A-Za-z]{1,12}\b)|\b[A-Z][a-z]+ [A-Z][a-z]+\b))',
+            r'(?=((?<!\w)\d[\d,]*(?:\.\d+)?(?:\s?%|\s?percent\b|\s+(?P<unit>[A-Za-z]{1,12})\b)|\b(?P<name>[A-Z][a-z]+ [A-Z][a-z]+)\b))',
             clean,
         )
+        if _figure_or_name(clean, m)
     ] + [
         (m.start(), m.end() - len(m.group()) + len(m.group().rstrip('.,;:!?')))
         for m in re.finditer(URL, linkable)
@@ -134,16 +181,20 @@ def carried_over(text, examples, allowed):
         if not body.strip():
             continue
         folded = body.casefold()
-        example_words = [word for _, _, word in _words(body)]
         hits = set()
-        for index in range(len(example_words) - SHINGLE + 1):
-            run = tuple(example_words[index : index + SHINGLE])
-            if run in runs and run not in permitted_runs:
-                hits.update(runs[run])
+        for group in _paragraphs(body):
+            for index in range(len(group) - SHINGLE + 1):
+                run = tuple(word for _, _, word in group[index : index + SHINGLE])
+                if run in runs and run not in permitted_runs:
+                    hits.update(runs[run])
         spans = []
         for index in sorted(hits):
             start, end = words[index][0], words[index + SHINGLE - 1][1]
-            if spans and index <= spans[-1][2] + SHINGLE - 1:
+            if (
+                spans
+                and index <= spans[-1][2] + SHINGLE - 1
+                and groups[index] == groups[spans[-1][2]]
+            ):
                 spans[-1] = (spans[-1][0], end, index)
             else:
                 spans.append((start, end, index))
