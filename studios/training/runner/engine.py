@@ -922,10 +922,12 @@ class Engine(Reviewing):
             raise WorkspaceError(ready.problem)
         with self.files:
             record = new_record(agent, model, chosen, form['source_scope'], effort)
-            if form.get('review_level', review_policy.level(record)) != review_policy.level(record):
+            if form.get('review_seen', review_policy.level(record)) != review_policy.level(record):
                 raise WorkspaceError('The shared review preference changed while this form '
                                      'was open. Review the updated preference before '
                                      'starting. Nothing was started.')
+            if form.get('review_level'):  # this training's own choice, saved with its run
+                record['review_policy'] = {'schema': 1, 'level': form['review_level']}
             root = pipeline.create(space, form)
             try:
                 if review_policy.level(record) != 'step_by_step':

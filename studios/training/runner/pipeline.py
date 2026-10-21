@@ -447,10 +447,13 @@ def check_form(sent: dict, brands=None) -> dict:
     form['agent'] = None if sent.get('agent') is None else settings.check_agent(sent['agent'])
     form['model'] = settings.check_model(sent.get('model'))
     form['effort'] = settings.check_effort(sent.get('effort'), form['agent'], form['model'])
-    if 'review_level' in sent:
-        if sent['review_level'] not in review_policy.LEVELS:
-            raise WorkspaceError('Choose a supported review preference before starting.')
-        form['review_level'] = sent['review_level']
+    # `review_level` is the level this training is to run under; `review_seen` is the
+    # shared level the form showed as its default, so a form that is behind is refused.
+    for name in ('review_level', 'review_seen'):
+        if name in sent:
+            if sent[name] not in review_policy.LEVELS:
+                raise WorkspaceError('Choose a supported review preference before starting.')
+            form[name] = sent[name]
     return form
 
 

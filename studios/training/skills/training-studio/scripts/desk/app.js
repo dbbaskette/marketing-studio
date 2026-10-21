@@ -163,6 +163,15 @@ const STEPS = ['Learning goal', 'Materials', 'Review and start'];
 const MATERIALS = [['document', 'Learner guide'], ['brief', 'Reference brief'],
   ['scenario', 'Practice scenarios']];
 // Where the research looks. What each answer means is said under the choice.
+const REVIEW_LEVELS = [['balanced', 'Balanced'], ['automatic', 'Automatic draft'],
+  ['step_by_step', 'Step by step']];
+const REVIEW_SAYS = {
+  balanced: 'Stops to read the research plan, then the direction for every level together, '
+    + 'then the finished materials together.',
+  automatic: 'Stops only for the finished materials. It costs more before you first see '
+    + 'anything, and the spending limit still holds.',
+  step_by_step: 'Stops at every stage of every level.',
+};
 const SOURCES = [['public-web', 'The public web'], ['supplied-only', 'Your documents only'],
   ['both', 'Both']];
 const SOURCE_SAYS = [
@@ -4206,6 +4215,24 @@ function shapeStep(draft) {
         }, 'practice', 'Prepares fields to copy into Yoodli and a knowledge brief to upload. Nothing is posted to Yoodli.')))];
 }
 
+// Where this one training stops for you. The shared level is its default; a level picked
+// here is saved with the training when it starts, and a settings change never moves it.
+function reviewLevelCard(draft) {
+  const at = Math.max(0, REVIEW_LEVELS.findIndex(([id]) => id === draft.review_level));
+  // The step is drawn again from the pick, so everything that reads the level follows it.
+  const control = segmented('Review level', REVIEW_LEVELS.map(([, label]) => label), at,
+    (index) => {
+      draft.review_level = REVIEW_LEVELS[index][0];
+      draft.review_picked = true;
+      paintNew(true);
+      focusKey('review-level ' + index);
+    }, 'review-level');
+  const shared = REVIEW_LEVELS.find(([id]) => id === draft.review_seen);
+  return add(card('Review level'), control, make('p', 'quiet', REVIEW_SAYS[draft.review_level]),
+    make('p', 'quiet', (shared ? 'Shared default: ' + shared[1] + '. ' : '')
+      + 'This training keeps the level it starts with.'));
+}
+
 function startStep(draft) {
   const limits = (view.setup && view.setup.limits) || {};
   const drafted = make('p', 'quiet');
@@ -4216,8 +4243,10 @@ function startStep(draft) {
   told();
   const first = make('p', '');
   const then = make('p', '');
-  const policy = (view.setup && view.setup.review_level) || 'step_by_step';
+  // The shared level is this training's default until the person picks one for it.
   draft.review_seen = view.setup && view.setup.review_level;
+  if (!draft.review_picked) draft.review_level = draft.review_seen || 'step_by_step';
+  const policy = draft.review_level;
   const selected = MATERIALS.filter(([id]) => draft.materials.includes(id)).map(([, label]) => label);
   if (DECKS[draft.deck][0]) selected.push(DECKS[draft.deck][1] + ' deck');
   if (draft.yoodli) selected.push('Yoodli field layouts');
@@ -4239,6 +4268,7 @@ function startStep(draft) {
     make('p', 'quiet', (draft.levels.length ? 'Levels: ' + draft.levels.join(', ') : 'One training without levels')
       + (draft.time ? ' · ' + draft.time : ' · Sized from the teaching plan')),
     first, then, make('p', 'quiet', 'You can close this page while it works. Saved materials stay available.')),
+  reviewLevelCard(draft),
   add(card('Sources'), ...explained('Where the research looks',
     SOURCES.map((source) => source[1]), SOURCE_SAYS, draft.sources, (index) => {
       draft.sources = index;
@@ -4341,7 +4371,8 @@ async function startTraining(pressed) {
     yoodli: draft.yoodli, materials: draft.materials,
     agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null,
   };
-  if (draft.review_seen) body.review_level = draft.review_seen;
+  body.review_level = draft.review_level;
+  if (draft.review_seen) body.review_seen = draft.review_seen;
   draft.starting = true;
   pressed.disabled = true;
   const form = main().querySelector('form');

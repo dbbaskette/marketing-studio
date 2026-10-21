@@ -2603,6 +2603,28 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                     self.assertNotIn('at least 5 decisions', text)
                 self.assertEqual(self.posts(result), [])
 
+    def test_a_training_can_pick_its_own_review_level_on_the_last_step(self):
+        result = self.run_page(self.answers({**SET_UP, 'review_level': 'balanced'}, **{
+            'POST /api/trainings': [
+                {'status': 409, 'body': {'error': 'Fixture stopped before generation.'}}]}), [
+            {'click': 'New training'},
+            {'fill': 'A short title', 'value': 'Restart practice'},
+            {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
+            {'fill': 'Who is it for?', 'value': 'New operators'},
+            {'click': 'Continue'}, {'click': 'No deck'}, {'click': 'Continue'},
+            {'snapshot': 'shared'}, {'click': 'Automatic draft'}, {'snapshot': 'picked'},
+            {'click': 'Start the training'}])
+        shots = result['snapshots']
+        self.assertIn('Shared default: Balanced', shots['shared']['text'])
+        self.assertIn('Stops to read the research plan', shots['shared']['text'])
+        self.assertIn('review the teaching plan', shots['shared']['text'])
+        self.assertIn('Stops only for the finished materials', shots['picked']['text'])
+        self.assertIn('Automatic draft review', shots['picked']['text'])
+        self.assertNotIn('review the teaching plan', shots['picked']['text'])
+        sent = [body for _, body in self.posts(result)]
+        self.assertEqual([(body['review_level'], body['review_seen']) for body in sent],
+                         [('automatic', 'balanced')])
+
     def test_a_changed_review_preference_is_reloaded_with_all_answers_kept(self):
         setup = {**SET_UP, 'review_level': 'step_by_step'}
         result = self.run_page(self.answers(setup, **{
@@ -2621,6 +2643,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Your answers are still here', result['snapshots']['refreshed']['text'])
         sent = [body for _, body in self.posts(result)]
         self.assertEqual([body['review_level'] for body in sent], ['step_by_step', 'automatic'])
+        self.assertEqual([body['review_seen'] for body in sent], ['step_by_step', 'automatic'])
         self.assertEqual(sent[0]['topic'], sent[1]['topic'])
         self.assertEqual(sent[1]['title'], 'Restart practice')
 
