@@ -531,7 +531,11 @@ class UpgradeTests(ReleaseCase):
                              installer=helpers.REPO / 'installer' / 'install.py')
         keep.check()
         self.release('v99.0.0')
-        keep.look()
+        # The checkout's own installer pins its companions to their public repositories:
+        # only Training Studio's own, the local one, is asked, so nothing leaves this computer.
+        own = {upkeep.SELF: keep.repositories()[upkeep.SELF]}
+        with mock.patch.object(keep, 'repositories', return_value=own):
+            keep.look()
         versions = keep.report()['versions']
         self.assertEqual((versions['checkout'], versions['command']),
                          (True, f'cd {helpers.REPO} && git pull'))

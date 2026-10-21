@@ -723,7 +723,26 @@ class StoryboardTests(PageCase):
         slides = json.loads(json.dumps(shown['slides']))
         slides[0]['title'] = 'A new proposed title'
         preview = self.post('storyboard', {'path': path, 'expected': shown['expected'], 'slides': slides})
-        self.assertIn('A new proposed title', preview['html'])
+        self.assertTrue(preview['src'].startswith('/api/deck-draft?ticket='))
+        # The frame opens it without the key, with its ticket, as HTML under its own policy.
+        status, kind, body, extra = self.raw('GET', preview['src'], token=False)
+        self.assertEqual((status, kind), (200, 'text/html; charset=utf-8'))
+        self.assertIn(b'A new proposed title', body)
+        self.assertTrue(extra['Content-Security-Policy'].startswith('sandbox; '))
+        self.assertIn("default-src 'none'", extra['Content-Security-Policy'])
+        drafts = list((root / 'work' / 'drafts').glob('storyboard-*.html'))
+        self.assertEqual(len(drafts), 1, 'kept in work/, never shared')
+        # A made-up ticket, or none, opens nothing; nor does a name a request makes up.
+        self.assertEqual(self.raw('GET', '/api/deck-draft?ticket=made-up', token=False)[0], 403)
+        self.assertEqual(self.raw('GET', '/api/deck-draft', token=False)[0], 400)
+        for name in ('../outline.json', 'storyboard-zzzzzzzzzzzz.html', drafts[0].name + '/..'):
+            with self.subTest(name=name), self.assertRaises(FileNotFoundError):
+                self.engine.storyboard_page(path, name)
+        drafts[0].unlink()
+        self.assertEqual(self.raw('GET', preview['src'], token=False)[0], 404)
+        # The saved outline drawn as it is, by a GET from the page.
+        drawn = self.get('storyboard', path=path, expected=shown['expected'])
+        self.assertEqual(self.raw('GET', drawn['src'], token=False)[0], 200)
         self.assertEqual(before, ((root / 'outline.json').read_bytes(), (root / 'run.json').read_bytes()))
         self.post('storyboard', {'path': path, 'expected': 'old', 'slides': slides}, 409)
         self.post('storyboard', {'path': path, 'expected': shown['expected'], 'slides': []}, 409)

@@ -422,11 +422,13 @@ function see(words) {
 }
 
 // A picture is the page's own when it is shown from memory. Any other is from somewhere else.
+// The one frame is the storyboard's: sandboxed, with no srcdoc, opened at the runner's own
+// framed address with a ticket.
 function own(node) {
   return node.tagName === 'IMG' && kept.has(node.src)
-    || node.tagName === 'IFRAME' && node.className === 'storyboard'
-      && node.getAttribute('sandbox') === '' && typeof node.srcdoc === 'string'
-      && node.srcdoc.startsWith('<meta http-equiv="Content-Security-Policy"');
+    || node.tagName === 'IFRAME' && node.className === 'deck-storyboard-frame'
+      && node.getAttribute('sandbox') === '' && node.srcdoc === undefined
+      && String(node.src).startsWith('/api/deck-draft?ticket=');
 }
 
 function snapshot() {
@@ -663,6 +665,9 @@ async function app(file) {
   window.navigator.clipboard.writeText = () => Promise.resolve();
   const context = vm.createContext(window);
   context.navigator = window.navigator;
+  // The deck panels are the shared core's, served beside the page.
+  const panels = path.join(PAGE, '..', 'studio_core', 'deck_web', 'deck-panels.js');
+  vm.runInContext(fs.readFileSync(panels, 'utf8'), context, { filename: 'deck-panels.js' });
   for (const script of ['markdown.js', 'app.js']) {
     vm.runInContext(fs.readFileSync(path.join(PAGE, script), 'utf8'), context, { filename: script });
   }

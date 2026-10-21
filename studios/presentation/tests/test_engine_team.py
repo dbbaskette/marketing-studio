@@ -249,7 +249,7 @@ class DriverTests(Team):
         self.assertEqual(view['gate']['picture'], {'kind': 'look', 'ref': 'sample'})
         with self.be(self.blake):
             self.blake.engine.picture(theirs, 'look', 'sample')
-        self.assertIn('Rolling restarts: carry on here: draw a sample in your brand again',
+        self.assertIn("Rolling restarts: carry on here: draw the brand's looks again",
                       self.git('log', '--format=%s', repo=self.blake.space.repo))
 
     def test_an_upload_kept_on_the_computer_that_started_the_deck_stops_it_elsewhere(self):

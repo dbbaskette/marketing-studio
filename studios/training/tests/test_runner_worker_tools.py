@@ -1241,3 +1241,24 @@ class ResearchCitationTests(JobCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+
+class PreviewPoolTests(unittest.TestCase):
+    """A preview in the slides tool's pool: its link is kept with its receipt, never listed as
+    a file the runner left, and forgotten once a newer preview replaced it."""
+
+    def test_a_pooled_preview_keeps_its_receipt_and_a_replaced_one_is_forgotten(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as folder:
+            kept = Path(folder) / 'deck.json'
+            how = {'kept': str(kept), 'named': {'name': 'Preview: Rolling restarts'}}
+            worker_tools._in_drive(how, lambda known: {
+                'fileId': 'pool-2', 'url': 'https://docs.example.com/pool-2',
+                'pool': {'receipt': 'pool-2:7', 'route': 'google-pool'}})
+            self.assertEqual(json.loads(kept.read_text())['pool'], 'pool-2:7')
+            worker_tools._in_drive(how, lambda known: {
+                'fileId': 'pool-2', 'url': 'https://docs.example.com/pool-2',
+                'remoteReplaced': True})
+            self.assertFalse(kept.exists(), 'a link to slides that are no longer these')

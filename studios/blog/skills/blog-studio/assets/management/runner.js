@@ -685,6 +685,9 @@ for(const [id,screen,icon]of [['go-home','home','home'],['go-blogs','blogs','blo
 for(const node of document.querySelectorAll('[data-view]'))node.addEventListener('click',()=>sLegacy(node.dataset.view));
 $('new-blog').addEventListener('click',()=>newBlog().catch(error=>notice(error.message,true)));
 document.querySelector('.skip').addEventListener('click',event=>{event.preventDefault();$('main').focus();});
+// A new link opened in a tab that already shows this page changes only the fragment, which does
+// not reload it. Start again with the new key.
+window.addEventListener('hashchange',()=>{const next=location.hash.slice(1).split('&')[0];if(next&&/^(token=)?[A-Za-z0-9_-]{32,128}$/.test(next)&&next.replace(/^token=/,'')!==token.replace(/^token=/,''))location.reload();});
 window.addEventListener('popstate',()=>{const query=new URLSearchParams(location.search);studioNavigate(query.get('screen')||'home',query.get('id'),query.get('stage'));});
 document.addEventListener('keydown',event=>{if(!studio.sheet)return;if(event.key==='Escape'){event.preventDefault();sCloseSheet();return;}if(event.key==='Tab'){const nodes=[...$('sheet').querySelectorAll('button,input,textarea,select,[tabindex="0"]')].filter(node=>!node.disabled);if(!nodes.length){event.preventDefault();return;}const first=nodes[0],last=nodes[nodes.length-1];if(event.shiftKey&&(document.activeElement===first||document.activeElement===$('sheet'))){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
 setInterval(sPoll,3000);

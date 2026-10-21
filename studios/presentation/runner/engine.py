@@ -48,7 +48,9 @@ What a caller needs to know
   for changes sets the gate to 'changes' first and then reopens it (`stages.reopen`), so
   the step that feeds it runs again with the person's note. Asking for changes at gate:look
   is choosing another brand or variant ({'brand', 'variant'}, with no note needed): the
-  deck's contract is exported again for it and its cover drawn again. Asking for changes at
+  deck's contract is exported again for it and its looks drawn again. {'look': 'again'}
+  there, or in the direction review with 'direction_target' gate:look, draws the brand's
+  looks again and approves nothing. Asking for changes at
   gate:build once the deck is delivered builds it again (deliver.again). A line against a
   slide at gate:build ('slide_notes', by number) marks it and goes into its section's brief.
   "Change what it says" is a request for changes at gate:build, or on a delivered deck, with
@@ -106,12 +108,13 @@ What a caller needs to know
 """
 from __future__ import annotations
 
-from studio_core import review_policy
+from studio_core import deck_flow, review_policy
 
 import contextvars
 import json
 import os
 import re
+import secrets
 import shutil
 import tempfile
 import threading
@@ -229,6 +232,12 @@ NO_NEXT_STEP = {'finished': 'This deck is finished: there is no next step to lea
                 'stopped': 'This deck is stopped. Resume it, then leave a note for the next step.'}
 NO_NOTE = 'Say what should change.'
 NO_BRAND_CHOSEN = 'Choose the brand, and its variant, to make the deck in.'
+DRAFTS = Path('work') / 'drafts'   # the storyboards drawn for the page: never shared
+DRAFT_NAME = re.compile(r'storyboard-[0-9a-f]{12}\.html')
+KEPT_DRAFTS = 4                   # storyboards kept, the newest; older ones are removed
+STORYBOARD_LIMIT = 4_000_000      # bytes of one storyboard
+LOOKS_STALE = ('What the deck says changed since its looks were drawn, so they are drawn '
+               'again. Choose once they are.')
 ON_ITS_WAY = 'This deck is on its way to Google Slides already. Wait for it.'
 STILL_NOT_CONNECTED = ("Google still isn't connected on this computer. Sign in with gcloud, "
                        'then deliver it again.')
@@ -945,7 +954,9 @@ class Engine(Jobs, Researching):
                 step = first(record)
                 if step is None:
                     return
-                if step.kind == 'gate' and review_policy.automatic(record, 'presentation', step.name):
+                if step.kind == 'gate' and review_policy.automatic(
+                        record, 'presentation', step.name,
+                        holding=self._holding(root, step.name)):
                     self._policy_gate(root, step)
                     continue
                 if step.kind == 'gate' and gate_state(record, step.name) == 'waiting':
@@ -1009,7 +1020,7 @@ class Engine(Jobs, Researching):
                 and (lacks or not self._shots(root / existing.ORIGINAL_SHOTS)):
             again.append('inventory')
         if gate_state(record, 'gate:look') != 'approved' and did('look-preview') \
-                and not (root / looks.SAMPLE).is_file():
+                and not (root / looks.SAMPLE).is_file() and looks.shown_looks(root) is None:
             again.append('look-preview')
         if did('patch') and (lacks or not (root / existing.PATCH).is_file()):
             again += ['patch', 'build-render']
@@ -1076,14 +1087,35 @@ class Engine(Jobs, Researching):
         if space is not None and space.share == gitstate.SHARE[0]:
             self.share_soon()
 
+    def _holding(self, root: Path, gate: str) -> list[str]:
+        """What keeps a gate for the person whatever the saved level: for the deck's own
+        gate, the grave findings its last review still has and the brand audit's errors;
+        nothing for any other gate."""
+        if gate != 'gate:build':
+            return []
+        state = build.read_state(root)
+        last = state['rounds'][-1] if state.get('rounds') else {}
+        audit = state.get('audit') or {}
+        blockers = [line for line in audit.get('messages') or () if str(line).endswith('(error)')]
+        return review_policy.held(((last or {}).get('review') or {}).get('findings'), blockers)
+
     def _policy_gate(self, root: Path, step: stages.Step) -> None:
         """Continue under the saved policy, without claiming a person's approval."""
         with self.files:
             record = self._load(root)
-            if not review_policy.automatic(record, 'presentation', step.name):
+            if not review_policy.automatic(record, 'presentation', step.name,
+                                           holding=self._holding(root, step.name)):
                 raise WorkspaceError('This step needs your review.')
             evidence = getattr(self, f"_show_{step.name.partition(':')[2].replace('-', '_')}")(root, record)
             if step.name == 'gate:look':
+                # The look the person picked in the direction review, in their words; else,
+                # under Automatic draft, the brand's default, saying why.
+                if not self._look_policy(root, record):
+                    record['steps']['look-preview'] = {
+                        **(record['steps'].get('look-preview') or {}), 'done': False}
+                    self._store(root, record)
+                    self._commit(root, 'draw the looks again: what the deck says changed')
+                    return
                 looks.approve(root, record, 'Continued under the saved review level.',
                               by='review-policy')
                 record = self._load(root)
@@ -1093,7 +1125,10 @@ class Engine(Jobs, Researching):
             gate = record['gates'].get(step.name) or {}
             record['gates'][step.name] = {**gate, 'state': 'approved', 'by': 'review-policy',
                                           'at': at, 'note': 'Continued automatically.'}
-            review_policy.receipt(record, step.name, evidence, at)
+            # A look chosen from samples nobody saw rendered says so, and why.
+            picked = looks.chosen(root) if step.name == 'gate:look' else None
+            note = picked['words'] if picked and picked.get('shown') == 'unrendered' else None
+            review_policy.receipt(record, step.name, evidence, at, note=note)
             self._store(root, record)
             self._commit(root, f'continue the {WORDS[step.name]} under the saved review level')
 
@@ -1378,14 +1413,21 @@ class Engine(Jobs, Researching):
             self._done(root, step, clock, 'load the brand')
 
     def _look_preview(self, root: Path, run: _Run, step: stages.Step) -> None:
+        """The brand's look step: a slide of the outline in each of the brand's looks, for
+        the person to choose from. A brand too old to offer looks has its cover drawn, to
+        show it is the brand they meant, as it always had."""
         how = self._renderer(root, step)
         self._contract(root)
         clock = time.monotonic()
-        looks.draw_sample(root, self._load(root), self.slides(), how)
+        skill = self._skill()
+        if skill.looks():
+            looks.draw_looks(root, self._load(root), skill, how, self.slides().has)
+        else:
+            looks.draw_sample(root, self._load(root), self.slides(), how)
         with self.files:
             record = self._load(root)
             looks.show_sample(root, record)
-            self._done(root, step, clock, 'draw your cover in your brand', record)
+            self._done(root, step, clock, "draw the brand's looks", record)
 
     def _build_start(self, root: Path, run: _Run, step: stages.Step) -> None:
         contract = self._contract(root)
@@ -1558,6 +1600,13 @@ class Engine(Jobs, Researching):
         if self._reviewed(root):
             with self.files:
                 self._done(root, step, time.monotonic(), 'the deck is reviewed')
+            return
+        if build.to_draw(root):
+            # The preview's screen sent slides back: they are drawn again, and the deck is
+            # reviewed once they are, as the next step does.
+            with self.files:
+                self._done(root, step, time.monotonic(),
+                           'send back what the preview found before the review')
             return
         self._review(root, run, step)
 
@@ -1737,7 +1786,13 @@ class Engine(Jobs, Researching):
                 or target not in DIRECTION_TARGETS):
             raise WorkspaceError('Choose research or brand from the direction review.')
         extra = {key: value for key, value in extra.items() if key != 'direction_target'}
-        rebrand = (gate == 'gate:look' or target == 'gate:look') and decision == 'changes'
+        # Asking for changes to the look is choosing another brand, or, for looks that could
+        # not be rendered, drawing them again.
+        again = extra.get('look') == looks.AGAIN and decision == 'changes'
+        if again:
+            note = note or 'Draw the looks again.'
+        rebrand = (gate == 'gate:look' or target == 'gate:look') and decision == 'changes' \
+            and not again
         if rebrand and not (isinstance(extra.get('brand'), str) and extra['brand'].strip()):
             raise WorkspaceError(NO_BRAND_CHOSEN)
         brands = self.brands() if rebrand else None
@@ -1841,8 +1896,12 @@ class Engine(Jobs, Researching):
             if gate == 'gate:outline' and gated.get('saying') else None
         look_gate = dict(record['gates'].get('gate:look') or {}) if look else None
         if rebrand:
+            record.pop('look_picked', None)   # a pick of the old brand's looks is not one
             looks.rebrand(root, record, extra['brand'], extra.get('variant'), brands)
             note = note or ('Make it in ' + decks.brand_words(record['form']) + '.')
+        if extra.get('look') == looks.AGAIN:
+            looks.drop(root)
+            record.pop('look_picked', None)
         if gate == 'gate:outline' and extra.get('edited') is not None:
             self._edit_outline(root, record, extra['edited'])
         if marked:
@@ -2031,9 +2090,52 @@ class Engine(Jobs, Researching):
             if not record.get('research_contract'):
                 write_atomic(root / REPORT, self._report_text(root, record))
         elif gate == 'gate:look':
+            picked = self._look_picked(root, extra, note)
+            if picked and looks.choose(root, self._skill(), picked['choice'],
+                                       picked['words']) is None:
+                raise WorkspaceError(LOOKS_STALE)
             looks.approve(root, record, note)
             record = self._load(root)
+        if gate == 'gate:outline' and review_policy.level(record) == 'balanced':
+            # The direction review shows the looks: the person's pick is part of approving
+            # it. It is kept in the run, so that whichever computer goes on draws the deck in
+            # it, and is chosen with the brand when the look's own gate continues.
+            picked = self._look_picked(root, extra, note)
+            if picked:
+                record['look_picked'] = picked
         return record
+
+    def _look_picked(self, root: Path, extra: dict, note: str | None) -> dict | None:
+        """The look the person picked on the page, as {'choice', 'words'}, where the brand
+        was asked for looks and none is chosen yet: one it drew, or, where none could be
+        rendered, DEFAULT. A pick is needed to approve."""
+        shown = looks.shown_looks(root)
+        if shown is None or looks.chosen(root) is not None:
+            return None
+        choice, said = extra.get('look'), (note or '').strip()
+        if choice == looks.DEFAULT and shown.get('failed'):
+            return {'choice': choice, 'words': said or deck_flow.PROCEED_WORDS.format(
+                name=looks.DEFAULT_NAME)}
+        picked = next((look for look in shown.get('looks') or () if look['id'] == choice), None)
+        if picked is None:
+            raise WorkspaceError(looks.NO_LOOK)
+        return {'choice': choice, 'words': said or looks.NO_COMMENT.format(name=picked['name'])}
+
+    def _look_policy(self, root: Path, record: dict) -> bool:
+        """A look gate the saved level does not stop at: the look picked in the direction
+        review, in the person's words; else the brand's default, saying why. False when the
+        outline changed since the looks were drawn, which are then drawn again."""
+        shown = looks.shown_looks(root)
+        if shown is None or looks.chosen(root) is not None:
+            return True
+        picked = record.get('look_picked') or {}
+        known = [look['id'] for look in shown.get('looks') or ()]
+        if picked.get('choice') in known or (picked.get('choice') == looks.DEFAULT
+                                              and shown.get('failed')):
+            made = looks.choose(root, self._skill(), picked['choice'], picked['words'])
+        else:
+            made = looks.choose_default(root, self._skill())
+        return made is not None
 
     def _edit_outline(self, root: Path, record: dict, edited) -> None:
         """The outline as the person edited it on the page, checked and saved."""
@@ -2209,7 +2311,12 @@ class Engine(Jobs, Researching):
         if kind == 'build' and ref == SHEET:
             within, file = root.resolve(), root / build.SHEET
         elif kind == 'look':
-            file = root / looks.SAMPLE if str(ref) == 'sample' else None
+            shown = looks.shown_looks(root) or {}
+            numbers = {str(look['number']) for look in shown.get('looks') or ()}
+            # The sheet of every look is its picture 0, as the shared look picker names it.
+            file = root / looks.SAMPLE if str(ref) == 'sample' else root / looks.SHEET \
+                if str(ref) in ('sheet', '0') else root / looks.FOLDER / f'{ref}.png' \
+                if str(ref) in numbers else None
         else:
             try:
                 number = int(ref)
@@ -2458,11 +2565,13 @@ class Engine(Jobs, Researching):
         return [{'id': ident, 'label': worker['label'], 'started_at': worker['started_at'],
                  'lines': list(worker['lines'])} for ident, worker in live]
 
-    def _timeline(self, record: dict, state: str) -> list[dict]:
+    def _timeline(self, record: dict, state: str, root: Path | None = None) -> list[dict]:
         """stages.timeline, with each step's tries, time, cost and last error."""
         rows, failed = stages.timeline(record), (record.get('halted') or {}).get('step')
         for row in rows:
-            if row['name'].startswith('gate:') and review_policy.automatic(record, 'presentation', row['name']):
+            if row['name'].startswith('gate:') and review_policy.automatic(
+                    record, 'presentation', row['name'],
+                    holding=self._holding(root, row['name']) if root else ()):
                 row['label'] = 'Continue the ' + WORDS[row['name']] + ' automatically'
             tried = attempts(record, row['name'])
             dollars = [attempt['dollars'] for attempt in tried
@@ -2501,7 +2610,8 @@ class Engine(Jobs, Researching):
     def _direction_signature(self, root: Path, record: dict) -> str:
         return review_policy.fingerprint({'form': record.get('form'), 'files': {
             str(file): sha256_of(root / file) for file in
-            (PLAN, REPORT, outlines.OUTLINE, looks.SAMPLE, build.CONTRACT)}})
+            (PLAN, REPORT, outlines.OUTLINE, looks.SAMPLE, looks.SHOWN, looks.SHEET,
+             build.CONTRACT)}})
 
     def _show_classify(self, root: Path, record: dict) -> dict:
         if record['route'] == 'document':
@@ -2558,15 +2668,39 @@ class Engine(Jobs, Researching):
             contract = root / build.CONTRACT
             if not contract.is_file():
                 raise WorkspaceError('The outline needs its saved brand contract before previewing.')
-            # Temporary input and output never enter the shared workspace or approval record.
+            # The input never enters the shared workspace or the approval record. The draft
+            # the slides tool draws is kept in the deck's work/drafts/ (never shared), under a
+            # name of its own, for the page to frame by a ticket for that one file.
             with tempfile.TemporaryDirectory(prefix='presentation-storyboard-') as temporary:
                 source, output = Path(temporary) / 'outline.json', Path(temporary) / 'draft.html'
                 source.write_text(json.dumps(outline), encoding='utf-8')
                 self.slides().outline_draft(source, contract, output)
-                text = output.read_text(encoding='utf-8')
-                if len(text.encode('utf-8')) > 4_000_000:
+                data = output.read_bytes()
+                if len(data) > STORYBOARD_LIMIT:
                     raise WorkspaceError('The storyboard is too large to show in the page.')
-        return {'html': text, 'expected': expected, 'milliseconds': round((time.monotonic() - started) * 1000, 1)}
+            folder = root / DRAFTS
+            folder.mkdir(parents=True, exist_ok=True)
+            name = f'storyboard-{secrets.token_hex(6)}.html'
+            write_atomic(folder / name, data.decode('utf-8', errors='replace'))
+            kept = sorted((one for one in folder.glob('storyboard-*.html') if one.is_file()),
+                          key=lambda one: one.stat().st_mtime, reverse=True)
+            for old in kept[KEPT_DRAFTS:]:
+                old.unlink(missing_ok=True)
+        return {'draft': name, 'expected': expected,
+                'milliseconds': round((time.monotonic() - started) * 1000, 1)}
+
+    def storyboard_page(self, path, name) -> bytes:
+        """A storyboard the runner drew for a deck, by the name `storyboard` gave it: only a
+        file of that form inside the deck's own work/drafts/, never a path a request names.
+        FileNotFoundError for anything else."""
+        root = self.driven(path)
+        if root is None or not isinstance(name, str) or not DRAFT_NAME.fullmatch(name):
+            raise FileNotFoundError(NO_PICTURE)
+        folder = (root / DRAFTS).resolve()
+        file = folder / name
+        if file.is_symlink() or folder not in file.resolve().parents or not file.is_file():
+            raise FileNotFoundError(NO_PICTURE)
+        return file.read_bytes()
 
     def _show_outline(self, root: Path, record: dict) -> dict:
         found = home.read_json(root / outlines.OUTLINE, None)
@@ -2581,17 +2715,39 @@ class Engine(Jobs, Researching):
                 or build.DELIVERY}
 
     def _show_look(self, root: Path, record: dict) -> dict:
+        """What the look gate shows, and the direction review with it: the brand's looks as
+        the shared look picker takes them, or why none could be rendered, with how they
+        were rendered; or, for a brand too old to offer looks, its cover."""
         form = record.get('form') or {}
+        shown = looks.shown_looks(root)
+        picked = looks.chosen(root)
+        offered = None
+        if shown:
+            notes = [deck_flow.LOOK_FAILED.format(why=shown['failed'])] if shown.get('failed') \
+                else [shown['says']] if shown.get('says') else []
+            offered = {
+                'looks': [{key: look.get(key) for key in ('id', 'name', 'useWhen', 'number')}
+                          for look in shown.get('looks') or ()],
+                'default': shown.get('default'), 'sheet': (root / looks.SHEET).is_file(),
+                'failed': bool(shown.get('failed')), 'notes': notes,
+                'chosen': {key: picked[key] for key in ('choice', 'name', 'words')}
+                if picked else None}
         return {'text': text_of(root / looks.LOOK_MD) or '', 'brand': form.get('brand'),
                 'variant': form.get('variant'), 'made_in': decks.brand_words(form),
                 'picture': {'kind': 'look', 'ref': 'sample'}
-                if (root / looks.SAMPLE).is_file() else None}
+                if (root / looks.SAMPLE).is_file() else None,
+                'offered': offered,
+                'older': looks.OLDER if not shown else None}
 
     def _show_build(self, root: Path, record: dict) -> dict:
         """build.gate_view, with each picture named as `picture` takes it, never by path."""
         shown = build.gate_view(root, json.loads(json.dumps(record)))
         last = (build.read_state(root).get('rounds') or [{}])[-1]
         shown['unreviewed'] = decks.user_first(record) and not last.get('review')
+        # A look chosen from samples nobody saw rendered: the deck is an unreviewed draft of
+        # its look until its slides are looked at.
+        shown['look_unreviewed'] = deck_flow.UNREVIEWED \
+            if record.get('look_shown') == 'unrendered' else None
         shown['expected_deck'] = last.get('deck')
         ids = {slide['number']: slide['id'] for slide in last.get('slides') or ()}
         feedback = list(record.get('build_feedback') or [])
@@ -2633,7 +2789,7 @@ class Engine(Jobs, Researching):
             'route': record['route'], 'level': (record.get('form') or {}).get('level'),
             'output': (record.get('form') or {}).get('output'),
             'unreviewed': decks.user_first(record),
-            'state': state, 'sentence': sentence, 'timeline': self._timeline(record, state),
+            'state': state, 'sentence': sentence, 'timeline': self._timeline(record, state, root),
             'gate': self._gate_view(root, record) if not halted else None,
             'driver': who, 'mine': mine, 'notice': self._notice(root, record),
             'taken': None if mine else team.taken(root), 'last_shared': last,
@@ -2967,7 +3123,9 @@ class Engine(Jobs, Researching):
         """What a deck left in Google Drive, which the runner never deletes."""
         found = []
         kept = home.read_json(root / build.BUILD / 'drive-preview.json', None)
-        if isinstance(kept, dict) and kept.get('url'):
+        # A preview in the slides tool's pool is its own reusable deck, not a file this deck
+        # left: its link may show another deck's slides by now, so it is not listed.
+        if isinstance(kept, dict) and kept.get('url') and not kept.get('pool'):
             found.append({'what': DRIVE_FILES['preview'], 'name': kept.get('name'),
                           'url': kept['url']})
         for revision in record.get('revisions') or ():

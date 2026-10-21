@@ -59,6 +59,7 @@ from studio_core.server import for_product as _server_for_product
 _security = _server_for_product('_training_studio_security', 'Training Studio',
     TOKEN_HEADER, PAGE_DIR, PAGE, computer, workspace.WorkspaceError, READS, WRITES)
 Refusal, describe, as_json = _security.Refusal, _security.describe, _security.as_json
+framed_html = _security.framed_html   # a sandboxed page for a frame of the page
 Server, Handler, allowed = _security.Server, _security.Handler, _security.allowed
 SECURITY_HEADERS = _security.SECURITY_HEADERS
 

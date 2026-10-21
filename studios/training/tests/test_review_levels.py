@@ -15,16 +15,26 @@ class ReviewLevelsTests(DeckCase):
         if mode == 'balanced':  # the research plan is read first, before anything is spent
             self.assertEqual(workspace.status(root)['gate'], 'research-plan', self.view(root))
             self.decide(root, 'research-plan')
-        shown = self.view(root)
+        shown = self.past_decks(root)
         self.assertIsNone(shown['problem'], shown)
         return root, shown
+
+    def past_decks(self, root):
+        """Approve each drawn deck waiting at its own gate, as the person does: a deck is
+        never continued under the saved level."""
+        for _ in range(4):
+            waiting = workspace.status(root)['gate']
+            if not waiting or workspace.split(waiting)[0] != 'deck':
+                break
+            self.decide(root, waiting)
+        return self.view(root)
 
     def test_balanced_reads_the_research_plan_before_anything_is_researched(self):
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
             made = self.engine.start(pipeline.check_form({**FORM, 'deck_target': 'pptx',
                                                           'brand': CHOSEN}))
         root = Path(made['path'])
-        self.assertEqual(made['gates'], 3)
+        self.assertEqual(made['gates'], 4, 'the plan, the direction, the deck, the materials')
         shown = self.view(root)
         self.assertEqual((shown['state'], shown['review']), ('waiting', None))
         self.assertEqual(workspace.status(root)['gate'], 'research-plan')
@@ -91,7 +101,7 @@ class ReviewLevelsTests(DeckCase):
         # its plan is left where it is.
         from runner_support import fails
 
-        def before(record, product, gate, last=None):
+        def before(record, product, gate, last=None, holding=()):
             return not gate.startswith('review:') and gate not in ('documents', 'intake', 'deck')
 
         with mock.patch.object(review_policy, 'automatic', before):
@@ -121,7 +131,99 @@ class ReviewLevelsTests(DeckCase):
         self.assertEqual(workspace.load(root)['artifacts']['research-plan']['approved']['by'], 'review-policy')
 
     def approve_review(self, root, shown):
-        return self.engine.review_decide(root, shown['review']['expected'], 'approve')
+        self.engine.review_decide(root, shown['review']['expected'], 'approve')
+        return self.past_decks(root)
+
+    def test_balanced_asks_for_the_draft_and_the_look_in_one_stop(self):
+        self.brand.offers_looks = True
+        root, shown = self.choose('balanced')
+        self.assertEqual(shown['review']['phase'], 'direction')
+        direction, = [item for item in shown['review']['items']
+                      if item['target'].startswith('outline:')]
+        # The brand's looks, never a cover drawn in the studio's own colours.
+        self.assertNotIn('sample', direction)
+        self.assertEqual([look['id'] for look in direction['looks']['looks']],
+                         ['example-contrast', 'example-calm'])
+        self.assertNotIn('review-sample', [call for call in self.slides.calls])
+        with self.assertRaisesRegex(WorkspaceError, 'Pick a look'):
+            self.engine.review_decide(root, shown['review']['expected'], 'approve')
+        self.engine.review_decide(root, shown['review']['expected'], 'approve',
+                                  looks={'': {'choice': 'example-calm',
+                                              'words': 'Calm suits a first course.'}})
+        shown = self.view(root)
+        self.assertIsNone(shown['problem'], shown)
+        # No second stop for the look: it was picked with the draft.
+        self.assertEqual(workspace.status(root)['gate'], 'deck')
+        chosen = self.engine._load(root)['deck']['']['look']['chosen']
+        self.assertEqual((chosen['id'], chosen['by'], chosen['words']),
+                         ('example-calm', 'page', 'Calm suits a first course.'))
+        self.assertTrue(self.brand.written[-1], 'the brand wrote the outline with the look')
+
+    def test_a_review_approved_before_looks_were_offered_stays_approved(self):
+        # A training approved under the code before this: its direction signature had no
+        # looks. An older brand draws none, so nothing of looks enters it now either.
+        from runner import reviews
+        root, shown = self.choose('balanced')
+        session, record = workspace.load(root), self.engine._load(root)
+        before = reviews.contents(root, session, record, 'direction')
+        self.assertFalse([key for key in before['files'] if key.endswith(':looks')])
+        shown = self.approve_review(root, shown)
+        self.assertEqual(shown['review']['phase'], 'final')
+        shown = self.approve_review(root, shown)
+        self.assertEqual(shown['state'], 'done')
+        # Looked at again, as a new runner would after the upgrade, it is still done.
+        other = self.make()
+        other.resume()
+        self.assertEqual(other.view(root)['state'], 'done')
+        self.assertIsNone(other.view(root)['review'])
+
+    def test_balanced_offers_a_way_on_when_the_looks_cannot_be_rendered(self):
+        self.brand.offers_looks, self.brand.cannot_render = True, True
+        root, shown = self.choose('balanced')
+        direction, = [item for item in shown['review']['items']
+                      if item['target'].startswith('outline:')]
+        self.assertTrue(direction['looks']['failed'])
+        with self.assertRaisesRegex(WorkspaceError, 'Pick a look'):
+            self.engine.review_decide(root, shown['review']['expected'], 'approve',
+                                      looks={'': {'choice': 'example-calm'}})
+        # Tried again: still not rendered, and the review is back, not approved.
+        shown = self.engine.review_decide(root, shown['review']['expected'], 'approve',
+                                          looks={'': {'choice': pipeline.AGAIN_LOOK}})
+        self.assertEqual(shown['review']['phase'], 'direction')
+        self.assertNotIn('direction', self.engine._load(root).get('review_decisions') or {})
+        # Then the brand's default, chosen knowingly.
+        self.engine.review_decide(root, shown['review']['expected'], 'approve',
+                                  looks={'': {'choice': pipeline.DEFAULT_LOOK}})
+        self.assertEqual(workspace.status(root)['gate'], 'deck')
+        chosen = self.engine._load(root)['deck']['']['look']['chosen']
+        self.assertEqual((chosen['by'], chosen['shown']), ('page', 'unrendered'))
+
+    def test_a_drawn_deck_always_comes_to_the_person(self):
+        # Balanced and Automatic draft both stop at the deck itself, before the scenarios
+        # and the final review: the policy never accepts a drawn deck for the person.
+        for mode in ('balanced', 'automatic'):
+            with self.subTest(mode=mode):
+                with mock.patch.object(review_policy, 'capture',
+                                       return_value={'schema': 1, 'level': mode}):
+                    root = self.begin(title=f'Deck stop {mode}')
+                if mode == 'balanced':
+                    self.decide(root, 'research-plan')
+                    shown = self.view(root)
+                    self.engine.review_decide(root, shown['review']['expected'], 'approve')
+                shown = self.view(root)
+                self.assertIsNone(shown['problem'], shown)
+                self.assertEqual(workspace.status(root)['gate'], 'deck')
+                gate = self.steps(root)['gate:deck']
+                self.assertEqual((gate['kind'], gate['status']), ('gate', 'waiting'))
+                self.assertNotIn('automatically', gate['label'])
+                record = self.engine._load(root)
+                self.assertNotIn('gate:deck', [event['gate'] for event in
+                                               record.get('review_events') or ()])
+                self.decide(root, 'deck')
+                shown = self.view(root)
+                self.assertEqual(shown['review']['phase'], 'final')
+                self.assertEqual(workspace.load(root)['artifacts']['deck']['approved']['by'],
+                                 'page')
 
     def test_balanced_all_levels_have_two_combined_reviews(self):
         root, shown = self.choose('balanced', levels=['101', '201'])

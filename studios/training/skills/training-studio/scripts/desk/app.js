@@ -4375,8 +4375,11 @@ function startStep(draft) {
     const supplied = SOURCES[draft.sources][0] !== 'public-web';
     first.textContent = supplied ? 'First, add your documents on the next screen. Research waits until you say they are all added.'
       : 'Research starts after you start the training.';
-    const stops = policy === 'balanced' ? 'the research plan, the direction review and the finished materials'
-      : policy === 'automatic' ? 'the finished materials'
+    // A drawn deck always comes to the person, whatever the level.
+    const deck = Boolean(DECKS[draft.deck][0]);
+    const stops = policy === 'balanced' ? 'the research plan, the direction review'
+        + (deck ? ', each drawn deck' : '') + ' and the finished materials'
+      : policy === 'automatic' ? (deck ? 'each drawn deck and ' : '') + 'the finished materials'
         : 'at least ' + gatesFor(draft) + ' decisions for research and the selected teaching materials'
           + (draft.materials.includes('scenario') ? ', plus each practice scenario' : '')
           + (draft.yoodli ? ' and each Yoodli layout' : '');
@@ -5379,6 +5382,75 @@ function outlinePart(run) {
       + 'quick to change now, and slow to change once the slides are drawn.'));
 }
 
+// The brand's looks for a deck, each drawn on the same slide of what it says, in the panel
+// every studio's page shows. The person picks the one every slide is drawn in, and may say
+// why: their words are kept with it. Looks that could not be rendered are never picked
+// blind: the person tries again, or carries on in the brand's default look.
+// The deck's wireframe draft, drawn by the slides tool from what the deck says and framed
+// from this page's own server: opened with a ticket, sandboxed, able to reach nothing.
+function draftPanel(level) {
+  return window.DeckPanels.storyboard({ title: 'Wireframe draft of the deck',
+    load: () => ask('deck-draft-ticket', level ? { path: view.path, level } : { path: view.path })
+      .then((made) => made.src) });
+}
+
+function lookPicker(look, picked, changed) {
+  return window.DeckPanels.lookPicker({ name: look.artifact, looks: list(look.looks),
+    defaultId: look.default, sheet: look.sheet, notes: list(look.notes), failed: look.failed,
+    picked, changed,
+    picture: (number, alt) => pictureAt({ artifact: look.artifact, section: 'look', number },
+      alt) });
+}
+
+function lookPart(run) {
+  const look = run.look;
+  const deck = look.level ? 'the level ' + look.level + ' slide deck' : 'the slide deck';
+  const node = callout('yours', make('p', '', 'Choose the look of ' + deck + '.'),
+    make('p', 'quiet', 'The brand drew one slide of what the deck says in each of its looks. '
+      + 'The look you choose sets the colours, what each one stands for and how cards are '
+      + 'drawn on every slide.'));
+  const key = 'look:' + look.artifact;
+  const held = view.notes[key] || (view.notes[key] = { choice: '', words: '' });
+  const problem = alertLine('look-problem');
+  add(node, lookPicker(look, held, (now) => Object.assign(held, now)), problem);
+  if (look.failed) {
+    const again = capsule('Try again', 'filled',
+      () => chooseLook(look, 'again', '', problem, again), 'look-again');
+    const proceed = capsule('Carry on in the brand’s default look', '',
+      () => chooseLook(look, 'default', '', problem, proceed), 'look-default');
+    return add(node, again, proceed);
+  }
+  const use = capsule('Use this look', 'filled', () => {
+    if (!held.choice) return say(problem, 'Pick a look first.');
+    return chooseLook(look, held.choice, held.words || '', problem, use);
+  }, 'look-use');
+  return add(node, use);
+}
+
+async function chooseLook(look, choice, words, problem, pressed) {
+  if (view.busy) return;
+  const turn = view.turn;
+  view.busy = true;
+  pressed.disabled = true;
+  let run;
+  try {
+    run = await send('look', { path: view.path, level: look.level || null, choice,
+      words: words.trim() || null });
+  } catch (failure) {
+    say(problem, failure.message);
+    pressed.disabled = false;
+    view.busy = false;
+    return;
+  }
+  delete view.notes['look:' + look.artifact];
+  view.busy = false;
+  if (turn !== view.turn) return;
+  view.run = run;
+  toast('The look is chosen. ' + run.sentence);
+  show('run', { path: view.path }, true);
+  refresh();
+}
+
 // What a deck of this size has cost before, so that this one is no surprise.
 function costBefore(before) {
   const parts = [];
@@ -5583,6 +5655,33 @@ function combinedConfirm() {
     .filter(Boolean);
 }
 
+// Looks that could not be rendered, drawn again from the combined review. It approves
+// nothing: the review comes back with what was drawn.
+async function redrawLooks(review, looks, problem, pressed) {
+  if (view.busy) return;
+  const turn = view.turn;
+  view.busy = true;
+  pressed.disabled = true;
+  say(problem, '');
+  let run;
+  try {
+    run = await send('review', { path: view.path, expected: review.expected,
+      decision: 'approve', target: null, note: null,
+      looks: { [looks.level || '']: { choice: 'again', words: '' } } });
+  } catch (failure) {
+    say(problem, failure.message);
+    pressed.disabled = false;
+    view.busy = false;
+    return;
+  }
+  view.busy = false;
+  if (turn !== view.turn) return;
+  view.run = run;
+  toast('The looks are being drawn again. ' + run.sentence);
+  show('run', { path: view.path }, true);
+  refresh();
+}
+
 async function decideCombined(review, decision, target, note, pressed,
   problem = byId('combined-problem'), requests = null) {
   if (view.busy) return;
@@ -5609,6 +5708,21 @@ async function decideCombined(review, decision, target, note, pressed,
   say(problem, '');
   try {
     const body = { path, expected: review.expected, decision, target: null, note: null };
+    // The looks picked for each deck go with an approval of the direction.
+    const offered = review.items.filter((item) => item.looks);
+    if (decision === 'approve' && offered.length) {
+      body.looks = {};
+      for (const item of offered) {
+        const held = view.notes['look:' + item.looks.artifact] || {};
+        if (!held.choice) {
+          view.busy = false;
+          if (pressed) pressed.disabled = false;
+          say(problem, 'Pick a look for ' + item.label.toLowerCase() + ' first.');
+          return;
+        }
+        body.looks[item.looks.level || ''] = { choice: held.choice, words: held.words || '' };
+      }
+    }
     if (asked && requests) body.requests = asked.map((ask) => ({ target: ask.target, note: ask.note }));
     else if (asked) Object.assign(body, { target, note });
     const run = await send('review', body);
@@ -5699,10 +5813,34 @@ function combinedReview(run) {
     const mark = view.marks[markKey(review, item)] || '';
     // On a phone everything but the first material is folded away until it is opened.
     detail.open = small ? first || mark === 'changes'
-      : Boolean(item.sample || item.sample_note || item.deck_view || first);
+      : Boolean(item.sample || item.sample_note || item.looks || item.deck_view || first);
     if (item.text) add(part, window.TrainingStudioMarkdown.render(item.text));
     if (item.sample) add(part, pictureAt({path: view.path, ...item.sample},
       'Sample slide for ' + item.label, review.expected));
+    // The draft and the look are approved together: the draft as the slides tool draws it,
+    // and the look the person picks.
+    if (/^outline:/.test(item.target) && !theirs) {
+      add(part, draftPanel(item.target.slice('outline:'.length) || null));
+    }
+    if (item.looks && !theirs) {
+      const key = 'look:' + item.looks.artifact;
+      const held = view.notes[key] || (view.notes[key] = { choice: '', words: '' });
+      add(part, make('p', 'step-name', 'Pick the look of this deck'),
+        lookPicker(item.looks, held, (now) => Object.assign(held, now)));
+      if (item.looks.failed) {
+        // Nothing is picked blind: the looks are drawn again, or the brand's default is
+        // chosen knowingly, and goes with the approval.
+        const lookProblem = alertLine('look-problem-' + item.looks.artifact);
+        const again = capsule('Try again', '', () => redrawLooks(review, item.looks,
+          lookProblem, again), 'looks-again-' + item.looks.artifact);
+        const proceed = capsule('Carry on in the brand’s default look', '', () => {
+          held.choice = held.choice === 'default' ? '' : 'default';
+          proceed.setAttribute('aria-pressed', String(held.choice === 'default'));
+        }, 'looks-default-' + item.looks.artifact);
+        proceed.setAttribute('aria-pressed', String(held.choice === 'default'));
+        add(part, again, proceed, lookProblem);
+      }
+    }
     // A sample that could not be drawn is said in its place; the review goes on without it.
     if (item.sample_note) add(part, make('p', 'fix', item.sample_note));
     if (item.deck_view) {
@@ -5778,6 +5916,7 @@ function paintRun(fresh) {
   const driver = run.driver || null;
   const supplying = adding(run) && !theirs;
   const outline = outlining(run) && !theirs;
+  const looking = Boolean(run.look && run.look.waiting) && !theirs;
   const free = theirs && !driver && !run.finished;
   // One filled button on the screen, for the first thing that is needed. While a sheet is
   // open it holds that button, so nothing under it is filled.
@@ -5785,7 +5924,7 @@ function paintRun(fresh) {
     : free ? 'take' : '')
     : run.question ? 'answer' : offered ? 'problem'
       : supplying ? 'documents' : run.review ? 'combined' : waiting ? 'review' : outline ? 'outline'
-        : run.finished ? 'finished' : ['paused', 'stopped'].includes(run.state) ? 'resume'
+        : looking ? 'look' : run.finished ? 'finished' : ['paused', 'stopped'].includes(run.state) ? 'resume'
           : run.state === 'failed' && !run.problem ? 'retry' : '';
   const limits = (view.setup && view.setup.limits) || {};
   const runs = !theirs ? 'Runs on this page' : driver ? 'Run by ' + nameOf(driver)
@@ -5821,6 +5960,8 @@ function paintRun(fresh) {
       () => gatePart(training, waiting, run.sentence)] : null,
     outline && !run.question && !run.review ? ['outline', [run.outline.level, run.sentence],
       () => outlinePart(run)] : null,
+    looking && !run.question && !run.review ? ['look', [run.look, run.sentence],
+      () => lookPart(run)] : null,
     run.deck_left ? ['deck-left', [run.deck_left, run.sentence, theirs],
       () => deckLeftPart(run)] : null,
     !theirs && run.controls && (run.controls.finish_level || run.controls.finishing
@@ -6048,6 +6189,8 @@ function paintOutline(fresh) {
   const doc = add(make('article', 'paper doc'), make('h2', 'doc-title',
     count(slides.length, 'slide', 'slides') + ', in order'), items);
   doc.setAttribute('aria-label', label);
+  // Where it is decided here, the draft is shown as the slides tool draws it.
+  if (outline.waiting && run.mine !== false) doc.prepend(draftPanel(outline.level));
   const aside = add(make('aside', 'aside'), outlineChecked(outline), outlineWorth(outline));
   aside.setAttribute('aria-label', 'The review');
   // What someone else runs is read here, and decided where it runs.

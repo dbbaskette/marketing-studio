@@ -92,6 +92,60 @@ class BriefTests(Case):
             self.assertIn('Capacity holds', work.prepared['inputs']['Inventory'])
 
 
+    def test_a_lead_slides_title_is_one_line(self):
+        work = self.work()
+        self.assertIn(outline.one_line_titles, work.prepared['artifacts']['outline']['rules'])
+        two = {'slides': [{'id': 'end', 'kind': 'closing',
+                           'title': 'Thank you\nNext: try it on a test app'},
+                          {'id': 'body', 'kind': 'content', 'title': 'One\nTwo'}]}
+        self.assertEqual(outline.one_line_titles(two), [
+            'end: the title of a closing slide is one line. Put a second line in its '
+            'subtitle, or on a content slide before it.'])
+        self.assertEqual(outline.one_line_titles({'slides': [
+            {'id': 'end', 'kind': 'closing', 'title': 'Thank you'}]}), [])
+
+
+    def test_a_teams_bookkeeping_stays_off_the_slides(self):
+        import functools
+        from runner.steps import build
+        root, run = self.deck()
+        (root / 'research').mkdir()
+        (root / 'research' / 'plan.json').write_text(json.dumps({'items': [{'id': 'q1'}]}))
+        (root / '.harness-research').mkdir()
+        (root / '.harness-research' / 'research.json').write_text(json.dumps(
+            {'findings': [{'id': 'g1'}, {'id': 'g7'}], 'sources': [{'id': 's3'}]}))
+        self.assertEqual(outline.research_ids(root), ['g1', 'g7', 'q1', 's3'])
+        work = outline.outline_work(root, run, None, None, self.brand, slides=self.slides)
+        rules = work.prepared['artifacts']['outline']['rules']
+        self.assertIn(build.parts_rules, rules)
+        held = next(rule for rule in rules if isinstance(rule, functools.partial))
+        self.assertEqual((held.func, held.keywords), (build.bookkeeping,
+                                                      {'ids': ['g1', 'g7', 'q1', 's3']}))
+        ids = outline.research_ids(root)
+
+        def shows(text):
+            return build.bookkeeping({'slides': [{'id': 's', 'kind': 'content',
+                                                  'title': text}]}, ids)
+
+        # Ordinary words, whatever IDs they look like: the run does not define them.
+        for text in ('O2 sensors', 'g5.xlarge', 'Model O3', 'Research 2024: what changed',
+                     'Research 5G', 'Objectives 2 and 3', 'real-time: a stream',
+                     'follow-up: next week', 'built-in: the operator', 'x86-64: the target'):
+            with self.subTest(text=text):
+                self.assertEqual(shows(text), [])
+        # The run's own findings, named: refused, with where they go.
+        said = shows('Findings g1, g7')
+        self.assertEqual(len(said), 1)
+        self.assertIn('s: title shows "Findings g1, g7"', said[0])
+        self.assertIn("put the IDs in the slide's `provenance`", said[0])
+        self.assertEqual(build.parts_rules({'slides': [{'id': 's', 'points': [
+            {'text': 'One sentence.', 'parts': ['Drain', 'Restart']}]}]}), [])
+        for parts in ([], ['x'] * 9, ['one two three four five six seven'], [3]):
+            bad = {'slides': [{'id': 's', 'kind': 'content', 'points': [
+                {'text': 'One sentence.', 'parts': parts}]}]}
+            self.assertIn('`parts` gives a point', ' '.join(build.parts_rules(bad)), parts)
+
+
 class RuleTests(Case):
     def test_verbatim_passes_copied_text_and_refuses_a_changed_word(self):
         rule = outline.verbatim_rule(INVENTORY)

@@ -532,8 +532,8 @@ class GivenTests(WholeCase):
         root = self.begin()
         self.drawn(root)
         first, second = self.composers.read['s1_'], self.composers.read['s2_']
-        fixed = ['brief', 'composition contract', 'design guidance', 'composition guidance',
-                 'gallery']
+        fixed = ['brief', 'composition contract', 'brand design', 'design guidance',
+                 'composition guidance', 'gallery']
         self.assertEqual(list(first), [*fixed, 'example contrast', 'example order'])
         self.assertEqual(list(second), [*fixed, 'example contrast', 'example order'])
         self.assertIn('submit_section', first['brief'])

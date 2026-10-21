@@ -710,3 +710,68 @@ class StandInTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BrandEntryTests(unittest.TestCase):
+    """A brand that is the entry to slide building, and offers looks to choose from, as
+    a newer brand skill does; and an older one that does neither."""
+
+    def setUp(self):
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        self.root = Path(holder.name).resolve()
+        self.brand = brand_stand_in.stand_in()
+        self.skill = self.brand.run
+
+    def test_an_older_brand_has_no_guidance_entry_and_no_looks(self):
+        self.assertIsNone(self.brand.guides())
+        self.assertFalse(self.brand.looks())
+        made = self.brand.export(self.root / 'brand', 'example', 'light')
+        self.assertFalse((Path(made['contract']).parent / 'deck-direction.json').exists())
+
+    def test_the_brands_guidance_entry_is_started_and_resumed(self):
+        self.skill.guides = True
+        self.assertEqual(self.brand.guides(), 'brand')
+        work = self.root / 'work'
+        work.mkdir()
+        started = self.brand.guidance(work, 'example', 'light')
+        self.assertEqual(started['brand']['worker'], brand_stand_in.WORKER)
+        self.assertTrue(Path(started['guidance']).is_file())
+        self.assertEqual(self.skill.calls[-1], [
+            'guidance', 'start', '--skill', 'slides', '--project', str(work), '--brand',
+            'example', '--variant', 'light'])
+        again = self.brand.guidance(work, 'example', 'light', task=started['task'])
+        self.assertEqual((again['task'], again['freshness']), (started['task'], 'pinned'))
+        self.assertIn('--task', self.skill.calls[-1])
+        with self.assertRaises(brand.Refused):
+            self.brand.guidance(work, 'example', 'light', task='0' * 32)
+        # A brand whose entry does not take the deck's brand is asked without it.
+        self.skill.guides = 'plain'
+        self.assertEqual(self.brand.guides(), 'plain')
+        plain = self.brand.guidance(work, 'example', 'light', branded=False)
+        self.assertNotIn('brand', plain)
+        self.assertNotIn('--brand', self.skill.calls[-1])
+
+    def test_looks_are_rendered_and_one_is_chosen_in_the_persons_words(self):
+        self.skill.offers_looks = True
+        self.assertTrue(self.brand.looks())
+        made = self.brand.export(self.root / 'brand', 'example', 'light')
+        record = json.loads((Path(made['contract']).parent / 'deck-direction.json').read_text())
+        self.assertEqual(record['default'], brand_stand_in.DEFAULT_LOOK)
+        outline = self.root / 'outline.json'
+        outline.write_text(json.dumps(OUTLINE))
+        samples = self.brand.look_samples(outline, self.root / 'looks', 'example', 'light',
+                                          preview='local')
+        self.assertEqual(samples['status'], 'awaiting-choice')
+        self.assertEqual([one['id'] for one in samples['samples']],
+                         [entry['id'] for entry in brand_stand_in.DIRECTIONS])
+        self.assertTrue(Path(samples['sheet']).is_file())
+        self.assertIn('--preview', self.skill.calls[-1])
+        with self.assertRaises(brand.Refused):
+            self.brand.look_choose(self.root / 'looks', 'example-bold', '  ')
+        chosen = self.brand.look_choose(self.root / 'looks', 'example-bold', 'The bold one.')
+        self.assertEqual((chosen['status'], chosen['choice']), ('chosen', 'example-bold'))
+        self.assertEqual(self.brand.look_status(self.root / 'looks')['choice']['words'],
+                         'The bold one.')
+        with self.assertRaises(brand.Refused):
+            self.brand.look_choose(self.root / 'looks', 'example-clear', 'Changed my mind.')

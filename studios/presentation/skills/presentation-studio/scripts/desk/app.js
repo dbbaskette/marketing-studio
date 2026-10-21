@@ -96,6 +96,15 @@ const SHARE_SAYS = [
     + 'until you press “Share now”.',
 ];
 const OUTPUTS = [['google', 'Google Slides'], ['pptx', 'PowerPoint (.pptx)']];
+// A talk or a handout, asked once on the form; the runner's own default for each way in.
+const DELIVERIES = [['live', 'A talk'], ['reading', 'A handout']];
+
+// How the deck is delivered, by its index in DELIVERIES: the person's answer, else a talk
+// for an idea or a brief and a handout for a document or a deck that is there already.
+function deliveryOf(draft) {
+  if (draft.delivery === 0 || draft.delivery === 1) return draft.delivery;
+  return draft.route === 'scratch' ? 0 : 1;
+}
 const OUTPUT_SAYS = [
   'Google Slides: the finished deck is a new presentation in your Google Drive.',
   'PowerPoint: the finished deck is a .pptx file kept on this computer, to download.',
@@ -2645,6 +2654,7 @@ function newDraft() {
   const agent = (view.setup && view.setup.agent) || {};
   const brand = (view.setup && view.setup.brand && view.setup.brand.default) || {};
   return settleBrand({ route: null, step: 0, title: '', audience: '', goal: '', minutes: '',
+    delivery: null,
     research: false, firstDraft: false, firstDraftExplicit: false, level: null, selected: '', source: 0, link: '', text: '', upload: null,
     reading: false, brand: brand.brand || '', variant: brand.variant || '',
     output: view.setup && view.setup.output === 'pptx' ? 1 : 0,
@@ -2872,6 +2882,9 @@ function aboutStep(draft) {
       hint: 'A sentence or two is enough.' }),
     field('new-minutes', 'About how long, in minutes (optional)', draft, 'minutes',
       { short: true, mode: 'numeric' }),
+    choice('Is this deck for a talk or a handout?', DELIVERIES.map((one) => one[1]),
+      deliveryOf(draft), (index) => { draft.delivery = index; }, 'delivery',
+      'A talk is presented, with fewer words on each slide; a handout is read on its own.'),
     research ? add(make('div', 'field'), research, make('p', 'quiet field-hint',
       draft.route === 'document' ? 'Only where your document turns out to be material to '
         + 'build from. You approve the research plan, then the findings, before the outline '
@@ -2890,7 +2903,7 @@ function asksFor(draft) {
     'the research');
   const level = draft.route === 'existing' ? draft.level : null;
   if (!level || level === 'rework') asks.push('the outline');
-  if (!level || ['redesign', 'rework'].includes(level)) asks.push('the brand, on your cover');
+  if (!level || ['redesign', 'rework'].includes(level)) asks.push('the look, from the brand’s samples');
   asks.push('the deck itself');
   return asks;
 }
@@ -3028,6 +3041,7 @@ function formOf(draft) {
     audience: draft.audience.trim(), goal: draft.goal.trim(),
     minutes: minutes ? Number(minutes) : null, brand: draft.brand,
     variant: draft.variant || null, output: OUTPUTS[draft.output][0],
+    delivery: DELIVERIES[deliveryOf(draft)][0],
     research: draft.route !== 'existing' && draft.research,
     agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null };
   if (draft.firstDraftExplicit) form.initial_review = draft.firstDraft ? 'user-first' : 'standard';
@@ -3893,6 +3907,9 @@ function outlineEdited(gate) {
 
 // How long after the last edit the storyboard is drawn again, in milliseconds.
 const STORYBOARD_PAUSE = 1500;
+// How long the address of a drawn storyboard is shown before it is asked for again, in
+// milliseconds: inside the two minutes its ticket holds.
+const STORYBOARD_TICKET = 100000;
 
 // The storyboard follows the outline: a while after the last edit it is drawn again by
 // itself. Until the new one comes, the old one stays, greyed, so nothing jumps.
@@ -4076,7 +4093,10 @@ function outlinePanel(gate, readonly) {
   const node = card(gate.look ? 'Review the direction' : 'The outline');
   add(node, sayingLine(gate, readonly), classifyLine(gate, readonly));
   if (gate.research?.text) add(node, documentPart('Research findings', gate.research.text));
-  if (gate.look) add(node, lookPanel(gate.look, true));
+  if (gate.look) {
+    add(node, lookPanel(gate.look, readonly || !gate.look.offered, chosenFor(gate),
+      gate.look.offered ? gate : null));
+  }
   if (gate.look && !readonly) {
     add(node, capsule('Choose another brand', '', openSheet('rebrand', 'direction-brand'), 'direction-brand'));
     if (gate.research?.text) {
@@ -4164,13 +4184,16 @@ function storyboardPanel(gate, readonly) {
   waiting.setAttribute('role', 'status');
   waiting.textContent = 'The storyboard is redrawn once you stop editing.';
   waiting.hidden = true;
+  // The storyboard is framed from the runner's own address, opened with a ticket that holds
+  // for two minutes: one older than that is asked for again rather than shown.
+  const fresh = () => held.storyboard && Date.now() - (held.storyboardAt || 0) < STORYBOARD_TICKET;
   const render = () => {
-    if (!held.storyboard) return;
-    const frame = make('iframe', 'storyboard');
-    frame.title = 'Visual storyboard — wording and structure';
-    frame.setAttribute('sandbox', '');
-    frame.srcdoc = '<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; style-src &#39;unsafe-inline&#39;">' + held.storyboard;
-    holder.replaceChildren(frame);
+    if (!fresh()) return;
+    const src = held.storyboard;
+    holder.replaceChildren(window.DeckPanels.storyboard({
+      title: 'Visual storyboard — wording and structure', load: () => Promise.resolve(src),
+      note: 'The outline drawn plainly: what each slide says and how its points relate. '
+        + 'It is not the design.' }));
     holder.classList.remove('waiting');
     waiting.hidden = true;
   };
@@ -4189,7 +4212,8 @@ function storyboardPanel(gate, readonly) {
     try {
       const found = await send('storyboard', {path, expected: gate.expected, slides});
       if (path !== view.path) return;
-      held.storyboard = found.html;
+      held.storyboard = found.src;
+      held.storyboardAt = Date.now();
       render();
     } catch (failure) { say(problem, failure.message); }
     finally {
@@ -4212,13 +4236,15 @@ function storyboardPanel(gate, readonly) {
     holder.classList.add('waiting');
     waiting.hidden = false;
   }
-  if (!held.storyboard && !held.previewing) {
+  if (!fresh() && !held.previewing) {
     held.previewing = true;
     const path = view.path;
     const before = JSON.stringify(outlineWork(gate));
     ask('storyboard', {path, expected: gate.expected}).then(found => {
       if (path !== view.path || before !== JSON.stringify(outlineWork(gate))) return;
-      held.storyboard = found.html; render();
+      held.storyboard = found.src;
+      held.storyboardAt = Date.now();
+      render();
     }).catch(failure => say(problem, failure.message)).finally(() => { held.previewing = false; });
   }
   return add(node, add(make('div', 'bar'), preview), waiting, problem, holder);
@@ -4227,7 +4253,8 @@ function storyboardPanel(gate, readonly) {
 // The brand: the deck's cover drawn in the brand it is made in, so the person can see it is
 // the one they meant. No layout is chosen here: each slide is designed on its own as it is
 // built.
-function lookPanel(gate, readonly) {
+function lookPanel(gate, readonly, held, review) {
+  if (gate.offered) return looksPanel(gate, readonly, held || chosenFor(gate), review);
   const node = card('The brand');
   const made = gate.made_in || 'your brand';
   add(node, make('p', 'lede', 'Made in ' + made + '.'),
@@ -4236,8 +4263,47 @@ function lookPanel(gate, readonly) {
       + 'brand.'),
     gate.picture ? pictureAt(pictureOf(view.path, gate.picture), 'The cover in ' + made,
       gate.round) : make('p', 'quiet', 'There is no picture of it on this computer.'),
-    make('p', 'quiet', 'No layout is chosen here. When the deck is built, each slide is '
-      + 'designed on its own from what it says.'));
+    gate.older ? make('p', 'quiet', gate.older) : null);
+  return add(node, ...gateSaid(gate));
+}
+
+// The brand's looks: one slide of the outline drawn in each, in the panel every studio's
+// page shows (window.DeckPanels.lookPicker). The person picks the look the whole deck is
+// drawn in, and may say why in their words; the brand records both. Looks that could not
+// be rendered are never picked blind: the person tries again, or carries on in the brand's
+// default look. `held` keeps the pick until it is sent; `review` is the direction review
+// that hosts the pick under Balanced, or nothing at the look's own gate.
+function looksPanel(gate, readonly, held, review) {
+  const offered = gate.offered;
+  const made = gate.made_in || 'your brand';
+  const node = card('Choose the look');
+  add(node, make('p', 'lede', 'Made in ' + made + '.'),
+    make('p', '', 'The brand drew one slide of your outline in each of its looks. The look '
+      + 'you choose sets the colours, what each colour means and how cards are drawn on every '
+      + 'slide.'));
+  if (offered.chosen) {
+    add(node, state('done', 'Chosen: ' + offered.chosen.name + '.'),
+      offered.chosen.words ? make('p', 'quiet', '“' + offered.chosen.words + '”') : null);
+    return add(node, ...gateSaid(gate));
+  }
+  add(node, window.DeckPanels.lookPicker({
+    name: 'the deck', looks: list(offered.looks), defaultId: offered.default,
+    sheet: offered.sheet, notes: list(offered.notes), failed: offered.failed,
+    picked: { choice: held.look || '', words: held.lookWords || '' },
+    changed: (now) => { held.look = now.choice; held.lookWords = now.words; },
+    picture: (number, alt) => pictureAt(pictureOf(view.path,
+      { kind: 'look', ref: number === 0 ? 'sheet' : number }), alt, gate.round) }));
+  if (offered.failed && !readonly) {
+    const again = capsule('Try again', '', () => decide('changes', '', null, again,
+      review ? { look: 'again', direction_target: 'gate:look' } : { look: 'again' }),
+    'look-again');
+    const proceed = capsule('Carry on in the brand’s default look', '', () => {
+      held.look = 'default';
+      if (review) sendReview(review, proceed);
+      else decide('approve', '', null, proceed, { look: 'default' });
+    }, 'look-default');
+    add(node, add(make('div', 'bar'), again, proceed));
+  }
   return add(node, ...gateSaid(gate));
 }
 
@@ -4365,6 +4431,8 @@ function stepLabel(run, name) {
 function buildPanel(gate, readonly) {
   const node = card(gate.unreviewed ? 'Unreviewed first draft' : 'The deck');
   const held = chosenFor(gate);
+  // A look chosen from samples nobody saw rendered: said first, in the shared words.
+  if (gate.look_unreviewed) add(node, callout('', make('p', '', gate.look_unreviewed)));
   if (gate.unreviewed) {
     add(node, state('late', 'Unreviewed first draft'), make('p', '',
       'Validated and rendered. AI critique and visual polishing have not run. Exporting or resuming does not start them.'),
@@ -4480,8 +4548,8 @@ const APPROVING = {
     + 'changes.',
   'gate:outline': 'Approve, and every slide is designed and built from this outline, with '
     + 'any edits you made here. Or ask for changes.',
-  'gate:look': 'Approve, and every slide is designed in this brand, each on its own. Or '
-    + 'choose another brand.',
+  'gate:look': 'Approve, and every slide is designed in this brand, in the look you chose. '
+    + 'Or choose another brand.',
   'gate:build': 'Approve, and the deck is delivered as it is. Or mark slides and ask for '
     + 'changes.',
 };
@@ -4814,14 +4882,19 @@ function reviewOf(gate) {
     return { label: 'Send ' + count(slides, 'change', 'changes'), approve: false,
       extra: changesOf(gate), tally };
   }
-  return { label: 'Approve', approve: true, extra: edited, tally };
+  // In the direction review the look picked here goes with the approval.
+  const look = gate.look?.offered && !gate.look.offered.chosen && held.look
+    ? { look: held.look } : null;
+  return { label: 'Approve', approve: true,
+    extra: edited || look ? { ...(edited || {}), ...(look || {}) } : null, tally };
 }
 
 // Do what a reviewed stop's button says. What refuses it is said in `problem` where one is
 // given, or else at the head of the deck.
 function sendReview(gate, pressed, problem) {
   const made = reviewOf(gate);
-  decide(made.approve ? 'approve' : 'changes', '', problem || null, pressed, made.extra);
+  const words = made.approve && made.extra?.look ? (chosenFor(gate).lookWords || '').trim() : '';
+  decide(made.approve ? 'approve' : 'changes', words, problem || null, pressed, made.extra);
 }
 
 // Two to four numbers in a row, each with what it counts.
@@ -4936,6 +5009,10 @@ function extraFor(gate, decision) {
   if (gate.name === 'gate:look' && decision === 'changes') {
     return { brand: held.brand, variant: held.variant || null };
   }
+  if (gate.name === 'gate:look' && decision === 'approve' && gate.offered
+      && !gate.offered.chosen) {
+    return { look: held.look };
+  }
   if (gate.name === 'gate:build' && decision === 'changes') return deckChanges();
   return null;
 }
@@ -4970,8 +5047,8 @@ function rebrandSheet() {
     decide('changes', '', problem, submit, {brand: held.brand, variant: held.variant || null,
       ...(current?.look ? {direction_target: 'gate:look'} : {})});
   });
-  add(form, brandFields(held, 'rebrand'), make('p', 'quiet', 'Your cover is drawn again in '
-    + 'the one you choose and comes back here for your decision.'), problem,
+  add(form, brandFields(held, 'rebrand'), make('p', 'quiet', 'Its looks are drawn again in '
+    + 'the one you choose and come back here for your decision.'), problem,
   add(make('div', 'bar'), submit, cancel));
   return [title, form];
 }
@@ -5094,7 +5171,9 @@ function deckActions(run, lead) {
       : run.gate.unreviewed ? 'Use/export draft as-is' : 'Approve', lead === 'approve' ? 'filled' : '', () => {
       const gate = view.run.gate;
       if (gate && REVIEWED.includes(gate.name)) sendReview(gate, approve);
-      else decide('approve', '', null, approve);
+      else if (gate && gate.name === 'gate:look' && gate.offered) {
+        decide('approve', (chosenFor(gate).lookWords || '').trim(), null, approve);
+      } else decide('approve', '', null, approve);
     }, 'approve');
     const brand = run.gate.name === 'gate:look';
     actions.push(approve, capsule(brand ? 'Choose another brand' : 'Ask for changes', '',

@@ -263,6 +263,7 @@ class CommandTests(unittest.TestCase):
                         (0, json.dumps(local), '')]
         first = self.slides.preview('/d/compiled', '/d/p', 'drive')
         self.assertEqual(first, {**shown, 'renderer': 'drive'})
+        self.slides._asked_capabilities = True    # a tool that lists nothing: no preview pool
         self.slides.preview('/d/compiled', '/d/p2', 'drive', file_id='file-1',
                             slide='what-it-is')
         offline = self.slides.preview('/d/compiled', '/d/q', 'local', file_id='file-1')
@@ -277,6 +278,27 @@ class CommandTests(unittest.TestCase):
             ['compose', 'preview', '--file', '/d/compiled', '--output', '/d/q', '--renderer',
              'local']])
 
+    def test_a_tool_with_a_preview_pool_is_never_told_which_drive_file_to_reuse(self):
+        shown = {'deck': '/d/p/deck.pptx', 'deckSha256': 'abc', 'slides': []}
+        self.answers = [(0, json.dumps({'version': '0.17.0',
+                                        'capabilities': ['google-preview-pool']}), ''),
+                        (0, json.dumps(shown), '')]
+        self.slides.preview('/d/c', '/d/p', 'drive', file_id='file-1')
+        self.assertEqual(self.ran[-1][2:], ['compose', 'preview', '--file', '/d/c', '--output',
+                                            '/d/p', '--renderer', 'google'])
+
+    def test_a_preview_file_a_newer_preview_replaced_is_previewed_again_unnamed(self):
+        shown = {'deck': '/d/p/deck.pptx', 'deckSha256': 'abc', 'slides': []}
+        self.answers = [(1, '', 'That preview has been replaced by a newer one; preview '
+                                'again\n'), (0, json.dumps(shown), '')]
+        self.slides._asked_capabilities = True    # a tool that lists nothing: no preview pool
+        self.slides.preview('/d/c', '/d/p', 'drive', file_id='file-1')
+        self.assertEqual([command[2:] for command in self.ran][-2:], [
+            ['compose', 'preview', '--file', '/d/c', '--output', '/d/p', '--renderer',
+             'google', '--file-id', 'file-1'],
+            ['compose', 'preview', '--file', '/d/c', '--output', '/d/p', '--renderer',
+             'google']])
+
     def test_a_build_bound_to_a_design_names_its_project_and_asks_for_json(self):
         shown = {'deck': '/d/p/deck.pptx', 'deckSha256': 'abc', 'slides': []}
         self.answers = [(0, '{"status": "fits"}', ''), (0, '{"output": "/d/c"}', ''),
@@ -286,6 +308,7 @@ class CommandTests(unittest.TestCase):
         self.slides.compile('/d/composition.json', '/d/brand.json', '/d/c',
                             design=Path('/d/deck'))
         self.slides.preview('/d/c', '/d/p', 'local', design=Path('/d/deck'), section=True)
+        self.slides._asked_capabilities = True    # a tool that lists nothing: no preview pool
         self.slides.preview('/d/c', '/d/q', 'drive', file_id='file-1', design=Path('/d/deck'))
         self.assertEqual([command[2:] for command in self.ran], [
             ['compose', 'compile', '--file', '/d/section-1.json', '--brand', '/d/brand.json',

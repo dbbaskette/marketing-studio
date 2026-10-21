@@ -58,8 +58,10 @@ class PageFileTests(unittest.TestCase):
         self.assertIn('tests/page_harness.js', taken)
 
     def test_the_page_and_its_stylesheets_are_served_and_nothing_else(self):
+        # The deck panels are the shared core's, served beside every studio page.
         self.assertEqual(set(server.PAGE), {'/', '/index.html', '/app.js', '/markdown.js',
-                                            '/style.css', '/deck.css'})
+                                            '/style.css', '/deck.css', '/deck-panels.js',
+                                            '/deck-panels.css'})
 
     def test_the_page_has_nothing_its_own_policy_would_block(self):
         page = self.read('index.html')
@@ -67,8 +69,9 @@ class PageFileTests(unittest.TestCase):
         self.assertNotRegex(page, r'\sstyle\s*=')
         self.assertNotRegex(page, r'\son[a-z]+\s*=')
         self.assertNotRegex(page, r'<svg\b')
+        # markdown.js, the shared deck panels and app.js: each a file, none inline.
         self.assertEqual(re.findall(r'<script\b[^>]*>(.*?)</script>', page, re.DOTALL),
-                         ['', ''])
+                         ['', '', ''])
 
     def test_the_shell_names_its_controls_and_its_regions(self):
         page = self.read('index.html')
@@ -337,6 +340,22 @@ class ScreenTests(ScriptedPage, PageCase):
         posted = [body for address, body in self.posts(result) if address == '/api/decks']
         self.assertNotIn('initial_review', posted[0]['form'])
 
+    def test_the_new_deck_form_asks_once_whether_it_is_a_talk_or_a_handout(self):
+        answers = self.answers(**{'GET /api/run': [{'status': 404,
+                                                    'body': {'error': 'There is no deck there.'}}]})
+        result = self.run_page(answers, [
+            {'click': 'New deck'}, {'click': 'Start from scratch'},
+            {'fill': 'A short title', 'value': 'Rolling restarts'},
+            {'snapshot': 'about'}, {'click': 'A handout'},
+            {'click': 'Continue'}, {'snapshot': 'last'}, {'click': 'Start the deck'}])
+        about = result['snapshots']['about']
+        self.assertIn('Is this deck for a talk or a handout?', about['text'])
+        self.assertIn('A talk', about['buttons'])
+        self.assertNotIn('talk or a handout', result['snapshots']['last']['text'],
+                         'asked once, on the form')
+        posted = [body for address, body in self.posts(result) if address == '/api/decks']
+        self.assertEqual(posted[0]['form']['delivery'], 'reading')
+
     def test_the_goal_text_does_not_flip_the_first_draft_in_the_runner(self):
         path = self.started(goal='Skip AI review on the first build.')
         self.assertFalse(self.run_of(path)['unreviewed'])
@@ -532,7 +551,7 @@ class ScreenTests(ScriptedPage, PageCase):
                 self.assertIn('research', shot['text'].lower())
             if name == 'gate:look':
                 self.assertIn('Made in example (light).', shot['text'])
-                self.assertIn('each slide is designed on its own', shot['text'])
+                self.assertIn('too old to offer looks', shot['text'])
                 self.assertTrue(any('kind=look&name=sample' in picture['of']
                                     for picture in shot['pictures']), shot['pictures'])
                 asked = result['snapshots']['rebrand']['sheet']
@@ -724,7 +743,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.run_of(path)['gate']['round'], 2)
 
     def test_a_slide_added_and_moved_on_the_page_is_an_outline_the_slides_tool_takes(self):
-        path = self.started()
+        path = self.started(delivery='reading')   # a handout: an added slide needs no notes
         drafted = self.run_of(path)['gate']['slides']
         title = 'Watch each batch of the restart closely'
         result = self.deck_screen(path, [
@@ -864,7 +883,8 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.deck_screen(path, [
             {'fill': 'Title of slide 2', 'value': 'A clearer proposed title'},
             {'click': 'Refresh now'}, {'snapshot': 'shown'}],
-            **{'POST /api/storyboard': [ok({'html': '<h1>Wireframe</h1>', 'expected': gate['expected']})]})
+            **{'POST /api/storyboard': [ok({'src': '/api/deck-draft?ticket=shown',
+                                            'expected': gate['expected']})]})
         (_, body), = self.posts(result)
         self.assertEqual(body['slides'][1]['title'], 'A clearer proposed title')
         self.assertEqual(body['expected'], gate['expected'])
@@ -1007,6 +1027,80 @@ class ScreenTests(ScriptedPage, PageCase):
         gate = self.run_of(path)['gate']
         self.assertEqual((gate['name'], gate['made_in'], gate['round']),
                          ('gate:look', 'example (dark)', 2))
+
+    def test_the_brands_looks_are_shown_and_the_pick_is_sent_in_the_persons_words(self):
+        self.brand.run.offers_looks = True
+        path = self.started()
+        self.decided(path, 'gate:outline')
+        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:look')
+        result = self.deck_screen(path, [
+            {'see': 'Every look'}, {'see': 'Clear'}, {'see': 'Bold'},
+            {'click': 'Bold'},
+            {'fill': 'Your words, kept with your choice (optional)', 'value': 'Bold for a launch.'},
+            {'snapshot': 'looks'}, {'click': 'Approve'}, {'snapshot': 'sent'}],
+            **{'POST /api/decide': [ok(self.run_of(path))], 'GET /api/slide': [PICTURE] * 3})
+        shot = result['snapshots']['looks']
+        for shown in ('Choose the look', 'Clear', 'the brand’s default', 'Bold',
+                      'Launches and keynotes.', 'Rendered on this computer with LibreOffice.'):
+            self.assertIn(shown, shot['text'])
+        self.assertNotIn('too old to offer looks', shot['text'])
+        refs = {picture['of'].split('kind=look&')[1] for picture in shot['pictures']
+                if 'kind=look' in picture['of']}
+        self.assertTrue({'name=sheet', 'number=1', 'number=2'} <= refs, refs)
+        (address, body), = self.posts(result)
+        self.assertEqual((address, body['gate'], body['decision'], body['extra'], body['note']),
+                         ('/api/decide', 'gate:look', 'approve', {'look': 'example-bold'},
+                          'Bold for a launch.'))
+        # What the page sent is what the runner takes: the deck goes on in the bold look.
+        self.post('decide', body)
+        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:build')
+
+    def test_the_direction_review_hosts_the_look_pick(self):
+        from unittest import mock
+        from studio_core import review_policy
+        self.brand.run.offers_looks = True
+        with mock.patch.object(review_policy, 'capture',
+                               return_value={'schema': 1, 'level': 'balanced'}):
+            path = self.started()
+        gate = self.run_of(path)['gate']
+        self.assertEqual((gate['name'], gate['label']), ('gate:outline', 'Review the direction'))
+        result = self.deck_screen(path, [
+            {'see': 'Every look'}, {'see': 'Clear'}, {'see': 'Bold'},
+            {'click': 'Bold'}, {'snapshot': 'review'}, {'click': 'Approve'}],
+            **{'POST /api/decide': [ok(self.run_of(path))], 'GET /api/slide': [PICTURE] * 3})
+        self.assertIn('Choose the look', result['snapshots']['review']['text'])
+        (address, body), = self.posts(result)
+        self.assertEqual((body['gate'], body['decision'], body['extra']),
+                         ('gate:outline', 'approve', {'look': 'example-bold'}))
+        self.post('decide', body)
+        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:build')
+
+    def test_looks_that_cannot_be_rendered_offer_to_try_again_or_carry_on(self):
+        self.brand.run.offers_looks = True
+        self.brand.run.unrenderable = 'No renderer here.'
+        path = self.started()
+        self.decided(path, 'gate:outline')
+        result = self.deck_screen(path, [
+            {'snapshot': 'failed'}, {'click': 'Try again'},
+            {'click': 'Carry on in the brand’s default look'}],
+            **{'POST /api/decide': [ok(self.run_of(path)), ok(self.run_of(path))]})
+        text = result['snapshots']['failed']['text']
+        self.assertIn("The brand's looks could not be rendered here (No renderer here.)", text)
+        sent = [body for _, body in self.posts(result)]
+        self.assertEqual([(body['decision'], body['extra']) for body in sent],
+                         [('changes', {'look': 'again'}), ('approve', {'look': 'default'})])
+        self.post('decide', sent[1])
+        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:build')
+        # The deck's own gate says its look was chosen without being seen rendered.
+        from studio_core import deck_flow
+        shot = self.deck_screen(path, [{'snapshot': 'deck'}])['snapshots']['deck']
+        self.assertIn(deck_flow.UNREVIEWED, shot['text'])
+
+    def test_an_older_brand_says_it_offers_no_looks(self):
+        path = self.started()
+        self.decided(path, 'gate:outline')
+        result = self.deck_screen(path, [{'snapshot': 'look'}])
+        self.assertIn('too old to offer looks', result['snapshots']['look']['text'])
 
     def test_an_approval_that_is_refused_is_said_on_the_deck_s_screen(self):
         path = self.started()
@@ -1388,8 +1482,10 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.deck_screen(path, [
             {'fill': 'Title of slide 2', 'value': 'A clearer proposed title'},
             {'snapshot': 'edited'}, {'timer': 'redrawStoryboard'}, {'snapshot': 'redrawn'}],
-            **{'GET /api/storyboard': [ok({'html': '<h1>Before</h1>', 'expected': gate['expected']})],
-               'POST /api/storyboard': [ok({'html': '<h1>After</h1>', 'expected': gate['expected']})]})
+            **{'GET /api/storyboard': [ok({'src': '/api/deck-draft?ticket=before',
+                                           'expected': gate['expected']})],
+               'POST /api/storyboard': [ok({'src': '/api/deck-draft?ticket=after',
+                                            'expected': gate['expected']})]})
         edited = result['snapshots']['edited']
         self.assertIn('Refresh now', edited['buttons'])
         self.assertIn('The storyboard is redrawn once you stop editing.', edited['text'])

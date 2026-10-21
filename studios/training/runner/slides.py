@@ -90,7 +90,9 @@ Added to the above
 - `drive_check` is True or False. It is False too when Drive would not turn a PowerPoint
   file into slides, since previews and the finished deck both need that.
 - A refusal by `preview` that had already written its file in Drive says so in `left`:
-  {'fileId', 'url'}. Pass that `fileId` to the next preview, or a second file is made.
+  {'fileId', 'url'}. A tool with a Google preview pool (`google-preview-pool`) reuses its
+  own few preview decks, and is never named a file; an older one is passed that `fileId`
+  for the next preview, and one it says a newer preview replaced is previewed again.
 - `ready()` returns {'tool', 'version', 'pictures', 'local', 'drive', 'missing'}: four
   yes-or-no answers, the version, and the sentences. `ready(slides, which=...)` asks a given
   Slides, and looks for programs some other way, which is how a test asks. With
@@ -413,6 +415,14 @@ class Slides:
 
     # --- the composition ---
 
+    def outline_draft(self, outline: Path, brand: Path, output: Path) -> Path:
+        """Write the tool's page of an outline's wording and structure: a wireframe draft,
+        which is no design."""
+        with _new(output):
+            self._json('outline', 'draft', '--file', str(outline), '--brand', str(brand),
+                       '--output', str(output))
+        return Path(output)
+
     def compose_contract(self, brand: Path) -> str:
         """How a slide is drawn and the sizes this brand gives, as text."""
         return self._call('compose', 'contract', '--brand', str(brand)).strip()
@@ -422,12 +432,17 @@ class Slides:
         return self._json('compose', 'layouts', '--brand', str(brand))
 
     def compile(self, composition: Path, brand: Path, folder: Path | None = None,
-                design: Path | None = None, section: bool = False) -> dict:
+                design: Path | None = None, section: bool = False,
+                outline: Path | None = None) -> dict:
         """Check a composition, a whole deck or one section. With a new folder, write what
         a preview and a render are made from. With `design`, it is checked against the
-        design approved in that project: as the whole deck, or as one `section`."""
+        design approved in that project: as the whole deck, or as one `section`. With the
+        approved `outline`, on a tool that can, its preview finds a point's sentence split
+        across shapes."""
         args = ['compose', 'compile', '--file', str(composition), '--brand', str(brand),
-                *_bound(design, section)]
+                *_bound(design, section),
+                *(['--outline', str(outline)] if outline and self.has('compose-split-point')
+                  else [])]
         if folder is None:
             return self._json(*args)
         with _new(folder):
@@ -451,13 +466,18 @@ class Slides:
                                  f'{RENDERERS[1]}, not {renderer}.')
         args = ['compose', 'preview', '--file', str(compiled), '--output', str(folder),
                 '--renderer', 'google' if renderer == 'drive' else 'local']
-        if file_id and renderer == 'drive':
-            args += ['--file-id', file_id]
-        if slide:
-            args += ['--slide', slide]
-        args += _bound(design, section)
+        # A tool with a preview pool reuses its own few preview decks: no file is named.
+        named = bool(file_id) and renderer == 'drive' and not self.has('google-preview-pool')
+        rest = [*(['--slide', slide] if slide else []), *_bound(design, section)]
         with PREVIEWING, _new(folder):
-            shown = self._json(*args)
+            try:
+                shown = self._json(*args, *(['--file-id', file_id] if named else []), *rest)
+            except Refused as refusal:
+                # The file named was taken over by a newer preview: preview again, unnamed.
+                if not named or not ('preview-replaced' in refusal.codes or any(
+                        'replaced by a newer one' in line for line in refusal.problems)):
+                    raise
+                shown = self._json(*args, *rest)
             if not shown.get('deck') or not isinstance(shown.get('slides'), list):
                 raise WorkspaceError('The slides tool rendered a preview and did not say '
                                      'where its slides are. Check that it is installed '
@@ -549,6 +569,13 @@ class Slides:
             self._capabilities = frozenset(str(name) for name in listed) \
                 if isinstance(listed, list) else None
         return self._capabilities
+
+    def knows(self) -> frozenset:
+        """What this tool knows of an outline beyond its words, by the names deck.KNOWS
+        gives: a point's `parts`, a slide's `provenance`."""
+        from runner import deck
+        return frozenset(name for capability, name in deck.KNOWS.items()
+                         if self.has(capability))
 
     def has(self, name: str) -> bool:
         """Whether the tool's `version` lists this capability. A tool that lists none has

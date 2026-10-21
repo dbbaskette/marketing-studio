@@ -37,6 +37,7 @@ import tempfile
 from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
+import home
 from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, decks, documents, slides as slides_tool, stages, worker_tools
@@ -263,12 +264,63 @@ def _tail(run: dict, request, error) -> list[str]:
     return lines
 
 
+def research_ids(root) -> list[str]:
+    """The identifiers this deck's research defines, which a slide may not show: its
+    questions, from the plan, and the findings, facts and sources of its reviewed research
+    bundle or of harness-research's own record."""
+    root = Path(root)
+    found = []
+    plan = home.read_json(root / 'research' / 'plan.json', None)
+    found += [entry.get('id') for entry in (plan or {}).get('items') or ()
+              if isinstance(entry, dict)] if isinstance(plan, dict) else []
+    for record in (home.read_json(root / '.harness-research' / 'research.json', None),):
+        if isinstance(record, dict):
+            found += [entry.get('id') for key in ('findings', 'facts', 'sources', 'items')
+                      for entry in record.get(key) or () if isinstance(entry, dict)]
+    try:
+        from studio_core.research_contract import read_bundle
+        facts, _ = read_bundle(root / 'research')
+        found += [entry.get('id') for key in ('findings', 'facts', 'sources')
+                  for entry in facts.get(key) or () if isinstance(entry, dict)]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return sorted({str(ident) for ident in found if ident})
+
+
+def one_line_titles(outline) -> list[str]:
+    """A cover, section or closing slide's title is one line: the brand's lead layouts hold
+    one, and a second line packed into it is drawn over the artwork. Words that should be
+    read go in its subtitle, or on a content slide before a closing."""
+    return [f"{slide.get('id') or 'a slide'}: the title of a {slide.get('kind')} slide is one "
+            'line. Put a second line in its subtitle, or on a content slide before it.'
+            for slide in outline.get('slides') or () if isinstance(slide, dict)
+            and slide.get('kind') in ('cover', 'section', 'closing')
+            and '\n' in str(slide.get('title') or '').strip()]
+
+
 def _job(root, run, request, error, brand, slides, brief_kind, level, inputs, rules, intro,
          ask):
     root = Path(root)
     form = run.get('form') or {}
     contract = (slides or slides_tool.Slides()).outline_contract(Path(brand))
-    inputs = {'Outline contract': contract, **inputs}
+    from runner.steps import build
+    from studio_core import deck_flow
+    # The deck's own guidance first, in the order every studio gives it (deck_flow): the
+    # outline contract, the slides tool's drafting guidance, pinned by the brand for this
+    # deck where it is the entry, else the installed tool's, then the brand's worker
+    # guidance unchanged. Then what this deck's words come from.
+    pinned = build.guided_reading(root)
+    if not pinned:
+        try:
+            pinned = (slides or slides_tool.Slides()).reading(Path(brand))
+        except (WorkspaceError, OSError):
+            pinned = {}
+    shared = {'outline contract': contract}
+    for name in deck_flow.OUTLINE_READING:
+        if (pinned.get(name) or '').strip():
+            shared[name] = pinned[name]
+    shared.update(build.brand_for_workers(root, Path(brand)))
+    inputs = {**shared, **inputs}
     current = Path(root) / OUTLINE
     if current.exists():
         inputs['The current outline'] = current.read_text(encoding='utf-8')
@@ -277,7 +329,10 @@ def _job(root, run, request, error, brand, slides, brief_kind, level, inputs, ru
              f"Goal: {form.get('goal') or 'not given'}",
              intro, f'Hand your outline back under the name "{NAME}".',
              'Your inputs: ' + ', '.join(inputs) + '.', *_tail(run, request, error)]
-    spec = {'kind': 'outline', 'brand': str(brand), 'rules': [r for r in rules if r]}
+    # How the deck is delivered is the form's, read through build.delivery: the outline is
+    # held to it, whatever the writer put.
+    spec = {'kind': 'outline', 'brand': str(brand), 'rules': [r for r in rules if r],
+            'delivery': build.delivery(run)}
     return Work(guidance=briefs.guidance(brief_kind, level=level), task='\n\n'.join(lines),
                 profile='write', name=NAME,
                 prepared={'inputs': inputs, 'artifacts': {NAME: spec}, 'ask': ask})
@@ -323,7 +378,10 @@ def outline_work(root, run: dict, request: dict | None, error: str | None, brand
         inputs['Research selection'] = ('Use only retained findings to shape this presentation. '
             'The report and brief preserve the full reviewed research; do not reintroduce excluded '
             'finding claims through paraphrase. Excluded finding IDs: ' + ', '.join(sorted(excluded)))
-    return _job(root, run, request, error, brand, slides, kind, None, inputs, [], intro, True)
+    from runner.steps import build
+    return _job(root, run, request, error, brand, slides, kind, None, inputs,
+                [one_line_titles, build.parts_rules,
+                 functools.partial(build.bookkeeping, ids=research_ids(root))], intro, True)
 
 
 def extract_work(root, run: dict, request: dict | None, error: str | None, brand: Path,

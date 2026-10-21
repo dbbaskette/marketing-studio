@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 import runner_support
+from stand_ins import brand as brand_stand_in
 from runner_support import LONG_OUTLINE, OUTLINE, StudioCase, asks, fails, unsettled
 from workspace import WorkspaceError
 
@@ -1198,6 +1199,273 @@ class SayingTests(StudioCase):
         # section kept from the build before counts as it did then.
         self.assertEqual(shown['last_build']['dollars'], 0.75)
         self.assertEqual(shown['last_build']['sections'], 2)
+
+
+class LookStepTests(StudioCase):
+    """A brand that is the entry to slide building and offers looks: the deck's look is
+    chosen from the brand's rendered samples, and the deck pauses for the person where
+    studio_core.deck_flow says, at each review level."""
+
+    def setUp(self):
+        super().setUp()
+        self.brand.run.offers_looks = True
+        self.brand.run.guides = True
+
+    def begin(self, level):
+        from studio_core import review_policy
+        with mock.patch.object(review_policy, 'capture',
+                               return_value={'schema': 1, 'level': level}):
+            return self.start()
+
+    def paused(self, root, gates=('gate:outline', 'gate:look', 'gate:build')):
+        """Each gate this deck stopped at for the person, in order, approving each with a
+        look where one is asked for."""
+        seen = []
+        for _ in range(8):
+            gate = self.view(root)['gate']
+            if gate is None:
+                break
+            seen.append(gate['name'])
+            offered = (gate.get('offered') or (gate.get('look') or {}).get('offered'))
+            self.decide(root, gate['name'], 'approve', None,
+                        {'look': 'example-bold'} if offered and not offered['chosen'] else None)
+        return [name for name in seen if name in gates]
+
+    def test_step_by_step_stops_for_the_draft_the_look_and_the_deck(self):
+        from studio_core import deck_flow
+        root = self.begin('step_by_step')
+        self.decide(root, 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:look')
+        shown = self.view(root)['gate']
+        offered = shown['offered']
+        self.assertEqual([one['id'] for one in offered['looks']],
+                         [entry['id'] for entry in brand_stand_in.DIRECTIONS])
+        self.assertEqual(offered['default'], brand_stand_in.DEFAULT_LOOK)
+        self.assertTrue(offered['sheet'])
+        self.assertEqual(offered['notes'], [deck_flow.route('local')['says']])
+        self.assertFalse(offered['failed'])
+        self.assertIsNone(shown['older'])
+        self.assertTrue(self.engine.picture(root, 'look', 0).startswith(b'\x89PNG'))
+        self.assertTrue(self.engine.picture(root, 'look', 2).startswith(b'\x89PNG'))
+        with self.assertRaises(FileNotFoundError):
+            self.engine.picture(root, 'look', '../../outline')
+        with self.assertRaisesRegex(WorkspaceError, 'Choose one of the looks'):
+            self.decide(root, 'gate:look')
+        self.decide(root, 'gate:look', 'approve', 'Bold, for the launch.',
+                    {'look': 'example-bold'})
+        self.assertEqual(self.waiting(root), 'gate:build')
+        bold = brand_stand_in.DIRECTIONS[1]
+        started = json.loads((root / build.START / 'outline.json').read_text())
+        self.assertEqual(started['direction'], bold['direction'])
+        self.assertEqual(started['house'][:2], list(brand_stand_in.LOOK_HOUSE))
+        self.assertEqual(started['layouts']['closing'], 'Big Statement')
+        self.assertIn('In their words: "Bold, for the launch."', ' '.join(started['approval']))
+        chose = [call for call in self.brand.run.calls if call[:2] == ['look', 'choose']][-1]
+        self.assertEqual(chose[chose.index('--words') + 1], 'Bold, for the launch.')
+        self.assertIn('--outline', chose)
+        self.assertIn('--write', chose)
+        # Every composer was handed the brand's worker guidance unchanged.
+        composer = [spec for seen, job, spec in self.workers.jobs if seen == 'section'][0]
+        self.assertIn('brand worker guidance', [entry['name'] for entry in composer['inputs']])
+        self.decide(root, 'gate:build')
+        self.assertEqual(self.view(root)['state'], 'finished')
+
+    def test_each_level_pauses_where_the_shared_deck_flow_says(self):
+        from studio_core import deck_flow
+        expected = {'step_by_step': ['gate:outline', 'gate:look', 'gate:build'],
+                    'balanced': ['gate:outline', 'gate:build'],
+                    'automatic': ['gate:build']}
+        for level, gates in expected.items():
+            with self.subTest(level=level):
+                root = self.begin(level)
+                self.assertEqual(self.paused(root), gates)
+                hosts = deck_flow.HOSTS['presentation'].get(level, {})
+                checkpoints = [next((stop for stop, host in hosts.items() if host == gate),
+                                    deck_flow.canonical('presentation', gate)) for gate in gates]
+                self.assertEqual(tuple(checkpoints), deck_flow.pauses(level))
+
+    def test_balanced_asks_for_the_pick_in_the_direction_review(self):
+        root = self.begin('balanced')
+        self.assertEqual(self.waiting(root), 'gate:outline')
+        shown = self.view(root)['gate']
+        self.assertEqual(shown['label'], 'Review the direction')
+        self.assertEqual(len(shown['look']['offered']['looks']), 2)
+        with self.assertRaisesRegex(WorkspaceError, 'Choose one of the looks'):
+            self.decide(root, 'gate:outline')
+        self.decide(root, 'gate:outline', 'approve', None, {'look': 'example-clear'})
+        self.assertEqual(self.waiting(root), 'gate:build')
+        started = json.loads((root / build.START / 'outline.json').read_text())
+        self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[0]['direction'])
+        self.assertIn('Picked Clear on the page, with no comment.',
+                      ' '.join(started['approval']))
+        self.assertEqual(decks.read_run(root)['look_picked']['choice'], 'example-clear')
+
+    def test_automatic_draft_takes_the_brands_default_and_records_why(self):
+        from studio_core import deck_flow
+        root = self.begin('automatic')
+        self.assertEqual(self.waiting(root), 'gate:build')
+        started = json.loads((root / build.START / 'outline.json').read_text())
+        self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[0]['direction'])
+        self.assertIn(deck_flow.DEFAULT_WORDS.format(name='Clear'),
+                      ' '.join(started['approval']))
+
+    def test_looks_that_cannot_be_rendered_offer_to_try_again_or_carry_on(self):
+        from studio_core import deck_flow
+        self.brand.run.unrenderable = 'LibreOffice (soffice) is not installed.'
+        root = self.begin('step_by_step')
+        self.decide(root, 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:look')
+        offered = self.view(root)['gate']['offered']
+        self.assertTrue(offered['failed'])
+        self.assertEqual(offered['notes'], [deck_flow.LOOK_FAILED.format(
+            why='LibreOffice (soffice) is not installed.')], 'nothing said of a route')
+        self.assertEqual(offered['looks'], [])
+        # The brand kept its samples, drawn without pictures.
+        drawn = [call for call in self.brand.run.calls if call[:2] == ['look', 'samples']]
+        self.assertEqual(['--preview' in call for call in drawn], [True, False])
+        # Trying again draws them again: they render this time.
+        self.brand.run.unrenderable = ''
+        self.decide(root, 'gate:look', 'changes', None, {'look': 'again'})
+        self.assertEqual(self.waiting(root), 'gate:look')
+        self.assertFalse(self.view(root)['gate']['offered']['failed'])
+        # Carrying on knowingly in the brand's default where they cannot.
+        self.brand.run.unrenderable = 'No renderer.'
+        self.decide(root, 'gate:look', 'changes', None, {'look': 'again'})
+        self.assertTrue(self.view(root)['gate']['offered']['failed'])
+        self.decide(root, 'gate:look', 'approve', None, {'look': 'default'})
+        self.assertEqual(self.waiting(root), 'gate:build')
+        chose = [call for call in self.brand.run.calls if call[:2] == ['look', 'choose']][-1]
+        self.assertIn('--unrendered', chose)
+        started = json.loads((root / build.START / 'outline.json').read_text())
+        self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[0]['direction'])
+        self.assertIn(deck_flow.PROCEED_WORDS.format(name="the brand's default"),
+                      ' '.join(started['approval']))
+        self.assertEqual(decks.read_run(root)['look_shown'], 'unrendered')
+        self.assertEqual(self.view(root)['gate']['look_unreviewed'], deck_flow.UNREVIEWED)
+
+    def test_a_brand_that_does_not_take_unrendered_is_recorded_by_the_studio(self):
+        from studio_core import deck_flow
+        self.brand.run.unrenderable = 'No renderer.'
+        self.brand.run.refuses_unrendered = True
+        root = self.begin('step_by_step')
+        self.decide(root, 'gate:outline')
+        self.decide(root, 'gate:look', 'approve', None, {'look': 'default'})
+        self.assertEqual(self.waiting(root), 'gate:build')
+        self.assertEqual(decks.read_run(root)['look_shown'], 'unrendered')
+        self.assertEqual(self.view(root)['gate']['look_unreviewed'], deck_flow.UNREVIEWED)
+        started = json.loads((root / build.START / 'outline.json').read_text())
+        self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[0]['direction'])
+
+    def test_balanced_carries_on_knowingly_from_the_direction_review(self):
+        from studio_core import deck_flow
+        self.brand.run.unrenderable = 'No renderer.'
+        root = self.begin('balanced')
+        self.assertTrue(self.view(root)['gate']['look']['offered']['failed'])
+        with self.assertRaisesRegex(WorkspaceError, 'Choose one of the looks'):
+            self.decide(root, 'gate:outline')
+        self.decide(root, 'gate:outline', 'approve', None, {'look': 'default'})
+        self.assertEqual(self.waiting(root), 'gate:build')
+        self.assertEqual(decks.read_run(root)['look_shown'], 'unrendered')
+        self.assertEqual(self.view(root)['gate']['look_unreviewed'], deck_flow.UNREVIEWED)
+
+    def test_automatic_draft_carries_on_in_the_default_when_looks_cannot_be_rendered(self):
+        from studio_core import deck_flow
+        self.brand.run.unrenderable = 'No renderer.'
+        root = self.begin('automatic')
+        self.assertEqual(self.waiting(root), 'gate:build')
+        said = deck_flow.UNRENDERED_WORDS.format(why='No renderer.', name='Clear')
+        started = json.loads((root / build.START / 'outline.json').read_text())
+        self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[0]['direction'])
+        self.assertIn(said, ' '.join(started['approval']))
+        record = decks.read_run(root)
+        event = next(event for event in record['review_events'] if event['gate'] == 'gate:look')
+        self.assertEqual((event['by'], event['note']), ('review-policy', said))
+        self.assertEqual(self.view(root)['gate']['look_unreviewed'], deck_flow.UNREVIEWED)
+
+    def test_the_direction_review_offers_to_draw_failed_looks_again(self):
+        self.brand.run.unrenderable = 'No renderer.'
+        root = self.begin('balanced')
+        offered = self.view(root)['gate']['look']['offered']
+        self.assertTrue(offered['failed'])
+        self.brand.run.unrenderable = ''
+        self.decide(root, 'gate:outline', 'changes', None,
+                    {'look': 'again', 'direction_target': 'gate:look'})
+        shown = self.view(root)['gate']
+        self.assertEqual(shown['name'], 'gate:outline')
+        self.assertFalse(shown['look']['offered']['failed'])
+        self.decide(root, 'gate:outline', 'approve', None, {'look': 'example-bold'})
+        self.assertEqual(self.waiting(root), 'gate:build')
+        started = json.loads((root / build.START / 'outline.json').read_text())
+        self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[1]['direction'])
+
+    def test_a_pick_made_before_the_words_changed_is_chosen_again_once_redrawn(self):
+        root = self.begin('balanced')
+        shown = self.view(root)['gate']
+        edited = [dict(slide) for slide in shown['slides']]
+        edited[1]['title'] = 'Batches restart one at a time'
+        self.decide(root, 'gate:outline', 'approve', 'Bold please.',
+                    {'look': 'example-bold', 'edited': edited})
+        # The brand refused the outline it had not drawn: the looks were drawn again from
+        # the words approved, and the person's pick taken then. (The scripted composers draw
+        # the fixture's own titles, so the build itself is not followed here.)
+        record = decks.read_run(root)
+        self.assertEqual(record['gates']['gate:look']['state'], 'approved')
+        samples = [call for call in self.brand.run.calls if call[:2] == ['look', 'samples']]
+        self.assertEqual(len(samples), 2)
+        started = json.loads((root / build.START / 'outline.json').read_text())
+        self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[1]['direction'])
+
+
+class PreviewRepairEngineTests(StudioCase):
+    def test_a_slide_the_preview_flags_is_drawn_again_before_the_review(self):
+        second = OUTLINE['slides'][1]['id']
+        self.slides.run.screens = {second: [
+            {'severity': 'error', 'code': 'text-overflow', 'detail': 'Text runs off.'}]}
+        root = self.start()
+        self.to_gate(root, 'gate:build')
+        state = build.read_state(root)
+        # The first round went back to its composer before any review; later rounds within
+        # REPAIRS too; the review came after.
+        self.assertEqual(state['repaired'], build.REPAIRS)
+        self.assertIsNone(state['rounds'][0]['review'])
+        self.assertTrue(state['rounds'][0]['preview_repair'])
+        self.assertIsNotNone(state['rounds'][-1]['review'])
+        told = [spec for seen, job, spec in self.workers.jobs if seen == 'section'
+                and any(entry['name'] == 'what the preview found' for entry in spec['inputs'])]
+        self.assertTrue(told)
+
+
+class HoldingTests(StudioCase):
+    def test_the_decks_gate_is_held_by_grave_findings_and_audit_errors(self):
+        root = self.start()
+        self.assertEqual(self.engine._holding(root, 'gate:outline'), [])
+        self.assertEqual(self.engine._holding(root, 'gate:build'), [])
+        state = build.read_state(root)
+        state['rounds'] = [{'review': {'findings': [
+            {'slide': 'what-it-does', 'severity': 'major', 'note': 'The boxes crowd.'},
+            {'slide': 'the-objection', 'severity': 'minor', 'note': 'A little tight.'}]}}]
+        state['audit'] = {'messages': ['Slide 2: Restore the logo. (error)',
+                                       'Slide 3: Small text. (warning)']}
+        build.write_state(root, state)
+        self.assertEqual(self.engine._holding(root, 'gate:build'),
+                         ['Major on what-it-does: The boxes crowd.',
+                          'Audit blocker: Slide 2: Restore the logo. (error)'])
+        self.assertEqual(self.engine._holding(root, 'gate:look'), [])
+
+
+class PreviewLinkTests(StudioCase):
+    def test_a_pooled_preview_is_never_listed_as_a_file_the_deck_left(self):
+        root = self.start()
+        kept = root / build.BUILD / 'drive-preview.json'
+        kept.parent.mkdir(parents=True, exist_ok=True)
+        own = {'name': 'Preview: Rolling restarts', 'id': 'file-1',
+               'url': 'https://docs.example.com/file-1'}
+        kept.write_text(json.dumps(own))
+        self.assertEqual([entry['url'] for entry in self.engine.leaving(root)['drive']],
+                         ['https://docs.example.com/file-1'])
+        kept.write_text(json.dumps({**own, 'pool': 'pool-2:7'}))
+        self.assertEqual(self.engine.leaving(root)['drive'], [],
+                         'its link may show another deck\'s slides by now')
 
 
 class SlideNoteTests(StudioCase):

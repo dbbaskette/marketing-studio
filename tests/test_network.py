@@ -154,6 +154,70 @@ class NetworkTests(unittest.TestCase):
         self.assertNotIn(self.desk.token.encode(), body)
 
 
+class FramedDraftBridgeTests(unittest.TestCase):
+    """A studio's deck panels and its framed draft page reach a phone through the bridge: the
+    panels as the page's own files, the draft by its one-page ticket, which a frame sends in
+    place of the key. Every other check still holds. A disposable data root and a synthetic
+    studio server; no real workspace and no LAN address."""
+
+    def setUp(self):
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'core'))
+        from studio_core import server as core
+        temporary = tempfile.TemporaryDirectory(prefix='marketing-framed-')
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        (self.root / 'index.html').write_text('<!doctype html><title>Probe</title>')
+        patcher = mock.patch.dict(os.environ, {'MARKETING_STUDIO_DATA': str(self.root / 'data'),
+                                               'STUDIOS_CONFIG': str(self.root / 'settings.json')})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        module = core.for_product('_bridge_probe', 'Training Studio', 'X-Training-Studio-Token',
+                                  self.root, {'/': ('index.html', 'text/html; charset=utf-8')},
+                                  None, ValueError, reads=('/api/run',), writes=())
+
+        class Probe(module.Page):
+            framed = ('/api/deck-draft',)
+
+            def read_framed(self, path, scope):
+                return module.framed_html(b'<p>draft</p>')
+
+        self.studio = module.Desk(page=Probe)
+        self.studio.start()
+        self.addCleanup(self.studio.stop)
+        with mock.patch.object(network, 'private_address', return_value='127.0.0.1'):
+            self.lan = network.Network('synthetic-private-address')
+        self.addCleanup(self.lan.close)
+        self.url = urlsplit(self.lan.share('training', self.studio.url))
+        self.ticket = self.studio.page.ticket('/api/deck-draft', 'scope')
+
+    def request(self, path, headers=None):
+        with contextlib.closing(http.client.HTTPConnection(self.url.hostname, self.url.port,
+                                                           timeout=3)) as connection:
+            connection.request('GET', path, headers=headers or {})
+            response = connection.getresponse()
+            return response.status, response.headers, response.read()
+
+    def test_the_panels_and_the_draft_reach_a_phone_without_the_key(self):
+        for path in ('/deck-panels.js', '/deck-panels.css'):
+            with self.subTest(path=path):
+                status, _, body = self.request(path)
+                self.assertEqual(status, 200)
+                self.assertTrue(body)
+        status, headers, body = self.request(f'/api/deck-draft?ticket={self.ticket}',
+                                             {'Sec-Fetch-Site': 'same-origin',
+                                              'Sec-Fetch-Dest': 'iframe'})
+        self.assertEqual((status, body), (200, b'<p>draft</p>'))
+        self.assertTrue(headers['Content-Security-Policy'].startswith('sandbox;'))
+        # The studio still checks the ticket, and the bridge every other rule.
+        self.assertEqual(self.request('/api/deck-draft?ticket=made-up')[0], 403)
+        self.assertEqual(self.request(f'/api/deck-draft?ticket={self.ticket}',
+                                      {'Sec-Fetch-Site': 'cross-site'})[0], 403)
+        self.assertEqual(self.request(f'/api/deck-draft?ticket={self.ticket}',
+                                      {'Origin': 'http://evil.example'})[0], 403)
+        self.assertEqual(self.request('/api/run')[0], 403, 'any other read still needs the key')
+
+
 class NetworkCliTests(unittest.TestCase):
     def test_only_explicit_private_ipv4_interfaces_are_allowed(self):
         for value in ('10.0.0.2', '172.16.1.2', '172.31.255.1', '192.168.1.2'):

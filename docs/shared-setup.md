@@ -100,14 +100,23 @@ runs in Blog Studio, Presentation Studio and Training Studio save this choice.
 | Choice | Reviews |
 | --- | --- |
 | Balanced (default) | Research and the planned direction together, then finished work. Training Studio also stops for the research plan first |
-| Automatic draft | Finished work only |
+| Automatic draft | Finished work only, and each drawn slide deck |
 | Step by step | Every existing stage |
 
-Presentation Studio's direction review includes research, editable outline and a
-rendered brand sample. Blog Studio includes research with the outline, and the
+A slide deck pauses the same way in Presentation Studio and Training Studio, at
+the brand's three checkpoints: the wireframe draft of what it says, its look
+(picked from the brand's rendered samples), and the finished deck. Step by step
+stops at each; Balanced asks for the draft and the look in one stop, then the
+deck; Automatic draft stops only at the deck and uses the brand's default look,
+saying why. No stop is passed while a review or the brand's audit still finds
+something grave.
+
+Presentation Studio's direction review includes research, the editable outline
+with its wireframe draft, and the brand's rendered looks to pick from. Blog Studio includes research with the outline, and the
 writing, independent review and requested export package at the final stop.
 Training Studio reads the research plan before any research is run, then groups
-all selected levels into one direction review with sample slides, then one review
+all selected levels into one direction review with each deck's wireframe draft and
+the brand's looks to pick from, stops at each drawn deck, then one review
 of the completed documents, decks and scenarios. Its start form can choose a
 level for that one training; the shared level is the default.
 

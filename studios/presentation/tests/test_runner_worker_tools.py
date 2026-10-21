@@ -1634,3 +1634,57 @@ class ResearchCitationTests(JobCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PreviewPoolTests(unittest.TestCase):
+    """A preview in the slides tool's Google preview pool: its link is kept with its receipt,
+    never listed as a file the deck left, and forgotten once a newer preview replaced it,
+    whether the tool says so in its result or in its refusal."""
+
+    class Tool:
+        def __init__(self, *answers):
+            self.answers, self.asked = list(answers), []
+
+        def preview(self, compiled, folder, renderer, file_id=None):
+            self.asked.append(file_id)
+            answer = self.answers.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+    def setUp(self):
+        import tempfile
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        self.base = Path(holder.name)
+        self.kept = self.base / 'drive-preview.json'
+        self.how = {'renderer': 'drive', 'lock': str(self.base / 'render.lock'),
+                    'kept': str(self.kept), 'named': {'name': 'Preview: Rolling restarts'}}
+
+    def test_a_pooled_preview_keeps_its_receipt_and_a_replaced_one_is_forgotten(self):
+        pooled = {'fileId': 'pool-2', 'url': 'https://docs.example.com/pool-2',
+                  'pool': {'receipt': 'pool-2:7', 'route': 'google-pool'}}
+        worker_tools.render(self.Tool(pooled), self.base, self.base / 'p', self.how)
+        kept = json.loads(self.kept.read_text())
+        self.assertEqual((kept['id'], kept['pool']), ('pool-2', 'pool-2:7'))
+        # The same pool deck, holding a later preview: the new receipt is kept.
+        later = {**pooled, 'pool': {'receipt': 'pool-2:9'}}
+        worker_tools.render(self.Tool(later), self.base, self.base / 'p', self.how)
+        self.assertEqual(json.loads(self.kept.read_text())['pool'], 'pool-2:9')
+        # Marked replaced: the link is forgotten, never shown with someone else's slides.
+        worker_tools.render(self.Tool({**pooled, 'remoteReplaced': True}), self.base,
+                            self.base / 'p', self.how)
+        self.assertFalse(self.kept.exists())
+
+    def test_a_refusal_that_says_the_preview_was_replaced_forgets_the_link(self):
+        from runner import slides as slides_tool
+        self.kept.write_text(json.dumps({'id': 'file-1', 'url': 'https://docs.example.com/f1'}))
+        refused = slides_tool.Refused(['The preview deck was replaced by a newer one.'],
+                                      {'problems': [{'code': 'preview-replaced',
+                                                     'detail': 'replaced'}]})
+        with self.assertRaises(slides_tool.Refused):
+            worker_tools.render(self.Tool(refused), self.base, self.base / 'p', self.how)
+        self.assertFalse(self.kept.exists())
+        self.assertTrue(worker_tools.replaced(refused))
+        other = slides_tool.Refused(['LibreOffice is not installed.'])
+        self.assertFalse(worker_tools.replaced(other))
