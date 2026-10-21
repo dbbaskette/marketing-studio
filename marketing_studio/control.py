@@ -1,11 +1,32 @@
-"""Private same-user CLI control, so repeated open commands reuse the running app."""
+"""Private same-user CLI control, so repeated commands reuse and manage the running app.
+
+Only the person's own account can reach the socket (0600, same user). Its replies may
+carry the private link, as the terminal that started Marketing Studio would; the CLI
+shows it only to a terminal, never to a pipe.
+"""
 import hashlib
 import json
 import os
 from pathlib import Path
+import signal
 import socket
 import stat
 import threading
+
+COMMANDS = ('open', 'setup', 'state', 'start', 'stop', 'shutdown')
+STUDIOS = (None, 'blog', 'presentation', 'training')
+FIELDS = frozenset(('command', 'studio', 'force'))
+
+
+def valid(action):
+    return (isinstance(action, dict) and not set(action) - FIELDS
+            and action.get('command') in COMMANDS and action.get('studio') in STUDIOS
+            and type(action.get('force', False)) is bool)
+
+
+def interrupt():
+    """Stop the way Ctrl-C does, so the main thread closes everything in order."""
+    os.kill(os.getpid(), signal.SIGINT)
 
 
 def address(data):
@@ -41,9 +62,12 @@ def request(data, action):
 
 
 class Control:
-    def __init__(self, data, handle):
+    def __init__(self, data, handle, shutdown=interrupt):
+        """`handle` answers each request with a reply; after a shutdown reply is sent,
+        `shutdown` is called from this thread."""
         self.path = address(data)
         self.handle = handle
+        self.shutdown = shutdown
         self.stopped = threading.Event()
         # The caller holds the home singleton lock before clearing a stale socket.
         if self.path.exists():
@@ -71,6 +95,7 @@ class Control:
                 continue
             except OSError:
                 return
+            action = None
             with client:
                 client.settimeout(2)
                 try:
@@ -79,17 +104,21 @@ class Control:
                     if len(raw) > 4096:
                         raise ValueError('The CLI request is too large.')
                     action = json.loads(raw)
-                    if not isinstance(action, dict) or action.get('command') not in ('open', 'setup') \
-                            or action.get('studio') not in (None, 'blog', 'presentation', 'training'):
+                    if not valid(action):
+                        action = None
                         raise ValueError('Choose a supported studio command.')
-                    self.handle(action)
-                    result = {'opened': True}
+                    result = self.handle(action)
+                    if result is None:
+                        result = {'opened': True}
                 except Exception as failure:
                     result = {'error': str(failure)}
                 try:
                     client.sendall(json.dumps(result).encode() + b'\n')
                 except OSError:
                     pass
+            if action and action['command'] == 'shutdown' and 'error' not in result:
+                # The reply is out first: the caller learns it was accepted, then it stops.
+                self.shutdown()
 
     def close(self):
         self.stopped.set()
