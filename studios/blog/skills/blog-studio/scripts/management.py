@@ -1238,11 +1238,20 @@ def _dispatch(root, route, data):
                 'Hub refresh could not verify current shared work. Check connectivity and GitHub access; saved content is preserved.'
             )
         return result
+    if route == 'blog-delete':
+        # It stops the blog's job and waits for it to end, so it takes the lock itself.
+        import blog_delete
+
+        return blog_delete.delete(root, data)
     with studio.locked(root):
         if route == 'run-settings':
             from blog_runner import settings
 
             return settings(root, data)
+        if route == 'blog-restore':
+            import blog_delete
+
+            return blog_delete.restore(root, data)
         adapter = authorize_write(root)
         if route in ('google-preview', 'google-start'):
             import google_intake
@@ -1516,7 +1525,7 @@ def dispatch(root, route, data):
             data.get('id')
             if route.startswith(('run-', 'editor-'))
             and route != 'run-create'
-            or route in ('schedule', 'tool-action')
+            or route in ('schedule', 'tool-action', 'blog-delete')
             else None,
         )
     result = _dispatch(root, route, data)

@@ -495,6 +495,93 @@ class TeamTests(unittest.TestCase):
             'Synthetic training, preserved.\n',
         )
 
+    def test_delete_takes_the_blog_out_of_the_shared_branch_and_restore_brings_it_back(self):
+        import management
+
+        found = self.create()
+        ident = found['id']
+        (self.root / ident / '.google-native').mkdir()
+        (self.root / ident / '.google-native' / 'kept.json').write_text('{}')
+        shown = blog_runner.survey(self.root, ident)
+        result = management.dispatch(
+            self.root,
+            'blog-delete',
+            {'id': ident, 'expected': shown['expected'], 'title': found['title']},
+        )
+        self.assertNotIn('id', result)
+        self.assertTrue(result['deleted'])
+        self.assertFalse((self.root / ident).exists(), 'ignored leftovers go with the folder')
+        self.assertEqual(support.git(self.root.parent, 'status', '--porcelain', '--', 'blogs'), '')
+        message = support.git(self.root.parent, 'log', '-1', '--format=%s', 'origin/main')
+        self.assertIn('deletes this blog', message)
+        self.assertIn('Synthetic Author', message)
+        self.assertTrue(teams.refresh(self.root)['shared'])
+        record = studio.read_json(self.root / '.blog-runs' / 'deleted' / (ident + '.json'))
+        self.assertEqual(record['commit'], support.git(self.root.parent, 'rev-parse', 'HEAD'))
+        other = self.other()
+        self.assertFalse((other / ident).exists())
+        self.assertEqual(blog_runner.catalog(other)['deleted'], [])
+        os.environ['BLOG_STUDIO_DATA'] = str(self.base / 'one')
+        listed = blog_runner.catalog(self.root)['deleted']
+        self.assertEqual([row['title'] for row in listed], ['Fictional launch'])
+        restored = management.dispatch(self.root, 'blog-restore', {'id': ident})
+        self.assertEqual(restored['id'], ident)
+        self.assertTrue((self.root / ident / 'session.json').is_file())
+        self.assertTrue((self.root / ident / 'run.json').is_file())
+        self.assertEqual(support.git(self.root.parent, 'status', '--porcelain', '--', 'blogs'), '')
+        self.assertTrue(teams.refresh(self.root)['shared'])
+        self.assertTrue(teams.driver(self.root, ident)['here'])
+        self.assertEqual(blog_runner.catalog(self.root)['deleted'], [])
+        self.assertFalse(blog_runner.engine(self.root).describe(ident)['enabled'])
+        os.environ['BLOG_STUDIO_DATA'] = str(self.base / 'two')
+        teams.refresh(other)
+        self.assertTrue((other / ident / 'session.json').is_file())
+
+    def test_a_folder_git_has_nothing_to_take_out_is_kept_here_instead(self):
+        import management
+
+        found = self.create()
+        ident = found['id']
+        # A folder git ignores: nothing of it is in the branch, so there is nothing to take out.
+        with open(self.root / '.gitignore', 'a') as ignore:
+            ignore.write('/' + ident + '/\n')
+        support.git(self.root.parent, 'rm', '-r', '-q', '--cached', 'blogs/' + ident)
+        support.git(self.root.parent, 'add', 'blogs/.gitignore')
+        support.git(self.root.parent, 'commit', '-q', '-m', 'Keep one blog out of the branch')
+        self.assertEqual(support.git(self.root.parent, 'ls-files', '--', 'blogs/' + ident), '')
+        shown = blog_runner.survey(self.root, ident)
+        management.dispatch(
+            self.root,
+            'blog-delete',
+            {'id': ident, 'expected': shown['expected'], 'title': found['title']},
+        )
+        self.assertFalse((self.root / ident).exists())
+        kept = self.root / '.blog-runs' / 'deleted' / ident / 'blog' / 'session.json'
+        self.assertTrue(kept.is_file(), 'it is kept here instead')
+        record = studio.read_json(self.root / '.blog-runs' / 'deleted' / (ident + '.json'))
+        self.assertIsNone(record['commit'], 'no unrelated commit is remembered')
+        self.assertNotIn('deletes this blog', support.git(self.root.parent, 'log', '--format=%s'))
+        management.dispatch(self.root, 'blog-restore', {'id': ident})
+        self.assertTrue((self.root / ident / 'session.json').is_file())
+        self.assertEqual(support.git(self.root.parent, 'status', '--porcelain', '--', 'blogs'), '')
+        self.assertTrue(teams.refresh(self.root)['shared'])
+
+        import management
+
+        found = self.create()
+        ident = found['id']
+        other = self.other()
+        teams.action(other, ident, 'takeover')
+        os.environ['BLOG_STUDIO_DATA'] = str(self.base / 'one')
+        shown = blog_runner.survey(self.root, ident)
+        with self.assertRaisesRegex(ValueError, 'another computer'):
+            management.dispatch(
+                self.root,
+                'blog-delete',
+                {'id': ident, 'expected': shown['expected'], 'title': found['title']},
+            )
+        self.assertTrue((self.root / ident / 'session.json').is_file())
+
     def test_offline_queue_retry_and_manual_sharing(self):
         found = self.create()
         ident = found['id']

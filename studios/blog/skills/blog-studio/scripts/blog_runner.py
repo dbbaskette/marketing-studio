@@ -380,6 +380,7 @@ def survey(root, ident, listing=False):
         if run.get('brand')
         else None,
         'decisions': run.get('decisions', [])[-30:],
+        'publication': (record.get('editorial') or {}).get('publication_url') or None,
     }
 
 
@@ -1189,7 +1190,11 @@ class Engine:
                         state.update(enabled=False, status='failed', error=str(exc)[:500])
                         self.keep_local(path.stem, state)
             if not self.closed.is_set():
-                tool_jobs.once(self)
+                try:
+                    tool_jobs.once(self)
+                except Exception:
+                    # A tool job that failed to be recorded never takes the loop down with it.
+                    self.current = None
             self.wake.wait(1)
             self.wake.clear()
 
@@ -1254,7 +1259,9 @@ def catalog(root):
                 }
             )
     rows.sort(key=lambda row: row.get('touched') or '', reverse=True)
-    return {'items': rows, 'total': len(rows)}
+    import blog_delete
+
+    return {'items': rows, 'total': len(rows), 'deleted': blog_delete.deleted(root)}
 
 
 def options(root):
@@ -1333,6 +1340,8 @@ def document(root, ident, stage):
         'diff_truncated': len(differences) > 4000,
         'stage': stage,
         'review_level': found['review_level'],
+        # Grouped reviews read the approved stages together; the final stop always brings
+        # the approved draft back beside the handoff notes, whatever the review level.
         'bundle': [
             {
                 'stage': item['stage'],
@@ -1340,10 +1349,14 @@ def document(root, ident, stage):
                 **preview_file(studio.inside(directory, item['path'])),
             }
             for item in found['stages']
-            if found['review_level'] != 'step_by_step'
-            and stage == found['next']
+            if stage == found['next']
             and item['stage'] != stage
             and item['status'] == 'approved'
+            and (
+                found['review_level'] != 'step_by_step'
+                or item['stage'] == 'draft'
+                and stage == run['pipeline'][-1]
+            )
         ],
         'label': row['label'],
         'status': row['status'],

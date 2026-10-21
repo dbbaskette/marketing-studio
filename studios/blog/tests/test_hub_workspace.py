@@ -107,6 +107,60 @@ class HubWorkspaceTests(unittest.TestCase):
         self.assertEqual(status['last_saved_to_hub'], confirmed['last_saved_to_hub'])
         self.assertEqual(status['hub_saved_revision'], confirmed['last_saved_revision'])
 
+    def test_a_deleted_blog_stays_shared_in_the_hub_and_restore_binds_it_again(self):
+        import management
+
+        aid = self.article()
+        self.save(self.a, aid, 'draft', 'A shared draft.')
+        shared = self.export(aid)
+        selected = patch(
+            'hub_workspace.active', side_effect=lambda root: self.wa if root == self.a else None
+        )
+        selected.start()
+        self.addCleanup(selected.stop)
+        shown = management.detail(self.a, aid)
+        result = management.dispatch(
+            self.a,
+            'blog-delete',
+            {'id': aid, 'expected': shown['expected'], 'title': shown['title']},
+        )
+        self.assertTrue(result['deleted'])
+        self.assertIn('leaves the shared list', result['notice'])
+        self.assertFalse(studio.inside(self.a, 'articles', aid).exists())
+        self.assertNotIn('articles/' + aid, self.wa.state['items'])
+        self.assertNotIn('articles/' + aid, Workspace(self.a, self.ha).state['items'])
+        graph = self.ha.graph()
+        (head,) = graph['heads'][shared['item']]
+        self.assertEqual(graph['revisions'][head]['status'], 'tombstone')
+        self.assertEqual(graph['revisions'][head]['parents'], [shared['revision']])
+        self.assertIn(shared['revision'], graph['revisions'], 'history stays')
+        self.assertEqual(
+            [row['title'] for row in management.view(self.a, 'runs', {})['deleted']],
+            ['Writing handoffs'],
+        )
+        # A removed item is not checked out again; another local blog already bound to the
+        # same shared one blocks the restore.
+        self.hb.refresh()
+        with self.assertRaisesRegex(HubError, 'removed'):
+            self.wb.checkout_selected({'articles': [shared['item']]})
+        self.wa.state['items']['articles/other'] = {'item': shared['item'], 'revision': head}
+        self.wa.persist()
+        studio.inside(self.a, 'articles', 'other').mkdir()
+        with self.assertRaisesRegex(ValueError, 'already bound'):
+            management.dispatch(self.a, 'blog-restore', {'id': aid})
+        studio.inside(self.a, 'articles', 'other').rmdir()
+        del self.wa.state['items']['articles/other']
+        self.wa.persist()
+        management.dispatch(self.a, 'blog-restore', {'id': aid})
+        self.assertTrue(studio.inside(self.a, 'articles', aid, 'DRAFT.md').is_file())
+        binding = Workspace(self.a, self.ha).state['items']['articles/' + aid]
+        self.assertEqual(binding['item'], shared['item'])
+        graph = self.ha.graph()
+        (head,) = graph['heads'][shared['item']]
+        self.assertEqual(graph['revisions'][head]['status'], 'active', 'it is back on the list')
+        self.assertEqual(binding['revision'], head)
+        self.assertEqual(self.wa.publish_selected({'articles': [aid]})['status'], 'synchronized')
+
     def test_original_author_resumes_other_member_edit_without_duplicate_blog(self):
         aid = self.article()
         self.save(self.a, aid, 'original', 'Original manuscript.')

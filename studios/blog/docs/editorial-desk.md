@@ -35,7 +35,7 @@ controls.
 
 ## What you can do
 
-**Blogs in progress** shows titles, authors, owners, due dates, editorial stages,
+**All blogs** shows titles, authors, owners, due dates, editorial stages,
 and saved working Google Doc links. Open a local blog to assign an owner, choose a
 due date, or record a stage. Choose **Resume** on a shared blog to bring its saved
 revision into your workspace. Existing unshared edits are protected.
