@@ -548,12 +548,28 @@ def _style_plan(root, legacy_root, ident, revisions):
         if revisions == {1} and ident in styles.starters():
             return None  # A starter never copied there reads as its packaged revision 1 here.
         raise ValueError('A selected blog uses a style that is missing: ' + ident)
+    for revision in sorted(revisions):
+        there = studio.inside(folder, 'revisions', str(revision))
+        if not ((there / 'record.json').is_file() and (there / 'STYLE.md').is_file()):
+            raise ValueError(
+                f'A selected blog uses a style revision that is missing: {ident} revision {revision}'
+            )
     destination = studio.inside(root, 'styles', ident)
     if destination.exists():
-        for revision in revisions:
-            here = studio.inside(destination, 'revisions', str(revision), 'STYLE.md')
-            there = studio.inside(folder, 'revisions', str(revision), 'STYLE.md')
-            if not here.is_file() or here.read_bytes() != there.read_bytes():
+        for revision in sorted(revisions):
+            here = studio.inside(destination, 'revisions', str(revision))
+            there = studio.inside(folder, 'revisions', str(revision))
+            same = (here / 'record.json').is_file() and (here / 'STYLE.md').is_file()
+            if same:
+                try:
+                    same = (
+                        studio.read_json(here / 'record.json').get('name')
+                        == studio.read_json(there / 'record.json').get('name')
+                        and (here / 'STYLE.md').read_bytes() == (there / 'STYLE.md').read_bytes()
+                    )
+                except (ValueError, OSError, AttributeError):
+                    same = False
+            if not same:
                 raise ValueError(
                     'Migration would overwrite local work: the style '
                     + ident

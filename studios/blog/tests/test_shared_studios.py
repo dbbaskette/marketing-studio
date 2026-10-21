@@ -793,6 +793,17 @@ class MigrationTests(unittest.TestCase):
             teams._style_plan(self.root, legacy, 'how-to', {2})
         tracked = support.git(teams.space(self.root).repo, 'ls-files')
         self.assertIn('.shared/styles/' + learned['id'] + '/revisions/2/STYLE.md', tracked)
+        # The same style here is kept; a revision the legacy copy lacks is named.
+        self.assertIsNone(teams._style_plan(self.root, legacy, learned['id'], {2}))
+        with self.assertRaisesRegex(
+            ValueError, 'style revision that is missing: ' + learned['id'] + ' revision 9'
+        ):
+            teams._style_plan(self.root, legacy, learned['id'], {2, 9})
+        # The same guide under another name is not the same style.
+        saved = here / 'revisions' / '2' / 'record.json'
+        studio.write_json(saved, {**studio.read_json(saved), 'name': 'Other notes'})
+        with self.assertRaisesRegex(ValueError, 'overwrite local work: the style'):
+            teams._style_plan(self.root, legacy, learned['id'], {2})
 
     # Reuse the synthetic repository fixture, with a legacy fake provider kept entirely local.
     def test_selected_migration_is_byte_preserving_and_old_hub_is_unchanged(self):
