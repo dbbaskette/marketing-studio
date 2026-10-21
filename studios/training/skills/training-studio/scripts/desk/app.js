@@ -2199,6 +2199,13 @@ function standing(found) {
       paintGate(false);
     });
   }
+  // A file a combined review covers is decided there, with everything else it covers.
+  if (found.combined && found.approval === 'page' && !reads(found.path)) {
+    return callout('yours', make('p', '', 'This is part of the ' + found.combined.name
+      + ' that is waiting for you. It is decided there, with everything the review covers.'),
+    add(make('div', 'bar'), capsule('Request changes in the ' + found.combined.name, '',
+      () => show('run', { path: found.path }), 'combined')));
+  }
   if (found.status === 'approved' && found.approved) {
     return callout('', add(make('p', ''), found.approved.by === 'review-policy'
       ? 'Continued automatically under the saved review level '
@@ -2258,8 +2265,9 @@ function inChat(found) {
 
 // The toolbar's side of a gate: one filled button for the main thing to do, the rest quieter.
 function gateActions(found) {
-  // A training someone else runs is read here, and decided where it runs.
-  if (found.approval !== 'page' || view.newer || reads(found.path)) return [];
+  // A training someone else runs is read here, and decided where it runs. A file a
+  // combined review covers is decided there.
+  if (found.approval !== 'page' || view.newer || reads(found.path) || found.combined) return [];
   const offers = list(found.decisions);
   const lead = offers.includes('approve') ? 'approve' : offers.includes('restore') ? 'restore'
     : found.status === 'stale' && offers.includes('rebuild') ? 'rebuild' : '';

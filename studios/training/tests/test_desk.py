@@ -2705,6 +2705,35 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertEqual(result['snapshots']['newer']['focus'], 'change-research')
         self.assertIn('Try the updated review.', result['snapshots']['refused']['text'])
 
+    def test_a_file_the_direction_review_covers_is_read_only_at_its_gate(self):
+        self.at_the_blueprint_gate()
+        waits = 'Waiting for you to review the direction.'
+        combined = {'phase': 'direction', 'label': 'Review the direction',
+                    'name': 'direction review'}
+        waiting = a_run('waiting', waits)
+        waiting['body']['review'] = {
+            'phase': 'direction', 'label': 'Review the direction', 'expected': 'v1',
+            'items': [{'target': 'research', 'label': 'Research', 'text': '# Findings'},
+                      {'target': 'blueprint', 'label': 'Teaching plan', 'text': '# Plan'}]}
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', waits)],
+            'GET /api/training': [self.detail('waiting', waits)],
+            'GET /api/run': [waiting],
+            'GET /api/gate': [self.gate_as_the_runner_gives_it('blueprint', combined=combined)]})
+        result = self.run_page(answers, [
+            {'click': 'Review the blueprint'}, {'snapshot': 'gate'},
+            {'click': 'Request changes in the direction review'}, {'snapshot': 'review'}])
+        gate = result['snapshots']['gate']
+        self.assertEqual(gate['heading'], 'The blueprint')
+        self.assertEqual((gate['toolbarButtons'], gate['filled']), ([], []))
+        self.assertNotIn('Approve', gate['buttons'])
+        self.assertNotIn('Ask for changes', gate['buttons'])
+        self.assertIn('part of the direction review that is waiting for you', gate['text'])
+        review = result['snapshots']['review']
+        self.assertEqual(review['heading'], 'Rolling restarts')
+        self.assertIn('Approve the direction', review['toolbarButtons'])
+        self.assertEqual(self.posts(result), [])
+
     def test_grouped_review_keeps_a_section_closed_when_content_refreshes(self):
         self.started()
         review = {'phase': 'direction', 'label': 'Review the direction', 'expected': 'v1',

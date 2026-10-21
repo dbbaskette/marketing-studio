@@ -241,6 +241,7 @@ class RunnerPage(desk.Page):
         """The desk's gate. A practice scenario's also says whose file it is, and a Yoodli
         scenario's names the scenario it was laid out from, to show beside it."""
         shown = desk.gate(path, name)
+        shown['combined'] = self.engine.reviewing(path)
         kind = workspace.split(name)[0].partition(':')[0]
         if kind == 'scenario':
             shown['whose'] = self.engine.whose(path, name)
@@ -388,6 +389,7 @@ class RunnerPage(desk.Page):
         with self.engine.files:
             self.engine.hold(path)
             try:   # a deck the slides tool presented has the approval sent to it first
+                self.engine.refuse_while_reviewing(path, decision)
                 self.engine.deck_decided(path, target, decision, note, seen)
             except WorkspaceError as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))

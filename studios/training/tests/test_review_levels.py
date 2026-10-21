@@ -41,6 +41,28 @@ class ReviewLevelsTests(DeckCase):
         self.assertEqual(workspace.load(root)['artifacts']['research-plan']['approved']['by'], 'page')
         self.assertEqual(workspace.load(root)['artifacts']['research']['approved']['by'], 'review-policy')
 
+    def test_files_a_combined_review_covers_are_decided_there_only(self):
+        import desk
+        root, shown = self.choose('balanced')
+        self.assertEqual(shown['review']['phase'], 'direction')
+        gate = self.gate(root, 'research')
+        self.assertEqual(gate['combined'], {'phase': 'direction', 'label': 'Review the direction',
+                                            'name': 'direction review'})
+        requests = len(workspace.load(root)['requests'])
+        with self.assertRaisesRegex(desk.Refusal, 'direction review'):
+            self.decide(root, 'research', 'revise', 'Add a worked example.')
+        with self.assertRaisesRegex(desk.Refusal, 'direction review'):
+            self.decide(root, 'blueprint', 'rebuild')
+        self.assertEqual(len(workspace.load(root)['requests']), requests)
+        self.assertEqual(self.view(root)['review']['phase'], 'direction')
+        # Once the review is approved, nothing is pending and the gate says so.
+        shown = self.approve_review(root, shown)
+        self.assertEqual(shown['review']['phase'], 'final')
+        self.assertEqual(self.gate(root, 'research')['combined']['phase'], 'final')
+        shown = self.approve_review(root, shown)
+        self.assertEqual(shown['state'], 'done')
+        self.assertIsNone(self.gate(root, 'research')['combined'])
+
     def test_automatic_continues_past_the_research_plan(self):
         root, shown = self.choose('automatic')
         plan = self.steps(root)['gate:research-plan']

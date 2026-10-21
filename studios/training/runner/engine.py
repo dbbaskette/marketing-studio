@@ -265,6 +265,9 @@ NOT_HERE = ('The documents this training was researched from are on another comp
             'Research cannot be run again here until they are added again.')
 SETTLED = ('The research for this training was planned from the documents already added, so '
            'they cannot be changed now.')
+REVIEW_DECIDES = ('This is part of the {name} that is waiting for you, so it is decided there, '
+                  'with everything the review covers. Nothing was changed.')
+REVIEW_NAMES = {'direction': 'direction review', 'final': 'final review'}
 PREVIEWS = 'previews'   # in the per-user data folder: the render's turn, and each deck's file
 DECK_KEPT = ('What you approved the deck should say is kept, and so is everything made '
              'before it.')
@@ -2818,18 +2821,48 @@ class Engine(Reviewing):
             if step is None or name == step or name.startswith(f'{step}:'):
                 entry['failed'] = 0
 
+    def reviewing(self, path) -> dict | None:
+        """The combined review a run is waiting for, when there is one: its `phase`, its
+        `label` and its `name` in a sentence. While it waits, the files it covers are
+        decided there and nowhere else, so that two ledgers never restart a step."""
+        root = self.driven(path)
+        if root is None:
+            return None
+        record = self._load(root)
+        if self._resting(record):
+            return None
+        found = self._survey(root, record)
+        if found.next.kind != 'review':
+            return None
+        phase = found.next.step.id.partition(':')[2]
+        return {'phase': phase, 'label': found.next.step.label,
+                'name': REVIEW_NAMES.get(phase, 'combined review')}
+
+    def refuse_while_reviewing(self, path, decision: str) -> None:
+        """Refuse a decision about one file while a combined review covers it. Leaving a
+        stage out, or bringing one back, is about the training and is not refused."""
+        if decision in ('skip', 'restore'):
+            return
+        pending = self.reviewing(path)
+        if pending:
+            raise WorkspaceError(REVIEW_DECIDES.format(name=pending['name']))
+
     def decided(self, path, outcome: dict) -> bool:
         """Commit a decision the page has just recorded. False when no run is driving the
         training, so there is nothing to commit or wake.
 
         Call it holding `files`, straight after the core records the decision, so the
         decision and its commit are one thing; then let go and call `carry_on`. A change
-        the person asked for starts its step afresh.
+        the person asked for starts its step afresh. A decision about a file a combined
+        review covers is refused: `refuse_while_reviewing` says so before anything is
+        recorded, and this is the last word should anything else record one.
         """
         root = self.driven(path)
         if root is None:
             return False
         self.hold(root)
+        if outcome.get('artifact'):
+            self.refuse_while_reviewing(root, outcome.get('decision') or '')
         with self.files:
             record = self._load(root)
             target = outcome.get('artifact')
