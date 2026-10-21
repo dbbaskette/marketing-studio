@@ -631,14 +631,18 @@ function sDoneCard(found){
     found.publication?null:sAdd(sNode('div'),sField('published-url','Where was it published?',held,'url',{type:'url',max:2000,hint:'The public https address. Recording it posts nothing.'}),publish),
     problem,sAdd(sNode('div','bar'),remove));
 }
+// The same match the server makes: NFKC, plain quotes and dashes, one space between words, no case.
+function sPlainTitle(value){return value.normalize('NFKC').replace(/[‘’‚]/g,"'").replace(/[“”„]/g,'"').replace(/[–—]/g,'-').replace(/\s+/g,' ').trim().toLowerCase();}
 function sDeleteSheet(found){
   const title=found.title||'this blog',running=['working','queued'].includes(found.status),held={title:''},problem=sNode('p','sheet-error');problem.setAttribute('role','alert');
-  const confirm=sButton('Delete '+title,async button=>{if(held.title.trim()!==title)return;await busy(button,'Deleting…',async()=>{try{const expected=found.expected||(await api('article?'+new URLSearchParams({id:found.id,location:'local'}))).expected;const result=await api('blog-delete',{id:found.id,expected,title:held.title.trim()});sCloseSheet();studio.found=null;sToast('Deleted '+title+'.'+(result?.notice?' '+result.notice:''));await sRoute('blogs');}catch(error){problem.textContent=error.message+(/deleted/.test(error.message)?'':' Nothing was deleted.');}});},'danger');confirm.disabled=true;
+  const matches=()=>sPlainTitle(held.title)===sPlainTitle(title);
+  const confirm=sButton('Delete '+title,async button=>{if(!matches())return;await busy(button,'Deleting…',async()=>{try{const expected=found.expected||(await api('article?'+new URLSearchParams({id:found.id,location:'local'}))).expected;const result=await api('blog-delete',{id:found.id,expected,title:held.title.trim()});sCloseSheet();studio.found=null;sToast('Deleted '+title+'.'+(result?.notice?' '+result.notice:''));await sRoute('blogs');}catch(error){problem.textContent=error.message+(/deleted/.test(error.message)?'':' Nothing was deleted.');}});},'danger');confirm.disabled=true;
+  const hint=sNode('p','quiet field-hint','Not the title yet.');hint.id='delete-title-hint';hint.hidden=true;
   const goes=[running?'What’s running will stop, and nothing more of it is kept.':null,'It leaves your lists, and its folder goes'+(found.team?' from the team repository as one recorded change.':'.'),'What only this computer kept for it: its run state, receipts and tool jobs.'].filter(Boolean);
   sOpenSheet('Delete '+title+'?',running?sStatus('late','It is working now. What’s running will stop.'):null,
     sNode('h3','sheet-part','What goes'),sAdd(sNode('ul',''),...goes.map(words=>sNode('li','',words))),
     sNode('h3','sheet-part','What stays'),sAdd(sNode('ul',''),sNode('li','','It is kept for 30 days under Recently deleted on the Blogs page, where Restore brings it back.'),sNode('li','','Anything published elsewhere, or shared with a Team Hub, is not touched.')),
-    sField('delete-title','Type the title to confirm',held,'title',{required:true,max:500,changed:()=>{confirm.disabled=held.title.trim()!==title;}}),problem,sAdd(sNode('div','bar'),confirm,sButton('Cancel',sCloseSheet)));
+    sField('delete-title','Type the title to confirm',held,'title',{required:true,max:500,changed:()=>{const same=matches();confirm.disabled=!same;hint.hidden=same||!held.title.trim();}}),hint,problem,sAdd(sNode('div','bar'),confirm,sButton('Cancel',sCloseSheet)));
 }
 function sDeletedFold(){
   const rows=studio.deleted||[];if(!rows.length)return null;const list=sNode('ul','rows');

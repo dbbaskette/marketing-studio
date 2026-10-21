@@ -1217,7 +1217,12 @@ async function finishAndDelete(){
   assert.ok(sheet().some(e=>/running will stop/.test(e.textContent)),sheet().map(e=>e.textContent).join('|'));
   const confirm=sheet().find(e=>e.textContent==='Delete Synthetic blog');
   assert.equal(confirm.className,'button button-danger');assert.equal(confirm.disabled,true,'nothing is deleted until the title is typed');
-  const typed=sheet().find(e=>e.id==='delete-title');typed.value='Synthetic';typed.listeners.input();assert.equal(confirm.disabled,true);
+  const typed=sheet().find(e=>e.id==='delete-title'),hint=()=>sheet().find(e=>e.id==='delete-title-hint');
+  assert.equal(hint().hidden,true,'no hint before anything is typed');
+  typed.value='Synthetic';typed.listeners.input();assert.equal(confirm.disabled,true);
+  assert.equal(hint().hidden,false,'a partial title says it is not the title yet');assert.equal(hint().textContent,'Not the title yet.');
+  typed.value='  synthetic  BLOG ';typed.listeners.input();assert.equal(confirm.disabled,false,'case and spacing do not matter');assert.equal(hint().hidden,true);
+  typed.value='“Synthetic” blog';typed.listeners.input();assert.equal(confirm.disabled,true,'added characters still do not match');
   typed.value='Synthetic blog';typed.listeners.input();assert.equal(confirm.disabled,false);
   await confirm.listeners.click();
   assert.deepEqual(requests.find(r=>r.url==='/api/blog-delete').data,{id:'synthetic',expected:'version-3',title:'Synthetic blog'});
