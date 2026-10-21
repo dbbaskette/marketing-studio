@@ -2233,12 +2233,18 @@ class MaterialUploadTests(Fixture):
             role(id=ident, role='facts', keep=True)
         with self.assertRaisesRegex(ValueError, 'Unknown sources ID'):
             role(id='material-0000000000000000', role='facts')
+        # A library reference changes its role in a new revision, keeping its other purposes.
         reference = self.source()
-        with self.assertRaisesRegex(ValueError, 'uploaded for one blog'):
-            role(id=reference['id'], role='example')
-        self.assertEqual(
-            studio.item(self.root, 'sources', reference['id'])[1]['purposes'], ['reference']
+        self.assertEqual(role(id=reference['id'], role='example')['role'], 'example')
+        _, saved = studio.item(self.root, 'sources', reference['id'])
+        self.assertEqual((saved['purposes'], saved['revision']), (['reference', 'inspiration'], 2))
+        self.assertEqual(role(id=reference['id'], role='facts')['purposes'], ['reference'])
+        self.assertEqual(studio.item(self.root, 'sources', reference['id'])[1]['revision'], 3)
+        sample = self.command(
+            'source', 'add', '--name', 'S', '--file', str(self.file), '--purpose', 'voice-sample'
         )
+        with self.assertRaisesRegex(ValueError, 'library reference'):
+            role(id=sample['id'], role='example')
         # A file a started blog pinned keeps the role that blog read it with.
         import studios_config
 

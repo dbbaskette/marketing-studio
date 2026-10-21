@@ -33,7 +33,10 @@ and `--profile ''` writes in no particular voice. `--tone "description"` is then
 nudge beside the voice (dropped when it equals the settings' tone), or the whole voice
 when none applies. `--style <id>` adds a kind of post. `--author` overrides a saved
 default. Select an installed brand with `--brand ID --variant VARIANT`, or
-`--brand ''` for no brand. Read its pinned guides in `derived/blog-run.json`;
+`--brand ''` for no brand. `--example <id>` reads a team library item as an example of
+the kind of post for this blog only (`--source` reads one with its library role).
+Approving the last stage keeps the draft in the team library as a reference and an
+example, once per blog. Read its pinned guides in `derived/blog-run.json`;
 keep its naming rules separate from the author voice. `--mode write` is the default; `outline` stops at outline. Use
 `--mode revise --manuscript <source-id>` to revise a saved readable source, or
 `--mode review --manuscript <source-id>` to review it without rewriting.
@@ -60,8 +63,9 @@ name, quotation, link or product detail from one unless the sources, research or
 also say it. Research never reads an example. At draft and review, `mechanical_checks`
 lists passages carried over from an example under rule `from-example`; a claim traced
 to an example and to nothing else is unsupported. Files past
-the run's budget are excerpted and `excerpted` in status names them. The files stay
-on this computer, but the blog's outline and draft may quote them and are shared like any blog. `--stop` can be `outline`,
+the run's budget are excerpted and `excerpted` in status names them. On the page a file is
+kept in the team library (with its role, author and kind of post) unless **Keep** is unticked;
+material stays on this computer, but the blog's outline and draft may quote it and are shared like any blog. `--stop` can be `outline`,
 `draft`, `review` or `package`. For an existing article, use `--id <article-id>`;
 a saved manuscript starts at review, or use `--mode revise --id <article-id>` to
 start with revision.

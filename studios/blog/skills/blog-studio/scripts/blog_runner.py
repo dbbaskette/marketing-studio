@@ -110,8 +110,37 @@ def settings(root, data=None):
         base['engine'] = agent
     if isinstance(name, str) and len(name) <= 200:
         base['author'] = name
+    import writing_defaults
+
     if data is not None:
         data = dict(data)
+        # The personal default voice: a confirmed profile at a revision, or none. It lives in
+        # the private writing defaults, beside the other personal values, never in a Hub. It
+        # is checked with the rest of the form, against the voice the form showed, and saved
+        # only once the shared settings are, so a refused form changes nothing.
+        voice_given = 'voice' in data
+        voice = data.pop('voice', None)
+        if voice_given:
+            if 'voice_before' not in data:
+                raise ValueError('Reload the displayed settings before saving the default voice.')
+            shown = data.pop('voice_before')
+            current = writing_defaults.personal(root)['values'].get('voice')
+            if shown != (current if isinstance(current, dict) else None):
+                raise ValueError(
+                    'The default voice changed since these settings were shown. Reload the '
+                    'settings before saving.'
+                )
+            if voice is not None and not (
+                isinstance(voice, dict) and set(voice) == {'profile_id', 'revision'}
+            ):
+                raise ValueError('Choose a listed voice, or none.')
+            if voice is not None and not any(
+                found['id'] == voice['profile_id']
+                for found in writing_defaults.confirmed_voices(root)
+            ):
+                raise ValueError('Choose a confirmed voice for the default, or none.')
+        elif 'voice_before' in data:
+            raise ValueError('Save the displayed writing settings only.')
         before = data.pop(
             'shared_before',
             {
@@ -151,6 +180,8 @@ def settings(root, data=None):
         shared = studios_config.update(changes, expected=expected)
         private = {key: value for key, value in data.items() if key not in ('engine', 'author')}
         studio.write_json(path, {'schema': 1, 'defaults': private})
+        if voice_given:
+            writing_defaults.set_personal(root, 'voice', voice)
         base = {
             **data,
             'engine': shared.get('assistant', {}).get('agent')
@@ -163,9 +194,12 @@ def settings(root, data=None):
         review_level = review_policy.snapshot(shared)['level']
     except ValueError:
         review_level = 'step_by_step'
+    personal = writing_defaults.personal(root)['values'].get('voice')
     return {
         'configured': bool(saved) or shared_ready(shared),
         'defaults': base,
+        'voice': personal if isinstance(personal, dict) else None,
+        'voices': writing_defaults.confirmed_voices(root),
         'review_level': review_level,
         'shared_before': {
             'engine': shared.get('assistant', {}).get('agent'),
@@ -220,6 +254,29 @@ def same_source(folder, source, revision):
     return not now.is_file() or then.read_bytes() == now.read_bytes()
 
 
+def pinned_source(folder, source, revision):
+    """(record, text) of the source revision a blog pinned, for every source a blog reads.
+
+    The current revision, or a newer one with the same words, reads from the source itself.
+    An older revision reads from its saved copy under revisions/<n>/, so a later revision (a
+    finished blog kept again, a corrected text) never changes what a blog already read.
+    Without that copy a run cannot tell what it read, and refuses."""
+    path = folder / 'content.md'
+    if revision == source['revision'] or same_source(folder, source, revision):
+        return source, path.read_text() if path.is_file() else ''
+    saved = folder / 'revisions' / str(revision)
+    if (
+        isinstance(revision, int)
+        and (saved / 'record.json').is_file()
+        and (saved / 'content.md').is_file()
+    ):
+        try:
+            return studio.read_json(saved / 'record.json'), (saved / 'content.md').read_text()
+        except (OSError, ValueError):
+            pass
+    raise ValueError('A selected source changed. Reattach its current revision in chat first.')
+
+
 def inputs(root, record, run):
     """Exact selected context. Never silently replace a pinned voice with its latest revision."""
     sources = []
@@ -234,15 +291,8 @@ def inputs(root, record, run):
                 studio.item(root, 'sources', selected['source_id'])
             except ValueError:
                 raise ValueError(MATERIAL_ELSEWHERE) from None
-        folder, source = studio.item(root, 'sources', selected['source_id'])
-        path = studio.inside(folder, 'content.md')
-        if selected['revision'] != source['revision'] and not same_source(
-            folder, source, selected['revision']
-        ):
-            raise ValueError(
-                'A selected source changed. Reattach its current revision in chat first.'
-            )
-        content = path.read_text() if path.is_file() else ''
+        folder, current = studio.item(root, 'sources', selected['source_id'])
+        source, content = pinned_source(folder, current, selected['revision'])
         sources.append(
             {
                 'id': 'source-' + studio.digest((source['name'] + content).encode())[:12],
@@ -589,6 +639,8 @@ def survey(root, ident, listing=False):
         else None,
         'decisions': run.get('decisions', [])[-30:],
         'publication': (record.get('editorial') or {}).get('publication_url') or None,
+        # Whether Finish kept the blog in the team library, for the Done card.
+        'library': run.get('library') if next_stage is None else None,
         # Files cut to the run's budget, by name, so the page and chat can say so.
         'excerpted': [
             source['name']
@@ -663,6 +715,7 @@ def create(root, data, approval='conversation'):
         'variant',
         'point',
         'revision',
+        'library',
     }
     if set(data) - allowed:
         raise ValueError('Unknown new-blog field.')
@@ -756,10 +809,12 @@ def create(root, data, approval='conversation'):
         raise ValueError('Select at most 50 different sources.')
     for source in sources:
         studio.item(root, 'sources', source)
+    # Library items read with a role for this blog only; the library record is not changed.
+    picked = library_picks(root, data.get('library', []), sources)
     if from_files:
         readable = [
             source
-            for source in sources
+            for source in sources + list(picked)
             if studio.item(root, 'sources', source)[1]['status'] == 'ready'
         ]
         if not readable:
@@ -810,13 +865,13 @@ def create(root, data, approval='conversation'):
     if data.get('id') and mode == 'from-outline' and not existing:
         record['mode'] = 'from-outline'
         record['stop_point'] = stop
-    for source in sources:
+    for source in sources + list(picked):
         _, source_record = studio.item(root, 'sources', source)
         record['sources'] = [s for s in record['sources'] if s['source_id'] != source] + [
             {
                 'source_id': source,
                 'revision': source_record['revision'],
-                'purposes': source_record['purposes'],
+                'purposes': picked.get(source, source_record['purposes']),
             }
         ]
     if profile:
@@ -905,6 +960,37 @@ def create(root, data, approval='conversation'):
     return survey(root, record['id'])
 
 
+LIBRARY_ROLES = {'facts': ['reference'], 'example': ['reference', 'inspiration']}
+
+
+def library_picks(root, chosen, sources):
+    """{id: purposes} for library items read with a role for one blog: `[{id, role}]`, or
+    `[{id, role, location}]` for a row the catalog lists from the Team Hub, which is checked
+    out here first. Each is a library item (never a file uploaded for one blog), no more than
+    50 with the sources, and none of them twice."""
+    import blog_library
+
+    if not isinstance(chosen, list) or len(chosen) + len(sources) > 50:
+        raise ValueError('Pick at most 50 library items and sources together.')
+    picked = {}
+    for entry in chosen:
+        if (
+            not isinstance(entry, dict)
+            or set(entry) - {'location'} != {'id', 'role'}
+            or not isinstance(entry['id'], str)
+            or entry['role'] not in LIBRARY_ROLES
+        ):
+            raise ValueError('Each library item needs its id and a role: facts or example.')
+        ident = blog_library.local_item(root, entry['id'], entry.get('location', 'local'))
+        if ident in picked or ident in sources:
+            raise ValueError('Pick each library item once.')
+        directory, record = studio.item(root, 'sources', ident)
+        if studio.is_material(root, directory, record):
+            raise ValueError('A file uploaded for one blog is not a library item.')
+        picked[ident] = list(LIBRARY_ROLES[entry['role']])
+    return picked
+
+
 def guard(root, ident, expected, page=False):
     found = survey(root, ident)
     if found['approval'] == 'page' and not page:
@@ -990,6 +1076,7 @@ def _accept(directory, run, stage, by):
 def decide(root, ident, expected, action, request='', page=False, target=None):
     found = guard(root, ident, expected, page)
     directory, record, run = load(root, ident)
+    kept = None  # What Finish did with the library, said in the decision.
     stage = target if action == 'changes' and target else found['next']
     if (
         action == 'changes'
@@ -1019,6 +1106,9 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
                 'steps the review level accepted automatically need no approval.'
             )
         _accept(directory, run, stage, 'page' if page else 'conversation')
+        if stage == run['pipeline'][-1]:
+            # Finish: the approved draft lands in the team library, once per blog.
+            kept = keep_finished(root, directory, record, run)
     elif action == 'changes':
         if not stage:
             raise ValueError('This run is complete. Start a new revision in chat.')
@@ -1033,8 +1123,51 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
             run['stages'].pop(name, None)
     else:
         raise ValueError('Unknown guided-blog decision.')
-    save(root, directory, record, run, action + (' ' + stage if stage else ''))
+    event = action + (' ' + stage if stage else '')
+    if action == 'approve' and kept is not None:
+        event += ' · ' + kept
+    save(root, directory, record, run, event)
     return survey(root, ident)
+
+
+def keep_finished(root, directory, record, run):
+    """Keep a finished blog's draft in the library; what happened, in a few words, or None
+    when the run ends without a draft (ideas, an outline). run['library'] says it for the
+    Done card: the item and its revision, or why the blog was not kept. The approval never
+    waits on it: whatever stops the library save is reported, never raised."""
+    draft = directory / 'DRAFT.md'
+    if run.get('mode') in ('ideas', 'outline') or not draft.is_file():
+        run.pop('library', None)
+        return None
+    try:
+        text = draft.read_text()
+        if not text.strip():
+            run.pop('library', None)
+            return None
+        import blog_library
+        import styles
+
+        kind = (record.get('style') or {}).get('style_id')
+        if kind and styles.name_of(root, kind) is None:
+            kind = None  # Its style is gone; the blog is kept without a kind of post.
+        source = blog_library.keep_written(root, record, text, kind)
+        from management import share, receipt
+
+        receipt(root, 'Finished blog', share(root, 'source', source), 'source')
+    except Exception as exc:
+        if not isinstance(exc, (ValueError, OSError)):
+            from management import note_unexpected
+
+            note_unexpected(exc)
+        reason = (
+            str(exc)[:200]
+            if isinstance(exc, ValueError)
+            else 'it could not be saved here. The approval is kept; finish it again to retry.'
+        )
+        run['library'] = {'reason': reason}
+        return 'not kept in the team library: ' + reason
+    run['library'] = {'id': source['id'], 'revision': source['revision']}
+    return 'kept in the team library'
 
 
 def tone_nudge(voice):
@@ -2086,6 +2219,12 @@ def add_parser(groups):
     create_cmd.add_argument('--engine', choices=('codex', 'claude'))
     create_cmd.add_argument('--seconds', type=int, default=600)
     create_cmd.add_argument('--source', action='append', default=[])
+    create_cmd.add_argument(
+        '--example',
+        action='append',
+        default=[],
+        help='A library item read as an example of the kind of post for this blog only',
+    )
     create_cmd.add_argument('--mode', choices=MODES, default='write')
     create_cmd.add_argument('--manuscript')
     create_cmd.add_argument('--outline-text')
@@ -2122,9 +2261,12 @@ def command(root, args):
             data = {
                 k: v
                 for k, v in vars(args).items()
-                if k not in ('root', 'group', 'action', 'source', 'compact') and v is not None
+                if k not in ('root', 'group', 'action', 'source', 'example', 'compact')
+                and v is not None
             }
             data['sources'] = args.source
+            if args.example:
+                data['library'] = [{'id': ident, 'role': 'example'} for ident in args.example]
             return create(root, data)
         if args.action == 'submit':
             return submit(

@@ -391,7 +391,7 @@ def checked_google(root, entry):
     }
 
 
-def save_upload(root, staging, checked, purpose, author=None, analyze=True):
+def save_upload(root, staging, checked, purpose, author=None, analyze=True, library=None):
     with (
         tempfile.TemporaryDirectory(dir=staging) as temp,
         source_curator.skipping(analyze is False),
@@ -411,6 +411,7 @@ def save_upload(root, staging, checked, purpose, author=None, analyze=True):
                 author=author or None,
                 note='Uploaded through the local editorial desk.',
                 status=checked['status'],
+                library=library,
             ),
         )
 
@@ -422,7 +423,7 @@ def upload_files(root, data, staging, ledger, fingerprint):
     recorded on every source it saves."""
     import sample_intake
 
-    if set(data) - {'operation', 'files', 'purpose', 'keep', 'analyze', 'author'}:
+    if set(data) - {'operation', 'files', 'purpose', 'keep', 'analyze', 'author', 'kind'}:
         raise ValueError('Unknown upload field.')
     files = data.get('files')
     if not isinstance(files, list) or not files or len(files) > MAX_UPLOAD_FILES:
@@ -435,6 +436,8 @@ def upload_files(root, data, staging, ledger, fingerprint):
     if data.get('keep') and purpose == 'material':
         purpose = 'reference'
     author = studio.checked_author(data['author']) if data.get('author') else None
+    kind = data.get('kind') or None
+    blog_library.library_fields(root, kind=kind)  # Refused before anything is saved.
     entries = [dict(entry) if isinstance(entry, dict) else {} for entry in files]
     exports = sum('linkedin' in entry for entry in entries)
     if exports > 1:
@@ -470,8 +473,22 @@ def upload_files(root, data, staging, ledger, fingerprint):
         for entry in checked:
             chosen = entry.get('purpose', purpose)
             whose = author or entry.get('author')
+            # A kept file is a library item: it says where it came from and its kind of post.
+            fields = (
+                blog_library.library_fields(
+                    root, kind=kind, origin_kind='google-doc' if entry.get('link') else 'upload'
+                )
+                if chosen != 'material'
+                else None
+            )
             source = save_upload(
-                root, staging, entry, entry['purposes'], whose, analyze=data.get('analyze', True)
+                root,
+                staging,
+                entry,
+                entry['purposes'],
+                whose,
+                analyze=data.get('analyze', True),
+                library=fields,
             )
             saved.append(source['id'])
             if chosen != 'material':
@@ -516,17 +533,16 @@ ROLES = {'facts': ['material'], 'example': ['material', 'inspiration']}
 
 
 def source_role(root, data):
-    """What an uploaded file is for: facts the writing may quote, or an example of the
-    kind of post. A library reference is facts; a file a started blog pinned keeps the
-    role that blog read it with."""
+    """What a file is for: facts the writing may quote, or an example of the kind of post.
+    A file uploaded for one blog changes in place; a library item changes in a new
+    revision, shared as a reference is. A file a started blog pinned keeps the role that
+    blog read it with."""
     if set(data) - {'id', 'role'} or data.get('role') not in ROLES:
         raise ValueError('Choose facts or example for the file.')
     directory, record = studio.item(root, 'sources', str(data.get('id', '')))
-    if not studio.is_material(root, directory, record):
-        raise ValueError(
-            'Only a file uploaded for one blog changes its role; a reference is facts. '
-            + studio.MATERIAL_STAYS
-        )
+    material = studio.is_material(root, directory, record)
+    if not material and 'reference' not in record.get('purposes', []):
+        raise ValueError('Only a file or a library reference changes between facts and example.')
     for path in studio.inside(root, 'articles').glob('*/session.json'):
         article = studio.read_json(path)
         if record['id'] in article.get('material', []) or any(
@@ -537,10 +553,25 @@ def source_role(root, data):
                 + ('an example' if 'inspiration' in record['purposes'] else 'facts')
                 + '; its role stays. Upload it again for a new role.'
             )
-    if record['purposes'] != ROLES[data['role']]:
-        record['purposes'] = ROLES[data['role']]
+    if material:
+        purposes = ROLES[data['role']]
+    else:
+        # A library item keeps its other purposes (a sample stays a sample); only the example mark moves.
+        purposes = [p for p in record['purposes'] if p != 'inspiration']
+        if data['role'] == 'example':
+            purposes.append('inspiration')
+    changed = record['purposes'] != purposes
+    if changed and not material:
+        blog_library.save_revision(directory, record)
+        record['revision'] += 1
+    if changed:
+        record['purposes'] = purposes
         studio.persist(directory, 'sources', record)
-    return {'id': record['id'], 'role': data['role'], 'purposes': record['purposes']}
+    result = {'id': record['id'], 'role': data['role'], 'purposes': record['purposes']}
+    if changed and not material:
+        shared = share(root, 'source', record)
+        result['receipts'] = [receipt(root, 'Library item role', shared, 'source')]
+    return result
 
 
 def upload(root, data):
@@ -555,6 +586,7 @@ def upload(root, data):
         'analyze',
         'files',
         'keep',
+        'kind',
     }:
         raise ValueError('Unknown upload field.')
     if not isinstance(data.get('analyze', True), bool):
@@ -593,6 +625,11 @@ def upload(root, data):
         )
     if data.get('author'):
         studio.checked_author(data['author'])
+    fields = (
+        blog_library.library_fields(root, kind=data.get('kind') or None, origin_kind='upload')
+        if purpose != 'material'
+        else None
+    )
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
     # An unchecked "Summarize and tag" keeps this file's text away from the analysis CLI.
     # An example of the kind of post is a kept reference with inspiration, as on the files screen.
@@ -603,6 +640,7 @@ def upload(root, data):
         ['reference', 'inspiration'] if purpose == 'inspiration' else purpose,
         data.get('author'),
         data.get('analyze', True),
+        library=fields,
     )
     result = {
         'source': share(root, 'source', source) if purpose != 'material' else source,
@@ -1553,6 +1591,10 @@ def _dispatch(root, route, data):
             return library_import(root, data)
         if route in ('voice-links-preview', 'voice-links-import'):
             return voice_links_route(root, route, data)
+        if route.startswith('library-add') or route == 'library-selection':
+            import library_add
+
+            return library_add.route(root, route, data)
         if route == 'retry-sync':
             return retry_receipt(root, adapter, data)
         if route == 'upload':
@@ -1972,19 +2014,31 @@ def view(root, name, query):
 
         return report(root, arg('topic', ''))
     if name == 'library':
-        return blog_library.catalog(
-            root,
-            arg('query', ''),
-            arg('collection'),
-            arg('author'),
-            arg('topic'),
-            arg('product'),
-            arg('since'),
-            arg('until'),
-            limit,
-            offset,
-            arg('retired') == 'true' or arg('status') == 'retired',
-            status=arg('status'),
+        import styles
+
+        kinds = [
+            {'id': style['id'], 'name': style['name']}
+            for style in styles.catalog(root)['styles']
+            if style['status'] != 'retired'
+        ]
+        return dict(
+            blog_library.catalog(
+                root,
+                arg('query', ''),
+                arg('collection'),
+                arg('author'),
+                arg('topic'),
+                arg('product'),
+                arg('since'),
+                arg('until'),
+                limit,
+                offset,
+                arg('retired') == 'true' or arg('status') == 'retired',
+                status=arg('status'),
+                role=arg('role'),
+                kind=arg('kind'),
+            ),
+            kinds=kinds,
         )
     if name == 'memory':
         return memories(root, limit, offset, arg('query', ''))
