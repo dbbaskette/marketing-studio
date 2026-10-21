@@ -34,6 +34,7 @@ MAX_FETCH = 2 * 1024 * 1024
 MAX_IMPORT_BYTES = 25 * 1024 * 1024
 FETCH_DEADLINE = 45  # Seconds for one address, redirects included.
 UNREACHABLE = 'This address could not be reached. Check the URL and your connection; nothing was imported from it.'
+OUT_OF_SCOPE = 'URL is outside the approved collection scope.'
 TOO_SLOW = 'This address took too long to respond; nothing was imported from it.'
 UNREADABLE_DOCX = 'This DOCX file could not be read. Open it in a word processor, save it again as .docx, then retry.'
 NO_PDF_READER = 'This computer has no PDF reader (pdftotext), so this PDF needs text. Install poppler, or upload the same content as text, Markdown, HTML or DOCX.'
@@ -117,7 +118,7 @@ def fetch(url, scope, redirects=3, deadline=None):
     """
     deadline = deadline or time.monotonic() + FETCH_DEADLINE
     if not in_scope(url, scope):
-        raise ValueError('URL is outside the approved collection scope.')
+        raise ValueError(OUT_OF_SCOPE)
     parsed = urlsplit(canonical(url))
     try:
         found = socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM)

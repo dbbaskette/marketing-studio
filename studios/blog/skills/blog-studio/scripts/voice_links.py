@@ -204,13 +204,19 @@ class Bylines(HTMLParser):
     def json_ld(self, content):
         try:
             value = json.loads(content)
-        except ValueError:
+        except (ValueError, RecursionError):
             return
 
         def names(author):
             if isinstance(author, str):
                 return [author]
             if isinstance(author, dict):
+                # A publisher credited as the author (an Organization) is not a person
+                # whose voice a post shows; the next byline source decides instead.
+                kinds = author.get('@type')
+                kinds = kinds if isinstance(kinds, list) else [kinds]
+                if any(str(kind).casefold() in NOT_A_PERSON for kind in kinds):
+                    return []
                 return [author['name']] if isinstance(author.get('name'), str) else []
             if isinstance(author, list):
                 return [name for entry in author[:10] for name in names(entry)]
@@ -229,7 +235,13 @@ class Bylines(HTMLParser):
                     if key != 'author' and isinstance(entry, (dict, list)):
                         walk(entry, depth + 1)
 
-        walk(value)
+        try:
+            walk(value)
+        except RecursionError:
+            return
+
+
+NOT_A_PERSON = frozenset(('organization', 'brand', 'corporation', 'newsmediaorganization'))
 
 
 def plain(name):
@@ -529,7 +541,14 @@ def run(root, data, reader=None, delay=0.25):
         elif manifest is not None:
             saved = manifest['results'].get(link)
             if saved and saved['status'] == 'failed':
-                row.update(status='failed', reason=saved.get('reason') or 'Not read.')
+                reason = saved.get('reason') or 'Not read.'
+                if reason == blog_library.OUT_OF_SCOPE:
+                    reason = (
+                        'This page has moved outside '
+                        + site_of(state['scope'])
+                        + '; use its new address.'
+                    )
+                row.update(status='failed', reason=reason)
             elif saved:
                 ident = saved['id']
                 row['status'] = 'imported'

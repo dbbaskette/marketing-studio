@@ -179,6 +179,15 @@ class BylineTests(Fixture):
         )
         self.assertEqual(voice_links.bylines(coauthored), [AUTHOR, 'Jordan Lee'])
         self.assertEqual(voice_links.bylines(b'<script type="application/ld+json">{broken'), [])
+        # A publisher credited as the author in JSON-LD is not a byline: the page's own
+        # byline decides, so an organisation never marks every post as someone else's.
+        published = (
+            b'<script type="application/ld+json">{"author":{"@type":"Organization",'
+            b'"name":"Example Publishing"}}</script><p class="byline">By Avery Quinn</p>'
+        )
+        self.assertEqual(voice_links.bylines(published), [AUTHOR])
+        nested = b'<script type="application/ld+json">' + b'[' * 2000 + b']' * 2000 + b'</script>'
+        self.assertEqual(voice_links.bylines(nested), [])
 
     def test_names_match_without_case_accents_order_or_initials(self):
         for byline in (
@@ -222,12 +231,13 @@ class ImportTests(Fixture):
                 SITE + 'unsigned/': page('Unsigned'),
                 SITE + 'theirs/': page('Theirs', 'Jordan Lee', 'meta'),
                 SITE + 'down/': ValueError(library.UNREACHABLE),
+                SITE + 'moved/': ValueError(library.OUT_OF_SCOPE),
             }
         )
-        text = '# synthetic list\n' + self.links('mine', 'unsigned', 'theirs', 'down')
+        text = '# synthetic list\n' + self.links('mine', 'unsigned', 'theirs', 'down', 'moved')
         result, shown = self.run_links(text, reader)
-        self.assertEqual((shown['links'], shown['to_fetch'], shown['in_library']), (4, 4, 0))
-        self.assertEqual([call[1] for call in reader.calls], [SITE] * 4)
+        self.assertEqual((shown['links'], shown['to_fetch'], shown['in_library']), (5, 5, 0))
+        self.assertEqual([call[1] for call in reader.calls], [SITE] * 5)
         rows = {row['url'].rsplit('/', 2)[-2]: row for row in result['results']}
         self.assertEqual(rows['mine']['status'], 'imported')
         self.assertTrue(rows['mine']['sample'])
@@ -238,13 +248,19 @@ class ImportTests(Fixture):
         self.assertFalse(rows['theirs']['sample'])
         self.assertEqual(rows['theirs']['byline'], ['Jordan Lee'])
         self.assertEqual(rows['down']['status'], 'failed')
+        # A post that now redirects elsewhere explains itself in the list's own terms.
+        self.assertEqual(rows['moved']['status'], 'failed')
+        self.assertEqual(
+            rows['moved']['reason'],
+            'This page has moved outside ' + shown['shown_scope'] + '; use its new address.',
+        )
         self.assertIn('could not be reached', rows['down']['reason'])
         self.assertEqual(
             result['counts'],
             {
                 'imported': 3,
                 'in-library': 0,
-                'failed': 1,
+                'failed': 2,
                 'pending': 0,
                 'mismatch': 1,
                 'no_text': 0,
@@ -281,10 +297,12 @@ class ImportTests(Fixture):
         self.assertTrue(next(r for r in kept['results'] if r['url'].endswith('theirs/'))['kept'])
         self.assertEqual(len(reader.calls), before[0])
         retried, _ = self.run_links(text, reader, keep=[SITE + 'theirs/'], retry=True)
-        self.assertEqual(reader.calls[-1][0], SITE + 'down/')
-        self.assertEqual(len(reader.calls), before[0] + 1)
+        self.assertEqual(
+            {c[0] for c in reader.calls[before[0] :]}, {SITE + 'down/', SITE + 'moved/'}
+        )
+        self.assertEqual(len(reader.calls), before[0] + 2)
         self.assertEqual(retried['counts']['samples'], 4)
-        self.assertEqual(retried['counts']['failed'], 0)
+        self.assertEqual(retried['counts']['failed'], 1)
 
     def test_posts_already_in_the_library_are_reused_not_fetched_or_copied(self):
         reader = Pages({SITE + n + '/': page(n, AUTHOR) for n in ('one', 'two', 'three')})
