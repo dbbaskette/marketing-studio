@@ -59,7 +59,7 @@ What a caller needs to know
 from __future__ import annotations
 
 import json
-from studio_core import review_policy, research_contract
+from studio_core import deck_direction, review_policy, research_contract
 import re
 import shutil
 from dataclasses import dataclass, field, replace
@@ -1604,6 +1604,17 @@ def contract(root: Path, mine: Deck) -> Path:
     """Where a deck's exported brand contract is, on this computer."""
     return place(root, mine.level, WORK) / str((mine.built.get('brand') or {})
                                                .get('contract'))
+
+
+def look_of(root: Path, mine: Deck) -> dict:
+    """What a deck is drawn in: the look the person chose for it, with its direction and
+    house style, else the direction its brand gives, else nothing, and the deck has the
+    fallback."""
+    chosen = (mine.kept.get('look') or {}).get('chosen')
+    if isinstance(chosen, dict) and chosen.get('direction'):
+        return {'direction': chosen['direction'], 'house': list(chosen.get('house') or ())}
+    given = deck_direction.of_file(contract(root, mine))
+    return {'direction': given} if given else {}
 
 
 def naming_rules(root: Path, mine: Deck) -> str | None:

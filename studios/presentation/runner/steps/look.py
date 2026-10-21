@@ -87,7 +87,7 @@ def draw_sample(root, run: dict, slides, renderer) -> Path:
     try:
         folder.mkdir(parents=True)
         made = composition(_outline(root), title, slides.layouts(brand).get('layouts'),
-                           deck_direction.of_file(brand)['direction'])
+                           deck_direction.of_file(brand))
         home.write_json(folder / 'composition.json', made)
         slides.compile(folder / 'composition.json', brand, folder=folder / 'compiled')
         found = worker_tools.render(slides, folder / 'compiled', folder / 'preview',

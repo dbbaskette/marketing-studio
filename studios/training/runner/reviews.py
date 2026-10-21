@@ -221,7 +221,8 @@ class Reviewing:
         folder.mkdir(parents=True, exist_ok=True)
         home.write_json(folder / 'composition.json', {
             'version': 1, 'title': found.session['title'],
-            'direction': deck_direction.of_file(contract)['direction'], 'slides': [laid]})
+            'direction': deck_direction.of_file(contract) or dict(deck.DIRECTION),
+            'slides': [laid]})
         tool.compile(folder / 'composition.json', contract, folder=folder / 'compiled')
         shown = worker_tools.render(tool, folder / 'compiled', folder / 'preview',
                                     self._how(root, found, level))

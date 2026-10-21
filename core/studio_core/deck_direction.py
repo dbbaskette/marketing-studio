@@ -1,27 +1,26 @@
-"""A deck's visual direction and house rules, read from its brand's exported contract.
+"""A deck's visual direction as its brand, or the person's choice of look, gives it.
 
 What a caller needs to know
 ---------------------------
-    look = deck_direction.of_file(contract_path)   # {'direction', 'square'}
-    deck_direction.direction(contract, beside)     # the direction alone, from parsed JSON
-    deck_direction.house(square)                   # the house rules a composer is told
+    deck_direction.of_file(contract_path)          # the brand's own direction, or None
+    deck_direction.direction(contract, beside)     # the same, from parsed JSON
+    deck_direction.checked(given, contract)        # a look's direction, held to the brand
+    deck_direction.told(direction)                 # what a composer is told of its colours
 
+- A studio does not choose how a deck looks. The brand's slide guidance does, through its
+  look step: the person picks one of a few rendered looks, and that look's direction and
+  house style are what the deck is built with. Until a look is chosen, a brand may give a
+  default direction of its own: in `deck-direction.json` beside its exported contract, or
+  in the contract under `design.deckDirection`, `design.direction` or
+  `design.slides.direction`. Reading it is tolerant: a meaning whose role the brand does
+  not have, or whose colour is the focal's or the neutral's, is left out, and anything
+  unreadable is passed over.
 - A direction is harness-slides' own: `focal`, the one colour that means "look here";
   `neutral`, the panel colour everything starts as; `meanings`, what each other colour
   stands for in the deck; and `motif`, one recurring device. Every value is a colour role
   of the brand.
-- A brand may say which direction its decks take: in `deck-direction.json` beside its
-  contract, or in the contract under `design.deckDirection`, `design.direction` or
-  `design.slides.direction`. The first that names a focal and a neutral the brand has is
-  used. Reading is tolerant: a meaning whose role the brand does not have, or whose colour
-  is the focal's or the neutral's, is left out, and anything unreadable is passed over.
-- A brand that says nothing gets BUILT_IN: the heading colour as focal, the secondary
-  canvas as neutral, and a meaning for each of the standard accents the brand has, so that
-  products, alternatives and results can be told apart by colour as well as by word. A
-  brand without those roles gets LEGACY, the two colours decks always had.
-- `square` is True when the brand's geometry gives rectangles no radius, False when it
-  gives them one, and None when it does not say. Only True puts square corners into the
-  house rules.
+- FALLBACK is harness-slides' own two-colour example. It is what a deck has only when
+  neither the brand nor a chosen look gives a direction, as every deck had before.
 - Nothing here runs anything or writes anything. Standard library only.
 """
 from __future__ import annotations
@@ -30,32 +29,8 @@ import json
 from pathlib import Path
 
 FILE = 'deck-direction.json'
-LEGACY = {'focal': 'headingPrimary', 'neutral': 'canvasSecondary'}
-# What each standard accent stands for when the brand does not say: the deck's own product,
-# what it is compared with, and a result or a healthy state.
-MEANINGS = (
-    ('accentAqua', 'The product or platform this deck teaches'),
-    ('accentPurple', 'Another product, vendor or approach it is compared with'),
-    ('accentGreen', 'A recommended step, a healthy state or a result'),
-)
+FALLBACK = {'focal': 'headingPrimary', 'neutral': 'canvasSecondary'}
 MOTIF = 200     # characters a motif may hold
-
-PEERS = ('Equals share one size and weight: never set one of several peers larger or '
-         'bolder. Peers may share a light fill from the direction, and a peer that is one '
-         "of the direction's meanings, such as a product or an actor, takes that colour on "
-         'every slide.')
-FOCAL = ('The focal point is what the title singles out, and never one of several peers. A '
-         'slide that lists equals has a focal that is not one of them.')
-ANNOUNCE = 'Draw nothing the title does not announce.'
-CASE = 'Titles and labels are in sentence case. Names and acronyms stay as they are written.'
-SQUARE = 'Boxes have square corners, as the brand draws them.'
-CAVEAT = ("A caveat and a source line go in the slide's own caveat and source fields, never "
-          'in the drawing.')
-BADGES = ('Leave out badges, labels on arrows and small print wherever the slide reads '
-          'without them.')
-ICONS = ("Give each recognisable product, platform, tool or actor its icon from the brand's "
-         'functional icon library: the same icon for the same thing across the deck, never '
-         'twice on one slide. Leave abstract ideas without one.')
 
 
 def _colours(contract) -> dict:
@@ -64,9 +39,10 @@ def _colours(contract) -> dict:
     return colours if isinstance(colours, dict) else {}
 
 
-def _checked(given, colours: dict) -> dict | None:
-    """A direction the brand gives, as harness-slides takes it, or None when it does not
-    name a focal and a neutral the brand has."""
+def checked(given, contract) -> dict | None:
+    """A direction as harness-slides takes it, held to the brand's colour roles, or None
+    when it does not name a focal and a neutral the brand has."""
+    colours = _colours(contract)
     if not isinstance(given, dict):
         return None
     focal, neutral = given.get('focal'), given.get('neutral')
@@ -88,36 +64,17 @@ def _checked(given, colours: dict) -> dict | None:
     return made
 
 
-def built_in(contract) -> dict:
-    """The direction a deck takes when its brand gives none."""
-    colours = _colours(contract)
-    if not all(role in colours for role in LEGACY.values()):
-        return dict(LEGACY)
-    return _checked({**LEGACY, 'meanings': dict(MEANINGS)}, colours) or dict(LEGACY)
-
-
-def direction(contract, beside=None) -> dict:
-    """A deck's direction: the one its brand gives, else the built-in one."""
-    colours = _colours(contract)
+def direction(contract, beside=None) -> dict | None:
+    """The direction the brand gives its decks, or None when it gives none."""
     design = contract.get('design') if isinstance(contract, dict) else None
     design = design if isinstance(design, dict) else {}
     slides = design.get('slides') if isinstance(design.get('slides'), dict) else {}
     for given in (beside, design.get('deckDirection'), design.get('direction'),
                   slides.get('direction')):
-        found = _checked(given, colours)
+        found = checked(given, contract)
         if found:
             return found
-    return built_in(contract)
-
-
-def square(contract) -> bool | None:
-    """Whether the brand draws rectangles with square corners, or None when it does not say."""
-    design = contract.get('design') if isinstance(contract, dict) else None
-    geometry = design.get('geometry') if isinstance(design, dict) else None
-    radius = geometry.get('rectangularRadiusPx') if isinstance(geometry, dict) else None
-    if isinstance(radius, bool) or not isinstance(radius, (int, float)):
-        return None
-    return radius == 0
+    return None
 
 
 def _json(path: Path):
@@ -127,32 +84,28 @@ def _json(path: Path):
         return None
 
 
-def of_file(contract_path) -> dict:
-    """The direction and corners of the brand exported to `contract_path`, reading
-    deck-direction.json beside it when the brand wrote one. A contract that cannot be read
-    gives LEGACY and no word on corners."""
+def contract_of(contract_path) -> dict:
+    """The exported contract at `contract_path`, or an empty one when it cannot be read."""
+    found = _json(Path(contract_path))
+    return found if isinstance(found, dict) else {}
+
+
+def of_file(contract_path) -> dict | None:
+    """The direction the brand exported to `contract_path` gives, reading
+    deck-direction.json beside it when the brand wrote one; None when it gives none."""
     path = Path(contract_path)
-    contract = _json(path)
-    contract = contract if isinstance(contract, dict) else {}
-    return {'direction': direction(contract, _json(path.parent / FILE)),
-            'square': square(contract)}
+    return direction(contract_of(path), _json(path.parent / FILE))
 
 
-def house(square_corners: bool | None = None) -> tuple[str, ...]:
-    """The house rules a composer is told, with square corners only where the brand says."""
-    return (PEERS, FOCAL, ANNOUNCE, CASE, *((SQUARE,) if square_corners else ()), CAVEAT,
-            BADGES, ICONS)
-
-
-def told(direction_given: dict) -> str:
+def told(given: dict) -> str:
     """What a composer is told of a direction's colours, in a few sentences."""
-    meanings = direction_given.get('meanings') or {}
-    lines = [f"`{direction_given.get('focal')}` marks the one node that carries a slide's "
-             f"point. Panels start as `{direction_given.get('neutral')}`."]
+    meanings = given.get('meanings') or {}
+    lines = [f"`{given.get('focal')}` marks the one node that carries a slide's point. "
+             f"Panels start as `{given.get('neutral')}`."]
     if meanings:
         lines.append('Each of these colours means one thing on every slide; use it for that '
                      'thing and nothing else, with its name in words too:')
         lines += [f'- `{role}`: {said}' for role, said in meanings.items()]
-    if direction_given.get('motif'):
-        lines.append(f"The deck's recurring device: {direction_given['motif']}")
+    if given.get('motif'):
+        lines.append(f"The deck's recurring device: {given['motif']}")
     return '\n'.join(lines)

@@ -93,7 +93,7 @@ from runner.steps import Work
 PREVIEWS = 4            # times one composer may render its section
 REPAIRS = 2             # rounds of drawing again after a review
 DELIVERY = 'reading'    # a deck is read alone as well as presented
-DIRECTION = {'focal': 'headingPrimary', 'neutral': 'canvasSecondary'}
+DIRECTION = deck_direction.FALLBACK   # only until the brand gives one
 SEVERITIES = ('critical', 'major', 'minor')
 ABOUT = ('drawing', 'content')
 STRICT = ('brand-only', 'polish')    # levels whose slides draw only the approved words
@@ -465,8 +465,10 @@ def _read(path: Path) -> str:
 LEADS = ('cover', 'section', 'closing')
 NAMED_LAYOUTS = {'cover': ('title', 'cover'), 'section': ('section', 'divider'),
                  'closing': ('closing', 'end', 'title')}
-# The house rules when the brand says nothing of its corners; `house` gives a deck's own.
-HOUSE = deck_direction.house()
+# The studio's own house rules are about what a slide says, never how it looks: the look is
+# the brand's, from its own slide guidance.
+HOUSE = ("A caveat and a source line go in the slide's own caveat and source fields, never in "
+         'the drawing.',)
 FREEDOM = {
     'brand-only': "Keep each slide's composition as close to the original as the brand's "
                   'layouts allow. Add no icons.',
@@ -477,12 +479,11 @@ FREEDOM = {
 POINTER = re.compile(r'Read `references/[^\n]*')
 
 
-def house(run: dict, square: bool | None = None) -> list[str]:
-    """The house rules a deck is drawn by: the runner's own, with square corners only where
-    the brand says so, and for an existing deck the line that says how far its slides may
-    move."""
+def house(run: dict) -> list[str]:
+    """The house rules a deck is drawn by: the runner's own, and for an existing deck the
+    line that says how far its slides may move."""
     level = _level(run) if run.get('route') == 'existing' else None
-    return [*deck_direction.house(square), *([FREEDOM[level]] if level in FREEDOM else [])]
+    return [*HOUSE, *([FREEDOM[level]] if level in FREEDOM else [])]
 
 
 def layouts(listed, slides: list[dict]) -> dict:
@@ -517,8 +518,8 @@ def complete(outline: dict, listed, words: list[str], rules: list[str],
              direction: dict | None = None) -> dict:
     """An approved outline as the slides tool starts a deck from: with its direction, a
     layout for each kind of lead slide, the house rules, and the person's own words of
-    approval. `direction` is the brand's, as `deck_direction.of_file` reads it; without it
-    the outline's own, or DIRECTION."""
+    approval. `direction` is the one the brand gives, as `deck_direction.of_file` reads it;
+    without it the outline's own, or DIRECTION."""
     return {**outline, 'delivery': outline.get('delivery') or DELIVERY,
             'direction': dict(direction or outline.get('direction') or DIRECTION),
             'layouts': layouts(listed, slides_of(outline)), 'house': list(rules),
@@ -681,9 +682,8 @@ def start(root, run: dict, slides, brand) -> dict:
     source = work / f'outline-{secrets.token_hex(3)}.json'
     try:
         listed = slides.layouts(brand).get('layouts')
-        look = deck_direction.of_file(brand)
-        whole = complete(outline, listed, _approval(root, run, outline),
-                         house(run, look['square']), look['direction'])
+        whole = complete(outline, listed, _approval(root, run, outline), house(run),
+                         deck_direction.of_file(brand))
         home.write_json(source, whole)
         slides.outline_start(source, brand, folder)
         sections = []

@@ -124,11 +124,11 @@ class RuleTests(JobCase):
         self.assertEqual(deck.lead({'slides': [{'id': 'a', 'detail': 'x'}]}),
                          {'slides': [{'id': 'a'}]})
 
-    def test_the_house_rules_say_what_no_program_can_check(self):
-        for told in ('Equals share one size and weight', 'never one of several peers',
-                     'Draw nothing the title does not announce'):
-            self.assertIn(told, ' '.join(deck.HOUSE))
-            self.assertIn(told.split(' ', 1)[1][:20], briefs.guidance('deck-section'))
+    def test_the_house_rules_are_about_what_a_slide_says_never_how_it_looks(self):
+        self.assertEqual(deck.HOUSE, (deck.CAVEAT, deck.WHOLE))
+        self.assertIn('Never split a sentence across boxes', briefs.guidance('deck-section')
+                      .replace('a program refuses a sentence split across boxes',
+                               'Never split a sentence across boxes'))
 
     def test_a_sections_brief_is_rewritten_for_a_worker_with_tools_and_no_files(self):
         whole = deck.complete(OUTLINE, Slides.LAYOUTS, [])
@@ -147,36 +147,30 @@ class RuleTests(JobCase):
         self.assertIn('## Return', deck.brief('# A brief with none of the headings\n', whole))
 
     def test_a_deck_drawn_from_its_design_draws_its_visuals_and_keeps_the_relevance_rules(self):
-        self.assertIn("brand's functional icon library", deck.HOUSE[-1])
-        self.assertEqual(deck.DESIGNED_HOUSE[:-1], deck.HOUSE[:-1])
-        for told in ('Draw what the approved design says', 'names a recognisable thing',
-                     'the same icon for the same concept across the deck',
-                     'never twice on one slide'):
-            self.assertIn(told, deck.DESIGNED_HOUSE[-1])
-        self.assertNotIn('optional', ' '.join(deck.DESIGNED_HOUSE))
-        self.assertIn('still give a recognisable product', deck.DESIGNED_HOUSE[-1])
+        self.assertEqual(deck.DESIGNED_HOUSE, (*deck.HOUSE, deck.AS_DESIGNED))
+        self.assertIn('Draw what the approved design says', deck.AS_DESIGNED)
         self.assertEqual(deck.complete(OUTLINE, Slides.LAYOUTS, [])['house'], list(deck.HOUSE))
         self.assertEqual(deck.complete(OUTLINE, Slides.LAYOUTS, [], designed=True)['house'],
                          list(deck.DESIGNED_HOUSE))
 
-    def test_a_deck_takes_its_direction_and_corners_from_its_brand(self):
-        from studio_core import deck_direction
-        # Without a word from the brand: the two colours decks always had, no corners rule.
+    def test_a_deck_takes_its_direction_and_house_style_from_its_look(self):
+        # Without a look or a word from the brand: the fallback, and only the studio's own
+        # rules about what a slide says.
         whole = deck.complete(OUTLINE, Slides.LAYOUTS, [])
         self.assertEqual(whole['direction'], deck.DIRECTION)
-        self.assertNotIn(deck_direction.SQUARE, whole['house'])
-        rules = ' '.join(whole['house'])
-        self.assertNotIn('Never set one of several peers larger, bolder or in another colour',
-                         rules)
-        self.assertIn('Peers may share a light fill', rules)
-        # With the brand's: its direction, with meanings, and square corners where it says.
+        self.assertEqual(whole['house'], [deck.CAVEAT, deck.WHOLE])
+        rules = ' '.join(deck.DESIGNED_HOUSE)
+        for visual in ('peers', 'square corners', 'icon', 'colour', 'sentence case'):
+            self.assertNotIn(visual, rules.lower(), 'how a deck looks is the brand\'s')
+        # With the look the person chose: its direction and its house style first.
         look = {'direction': {'focal': 'headingPrimary', 'neutral': 'canvasSecondary',
                               'meanings': {'accentAqua': 'The product'},
-                              'motif': 'One shared base.'}, 'square': True}
+                              'motif': 'One shared base.'},
+                'house': ['Supporting cards are outlined.', '  ', 7]}
         whole = deck.complete(OUTLINE, Slides.LAYOUTS, [], designed=True, look=look)
         self.assertEqual(whole['direction'], look['direction'])
-        self.assertIn(deck_direction.SQUARE, whole['house'])
-        self.assertEqual(whole['house'][-1], deck.DESIGNED_ICONS)
+        self.assertEqual(whole['house'], ['Supporting cards are outlined.',
+                                          *deck.DESIGNED_HOUSE])
         written = Slides._brief(whole, 1, whole['slides'][1:3], '/opt/brand/contract.json',
                                 Path('/opt/work'))
         given = deck.brief(written, whole)
@@ -184,7 +178,7 @@ class RuleTests(JobCase):
         self.assertIn('## Colour', given)
         self.assertIn('- `accentAqua`: The product', given)
         self.assertIn("The deck's recurring device: One shared base.", given)
-        self.assertIn(deck_direction.SQUARE, given)
+        self.assertIn('- Supporting cards are outlined.', given)
         spec = deck.fixed(whole, [whole['slides'][1]['id']], 1)
         self.assertEqual(spec['direction'], look['direction'])
 
@@ -213,7 +207,6 @@ class RuleTests(JobCase):
                      '- An instance: "server", on `what-it-does`, `the-objection`'):
             self.assertIn(told, given)
         self.assertNotIn('### `the-objection`', given, 'only its own slides are described')
-        self.assertNotIn(deck.HOUSE[-1], given)
         self.assertEqual(deck.icons(plan), [{'concept': 'An instance', 'ref': 'server',
                                              'status': 'resolved', 'slides': [
                                                  'what-it-does', 'the-objection']}])
@@ -229,6 +222,7 @@ class RuleTests(JobCase):
         for gone in ('## The approved design', '## Icons across the deck', '`intent`'):
             self.assertNotIn(gone, before)
         self.assertIn(f'- {deck.HOUSE[-1]}', before)
+        self.assertNotIn(deck.AS_DESIGNED, before)
 
     def test_a_section_drawn_from_its_design_keeps_its_intent_and_the_approved_copy(self):
         plan = approved_plan()
@@ -1161,21 +1155,13 @@ class DeckCase(StudioCase):
 
 
 class FlowTests(DeckCase):
-    def test_a_started_deck_is_drawn_in_its_brands_direction(self):
-        from studio_core import deck_direction
-        self.brand.design = {'colors': {'canvasSecondary': '#EEEEEE', 'headingPrimary': '#123456',
-                                        'accentAqua': '#007B8C', 'accentPurple': '#6C4B94'},
-                             'geometry': {'rectangularRadiusPx': 0}}
+    def test_a_started_deck_has_the_fallback_when_its_brand_gives_no_direction(self):
         root = self.begin()
         self.drawn(root)
         start = root / pipeline.WORK / self.built(root)['start']['folder']
         given = json.loads((start / 'given' / 'outline.json').read_text())
-        self.assertEqual(given['direction'], deck_direction.built_in({'design': self.brand.design}))
-        self.assertEqual(list(given['direction']['meanings']), ['accentAqua', 'accentPurple'])
-        self.assertIn(deck_direction.SQUARE, given['house'])
-        brief = (start / 'given' / 'section-1.md').read_text()
-        self.assertIn('## Colour', brief)
-        self.assertIn('- `accentPurple`: Another product', brief)
+        self.assertEqual(given['direction'], deck.DIRECTION)
+        self.assertEqual(given['house'], list(deck.HOUSE))
 
     def test_short_labels_for_a_diagram_reach_the_composer_and_not_the_tool(self):
         made = json.loads(json.dumps(OUTLINE))
@@ -1201,7 +1187,7 @@ class FlowTests(DeckCase):
         start = root / pipeline.WORK / self.built(root)['start']['folder']
         given = json.loads((start / 'given' / 'outline.json').read_text())
         self.assertEqual(given['direction'], own)
-        self.assertNotIn(deck_direction.SQUARE, given['house'], 'the brand says nothing of corners')
+        self.assertIn('## Colour', (start / 'given' / 'section-1.md').read_text())
 
     def test_a_deck_only_bundle_uses_the_blueprint_without_other_material_writers(self):
         root = self.begin(materials=[])

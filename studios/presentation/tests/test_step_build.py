@@ -157,24 +157,26 @@ class StartTests(Deck):
             others = [line for name, line in build.FREEDOM.items() if name != level]
             self.assertFalse(any(line in whole['house'] for line in others), level)
         whole, brief = self.started('rework')
-        square = deck_direction.of_file(self.contract)['square']
-        self.assertEqual(whole['house'], list(deck_direction.house(square)))
+        self.assertEqual(whole['house'], list(build.HOUSE))
         self.assertIn('Add no icons', build.FREEDOM['brand-only'])
 
-    def test_house_rules_are_soft_on_peers_and_icons_and_follow_the_brands_corners(self):
-        rules = ' '.join(build.HOUSE)
-        self.assertNotIn('in another colour', rules)
-        self.assertNotIn('An icon is optional', rules)
-        self.assertNotIn(deck_direction.SQUARE, build.HOUSE)
-        self.assertIn('Peers may share a light fill', rules)
-        self.assertIn("brand's functional icon library", rules)
-        self.assertIn(deck_direction.SQUARE, build.house(self.run_, True))
-        self.assertNotIn(deck_direction.SQUARE, build.house(self.run_, None))
+    def test_the_house_rules_are_about_what_a_slide_says_never_how_it_looks(self):
+        rules = ' '.join(build.HOUSE).lower()
+        for visual in ('peers', 'square corners', 'icon', 'colour', 'sentence case'):
+            self.assertNotIn(visual, rules)
+
+    def test_start_uses_the_direction_the_brand_gives(self):
+        own = {'focal': 'accentAqua', 'neutral': 'canvasSecondary',
+               'meanings': {'headingPrimary': 'Our product'}}
+        (Path(self.contract).parent / deck_direction.FILE).write_text(json.dumps(own))
+        whole, brief = self.started('rework')
+        self.assertEqual(whole['direction'], own)
+        self.assertIn('- `headingPrimary`: Our product', brief)
 
     def test_start_adds_the_direction_layouts_and_approval(self):
         whole, brief = self.started('rework')
-        self.assertEqual(whole['direction'], deck_direction.of_file(self.contract)['direction'])
-        self.assertIn('meanings', whole['direction'], "the brand's accents carry meanings")
+        self.assertEqual(whole['direction'], build.DIRECTION, 'the brand gives none')
+        self.assertIsNone(deck_direction.of_file(self.contract))
         self.assertIn('## Colour', brief)
         self.assertEqual(set(whole['layouts']), {'cover', 'closing'})
         self.assertTrue(whole['approval'])

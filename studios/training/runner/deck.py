@@ -92,7 +92,7 @@ from workspace import WorkspaceError
 PREVIEWS = 4            # times one composer may render its section
 REPAIRS = 2             # rounds of drawing again after a review
 DELIVERY = 'reading'    # a deck is read alone as well as presented
-DIRECTION = {'focal': 'headingPrimary', 'neutral': 'canvasSecondary'}
+DIRECTION = deck_direction.FALLBACK   # only until the brand or a chosen look gives one
 RATE = {'dollars': 0.40, 'minutes': 1.25}   # a slide, as the first decks cost
 KINDS = ('cover', 'section', 'content', 'closing')
 LEADS = ('cover', 'section', 'closing')
@@ -122,26 +122,23 @@ WHOLE = ('A point is one sentence: keep its text whole in one shape, with its la
          'shape or right beside it. Never split a sentence across boxes. Where a point gives '
          'short `nodes` labels, draw them as the parts of its diagram and keep the sentence '
          'whole once on the slide, unless the brief says it is in the notes.')
+CAVEAT = ("A caveat and a source line go in the slide's own caveat and source fields, never in "
+          'the drawing.')
+AS_DESIGNED = ('Draw what the approved design says: its visual, its composition and the '
+               'assets it selected.')
+# The studio's own house rules are about what a slide says, never how it looks: the look,
+# with its direction and its house style, is the brand's, chosen by the person from rendered
+# samples. `house` adds a chosen look's own lines first.
+HOUSE = (CAVEAT, WHOLE)
+DESIGNED_HOUSE = (*HOUSE, AS_DESIGNED)
 
 
-def _with_whole(rules: tuple[str, ...]) -> tuple[str, ...]:
-    return rules[:-1] + (WHOLE, rules[-1])
-
-
-# The house rules when the brand says nothing of its corners. `house` gives a deck's own.
-HOUSE = _with_whole(deck_direction.house())
-DESIGNED_ICONS = ('Draw what the approved design says: its visual, its composition and the '
-                  'assets it selected. An icon names a recognisable thing: the same icon for '
-                  'the same concept across the deck, never twice on one slide. Where the '
-                  "design selected none, still give a recognisable product, platform, tool or "
-                  "actor its icon from the brand's functional icon library.")
-DESIGNED_HOUSE = HOUSE[:-1] + (DESIGNED_ICONS,)
-
-
-def house(designed: bool = False, square: bool | None = None) -> tuple[str, ...]:
-    """The house rules a deck is drawn by, with square corners only where its brand says."""
-    rules = _with_whole(deck_direction.house(square))
-    return rules[:-1] + (DESIGNED_ICONS,) if designed else rules
+def house(designed: bool = False, look: dict | None = None) -> tuple[str, ...]:
+    """The house rules a deck is drawn by: the chosen look's house style, then the studio's
+    own rules about what a slide says."""
+    styled = tuple(str(line) for line in ((look or {}).get('house') or ())
+                   if isinstance(line, str) and line.strip())
+    return (*styled, *(DESIGNED_HOUSE if designed else HOUSE))
 
 
 QUESTIONS = (
@@ -544,14 +541,14 @@ def complete(outline: dict, listed, words: list[str], designed: bool = False,
              look: dict | None = None) -> dict:
     """An approved outline as the slides tool starts a deck from: with the direction, a
     layout for each kind of lead slide, the house rules, and the person's own words of
-    approval. A deck `designed` is drawn from its approved design. `look` is what
-    `deck_direction.of_file` read from the brand: its direction and its corners. Without
-    it a deck has DIRECTION, and no word on corners."""
+    approval. A deck `designed` is drawn from its approved design. `look` is what the
+    deck is drawn in: the look the person chose, as {'direction', 'house'}, or the brand's
+    own direction alone. Without one a deck has deck_direction.FALLBACK."""
     look = look or {}
     return {**outline, 'delivery': DELIVERY,
             'direction': dict(look.get('direction') or DIRECTION),
             'layouts': layouts(listed, slides_of(outline)),
-            'house': list(house(designed, look.get('square'))), 'approval': list(words)}
+            'house': list(house(designed, look)), 'approval': list(words)}
 
 
 def lead(part: dict) -> dict:

@@ -1908,7 +1908,7 @@ class Engine(Reviewing):
             listed = home.read_json(work / mine.built['brand']['told'] / 'layouts.json', {})
             whole = deck.complete(mine.outline, (listed or {}).get('layouts'), words,
                                   designed=plan is not None,
-                                  look=deck_direction.of_file(pipeline.contract(root, mine)))
+                                  look=pipeline.look_of(root, mine))
             home.write_json(source, deck.for_tool(whole))
             self.slides().outline_start(source, pipeline.contract(root, mine), folder)
             sections = []

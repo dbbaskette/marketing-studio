@@ -1,4 +1,4 @@
-"""A deck's direction and house rules from its brand contract: disposable files only."""
+"""A deck's direction as its brand gives it: disposable files only."""
 import json
 import tempfile
 import unittest
@@ -17,19 +17,10 @@ def contract(**design):
 
 
 class DirectionTests(unittest.TestCase):
-    def test_a_brand_that_says_nothing_gets_three_meanings_from_its_accents(self):
-        made = looks.direction(contract())
-        self.assertEqual((made['focal'], made['neutral']), ('headingPrimary', 'canvasSecondary'))
-        self.assertEqual(list(made['meanings']), ['accentAqua', 'accentPurple', 'accentGreen'])
-        self.assertTrue(all(made['meanings'].values()))
-        self.assertNotIn('motif', made)
-
-    def test_a_brand_without_the_standard_roles_keeps_the_two_colours(self):
-        bare = {'schema': 1, 'design': {'colors': {'headingPrimary': '#000',
-                                                   'canvasSecondary': '#EEE'}}}
-        self.assertEqual(looks.direction(bare), looks.LEGACY)
-        self.assertEqual(looks.direction({}), looks.LEGACY)
-        self.assertEqual(looks.direction(None), looks.LEGACY)
+    def test_a_brand_that_says_nothing_gives_no_direction(self):
+        # The studio does not choose one: the brand's look step, or the fallback, does.
+        for given in (contract(), {}, None):
+            self.assertIsNone(looks.direction(given))
 
     def test_the_brands_own_direction_is_used_wherever_it_says_it(self):
         given = {'focal': 'accentAqua', 'neutral': 'canvasSecondary',
@@ -48,48 +39,36 @@ class DirectionTests(unittest.TestCase):
         other = {'focal': 'headingPrimary', 'neutral': 'canvasPrimary'}
         self.assertEqual(looks.direction(contract(deckDirection=given), other), other)
 
-    def test_an_unusable_direction_falls_back_to_the_built_in_one(self):
+    def test_an_unusable_direction_is_passed_over(self):
         for given in ({'focal': 'missing', 'neutral': 'canvasSecondary'},
                       {'focal': 'headingPrimary', 'neutral': 'headingPrimary'},
                       'not an object', {'neutral': 'canvasSecondary'}):
             with self.subTest(given=given):
-                self.assertEqual(looks.direction(contract(deckDirection=given)),
-                                 looks.built_in(contract()))
+                self.assertIsNone(looks.direction(contract(deckDirection=given)))
 
     def test_a_meaning_in_the_focal_colour_is_left_out(self):
         same = contract()
         same['design']['colors']['accentAqua'] = '#005c8a'
-        self.assertNotIn('accentAqua', looks.direction(same)['meanings'])
-
-    def test_corners_and_house_rules_follow_the_brand(self):
-        self.assertIs(looks.square(contract(geometry={'rectangularRadiusPx': 0})), True)
-        self.assertIs(looks.square(contract(geometry={'rectangularRadiusPx': 6})), False)
-        self.assertIsNone(looks.square(contract()))
-        self.assertIn(looks.SQUARE, looks.house(True))
-        for said in (None, False):
-            self.assertNotIn(looks.SQUARE, looks.house(said))
-        rules = ' '.join(looks.house())
-        self.assertNotIn('in another colour', rules)
-        self.assertIn('may share a light fill', rules)
-        self.assertIn('functional icon library', rules)
-        self.assertNotIn('An icon is optional', rules)
+        made = looks.checked({'focal': 'headingPrimary', 'neutral': 'canvasSecondary',
+                              'meanings': {'accentAqua': 'Tanzu'}}, same)
+        self.assertNotIn('meanings', made)
 
     def test_of_file_reads_the_contract_and_the_direction_beside_it(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'brand-contract.json'
-            path.write_text(json.dumps(contract(geometry={'rectangularRadiusPx': 0})))
-            made = looks.of_file(path)
-            self.assertEqual(made['direction'], looks.built_in(contract()))
-            self.assertIs(made['square'], True)
+            path.write_text(json.dumps(contract()))
+            self.assertIsNone(looks.of_file(path))
             (Path(folder) / looks.FILE).write_text(json.dumps(
                 {'focal': 'accentAzure', 'neutral': 'canvasSecondary'}))
-            self.assertEqual(looks.of_file(path)['direction']['focal'], 'accentAzure')
+            self.assertEqual(looks.of_file(path)['focal'], 'accentAzure')
             (Path(folder) / looks.FILE).write_text('{not json')
-            self.assertEqual(looks.of_file(path)['direction'], looks.built_in(contract()))
-            self.assertEqual(looks.of_file(Path(folder) / 'missing.json'),
-                             {'direction': looks.LEGACY, 'square': None})
+            self.assertIsNone(looks.of_file(path))
+            self.assertIsNone(looks.of_file(Path(folder) / 'missing.json'))
+            self.assertEqual(looks.contract_of(Path(folder) / 'missing.json'), {})
 
     def test_told_names_each_meaning(self):
-        text = looks.told(looks.direction(contract()))
-        self.assertIn('`accentPurple`: Another product', text)
+        text = looks.told({'focal': 'headingPrimary', 'neutral': 'canvasSecondary',
+                           'meanings': {'accentPurple': 'Competitors'}, 'motif': 'A base.'})
+        self.assertIn('- `accentPurple`: Competitors', text)
         self.assertIn('`headingPrimary` marks the one node', text)
+        self.assertIn("The deck's recurring device: A base.", text)
