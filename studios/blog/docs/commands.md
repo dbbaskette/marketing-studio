@@ -73,6 +73,11 @@ Generated from `studio.py`; use `--help` on a listed command for required inputs
 | `studio.py profile save` | `--id`, `--name`, `--guide-file`, `--background-file`, `--rules-file`, `--status`, `--sample` |
 | `studio.py profile show` | `--id`, `--revision` |
 | `studio.py profile retire` | `--id`, `--expected-revision`, `--confirmed` |
+| `studio.py style` | — |
+| `studio.py style create` | `--name`, `--id`, `--guide-file`, `--status`, `--sample` |
+| `studio.py style save` | `--id`, `--name`, `--guide-file`, `--status`, `--sample` |
+| `studio.py style show` | `--id`, `--revision` |
+| `studio.py style retire` | `--id`, `--expected-revision`, `--confirmed` |
 | `studio.py source` | — |
 | `studio.py source add` | `--name`, `--file`, `--text-file`, `--origin`, `--purpose`, `--author`, `--note`, `--status` |
 | `studio.py source show` | `--id` |
