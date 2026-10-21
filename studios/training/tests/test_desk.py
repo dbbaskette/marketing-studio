@@ -2309,7 +2309,7 @@ MODELS = {'GET /api/models?agent=claude': [ok(CLAUDE_MODELS)],
           'GET /api/models?agent=codex': [ok(CODEX_MODELS)]}
 RUN_FIELDS = {'state', 'sentence', 'agent', 'model', 'effort', 'steps', 'workers', 'spent',
               'question', 'problem', 'documents', 'copies', 'deck_left', 'finished', 'outline',
-              'deck', 'redesign'}
+              'deck', 'redesign', 'note'}
 OUTLINE_FIELDS = {'level', 'waiting', 'slides', 'sha256', 'checked', 'worth', 'note',
                   'design'}
 OUTLINE_SLIDE_FIELDS = {'id', 'kind', 'title', 'subtitle', 'understand', 'points', 'caveat',
@@ -2346,7 +2346,7 @@ def a_run(state: str, sentence: str, **more) -> dict:
            'effort': None, 'steps': [], 'workers': [], 'spent': {'dollars': None, 'tokens': None},
            'question': None, 'problem': None, 'documents': None, 'copies': [],
            'deck_left': None, 'finished': None, 'outline': None, 'deck': None,
-           'redesign': [], **more}
+           'redesign': [], 'note': {'pending': None, 'used': [], 'expected': '0'}, **more}
     assert set(run) == RUN_FIELDS, run
     return ok(run)
 
@@ -2541,6 +2541,59 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                                          {'snapshot': 'working'}])
         self.assertIn('Draft the research questions · 3 minutes · $0.40 so far · stops at '
                       '$20.00', result['snapshots']['working']['text'])
+
+    def test_a_note_for_the_next_step_is_sent_from_the_run_and_replaced(self):
+        self.started()
+        going = 'Drafting the research questions.'
+        working = a_run('working', going, steps=steps('done', 'working'))
+        noted = a_run('working', going, steps=steps('done', 'working'), note={
+            'pending': {'text': 'Lean on the operator handbook.', 'at': 'now'}, 'used': [],
+            'expected': '1'})
+        answers = self.answers(**{'GET /api/trainings': [self.listed('working', going)],
+                                  'GET /api/training': [self.detail('working', going)],
+                                  'GET /api/run': [working, working, noted],
+                                  'POST /api/note': [noted]})
+        box = 'Note for the next step'
+        result = self.run_page(answers, [
+            {'click': 'Open Rolling restarts'}, {'snapshot': 'working'},
+            {'click': 'Send the note'}, {'snapshot': 'empty'},
+            {'fill': box, 'value': 'Lean on', 'stay': True}, {'poll': True},
+            {'snapshot': 'typing'}, {'fill': box, 'value': '  Lean on the operator handbook.  '},
+            {'click': 'Send the note'}, {'snapshot': 'noted'}])
+        shots = result['snapshots']
+        self.assertIn('It goes with the next job that starts, and stops nothing.',
+                      shots['working']['text'])
+        self.assertEqual(shots['working']['fields'][box], '')
+        self.assertEqual((shots['empty']['invalid'], shots['empty']['posts']), ([box], 0))
+        self.assertIn('Write the note first.', shots['empty']['text'])
+        self.assertEqual(shots['typing']['fields'][box], 'Lean on',
+                         'a refresh leaves what is being typed')
+        self.assertEqual(self.posts(result), [('/api/note', {
+            'path': str(self.root), 'expected': '0', 'text': 'Lean on the operator handbook.'})])
+        sent = shots['noted']
+        self.assertIn('Noted. It goes with the next job that starts.', sent['toasts'])
+        self.assertIn('Noted for the next step: Lean on the operator handbook.', sent['text'])
+        self.assertIn('Sending another replaces it.', sent['text'])
+        self.assertIn('Replace the note', sent['buttons'])
+        self.assertEqual(sent['fields'][box], '')
+
+    def test_a_used_note_is_listed_with_the_steps_and_a_finished_run_takes_none(self):
+        self.started()
+        done = a_run('done', 'This training is done.', steps=steps('done', 'done'), note={
+            'pending': None, 'expected': '2',
+            'used': [{'text': 'Lean on the operator handbook.', 'at': 'now',
+                      'step': 'research:availability'}]})
+        answers = self.answers(**{'GET /api/trainings': [self.listed('done', 'Done.')],
+                                  'GET /api/training': [self.detail('done', 'Done.')],
+                                  'GET /api/run': [done]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'click': 'All production steps'},
+                                         {'snapshot': 'done'}])
+        shot = result['snapshots']['done']
+        self.assertNotIn('Note for the next step', shot['fields'])
+        self.assertNotIn('Send the note', shot['buttons'])
+        self.assertIn('Notes for the next step', shot['text'])
+        self.assertIn('Lean on the operator handbook. Went with: Do the research.', shot['text'])
 
     def test_a_phone_keeps_one_decision_in_the_toolbar(self):
         self.started()
