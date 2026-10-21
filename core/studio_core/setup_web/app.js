@@ -6,9 +6,21 @@ const tokenHeader = document.body.dataset.tokenHeader;
 const sessionKey = standalone ? product.toLowerCase().replaceAll(' ', '-') + '-setup-token' : 'marketing-studio-token';
 const launchOptions = new URLSearchParams(location.hash.slice(1));
 const requestedView = launchOptions.get('view') === 'settings' ? 'settings' : 'home';
-const tokenInLink = launchOptions.get('token') || (standalone && /^[A-Za-z0-9_-]+$/.test(location.hash.slice(1).split('&')[0]) ? location.hash.slice(1).split('&')[0] : '');
+// The private key in a link's fragment: `token=…`, or for a standalone studio's setup the bare key.
+function linkKey(hash, bare) {
+  const fragment = String(hash).replace(/^#/, '');
+  const first = fragment.split('&')[0];
+  return new URLSearchParams(fragment).get('token') || (bare && /^[A-Za-z0-9_-]+$/.test(first) ? first : '');
+}
+const tokenInLink = linkKey(location.hash, standalone);
 if (tokenInLink) { sessionStorage.setItem(sessionKey, tokenInLink); history.replaceState(null, '', location.pathname); }
 const token = tokenInLink || sessionStorage.getItem(sessionKey) || '';
+// A new link opened in a tab that already shows this page changes only the fragment, which
+// does not reload it: after a restart the page would keep the old key. Start again with the new one.
+window.addEventListener('hashchange', () => {
+  const next = linkKey(location.hash, standalone);
+  if (next && next !== token) location.reload();
+});
 // Studios opened from here link back to this tab by its name.
 if (!standalone) window.name = 'marketing-studio';
 function withHome(link, tab = false) {
