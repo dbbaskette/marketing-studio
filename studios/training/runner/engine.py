@@ -2703,6 +2703,7 @@ class Engine(Reviewing):
                 record = self._load(root)
                 record['research']['reviewed'] = True
                 record['research']['reviewed_request'] = (step.request or {}).get('at')
+                record['research'].pop('again', None)
                 self._store(root, record)
                 self._commit(root, 'complete independent research review')
             return
@@ -3318,8 +3319,13 @@ class Engine(Reviewing):
         if state == 'failed' and failed not in [step.id for step in found.steps]:
             failed = current
         listed = []
+        # Research done as one authored report and one independent check records its two
+        # jobs under their own names: the research row carries both.
+        synthesis = bool(record.get('research_contract'))
         for step in found.steps:
             tried = attempts(record, step.id)
+            if step.id == 'research' and synthesis:
+                tried = attempts(record, 'research-author') + attempts(record, 'research-review')
             dollars = [attempt['dollars'] for attempt in tried
                        if attempt.get('dollars') is not None]
             if step.id == failed:

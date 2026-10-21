@@ -3679,9 +3679,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       'not be reached.',
                       'What was kept: Your answers and the approved research questions.',
                       # What trying again does, and roughly what it costs, before it is pressed.
-                      'Try again re-runs the research from the start. It is about 5 minutes '
-                      'and the tokens of a full research job; the tries so far took 13 '
-                      'minutes and $1.28.',
+                      'Try again re-runs the research from the start (both jobs); the tries '
+                      'so far took 13 minutes and $1.28.',
                       'Failed', '3 tries · 13 minutes · $1.28',
                       'The agent could not be reached.'):
             self.assertIn(shown, down['text'])

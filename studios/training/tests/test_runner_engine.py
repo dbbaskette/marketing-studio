@@ -793,6 +793,26 @@ class SynthesisWordsTests(StudioCase):
         live()
         self.assertEqual(says(), first)
 
+    def test_the_research_row_carries_both_jobs_time_and_money(self):
+        from types import SimpleNamespace
+        root = self.start()
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        record['steps']['research-author'] = {'failed': 0, 'attempts': [
+            {'started_at': self.STAMPS[0], 'ended_at': self.STAMPS[1], 'seconds': 300.0,
+             'dollars': 0.8, 'tokens': 40000, 'outcome': 'kept', 'error': None}]}
+        record['steps']['research-review'] = {'failed': 1, 'attempts': [
+            {'started_at': self.STAMPS[1], 'ended_at': self.STAMPS[2], 'seconds': 120.5,
+             'dollars': 0.25, 'tokens': 9000, 'outcome': 'failed',
+             'error': 'The agent could not be reached.'}]}
+        step = pipeline.Step('research', 'agent', *pipeline.SYNTHESIS, 'research')
+        found = SimpleNamespace(steps=[step], done=frozenset(),
+                                next=SimpleNamespace(kind='agent', step=step),
+                                research=SimpleNamespace(unread=[]))
+        row, = self.engine._steps(record, found, 'working')
+        self.assertEqual((row['id'], row['status'], row['attempts'], row['seconds'],
+                          row['dollars']), ('research', 'working', 2, 420.5, 1.05))
+
     def test_a_run_that_researches_each_question_keeps_its_count(self):
         from types import SimpleNamespace
         root = self.start()

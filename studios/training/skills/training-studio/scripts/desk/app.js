@@ -4508,7 +4508,9 @@ function failedStep(run, found) {
 // What the one action a problem offers does, and roughly what it costs, in the way a
 // deck's cost is said before it is drawn: from what the same work took before.
 function actionSays(run, found) {
-  if (found.action === 'resume') return 'Carry on picks up where it stopped; nothing is done again.';
+  if (found.action === 'resume') {
+    return 'Carry on starts that step again; everything finished before it is kept.';
+  }
   if (found.action !== 'retry') return '';
   const step = failedStep(run, found);
   const research = /^research(:|$)/.test(String(found.step || (step && step.id) || ''));
@@ -4517,8 +4519,9 @@ function actionSays(run, found) {
   if (step && given(step.dollars)) taken.push(money(step.dollars));
   const before = taken.length ? 'the tries so far took ' + taken.join(' and ') + '.' : '';
   if (research) {
-    return 'Try again re-runs the research from the start. It is about 5 minutes and the '
-      + 'tokens of a full research job' + (before ? '; ' + before : '.');
+    // Only what was recorded is said; with nothing recorded yet, what kind of cost it is.
+    return 'Try again re-runs the research from the start (both jobs); '
+      + (before || 'it takes the tokens of a full research job.');
   }
   return 'Try again re-runs this step from the start' + (step ? ': ' + lower(step.label)
     : '') + '.' + (before ? ' ' + capital(before) : '');

@@ -157,7 +157,7 @@ class Reviewing:
         mine = found.decks[level]
         try:
             self._draw_sample(root, found, level, mine)
-        except (WorkspaceError, OSError, ValueError, KeyError, TypeError) as failure:
+        except (WorkspaceError, OSError, ValueError) as failure:
             why = str(failure).strip() or type(failure).__name__
             shutil.rmtree(contained(root, f'{workspace.prefix(level)}work/review-sample'),
                           ignore_errors=True)
