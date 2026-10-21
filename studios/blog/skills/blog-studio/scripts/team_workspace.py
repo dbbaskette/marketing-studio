@@ -446,6 +446,8 @@ def _migrate(root, legacy_root, selected, sources=(), profiles=(), memories=()):
             continue
         seen.add((group, ident))
         folder, info = studio.item(legacy_root, group, ident)
+        if group == 'sources' and studio.is_material(legacy_root, folder, info):
+            continue  # One blog's uploaded files never join the shared references.
         destination = studio.inside(root, group, ident)
         if destination.exists():
             raise ValueError('Migration would overwrite local work: ' + ident)

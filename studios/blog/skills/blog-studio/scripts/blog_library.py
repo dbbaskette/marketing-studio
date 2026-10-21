@@ -11,9 +11,12 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import socket
 import sqlite3
 import ssl
+import subprocess
+import tempfile
 import time
 from urllib.parse import urlsplit, urljoin, urlunsplit
 import uuid
@@ -33,6 +36,11 @@ FETCH_DEADLINE = 45  # Seconds for one address, redirects included.
 UNREACHABLE = 'This address could not be reached. Check the URL and your connection; nothing was imported from it.'
 TOO_SLOW = 'This address took too long to respond; nothing was imported from it.'
 UNREADABLE_DOCX = 'This DOCX file could not be read. Open it in a word processor, save it again as .docx, then retry.'
+NO_PDF_READER = 'This computer has no PDF reader (pdftotext), so this PDF needs text. Install poppler, or upload the same content as text, Markdown, HTML or DOCX.'
+UNREADABLE_PDF = (
+    'This PDF could not be read, so it needs text. Export its text and upload that instead.'
+)
+EMPTY_PDF = 'No text was found in this PDF, so it needs text. A scanned image needs OCR first.'
 
 
 def canonical(url):
@@ -576,7 +584,48 @@ def preview(root, key, reader=fetch, config=None):
     }
 
 
+def pdf_text(content):
+    """The text of a PDF through pdftotext, and why there is none when there is none."""
+    program = shutil.which('pdftotext')
+    if program is None:
+        return None, NO_PDF_READER
+    with tempfile.TemporaryDirectory(prefix='blog-pdf-') as temp:
+        path = Path(temp) / 'upload.pdf'
+        path.write_bytes(content)
+        try:
+            done = subprocess.run(
+                [program, '-layout', str(path), '-'],
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                timeout=60,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None, UNREADABLE_PDF
+    if done.returncode != 0:
+        return None, UNREADABLE_PDF
+    text = done.stdout.decode('utf-8', 'replace').replace('\f', '\n').strip()
+    if not text:
+        return None, EMPTY_PDF
+    return text, ''
+
+
 def extract(root, content, suffix):
+    text, status, _ = extract_detail(root, content, suffix)
+    return text, status
+
+
+def extract_detail(root, content, suffix):
+    """Extracted text, its status, and the reason a file still needs text."""
+    if suffix == '.pdf':
+        text, note = pdf_text(content)
+        return text, 'ready' if text else 'pending', note
+    text, status = _extract(root, content, suffix)
+    if status == 'ready':
+        return text, status, ''
+    return text, status, 'No text was found in this file, so it needs text.'
+
+
+def _extract(root, content, suffix):
     if suffix == '.docx':
         try:
             with zipfile.ZipFile(io.BytesIO(content)) as archive:
@@ -636,7 +685,7 @@ def source_rows(root):
             if not directory.is_dir():
                 continue
             _, record = studio.item(root, 'sources', directory.name)
-            if record.get('pinned_reference'):
+            if record.get('pinned_reference') or 'material' in record.get('purposes', []):
                 continue
             binding = adapter.state['items'].get('sources/' + record['id'], {}) if adapter else {}
             if binding and graph['heads'].get(binding['item']) != [binding['revision']]:

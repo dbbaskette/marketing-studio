@@ -230,6 +230,8 @@ class Workspace:
                 group, ident, seen, fork=fork
             )
         directory, record = projection or self.local_item(group, local_id)
+        if group == 'sources' and studio.is_material(self.root, directory, record):
+            raise HubError(studio.MATERIAL_STAYS)
         dependencies = []
         data = {
             k: v
@@ -258,7 +260,14 @@ class Workspace:
             sources = []
             for selected in record['sources']:
                 source_id = selected['source_id']
-                _, source_record = self.local_item('sources', source_id)
+                try:
+                    source_dir, source_record = self.local_item('sources', source_id)
+                except ValueError:
+                    if 'material' in selected['purposes']:
+                        continue  # Uploaded files that are away, or never came here.
+                    raise
+                if studio.is_material(self.root, source_dir, source_record):
+                    continue  # One blog's uploaded files stay on this computer.
                 if selected['revision'] != source_record['revision']:
                     pin_key = source_id + '/' + str(selected['revision'])
                     if read_only:
@@ -536,7 +545,9 @@ class Workspace:
         if key in self.state['items']:
             saved = self.state['items'][key]
             return {'item': saved['item'], 'revision': saved['revision'], 'kind': 'source'}
-        directory, _ = self.local_item('sources', local_id)
+        directory, current = self.local_item('sources', local_id)
+        if studio.is_material(self.root, directory, current):
+            raise HubError(studio.MATERIAL_STAYS)
         pinned = studio.inside(directory, 'revisions', str(revision))
         record = studio.read_json(pinned / 'record.json')
         data = {k: v for k, v in record.items() if k not in ('id', 'revision')}

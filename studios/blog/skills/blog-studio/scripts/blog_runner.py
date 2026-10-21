@@ -17,7 +17,18 @@ from studio_core import model_profiles, review_policy, research_contract
 from studio_core.preferences import ready as shared_ready
 
 STATE = 'derived/blog-run.json'
+# A from-files run embeds the uploaded files; past this many JSON characters of source
+# text, each file is excerpted to its share and the run says which ones were.
+SOURCE_BUDGET = 240_000
 STAGES = {
+    'angles': (
+        'Angles',
+        'derived/blog-angles.md',
+        'Read the uploaded files and the author’s note about them. Propose three distinct blog '
+        'angles the files can support. Return each as a `## Title` heading followed by one '
+        'line in this shape: the audience · the point it makes · Leans on <file names>. '
+        'Say which files were excerpted or have no text. Do not outline or draft the blog.',
+    ),
     'research-plan': (
         'Research questions',
         'derived/blog-research-plan.md',
@@ -54,6 +65,7 @@ STAGES = {
     ),
 }
 GUIDES = {
+    'angles': 'modules/blog-argument-outline.md',
     'research-plan': 'modules/blog-deep-research.md',
     'research': 'modules/blog-deep-research.md',
     'outline': 'modules/blog-argument-outline.md',
@@ -70,7 +82,11 @@ DEFAULTS = {
     'tone': 'Clear, conversational and specific',
     'author': '',
 }
-MODES = ('write', 'outline', 'from-outline', 'ideas', 'revise', 'review')
+MODES = ('write', 'outline', 'from-outline', 'ideas', 'revise', 'review', 'from-files')
+MATERIAL_ELSEWHERE = (
+    'This blog’s uploaded files stay on the computer that added them. Continue it there, '
+    'or start it again here from your files.'
+)
 
 
 def settings(root, data=None):
@@ -187,7 +203,15 @@ def inputs(root, record, run):
     sources = []
     from hub_workspace import portable_origin
 
+    pinned = {selected['source_id'] for selected in record['sources']}
     for selected in record['sources']:
+        if 'material' in selected['purposes'] or selected['source_id'] in record.get(
+            'material', []
+        ):
+            try:
+                studio.item(root, 'sources', selected['source_id'])
+            except ValueError:
+                raise ValueError(MATERIAL_ELSEWHERE) from None
         folder, source = studio.item(root, 'sources', selected['source_id'])
         path = studio.inside(folder, 'content.md')
         if selected['revision'] != source['revision']:
@@ -236,6 +260,10 @@ def inputs(root, record, run):
                     'body': Path(materialized['paths']['BODY.md']).read_text(),
                 }
             )
+    if set(record.get('material', [])) - pinned:
+        raise ValueError(MATERIAL_ELSEWHERE)  # A Team Hub copy carries no uploaded files.
+    if run.get('mode') == 'from-files':
+        sources = excerpted(sources, SOURCE_BUDGET, run_terms(record, run))
     payload = {
         'title': record['title'],
         'author': record.get('author', ''),
@@ -255,6 +283,118 @@ def inputs(root, record, run):
             'Selected context is too large for one writing job. Use focused excerpts in chat.'
         )
     return payload
+
+
+def encoded_size(value):
+    return len(json.dumps(value))
+
+
+STOPWORDS = frozenset(
+    'about after again also because been before being blog could does each file files from '
+    'have into just more most much need only other over post same should some such than '
+    'that their them then there these they this those through very want what when where '
+    'which while will with would your uploaded write writing'.split()
+)
+
+
+def terms(*texts):
+    """Words worth matching in a file: four letters or more, without common words."""
+    words = []
+    for value in texts:
+        for word in re.findall(r'[^\W\d_]{4,}', str(value or '').casefold()):
+            if word not in words and word not in STOPWORDS:
+                words.append(word)
+    return words[:12]
+
+
+def run_terms(record, run):
+    """What the person typed about the files and, once chosen, the angle: never defaults."""
+    chosen = run.get('chosen_angle') or {}
+    return terms(run.get('files_note', ''), chosen.get('title', ''), chosen.get('says', ''))
+
+
+def fit(text, limit, wanted=()):
+    """The head of a text, then the paragraphs that mention the wanted words, then the rest,
+    within a limit of JSON characters. Cuts are marked so the worker sees them."""
+    if encoded_size(text) <= limit:
+        return text
+    spans = [(m.start(), m.end()) for m in re.finditer(r'\S[\s\S]*?(?=\n\s*\n|\Z)', text)]
+    chosen, used = {}, 0
+    mark = encoded_size('\n\n[…]\n\n')
+
+    def take(index, allowance, cut):
+        nonlocal used
+        start, end = spans[index]
+        piece = text[start:end]
+        size = encoded_size(piece)
+        if size > allowance:
+            if not cut:
+                return False  # Whole paragraphs first; a later pass may cut one to fit.
+            piece = piece[: max(0, len(piece) - (size - allowance))]
+            while piece and encoded_size(piece) > allowance:
+                piece = piece[: len(piece) * 9 // 10]
+            if not piece:
+                return False
+            while piece and encoded_size(piece + ' […]') > allowance:
+                piece = piece[: len(piece) * 9 // 10]
+            if not piece:
+                return False
+            piece += ' […]'
+        chosen[index] = piece
+        used += encoded_size(piece) + mark
+        return True
+
+    order = list(range(len(spans)))
+    matched = [
+        index
+        for index in order
+        if any(word in text[spans[index][0] : spans[index][1]].casefold() for word in wanted)
+    ]
+    passes = ((order, limit // 2, False), (matched, limit, False), (order, limit, True))
+    for sequence, allowance, cut in passes:
+        for index in sequence:
+            if index in chosen:
+                continue
+            if used + mark >= allowance or not take(index, allowance - used - mark, cut):
+                break
+    parts, previous = [], None
+    for index in sorted(chosen):
+        if previous is not None and index != previous + 1 and not parts[-1].endswith('[…]'):
+            parts.append('[…]')
+        parts.append(chosen[index])
+        previous = index
+    if previous is not None and previous != len(spans) - 1 and not parts[-1].endswith('[…]'):
+        parts.append('[…]')
+    return '\n\n'.join(parts)
+
+
+def excerpted(sources, budget, wanted=()):
+    """Sources within a shared budget: small files whole, large ones excerpted to a fair share."""
+    sizes = {source['id']: encoded_size(source['text']) for source in sources}
+    if sum(sizes.values()) <= budget:
+        return sources
+    shares, remaining = {}, budget
+    pending = sorted(sources, key=lambda source: sizes[source['id']])
+    for position, source in enumerate(pending):
+        share = min(sizes[source['id']], remaining // (len(pending) - position))
+        shares[source['id']] = share
+        remaining -= share
+    result = []
+    for source in sources:
+        if sizes[source['id']] <= shares[source['id']]:
+            result.append(source)
+            continue
+        text = fit(source['text'], shares[source['id']], wanted)
+        result.append(
+            {
+                **source,
+                'text': text,
+                'excerpted': True,
+                'total_chars': len(source['text']),
+                'kept_chars': len(text),
+            }
+        )
+    return result
 
 
 def basis(root, directory, record, run, stage, context=None, research=None):
@@ -287,7 +427,8 @@ def survey(root, ident, listing=False):
     if run.get('research_contract') and run['stages'].get('research'):
         _, research = research_contract.read_bundle(directory / 'research')
     # Selected context is read and serialised once; every stage pin reuses it.
-    context = json.dumps(inputs(root, record, run), sort_keys=True)
+    payload = inputs(root, record, run)
+    context = json.dumps(payload, sort_keys=True)
     bases = {}
 
     def pin(name):
@@ -381,6 +522,8 @@ def survey(root, ident, listing=False):
         else None,
         'decisions': run.get('decisions', [])[-30:],
         'publication': (record.get('editorial') or {}).get('publication_url') or None,
+        # Files cut to the run's budget, by name, so the page and chat can say so.
+        'excerpted': [source['name'] for source in payload['sources'] if source.get('excerpted')],
     }
 
 
@@ -446,7 +589,9 @@ def create(root, data, approval='conversation'):
         raise ValueError('Unknown new-blog field.')
     mode = data.get('mode', 'write')
     if mode not in MODES:
-        raise ValueError('Choose write, outline, from-outline, ideas, revise or review.')
+        raise ValueError(
+            'Choose write, outline, from-outline, ideas, revise, review or from-files.'
+        )
     outline_text = text(
         data.get('outline_text', ''), 'outline', 200_000, required=mode == 'from-outline'
     )
@@ -476,6 +621,8 @@ def create(root, data, approval='conversation'):
     )
     if research not in ('supplied-only', 'web-allowed', 'none'):
         raise ValueError('Choose supplied sources, public research, or no research.')
+    if mode == 'from-files' and research == 'none':
+        research = 'supplied-only'  # The files are the sources; the web is the only option.
     stop = data.get('stop', 'package')
     if mode in ('outline', 'ideas'):
         stop = 'outline'
@@ -485,14 +632,23 @@ def create(root, data, approval='conversation'):
         raise ValueError('A revision starts at draft. Choose draft, review or export package.')
     if stop not in ('outline', 'draft', 'review', 'package'):
         raise ValueError('Choose outline, draft, review or export package.')
+    from_files = mode == 'from-files'
     brief = {
-        'goal': text(data.get('goal', ''), 'goal', required=True),
-        'audience': text(data.get('audience', ''), 'audience', 500, required=True),
+        'goal': text(data.get('goal', ''), 'goal', required=not from_files)
+        or 'Write a blog from the uploaded files.',
+        'audience': text(data.get('audience', ''), 'audience', 500, required=not from_files)
+        or 'To be chosen with the angle.',
     }
     import brand_skill
 
     selected_brand = brand_skill.snapshot(data.get('brand', ''), data.get('variant', ''))
-    title = text(data.get('title', ''), 'title', 500, required=not data.get('id'))
+    title = text(
+        data.get('title', ''), 'title', 500, required=not data.get('id') and not from_files
+    )
+    if from_files:
+        title = title or 'From my files'
+        if data.get('id') or manuscript or outline_text:
+            raise ValueError('Write from my files starts a new blog from uploaded files.')
     profile = data.get('profile') or None
     if profile:
         studio.voice_pin(root, profile)
@@ -501,6 +657,14 @@ def create(root, data, approval='conversation'):
         raise ValueError('Select at most 50 different sources.')
     for source in sources:
         studio.item(root, 'sources', source)
+    if from_files:
+        readable = [
+            source
+            for source in sources
+            if studio.item(root, 'sources', source)[1]['status'] == 'ready'
+        ]
+        if not readable:
+            raise ValueError('Upload at least one file with text first.')
     existing = bool(data.get('id') or manuscript)
     if data.get('id'):
         directory, record = studio.item(root, 'articles', data['id'])
@@ -550,6 +714,8 @@ def create(root, data, approval='conversation'):
         record['voice'] = {'mode': 'profile', **studio.voice_pin(root, profile)}
     record['research_policy'] = 'supplied-only' if research == 'none' else research
     research = research_scope(research, record['sources'])
+    if from_files and research == 'supplied-only':
+        research = 'none'  # The files are read at every step; only the web adds research stages.
     pipeline = [] if research == 'none' else ['research-plan', 'research']
     pipeline += (
         (['draft', 'review', 'package'] if mode == 'revise' else ['review', 'package'])
@@ -559,6 +725,11 @@ def create(root, data, approval='conversation'):
         else ['outline', 'draft', 'review', 'package']
     )
     pipeline = pipeline[: pipeline.index(stop) + 1]
+    if from_files:
+        # Three angles first; the chosen one starts the pipeline above (see choose_angle).
+        pipeline = ['angles']
+        record['stop_point'] = stop
+        record['mode'] = 'from-files'
     run = {
         'schema': 1,
         'approval': approval,
@@ -570,6 +741,13 @@ def create(root, data, approval='conversation'):
         'pipeline': pipeline,
         'stages': {},
     }
+    if from_files:
+        run['after_angles'] = {'research': research, 'stop': stop}
+        run['files_note'] = text(data.get('goal', ''), 'goal')
+        # The uploaded files this blog pinned; a deletion keeps them with it.
+        record['material'] = [
+            entry['source_id'] for entry in record['sources'] if 'material' in entry['purposes']
+        ]
     import studios_config
 
     shared, problem = studios_config.read()
@@ -624,6 +802,8 @@ def submit(root, ident, stage, result, expected, page=False):
     if found['next'] != stage:
         raise ValueError('Finish the current stage before submitting another.')
     result = blog_worker.validate(result)
+    if stage == 'angles' and len(angles(result['content'])) != 3:
+        raise ValueError('Return exactly three angles, each under its own ## heading.')
     directory, record, run = load(root, ident)
     if stage == 'research' and run.get('research_contract'):
         research_contract.read_bundle(directory / 'research')
@@ -661,7 +841,7 @@ def submit(root, ident, stage, result, expected, page=False):
         'request': previous.get('request', ''),
         'model_purpose': previous.get('model_purpose', stage),
     }
-    if review_policy.automatic(run, 'blog', stage, run['pipeline'][-1]):
+    if stage != 'angles' and review_policy.automatic(run, 'blog', stage, run['pipeline'][-1]):
         _accept(directory, run, stage, 'review-policy')
         review_policy.receipt(run, stage, run['stages'][stage], studio.now())
     save(root, directory, record, run, 'Submitted ' + stage)
@@ -698,6 +878,10 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
             raise ValueError('Finish the current stage before changing a later stage.')
     if action == 'handoff':
         run['approval'] = 'conversation' if page else 'page'
+    elif action == 'approve' and stage == 'angles':
+        raise ValueError(
+            'Choose one of the angles with run choose, or ask for three different ones.'
+        )
     elif action == 'approve':
         if (
             not stage
@@ -778,7 +962,7 @@ def job(root, ident):
         raise ValueError('This job needs smaller source excerpts. Continue it in chat.')
     # A request against a version the author has already seen, or their own manuscript,
     # edits it. Otherwise (a developed idea, a first attempt) it directs a new document.
-    edit = bool(
+    edit = stage != 'angles' and bool(
         request
         and payload['documents'].get(stage, '').strip()
         and not (stage == 'review' and run.get('editor_check'))
@@ -827,6 +1011,14 @@ def job(root, ident):
         guidance += (
             '\n\n' + (references / 'blogforge/voice/assets/ai-tells/patterns.md').read_text()
         )
+    if stage == 'angles':
+        if payload['sources']:
+            guidance += '\nThe uploaded files are in sources, with their names; name them in each angle’s Leans on line.'
+        if request and payload['documents'].get('angles', '').strip():
+            guidance += (
+                '\nThe author set aside the saved angles in documents.angles. Propose three '
+                'different angles that honor the author’s request; do not repeat the earlier ones.'
+            )
     if run.get('mode') == 'ideas' and stage == 'outline':
         guidance += '\nReturn three distinct blog angles with audience, thesis, evidence needed and tradeoffs. Stop for the author to choose; do not draft the blog.'
     if run.get('mode') == 'from-outline':
@@ -1269,6 +1461,8 @@ def options(root):
         result = []
         for path in sorted(studio.inside(root, kind).glob('*/record.json')):
             record = studio.read_json(path)
+            if kind == 'sources' and 'material' in record.get('purposes', []):
+                continue  # Uploaded for one run; chosen on its own screen, not from the library.
             if kind != 'profiles' or record.get('status') != 'retired':
                 result.append(
                     {'id': record['id'], 'name': record['name'], 'status': record['status']}
@@ -1406,6 +1600,9 @@ def dispatch(root, action, data):
     if action == 'develop':
         guard(root, ident, data['expected'], page=True)
         directory, record, run = load(root, ident)
+        if run.get('mode') == 'from-files':
+            choose_angle(root, directory, record, run, found, data.get('request', ''))
+            return runner.control(ident, 'resume')
         if run.get('mode') not in ('ideas', 'outline') or not (directory / 'OUTLINE.md').is_file():
             raise ValueError('Choose a saved idea or outline before developing it.')
         request = text(data.get('request', ''), 'selected angle', 8000, required=True)
@@ -1490,6 +1687,79 @@ def dispatch(root, action, data):
     return {**result, **runner.describe(ident)}
 
 
+def angles(content):
+    """The saved angles: each `## Title` heading with the line beneath it."""
+    found = []
+    lines = str(content or '').splitlines()
+    for index, line in enumerate(lines):
+        match = re.fullmatch(r'##\s+(.+?)\s*#*\s*', line)
+        if not match:
+            continue
+        says = ''
+        for later in lines[index + 1 :]:
+            if later.startswith('#'):
+                break
+            if later.strip():
+                says = re.sub(r'^[-*]\s+', '', later.strip())
+                break
+        title = re.sub(r'^\d+[.)]\s*', '', match.group(1)).replace('**', '').strip()
+        found.append({'title': title, 'says': says})
+    return found
+
+
+def choose_angle(root, directory, record, run, found, request):
+    """The chosen angle becomes the blog's title, point and reader; the normal run follows."""
+    saved = run['stages'].get('angles', {})
+    if found['next'] != 'angles' or saved.get('status') != 'draft':
+        raise ValueError('Wait for the three angles before choosing one.')
+    request = text(request, 'selected angle', 8000, required=True)
+    title, _, note = request.partition('\n')
+    doc = (directory / STAGES['angles'][1]).read_text()
+    angle = next(
+        (item for item in angles(doc) if item['title'].casefold() == title.strip().casefold()),
+        None,
+    )
+    if angle is None:
+        raise ValueError('Choose one of the saved angles by its heading.')
+    headings = [item['title'].casefold() for item in angles(doc)]
+    if len(set(headings)) != len(headings):
+        raise ValueError('Two angles share a heading. Ask for three different ones instead.')
+    parts = [part.strip() for part in re.split(r'\s[·•|]\s', angle['says'])]
+    audience = parts[0] if len(parts) >= 2 else ''
+    point = parts[1] if len(parts) >= 2 else angle['says']
+    record['title'] = angle['title']
+    record.setdefault('writing_preferences', {})
+    if audience:
+        record['writing_preferences']['audience'] = audience
+    run['brief'] = {
+        'goal': point or run['brief']['goal'],
+        'audience': audience or run['brief']['audience'],
+    }
+    after = run.get('after_angles') or {'research': 'none', 'stop': 'package'}
+    pipeline = ['research-plan', 'research'] if after['research'] == 'web-allowed' else []
+    pipeline += ['outline', 'draft', 'review', 'package']
+    # The angles stay at the head of the run, decided by the pick.
+    run['pipeline'] = ['angles'] + pipeline[: pipeline.index(after['stop']) + 1]
+    run['chosen_angle'] = {'title': angle['title'], 'says': angle['says']}
+    _accept(directory, run, 'angles', 'page' if run['approval'] == 'page' else 'conversation')
+    run['stages'] = {
+        'angles': run['stages']['angles'],
+        'outline': {
+            'status': 'pending',
+            'request': (
+                'Develop this selected angle: '
+                + angle['title']
+                + ('\n' + angle['says'] if angle['says'] else '')
+                + ('\n' + note.strip() if note.strip() else '')
+            ),
+        },
+    }
+    record['stop_point'] = after['stop']
+    # The brief and title just changed with the pick; the decided angles are pinned to them.
+    run['stages']['angles']['basis'] = basis(root, directory, record, run, 'angles')
+    save(root, directory, record, run, 'Chose the angle: ' + angle['title'])
+
+
 def add_parser(groups):
     commands = groups.add_parser('run', help='Guided blogs in chat or on the page').add_subparsers(
         dest='action', required=True
@@ -1520,11 +1790,14 @@ def add_parser(groups):
     create_cmd.add_argument('--manuscript')
     create_cmd.add_argument('--outline-text')
     commands.add_parser('list')
-    for name in ('status', 'submit', 'approve', 'changes', 'handoff'):
+    for name in ('status', 'submit', 'approve', 'changes', 'handoff', 'choose'):
         cmd = commands.add_parser(name)
         cmd.add_argument('--id', required=True)
         if name != 'status':
             cmd.add_argument('--expected', required=True)
+        if name == 'choose':
+            cmd.add_argument('--angle', required=True)
+            cmd.add_argument('--note', default='')
         if name == 'submit':
             cmd.add_argument('--stage', choices=tuple(STAGES), required=True)
             cmd.add_argument('--file', required=True)
@@ -1556,6 +1829,13 @@ def command(root, args):
                 {'content': Path(args.file).read_text(), 'notes': args.notes},
                 args.expected,
             )
+        if args.action == 'choose':
+            found = guard(root, args.id, args.expected)
+            directory, record, run = load(root, args.id)
+            if run.get('mode') != 'from-files':
+                raise ValueError('Only a blog written from files chooses an angle.')
+            choose_angle(root, directory, record, run, found, args.angle + '\n' + (args.note or ''))
+            return survey(root, args.id)
         return decide(
             root,
             args.id,

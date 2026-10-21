@@ -72,6 +72,10 @@ Once the page is open, use its controls to drive the work:
    audience; choose **Write a blog**, **Outline only**, **Revise a draft**, or
    **Review a draft**, a voice and an optional brand; then select or upload sources, choose Codex or
    Claude Code, and set limits. To revise or review, supply the manuscript.
+   To start from your own documents, choose **Write from my files** on Home: upload
+   them, pick one of three suggested angles, and the usual outline and draft follow.
+   The files stay on this computer unless you keep them in your references, but the
+   blog's outline and draft may quote them and are shared like any other blog.
    For a blog already in Google Docs, choose **Open Google Doc** on Home or Blogs,
    preview its link and confirm the manuscript before importing. The same Doc
    stays linked; importing does not start an assistant or change Google.

@@ -12,6 +12,7 @@ Classify each item by its intended role, inferring from an explicit request:
 | inspiration | Topic/structure example; not evidence or author voice by default |
 | voice-sample | Confirmed authored writing selected to learn style |
 | author-background | Bio, role, expertise, preferences; not invented experience |
+| material | Uploaded for one blog written from files; not listed as a reference unless kept |
 
 A source may have multiple roles. A public blog by someone else is not a voice
 sample for the author. If authorship or purpose affects the work and is unclear,

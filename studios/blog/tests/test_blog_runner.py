@@ -1603,3 +1603,354 @@ class DeleteTests(RunnerCase):
             runner.engine(self.root).describe(found['id'])['publication'],
             'https://example.com/post',
         )
+
+
+class FilesCase(RunnerCase):
+    """Uploaded material and a from-files run, for the tests below."""
+
+    ANGLES = (
+        '# Three angles\n\n'
+        '## Retries are a budget\n\n'
+        'Platform engineers · Retries cost more than they save without a budget · Leans on notes.md\n\n'
+        '## The gateway is a contract\n\n'
+        'API authors · Treat the gateway as the public contract · Leans on notes.md, plain.txt\n\n'
+        '## Fewer hops, fewer surprises\n\n'
+        'Team leads · Every hop is a failure mode · Leans on plain.txt\n'
+    )
+
+    def material(self, *files, keep=False):
+        import base64
+        import blog_library
+
+        with patch.object(blog_library.shutil, 'which', return_value=None):
+            result = management.dispatch(
+                self.root,
+                'upload',
+                {
+                    'operation': studio.digest(repr(files).encode())[:32],
+                    'purpose': 'material',
+                    'keep': keep,
+                    'analyze': False,
+                    'files': [
+                        {'filename': name, 'content': base64.b64encode(body.encode()).decode()}
+                        for name, body in files
+                    ],
+                },
+            )
+        return [row['source']['id'] for row in result['files']]
+
+    def from_files(self, page=True, **extra):
+        sources = extra.pop(
+            'sources',
+            self.material(
+                ('notes.md', 'Retries cost money. ' * 40), ('plain.txt', 'Hops add latency. ' * 40)
+            ),
+        )
+        return runner.create(
+            self.root,
+            {'mode': 'from-files', 'sources': sources, 'goal': 'A post for the team blog', **extra},
+            'page' if page else 'conversation',
+        )
+
+
+class FromFilesTests(FilesCase):
+    """Write from my files: uploaded material, three angles, then the normal run."""
+
+    def test_from_files_starts_with_the_angles_step(self):
+        found = self.from_files()
+        self.assertEqual([row['stage'] for row in found['stages']], ['angles'])
+        self.assertEqual(found['mode'], 'from-files')
+        self.assertEqual(found['next'], 'angles')
+        _, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(record['research_policy'], 'supplied-only')
+        self.assertNotIn('research_contract', run)
+        self.assertEqual(run['after_angles'], {'research': 'none', 'stop': 'package'})
+        self.assertEqual(len(record['sources']), 2)
+        self.assertEqual(record['title'], 'From my files')
+        self.assertEqual(run['brief']['goal'], 'A post for the team blog')
+        # The files, not the empty brief, are what the worker reads.
+        found, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual([source['name'] for source in payload['sources']], ['notes', 'plain'])
+        self.assertIn('## ', guidance)
+        self.assertIn('three', guidance.lower())
+        self.assertIn('Leans on', guidance)
+        with self.assertRaisesRegex(ValueError, 'file'):
+            self.from_files(sources=[])
+        pending = self.material(('scan.pdf', '%PDF-fixture'))
+        with self.assertRaisesRegex(ValueError, 'text'):
+            self.from_files(sources=pending)
+        web = self.from_files(research='web-allowed', stop='draft')
+        _, _, run = runner.load(self.root, web['id'])
+        self.assertEqual(run['after_angles'], {'research': 'web-allowed', 'stop': 'draft'})
+        self.assertEqual([row['stage'] for row in web['stages']], ['angles'])
+
+    def test_the_angles_always_wait_for_the_person(self):
+        import studios_config
+
+        studios_config.update({'review': {'level': 'automatic'}})
+        found = self.from_files()
+        found = self.submit(found, self.ANGLES, page=True)
+        self.assertEqual(found['awaits'], 'decision')
+        self.assertEqual(found['stages'][0]['status'], 'draft')
+        self.assertFalse(found['stages'][0]['auto_accepted'])
+
+    def test_picking_an_angle_starts_the_normal_run_from_the_outline(self):
+        found = self.submit(self.from_files(), self.ANGLES, page=True)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {
+                    'id': found['id'],
+                    'expected': found['expected'],
+                    'request': 'The gateway is a contract\nKeep it under 900 words.',
+                },
+            )
+        directory, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(record['title'], 'The gateway is a contract')
+        self.assertEqual(run['brief']['audience'], 'API authors')
+        self.assertIn('Treat the gateway as the public contract', run['brief']['goal'])
+        self.assertEqual(record['writing_preferences']['audience'], 'API authors')
+        self.assertEqual(run['pipeline'], ['angles', 'outline', 'draft', 'review', 'package'])
+        self.assertEqual(run['mode'], 'from-files')
+        self.assertEqual(run['stages']['outline']['status'], 'pending')
+        self.assertIn('Keep it under 900 words.', run['stages']['outline']['request'])
+        self.assertIn('notes.md, plain.txt', run['stages']['outline']['request'])
+        self.assertTrue((directory / 'derived/blog-angles.md').is_file())
+        found = runner.survey(self.root, found['id'])
+        self.assertEqual(found['next'], 'outline')
+        self.assertEqual(found['title'], 'The gateway is a contract')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(len(payload['sources']), 2)
+        self.assertIn('The gateway is a contract', guidance)
+        self.assertNotIn('minimal edit', guidance)
+        # A heading that is not one of the saved angles is refused.
+        other = self.submit(self.from_files(), self.ANGLES, page=True)
+        with studio.locked(self.root), self.assertRaisesRegex(ValueError, 'one of the'):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {'id': other['id'], 'expected': other['expected'], 'request': 'Something else'},
+            )
+
+    def test_web_research_comes_before_the_outline_when_asked(self):
+        found = self.submit(self.from_files(research='web-allowed'), self.ANGLES, page=True)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {
+                    'id': found['id'],
+                    'expected': found['expected'],
+                    'request': 'Retries are a budget',
+                },
+            )
+        _, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(
+            run['pipeline'],
+            ['angles', 'research-plan', 'research', 'outline', 'draft', 'review', 'package'],
+        )
+        self.assertEqual(record['research_policy'], 'web-allowed')
+        self.assertEqual(runner.survey(self.root, found['id'])['next'], 'research-plan')
+
+    def test_none_of_these_asks_for_three_different_angles(self):
+        found = self.submit(self.from_files(), self.ANGLES, page=True)
+        found = runner.decide(
+            self.root,
+            found['id'],
+            found['expected'],
+            'changes',
+            'Closer to the on-call experience.',
+            page=True,
+            target='angles',
+        )
+        self.assertEqual(found['next'], 'angles')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(payload['documents']['angles'], self.ANGLES)
+        self.assertIn('three different angles', guidance)
+        self.assertNotIn('minimal edit', guidance)
+        self.assertIn('Closer to the on-call experience.', guidance)
+
+    def test_oversized_files_are_excerpted_and_named_instead_of_refused(self):
+        big = 'Retries cost money. ' * 16_000  # 320,000 characters
+        sources = self.material(('big.md', big), ('small.txt', 'Hops add latency.'))
+        found = self.from_files(sources=sources)
+        self.assertEqual(found['excerpted'], ['big'])
+        _, record, run = runner.load(self.root, found['id'])
+        payload = runner.inputs(self.root, record, run)
+        self.assertLess(len(json.dumps(payload)), 300_000)
+        big_source = next(source for source in payload['sources'] if source['name'] == 'big')
+        self.assertTrue(big_source['excerpted'])
+        self.assertEqual(big_source['total_chars'], len(big))
+        self.assertLess(len(big_source['text']), len(big))
+        self.assertTrue(big_source['text'].startswith('Retries cost money.'))
+        small = next(source for source in payload['sources'] if source['name'] == 'small')
+        self.assertNotIn('excerpted', small)
+        self.assertEqual(small['text'], 'Hops add latency.')
+        self.assertIn('big', runner.engine(self.root).describe(found['id'])['excerpted'])
+        # Other modes still refuse rather than silently cutting a source.
+        with self.assertRaisesRegex(ValueError, 'too large'):
+            self.create(sources=sources)
+
+    def test_a_chat_run_can_write_from_files_too(self):
+        sources = self.material(('notes.md', 'Retries cost money.'))
+        args = studio.parser().parse_args(
+            [
+                '--root',
+                str(self.root),
+                'run',
+                'create',
+                '--mode',
+                'from-files',
+                '--source',
+                sources[0],
+                '--goal',
+                'A short post',
+                '--audience',
+                '',
+            ]
+        )
+        found = runner.command(self.root, args)
+        self.assertEqual(found['next'], 'angles')
+        self.assertEqual(found['approval'], 'conversation')
+        found = self.submit(found, self.ANGLES)
+        chosen = studio.parser().parse_args(
+            [
+                '--root',
+                str(self.root),
+                'run',
+                'choose',
+                '--id',
+                found['id'],
+                '--expected',
+                found['expected'],
+                '--angle',
+                'Fewer hops, fewer surprises',
+                '--note',
+                'Name the hops.',
+            ]
+        )
+        found = runner.command(self.root, chosen)
+        self.assertEqual(found['next'], 'outline')
+        self.assertEqual(found['title'], 'Fewer hops, fewer surprises')
+        self.assertEqual(found['brief']['audience'], 'Team leads')
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            runner.command(self.root, chosen)
+
+
+class FromFilesReviewTests(FilesCase):
+    """The angles gate keeps its decision, and a deleted blog takes its files with it."""
+
+    def chosen(self, angle='The gateway is a contract'):
+        found = self.submit(self.from_files(), self.ANGLES, page=True)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {'id': found['id'], 'expected': found['expected'], 'request': angle},
+            )
+        return runner.survey(self.root, found['id'])
+
+    def test_the_angles_cannot_be_approved_as_if_they_were_the_blog(self):
+        found = self.submit(self.from_files(page=False), self.ANGLES)
+        with self.assertRaisesRegex(ValueError, 'run choose'):
+            self.approve(found)
+        page = self.submit(self.from_files(), self.ANGLES, page=True)
+        with studio.locked(self.root), self.assertRaisesRegex(ValueError, 'run choose'):
+            runner.dispatch(self.root, 'approve', {'id': page['id'], 'expected': page['expected']})
+        self.assertFalse(runner.survey(self.root, page['id'])['complete'])
+
+    def test_choosing_keeps_the_angles_decided_at_the_head_of_the_run(self):
+        found = self.chosen()
+        self.assertEqual(
+            [row['stage'] for row in found['stages']],
+            ['angles', 'outline', 'draft', 'review', 'package'],
+        )
+        angles = found['stages'][0]
+        self.assertEqual((angles['status'], angles['accepted_by']), ('approved', 'page'))
+        self.assertEqual(found['next'], 'outline')
+        _, _, run = runner.load(self.root, found['id'])
+        self.assertEqual(run['chosen_angle']['title'], 'The gateway is a contract')
+        self.assertEqual(run['chosen_angle']['says'].split(' · ')[0], 'API authors')
+        # The outline is next and reads the angles it came from.
+        _, payload, _ = runner.job(self.root, found['id'])
+        self.assertEqual(payload['documents']['angles'], self.ANGLES)
+        found = self.submit(found, page=True)
+        self.assertEqual(self.approve(found, page=True)['next'], 'draft')
+
+    def test_the_worker_must_return_exactly_three_distinct_angles(self):
+        found = self.from_files()
+        for content in (
+            '# Angles\n\n## Only one\n\nReaders · A point · Leans on notes.md',
+            self.ANGLES + '\n## A fourth\n\nMore · More · Leans on notes.md\n',
+        ):
+            with self.subTest(content=content[:40]):
+                with self.assertRaisesRegex(ValueError, 'exactly three'):
+                    self.submit(found, content, page=True)
+        twice = self.ANGLES.replace('Fewer hops, fewer surprises', 'Retries are a budget')
+        found = self.submit(found, twice, page=True)
+        with studio.locked(self.root), self.assertRaisesRegex(ValueError, 'share a heading'):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {
+                    'id': found['id'],
+                    'expected': found['expected'],
+                    'request': 'Retries are a budget',
+                },
+            )
+
+    def test_excerpts_follow_the_persons_words_not_the_defaults(self):
+        found = self.from_files(goal='')
+        _, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(runner.run_terms(record, run), [])
+        found = self.from_files(goal='Why the gateway retries matter for our team')
+        _, record, run = runner.load(self.root, found['id'])
+        words = runner.run_terms(record, run)
+        self.assertIn('gateway', words)
+        self.assertIn('retries', words)
+        for common in ('why', 'the', 'for', 'our', 'with', 'from', 'files', 'uploaded'):
+            self.assertNotIn(common, words)
+
+    def test_deleting_a_blog_keeps_its_files_with_it_and_restore_brings_them_back(self):
+        import base64
+
+        ours, shared = self.material(('mine.md', 'Only mine. ' * 20), ('both.md', 'Shared. ' * 20))
+        single = management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': 'c' * 32,
+                'filename': 'single.md',
+                'content': base64.b64encode(b'One file on its own.').decode(),
+                'purpose': 'material',
+                'analyze': False,
+            },
+        )['source']['id']
+        found = runner.create(
+            self.root,
+            {'mode': 'from-files', 'sources': [ours, shared, single], 'goal': 'A post'},
+            'page',
+        )
+        _, record, _ = runner.load(self.root, found['id'])
+        self.assertEqual(record['material'], [ours, shared, single])
+        self.create(page=True, sources=[shared])  # another blog pins the second file
+        material = self.root / '.uploads' / 'material'
+        ledgers = sorted((self.root / '.uploads').glob('*.json'))
+        self.assertEqual(len(ledgers), 2)
+        management.dispatch(
+            self.root,
+            'blog-delete',
+            {'id': found['id'], 'expected': found['expected'], 'title': found['title']},
+        )
+        self.assertFalse((material / ours).exists())
+        self.assertTrue((material / shared).is_dir(), 'a file another blog pins stays')
+        self.assertEqual(list((self.root / '.uploads').glob('*.json')), [])
+        import blog_delete
+
+        kept = blog_delete.folder(self.root) / found['id'] / 'material' / ours
+        self.assertTrue(kept.is_dir(), 'kept for restore')
+        management.dispatch(self.root, 'blog-restore', {'id': found['id']})
+        self.assertTrue((material / ours / 'content.md').is_file())
+        _, payload, _ = runner.job(self.root, found['id'])
+        self.assertEqual(len(payload['sources']), 3)
