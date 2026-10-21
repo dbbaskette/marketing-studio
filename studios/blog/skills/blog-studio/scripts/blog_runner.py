@@ -380,6 +380,7 @@ def survey(root, ident, listing=False):
         if run.get('brand')
         else None,
         'decisions': run.get('decisions', [])[-30:],
+        'publication': (record.get('editorial') or {}).get('publication_url') or None,
     }
 
 
@@ -1233,7 +1234,9 @@ def catalog(root):
                 }
             )
     rows.sort(key=lambda row: row.get('touched') or '', reverse=True)
-    return {'items': rows, 'total': len(rows)}
+    import blog_delete
+
+    return {'items': rows, 'total': len(rows), 'deleted': blog_delete.deleted(root)}
 
 
 def options(root):
