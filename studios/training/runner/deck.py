@@ -86,12 +86,13 @@ import re
 
 import runner  # noqa: F401  puts the core on the import path
 import checks
+from studio_core import deck_copy, deck_direction
 from workspace import WorkspaceError
 
 PREVIEWS = 4            # times one composer may render its section
 REPAIRS = 2             # rounds of drawing again after a review
 DELIVERY = 'reading'    # a deck is read alone as well as presented
-DIRECTION = {'focal': 'headingPrimary', 'neutral': 'canvasSecondary'}
+DIRECTION = deck_direction.FALLBACK   # only until the brand or a chosen look gives one
 RATE = {'dollars': 0.40, 'minutes': 1.25}   # a slide, as the first decks cost
 KINDS = ('cover', 'section', 'content', 'closing')
 LEADS = ('cover', 'section', 'closing')
@@ -114,26 +115,36 @@ ABOUT_WORDS = {'drawing': 'how it is drawn', 'content': 'what it says',
                'concept': 'the visual concept it was approved with'}
 MARKED = 'Looked at at full size, slide by slide, by a reviewer that drew none of the deck.'
 NOTE = 12               # the shortest note the slides tool takes for a finding
-HOUSE = (
-    'Equals share one size and weight. Never set one of several peers larger, bolder or in '
-    'another colour.',
-    'The focal point is what the title singles out, and never one of several peers. A slide '
-    'that lists equals has a focal that is not one of them.',
-    'Draw nothing the title does not announce.',
-    'Titles and labels are in sentence case. Names and acronyms stay as they are written.',
-    'Boxes have square corners.',
-    "A caveat and a source line go in the slide's own caveat and source fields, never in "
-    'the drawing.',
-    'Leave out badges, labels on arrows and small print wherever the slide reads without '
-    'them.',
-    'An icon is optional. Use one only where it names a recognisable thing, the same icon '
-    'for the same thing, never twice on one slide.',
-)
-DESIGNED_HOUSE = HOUSE[:-1] + (
-    'Draw what the approved design says: its visual, its composition and the assets it '
-    'selected. An icon names a recognisable thing: the same icon for the same concept '
-    'across the deck, never twice on one slide.',
-)
+CLUSTER = 3             # overlap findings on one slide that send it back to be drawn again
+PARTS = 8               # short labels one point may give the parts of a diagram
+PART_WORDS = 6          # words one of them may hold, as the slides tool allows
+TEXTS = ('text', 'value', 'label', 'title')     # where a drawing's node holds its words
+# What the slides tool knows of an outline, by its capability: a point's short `parts` and
+# a slide's `provenance`. A tool without one is handed the outline without it.
+KNOWS = {'compose-split-point': 'parts', 'compose-provenance': 'provenance'}
+WHOLE = ('A point is one sentence: keep its text whole in one shape, with its label in that '
+         'shape or right beside it. Never split a sentence across boxes. Where a point gives '
+         'short `parts` labels, draw them as the parts of its diagram and keep the sentence '
+         'whole once on the slide, unless the brief says it is in the notes.')
+CAVEAT = ("A caveat and a source line go in the slide's own caveat and source fields, never in "
+          'the drawing.')
+AS_DESIGNED = ('Draw what the approved design says: its visual, its composition and the '
+               'assets it selected.')
+# The studio's own house rules are about what a slide says, never how it looks: the look,
+# with its direction and its house style, is the brand's, chosen by the person from rendered
+# samples. `house` adds a chosen look's own lines first.
+HOUSE = (CAVEAT, WHOLE)
+DESIGNED_HOUSE = (*HOUSE, AS_DESIGNED)
+
+
+def house(designed: bool = False, look: dict | None = None) -> tuple[str, ...]:
+    """The house rules a deck is drawn by: the chosen look's house style, then the studio's
+    own rules about what a slide says."""
+    styled = tuple(str(line) for line in ((look or {}).get('house') or ())
+                   if isinstance(line, str) and line.strip())
+    return (*styled, *(DESIGNED_HOUSE if designed else HOUSE))
+
+
 QUESTIONS = (
     'After three seconds, is the main point clear, and is it the claim in the title?',
     'Does the eye land first on what carries the point?',
@@ -145,6 +156,13 @@ QUESTIONS = (
     'layout unless they are meant to be compared?',
     'Does every picture and icon explain something?',
 )
+LOOKS_UNFINISHED = (
+    'Does the slide look finished, or like a wireframe: outline boxes on white, no colour '
+    "from the deck's direction where a product, an actor or a state is named, no icon where "
+    'a recognisable thing is named?',
+    "Is any approved point's sentence split across shapes, or does text sit on text?",
+    'Does the slide show a team\'s bookkeeping, such as finding, objective or blueprint IDs '
+    "or a scenario's slug, where the audience reads it?")
 WORD = re.compile(r"[^\W_]+(?:['’.-][^\W_]+)*")
 KEY_POINT = re.compile(r'^- (K\d+\.\d+):\s*(.+?)\s*(?:\[[^\]]*\]\s*)*$')
 POINTER = re.compile(r'Read `references/[^\n]*')
@@ -179,8 +197,8 @@ def handoff(title: str, level: str | None, blueprint: str, said: dict, target: s
             brand: tuple[str, str] | None, guide: bool, scenarios=None) -> str:
     """deck-handoff.md: one page, written from the record, under the headings the skill's
     own deck stage gives it. `said` is what intake says, `guide` whether the training has
-    a learner guide, and `scenarios` the practice scenarios its closing slide points to,
-    or None when the training has no practice."""
+    a learner guide, and `scenarios` the titles of the practice scenarios its closing slide
+    points to, in words, or None when the training has no practice."""
     parsed, framed = checks.parse_blueprint(blueprint), frame(blueprint)
     modules = '; '.join(f"{ident}, {module['title']}"
                         for ident, module in parsed['modules'].items())
@@ -204,8 +222,12 @@ def handoff(title: str, level: str | None, blueprint: str, said: dict, target: s
               '- A check for understanding in each module' + (f': {modules}.' if modules
                                                               else '.'),
               '- A recap.', f'- {closing}', '', '## Sources', '',
-              'The blueprint, ' + ('the learner guide and ' if guide else 'and ')
-              + 'the research findings.', '', '## Research', '',
+              'Work from the blueprint, ' + ('the learner guide and ' if guide else 'and ')
+              + 'the research findings. They are your sources, not the audience\'s: a '
+              "slide's `source` cites only what the audience can look up by name, such as a "
+              "product's documentation, or is left out. Finding, objective and blueprint "
+              "IDs go in the slide's `provenance`, which only the speaker notes carry.", '',
+              '## Research', '',
               'Complete. Work from the sources only and start no new research. Anything '
               "under the blueprint's open gaps stays out.", '', '## Output', '',
               made + (f', in the brand {brand[0]}' + (f' ({brand[1]}).' if brand[1] else '.')
@@ -238,7 +260,69 @@ def visible(slide: dict) -> int:
     """The words a slide will show: its title, its points, its caveat and its source."""
     return (count(slide.get('title')) + count(slide.get('caveat')) + count(slide.get('source'))
             + sum(count(point.get('label')) + count(point.get('text'))
+                  + sum(count(node) for node in _parts_of(point))
                   for point in _points(slide)))
+
+
+def _parts_of(point: dict) -> list[str]:
+    """A point's short labels for the parts of a diagram, when it gives them."""
+    nodes = point.get('parts') if isinstance(point, dict) else None
+    return [node for node in nodes if isinstance(node, str)] if isinstance(nodes, list) else []
+
+
+def for_tool(outline, knows=frozenset()):
+    """An outline as the slides tool takes it: without the short `parts` labels a point
+    gives its diagram, and without a slide's `provenance`, when the tool does not know
+    them. `knows` holds what it knows, by the names KNOWS gives. The runner keeps its own."""
+    if not isinstance(outline, dict) or not isinstance(outline.get('slides'), list):
+        return outline
+    slides = []
+    for slide in outline['slides']:
+        if not isinstance(slide, dict):
+            slides.append(slide)
+            continue
+        made = dict(slide)
+        if 'provenance' not in knows:
+            made.pop('provenance', None)
+        if 'parts' not in knows and isinstance(slide.get('points'), list):
+            made['points'] = [{key: value for key, value in point.items() if key != 'parts'}
+                              if isinstance(point, dict) else point
+                              for point in slide['points']]
+        slides.append(made)
+    return {**outline, 'slides': slides}
+
+
+def with_provenance(outline, knows=frozenset()):
+    """An outline whose slides' `provenance` the slides tool does not know: each one is
+    added to that slide's notes instead, where a presenter reads it and no slide shows it."""
+    if 'provenance' in knows or not isinstance(outline, dict) \
+            or not isinstance(outline.get('slides'), list):
+        return outline
+    slides = []
+    for slide in outline['slides']:
+        said = slide.get('provenance') if isinstance(slide, dict) else None
+        if isinstance(said, str) and said.strip():
+            notes = slide.get('notes') if isinstance(slide.get('notes'), str) else ''
+            slide = {**{key: value for key, value in slide.items() if key != 'provenance'},
+                     'notes': (notes.rstrip() + '\n\n' if notes.strip() else '')
+                     + f'Provenance: {said.strip()}'}
+        slides.append(slide)
+    return {**outline, 'slides': slides}
+
+
+def known_ids(blueprint: str, more=()) -> set[str]:
+    """The identifiers a training defines, which no slide may show: its blueprint's
+    objectives, modules and key points, and `more`, such as its research's findings, facts
+    and sources."""
+    parsed = checks.parse_blueprint(blueprint)
+    return {*parsed['objectives'], *parsed['modules'],
+            *re.findall(r'\bK\d+\.\d+\b', blueprint), *(str(ident) for ident in more)}
+
+
+def provenance_rules(outline, blueprint: str = '', known=(), slugs=()) -> list[str]:
+    """What the runner refuses because a slide shows the training's own bookkeeping, as
+    studio_core.deck_copy finds it: its IDs and its practice scenarios' slugs."""
+    return deck_copy.problems(slides_of(outline), known_ids(blueprint, known), slugs)
 
 
 def plain(text) -> str:
@@ -266,6 +350,7 @@ def _says(slide: dict) -> str:
     said = [slide.get(key) for key in ('title', 'subtitle', 'understand', 'focal', 'caveat',
                                        'notes')]
     said += [point.get(key) for point in _points(slide) for key in ('label', 'text')]
+    said += [node for point in _points(slide) for node in _parts_of(point)]
     return ' . '.join(plain(text) for text in said if text)
 
 
@@ -275,10 +360,11 @@ def slides_of(outline) -> list[dict]:
     return [slide for slide in found or () if isinstance(slide, dict)]
 
 
-def rules(outline, blueprint: str, budget: int | None = None) -> list[str]:
+def rules(outline, blueprint: str, budget: int | None = None, known=()) -> list[str]:
     """What the runner holds an outline to, beyond the slides tool's own check. Each
     problem is a sentence the worker can act on. `budget` is the most words one slide may
-    show, when the tool has said."""
+    show, when the tool has said. `known` are the IDs the training's research defines,
+    which a slide may not show."""
     if not isinstance(outline, dict) or not slides_of(outline):
         return ['The outline is one JSON object with its slides under "slides".']
     problems = [f'Leave out `{key}`: it is added after you hand the outline in.'
@@ -297,6 +383,11 @@ def rules(outline, blueprint: str, budget: int | None = None) -> list[str]:
                                 'and no more. Leave out ' + ', '.join(extra) + '.')
             if '\n' in str(slide.get('subtitle') or '').strip():
                 problems.append(f'{ident}: the subtitle of a cover is one line.')
+        if kind in LEADS and any('\n' in str(slide.get(key) or '').strip()
+                                 for key in ('title', *(('subtitle',) if kind != 'cover'
+                                                        else ()))):
+            problems.append(f'{ident}: a {kind} slide\'s title and subtitle are one line '
+                            'each. Put a second line in the subtitle, or on a content slide.')
         if kind == 'closing':
             # A closing slide is the template's own, with room for a few words and no body.
             said = f"{slide.get('title') or ''} {slide.get('subtitle') or ''}".split()
@@ -307,6 +398,17 @@ def rules(outline, blueprint: str, budget: int | None = None) -> list[str]:
                                 'between them, and nothing drawn under it. Put anything the '
                                 'audience should read, such as what to practise next, on a '
                                 'content slide before it.')
+        for point in _points(slide):
+            if 'parts' not in point:
+                continue
+            nodes = point['parts']
+            if not isinstance(point.get('text'), str) or not point['text'].strip() \
+                    or not isinstance(nodes, list) or not 1 <= len(nodes) <= PARTS \
+                    or not all(isinstance(node, str) and 1 <= count(node) <= PART_WORDS
+                               for node in nodes):
+                problems.append(f'{ident}: `parts` gives a point with a text 1 to {PARTS} '
+                                f'short labels, {PART_WORDS} words at most each, for the '
+                                'parts of its diagram. Its text stays one whole sentence.')
         if kind == 'content':
             sources = slide.get('sources')
             sources = sources if isinstance(sources, list) else []
@@ -327,6 +429,8 @@ def rules(outline, blueprint: str, budget: int | None = None) -> list[str]:
         problems += [f'{ident}: this states {gap}, which the blueprint lists under its open '
                      'gaps. Leave it out.' for gap, text in left_out.items()
                      if plain(text) and plain(text) in said]
+    slugs = [entry['id'] for entry in checks.parse_blueprint(blueprint)['practice']]
+    problems += provenance_rules(outline, blueprint, known, slugs)
     missing = [objective for objective in objectives if objective not in served]
     if missing:
         problems.append('No slide serves ' + ', '.join(missing) + '. Every objective is '
@@ -346,7 +450,9 @@ def shown(outline, design=None) -> list[dict]:
              'title': str(slide.get('title') or ''), 'subtitle': text(slide, 'subtitle'),
              'understand': text(slide, 'understand'),
              'points': [{'label': str(point.get('label') or ''),
-                         'text': str(point.get('text') or '')} for point in _points(slide)],
+                         'text': str(point.get('text') or ''),
+                         **({'parts': _parts_of(point)} if _parts_of(point) else {})}
+                        for point in _points(slide)],
              'caveat': text(slide, 'caveat'), 'source': text(slide, 'source'),
              'notes': text(slide, 'notes'),
              'serves': [str(source) for source in slide.get('sources') or ()
@@ -377,6 +483,34 @@ def design_rules(outline, design) -> list[str]:
             problems.append(f"{entry['id']}: leave out " + ', '.join(f'`{key}`' for key in extra)
                             + '. The title, the copy, the notes and the objectives are taken '
                             'from the outline.')
+    return problems + unjustified(entries)
+
+
+DRAWN = ('diagram', 'regions', 'icon')   # visual families that name things an icon could show
+
+
+def unjustified(entries) -> list[str]:
+    """Each slide drawn as a diagram, regions or icons whose design selects no asset
+    without saying why for that slide: its `asset.reason` names icons (why no icon from the
+    brand's library helps here), and is not a reason copied from another slide."""
+    problems, seen = [], {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        intent = entry.get('intent') if isinstance(entry.get('intent'), dict) else {}
+        visual = intent.get('visual') if isinstance(intent.get('visual'), dict) else {}
+        asset = entry.get('asset') if isinstance(entry.get('asset'), dict) else {}
+        if visual.get('family') not in DRAWN or asset.get('disposition') != 'not-needed':
+            continue
+        reason = asset.get('reason') if isinstance(asset.get('reason'), str) else ''
+        if plain(reason) in seen or 'icon' not in plain(reason):
+            problems.append(f"{entry.get('id')}: its {visual['family']} selects no asset, and "
+                            '`asset.reason` must say why for this slide: which products, '
+                            "actors or things it names, and why no icon from the brand's "
+                            'library helps the learner tell them apart'
+                            + (f" (it repeats {seen[plain(reason)]}'s reason)."
+                               if plain(reason) in seen else '.'))
+        seen.setdefault(plain(reason), entry.get('id'))
     return problems
 
 
@@ -469,10 +603,12 @@ def before(slides: int) -> dict:
 
 # --- starting the deck -------------------------------------------------------------------
 
-def layouts(listed, slides: list[dict]) -> dict:
-    """The template layout for each kind of lead slide an outline has: one that shows a
-    title, has room for the subtitle if there is one and no place for a picture, and is
-    named for that kind of slide where the template has such a one."""
+def layouts(listed, slides: list[dict], preferred: dict | None = None) -> dict:
+    """The template layout for each kind of lead slide an outline has: the one the deck's
+    look names for that kind (`preferred`, such as the brand's title-capable closing) when
+    the template has it and it holds what the slide carries; else one that shows a title,
+    has room for the subtitle if there is one and no place for a picture, and is named for
+    that kind of slide where the template has such a one."""
     chosen = {}
     listed = [layout for layout in listed or () if isinstance(layout, dict)
               and isinstance(layout.get('name'), str)]
@@ -481,6 +617,12 @@ def layouts(listed, slides: list[dict]) -> dict:
         if not mine:
             continue
         need = 1 if any(slide.get('subtitle') for slide in mine) else 0
+        wanted = next((layout for layout in listed if layout['name']
+                       == (preferred or {}).get(kind) and layout.get('title')
+                       and (layout.get('subtitles') or 0) >= need), None)
+        if wanted:
+            chosen[kind] = wanted['name']
+            continue
         fits = [layout for layout in listed
                 if layout.get('title') and (layout.get('subtitles') or 0) >= need]
         fits = [layout for layout in fits if not layout.get('pictures')] or fits
@@ -496,13 +638,20 @@ def layouts(listed, slides: list[dict]) -> dict:
     return chosen
 
 
-def complete(outline: dict, listed, words: list[str], designed: bool = False) -> dict:
+def complete(outline: dict, listed, words: list[str], designed: bool = False,
+             look: dict | None = None, knows=frozenset()) -> dict:
     """An approved outline as the slides tool starts a deck from: with the direction, a
     layout for each kind of lead slide, the house rules, and the person's own words of
-    approval. A deck `designed` is drawn from its approved design."""
-    return {**outline, 'delivery': DELIVERY, 'direction': dict(DIRECTION),
-            'layouts': layouts(listed, slides_of(outline)),
-            'house': list(DESIGNED_HOUSE if designed else HOUSE), 'approval': list(words)}
+    approval. A deck `designed` is drawn from its approved design. `look` is what the
+    deck is drawn in: the look the person chose, as {'direction', 'house'}, or the brand's
+    own direction alone. Without one a deck has deck_direction.FALLBACK. A slide's
+    `provenance` joins its notes unless the slides tool `knows` it."""
+    look = look or {}
+    outline = with_provenance(outline, knows)
+    return {**outline, 'delivery': DELIVERY,
+            'direction': dict(look.get('direction') or DIRECTION),
+            'layouts': layouts(listed, slides_of(outline), look.get('layouts')),
+            'house': list(house(designed, look)), 'approval': list(words)}
 
 
 def lead(part: dict) -> dict:
@@ -548,7 +697,11 @@ One JSON object, the section, handed in with `submit_section`:
 Each slide is `{{{shape}"brief": {{"relation", "focal": the ID of the node that carries the point, "rhythm"}}, "canvas", "connect"?, "caveat"?, "source"?, "notes"}}`. Copy each slide's {copied}caveat, source line and notes exactly as they are given below, and keep every word of every point. The input "composition contract" has the exact format.''',
                  'What you write')
     text = _part(text, 'House style', '\n'.join(
-        f'- {line}' for line in (DESIGNED_HOUSE if design else HOUSE)))
+        f'- {line}' for line in (whole.get('house') or (DESIGNED_HOUSE if design else HOUSE))))
+    text = _part(text, 'Colour', deck_direction.told(whole.get('direction') or DIRECTION))
+    parts = _parts_told(whole, named_in(written, whole))
+    if parts:
+        text = _part(text, 'Diagram parts', parts)
     if design:
         text = _part(text, 'The approved design', drawn_from(design, named_in(written, whole),
                                                              recorded, by_asset))
@@ -558,6 +711,25 @@ Each slide is `{{{shape}"brief": {{"relation", "focal": the ID of the node that 
 `preview_section` renders your whole section and returns a picture of every slide, with what the renderer found. You have {previews} previews. `check_section` is free: use it until the section compiles before you spend a preview.''')
     return _part(text, 'Return', '''
 Hand the section in with `submit_section`. It must be the version you last previewed. Say what you changed after looking at the pictures and what still bothers you, naming your weakest slide.''')
+
+
+def _parts_told(whole: dict, ids: list[str]) -> str:
+    """The short labels the points of a section's slides give their diagrams, for its
+    composer: each drawn whole, in a shape of its own, with the point's sentence kept whole
+    once on the slide or left in the notes."""
+    by_id = {slide.get('id'): slide for slide in slides_of(whole)}
+    lines = []
+    for ident in ids:
+        for point in _points(by_id.get(ident) or {}):
+            if _parts_of(point):
+                lines.append(f"- `{ident}`, {json.dumps(point.get('label') or point.get('text'))}"
+                             ': ' + ', '.join(json.dumps(node) for node in _parts_of(point)))
+    if not lines:
+        return ''
+    return '\n'.join(['These points give their diagrams shorter parts. Draw each short label '
+                      "whole, in a shape of its own. Keep the point's sentence whole once on "
+                      'the slide, or leave it only in the notes, where it already is. Never '
+                      'split the sentence itself across shapes.', '', *lines])
 
 
 def _json(value) -> str:
@@ -713,19 +885,25 @@ def fixed(whole: dict, ids: list[str], number: int, design=None) -> dict:
             'prefix': f's{number}_',
             'slides': [{'id': ident, 'title': by_id[ident].get('title'),
                         'sources': list(by_id[ident].get('sources') or ()),
-                        'points': [{'label': point.get('label'), 'text': point.get('text')}
+                        'points': [{'label': point.get('label'), 'text': point.get('text'),
+                                    'parts': _parts_of(point)}
                                    for point in _points(by_id[ident])],
                         'caveat': by_id[ident].get('caveat'),
                         'source': by_id[ident].get('source'),
-                        'notes': by_id[ident].get('notes')} for ident in ids]}
+                        'notes': by_id[ident].get('notes'),
+                        **({'provenance': by_id[ident]['provenance']}
+                           if by_id[ident].get('provenance') else {})} for ident in ids]}
     if design is None:
         return made
     approved = {slide.get('id'): slide for slide in slides_of(design)}
     for slide in made['slides']:
         mine = approved.get(slide['id']) or {}
         copy = mine.get('copy') if isinstance(mine.get('copy'), dict) else {}
+        # The short labels are the outline's own: the approved copy does not carry them.
+        nodes = {(point['label'], point['text']): point['parts'] for point in slide['points']}
         slide.update(title=mine.get('title'), points=[
-            {'label': point.get('label'), 'text': point.get('text')}
+            {'label': point.get('label'), 'text': point.get('text'),
+             'parts': nodes.get((point.get('label'), point.get('text'))) or []}
             for point in copy.get('points') or () if isinstance(point, dict)],
             caveat=copy.get('caveat'), source=copy.get('source'),
             intent=json.dumps(mine.get('intent'), separators=(',', ':'), ensure_ascii=False),
@@ -803,6 +981,71 @@ def _caveat(slide: dict):
     return stated.get('text') if isinstance(stated, dict) else stated
 
 
+def _shapes(node, found: list[dict], within: tuple = ()) -> None:
+    """Each node of a drawing that shows words: its own words, as compared, and the nodes it
+    sits inside, by identity. A badge's character is not one of the slide's words."""
+    if isinstance(node, list):
+        for item in node:
+            _shapes(item, found, within)
+    elif isinstance(node, dict):
+        own = [value for key, value in node.items() if key in TEXTS
+               and isinstance(value, str) and node.get('type') != 'badge']
+        if own:
+            found.append({'said': f" {' '.join(plain(text) for text in own)} ",
+                          'within': within, 'self': id(node)})
+        for value in node.values():
+            if isinstance(value, (dict, list)):
+                _shapes(value, found, (*within, id(node)))
+
+
+def _beside(one: dict, other: dict) -> bool:
+    """Whether two shapes are one, or one sits in what holds the other: a label in the box
+    or row that holds its text, or the text in the one that holds its label."""
+    return one is other or bool(one['within']) and one['within'][-1] in (
+        *other['within'], other['self']) or bool(other['within']) and other['within'][-1] in (
+        *one['within'], one['self'])
+
+
+def whole_points(drawing, points: list[dict], notes=None) -> list[str]:
+    """What is wrong with how a slide's drawing carries its approved points, a sentence
+    each: a point's text is whole in one shape, and its label is whole in that shape or right
+    beside it. A point that gives its diagram short `parts` labels has each of them drawn,
+    and its text whole once on the slide or in the notes."""
+    shapes: list[dict] = []
+    _shapes(drawing, shapes)
+    joined = ' ' + ' '.join(shape['said'].strip() for shape in shapes) + ' '
+    in_notes = f' {plain(notes)} ' if isinstance(notes, str) else ''
+    problems = []
+
+    def holding(text: str) -> list[dict]:
+        return [shape for shape in shapes if f' {plain(text)} ' in shape['said']]
+
+    for point in points:
+        label, text, nodes = point.get('label'), point.get('text'), point.get('parts') or []
+        held_text = holding(text) if plain(text) else []
+        held_label = holding(label) if plain(label) else []
+        for words, held in ((text, held_text), (label, held_label)):
+            if not plain(words) or held:
+                continue
+            if words == text and nodes and f' {plain(text)} ' in in_notes:
+                continue    # the diagram draws its short labels; the sentence is in the notes
+            if f' {plain(words)} ' in joined:
+                problems.append(f'this approved point is split across shapes: '
+                                f'{json.dumps(words)}. Keep it whole in one shape, with its '
+                                'label in that shape or right beside it.')
+            else:
+                problems.append(f'these approved words are missing or changed: '
+                                f'{json.dumps(words)}')
+        if held_text and held_label and not any(_beside(one, other) for one in held_text
+                                                for other in held_label):
+            problems.append(f'the label {json.dumps(label)} is far from its text: put it in '
+                            'the same shape or right beside it.')
+        problems += [f'the short label {json.dumps(node)} of a diagram part is missing or '
+                     'changed. Draw each of a point\'s `parts` whole, in a shape of its own.'
+                     for node in nodes if plain(node) and not holding(node)]
+    return problems
+
+
 def kept(section, spec: dict) -> list[str]:
     """What the runner refuses in a section: anything that was fixed before its composer
     started and is not as it was, and any approved word that is gone."""
@@ -833,17 +1076,17 @@ def kept(section, spec: dict) -> list[str]:
         if wrong:
             problems.append(f"{ident}: every node and edge ID starts with {spec['prefix']}. "
                             'These do not: ' + ', '.join(wrong[:8]) + '.')
-        on_slide = ' ' + ' '.join(plain(text) for text in texts) + ' '
-        gone = [text for point in theirs['points'] for text in (point['label'], point['text'])
-                if plain(text) and f' {plain(text)} ' not in on_slide]
-        problems += [f'{ident}: these approved words are missing or changed: '
-                     f'{json.dumps(text)}' for text in gone]
+        problems += [f'{ident}: {problem}' for problem in whole_points(
+            [mine.get('canvas'), mine.get('connect')], theirs['points'], theirs.get('notes'))]
         for name, got in (('caveat', _caveat(mine)), ('source', mine.get('source')),
-                          ('notes', mine.get('notes'))):
-            if not _same(got, theirs[name]):
+                          ('notes', mine.get('notes')),
+                          *((('provenance', mine.get('provenance')),)
+                            if 'provenance' in theirs or 'provenance' in mine else ())):
+            approved = theirs.get(name)
+            if not _same(got, approved):
                 problems.append(f'{ident}: `{name}` stays exactly as it was approved'
-                                + (f': {json.dumps(theirs[name])}' if theirs[name]
-                                   and name != 'notes' else '.' if theirs[name]
+                                + (f': {json.dumps(approved)}' if approved
+                                   and name != 'notes' else '.' if approved
                                    else ': the slide has none.'))
         if 'intent' not in theirs:
             continue
@@ -934,6 +1177,68 @@ def remains(findings) -> str:
             + f" thing{'' if len(left) == 1 else 's'} wrong.")
 
 
+def screened(slides: list[dict], repair=None, audit=None) -> list[dict]:
+    """What the slides tool's screens and the brand's audit found on each slide of a whole
+    deck, before anyone reviews it: {'slide', 'number', 'codes': {code: count},
+    'blocking'}, a slide with nothing found left out. `slides` are the round's, with the
+    findings each preview gave; `repair` is the tool's own grouping of them, when it gives
+    one; `audit` the brand's, whose warnings name a slide by its number."""
+    by_number = {slide['number']: slide for slide in slides}
+    found: dict = {}
+
+    def add(slide, code, blocking=False, many=1) -> None:
+        if not slide or not code:
+            return
+        entry = found.setdefault(slide['id'], {'slide': slide['id'], 'number': slide['number'],
+                                               'codes': {}, 'blocking': False})
+        entry['codes'][str(code)] = entry['codes'].get(str(code), 0) + many
+        entry['blocking'] = entry['blocking'] or blocking
+
+    clusters = (repair or {}).get('slides') if isinstance(repair, dict) else None
+    if isinstance(clusters, list):
+        ids = {slide['id']: slide for slide in slides}
+        for cluster in clusters:
+            if not isinstance(cluster, dict):
+                continue
+            for code, many in (cluster.get('codes') or {}).items():
+                add(ids.get(cluster.get('slide')), code, bool(cluster.get('blocking')),
+                    many if isinstance(many, int) else 1)
+    else:
+        for slide in slides:
+            for finding in slide.get('findings') or ():
+                if finding.get('severity') in ('warn', 'error'):
+                    add(slide, finding.get('code'), finding.get('severity') == 'error')
+    for warning in (audit or {}).get('warnings') or ():
+        if isinstance(warning, dict):
+            add(by_number.get(warning.get('slide')), warning.get('code'))
+    return sorted(found.values(), key=lambda entry: entry['number'])
+
+
+def sent_back(screens: list[dict]) -> list[dict]:
+    """The slides the screens send back to be drawn again before a review, as findings
+    about how each is drawn: one that blocks delivery, one with a sentence split across
+    shapes, and one where text overlaps text again and again."""
+    made = []
+    for entry in screens:
+        codes = entry['codes']
+        split = any('split' in code.lower() for code in codes)
+        overlaps = sum(many for code, many in codes.items() if 'overlap' in code.lower())
+        if not (entry['blocking'] or split or overlaps >= CLUSTER):
+            continue
+        why = (['a sentence of an approved point is split across shapes'] if split else []) \
+            + ([f'text overlaps text {overlaps} times'] if overlaps >= CLUSTER else []) \
+            + (['the slides tool found what blocks delivery'] if entry['blocking'] else [])
+        made.append({'slide': entry['slide'], 'number': entry['number'], 'severity': 'major',
+                     'about': ABOUT[0], 'criterion': 'screen', 'category': 'fit-defect',
+                     'note': 'Before any review, the screens found that ' + '; '.join(why)
+                             + ' (' + ', '.join(f'{code} ×{many}' for code, many in
+                                                 sorted(codes.items())) + ').',
+                     'fix': 'Keep each point whole in one shape, give every text room of its '
+                            'own, and look at the slide again before handing it in.',
+                     'by': 'screen'})
+    return made
+
+
 def told(findings, slides: list[dict]) -> str:
     """What a review found on some slides, as their composer is told it."""
     lines = ['# What the review found in your section', '',
@@ -959,9 +1264,27 @@ def told(findings, slides: list[dict]) -> str:
     return '\n'.join(lines)
 
 
-def asked(objectives: dict, slides: list[dict], earlier=None) -> str:
+def _looked(screens) -> list[str]:
+    """What a reviewer is told to look for beyond the questions, and what the screens and
+    the brand's audit already found, slide by slide."""
+    lines = ['', '## Look for these too', '',
+             'Answer them inside the questions or criteria you are given: a wireframe look '
+             'or visible bookkeeping is at least `major`, a split sentence or text on text '
+             'is `major` and about `drawing`.', '']
+    lines += [f'- {question}' for question in LOOKS_UNFINISHED]
+    if screens:
+        lines += ['', 'The screens and the brand\'s audit found these. Each is a prompt to '
+                  'look, not a verdict:', '']
+        lines += [f"- Slide {entry['number']}, `{entry['slide']}`: " + ', '.join(
+            f'{code} ×{many}' for code, many in sorted(entry['codes'].items()))
+            for entry in screens]
+    return lines
+
+
+def asked(objectives: dict, slides: list[dict], earlier=None, screens=None) -> str:
     """What a reviewer is asked: the questions, how grave a "no" is, the slides, the
-    objectives, and on a later round what was found before."""
+    objectives, what to look for beyond the questions with what the screens found, and on
+    a later round what was found before."""
     lines = ['# The review', '', '## The questions, asked of every slide', '']
     lines += [f'{number}. {question}' for number, question in enumerate(QUESTIONS, start=1)]
     lines += ['', '## How grave a "no" is', '',
@@ -972,6 +1295,7 @@ def asked(objectives: dict, slides: list[dict], earlier=None) -> str:
     lines += [f"- {slide['number']}. `{slide['id']}`: \"{slide['title']}\"" for slide in slides]
     lines += ['', '## The objectives', '']
     lines += [f'- {ident}: {text}' for ident, text in objectives.items()]
+    lines += _looked(screens)
     if earlier:
         lines += ['', '## What an earlier review found', '',
                   'These slides were drawn again since. Look for each of these, and where '
@@ -995,7 +1319,8 @@ def to_outline(findings) -> list[dict]:
 
 # --- a review against the approved design ------------------------------------------------
 
-def judging(objectives: dict, slides: list[dict], packets: list[dict], earlier=None) -> str:
+def judging(objectives: dict, slides: list[dict], packets: list[dict], earlier=None,
+            screens=None) -> str:
     """What a reviewer is asked of a deck reviewed against its approved design: the slides
     tool's criteria, how grave a "no" is and what it can be about, each slide with what the
     tool gives of it, the objectives, and on a later round what was found before. `packets`
@@ -1042,6 +1367,7 @@ def judging(objectives: dict, slides: list[dict], packets: list[dict], earlier=N
                   for found in packet.get('findings') or ()]
     lines += ['', '## The objectives', '']
     lines += [f'- {ident}: {text}' for ident, text in objectives.items()]
+    lines += _looked(screens)
     if earlier:
         lines += ['', '## What an earlier review found', '',
                   'These slides were drawn again since. Look for each of these, and where '

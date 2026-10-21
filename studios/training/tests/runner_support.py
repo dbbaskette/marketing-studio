@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import signal
 import struct
 import subprocess
@@ -269,6 +270,12 @@ def left(sentence: str, *why: str) -> str:
     return sentence.format(why=' '.join(why or (NO_SLIDES, NO_BRAND_SKILL)))
 
 
+def brand_skill_refused(lines: list[str]):
+    """The brand skill saying no, as the runner's wrapper raises it."""
+    from runner import brand
+    return brand.Refused(lines)
+
+
 def png(shade: int = 0) -> bytes:
     """A real PNG, one pixel across, in a shade of grey that tells one from another."""
     def chunk(kind: bytes, data: bytes) -> bytes:
@@ -289,6 +296,10 @@ def drawn(spec: dict, wording=None, placing=None) -> dict:
                   **({'textRole': 'label'} if key == 'label' else {})}
                  for number, point in enumerate(slide['points'], start=1)
                  for mark, key in (('h', 'label'), ('t', 'text'))]
+        # The short labels a point gives its diagram, each a box of its own.
+        texts += [{'type': 'box', 'id': f'{stem}_n{number}_{part}', 'text': wording(node)}
+                  for number, point in enumerate(slide['points'], start=1)
+                  for part, node in enumerate(point.get('parts') or (), start=1)]
         made = {'id': slide['id'], 'title': slide['title'], 'sources': slide['sources'],
                 'brief': {'relation': 'order', 'focal': f'{stem}_t1', 'rhythm': 'anchor'},
                 'canvas': {'type': 'stack', 'direction': 'column', 'children': [
@@ -512,6 +523,11 @@ class Slides:
     def has(self, name: str) -> bool:
         return name in self.listed
 
+    def knows(self) -> frozenset:
+        from runner import deck
+        return frozenset(known for capability, known in deck.KNOWS.items()
+                         if self.has(capability))
+
     def lacks(self) -> list[str]:
         return list(self.lacking)
 
@@ -545,6 +561,13 @@ class Slides:
         return {'status': 'findings' if found else 'ok', 'slides': len(slides),
                 'delivery': 'reading', 'wordBudget': self.budget, 'words': words,
                 'findings': found}
+
+    def outline_draft(self, outline, brand, output) -> Path:
+        self._asked('outline_draft', outline, brand, output)
+        slides = self._read(outline)['slides']
+        Path(output).write_text('<!doctype html><title>Draft</title><style>p{margin:0}</style>'
+                                + ''.join(f"<p>{slide.get('title')}</p>" for slide in slides))
+        return Path(output)
 
     def outline_start(self, outline, brand, folder) -> dict:
         from runner import slides
@@ -633,10 +656,13 @@ class Slides:
             found = designs.refusal(refused, designs.Session(design).revision())
             raise tool.Refused([problem['detail'] for problem in found['problems']], found)
 
-    def compile(self, composition, brand, folder=None, design=None, section=False) -> dict:
+    def compile(self, composition, brand, folder=None, design=None, section=False,
+                outline=None) -> dict:
         from runner import slides
         self._asked('compile', composition, brand, folder,
-                    *([design, f'section={section}'] if design else []))
+                    *([design, f'section={section}'] if design else []),
+                    *([f'outline={Path(outline).name}'] if outline
+                      and self.has('compose-split-point') else []))
         made = self._read(composition)
         text = json.dumps(made)
         problems = [f"{slide.get('id')}: nothing is drawn." for slide in made.get('slides', [])
@@ -1006,6 +1032,28 @@ class Brand:
 
     def __init__(self):
         self.revision, self.refuse, self.exports, self.audited = 1, {}, [], []
+        # What a test gives the contract to say of how decks look, and what the skill writes
+        # beside it: {file name: text}.
+        self.design, self.beside = None, {}
+        # A brand new enough to offer looks draws one picture for each of these, and
+        # records the one chosen. An older one, the default here, offers none.
+        self.offers_looks, self.chosen, self.written, self.cannot_render = False, [], [], False
+        self.takes_unrendered, self.unrendered = True, []
+        # A brand that is the entry to slide building: `entry` is what `guides()` says
+        # ('brand', 'plain' or None, an older brand), and `guided` each guidance call.
+        self.entry, self.guided = None, []
+        self.LOOKS = [{'id': 'example-contrast', 'name': 'Example against an alternative',
+                       'useWhen': 'Comparisons.',
+                       'direction': {'focal': 'headingPrimary', 'neutral': 'canvasSecondary',
+                                     'meanings': {'accentAqua': 'Example'},
+                                     'motif': 'A strip says whose side a card is on.'},
+                       'layouts': {'cover': 'Title slide', 'section': 'Section divider',
+                                   'closing': 'Closing with title'}},
+                      {'id': 'example-calm', 'name': 'Calm',
+                       'useWhen': 'Explanations.',
+                       'direction': {'focal': 'accentAqua', 'neutral': 'canvasSecondary',
+                                     'motif': 'Quiet panels.'},
+                       'layouts': {'cover': 'Title slide', 'closing': 'Closing words'}}]
         self.warnings = [{'code': 'SMALL_TEXT', 'slide': 2, 'says': 'Text under 18 points.'},
                          {'code': 'SMALL_TEXT', 'slide': 3, 'says': 'Text under 18 points.'},
                          {'code': 'HIGH_TEXT_DENSITY', 'slide': 3,
@@ -1028,8 +1076,10 @@ class Brand:
         folder.mkdir(parents=True)
         (folder / 'brand-contract.json').write_text(json.dumps({
             'brand': brand_id, 'variant': variant, 'delivery': delivery,
-            'revision': self.revision}))
+            'revision': self.revision, **({'design': self.design} if self.design else {})}))
         (folder / 'DESIGN.md').write_text('# How Example Co looks\n')
+        for name, text in self.beside.items():
+            (folder / name).write_text(text)
         (folder / 'VOICE.md').write_text(self.VOICE)
         self.exports.append((folder.name, brand_id, variant, delivery))
         return {'contract': str(folder / 'brand-contract.json'),
@@ -1037,6 +1087,101 @@ class Brand:
 
     def contracts(self) -> bool:
         return 'contracts' not in self.refuse
+
+    WORKER = '# Example Co slides: worker guidance\n\nFill cards; one icon for each concept.\n'
+
+    def guides(self):
+        self._asked('guides')
+        return self.entry
+
+    def guidance(self, project, brand_id, variant, task=None, branded=True) -> dict:
+        self._asked('guidance')
+        self.guided.append(('resume' if task else 'start', task, brand_id, variant, branded))
+        project = Path(project)
+        task = task or f'task{len(self.guided)}'
+        snap = project / '.harness-slides' / 'guidance' / 'tasks' / task
+        (snap / 'references').mkdir(parents=True, exist_ok=True)
+        (snap / 'SKILL.md').write_text('# Harness Slides\n')
+        (snap / 'references' / 'compositions.md').write_text('Pinned composition guidance.\n')
+        (snap / 'references' / 'draft.md').write_text('Pinned drafting guidance.\n')
+        return {'task': task, 'revision': 'abc123', 'guidance': str(snap / 'SKILL.md'),
+                'runtime': '/opt/slides-tool/versions/0.13.1', 'freshness': 'current-at-start',
+                **({'brand': {'worker': self.WORKER, 'checkpoints': ['Draft approval.',
+                                                                     'Look.',
+                                                                     'Final acceptance.']}}
+                   if branded else {})}
+
+    def looks(self) -> bool:
+        self._asked('looks')
+        return self.offers_looks
+
+    def look_samples(self, outline, output, brand_id, variant, preview=None,
+                     delivery='reading') -> dict:
+        self._asked('look_samples')
+        output = Path(output)
+        output.mkdir(parents=True)
+        samples = []
+        if self.cannot_render and preview:
+            shutil.rmtree(output, ignore_errors=True)   # as the brand removes what it began
+            raise brand_skill_refused(['Google Slides could not be reached to render the '
+                                       'looks.'])
+        for number, look in enumerate(self.LOOKS, start=1):
+            (output / look['id']).mkdir()
+            image = output / look['id'] / 'slide-01.png'
+            if preview:
+                image.write_bytes(png(number * 40))
+            samples.append({**look, 'image': str(image) if preview else None})
+        sheet = output / 'looks.png'
+        sheet.write_bytes(png(200))
+        manifest = {'schema': 1, 'status': 'awaiting-choice', 'slide': 'what-it-does',
+                    'default': self.LOOKS[0]['id'], 'house': ['Fill cards.', 'Icons.'],
+                    'samples': samples, 'sheet': str(sheet), 'preview': preview,
+                    'outline': str(outline),
+                    'outlineSha256': hashlib.sha256(Path(outline).read_bytes()).hexdigest()}
+        (output / 'looks.json').write_text(json.dumps(manifest))
+        return {'status': 'awaiting-choice', 'output': str(output),
+                'default': self.LOOKS[0]['id'], 'sheet': str(sheet),
+                'samples': [{'id': sample['id'], 'name': sample['name'],
+                             'image': sample['image']} for sample in samples]}
+
+    def look_choose(self, samples, choice, words, outline=None, write=None,
+                    unrendered=False) -> dict:
+        from runner import brand
+        self._asked('look_choose')
+        shown = json.loads((Path(samples) / 'looks.json').read_text())['samples']
+        if not all(sample.get('image') for sample in shown) and not unrendered:
+            raise brand.Refused(['The samples have no rendered images, so the person has not '
+                                 'seen them. To record a choice made without seeing them, pass '
+                                 '--unrendered; the deck is then an unreviewed draft.'])
+        if unrendered and not self.takes_unrendered:
+            raise brand.Refused(['look choose does not take --unrendered'])
+        self.unrendered.append(unrendered)
+        if not words or not words.strip():
+            raise brand.Refused(['Record what the person said when they chose the look.'])
+        if (Path(samples) / 'choice.json').exists():
+            raise brand.Refused(['A look is already chosen for these samples.'])
+        picked = next(look for look in self.LOOKS if look['id'] == choice)
+        manifest = json.loads((Path(samples) / 'looks.json').read_text())
+        if outline is not None:
+            bytes_ = Path(outline).read_bytes()
+            if hashlib.sha256(bytes_).hexdigest() != manifest['outlineSha256']:
+                raise brand.Refused(['The outline has changed since the samples were made; '
+                                     'take new samples first'])
+            plan = json.loads(bytes_)
+            Path(write).write_text(json.dumps({
+                **plan, 'direction': picked['direction'],
+                'house': [*(plan.get('house') or []), *manifest['house']],
+                'layouts': {**(plan.get('layouts') or {}), **picked['layouts']},
+                'approval': [*(plan.get('approval') or []),
+                             f"Look chosen: {picked['name']} ({choice}). In their words: "
+                             f'"{words.strip()}"']}))
+        self.written.append(write)
+        (Path(samples) / 'choice.json').write_text(json.dumps({'choice': choice,
+                                                              'words': words}))
+        self.chosen.append((choice, words))
+        return {'status': 'chosen', 'choice': choice, 'name': picked['name'],
+                'direction': picked['direction'], 'layouts': picked['layouts']}
+
 
     def check(self, contract) -> None:
         from runner import brand

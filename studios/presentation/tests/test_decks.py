@@ -28,6 +28,23 @@ class FormTests(unittest.TestCase):
         self.assertEqual(checked['route'], 'scratch')
         self.assertEqual(checked['output'], 'google')
 
+    def test_talk_or_handout_is_asked_once_with_a_default_by_route(self):
+        self.assertEqual(decks.check_form(form(), BRANDS)['delivery'], 'live',
+                         'an idea or a brief is a talk')
+        for route, extra in (('document', {'source': {'kind': 'paste', 'text': 'Notes.'}}),
+                             ('existing', {'source': UPLOAD, 'level': 'polish'})):
+            with self.subTest(route=route):
+                checked = decks.check_form(form(route=route, **extra), BRANDS)
+                self.assertEqual(checked['delivery'], 'reading', 'material is a handout')
+        self.assertEqual(decks.check_form(form(delivery='reading'), BRANDS)['delivery'],
+                         'reading')
+        self.assertEqual(decks.check_form(form(route='document', delivery='live',
+                                               source={'kind': 'paste', 'text': 'x'}),
+                                          BRANDS)['delivery'], 'live')
+        with self.assertRaisesRegex(WorkspaceError, 'a talk or a handout'):
+            decks.check_form(form(delivery='podcast'), BRANDS)
+        self.assertIn('## Delivery\na talk', decks.intake(decks.check_form(form(), BRANDS)))
+
     def test_a_brand_with_no_variants_takes_none(self):
         brands = [{'brand': 'plain', 'variants': []}]
         for variant in (None, ''):

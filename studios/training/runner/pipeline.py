@@ -59,7 +59,7 @@ What a caller needs to know
 from __future__ import annotations
 
 import json
-from studio_core import review_policy, research_contract
+from studio_core import deck_direction, deck_flow, review_policy, research_contract
 import re
 import shutil
 from dataclasses import dataclass, field, replace
@@ -113,6 +113,23 @@ JUDGED = 'design'   # a start whose deck the slides tool reviews against its app
 SHOWS = 'deck/review.json'          # what its gate shows of the deck that was saved
 HISTORY = 'deck/history'            # what a deck was, kept when it is drawn again from a design
 WORK = 'work/deck'                  # what it is built with: never shared
+TOOL_OUTLINE = 'tool-outline.json'  # in a start: the outline as the slides tool started from it
+SHEET = 'sheet.png'                 # beside a deck's look samples: every look on one sheet
+DRAFTS = 'drafts'                   # in a deck's work folder: its wireframe draft pages
+DRAFT_LIMIT = 4_000_000             # bytes of a draft page the page is ever shown
+OLDER_BRAND = ('This brand skill is too old to offer looks to choose from, so the deck is '
+               "drawn in the brand's default direction, or in the slides tool's own where the "
+               'brand gives none.')
+THROUGH_DRIVE = ('The looks were rendered through Google Drive, the way this computer renders '
+                 'every preview: it has no local renderer.')
+NO_COMMENT = 'Picked {name} on the page, with no comment.'
+NO_ENTRY = ("This brand skill is not the entry to slide building yet, so the deck's workers "
+            "read the installed slides tool's own guidance.")
+BRAND_WORKER = deck_flow.BRAND_WORKER   # what the brand asks be handed to every composer
+BRAND_DESIGN = deck_flow.BRAND_OWN[0]    # the brand's DESIGN.md, for a brand that gives none
+AUTOMATIC_LOOK = "Automatic draft: the brand's default look, {name}, was used."
+DEFAULT_LOOK = 'default'   # a choice on the page: carry on in the brand's default look
+AGAIN_LOOK = 'again'       # a choice on the page: draw the looks again
 BUILT = f'{WORK}/state.json'        # what this computer has built, and from what
 SHOTS = f'{WORK}/preview'           # the pictures of the last preview of the whole deck
 DRAWN = f'{WORK}/sections'          # the pictures of each section's last preview
@@ -121,9 +138,10 @@ SEES = ('Your review of what {it} says', 'Waiting for your review of what {it} s
 SECTION = re.compile(r'^section-[1-9]\d{0,2}$')
 # What of the slides tool's own guidance each worker of a deck is handed, by the names
 # `slides.reading()` gives. A composer also gets the example of each relation it draws.
-DRAFTING = ('drafting guidance',)
-DESIGNING = ('design guidance',)    # the outline's writer, when it proposes a design too
-COMPOSING = ('design guidance', 'composition guidance', 'gallery')
+# The same for every studio: studio_core.deck_flow says what each worker of a deck reads.
+DRAFTING = deck_flow.OUTLINE_READING
+DESIGNING = deck_flow.DESIGN_READING    # the outline's writer, when it proposes a design too
+COMPOSING = deck_flow.COMPOSER_READING
 OUTLINE_CHECKED = (
     'The slides tool checked its shape and its own limits.',
     'Every content slide names the objectives it serves, and every objective is served by '
@@ -187,6 +205,10 @@ TRAINING = (
     ('deck', 'deck-brand', 'code', 'Export the brand for {it}', 'Exporting the brand for {it}'),
     ('deck', 'deck-outline', 'agent', 'Write what {it} says', 'Writing what {it} says'),
     ('deck', 'gate:deck-outline', 'gate', *SEES),
+    ('deck', 'deck-look', 'code', "Draw {it} in each of the brand's looks",
+     "Drawing {it} in each of the brand's looks"),
+    ('deck', 'gate:deck-look', 'gate', 'Your choice of a look for {it}',
+     'Waiting for your choice of a look for {it}'),
     ('deck', 'deck-start', 'code', 'Split {it} into sections', 'Splitting {it} into sections'),
     ('deck', 'deck-sections', 'agent', 'Draw the sections of {it}',
      'Drawing the sections of {it}'),
@@ -804,13 +826,27 @@ def handoff_text(root: Path, session: dict, level: str | None) -> str:
     """deck-handoff.md for one deck, as the record says it now."""
     scenarios = None
     if 'scenario' in wanted(session):
-        scenarios = sorted(workspace.split(name)[0].partition(':')[2]
-                           for name in practice_names(root, session, level))
+        scenarios = [scenario_title(root, session, name)
+                     for name in sorted(practice_names(root, session, level))]
     return deck.handoff(
         session['title'], level,
         _text(root, session, workspace.qualify('blueprint', level)) or '', answers(root),
         session['settings']['deck_target'], brand_of(session), 'document' in wanted(session),
         scenarios)
+
+
+def scenario_title(root: Path, session: dict, name: str) -> str:
+    """A practice scenario as a slide may name it: the title its file gives, else its ID
+    in words. `operating-model` is "Operating model": never the slug itself."""
+    text = _text(root, session, name) if name in workspace.artifact_names(root, session) \
+        else None
+    heading = next((line[2:].strip() for line in (text or '').splitlines()
+                    if line.startswith('# ') and line[2:].strip()), None)
+    if heading:
+        return re.sub(r'^(?:Practice scenario|Scenario)\s*[:\-–]\s*', '', heading) or heading
+    ident = workspace.split(name)[0].partition(':')[2]
+    words = ident.replace('-', ' ').replace('_', ' ').strip()
+    return words[:1].upper() + words[1:]
 
 
 def practice_names(root: Path, session: dict, level: str | None) -> list[str]:
@@ -931,8 +967,23 @@ def stands(root: Path, session: dict, state: dict, asked: dict, run: dict,
     if said and approved.get('sha256') == said \
             and (approved.get('design') or {}).get('sha256') == drawn_as:
         done.add('gate:deck-outline')
+    # The look: chosen by the person, or drawn here and waiting for them, for what the deck
+    # says now. A brand too old to offer looks has nothing to choose. A start made before
+    # looks were offered keeps the look it was drawn in.
+    chosen = looked(kept, said)
+    shown = built.get('look') or {}
+    drawn_here = bool(said) and shown.get('outline') == said \
+        and shown.get('brand') == brand.get('sha256') \
+        and (bool(shown.get('unavailable') or shown.get('failed'))
+             or (work / str(shown.get('folder'))).is_dir())
+    earlier = bool(said) and start.get('outline') == said and 'look' not in start
+    if chosen or drawn_here or earlier:
+        done.add('deck-look')
+    if chosen or earlier or drawn_here and shown.get('unavailable'):
+        done.add('gate:deck-look')
     # A start drawn from its approved design gives its sections that design to draw from.
     if start.get('outline') == said and start.get('brand') == brand.get('sha256') \
+            and (earlier or start.get('look') == (chosen or {}).get('id')) \
             and start.get('design') == approved.get('design') \
             and (start.get('design') or {}).get('sha256') == drawn_as \
             and (work / str(start.get('folder')) / 'parts.json').is_file() \
@@ -1061,6 +1112,8 @@ def _next(first: Step | None, session: dict, state: dict, asked: dict,
         return Next('review', first)
     if first.id.startswith('review-sample'):
         return Next('code', first)
+    if first.stage == 'deck' and bare(first.id) == 'gate:deck-look':
+        return Next('look', first)
     if first.stage == 'deck' and first.id != 'deck' and bare(first.id) != DECK_STEPS[-1]:
         mine = decks[workspace.split(first.artifact)[1]]
         if first.kind == 'gate':  # the runner's own gate: the core has none for it
@@ -1270,6 +1323,15 @@ def question_work(root: Path, found: Survey, ident: str, request: dict | None,
                  f"may not be about your question:\n\n{request['note']}")
     return Work(briefs.guidance('research-question'), task, 'write' if only else 'research',
                 {'finding': ident, 'fetch': not only, 'ask': False, 'sources': offered})
+
+
+def research_ids(root: Path) -> list[str]:
+    """The identifiers the training's research defines: its findings, facts and sources, or
+    its questions, which a slide may not show."""
+    record = workspace.research_record(root) or {}
+    found = [entry.get('id') for key in ('findings', 'facts', 'sources', 'items')
+             for entry in record.get(key) or () if isinstance(entry, dict)]
+    return sorted({str(ident) for ident in found if ident})
 
 
 def findings_text(root: Path) -> str:
@@ -1591,6 +1653,12 @@ def reading_file(name: str) -> str:
     return 'reading/' + re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-') + '.txt'
 
 
+def _brand_for_workers(root: Path, mine: Deck) -> tuple[str, ...]:
+    """What of the brand's own a deck's composers and its design's writer are handed: the
+    worker guidance its slides entry asks be forwarded unchanged, else its DESIGN.md."""
+    return deck_flow.for_workers(bool(_told(root, mine, reading_file(BRAND_WORKER)).strip()))
+
+
 def _read_also(root: Path, mine: Deck, inputs: dict, names) -> None:
     """Add the pieces of the slides tool's guidance a worker needs to its inputs, in the
     order given. One the installed tool does not have is left out."""
@@ -1604,6 +1672,61 @@ def contract(root: Path, mine: Deck) -> Path:
     """Where a deck's exported brand contract is, on this computer."""
     return place(root, mine.level, WORK) / str((mine.built.get('brand') or {})
                                                .get('contract'))
+
+
+def look_of(root: Path, mine: Deck) -> dict:
+    """What a deck is drawn in: the look the person chose for it, with its direction and
+    house style, else the direction its brand gives, else nothing, and the deck has the
+    fallback."""
+    chosen = looked(mine.kept, workspace.sha256_file(place(root, mine.level, OUTLINE)))
+    if chosen and chosen.get('direction'):
+        return {'direction': chosen['direction'], 'house': list(chosen.get('house') or ()),
+                'layouts': dict(chosen.get('layouts') or {})}
+    default = deck_direction.default_look(contract(root, mine))
+    if default:
+        return {key: default[key] for key in ('direction', 'house', 'layouts')}
+    given = deck_direction.of_file(contract(root, mine))
+    return {'direction': given} if given else {}
+
+
+def looked(kept: dict, said: str | None) -> dict | None:
+    """The look the person chose for a deck, for what it says now, or None."""
+    chosen = (kept.get('look') or {}).get('chosen') if isinstance(kept, dict) else None
+    return chosen if isinstance(chosen, dict) and said and chosen.get('outline') == said \
+        else None
+
+
+def look_view(root: Path, found: Survey, level: str | None) -> dict | None:
+    """What the page shows of a deck's looks: each look the brand drew, with its picture's
+    number and what it is for, the brand's default, whether there is a sheet of them all,
+    how they were rendered, and the one chosen. None while there are none to show."""
+    mine = (found.decks or {}).get(level)
+    if mine is None:
+        return None
+    shown = mine.built.get('look') or {}
+    said = workspace.sha256_file(place(root, level, OUTLINE))
+    chosen = looked(mine.kept, said)
+    if shown.get('outline') != said or not (shown.get('looks') or shown.get('failed')):
+        return None
+    waiting = found.next.kind == 'look' and workspace.split(found.next.step.artifact)[1] \
+        == level
+    notes = [deck_flow.LOOK_FAILED.format(why=shown['failed'])] if shown.get('failed') \
+        else [shown['says']] if shown.get('says') else []
+    return {'level': level, 'artifact': mine.name, 'waiting': waiting,
+            'failed': bool(shown.get('failed')),
+            'default': shown.get('default'), 'sheet': bool(shown.get('sheet')),
+            'looks': [{key: look.get(key) for key in ('id', 'name', 'useWhen', 'number')}
+                      for look in shown.get('looks') or ()],
+            'notes': notes,
+            'chosen': ({key: chosen.get(key) for key in ('id', 'name', 'words', 'by', 'shown')}
+                       if chosen else None)}
+
+
+def look_picture(root: Path, level: str | None, number: int) -> Path:
+    """Where one look's picture is, by its number, or the sheet of them all for 0."""
+    shown = read_built(root, level).get('look') or {}
+    folder = place(root, level, WORK) / str(shown.get('folder'))
+    return folder / (SHEET if number == 0 else f'{number}.png')
 
 
 def naming_rules(root: Path, mine: Deck) -> str | None:
@@ -1625,7 +1748,8 @@ def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
     blueprint = _text(root, session, workspace.qualify('blueprint', level)) or ''
     inputs = {'handoff': _read(place(root, level, HANDOFF)) or '',
               'outline contract': _told(root, mine, 'outline-contract.txt')}
-    _read_also(root, mine, inputs, [*DRAFTING, *(DESIGNING if designed else ())])
+    _read_also(root, mine, inputs, [*DRAFTING, *(DESIGNING if designed else ()),
+                                    *(_brand_for_workers(root, mine) if designed else ())])
     inputs['blueprint'] = blueprint
     guide = (_text(root, session, workspace.qualify('document', level))
              if 'document' in wanted(session) else None)
@@ -1664,6 +1788,7 @@ def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
     prepared = {'inputs': inputs,
                 'artifacts': {name: {'kind': 'outline', 'brand': str(contract(root, mine)),
                                      'blueprint': blueprint, 'design': designed,
+                                     'known': research_ids(root),
                                      **({'icons': True} if designed and icons else {})}},
                 'ask': _can_ask(answered)}
     return Work(briefs.guidance('deck-outline', design=designed, icons=designed and icons),
@@ -1705,7 +1830,7 @@ def section_work(root: Path, found: Survey, step: Step, section: str, error: str
               'composition contract': _told(root, mine, 'compose-contract.txt')}
     relations = [slide.get('relation') for slide in deck.slides_of(whole)
                  if slide.get('id') in ids and isinstance(slide.get('relation'), str)]
-    _read_also(root, mine, inputs, [*COMPOSING, *(
+    _read_also(root, mine, inputs, [*_brand_for_workers(root, mine), *COMPOSING, *(
         slides_tool.example(relation) for relation in sorted(set(relations)))])
     again, look = section in mine.again, []
     task = (f'Draw section {number} of {workspace.label(step.artifact)}: the slides in your '
@@ -1733,6 +1858,8 @@ def section_work(root: Path, found: Survey, step: Step, section: str, error: str
                 'artifacts': {name: {'kind': 'section', 'brand': str(contract(root, mine)),
                                      **deck.fixed(whole, ids, number, design),
                                      'previews': deck.PREVIEWS, **how, **bound,
+                                     **({'outline': str(folder / TOOL_OUTLINE)}
+                                        if (folder / TOOL_OUTLINE).is_file() else {}),
                                      **({'beyond': True} if beyond else {})}}}
     return Work(briefs.guidance('deck-section', repair=again, design=design is not None,
                                 assets='assets' in bound, beyond=beyond), task, 'write',
@@ -1769,7 +1896,8 @@ def review_work(root: Path, found: Survey, step: Step, error: str | None) -> Wor
             'and the objectives. Hand in what you find with submit_assessment, then say '
             'which slides address each objective with submit_coverage.'
             + _again(None, None, error, [], 'the review'))
-    prepared = {'inputs': {'the review': deck.asked(objectives, slides, earlier)},
+    prepared = {'inputs': {'the review': deck.asked(objectives, slides, earlier,
+                                                    last.get('screens'))},
                 'ask': False,
                 'review': {'preview': str(work / last['preview']), 'deck': last['deck'],
                            'slides': slides, 'objectives': list(objectives),
@@ -1789,7 +1917,8 @@ def _judging_work(root: Path, step: Step, mine: Deck, slides: list[dict], object
             'and the objectives. Hand in your judgement of every criterion of every slide with '
             'submit_judgements, then say which slides address each objective with '
             'submit_coverage.' + _again(None, None, error, [], 'the review'))
-    prepared = {'inputs': {'the review': deck.judging(objectives, slides, packets, earlier)},
+    prepared = {'inputs': {'the review': deck.judging(objectives, slides, packets, earlier,
+                                                      last.get('screens'))},
                 'ask': False,
                 'review': {'preview': str(work / last['preview']), 'deck': last['deck'],
                            'slides': slides, 'objectives': list(objectives),
@@ -2257,7 +2386,10 @@ def deck_shows(root: Path, session: dict, mine: Deck, audit: dict, cited: dict |
     review = last['review']
     parsed = checks.parse_blueprint(
         _text(root, session, workspace.qualify('blueprint', mine.level)) or '')
+    chosen = looked(mine.kept, workspace.sha256_file(place(root, mine.level, OUTLINE))) or {}
     return {'rendered': last['deck'], 'round': len(mine.rounds),
+            **({'unreviewed': deck_flow.UNREVIEWED} if chosen.get('shown') == 'unrendered'
+               else {}),
             'slides': [{key: slide[key] for key in ('number', 'id', 'title')}
                        for slide in last['slides']],
             'findings': [{key: finding.get(key) for key in (
@@ -2282,7 +2414,8 @@ def deck_note(shows: dict, request: dict | None, dated: bool) -> list[str]:
     first, the coverage as reviewed, and why this version was made. A deck is never called
     clear while a major finding remains."""
     audit, findings = shows['audit'], shows['findings']
-    lines = ['Checked for you:',
+    lines = [shows['unreviewed'], ''] if shows.get('unreviewed') else []
+    lines += ['Checked for you:',
              "- The brand's own audit "
              + {'ok': 'raised nothing.', 'warnings': 'passed it, with warnings.'}.get(
                  audit['status'], 'holds something against it.')
@@ -2359,6 +2492,24 @@ def keep_deck(root: Path, found: Survey, mine: Deck, source: Path | None, link: 
     workspace.append_review(root, name, f'Ready for your review, {workspace.now()}',
                             '\n'.join(deck_note(shows, request, dated)))
     return entry
+
+
+def holding(root: Path, found: 'Survey', step: Step) -> list[str]:
+    """What keeps a gate for the person whatever the saved review level, a sentence each:
+    for what a deck says, the grave findings a review of its slides sent back to it; for a
+    deck, the grave findings its review still has and its audit's blockers. Nothing for
+    any other gate."""
+    if step.stage != 'deck' or not step.artifact:   # the deck made in a conversation has none
+        return []
+    level = workspace.split(step.artifact)[1]
+    mine = (found.decks or {}).get(level)
+    if bare(step.id) == 'gate:deck-outline':
+        return review_policy.held((returned(mine) or {}).get('findings')) if mine else []
+    if bare(step.id) != 'gate:deck':
+        return []
+    shown = deck_gate(root, found.session, step.artifact)
+    return review_policy.held((shown.get('review') or {}).get('findings'),
+                              (shown.get('audit') or {}).get('blockers'))
 
 
 def deck_gate(root: Path, session: dict, name: str) -> dict:

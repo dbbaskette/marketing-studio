@@ -33,7 +33,7 @@ Ask how the person is starting and follow [the three routes](references/routes.m
 | Classify: a document's kind, or an existing deck's slides | Yes, when there is a source |
 | Research plan, then research | Each, when research is on |
 | Outline: title, key message and notes for each slide | Yes |
-| Brand: the deck's cover drawn in its brand | Yes, or another brand |
+| Look: the brand's looks, to pick one | Yes, or another brand |
 | Build: the whole deck, its preview and its checks | Yes, or changes |
 | Deliver: Google Slides or PowerPoint | No: say where it is |
 

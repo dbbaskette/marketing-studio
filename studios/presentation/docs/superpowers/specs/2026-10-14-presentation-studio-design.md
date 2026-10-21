@@ -58,7 +58,7 @@ One pipeline; the route and options decide which stages run. ⏸ is a gate: the 
 | **Research plan** | ⏸ if research is on | ⏸ if source material and research is on | — |
 | **Research** | ⏸ if research is on | ⏸ if source material and research is on | — |
 | **Outline** — per slide: title, key message, notes | Drafted ⏸ | Material: drafted ⏸ · Spec: parsed, confirmed ⏸ | Full rework only: proposed restructure ⏸ |
-| **Brand** — the deck's cover drawn in its brand, so the person sees it is the one they meant; approve, or choose another brand or variant | ⏸ | ⏸ | Redesign, Full rework (skipped for Brand only, Polish, Selected changes) |
+| **Look** — the brand draws one slide of the outline in each of its looks (`look samples`), and the person picks one in their words (`look choose`); or chooses another brand or variant. Looks that cannot be rendered offer to try again or to carry on knowingly in the brand's default. A brand too old to offer looks shows the cover in it | ⏸ | ⏸ | Redesign, Full rework (skipped for Brand only, Polish, Selected changes) |
 | **Build** — compose, render, brand audit, critique | ⏸ | ⏸ | ⏸ with before/after per slide |
 | **Deliver** — Google Slides link and/or `.pptx`, recorded in the deck | ✓ | ✓ | ✓ always a new copy; the original is never changed |
 | **Rehearse with Yoodli** | coming later | coming later | coming later |

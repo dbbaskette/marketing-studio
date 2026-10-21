@@ -20,11 +20,17 @@ What a caller needs to know
   - `/api/decks`, every deck in the engine's four lists {"needs", "working", "finished",
     "elsewhere"}; `/api/run?path=` one deck's view (`engine.view`).
   - `/api/slide?path=&kind=build|look|original&number=` (or `&name=sample` for the cover
-    drawn in the deck's brand, or `contact-sheet` for the build's sheet): one picture as
+    drawn in the deck's brand, `&name=sheet` for the brand's looks on one sheet and
+    `kind=look&number=` for one look, or `contact-sheet` for the build's sheet): one picture as
     image/png, only what `engine.picture` gives. Nothing is ever read from a place the
     request names.
   - `/api/download?path=`: the rendered deck, only what `engine.download` gives, as an
     attachment named for the deck.
+  - `/api/storyboard?path=&expected=` (and POST, with the unsaved `slides`): the outline
+    drawn as a wireframe storyboard, kept in the deck's work/drafts/, answered as {"src",
+    "expected", "milliseconds"}. `src` is `/api/deck-draft?ticket=`, which the page's
+    sandboxed frame opens without the key, for that one file, for two minutes, as HTML under
+    the framed page's own policy (`server.framed_html`).
   - `/api/file?path=&name=`: one of a deck's shared files, by name, only from FILES:
     {"name", "size", "text", "truncated"}. A file that leads out of the deck's folder is
     refused.
@@ -107,6 +113,7 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/deci
 PNG = 'image/png'
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
+DRAFT = '/api/deck-draft'   # a deck's storyboard, framed by the page and opened with a ticket
 DECKS_LIMIT = 120_000_000    # bytes: a deck's form with its uploads, in base64
 FILES = ('README.md', 'intake.md', 'classify.md', 'outline.md', 'look.md',
          'research/plan.md', 'research/report.md')
@@ -129,6 +136,7 @@ class RunnerPage(server.Page):
     """What the page may ask the runner."""
     reads = (*server.READS, *READS)
     writes = (*server.WRITES, *WRITES)
+    framed = (DRAFT,)   # opened by the storyboard's frame, with a ticket
 
     def __init__(self, port: int, engine: engines.Engine):
         super().__init__(port)
@@ -159,8 +167,8 @@ class RunnerPage(server.Page):
         if path == '/api/download':
             return self.download(one('path'))
         if path == '/api/storyboard':
-            return server.as_json(HTTPStatus.OK, self.engine.storyboard(
-                self.deck(one('path')), None, one('expected')))
+            return server.as_json(HTTPStatus.OK, self.framing(one('path'), self.engine.storyboard(
+                self.deck(one('path')), None, one('expected'))))
         if path == '/api/file':
             return server.as_json(HTTPStatus.OK, self.file(one('path'), one('name')))
         if path == '/api/status':
@@ -170,6 +178,27 @@ class RunnerPage(server.Page):
         if path == '/api/delete':
             return server.as_json(HTTPStatus.OK, self.engine.leaving(self.deck(one('path'))))
         return super().read(path, one)
+
+    def framing(self, path: str, drawn: dict) -> dict:
+        """A storyboard the runner drew, as the page frames it: the address of DRAFT with a
+        ticket for that one file of that one deck. Called only for a request that sent the
+        key."""
+        ticket = self.ticket(DRAFT, {'path': path, 'draft': drawn['draft']})
+        return {'src': f'{DRAFT}?ticket={ticket}', 'expected': drawn['expected'],
+                'milliseconds': drawn['milliseconds']}
+
+    def read_framed(self, path: str, scope) -> tuple:
+        """A framed page whose ticket held: the storyboard it was issued for, served under its
+        own sandboxed policy. Only the file the runner wrote in that deck's work/drafts/ is
+        read; nothing the request names is."""
+        if path != DRAFT or not isinstance(scope, dict):
+            return super().read_framed(path, scope)
+        try:
+            body = self.engine.storyboard_page(scope.get('path'), scope.get('draft'))
+        except (OSError, WorkspaceError):
+            raise server.Refusal(HTTPStatus.NOT_FOUND, 'That draft is not here any more. '
+                                                       'Show it again from the page.')
+        return server.framed_html(body)
 
     def deck(self, path: str) -> str:
         """A deck of this workspace, or 404 for any other folder, whatever it holds."""
@@ -296,9 +325,10 @@ class RunnerPage(server.Page):
         if path == '/api/run':
             return server.as_json(HTTPStatus.OK, self.act(sent))
         if path == '/api/storyboard':
-            return server.as_json(HTTPStatus.OK, self.engine.storyboard(
-                self.deck(server.text(sent, 'path')), sent.get('slides'),
-                server.text(sent, 'expected')))
+            return server.as_json(HTTPStatus.OK, self.framing(
+                server.text(sent, 'path'), self.engine.storyboard(
+                    self.deck(server.text(sent, 'path')), sent.get('slides'),
+                    server.text(sent, 'expected'))))
         if path == '/api/review-draft':
             return server.as_json(HTTPStatus.OK, self.engine.review_draft(
                 self.deck(server.text(sent, 'path')), server.text(sent, 'expected')))

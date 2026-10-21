@@ -27,6 +27,8 @@ from workspace import WorkspaceError, write_atomic
 from runner import gitstate, settings
 
 ROUTES = ('scratch', 'document', 'existing')
+DELIVERIES = ('live', 'reading')     # a talk, or a handout read on its own
+DELIVERY_BY_ROUTE = {'scratch': 'live', 'document': 'reading', 'existing': 'reading'}
 LEVELS = ('brand-only', 'polish', 'redesign', 'rework', 'selected')
 OUTPUTS = ('google', 'pptx')
 LIMITS = {'title': 120, 'audience': 2000, 'goal': 2000, 'notes': 4000, 'minutes': 240,
@@ -125,9 +127,17 @@ def check_form(sent: dict, brands: list | None) -> dict:
     if output not in OUTPUTS:
         raise WorkspaceError(f'Choose an output: {", ".join(OUTPUTS)}.')
     research = bool(sent.get('research'))
+    # Asked once, here: a talk ('live') or a handout ('reading'). A deck from an idea or a
+    # brief is a talk unless the person says otherwise; one made from a document or an
+    # existing deck, a handout. build.delivery is where every step reads it.
+    delivery = sent.get('delivery')
+    if delivery in (None, ''):
+        delivery = DELIVERY_BY_ROUTE[route]
+    if delivery not in DELIVERIES:
+        raise WorkspaceError('Say whether the deck is for a talk or a handout.')
     checked = {'route': route, 'title': title, 'audience': audience, 'goal': goal,
                'minutes': minutes, 'brand': brand, 'variant': variant, 'output': output,
-               'research': research}
+               'research': research, 'delivery': delivery}
     # Only the form's own choice shows the first draft before its review: nothing in the
     # goal's words flips it.
     mode = sent.get('initial_review')
@@ -270,6 +280,8 @@ def intake(form: dict) -> str:
         parts += ['', '## Goal', form['goal']]
     if form['minutes']:
         parts += ['', '## Length', f"{form['minutes']} minutes"]
+    if form.get('delivery'):
+        parts += ['', '## Delivery', 'a talk' if form['delivery'] == 'live' else 'a handout']
     parts += ['', '## Brand', brand_words(form),
               '', '## Output', form['output']]
     if form['route'] != 'existing':

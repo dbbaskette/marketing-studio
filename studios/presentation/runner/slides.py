@@ -35,6 +35,7 @@ What a caller needs to know
     slides.design_check(project)                   # {'plan', 'revision', 'buildAllowed'}
     slides.design_respond(project, reply)          # a person's answer to the question
     slides.capabilities()                          # what it says it has, or None
+    slides.has(name), slides.knows()               # one capability; outline fields it keeps
     slides.assets()                                # whether it keeps an asset manifest
     slides.asset_status(project)                   # {'manifest', 'assets': [{..., 'state'}]}
     slides.asset_check(project, brand=None)        # {'status': 'ready', ...}, or Refused
@@ -86,7 +87,9 @@ Added to the above
 - `drive_check` is True or False. It is False too when Drive would not turn a PowerPoint
   file into slides, since previews and the finished deck both need that.
 - A refusal by `preview` that had already written its file in Drive says so in `left`:
-  {'fileId', 'url'}. Pass that `fileId` to the next preview, or a second file is made.
+  {'fileId', 'url'}. A tool with a Google preview pool (`google-preview-pool`) reuses its
+  own few preview decks, and is never named a file; an older one is passed that `fileId`
+  for the next preview, and one it says a newer preview replaced is previewed again.
 - `ready()` returns {'tool', 'version', 'pictures', 'local', 'drive', 'missing'}: four
   yes-or-no answers, the version, and the sentences. `ready(slides, which=...)` asks a given
   Slides, and looks for programs some other way, which is how a test asks. With
@@ -420,12 +423,17 @@ class Slides:
         return self._json('compose', 'layouts', '--brand', str(brand))
 
     def compile(self, composition: Path, brand: Path, folder: Path | None = None,
-                design: Path | None = None, section: bool = False) -> dict:
+                design: Path | None = None, section: bool = False,
+                outline: Path | None = None) -> dict:
         """Check a composition, a whole deck or one section. With a new folder, write what
         a preview and a render are made from. With `design`, it is checked against the
-        design approved in that project: as the whole deck, or as one `section`."""
+        design approved in that project: as the whole deck, or as one `section`. With the
+        approved `outline`, on a tool that can (compose-split-point), its preview finds a
+        point's sentence split across shapes."""
         args = ['compose', 'compile', '--file', str(composition), '--brand', str(brand),
-                *_bound(design, section)]
+                *_bound(design, section),
+                *(['--outline', str(outline)] if outline and self.has('compose-split-point')
+                  else [])]
         if folder is None:
             return self._json(*args)
         with _new(folder):
@@ -449,18 +457,23 @@ class Slides:
                                  f'{RENDERERS[1]}, not {renderer}.')
         args = ['compose', 'preview', '--file', str(compiled), '--output', str(folder),
                 '--renderer', 'google' if renderer == 'drive' else 'local']
-        if file_id and renderer == 'drive':
-            args += ['--file-id', file_id]
-        if slide:
-            args += ['--slide', slide]
-        args += _bound(design, section)
+        # A tool with a preview pool reuses its own few preview decks: no file is named.
+        named = bool(file_id) and renderer == 'drive' and not self.has('google-preview-pool')
+        rest = [*(['--slide', slide] if slide else []), *_bound(design, section)]
         each = PROGRESS.get()
         events = each is not None and 'progress-events' in (self.capabilities() or ())
         if events:
-            args += ['--events']
+            rest += ['--events']
         observing = slide_events.watching(folder, each) if events else contextlib.nullcontext()
         with PREVIEWING, _new(folder), observing:
-            shown = self._json(*args)
+            try:
+                shown = self._json(*args, *(['--file-id', file_id] if named else []), *rest)
+            except Refused as refusal:
+                # The file named was taken over by a newer preview: preview again, unnamed.
+                if not named or not ('preview-replaced' in refusal.codes or any(
+                        'replaced by a newer one' in line for line in refusal.problems)):
+                    raise
+                shown = self._json(*args, *rest)
             if not shown.get('deck') or not isinstance(shown.get('slides'), list):
                 raise WorkspaceError('The slides tool rendered a preview and did not say '
                                      'where its slides are. Check that it is installed '
@@ -538,6 +551,18 @@ class Slides:
             self._sections = bool(found) and [problem.get('code') for problem
                                               in found['problems']] == ['input-invalid']
         return self._sections
+
+    def has(self, name: str) -> bool:
+        """Whether the tool's `version` lists this capability. A tool that lists none has
+        none of them."""
+        return name in (self.capabilities() or ())
+
+    def knows(self) -> frozenset:
+        """What this tool knows of an outline beyond its words, by the names build.KNOWS
+        gives: a point's `parts`, a slide's `provenance`."""
+        from runner.steps import build
+        return frozenset(name for capability, name in build.KNOWS.items()
+                         if self.has(capability))
 
     def capabilities(self) -> frozenset | None:
         """What the tool says it has, as `version` lists it, or None when it lists nothing,
@@ -771,7 +796,10 @@ class Slides:
                 raise WorkspaceError('The slides tool drew the deck and did not say where its '
                                      'pictures are. Check that it is installed whole.') from None
         return {'slides': slides, 'contactSheet': made.get('contactSheet'),
-                'fileId': made.get('fileId'), 'url': made.get('url')}
+                'fileId': made.get('fileId'), 'url': made.get('url'),
+                # Under the slides tool's preview pool: the receipt of the preview its deck
+                # holds, and whether a newer preview has replaced it since.
+                **{key: made[key] for key in ('pool', 'remoteReplaced') if key in made}}
 
     def outline_draft(self, outline: Path, brand: Path, output: Path) -> Path:
         """Write the tool's page of an outline's wording and structure, which is no design."""

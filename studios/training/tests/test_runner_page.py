@@ -48,7 +48,7 @@ POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/a
          '/api/note')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
 RUN_KEYS = ['agent', 'clash', 'controls', 'copies', 'deck', 'deck_left', 'documents', 'driver', 'effort',
-            'finished', 'kept', 'last_shared', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
+            'finished', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
             'question', 'queue', 'redesign', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
             'workers']
 STEP_KEYS = ['attempts', 'dollars', 'error', 'id', 'kind', 'label', 'seconds', 'status']
@@ -1562,7 +1562,11 @@ class WholeUpgradeTests(PageCase):
             keep = self.engine.upkeep = upkeep.Upkeep(
                 home_dir=home_dir, root=root, installer=running / 'installer' / 'install.py')
             keep.check()
-            self.assertTrue(keep.look())
+            # The installed copy pins its companions to their public repositories: only
+            # Training Studio's own, the local one, is asked, so nothing leaves this computer.
+            own = {upkeep.SELF: keep.repositories()[upkeep.SELF]}
+            with mock.patch.object(keep, 'repositories', return_value=own):
+                self.assertTrue(keep.look())
             versions = self.get('setup')['upkeep']['versions']
             own = versions['rows'][0]
             self.assertEqual((own['installed'], own['newest'], own['state']),

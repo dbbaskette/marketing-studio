@@ -1752,6 +1752,14 @@ p.fact > .bead {
   min-width: 6.5rem;
 }
 
+/* The brand's looks for a deck: each a little larger than a slide in a strip. */
+.looks .look-choice {
+  flex: 1 1 12rem;
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+}
+
 .thumb-name {
   display: block;
   font-size: 0.8rem;

@@ -4,6 +4,7 @@ how it places what the server says, and the words it uses.
 Nothing is run here; tests/test_desk.py runs the page in a document with no parser.
 """
 import re
+from pathlib import Path
 import unittest
 
 import helpers
@@ -98,7 +99,8 @@ class LinkTests(unittest.TestCase):
     def test_the_shell_loads_only_its_own_files(self):
         shell = read('index.html')
         self.assertEqual(sorted(re.findall(r'(?:src|href)="([^"]*)"', shell)),
-                         ['#main', 'app.js', 'deck.css', 'markdown.js', 'style.css'])
+                         ['#main', 'app.js', 'deck-panels.css', 'deck-panels.js', 'deck.css',
+                      'markdown.js', 'style.css'])
         for name in ('/deck.css', '/style.css', '/app.js', '/markdown.js'):
             self.assertIn(name, server.PAGE)
         styles = read('deck.css')
@@ -110,13 +112,6 @@ class MarkupTests(unittest.TestCase):
     def test_no_value_is_ever_treated_as_markup(self):
         for name in ('app.js', 'markdown.js'):
             script = read(name)
-            if name == 'app.js':
-                # The one HTML surface is isolated from the application, with no
-                # scripts or network. All ordinary deck values remain text.
-                assignment = next(line for line in script.splitlines() if 'frame.srcdoc =' in line)
-                self.assertIn('default-src &#39;none&#39;', assignment)
-                self.assertIn("frame.setAttribute('sandbox', '');", script)
-                script = script.replace(assignment, '')
             for risky in ('innerHTML', 'outerHTML', 'insertAdjacentHTML', 'document.write',
                           'createContextualFragment', 'DOMParser', 'srcdoc', 'eval(',
                           'Function(', "setAttribute('style'", "setAttribute('href'",
@@ -124,6 +119,22 @@ class MarkupTests(unittest.TestCase):
                 with self.subTest(name=name, risky=risky):
                     self.assertNotIn(risky, script)
             self.assertIn('textContent', script)
+
+    def test_the_one_html_surface_is_the_storyboard_framed_from_its_own_address(self):
+        # The page writes no HTML anywhere: the storyboard is the shared panel's sandboxed
+        # frame, opened at /api/deck-draft with a ticket, under that address's own policy.
+        script = read('app.js')
+        self.assertIn('window.DeckPanels.storyboard(', script)
+        self.assertNotIn('srcdoc', script)
+        self.assertNotIn('iframe', script)
+        panels = (Path(__file__).resolve().parents[3] / 'core' / 'studio_core' / 'deck_web'
+                  / 'deck-panels.js').read_text(encoding='utf-8')
+        self.assertIn("frame.setAttribute('sandbox', '');", panels)
+        self.assertNotIn('srcdoc', panels)
+        self.assertEqual(page.RunnerPage.framed, ('/api/deck-draft',))
+        policy = server.SECURITY_HEADERS['Content-Security-Policy']
+        self.assertEqual(policy, "default-src 'self'; img-src 'self' blob:")
+        self.assertNotIn('unsafe-inline', policy)
 
     def test_a_document_is_drawn_by_the_vendored_markdown_only(self):
         script = read('app.js')

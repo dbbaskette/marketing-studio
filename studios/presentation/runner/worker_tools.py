@@ -503,8 +503,19 @@ def check_outline(text: str, spec: dict, slides,
         outline, kept = as_json(text, 'outline')
     except Refusal as refusal:
         return [str(refusal)], [], [], text
+    if isinstance(outline, dict) and spec.get('delivery') in ('live', 'reading') \
+            and outline.get('delivery') != spec['delivery']:
+        # Talk or handout was decided once, on the form: the outline is kept as it says.
+        outline = {**outline, 'delivery': spec['delivery']}
+        kept = json.dumps(outline, indent=2, ensure_ascii=False) + '\n'
     try:
-        report = slides.outline_check(_draft(scratch, 'outline', kept), spec['brand'])
+        # The tool checks the outline without what it does not know: a point's `parts`
+        # and a slide's `provenance`, on an older tool.
+        known = slides.knows() if hasattr(slides, 'knows') else frozenset()
+        shown = build.for_tool(outline, known)
+        told = kept if shown == outline else json.dumps(
+            shown, indent=2, ensure_ascii=False) + '\n'
+        report = slides.outline_check(_draft(scratch, 'outline', told), spec['brand'])
     except WorkspaceError as refusal:
         found = said_no(refusal)
     else:
@@ -535,11 +546,17 @@ def check_section(text: str, spec: dict, slides,
             pass
     if isinstance(section, dict):
         try:
-            slides.compile(_draft(scratch, 'section', kept), spec['brand'])
+            slides.compile(_draft(scratch, 'section', kept), spec['brand'], **outlined(spec))
         except WorkspaceError as refusal:
             found = said_no(refusal)
     outcomes = [result('section.rules', ours), result('section.compile', found)]
     return held(outcomes), outcomes, [], kept
+
+
+def outlined(spec: dict) -> dict:
+    """What compile is given of the approved outline a section is drawn from, so that a
+    tool that can finds a point's sentence split across shapes: nothing without one."""
+    return {'outline': Path(spec['outline'])} if spec.get('outline') else {}
 
 
 # --- the rules an outline is held to, kept by name ----------------------------------------
@@ -701,9 +718,10 @@ def render(slides, compiled: Path, folder: Path, how: dict) -> dict:
     with one_at_a_time(Path(how['lock'])):
         known = home.read_json(kept, {}) if kept else {}
         known = known if isinstance(known, dict) else {}
-        def remember(ident, url) -> None:
-            if kept and ident and ident != known.get('id'):
-                home.write_json(kept, {**(how.get('named') or {}), 'id': ident, 'url': url})
+        def remember(ident, url, receipt=None) -> None:
+            if kept and ident and (ident != known.get('id') or receipt != known.get('pool')):
+                home.write_json(kept, {**(how.get('named') or {}), 'id': ident, 'url': url,
+                                       **({'pool': receipt} if receipt else {})})
 
         from contextlib import nullcontext
         from runner import build_progress
@@ -718,6 +736,9 @@ def render(slides, compiled: Path, folder: Path, how: dict) -> dict:
         except WorkspaceError as refusal:  # a preview that failed may have made its file
             if progress:
                 progress.failed()
+            if replaced(refusal) and kept:
+                kept.unlink(missing_ok=True)   # its slides are someone else's by now
+                raise
             left = getattr(refusal, 'left', None) or {}
             remember(left.get('fileId'), left.get('url'))
             raise
@@ -725,8 +746,24 @@ def render(slides, compiled: Path, folder: Path, how: dict) -> dict:
             if progress:
                 progress.failed()
             raise
-        remember(found.get('fileId'), found.get('url'))
+        # A preview in the slides tool's pool is one of its own few reusable decks: its link
+        # is kept with the receipt that says which preview it holds, and once a newer
+        # preview has replaced it, the link is forgotten rather than shown with someone
+        # else's slides. The delivered deck is a file of its own and is not touched.
+        if found.get('remoteReplaced'):
+            if kept:
+                kept.unlink(missing_ok=True)
+            return found
+        pool = found.get('pool') if isinstance(found.get('pool'), dict) else {}
+        remember(found.get('fileId'), found.get('url'), pool.get('receipt'))
     return found
+
+
+def replaced(refusal) -> bool:
+    """Whether the slides tool refused because a newer preview took over the preview file."""
+    return 'preview-replaced' in (getattr(refusal, 'codes', None) or ()) or any(
+        'replaced by a newer one' in str(line) for line in getattr(refusal, 'problems', None)
+        or ())
 
 
 def pictures(found: dict, folder: Path, target: Path) -> list[dict]:
@@ -1213,7 +1250,7 @@ class WorkerTools:
             new.parent.mkdir(parents=True, exist_ok=True)
         try:
             self.slides().compile(_draft(self.folder / 'drafts', 'preview', kept),
-                                  spec['brand'], folder=built)
+                                  spec['brand'], folder=built, **outlined(spec))
             found = render(self.slides(), built, taken, spec)
             slides = pictures(found, taken, self.folder / 'shown')
         except WorkspaceError as refusal:

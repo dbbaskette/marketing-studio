@@ -193,7 +193,7 @@ from pathlib import Path, PurePosixPath
 import runner  # noqa: F401  puts the core on the import path
 import computer
 import home
-from studio_core import model_profiles, review_policy, research_contract
+from studio_core import brand_guidance, deck_direction, deck_flow, model_profiles, review_policy, research_contract
 import hub
 import workspace
 from workspace import WorkspaceError
@@ -251,6 +251,7 @@ STALLED = ('Something went wrong while the runner picked its trainings up ({fail
 # The steps of a deck, and what the engine does for each. What a deck says is drafted like
 # any other draft, and gate 6 is the core's.
 DECK = {'deck-handoff': '_handoff', 'deck-brand': '_export', 'gate:deck-outline': '_ask',
+        'deck-look': '_looks',
         'deck-start': '_split', 'deck-sections': '_sections', 'deck-repair': '_sections',
         'deck-whole': '_whole', 'deck-review': '_review', 'deck-save': '_keep'}
 SUPPLYING = ('add', 'remove', 'done')
@@ -985,9 +986,13 @@ class Engine(Reviewing):
         needs = self.deck_needs()
         drawn = bool(form['deck_target'] and form['brand']) and not needs['missing'] \
             and not needs['update']
-        # Balanced stops three times: the research plan, the direction, the finished materials.
-        return {'path': str(root), 'id': root.name, 'gates': (pipeline.gates(form, drawn) if review_policy.level(record) == 'step_by_step'
-                                                        else 3 if review_policy.level(record) == 'balanced' else 1)}
+        # Balanced stops three times: the research plan, the direction, the finished materials;
+        # Automatic draft once, at the finished materials. Each deck drawn here stops too.
+        chosen = review_policy.level(record)
+        decks = max(1, len(form['levels'])) if drawn else 0
+        return {'path': str(root), 'id': root.name, 'gates': (
+            pipeline.gates(form, drawn) if chosen == 'step_by_step'
+            else (3 if chosen == 'balanced' else 1) + decks)}
 
     def _claimed(self, root: Path, space: gitstate.Workspace) -> None:
         """Share the claim a new training was committed with, before any work is done
@@ -1152,9 +1157,14 @@ class Engine(Reviewing):
                     return  # someone else drives it, or nobody does
                 found = self._survey(root, record)
                 step = found.next
-                if not self._resting(record) and step.kind in ('gate', 'wait', 'outline') \
-                        and review_policy.automatic(record, 'training', step.step.id):
-                    if pipeline.bare(step.step.id) == 'gate:deck-outline':
+                if not self._resting(record) and step.kind in ('gate', 'wait', 'outline',
+                                                               'look') \
+                        and review_policy.automatic(record, 'training', step.step.id,
+                                                    holding=pipeline.holding(root, found,
+                                                                             step.step)):
+                    if step.kind == 'look':
+                        self._look_default(root, step.step)
+                    elif pipeline.bare(step.step.id) == 'gate:deck-outline':
                         if step.kind == 'gate':
                             self._ask(root, run, found, step)
                         self._policy_outline(root, self._survey(root, self._load(root)))
@@ -1523,8 +1533,11 @@ class Engine(Reviewing):
         folder = self._previews()
         kept = [home.read_json(path, None) for path in sorted(folder.glob('*.json'))] \
             if folder.is_dir() else []
+        # A preview in the slides tool's pool is its own reusable deck, not a file the runner
+        # left: its link may show another deck's slides by now, so it is not listed.
         return [{key: entry.get(key) for key in ('name', 'url', 'training')}
-                for entry in kept if isinstance(entry, dict) and entry.get('url')]
+                for entry in kept if isinstance(entry, dict) and entry.get('url')
+                and not entry.get('pool')]
 
     def _how(self, root: Path, found: pipeline.Survey, level: str | None) -> dict:
         """How one deck's previews are taken, as `worker_tools.render` takes it."""
@@ -1624,7 +1637,16 @@ class Engine(Reviewing):
             home.write_json(told / 'layouts.json', tool.layouts(contract))
             for name, text in tool.reading(contract).items():
                 worker_tools._write(told / pipeline.reading_file(name), text)
+            # The brand is the entry to slide building: its guidance, pinned to the deck's
+            # task, replaces the installed tool's own, and its worker guidance goes to every
+            # composer unchanged.
+            guided = self._guide(work, chosen, told, (
+                (found.decks.get(level) or pipeline.Deck(level, '', frozenset(), {}, {}, None))
+                .built.get('brand') or {}).get('guidance') or {})
+            for name, text in brand_guidance.brand_texts(contract).items():
+                worker_tools._write(told / pipeline.reading_file(name), text)
             kept = {'brand': chosen[0], 'variant': chosen[1], 'folder': folder.name,
+                    'guidance': guided,
                     'told': told.name, 'changed': None, 'at': home.now(),
                     'contract': contract.relative_to(work.resolve()).as_posix(),
                     'voice': (Path(made['voice']).resolve().relative_to(work.resolve())
@@ -1641,6 +1663,277 @@ class Engine(Reviewing):
                     shutil.rmtree(old, ignore_errors=True)
             self._note(root, level, brand=kept)
             self._done(root, it, clock, f'export the brand for {workspace.label(it.artifact)}')
+
+    def _looks(self, root: Path, run: _Run, found: pipeline.Survey,
+               step: pipeline.Next) -> None:
+        """Have the brand draw one slide of what a deck says in each of its looks, through
+        the slides tool's own preview route, for the person to choose from, and keep a
+        picture of each and the sheet of them all in the deck's own work folder. A brand
+        too old to offer looks is noted. Samples that cannot be rendered are noted too, and
+        the person is offered the brand's default look: nothing is picked blind."""
+        it, clock = step.step, time.monotonic()
+        if not self._brand_holds(root, found, it):
+            return
+        level, session = self._level(it), found.session
+        mine, work = found.decks[level], pipeline.place(root, level, pipeline.WORK)
+        outline = pipeline.place(root, level, pipeline.OUTLINE)
+        base = {'outline': workspace.sha256_file(outline),
+                'brand': mine.built['brand']['sha256'], 'at': home.now()}
+        skill = self._skill()
+        try:
+            offers = skill.looks()
+        except (WorkspaceError, OSError):
+            offers = False
+        if not offers:
+            with self.files:
+                self._note(root, level, look={**base, 'unavailable': pipeline.OLDER_BRAND})
+                self._done(root, it, clock, f'note that the brand offers no looks for '
+                           f'{workspace.label(it.artifact)}')
+            return
+        folder = work / f'looks-{secrets.token_hex(3)}'
+        how = self._how(root, found, level)
+        rendered = deck_flow.route(how['renderer'], self.slides().has)
+        try:
+            folder.mkdir(parents=True)
+            with worker_tools.one_at_a_time(Path(how['lock'])):
+                made = skill.look_samples(outline, folder / 'samples', *pipeline.brand_of(session),
+                                          preview=rendered['preview'], delivery=deck.DELIVERY)
+            manifest = home.read_json(folder / 'samples' / 'looks.json', {})
+            looks = deck_flow.sampled(manifest, folder / 'samples')
+            for look in looks:
+                if not look['image']:
+                    raise WorkspaceError(f"The brand drew no picture of the look {look['name']}.")
+                (folder / f"{look['number']}.png").write_bytes(
+                    worker_tools.picture(Path(look.pop('image'))))
+            sheet = Path(str(made.get('sheet') or manifest.get('sheet'))).resolve()
+            if (folder / 'samples').resolve() in sheet.parents and sheet.is_file():
+                (folder / pipeline.SHEET).write_bytes(worker_tools.picture(sheet))
+        except (WorkspaceError, OSError, KeyError, TypeError, ValueError) as refusal:
+            shutil.rmtree(folder, ignore_errors=True)
+            why = str(refusal).strip() or type(refusal).__name__
+            # The samples drawn without pictures, so that a choice of the brand's default is
+            # recorded with the brand as one nobody saw rendered. None when even that fails.
+            kept, unseen = None, {}
+            try:
+                folder.mkdir(parents=True)
+                skill.look_samples(outline, folder / 'samples', *pipeline.brand_of(session),
+                                   delivery=deck.DELIVERY)
+                manifest = home.read_json(folder / 'samples' / 'looks.json', {})
+                unseen = {'looks': [{key: value for key, value in look.items()
+                                     if key != 'image'}
+                                    for look in deck_flow.sampled(manifest, folder / 'samples')],
+                          'default': manifest.get('default'),
+                          'house': [str(line) for line in manifest.get('house') or ()]}
+                kept = folder.name
+            except (WorkspaceError, OSError, KeyError, TypeError, ValueError):
+                shutil.rmtree(folder, ignore_errors=True)
+            with self.files:
+                self._note(root, level, look={**base, 'failed': why, 'folder': kept,
+                                              'unseen': unseen})
+                self._done(root, it, clock, f"note that the brand's looks for "
+                           f'{workspace.label(it.artifact)} could not be rendered')
+            return
+        with self.files:
+            for old in work.glob('looks-*'):
+                if old != folder:
+                    shutil.rmtree(old, ignore_errors=True)
+            self._note(root, level, look={
+                **base, 'folder': folder.name, 'looks': looks, 'says': rendered['says'],
+                'route': rendered['preview'], 'default': manifest.get('default'),
+                'slide': manifest.get('slide'),
+                'house': [str(line) for line in manifest.get('house') or ()],
+                'sheet': (folder / pipeline.SHEET).is_file()})
+            self._done(root, it, clock, f"draw {workspace.label(it.artifact)} in each of the "
+                                        "brand's looks")
+
+    def _choose_look(self, root: Path, level: str | None, choice, words: str, by: str) -> bool:
+        """Record the look chosen for a deck, in the person's words: with the brand, which
+        checks the approved outline is the one its samples were drawn from and writes it
+        again with the look in it, and in the run record, which every computer reads. A
+        `choice` of DEFAULT, where no samples could be rendered, is the brand's default
+        look. False when the outline changed since the samples, which are then drawn again.
+        Call it holding `files`."""
+        mine_built = pipeline.read_built(root, level)
+        shown = mine_built.get('look') or {}
+        work = pipeline.place(root, level, pipeline.WORK)
+        contract = work / str((mine_built.get('brand') or {}).get('contract'))
+        outline = pipeline.place(root, level, pipeline.OUTLINE)
+        if choice == pipeline.DEFAULT_LOOK:
+            chosen = self._unseen_default(root, level, shown, contract, outline, words)
+        else:
+            picked = next((look for look in shown.get('looks') or ()
+                           if look['id'] == choice), None)
+            if picked is None:
+                raise WorkspaceError('Choose one of the looks the brand drew for this deck.')
+            folder = work / str(shown.get('folder'))
+            written = folder / f'outline-{secrets.token_hex(3)}.json'
+            try:
+                made = self._skill().look_choose(folder / 'samples', picked['id'], words,
+                                                 outline=outline, write=written)
+            except WorkspaceError as refusal:
+                if 'changed' in str(refusal).lower():
+                    self._note(root, level, look=None)   # drawn again from what it says now
+                    return False
+                raise
+            look = deck_flow.chosen_from(home.read_json(written, None),
+                                         deck_direction.contract_of(contract)) or {}
+            chosen = {'id': picked['id'], 'name': picked['name'],
+                      'shown': made.get('shown') or 'rendered',
+                      'direction': look.get('direction') or picked['direction'],
+                      'house': look.get('house') or list(shown.get('house') or ()),
+                      'layouts': look.get('layouts') or picked['layouts']}
+        record = self._load(root)
+        kept = self._decided(record, level)
+        kept['look'] = {'chosen': {**chosen, 'words': words, 'by': by,
+                                   'outline': workspace.sha256_file(outline), 'at': home.now()}}
+        self._store(root, record)
+        return True
+
+    def _unseen_default(self, root: Path, level, shown: dict, contract: Path, outline: Path,
+                        words: str) -> dict:
+        """The brand's default look, chosen knowingly where its samples could not be
+        rendered: recorded with the brand as unrendered where it kept samples without
+        pictures and takes `--unrendered`, else read from its deck direction record. Either
+        way the deck says nobody saw it rendered."""
+        unseen = shown.get('unseen') or {}
+        default = next((look for look in unseen.get('looks') or ()
+                        if look['id'] == unseen.get('default')), None)
+        folder = pipeline.place(root, level, pipeline.WORK) / str(shown.get('folder'))
+        if default and shown.get('folder') and (folder / 'samples').is_dir():
+            written = folder / f'outline-{secrets.token_hex(3)}.json'
+            try:
+                self._skill().look_choose(folder / 'samples', default['id'], words,
+                                          outline=outline, write=written, unrendered=True)
+            except WorkspaceError:
+                written = None   # a brand that does not take it: the record is the studio's
+            if written:
+                look = deck_flow.chosen_from(home.read_json(written, None),
+                                             deck_direction.contract_of(contract)) or {}
+                return {'id': default['id'], 'name': default['name'], 'shown': 'unrendered',
+                        'direction': look.get('direction') or default.get('direction'),
+                        'house': look.get('house') or list(unseen.get('house') or ()),
+                        'layouts': look.get('layouts') or default.get('layouts') or {}}
+        brand_default = deck_direction.default_look(contract) or {}
+        return {'id': brand_default.get('id') or pipeline.DEFAULT_LOOK,
+                'name': brand_default.get('id') or "the brand's default", 'shown': 'unrendered',
+                **{key: brand_default.get(key) for key in ('direction', 'house', 'layouts')}}
+
+    def _look_default(self, root: Path, step: pipeline.Step) -> None:
+        """A look gate the saved level does not stop at: the look the person picked in the
+        combined direction review, in their words; else the brand's default, saying why."""
+        level = self._level(step)
+        with self.files:
+            record = self._load(root)
+            picked = (self._decided(record, level).get('look') or {}).get('picked')
+            shown = pipeline.read_built(root, level).get('look') or {}
+            looks = shown.get('looks') or []
+            if picked and picked.get('choice') == pipeline.DEFAULT_LOOK and shown.get('failed'):
+                words = picked.get('words') or deck_flow.PROCEED_WORDS.format(
+                    name="the brand's default")
+                self._choose_look(root, level, pipeline.DEFAULT_LOOK, words, 'page')
+                return self._commit(root, "carry on in the brand's default look for "
+                                          f'{workspace.label(step.artifact)}, as picked in the '
+                                          'direction review')
+            if shown.get('failed'):
+                words = deck_flow.UNRENDERED_WORDS.format(why=shown['failed'],
+                                                          name="the brand's default")
+                self._choose_look(root, level, pipeline.DEFAULT_LOOK, words, 'review-policy')
+                record = self._load(root)
+                review_policy.receipt(record, step.id, {'look': pipeline.DEFAULT_LOOK},
+                                      home.now(), note=words)
+                self._store(root, record)
+                return self._commit(root, "use the brand's default look for "
+                                          f'{workspace.label(step.artifact)}: its looks could '
+                                          'not be rendered')
+            if picked and picked.get('choice') in [look['id'] for look in looks]:
+                name = next(look['name'] for look in looks if look['id'] == picked['choice'])
+                words = picked.get('words') or pipeline.NO_COMMENT.format(name=name)
+                if not self._choose_look(root, level, picked['choice'], words, 'page'):
+                    return self._commit(root, 'draw the looks again: what the deck says changed')
+                return self._commit(root, f'use the look picked in the direction review for '
+                                          f'{workspace.label(step.artifact)}: {name}')
+            default = next((look for look in looks if look['id'] == shown.get('default')),
+                           looks[0] if looks else None)
+            choice = default['id'] if default else pipeline.DEFAULT_LOOK
+            name = default['name'] if default else "the brand's default"
+            if not self._choose_look(root, level, choice, deck_flow.DEFAULT_WORDS.format(
+                    name=name), 'review-policy'):
+                return self._commit(root, 'draw the looks again: what the deck says changed')
+            record = self._load(root)
+            review_policy.receipt(record, step.id, {'look': choice}, home.now())
+            self._store(root, record)
+            self._commit(root, f"use the brand's default look for "
+                               f'{workspace.label(step.artifact)}, under the saved review level')
+
+    def look(self, path, level: str | None, choice: str, words: str | None = None) -> dict:
+        """Record the look a person chose for a deck from the brand's samples, with their
+        words, as the page heard it, and carry on. AGAIN draws the samples again; DEFAULT,
+        offered when they could not be rendered, carries on in the brand's default look.
+        Nothing else calls this."""
+        root = self._held(path)
+        with self.files:
+            record = self._load(root)
+            step = self._survey(root, record).next
+            if step.kind != 'look' or self._level(step.step) != level:
+                raise WorkspaceError('No look is waiting to be chosen for that deck.')
+            shown = pipeline.read_built(root, level).get('look') or {}
+            if choice == pipeline.AGAIN_LOOK:
+                self._note(root, level, look=None)
+                self._commit(root, f'draw the looks of {workspace.label(step.step.artifact)} '
+                                   'again')
+            else:
+                if choice == pipeline.DEFAULT_LOOK:
+                    if not shown.get('failed'):
+                        raise WorkspaceError('Choose one of the looks the brand drew.')
+                    named = "the brand's default"
+                    said = deck_flow.PROCEED_WORDS.format(name=named)
+                else:
+                    named = next((look['name'] for look in shown.get('looks') or ()
+                                  if look['id'] == choice), None)
+                    if named is None:
+                        raise WorkspaceError('Choose one of the looks the brand drew for this '
+                                             'deck.')
+                    said = (words or '').strip()[:NEXT_NOTE] \
+                        or pipeline.NO_COMMENT.format(name=named)
+                if self._choose_look(root, level, choice, said, 'page'):
+                    self._commit(root, f'choose the look of '
+                                       f'{workspace.label(step.step.artifact)}: {named}')
+                else:
+                    self._commit(root, 'draw the looks again: what the deck says changed')
+        self.carry_on(root)
+        return self.view(root)
+
+    def _guide(self, work: Path, chosen: tuple, told: Path, saved: dict) -> dict:
+        """Start a deck's slide task through the brand, or resume the one kept with it for
+        the same brand, with the deck's own work folder as its project, which is never
+        shared. What it returns for workers is written beside what else the brand step
+        read for them. What is kept is what to resume with, or why there is none: a brand
+        without the entry, or one that refused, leaves the deck as it always was."""
+        skill = self._skill()
+        try:
+            kind = skill.guides()
+        except (WorkspaceError, OSError):
+            kind = None
+        if kind is None:
+            return {'problem': pipeline.NO_ENTRY}
+        task = saved.get('task') if saved.get('brand') == list(chosen) else None
+        try:
+            answer = skill.guidance(work, chosen[0], chosen[1], task=task,
+                                    branded=kind == 'brand')
+        except WorkspaceError as refusal:
+            if task is None:
+                return {'problem': str(refusal)}
+            try:   # a saved task that cannot be resumed is started afresh
+                answer = skill.guidance(work, chosen[0], chosen[1], branded=kind == 'brand')
+            except WorkspaceError as again:
+                return {'problem': str(again)}
+        for name, text in brand_guidance.snapshot(answer).items():
+            worker_tools._write(told / pipeline.reading_file(name), text)
+        said = brand_guidance.worker(answer)
+        if said:
+            worker_tools._write(told / pipeline.reading_file(pipeline.BRAND_WORKER), said)
+        return {**brand_guidance.recorded(answer), 'brand': list(chosen),
+                'checkpoints': brand_guidance.checkpoints(answer)}
 
     def _designed(self, mine: pipeline.Deck) -> bool | None:
         """Whether what a deck says is written with its design. A deck keeps what it was
@@ -1900,10 +2193,15 @@ class Engine(Reviewing):
         words += [approved['note']] if approved.get('note') else []
         try:
             listed = home.read_json(work / mine.built['brand']['told'] / 'layouts.json', {})
+            known = self.slides().knows()
             whole = deck.complete(mine.outline, (listed or {}).get('layouts'), words,
-                                  designed=plan is not None)
-            home.write_json(source, whole)
+                                  designed=plan is not None,
+                                  look=pipeline.look_of(root, mine), knows=known)
+            home.write_json(source, deck.for_tool(whole, known))
             self.slides().outline_start(source, pipeline.contract(root, mine), folder)
+            # Kept, so that every compile of this start can name the outline it was
+            # approved as, and a tool that can finds a sentence split across shapes.
+            shutil.copyfile(source, folder / pipeline.TOOL_OUTLINE)
             sections = []
             for part in home.read_json(folder / 'parts.json', {})['parts']:
                 ident = Path(part).stem
@@ -1941,6 +2239,8 @@ class Engine(Reviewing):
             self._note(root, level, sections={}, rounds=[], start={
                 'outline': approved['sha256'], 'brand': mine.built['brand']['sha256'],
                 'design': design, **({'assets': held} if held is not None else {}),
+                'look': (pipeline.looked(self._decided(self._load(root), level), approved['sha256'])
+                         or {}).get('id'),
                 **({'icons': 'asset'} if by_asset else {}),
                 **({'review': pipeline.JUDGED} if plan is not None and self._judges() else {}),
                 'folder': folder.name, 'sections': sections, 'at': home.now()})
@@ -2072,8 +2372,10 @@ class Engine(Reviewing):
                 shutil.copyfile(base / made['file'] if made else start / part, folder / part)
             tool = self.slides()
             tool.merge(folder / 'parts.json', folder / 'composition.json')
+            told = start / pipeline.TOOL_OUTLINE
             tool.compile(folder / 'composition.json', pipeline.contract(root, mine),
-                         folder=folder / 'compiled', **bound)
+                         folder=folder / 'compiled', **bound,
+                         **({'outline': told} if told.is_file() else {}))
             if judged:   # the slides tool renders the deck it reviews, and that is the deck
                 shown = self._rendered(folder, bound['design'], self._how(root, found, level))
             else:
@@ -2086,6 +2388,8 @@ class Engine(Reviewing):
             slides = worker_tools.pictures(shown, folder / seen, shots)
             home.write_json(shots / pipeline.ABOUT, {'deck': shown['deckSha256'], 'slides': [
                 {key: slide[key] for key in ('number', 'id', 'title')} for slide in slides]})
+            screens = deck.screened(self._screened(folder, slides) if judged else slides,
+                                    shown.get('repair'), self._audit_now(file, found.session))
         except (WorkspaceError, OSError, KeyError, ValueError, TypeError) as refusal:
             shutil.rmtree(folder, ignore_errors=True)
             shutil.rmtree(shots, ignore_errors=True)
@@ -2115,10 +2419,34 @@ class Engine(Reviewing):
                                for ident, fingerprint in (made.get('assets') or {}).items()}}
                    if mine.start.get('assets') is not None else {}),
                 **({'judged': shown['judged']} if judged else {}),
-                'deck': shown['deckSha256'], 'slides': slides})
+                'deck': shown['deckSha256'], 'slides': slides, 'screens': screens})
+            # What the screens send back is drawn again before anyone reviews it, within the
+            # rounds a deck has: the last round is always reviewed.
+            back = deck.sent_back(screens)
+            if back and len(rounds) <= deck.REPAIRS:
+                rounds[-1]['review'] = {'findings': back, 'weakest': None, 'coverage': {},
+                                        'by': 'screen', 'at': home.now()}
             self._note(root, level, rounds=rounds)
             self._done(root, it, clock, f'put {workspace.label(it.artifact)} together: '
                        f"{len(slides)} slide{'' if len(slides) == 1 else 's'}")
+
+    def _audit_now(self, file: Path, session: dict) -> dict | None:
+        """The brand's audit of a deck as it was just rendered, for the screens a review
+        is given; None when it cannot be run, which stops nothing."""
+        try:
+            return self._skill().audit(file, *pipeline.brand_of(session))
+        except (WorkspaceError, OSError, ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _screened(folder: Path, slides: list[dict]) -> list[dict]:
+        """A deck reviewed against its design keeps what the slides tool found of each slide
+        in its packets: each slide as a preview gives it, with those findings."""
+        packets = home.read_json(folder / 'packets.json', [])
+        found = {packet.get('slide', {}).get('slide'): packet.get('findings') or []
+                 for packet in packets if isinstance(packet, dict)}
+        return [{**slide, 'findings': [finding for finding in found.get(slide['id']) or ()
+                                       if isinstance(finding, dict)]} for slide in slides]
 
     def _rendered(self, folder: Path, design: Path, how: dict) -> dict:
         """Have the slides tool render a whole deck compiled against its approved design and
@@ -2509,7 +2837,12 @@ class Engine(Reviewing):
         if root is None:
             raise WorkspaceError('No run is driving this training.')
         session, within = workspace.load(root), root
-        if section == 'review-sample' and artifact is not None:
+        if section == 'look' and artifact is not None:
+            if artifact not in workspace.artifact_names(root, session) \
+                    or workspace.split(artifact)[0] != 'deck':
+                raise WorkspaceError('That is not a slide deck of this training.')
+            file = pipeline.look_picture(root, workspace.split(artifact)[1], number)
+        elif section == 'review-sample' and artifact is not None:
             if artifact not in workspace.artifact_names(root, session) or workspace.split(artifact)[0] != 'deck' or number != 1:
                 raise WorkspaceError('That is not a sample of this training.')
             file = pipeline.place(root, workspace.split(artifact)[1], 'work/review-sample/sample.png')
@@ -2532,6 +2865,52 @@ class Engine(Reviewing):
         if within.resolve() not in file.resolve().parents or not file.is_file():
             raise FileNotFoundError(NO_PICTURE)
         return worker_tools.picture(file)
+
+    def deck_draft(self, path, level: str | None) -> Path:
+        """The wireframe draft page of what one deck says now, as the slides tool draws it
+        from the outline and the deck's brand: drawn once for each version of the outline,
+        into the deck's own work folder, which is never shared. Returns the page."""
+        root = self.driven(path)
+        if root is None:
+            raise WorkspaceError('No run is driving this training.')
+        found = self._survey(root, self._load(root))
+        mine = (found.decks or {}).get(level)
+        outline = pipeline.place(root, level, pipeline.OUTLINE)
+        if mine is None or mine.outline is None or not outline.is_file():
+            raise WorkspaceError('What this deck says is not written yet.')
+        contract = pipeline.contract(root, mine)
+        if not contract.is_file():
+            raise WorkspaceError("The deck's brand is not exported here yet.")
+        folder = pipeline.place(root, level, pipeline.WORK) / pipeline.DRAFTS
+        page = folder / f'{workspace.sha256_file(outline)[:16]}.html'
+        if page.is_file():
+            return page
+        tool = self.slides()
+        with self.files:
+            folder.mkdir(parents=True, exist_ok=True)
+            source = folder / f'outline-{secrets.token_hex(3)}.json'
+            try:
+                home.write_json(source, deck.for_tool(mine.outline, tool.knows()))
+                tool.outline_draft(source, contract, page)
+                if page.stat().st_size > pipeline.DRAFT_LIMIT:
+                    page.unlink(missing_ok=True)
+                    raise WorkspaceError('The draft is too large to show in the page.')
+            finally:
+                source.unlink(missing_ok=True)
+            for old in folder.glob('*.html'):
+                if old != page:
+                    old.unlink(missing_ok=True)
+        return page
+
+    def draft_page(self, root, page) -> bytes:
+        """A draft page the runner drew, read only when it is one: an HTML file in a deck's
+        drafts folder of this training."""
+        root, page = Path(root).resolve(), Path(page).resolve()
+        if page.suffix != '.html' or page.parent.name != pipeline.DRAFTS \
+                or root not in page.parents or not page.is_file() \
+                or page.stat().st_size > pipeline.DRAFT_LIMIT:
+            raise FileNotFoundError(NO_PICTURE)
+        return page.read_bytes()
 
     def deck_gate(self, path, artifact: str) -> dict:
         """What gate 6 adds for a deck: its slides whose pictures are here, what the
@@ -3389,6 +3768,9 @@ class Engine(Reviewing):
         if step.kind == 'outline':
             it = workspace.sentence(pipeline.subject(step.step))
             return 'waiting', f'{it} is waiting for your review.{self._before(found, step)}'
+        if step.kind == 'look':
+            return 'waiting', (f'The brand drew {workspace.label(step.step.artifact)} in each '
+                               'of its looks. Choose the one to draw it in.')
         if step.kind == 'done':
             return 'done', (pipeline.finished_says(report, found) if report
                             else found.session.get('next_step') or 'This training is done.')
@@ -3485,7 +3867,8 @@ class Engine(Reviewing):
         return mine, who, 'elsewhere', (THEIRS.format(name=who['name']) + LAST.format(
             when=when, then=last['says'])), last
 
-    def _steps(self, record: dict, found: pipeline.Survey, state: str) -> list[dict]:
+    def _steps(self, record: dict, found: pipeline.Survey, state: str,
+               root: Path | None = None) -> list[dict]:
         """Every step of the training, with how it stands and what it has taken."""
         ahead = found.next.step.id if found.next.step else None
         current = 'intake' if ahead == 'gate:intake' else ahead
@@ -3512,7 +3895,10 @@ class Engine(Reviewing):
                 status = 'waiting'
             else:
                 status = 'to-do'
-            automatic = step.kind == 'gate' and review_policy.automatic(record, 'training', step.id)
+            # A gate a grave finding holds is not called automatic: it stops for the person.
+            automatic = step.kind == 'gate' and review_policy.automatic(
+                record, 'training', step.id,
+                holding=pipeline.holding(root, found, step) if root is not None else ())
             listed.append({
                 'id': step.id, 'label': (step.label.replace('Your review of ', 'Continue ') + ' automatically'
                                          if automatic else step.label),
@@ -3676,7 +4062,7 @@ class Engine(Reviewing):
             'model_mode': (record.get('model_profiles') or {}).get('mode', 'single'),
             'review_level': review_policy.level(record),
             'review': self._review_view(root, record, found),
-            'steps': self._steps(record, found, state),
+            'steps': self._steps(record, found, state, root),
             'workers': self._workers(run),
             'spent': {'dollars': dollars, 'tokens': tokens},
             'note': self._note_view(record),
@@ -3687,6 +4073,7 @@ class Engine(Reviewing):
             'documents': self._supplied(root, record, found),
             'copies': self._copies(found),
             'outline': pipeline.outline_view(root, found, level) if drawing else None,
+            'look': pipeline.look_view(root, found, level) if drawing else None,
             'deck': (pipeline.deck_view(root, found, level, self._live(run, drawing),
                                         self._given_up(record, drawing))
                      if drawing else None),
@@ -3811,6 +4198,9 @@ class Engine(Reviewing):
         if step.kind == 'outline':
             mine = found.decks[workspace.split(step.step.artifact)[1]]
             return f"outline:{step.step.id}:{(mine.kept.get('waiting') or {}).get('sha256')}"
+        if step.kind == 'look':
+            shown = found.decks[workspace.split(step.step.artifact)[1]].built.get('look') or {}
+            return f"look:{step.step.id}:{shown.get('folder')}"
         if step.kind == 'documents':
             return 'documents'
         return f'stuck:{step.why}' if step.kind == 'stuck' else None

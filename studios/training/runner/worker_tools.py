@@ -573,7 +573,12 @@ def check_outline(text: str, spec: dict, slides,
         design = given.get('design')
     budget = spec.get('budget')
     try:
-        report = slides.outline_check(_draft(scratch, 'outline', kept), spec['brand'])
+        # The tool checks the outline without the short labels a point gives its diagram.
+        known = slides.knows() if hasattr(slides, 'knows') else frozenset()
+        shown = deck.for_tool(outline, known)
+        told = kept if shown == outline else json.dumps(
+            shown, indent=2, ensure_ascii=False) + '\n'
+        report = slides.outline_check(_draft(scratch, 'outline', told), spec['brand'])
     except WorkspaceError as refusal:
         found = said_no(refusal)
     else:
@@ -582,7 +587,7 @@ def check_outline(text: str, spec: dict, slides,
                  for finding in report.get('findings') or ()]
     outcomes = [checks.result('outline.tool', found),
                 checks.result('outline.rules', deck.rules(outline, spec.get('blueprint') or '',
-                                                          budget))]
+                                                          budget, spec.get('known') or ()))]
     if not spec.get('design'):
         return held(outcomes), outcomes, [], kept
     problems, proposed = check_design(outline, design, slides, scratch,
@@ -641,6 +646,12 @@ def against(how: dict) -> dict:
     return {'design': Path(how['design']), 'section': bool(how.get('section'))}
 
 
+def outlined(spec: dict) -> dict:
+    """What compile is given of the approved outline a section is drawn from, so that a
+    tool that can finds a point's sentence split across shapes: nothing without one."""
+    return {'outline': Path(spec['outline'])} if spec.get('outline') else {}
+
+
 def check_section(text: str, spec: dict, slides,
                   scratch: Path) -> tuple[list[str], list[dict], list[str], str]:
     """A section: some slides of a deck, drawn. What was fixed before its composer started
@@ -658,7 +669,8 @@ def check_section(text: str, spec: dict, slides,
         kept = json.dumps(section, indent=2, ensure_ascii=False) + '\n'
     if isinstance(section, dict):
         try:
-            slides.compile(_draft(scratch, 'section', kept), spec['brand'], **against(spec))
+            slides.compile(_draft(scratch, 'section', kept), spec['brand'], **against(spec),
+                           **outlined(spec))
         except WorkspaceError as refusal:
             found = said_no(refusal)
     outcomes = [checks.result('section.rules', ours), checks.result('section.compile', found)]
@@ -750,9 +762,10 @@ def _in_drive(how: dict, made) -> dict:
     known = home.read_json(kept, {}) if kept else {}
     known = known if isinstance(known, dict) else {}
 
-    def remember(ident, url) -> None:
-        if kept and ident and ident != known.get('id'):
-            home.write_json(kept, {**(how.get('named') or {}), 'id': ident, 'url': url})
+    def remember(ident, url, receipt=None) -> None:
+        if kept and ident and (ident != known.get('id') or receipt != known.get('pool')):
+            home.write_json(kept, {**(how.get('named') or {}), 'id': ident, 'url': url,
+                                   **({'pool': receipt} if receipt else {})})
 
     try:
         found = made(known.get('id'))
@@ -760,7 +773,15 @@ def _in_drive(how: dict, made) -> dict:
         left = getattr(refusal, 'left', None) or {}
         remember(left.get('fileId'), left.get('url'))
         raise
-    remember(found.get('fileId'), found.get('url'))
+    # A preview in the slides tool's pool is one of its own few reusable decks: its link is
+    # kept with the receipt that says which preview it holds, and once a newer preview has
+    # replaced it, the link is forgotten rather than shown with someone else's slides.
+    pool = found.get('pool') if isinstance(found.get('pool'), dict) else {}
+    if found.get('remoteReplaced'):
+        if kept:
+            kept.unlink(missing_ok=True)
+        return found
+    remember(found.get('fileId'), found.get('url'), pool.get('receipt'))
     return found
 
 
@@ -1282,7 +1303,8 @@ class WorkerTools:
             new.parent.mkdir(parents=True, exist_ok=True)
         try:
             self.slides().compile(_draft(self.folder / 'drafts', 'preview', kept),
-                                  spec['brand'], folder=build, **against(spec))
+                                  spec['brand'], folder=build, **against(spec),
+                                  **outlined(spec))
             found = render(self.slides(), build, taken, spec)
             slides = pictures(found, taken, self.folder / 'shown')
         except WorkspaceError as refusal:
