@@ -296,12 +296,14 @@ def fit(text, limit, wanted=()):
     chosen, used = {}, 0
     mark = encoded_size('\n\n[…]\n\n')
 
-    def take(index, allowance):
+    def take(index, allowance, cut):
         nonlocal used
         start, end = spans[index]
         piece = text[start:end]
         size = encoded_size(piece)
         if size > allowance:
+            if not cut:
+                return False  # Whole paragraphs first; a later pass may cut one to fit.
             piece = piece[: max(0, len(piece) - (size - allowance))]
             while piece and encoded_size(piece) > allowance:
                 piece = piece[: len(piece) * 9 // 10]
@@ -318,19 +320,20 @@ def fit(text, limit, wanted=()):
         for index in order
         if any(word in text[spans[index][0] : spans[index][1]].casefold() for word in wanted)
     ]
-    for sequence, allowance in ((order, limit // 2), (matched, limit), (order, limit)):
+    passes = ((order, limit // 2, False), (matched, limit, False), (order, limit, True))
+    for sequence, allowance, cut in passes:
         for index in sequence:
             if index in chosen:
                 continue
-            if used + mark >= allowance or not take(index, allowance - used - mark):
+            if used + mark >= allowance or not take(index, allowance - used - mark, cut):
                 break
     parts, previous = [], None
     for index in sorted(chosen):
-        if previous is not None and index != previous + 1:
+        if previous is not None and index != previous + 1 and not parts[-1].endswith('[…]'):
             parts.append('[…]')
         parts.append(chosen[index])
         previous = index
-    if previous is not None and previous != len(spans) - 1:
+    if previous is not None and previous != len(spans) - 1 and not parts[-1].endswith('[…]'):
         parts.append('[…]')
     return '\n\n'.join(parts)
 
