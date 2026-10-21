@@ -2034,7 +2034,7 @@ In `skills/blog-studio/references/voice-flow.md`, after the paragraph that ends 
 
 ```markdown
 A voice belongs to one author, who may be the person you are writing for rather than
-the person in the chat: a ghostwriter learns Nick's voice from Nick's posts and starts
+the person in the chat: a ghostwriter learns Sam Rivera's voice from Sam's posts and starts
 a blog with that voice. Name every profile for its author and record the author on
 each sample (`--author`); ask whose writing links are before reading them, and keep
 the permission to analyze it the person's to give. A voice is not a style. When the
@@ -2095,7 +2095,7 @@ Voices are learned from writing the author wrote. Bring samples in three ways:
   when a colleague hands you theirs, give their name in the sheet. Nothing signs in
   to LinkedIn, and connections or messages are never read.
 - **Add links to posts.** Paste links, or choose a text file with one link per line,
-  such as `darin-zook-blog-links.txt`; the author is suggested from the file name and
+  such as `sam-rivera-blog-links.txt`; the author is suggested from the file name and
   you can change it. Blog Studio first shows what it will do: the site, the links
   already in your library and the ones it will fetch. It then reads each new page once,
   in batches, and saves it in your reference library under "Published posts by"
@@ -2138,7 +2138,7 @@ Expected: the check ends with the unittest summary `OK`. Lint may print `SKIPPED
 
 - [ ] **Step 5: Try it on the page against a disposable workspace**
 
-Following `docs/development.md` ("To try the skill from a checkout"), open the page on a temporary workspace with `BLOG_STUDIO_DATA`, `STUDIOS_CONFIG` and `HOME` pointed at temporary folders. Confirm: **More tools → Voices and styles** lists the eight starters; **New blog** shows the Style select with "(starter)" entries; a blog started with a style shows "Style: …" in **About this blog**; **Import a LinkedIn export** and **Add links** open and refuse an empty submit with a message. Do not start a provider job. Do not import the owner's example file (`darin-zook-blog-links.txt`, 21 public posts) without the owner's go-ahead; with it, use a disposable workspace and expect 21 rows, bylines matched or flagged, and a voice learned from the samples.
+Following `docs/development.md` ("To try the skill from a checkout"), open the page on a temporary workspace with `BLOG_STUDIO_DATA`, `STUDIOS_CONFIG` and `HOME` pointed at temporary folders. Confirm: **More tools → Voices and styles** lists the eight starters; **New blog** shows the Style select with "(starter)" entries; a blog started with a style shows "Style: …" in **About this blog**; **Import a LinkedIn export** and **Add links** open and refuse an empty submit with a message. Do not start a provider job. Do not import the owner's example file (`sam-rivera-blog-links.txt`, 21 public posts) without the owner's go-ahead; with it, use a disposable workspace and expect 21 rows, bylines matched or flagged, and a voice learned from the samples.
 
 - [ ] **Step 6: Commit**
 

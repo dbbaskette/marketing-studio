@@ -23,10 +23,11 @@ not extract arbitrary archive paths or import unrelated contacts/messages.
 Normalize selected articles through source intake before adding them to a profile.
 
 A voice belongs to one author, who may be the person you are writing for rather than
-the person in the chat: a ghostwriter learns Nick's voice from Nick's posts and starts
-a blog with that voice and Nick as its author. Name every profile for its author and
-record the author on each sample (`--author`); ask whose writing it is before reading
-it, and keep the permission to analyze it the person's to give. A voice is not a style.
+the person in the chat: a ghostwriter learns Sam Rivera's voice from Sam's posts and
+starts a blog with that voice and Sam Rivera as its author. Name every profile for its
+author and record the author on each sample (`--author`); ask whose writing it is
+before reading it, and keep the permission to analyze it the person's to give. A voice
+is not a style.
 When the author wants a kind of writing learned, such as how product announcements are
 shaped, learn a [style](workspace/styles.md) from examples by anyone and keep it apart
 from the voice; a blog takes one of each, and the page offers them as **Write as** and

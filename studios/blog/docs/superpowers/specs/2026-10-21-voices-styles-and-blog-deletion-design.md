@@ -90,8 +90,8 @@ a blog is managed.
 - **Voice**: how one person sounds. Learned from writing they authored. The
   person may be you or someone you write for: a workspace holds a voice per
   author, each named for that author, and a blog can be written in any of
-  them. That is how ghostwriting works here: learn Nick's voice from Nick's
-  posts, then start a blog with Nick's voice and, if you like, Nick's name as
+  them. That is how ghostwriting works here: learn Sam Rivera's voice from
+  Sam's posts, then start a blog with Sam's voice and, if you like, Sam's name as
   its author. A voice stays what Blog Studio has today under `profiles/`: a
   guide (`VOICE.md`), optional background, explicit rules, sample IDs,
   revisions, provisional or confirmed state, and a pinned revision per blog.
@@ -195,7 +195,7 @@ rules apply. Each voice sample carries the author's name in the source's
    checkbox as today gates the job. The export is a voice input only; a style
    can still be learned later from the sources it created.
 3. **Add links to posts**, pasted or as a text file. This is how a ghostwriter
-   usually starts: a file such as `darin-zook-blog-links.txt` with one link
+   usually starts: a file such as `sam-rivera-blog-links.txt` with one link
    per line.
    - **The list.** The sheet takes pasted text or a `.txt` file. One link per
      line; blank lines and lines starting with `#` are ignored, as are list
@@ -205,7 +205,7 @@ rules apply. Each voice sample carries the author's name in the source's
      reason. Up to 256 KiB and the library's post limit per list.
    - **Whose writing.** For voice samples the sheet asks whose writing the
      links are, prefilled from a file name such as
-     `darin-zook-blog-links.txt` as "Darin Zook" (trailing words like blog,
+     `sam-rivera-blog-links.txt` as "Sam Rivera" (trailing words like blog,
      posts and links are dropped) and editable. Style samples need no author.
    - **Reading.** Links go through the reference library's own `urls`
      import, by way of `voice_links` (first built on the local branch

@@ -37,7 +37,7 @@ def purpose_of(data):
 
 
 def author_from_filename(name):
-    """'darin-zook-blog-links.txt' -> 'Darin Zook': a suggestion the person can change."""
+    """'sam-rivera-blog-links.txt' -> 'Sam Rivera': a suggestion the person can change."""
     stem = Path(str(name or '')).stem
     words = [w for w in re.split(r'[\s_.-]+', stem) if w and w.casefold() not in LIST_WORDS]
     return ' '.join(w[:1].upper() + w[1:] for w in words if not w.isdigit())[:200]
