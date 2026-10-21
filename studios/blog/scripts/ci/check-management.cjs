@@ -1202,7 +1202,9 @@ async function filesJourney(){
   assert.equal(byId('files-web').checked,false,'web research is off by default');
   assert.equal(byId('files-keep').checked,true,'files land in the team library by default');
   assert.equal(byId('files-keep').parent.children[1].textContent,'Keep in the team library');
-  assert.match(byId('files-keep-hint').textContent,/just this blog/);
+  assert.match(byId('files-keep-hint').textContent,/^Applies to files you add next\./);assert.match(byId('files-keep-hint').textContent,/just this blog/);
+  {const ids=nodes().filter(e=>e.id).map(e=>e.id);assert.ok(ids.indexOf('files-keep')<ids.indexOf('files-input'),'Keep comes before the picker: '+ids.join('|'));}
+  assert.match(byId('files-google-hint').textContent,/lands in the team library unless Keep is unticked; then it stays with just this blog/);
   assert.equal(nodes().some(e=>e.id==='new-profile'),false);
   const start=()=>nodes().find(e=>e.type==='submit');
   assert.equal(start().disabled,true,'nothing to start before a file has text');
@@ -1234,6 +1236,7 @@ async function filesJourney(){
   assert.equal('author' in upload[0].data,false,'no author until one is named');assert.equal('kind' in upload[0].data,false,'no kind of post until one is chosen');
   assert.match(upload[0].data.operation,/^[0-9a-f]{32}$/);
   assert.ok(text().some(t=>/1,200 characters/.test(t)),'each file shows its extracted size: '+text().join('|'));
+  assert.ok(text().some(t=>/^1,200 characters · In the team library$/.test(t)),'and says it went to the team library: '+text().join('|'));
   assert.ok(text().some(t=>/Needs text/.test(t)),'a file without text says so');
   assert.ok(text().some(t=>/no PDF reader/.test(t)),'and why');
   assert.equal(start().disabled,false);
@@ -1257,12 +1260,17 @@ async function filesJourney(){
   await byId('files-input').listeners.change();
   assert.deepEqual(requests.filter(r=>r.url==='/api/upload').at(-1).data.files.map(e=>e.purpose),['inspiration']);
   byId('files-role').value='material';byId('files-role').listeners.change();
-  // A kept file carries the blog's author and kind of post to the library.
+  // A kept file carries the kind of post to the library; facts take no author, an example the blog's.
   f.run("studio.draft.author='Avery';studio.draft.style='product-announcement'");
   byId('files-input').files=[{name:'kept.md',size:4,arrayBuffer:async()=>new TextEncoder().encode('Kept').buffer}];
   await byId('files-input').listeners.change();
   const keptUpload=requests.filter(r=>r.url==='/api/upload').at(-1).data;
-  assert.equal(keptUpload.keep,true);assert.equal(keptUpload.author,'Avery');assert.equal(keptUpload.kind,'product-announcement');
+  assert.equal(keptUpload.keep,true);assert.equal('author' in keptUpload,false,'facts written by others do not get the blog’s author');assert.equal(keptUpload.kind,'product-announcement');
+  byId('files-role').value='inspiration';byId('files-role').listeners.change();
+  byId('files-input').files=[{name:'example.md',size:4,arrayBuffer:async()=>new TextEncoder().encode('Ex').buffer}];
+  await byId('files-input').listeners.change();
+  assert.equal(requests.filter(r=>r.url==='/api/upload').at(-1).data.author,'Avery','an example of the kind of post takes the blog’s author');
+  byId('files-role').value='material';byId('files-role').listeners.change();
   f.run("studio.draft.author='';studio.draft.style=''");
   // Unticked, Just this blog: the files added after it stay with the blog, out of the library.
   byId('files-keep').checked=false;byId('files-keep').listeners.change();
@@ -1270,6 +1278,9 @@ async function filesJourney(){
   await byId('files-input').listeners.change();
   assert.equal(requests.filter(r=>r.url==='/api/upload').at(-1).data.keep,false);
   assert.equal('author' in requests.filter(r=>r.url==='/api/upload').at(-1).data,false,'a file that stays with the blog carries no library fields');
+  f.run("studio.draft.files.push({id:'s7',filename:'mine.md',state:'ready',chars:5,note:'',link:'',role:'material',kept:false});sWizard()");
+  assert.ok(text().some(t=>/^5 characters · Just this blog$/.test(t)),'a file kept out of the library says so: '+text().join('|'));
+  f.run("studio.draft.files=studio.draft.files.filter(file=>file.id!=='s7');sWizard()");
   // Large files go up in several requests, each under the page's request limit.
   const before=requests.filter(r=>r.url==='/api/upload').length,MiB=1024*1024;
   byId('files-input').files=[6,6,5].map((size,n)=>({name:'big'+n+'.md',size:size*MiB,arrayBuffer:async()=>new TextEncoder().encode('Big').buffer}));
@@ -1658,6 +1669,11 @@ async function libraryScreen(){
   assert.ok(nodes().some(e=>/900 characters/.test(e.textContent)),'with how much text each has');
   assert.equal(f.run('librarySelection.size'),0,'the selection is used up');
   // A row only the Team Hub holds goes with its location, so the server checks it out first.
+  // Without edit access the rows cannot be ticked and nothing can be added.
+  f.run("access.actions.edit=false");await f.run('load()');
+  assert.equal(results().filter(e=>e.type==='checkbox').length,0,'no checkboxes without edit access');
+  assert.equal(f.get('library-add-open').hidden,true,'and no Add to library');
+  f.run("access.actions.edit=true");await f.run('load()');assert.equal(f.get('library-add-open').hidden,false);
   rows.push({...rows[0],id:'h',title:'Shared post',location:'hub'});await f.run('load()');
   const shared=results().find(e=>e.attributes?.['aria-label']==='Select Shared post');shared.checked=true;shared.listeners.change();
   await f.run("sLibrarySelection('blog',[...librarySelection.values()])");
