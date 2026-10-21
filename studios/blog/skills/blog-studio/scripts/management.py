@@ -417,8 +417,12 @@ def save_upload(root, staging, checked, purpose, author=None, analyze=True):
 
 def upload_files(root, data, staging, ledger, fingerprint):
     """Several files under one operation. Material is pinned by a run and stays out of
-    the reference library and the Team Hub unless the person keeps it."""
-    if set(data) - {'operation', 'files', 'purpose', 'keep', 'analyze'}:
+    the reference library and the Team Hub unless the person keeps it. A LinkedIn export
+    expands into its About text and its articles, and an author named for the request is
+    recorded on every source it saves."""
+    import sample_intake
+
+    if set(data) - {'operation', 'files', 'purpose', 'keep', 'analyze', 'author'}:
         raise ValueError('Unknown upload field.')
     files = data.get('files')
     if not isinstance(files, list) or not files or len(files) > MAX_UPLOAD_FILES:
@@ -430,19 +434,31 @@ def upload_files(root, data, staging, ledger, fingerprint):
         raise ValueError('Choose a source purpose.')
     if data.get('keep') and purpose == 'material':
         purpose = 'reference'
-    checked = [
-        (checked_google if 'google' in entry else checked_upload)(root, entry)
-        for entry in (entry if isinstance(entry, dict) else {} for entry in files)
-    ]
+    author = studio.checked_author(data['author']) if data.get('author') else None
+    checked = []
+    for entry in (entry if isinstance(entry, dict) else {} for entry in files):
+        if 'linkedin' in entry:
+            if purpose == 'material':
+                # Material stays with one blog; an export's rows are shared writing samples.
+                raise ValueError(
+                    'Upload a LinkedIn export as writing samples, not as material for one blog.'
+                )
+            checked.extend(sample_intake.checked_linkedin(root, entry))
+        else:
+            checked.append((checked_google if 'google' in entry else checked_upload)(root, entry))
     if len({entry['filename'] for entry in checked}) != len(checked):
         raise ValueError('Upload each file once.')
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
     rows, receipts, saved = [], [], []
     try:
         for entry in checked:
-            source = save_upload(root, staging, entry, purpose, analyze=data.get('analyze', True))
+            chosen = entry.get('purpose', purpose)
+            whose = author or entry.get('author')
+            source = save_upload(
+                root, staging, entry, chosen, whose, analyze=data.get('analyze', True)
+            )
             saved.append(source['id'])
-            if purpose != 'material':
+            if chosen != 'material':
                 source = share(root, 'source', source)
                 receipts.append(receipt(root, 'Uploaded reference', source, 'source'))
             row = {
@@ -451,6 +467,8 @@ def upload_files(root, data, staging, ledger, fingerprint):
                 'state': entry['status'],
                 'chars': len(entry['text']) if entry['text'] else 0,
                 'note': entry['note'],
+                'purpose': chosen,
+                'author': whose,
             }
             if entry.get('link'):
                 row['link'] = entry['link']

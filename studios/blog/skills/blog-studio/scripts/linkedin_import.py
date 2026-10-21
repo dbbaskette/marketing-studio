@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read only profile background and article samples from a supplied LinkedIn ZIP."""
+"""Read only profile background, the person's name and article samples from a supplied LinkedIn ZIP."""
 
 import argparse
 import csv
@@ -76,6 +76,7 @@ def parse(data, nested=False):
             raise ValueError('Selected profile/articles exceed 25 MB; provide a smaller selection.')
         result = {
             'headline': '',
+            'name': '',
             'summary': '',
             'articles': [],
             'limitations': [],
@@ -87,6 +88,14 @@ def parse(data, nested=False):
             if rows:
                 result['headline'] = (rows[0].get('Headline') or '').strip()
                 result['summary'] = (rows[0].get('Summary') or '').strip()
+                result['name'] = ' '.join(
+                    part
+                    for part in (
+                        (rows[0].get('First Name') or '').strip(),
+                        (rows[0].get('Last Name') or '').strip(),
+                    )
+                    if part
+                )
         for info in selected:
             if info.filename.lower().endswith(('.html', '.htm')):
                 parser = ArticleText()
