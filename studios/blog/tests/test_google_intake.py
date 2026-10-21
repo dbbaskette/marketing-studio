@@ -126,6 +126,17 @@ class GoogleIntakeTests(unittest.TestCase):
             support.git(found.repo, 'diff', '--cached', '--name-only').strip(), 'unrelated.txt'
         )
 
+    def test_an_earlier_generated_shared_readme_is_recorded_as_it_is(self):
+        found = self.shared_launch(legacy=True)
+        earlier = studio.PREVIOUS_SHARED_READMES[0]
+        self.assertNotEqual(earlier, studio.SHARED_README)
+        (self.root / '.shared/README.md').write_bytes(earlier)
+        teams.keep_setup(self.root)
+        self.assertEqual(gitstate.changed(found), [])
+        self.assertEqual((self.root / '.shared/README.md').read_bytes(), earlier)
+        committed = support.git(found.repo, 'show', 'HEAD:blogs/.shared/README.md')
+        self.assertEqual(committed, earlier.decode().strip(), 'committed as it is')
+
     def test_modified_setup_metadata_is_never_adopted_as_generated(self):
         found = self.shared_launch(legacy=True)
         studio.write_json(

@@ -641,9 +641,14 @@ def command(root, args):
         raise ValueError('Choose a text file of links up to 256 KiB.')
     text = path.read_text(encoding='utf-8')
     author = args.author or author_from_filename(path.name)
+    purpose = getattr(args, 'purpose', None) or 'voice-sample'
+    if not author and purpose == 'style-sample':
+        raise ValueError(
+            'Label these examples with --author, such as "Product announcements"; '
+            'they are collected as "Examples: <label>".'
+        )
     if not author:
         raise ValueError('Name the author these posts belong to with --author.')
-    purpose = getattr(args, 'purpose', None) or 'voice-sample'
     data = {'text': text, 'author': author, 'site': args.site, 'purpose': purpose}
     if not args.do_import:
         return preview(root, data)

@@ -205,9 +205,21 @@ class StyleTests(Fixture):
             sample['id'],
         )
         self.assertEqual(created['sample_ids'], [sample['id']])
-        self.assertEqual(
-            [row['id'] for row in styles.catalog(self.root)['samples']], [sample['id']]
-        )
+        found = styles.catalog(self.root)
+        self.assertEqual([row['id'] for row in found['samples']], [sample['id']])
+        listed = {row['id']: row['sample_ids'] for row in found['styles']}
+        self.assertEqual(listed[created['id']], [sample['id']])
+        self.assertEqual(listed['how-to'], [], 'an uncopied starter has no samples')
+
+    def test_packaged_starters_are_read_once_and_handed_out_as_copies(self):
+        styles._packaged.cache_clear()
+        self.addCleanup(styles._packaged.cache_clear)
+        with patch.object(styles, 'parse_seed', wraps=styles.parse_seed) as parsed:
+            first = styles.starters()
+            first['how-to'][0]['name'] = 'Changed by a caller'
+            again = styles.starters()
+        self.assertEqual(parsed.call_count, len(list(styles.SEEDS.glob('*.md'))))
+        self.assertEqual(again['how-to'][0]['name'], 'How-to and tutorial')
 
     def test_a_team_workspace_keeps_styles_under_the_shared_folder(self):
         team = self.base / 'team' / 'blogs'

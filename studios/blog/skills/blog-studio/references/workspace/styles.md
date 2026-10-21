@@ -24,6 +24,8 @@ Where a style and a voice conflict on wording, the voice wins; on structure, the
 wins.
 
 Links to public examples arrive through `library voice-links --purpose style-sample`
-(no byline check, no author needed) or the page's **Add links to examples**. A source
+or the page's **Add links to examples**. There is no byline check; `--author` is the
+examples' label, such as "Product announcements" (from the file name when omitted), and
+they are collected as "Examples: <label>". A source
 that is already a sample for a voice becomes a style example with **Use as an example**
 on the page; nothing is fetched again.

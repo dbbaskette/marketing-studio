@@ -131,7 +131,7 @@ def source_purpose(root, data):
         raise ValueError(
             'This source has no readable text yet. Add its text before using it as a sample.'
         )
-    given = data.get('author')
+    given = data.get('author') if purpose == 'voice-sample' else None
     author = studio.checked_author(given) if given not in (None, '') else None
     saved = (record.get('author') or '').strip()
     if purpose == 'voice-sample':

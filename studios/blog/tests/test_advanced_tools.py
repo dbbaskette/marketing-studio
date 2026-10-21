@@ -705,6 +705,14 @@ class SourcePurposeTests(Fixture):
         with self.assertRaisesRegex(ValueError, 'Avery'):
             self.mark(source['id'], 'voice-sample', 'Blake')
 
+    def test_a_style_sample_takes_no_author(self):
+        source = self.source('A synthetic announcement.')
+        result = self.mark(source['id'], 'style-sample', 'Avery')
+        self.assertEqual((result['revision'], result['author']), (2, ''))
+        self.assertEqual(studio.item(self.root, 'sources', source['id'])[1]['author'], '')
+        again = self.mark(source['id'], 'style-sample', 'Avery')
+        self.assertEqual(again['revision'], 2, 'an author alone changes nothing for a style')
+
     def test_refuses_unknown_purposes_pending_sources_material_and_a_missing_author(self):
         import base64
         import blog_library

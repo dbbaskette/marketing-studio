@@ -557,6 +557,20 @@ class ImportTests(Fixture):
         self.assertEqual(record['purposes'].count('style-sample'), 1)
         self.assertNotIn('voice-sample', record['purposes'])
 
+    def test_a_style_list_without_a_label_asks_for_one(self):
+        listing = self.base / 'links.txt'
+        listing.write_text(self.links('one'))
+        for purpose, wording in (
+            ('style-sample', 'Label these examples'),
+            ('voice-sample', 'Name the author'),
+        ):
+            args = studio.parser().parse_args(
+                ['--root', str(self.root), 'library', 'voice-links', '--file', str(listing)]
+                + ['--purpose', purpose]
+            )
+            with self.assertRaisesRegex(ValueError, wording):
+                library.command(self.root, args)
+
     def test_command_line_checks_then_imports_the_same_list(self):
         listing = self.base / 'avery-quinn-blog-links.txt'
         listing.write_text('# Synthetic\n' + self.links('one', 'two'))

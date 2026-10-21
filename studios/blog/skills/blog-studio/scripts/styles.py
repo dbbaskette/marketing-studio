@@ -8,6 +8,8 @@ someone changes or uses it (save, retire, pin), and from then on the copy is the
 an edited or retired starter is never copied back over.
 """
 
+import copy
+import functools
 import json
 import os
 from pathlib import Path
@@ -38,9 +40,10 @@ def parse_seed(text):
     return name, summary, match.group(2).strip() + '\n'
 
 
-def starters():
-    """{id: (record, guide)} for every packaged starter, as revision 1 of a confirmed style."""
-    found = {}
+@functools.cache
+def _packaged():
+    """Every packaged starter, parsed once: the files ship with the skill and never change."""
+    found = []
     for path in sorted(SEEDS.glob('*.md')):
         ident = studio.identifier(path.stem)
         name, summary, body = parse_seed(path.read_text(encoding='utf-8'))
@@ -54,8 +57,16 @@ def starters():
             'sample_ids': [],
             'created_at': SEED_TIME,
         }
-        found[ident] = (record, body)
-    return found
+        found.append((ident, record, body))
+    return tuple(found)
+
+
+def starters():
+    """{id: (record, guide)} for every packaged starter, as revision 1 of a confirmed style.
+
+    Each call hands out its own copies, so a caller that changes a record changes nothing
+    for the next one."""
+    return {ident: (copy.deepcopy(record), body) for ident, record, body in _packaged()}
 
 
 def materialize(root, ident):
@@ -277,7 +288,13 @@ def catalog(root):
     for ident, (record, _) in starters().items():
         found.setdefault(ident, record)
     rows = [
-        {key: record.get(key) for key in ('id', 'name', 'summary', 'kind', 'revision', 'status')}
+        {
+            **{
+                key: record.get(key)
+                for key in ('id', 'name', 'summary', 'kind', 'revision', 'status')
+            },
+            'sample_ids': list(record.get('sample_ids') or []),
+        }
         for record in found.values()
     ]
     rows.sort(key=lambda row: (row['kind'] != 'seed', (row['name'] or '').lower()))

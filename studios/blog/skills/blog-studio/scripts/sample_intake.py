@@ -13,6 +13,7 @@ import zlib
 
 import blog_library
 import linkedin_import
+import studio
 
 MAX_ARCHIVE = 10 * 1024 * 1024
 NOT_AN_EXPORT = 'That file is not a LinkedIn export zip. Download "Get a copy of your data" again.'
@@ -48,7 +49,12 @@ def checked_linkedin(root, entry, limit=19):
     ):
         raise ValueError(NOT_AN_EXPORT) from None
     rows, notes = [], list(found['limitations'])
-    author = found.get('name') or None  # the request's own author name wins over this
+    # The request's own author name wins over this; a profile name that is not a usable
+    # author name is left out rather than refusing the export.
+    try:
+        author = studio.checked_author(found.get('name'))
+    except ValueError:
+        author = None
     about = '\n\n'.join(part for part in (found['headline'], found['summary']) if part)
     if about and len(about.encode()) > blog_library.MAX_TEXT:
         notes.append('The About text was left out: too long to share.')

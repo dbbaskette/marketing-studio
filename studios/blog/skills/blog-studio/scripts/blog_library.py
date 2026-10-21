@@ -1535,7 +1535,10 @@ def add_parser(groups):
         help='Check, then with --import add published posts from a list of links as samples',
     )
     p.add_argument('--file', required=True, help='Text file: one link per line; # comments')
-    p.add_argument('--author', help='Whose posts these are (default: from the file name)')
+    p.add_argument(
+        '--author',
+        help='Whose posts these are, or the label of style examples (default: from the file name)',
+    )
     p.add_argument('--site', help='The one site to import when the list mixes sites')
     p.add_argument('--import', dest='do_import', action='store_true')
     p.add_argument('--keep', action='append', help='A link to keep despite a different byline')

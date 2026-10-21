@@ -17,6 +17,7 @@ def export(
     articles=(('A first article', '<p>One paragraph.</p>'),),
     headline='Platform engineer',
     summary='Writes about rollouts.',
+    first='Synthetic',
 ):
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w') as archive:
@@ -25,7 +26,7 @@ def export(
         writer.writeheader()
         writer.writerow(
             {
-                'First Name': 'Synthetic',
+                'First Name': first,
                 'Last Name': 'Author',
                 'Headline': headline,
                 'Summary': summary,
@@ -80,6 +81,14 @@ class LinkedInTests(Fixture):
         # A colleague's export: the name given for the request wins over the profile's.
         named = self.upload([{'linkedin': export()}], operation='9' * 32, author='Nick Example')
         self.assertEqual({row['author'] for row in named['files']}, {'Nick Example'})
+
+    def test_a_profile_name_that_is_not_an_author_name_is_dropped(self):
+        result = self.upload([{'linkedin': export(first='S' * 250)}], operation='8' * 32)
+        self.assertEqual([row['state'] for row in result['files']], ['ready', 'ready'])
+        self.assertEqual({row['author'] or '' for row in result['files']}, {''})
+        for row in result['files']:
+            _, record = studio.item(self.root, 'sources', row['source']['id'])
+            self.assertEqual(record.get('author') or '', '')
 
     def test_an_export_without_articles_says_so_and_a_bad_zip_is_refused(self):
         result = self.upload([{'linkedin': export(articles=())}], operation='b' * 32)
