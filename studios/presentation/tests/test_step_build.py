@@ -146,6 +146,41 @@ class BrandTests(Deck):
         self.assertTrue(halted['why'].startswith('The brand changed since this deck began'))
 
 
+class DeliveryTests(Deck):
+    """Talk or handout is decided once, on the form, and build.delivery is where the brand
+    export, the look samples and the outline read it."""
+
+    def test_the_forms_answer_reaches_the_export_the_looks_and_the_outline(self):
+        import shutil
+        from runner.steps import look, outline as outlines
+        self.run_['form']['delivery'] = 'live'
+        self.assertEqual(build.delivery(self.run_), 'live')
+        shutil.rmtree(self.root / build.BRAND)
+        self.brand.run.offers_looks = True
+        contract = build.export_brand(self.root, self.run_, self.brand)
+        exported = [call for call in self.brand.run.calls if call[:2] == ['contract', 'export']]
+        self.assertEqual(exported[-1][exported[-1].index('--delivery') + 1], 'live')
+        look.draw_looks(self.root, self.run_, self.brand, 'local')
+        sampled = [call for call in self.brand.run.calls if call[:2] == ['look', 'samples']]
+        self.assertEqual(sampled[-1][sampled[-1].index('--delivery') + 1], 'live')
+        # The outline is held to it, whatever its writer put, and the build starts from it.
+        work = outlines.outline_work(self.root, self.run_, None, None, contract, self.slides)
+        spec = work.prepared['artifacts']['outline']
+        self.assertEqual(spec['delivery'], 'live')
+        scratch = self.base / 'scratch'
+        scratch.mkdir()
+        written = {**OUTLINE, 'delivery': 'reading'}
+        _, _, _, kept = worker_tools.check_outline(json.dumps(written), spec, self.slides, scratch)
+        self.assertEqual(json.loads(kept)['delivery'], 'live')
+        build.start(self.root, self.run_, self.slides, contract)
+        told = json.loads((self.root / build.START / build.TOOL_OUTLINE).read_text())
+        self.assertEqual(told['delivery'], 'live')
+
+    def test_a_deck_from_before_the_question_is_a_handout(self):
+        self.run_['form'].pop('delivery', None)
+        self.assertEqual(build.delivery(self.run_), 'reading')
+
+
 class GuidanceTests(Deck):
     """The brand as the entry to slide building: the deck's slide task is started through
     it, and its guidance, not only the slides tool's own, is what the workers are handed."""

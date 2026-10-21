@@ -96,6 +96,15 @@ const SHARE_SAYS = [
     + 'until you press “Share now”.',
 ];
 const OUTPUTS = [['google', 'Google Slides'], ['pptx', 'PowerPoint (.pptx)']];
+// A talk or a handout, asked once on the form; the runner's own default for each way in.
+const DELIVERIES = [['live', 'A talk'], ['reading', 'A handout']];
+
+// How the deck is delivered, by its index in DELIVERIES: the person's answer, else a talk
+// for an idea or a brief and a handout for a document or a deck that is there already.
+function deliveryOf(draft) {
+  if (draft.delivery === 0 || draft.delivery === 1) return draft.delivery;
+  return draft.route === 'scratch' ? 0 : 1;
+}
 const OUTPUT_SAYS = [
   'Google Slides: the finished deck is a new presentation in your Google Drive.',
   'PowerPoint: the finished deck is a .pptx file kept on this computer, to download.',
@@ -2645,6 +2654,7 @@ function newDraft() {
   const agent = (view.setup && view.setup.agent) || {};
   const brand = (view.setup && view.setup.brand && view.setup.brand.default) || {};
   return settleBrand({ route: null, step: 0, title: '', audience: '', goal: '', minutes: '',
+    delivery: null,
     research: false, firstDraft: false, firstDraftExplicit: false, level: null, selected: '', source: 0, link: '', text: '', upload: null,
     reading: false, brand: brand.brand || '', variant: brand.variant || '',
     output: view.setup && view.setup.output === 'pptx' ? 1 : 0,
@@ -2872,6 +2882,9 @@ function aboutStep(draft) {
       hint: 'A sentence or two is enough.' }),
     field('new-minutes', 'About how long, in minutes (optional)', draft, 'minutes',
       { short: true, mode: 'numeric' }),
+    choice('Is this deck for a talk or a handout?', DELIVERIES.map((one) => one[1]),
+      deliveryOf(draft), (index) => { draft.delivery = index; }, 'delivery',
+      'A talk is presented, with fewer words on each slide; a handout is read on its own.'),
     research ? add(make('div', 'field'), research, make('p', 'quiet field-hint',
       draft.route === 'document' ? 'Only where your document turns out to be material to '
         + 'build from. You approve the research plan, then the findings, before the outline '
@@ -3028,6 +3041,7 @@ function formOf(draft) {
     audience: draft.audience.trim(), goal: draft.goal.trim(),
     minutes: minutes ? Number(minutes) : null, brand: draft.brand,
     variant: draft.variant || null, output: OUTPUTS[draft.output][0],
+    delivery: DELIVERIES[deliveryOf(draft)][0],
     research: draft.route !== 'existing' && draft.research,
     agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null };
   if (draft.firstDraftExplicit) form.initial_review = draft.firstDraft ? 'user-first' : 'standard';
@@ -3893,6 +3907,9 @@ function outlineEdited(gate) {
 
 // How long after the last edit the storyboard is drawn again, in milliseconds.
 const STORYBOARD_PAUSE = 1500;
+// How long the address of a drawn storyboard is shown before it is asked for again, in
+// milliseconds: inside the two minutes its ticket holds.
+const STORYBOARD_TICKET = 100000;
 
 // The storyboard follows the outline: a while after the last edit it is drawn again by
 // itself. Until the new one comes, the old one stays, greyed, so nothing jumps.
@@ -4167,13 +4184,16 @@ function storyboardPanel(gate, readonly) {
   waiting.setAttribute('role', 'status');
   waiting.textContent = 'The storyboard is redrawn once you stop editing.';
   waiting.hidden = true;
+  // The storyboard is framed from the runner's own address, opened with a ticket that holds
+  // for two minutes: one older than that is asked for again rather than shown.
+  const fresh = () => held.storyboard && Date.now() - (held.storyboardAt || 0) < STORYBOARD_TICKET;
   const render = () => {
-    if (!held.storyboard) return;
-    const frame = make('iframe', 'storyboard');
-    frame.title = 'Visual storyboard — wording and structure';
-    frame.setAttribute('sandbox', '');
-    frame.srcdoc = '<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; style-src &#39;unsafe-inline&#39;">' + held.storyboard;
-    holder.replaceChildren(frame);
+    if (!fresh()) return;
+    const src = held.storyboard;
+    holder.replaceChildren(window.DeckPanels.storyboard({
+      title: 'Visual storyboard — wording and structure', load: () => Promise.resolve(src),
+      note: 'The outline drawn plainly: what each slide says and how its points relate. '
+        + 'It is not the design.' }));
     holder.classList.remove('waiting');
     waiting.hidden = true;
   };
@@ -4192,7 +4212,8 @@ function storyboardPanel(gate, readonly) {
     try {
       const found = await send('storyboard', {path, expected: gate.expected, slides});
       if (path !== view.path) return;
-      held.storyboard = found.html;
+      held.storyboard = found.src;
+      held.storyboardAt = Date.now();
       render();
     } catch (failure) { say(problem, failure.message); }
     finally {
@@ -4215,13 +4236,15 @@ function storyboardPanel(gate, readonly) {
     holder.classList.add('waiting');
     waiting.hidden = false;
   }
-  if (!held.storyboard && !held.previewing) {
+  if (!fresh() && !held.previewing) {
     held.previewing = true;
     const path = view.path;
     const before = JSON.stringify(outlineWork(gate));
     ask('storyboard', {path, expected: gate.expected}).then(found => {
       if (path !== view.path || before !== JSON.stringify(outlineWork(gate))) return;
-      held.storyboard = found.html; render();
+      held.storyboard = found.src;
+      held.storyboardAt = Date.now();
+      render();
     }).catch(failure => say(problem, failure.message)).finally(() => { held.previewing = false; });
   }
   return add(node, add(make('div', 'bar'), preview), waiting, problem, holder);

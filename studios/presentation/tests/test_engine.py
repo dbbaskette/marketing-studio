@@ -1399,6 +1399,21 @@ class PreviewRepairEngineTests(StudioCase):
         self.assertTrue(told)
 
 
+class PreviewLinkTests(StudioCase):
+    def test_a_pooled_preview_is_never_listed_as_a_file_the_deck_left(self):
+        root = self.start()
+        kept = root / build.BUILD / 'drive-preview.json'
+        kept.parent.mkdir(parents=True, exist_ok=True)
+        own = {'name': 'Preview: Rolling restarts', 'id': 'file-1',
+               'url': 'https://docs.example.com/file-1'}
+        kept.write_text(json.dumps(own))
+        self.assertEqual([entry['url'] for entry in self.engine.leaving(root)['drive']],
+                         ['https://docs.example.com/file-1'])
+        kept.write_text(json.dumps({**own, 'pool': 'pool-2:7'}))
+        self.assertEqual(self.engine.leaving(root)['drive'], [],
+                         'its link may show another deck\'s slides by now')
+
+
 class SlideNoteTests(StudioCase):
     def setUp(self):
         super().setUp()

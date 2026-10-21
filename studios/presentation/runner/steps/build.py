@@ -1676,10 +1676,24 @@ def picture_deck(root, run: dict, deck: Path, folder: Path, slides, renderer) ->
     with tools.one_at_a_time(Path(settings['lock'])):
         known = home.read_json(kept, {})
         known = known if isinstance(known, dict) else {}
-        made = slides.pictures_of(deck, folder, _drawer(settings), file_id=known.get('id'))
-        if made.get('fileId') and made['fileId'] != known.get('id'):
+        try:
+            made = slides.pictures_of(deck, folder, _drawer(settings), file_id=known.get('id'))
+        except WorkspaceError as refusal:
+            if tools.replaced(refusal):
+                kept.unlink(missing_ok=True)   # its slides are someone else's by now
+            raise
+        # As `worker_tools.render` keeps it: with the pool's receipt, and forgotten once a
+        # newer preview replaced it.
+        if made.get('remoteReplaced'):
+            kept.unlink(missing_ok=True)
+            return made
+        receipt = (made.get('pool') or {}).get('receipt') \
+            if isinstance(made.get('pool'), dict) else None
+        if made.get('fileId') and (made['fileId'] != known.get('id')
+                                   or receipt != known.get('pool')):
             home.write_json(kept, {**(settings.get('named') or {}),
-                                   'id': made['fileId'], 'url': made.get('url')})
+                                   'id': made['fileId'], 'url': made.get('url'),
+                                   **({'pool': receipt} if receipt else {})})
     return made
 
 

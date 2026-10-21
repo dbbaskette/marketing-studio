@@ -112,6 +112,7 @@ import contextvars
 import json
 import os
 import re
+import secrets
 import shutil
 import tempfile
 import threading
@@ -229,6 +230,10 @@ NO_NEXT_STEP = {'finished': 'This deck is finished: there is no next step to lea
                 'stopped': 'This deck is stopped. Resume it, then leave a note for the next step.'}
 NO_NOTE = 'Say what should change.'
 NO_BRAND_CHOSEN = 'Choose the brand, and its variant, to make the deck in.'
+DRAFTS = Path('work') / 'drafts'   # the storyboards drawn for the page: never shared
+DRAFT_NAME = re.compile(r'storyboard-[0-9a-f]{12}\.html')
+KEPT_DRAFTS = 4                   # storyboards kept, the newest; older ones are removed
+STORYBOARD_LIMIT = 4_000_000      # bytes of one storyboard
 LOOKS_STALE = ('What the deck says changed since its looks were drawn, so they are drawn '
                'again. Choose once they are.')
 ON_ITS_WAY = 'This deck is on its way to Google Slides already. Wait for it.'
@@ -2641,15 +2646,39 @@ class Engine(Jobs, Researching):
             contract = root / build.CONTRACT
             if not contract.is_file():
                 raise WorkspaceError('The outline needs its saved brand contract before previewing.')
-            # Temporary input and output never enter the shared workspace or approval record.
+            # The input never enters the shared workspace or the approval record. The draft
+            # the slides tool draws is kept in the deck's work/drafts/ (never shared), under a
+            # name of its own, for the page to frame by a ticket for that one file.
             with tempfile.TemporaryDirectory(prefix='presentation-storyboard-') as temporary:
                 source, output = Path(temporary) / 'outline.json', Path(temporary) / 'draft.html'
                 source.write_text(json.dumps(outline), encoding='utf-8')
                 self.slides().outline_draft(source, contract, output)
-                text = output.read_text(encoding='utf-8')
-                if len(text.encode('utf-8')) > 4_000_000:
+                data = output.read_bytes()
+                if len(data) > STORYBOARD_LIMIT:
                     raise WorkspaceError('The storyboard is too large to show in the page.')
-        return {'html': text, 'expected': expected, 'milliseconds': round((time.monotonic() - started) * 1000, 1)}
+            folder = root / DRAFTS
+            folder.mkdir(parents=True, exist_ok=True)
+            name = f'storyboard-{secrets.token_hex(6)}.html'
+            write_atomic(folder / name, data.decode('utf-8', errors='replace'))
+            kept = sorted((one for one in folder.glob('storyboard-*.html') if one.is_file()),
+                          key=lambda one: one.stat().st_mtime, reverse=True)
+            for old in kept[KEPT_DRAFTS:]:
+                old.unlink(missing_ok=True)
+        return {'draft': name, 'expected': expected,
+                'milliseconds': round((time.monotonic() - started) * 1000, 1)}
+
+    def storyboard_page(self, path, name) -> bytes:
+        """A storyboard the runner drew for a deck, by the name `storyboard` gave it: only a
+        file of that form inside the deck's own work/drafts/, never a path a request names.
+        FileNotFoundError for anything else."""
+        root = self.driven(path)
+        if root is None or not isinstance(name, str) or not DRAFT_NAME.fullmatch(name):
+            raise FileNotFoundError(NO_PICTURE)
+        folder = (root / DRAFTS).resolve()
+        file = folder / name
+        if file.is_symlink() or folder not in file.resolve().parents or not file.is_file():
+            raise FileNotFoundError(NO_PICTURE)
+        return file.read_bytes()
 
     def _show_outline(self, root: Path, record: dict) -> dict:
         found = home.read_json(root / outlines.OUTLINE, None)
@@ -3069,7 +3098,9 @@ class Engine(Jobs, Researching):
         """What a deck left in Google Drive, which the runner never deletes."""
         found = []
         kept = home.read_json(root / build.BUILD / 'drive-preview.json', None)
-        if isinstance(kept, dict) and kept.get('url'):
+        # A preview in the slides tool's pool is its own reusable deck, not a file this deck
+        # left: its link may show another deck's slides by now, so it is not listed.
+        if isinstance(kept, dict) and kept.get('url') and not kept.get('pool'):
             found.append({'what': DRIVE_FILES['preview'], 'name': kept.get('name'),
                           'url': kept['url']})
         for revision in record.get('revisions') or ():

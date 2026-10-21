@@ -422,11 +422,13 @@ function see(words) {
 }
 
 // A picture is the page's own when it is shown from memory. Any other is from somewhere else.
+// The one frame is the storyboard's: sandboxed, with no srcdoc, opened at the runner's own
+// framed address with a ticket.
 function own(node) {
   return node.tagName === 'IMG' && kept.has(node.src)
-    || node.tagName === 'IFRAME' && node.className === 'storyboard'
-      && node.getAttribute('sandbox') === '' && typeof node.srcdoc === 'string'
-      && node.srcdoc.startsWith('<meta http-equiv="Content-Security-Policy"');
+    || node.tagName === 'IFRAME' && node.className === 'deck-storyboard-frame'
+      && node.getAttribute('sandbox') === '' && node.srcdoc === undefined
+      && String(node.src).startsWith('/api/deck-draft?ticket=');
 }
 
 function snapshot() {

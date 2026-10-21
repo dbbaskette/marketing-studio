@@ -340,6 +340,22 @@ class ScreenTests(ScriptedPage, PageCase):
         posted = [body for address, body in self.posts(result) if address == '/api/decks']
         self.assertNotIn('initial_review', posted[0]['form'])
 
+    def test_the_new_deck_form_asks_once_whether_it_is_a_talk_or_a_handout(self):
+        answers = self.answers(**{'GET /api/run': [{'status': 404,
+                                                    'body': {'error': 'There is no deck there.'}}]})
+        result = self.run_page(answers, [
+            {'click': 'New deck'}, {'click': 'Start from scratch'},
+            {'fill': 'A short title', 'value': 'Rolling restarts'},
+            {'snapshot': 'about'}, {'click': 'A handout'},
+            {'click': 'Continue'}, {'snapshot': 'last'}, {'click': 'Start the deck'}])
+        about = result['snapshots']['about']
+        self.assertIn('Is this deck for a talk or a handout?', about['text'])
+        self.assertIn('A talk', about['buttons'])
+        self.assertNotIn('talk or a handout', result['snapshots']['last']['text'],
+                         'asked once, on the form')
+        posted = [body for address, body in self.posts(result) if address == '/api/decks']
+        self.assertEqual(posted[0]['form']['delivery'], 'reading')
+
     def test_the_goal_text_does_not_flip_the_first_draft_in_the_runner(self):
         path = self.started(goal='Skip AI review on the first build.')
         self.assertFalse(self.run_of(path)['unreviewed'])
@@ -727,7 +743,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.run_of(path)['gate']['round'], 2)
 
     def test_a_slide_added_and_moved_on_the_page_is_an_outline_the_slides_tool_takes(self):
-        path = self.started()
+        path = self.started(delivery='reading')   # a handout: an added slide needs no notes
         drafted = self.run_of(path)['gate']['slides']
         title = 'Watch each batch of the restart closely'
         result = self.deck_screen(path, [
@@ -867,7 +883,8 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.deck_screen(path, [
             {'fill': 'Title of slide 2', 'value': 'A clearer proposed title'},
             {'click': 'Refresh now'}, {'snapshot': 'shown'}],
-            **{'POST /api/storyboard': [ok({'html': '<h1>Wireframe</h1>', 'expected': gate['expected']})]})
+            **{'POST /api/storyboard': [ok({'src': '/api/deck-draft?ticket=shown',
+                                            'expected': gate['expected']})]})
         (_, body), = self.posts(result)
         self.assertEqual(body['slides'][1]['title'], 'A clearer proposed title')
         self.assertEqual(body['expected'], gate['expected'])
@@ -1461,8 +1478,10 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.deck_screen(path, [
             {'fill': 'Title of slide 2', 'value': 'A clearer proposed title'},
             {'snapshot': 'edited'}, {'timer': 'redrawStoryboard'}, {'snapshot': 'redrawn'}],
-            **{'GET /api/storyboard': [ok({'html': '<h1>Before</h1>', 'expected': gate['expected']})],
-               'POST /api/storyboard': [ok({'html': '<h1>After</h1>', 'expected': gate['expected']})]})
+            **{'GET /api/storyboard': [ok({'src': '/api/deck-draft?ticket=before',
+                                           'expected': gate['expected']})],
+               'POST /api/storyboard': [ok({'src': '/api/deck-draft?ticket=after',
+                                            'expected': gate['expected']})]})
         edited = result['snapshots']['edited']
         self.assertIn('Refresh now', edited['buttons'])
         self.assertIn('The storyboard is redrawn once you stop editing.', edited['text'])

@@ -305,7 +305,10 @@ def _job(root, run, request, error, brand, slides, brief_kind, level, inputs, ru
              f"Goal: {form.get('goal') or 'not given'}",
              intro, f'Hand your outline back under the name "{NAME}".',
              'Your inputs: ' + ', '.join(inputs) + '.', *_tail(run, request, error)]
-    spec = {'kind': 'outline', 'brand': str(brand), 'rules': [r for r in rules if r]}
+    # How the deck is delivered is the form's, read through build.delivery: the outline is
+    # held to it, whatever the writer put.
+    spec = {'kind': 'outline', 'brand': str(brand), 'rules': [r for r in rules if r],
+            'delivery': build.delivery(run)}
     return Work(guidance=briefs.guidance(brief_kind, level=level), task='\n\n'.join(lines),
                 profile='write', name=NAME,
                 prepared={'inputs': inputs, 'artifacts': {NAME: spec}, 'ask': ask})

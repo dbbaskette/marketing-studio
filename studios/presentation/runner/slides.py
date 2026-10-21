@@ -796,7 +796,10 @@ class Slides:
                 raise WorkspaceError('The slides tool drew the deck and did not say where its '
                                      'pictures are. Check that it is installed whole.') from None
         return {'slides': slides, 'contactSheet': made.get('contactSheet'),
-                'fileId': made.get('fileId'), 'url': made.get('url')}
+                'fileId': made.get('fileId'), 'url': made.get('url'),
+                # Under the slides tool's preview pool: the receipt of the preview its deck
+                # holds, and whether a newer preview has replaced it since.
+                **{key: made[key] for key in ('pool', 'remoteReplaced') if key in made}}
 
     def outline_draft(self, outline: Path, brand: Path, output: Path) -> Path:
         """Write the tool's page of an outline's wording and structure, which is no design."""
