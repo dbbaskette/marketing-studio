@@ -1,15 +1,53 @@
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from marketing_studio import bridge, catalog
+from marketing_studio import bridge, catalog, launcher as launching
 from marketing_studio.errors import WorkspaceError
 from marketing_studio.launcher import Launcher
+
+
+def ps_works():
+    """Process listing is refused in some sandboxes; those tests skip there."""
+    try:
+        return subprocess.run(['ps', '-o', 'pid=', '-p', str(os.getpid())],
+                              capture_output=True).returncode == 0
+    except OSError:
+        return False
+
+
+PS = ps_works()
+SLEEPER = """import json, os, time
+handoff = json.loads(os.environ.pop('MARKETING_STUDIO_HANDOFF'))
+print(json.dumps({'address': 'http://127.0.0.1:12345/'}), flush=True)
+time.sleep(60)
+"""
+
+
+def end(process):
+    """Stop a process this test started, and only that one."""
+    if process.poll() is None:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            process.kill()
+    process.wait(timeout=5)
+
+
+def waited(check, seconds=5):
+    deadline = time.monotonic() + seconds
+    while True:
+        found = check()
+        if found or time.monotonic() > deadline:
+            return found
+        time.sleep(.05)
 
 
 class BridgeTests(unittest.TestCase):
@@ -126,6 +164,130 @@ time.sleep(60)
         with self.fixture('import time\ntime.sleep(60)\n'), mock.patch('marketing_studio.catalog.STUDIOS', {'training': catalog.STUDIOS['training']}), mock.patch('marketing_studio.launcher.TIMEOUT', .1):
             with self.assertRaisesRegex(WorkspaceError, 'too long'):
                 self.launcher.prepare(self.preferences, {})
+
+    def test_pid_file_is_written_and_removed(self):
+        record = self.root / 'data/run/training.json'
+        with self.fixture(SLEEPER):
+            self.launcher.open('training', self.preferences, {})
+            process = self.launcher.children['training'][0]
+            found = json.loads(record.read_text())
+            self.assertEqual(found['pid'], process.pid)
+            self.assertEqual(found['command'], 'marketing_studio/bridge.py training')
+            if PS:
+                self.assertTrue(found['started'])
+            self.assertEqual(record.stat().st_mode & 0o777, 0o600)
+            self.assertTrue(self.launcher.stop('training'))
+            self.assertIsNotNone(process.poll())
+            self.assertFalse(record.exists())
+            self.assertFalse(self.launcher.running('training'))
+            self.assertFalse(self.launcher.stop('training'))
+            self.launcher.open('training', self.preferences, {})
+            self.assertTrue(record.exists())
+            self.launcher.close()
+            self.assertFalse(record.exists())
+
+    def orphan(self, data, identifier, bridge_file=True):
+        """A studio left running by an earlier Marketing Studio, recorded in `data`."""
+        script = (self.fixture_root / 'marketing_studio/bridge.py') if bridge_file else (self.root / 'plain.py')
+        if not script.exists():
+            script.write_text('import time\ntime.sleep(60)\n')
+        process = subprocess.Popen([sys.executable, str(script), identifier, str(self.install)],
+                                   start_new_session=True, stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(end, process)
+        with mock.patch.dict(os.environ, {'MARKETING_STUDIO_DATA': str(data)}):
+            # The command line must be visible before it is recorded.
+            waited(lambda: 'bridge.py' in (launching.command_of(process.pid) or '')
+                   or 'plain.py' in (launching.command_of(process.pid) or ''))
+            launching.record(identifier, process.pid)
+        return process
+
+    @unittest.skipUnless(PS, 'Listing processes is not permitted here.')
+    def test_orphan_cleanup_reaches_only_this_data_roots_records(self):
+        (self.fixture_root / 'marketing_studio/bridge.py').write_text('import time\ntime.sleep(60)\n')
+        mine, other = self.root / 'data', self.root / 'other-data'
+        left = self.orphan(mine, 'training')
+        elsewhere = self.orphan(other, 'training')
+        unrelated = self.orphan(mine, 'blog', bridge_file=False)
+        finished = subprocess.Popen([sys.executable, '-c', 'pass'])
+        finished.wait()
+        with mock.patch.dict(os.environ, {'MARKETING_STUDIO_DATA': str(mine)}):
+            launching.record('presentation', finished.pid)
+            report = Launcher().clean_orphans()
+        self.assertEqual([(row['id'], row['stopped']) for row in report], [('training', True)])
+        self.assertIsNotNone(waited(lambda: left.poll() is not None or None))
+        self.assertIsNone(elsewhere.poll())
+        self.assertIsNone(unrelated.poll())
+        self.assertEqual(list((mine / 'run').iterdir()), [])
+        self.assertTrue((other / 'run/training.json').is_file())
+
+    def busy_bridge(self, name='tanzu-postgres-vs-edb-or-diy-oss--deck-outline-1'):
+        tools = self.root / 'bin'
+        tools.mkdir(exist_ok=True)
+        codex = tools / 'codex'
+        codex.write_text('#!/bin/sh\nsleep 60\n')
+        codex.chmod(0o755)
+        folder = self.root / 'data/jobs' / name / 'stand'
+        return f"""import json, os, subprocess, time
+os.environ.pop('MARKETING_STUDIO_HANDOFF', None)
+subprocess.Popen([{str(codex)!r}, 'exec', '--json', '--cd', {str(folder)!r}])
+print(json.dumps({{'address': 'http://127.0.0.1:12345/'}}), flush=True)
+time.sleep(60)
+"""
+
+    @unittest.skipUnless(PS, 'Listing processes is not permitted here.')
+    def test_jobs_find_an_assistant_under_the_studio_and_name_it(self):
+        with self.fixture(self.busy_bridge()):
+            self.launcher.open('training', self.preferences, {})
+            jobs = waited(lambda: self.launcher.jobs('training'))
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]['assistant'], 'codex')
+        self.assertEqual(jobs[0]['label'], 'tanzu-postgres-vs-edb-or-diy-oss--deck-outline-1')
+        self.assertRegex(launching.describe_job(jobs[0]),
+                         r'^codex job tanzu-postgres-vs-edb-or-diy-oss--deck-outline-1 \(.+\)$')
+        self.assertEqual(self.launcher.jobs('blog'), [])
+
+    def test_jobs_tolerate_a_missing_process_list(self):
+        with mock.patch.object(launching.subprocess, 'run', side_effect=FileNotFoundError('ps')):
+            self.assertIsNone(launching.ps('-o', 'pid='))
+            self.assertEqual(launching.descendant_jobs(os.getpid()), [])
+        self.assertEqual(launching.descendant_jobs(1, table='not a table\n'), [])
+        table = ('  10     1   04:10 python bridge.py training\n'
+                 '  11    10   03:59 /usr/local/bin/node /usr/local/bin/codex exec --cd /d/jobs/a-b/stand\n'
+                 '  12    11   03:58 /vendor/codex/codex exec\n'
+                 '  13    10 1-02:03:04 claude -p\n'
+                 '  14     1   00:01 gemini\n')
+        jobs = launching.descendant_jobs(10, table=table)
+        self.assertEqual([(job['assistant'], job['label'], job['seconds']) for job in jobs],
+                         [('codex', 'a-b', 239), ('claude', None, 93784)])
+        self.assertEqual(launching.describe_job(jobs[1]), 'claude (26 h 3 min)')
+        self.assertEqual(launching.describe_job({**jobs[0], 'seconds': 20}), 'codex job a-b (under 1 min)')
+
+    @unittest.skipUnless(PS, 'Listing processes is not permitted here.')
+    def test_start_up_cleanup_keeps_an_orphan_with_a_running_job(self):
+        (self.fixture_root / 'marketing_studio').mkdir(exist_ok=True)
+        content = self.busy_bridge('deck-1').replace("print(json.dumps({'address': 'http://127.0.0.1:12345/'}), flush=True)\n", '')
+        (self.fixture_root / 'marketing_studio/bridge.py').write_text(content)
+        busy = self.orphan(self.root / 'data', 'training')
+        self.assertTrue(waited(lambda: launching.descendant_jobs(busy.pid)))
+        kept = Launcher().clean_orphans(keep_busy=True)
+        self.assertEqual([(row['id'], row['stopped']) for row in kept], [('training', False)])
+        self.assertEqual(kept[0]['jobs'][0]['label'], 'deck-1')
+        self.assertIsNone(busy.poll())
+        stopped = Launcher().clean_orphans()
+        self.assertEqual([(row['id'], row['stopped']) for row in stopped], [('training', True)])
+        self.assertTrue(waited(lambda: busy.poll() is not None))
+        self.assertFalse((self.root / 'data/run/training.json').exists())
+
+    @unittest.skipUnless(PS, 'Listing processes is not permitted here.')
+    def test_an_idle_orphan_gives_way_to_a_new_launch(self):
+        (self.fixture_root / 'marketing_studio/bridge.py').write_text('import time\ntime.sleep(60)\n')
+        left = self.orphan(self.root / 'data', 'training')
+        with self.fixture(SLEEPER):
+            self.launcher.open('training', self.preferences, {})
+        self.assertTrue(waited(lambda: left.poll() is not None))
+        recorded = json.loads((self.root / 'data/run/training.json').read_text())
+        self.assertEqual(recorded['pid'], self.launcher.children['training'][0].pid)
 
     def test_installed_blog_layout_is_found(self):
         installed = self.root / 'installed-blog'
