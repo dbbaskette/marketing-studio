@@ -13,6 +13,7 @@ it does not claim every low-level CLI flag is a browser control.
 | Choose/adjust edits and comments; save locally | Choose changes → Finish | Version-bound editor proposals and draft save |
 | Send explicit Google feedback | Finish → Send feedback | Reserved, guarded Google suggestion/comment plans |
 | Learn/edit/confirm/audition/export/retire voices | More tools → Author voices | Existing profile revisions and voice guidance |
+| Add published posts as voice samples from a list of links | More tools → Author voices → Add published posts | `library voice-links --file LIST --author NAME`, then `--import`; the library's `urls` import, byline check and voice-sample classification |
 | Apply a voice revision to this article | Voice → Use this revision | Explicit article voice pin; no default mutation |
 | Interview → reviewed outline → requested draft | More tools / creation → Interview me | Existing interview notes, outline and from-outline runner |
 | Compare/restore manuscript checkpoints | More tools → Saved manuscript revisions | `article restore` and `author_workflow.restore` |
