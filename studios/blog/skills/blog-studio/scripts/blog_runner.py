@@ -143,9 +143,14 @@ def settings(root, data=None):
             'author': shared.get('person', {}).get('name') or DEFAULTS['author'],
         }
         saved = {'defaults': private}
+    try:
+        review_level = review_policy.snapshot(shared)['level']
+    except ValueError:
+        review_level = 'step_by_step'
     return {
         'configured': bool(saved) or shared_ready(shared),
         'defaults': base,
+        'review_level': review_level,
         'shared_before': {
             'engine': shared.get('assistant', {}).get('agent'),
             'author': shared.get('person', {}).get('name'),
@@ -918,11 +923,15 @@ class Engine:
         from team_workspace import driver, space
 
         owner = driver(self.root, ident) if space(self.root) else None
+        decisions = found.get('decisions') or []
         return {
             **found,
             'team': bool(space(self.root) and space(self.root).address),
             'driver': owner,
             'status': status,
+            # The job's start is timed only while it is the one working here.
+            'started_at': local.get('started_at') if status == 'working' else None,
+            'touched': decisions[-1]['at'] if decisions else None,
             'error': local.get('error', ''),
             'enabled': local.get('enabled', False),
             'observation': 'Saved locally. Workers use your selected CLI sign-in. Public research links need review; no publishing is automatic.',
@@ -989,7 +998,7 @@ class Engine:
                 save(self.root, directory, record, run, 'Selected model for ' + found['next'])
                 # Audit metadata changes the optimistic token, so use the freshly saved version.
                 found['expected'] = survey(self.root, ident)['expected']
-            local.update(status='working', error='')
+            local.update(status='working', error='', started_at=studio.now())
             self.keep_local(ident, local)
             self.current = ident
             self.stop.clear()
@@ -1210,6 +1219,7 @@ def catalog(root):
                             'editor_check',
                             'team',
                             'driver',
+                            'touched',
                         )
                     }
                 )
@@ -1222,6 +1232,7 @@ def catalog(root):
                     'error': 'Open this blog in chat to inspect its saved context.',
                 }
             )
+    rows.sort(key=lambda row: row.get('touched') or '', reverse=True)
     return {'items': rows, 'total': len(rows)}
 
 
@@ -1348,7 +1359,7 @@ def dispatch(root, action, data):
         studio.write_json(path, {'id': found['id'], 'fingerprint': fingerprint})
         return runner.control(found['id'], 'resume')
     ident = data.get('id')
-    if set(data) - {'id', 'expected', 'request', 'stage'}:
+    if set(data) - {'id', 'expected', 'request', 'stage'} - ({'seconds'} if action == 'retry' else set()):
         raise ValueError('Unknown run field.')
     # Every page control is bound to the version the person was shown.
     found = survey(root, ident)
@@ -1375,8 +1386,29 @@ def dispatch(root, action, data):
         if found['approval'] == 'conversation':
             decide(root, ident, data['expected'], 'handoff')
         return runner.control(ident, 'resume')
+    if action == 'retry' and 'seconds' in data:
+        # Try again with more time: the limit that just ran out is raised for every step.
+        seconds = data['seconds']
+        if type(seconds) is not int or not 30 <= seconds <= 3600:
+            raise ValueError('Choose a step time limit between 30 and 3600 seconds.')
+        directory, record, run = load(root, ident)
+        run['seconds'] = seconds
+        save(root, directory, record, run, f'Step time limit set to {seconds} seconds')
     if action in ('resume', 'retry', 'pause', 'stop'):
         return runner.control(ident, action)
+    if action == 'note':
+        # A note for the next job: it goes with the request of the next stage that has not
+        # been written yet, and stops nothing. A stage being worked on now has its request
+        # already, so a note made meanwhile reaches the next version of it.
+        request = text(data.get('request', ''), 'note', 8000, required=True)
+        if found['complete']:
+            raise ValueError('This blog is finished here. Ask for changes to a stage instead.')
+        directory, record, run = load(root, ident)
+        stage = found['next']
+        saved = run['stages'].setdefault(stage, {'status': 'pending'})
+        saved['request'] = (saved.get('request', '') + '\n' + request).strip()
+        save(root, directory, record, run, 'Noted for ' + stage)
+        return {**runner.describe(ident), 'noted': stage}
     if action == 'adopt':
         if not found['next'] or not found['content']:
             raise ValueError('There is no saved stage to review.')

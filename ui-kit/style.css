@@ -860,6 +860,27 @@ summary {
   font-size: 0.9rem;
 }
 
+/* --- the shared run pattern: where it stops, what it does now ------------------------ */
+
+/* Under a start form's summary: the review level and the stops it leaves, with a way to change it. */
+.stops-line a {
+  color: var(--accent);
+}
+
+/* Under a run's title: the step, its part, the time taken, the cost so far and the limit. */
+.now-line {
+  color: var(--quiet);
+  font-size: 0.95rem;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The toolbar's menu holds what a phone has no room for beside the one decision. */
+.toolbar-actions .menu-list {
+  right: 0;
+  left: auto;
+}
+
 /* --- words that head a screen ------------------------------------------------------ */
 
 .large-title {
@@ -2224,10 +2245,28 @@ p.fact > .bead {
     top: 0;
   }
 
+  /* A sheet on a phone rises from the bottom edge, above the thumb, not from the toolbar. */
   .sheet {
-    max-height: calc(100vh - 14rem);
-    max-height: calc(100dvh - 10rem - env(safe-area-inset-bottom));
+    position: fixed;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-height: calc(100vh - 6rem);
+    max-height: calc(100dvh - 6rem);
+    padding-bottom: calc(1.2rem + env(safe-area-inset-bottom));
+    border-radius: 22px 22px 0 0;
+    transform-origin: bottom center;
+    animation: rise 280ms var(--ease);
     overscroll-behavior: contain;
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(18px);
+    }
   }
 
   .beads:not(.beads-small) .bead-name {

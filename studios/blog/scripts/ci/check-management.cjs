@@ -76,11 +76,12 @@ async function check(){
   await contextualTools();
   await sharedSettings();
   await staleSharedForms();
+  await sharedPattern();
   pageDefinesEveryElement();
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -379,7 +380,6 @@ async function googleReopening(){
   await f.run("sRoute('polish')");let nodes=()=>descendants(f.get('studio-page'));
   const input=nodes().find(e=>e.id==='polish-url');input.value='fixture-doc';input.listeners.input();
   await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  const confirm=nodes().find(e=>e.type==='checkbox');confirm.checked=true;confirm.listeners.change();
   await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   assert.equal(f.run('studio.screen'),'editor');assert.equal(f.run('studio.editorDraft.content'),manuscript.content);
   assert.equal(raced.filter(url=>url==='/api/google-start').length,1);
@@ -413,14 +413,11 @@ async function googleIntake(){
   assert.equal(requests.filter(r=>r.url==='/api/google-preview').length,1);
   assert.equal(requests.some(r=>r.url==='/api/google-start'),false);
   form=f.get('studio-page').children.find(e=>e.tagName==='form');let nodes=descendants(form);
-  assert.equal(nodes.find(e=>e.type==='submit').disabled,true);
+  assert.equal(nodes.find(e=>e.type==='submit').disabled,false);
   assert.equal(nodes.some(e=>e.tagName==='script'),false);
   assert.ok(nodes.some(e=>e.textContent.includes('1 pending Google suggestions')));
   assert.ok(nodes.some(e=>e.textContent.includes('Images are omitted from this preview.')));
-  await form.listeners.submit({preventDefault(){}});
-  assert.equal(requests.some(r=>r.url==='/api/google-start'),false,'unconfirmed import is refused');
-  const check=nodes.find(e=>e.type==='checkbox');check.checked=true;check.listeners.change();
-  assert.equal(nodes.find(e=>e.type==='submit').disabled,false);
+  assert.equal(nodes.some(e=>e.type==='checkbox'),false,'the preview is checked by reading it, not by a checkbox');
   await form.listeners.submit({preventDefault(){}});
   assert.equal(f.run('studio.screen'),'editor');
   assert.equal(f.run('studio.editorDraft.id'),'imported');
@@ -1004,3 +1001,57 @@ async function contextualTools(){
   assert.equal(g.run('studio.sheet'),null);
   const slow=deferred(),h=fixture(()=>slow.promise);h.loadRunner();const reading=h.run("sPrepublishTool('fixture')");h.run('sCloseSheet()');slow.resolve({findings:[],coverage:'Local'});await reading;assert.equal(h.run('studio.sheet'),null);
 }
+
+// The pattern every studio shares: the start form says where it stops, the run says what it
+// is doing now and for how long, a retry says what it costs, a note reaches the next job
+// without stopping, and a phone keeps one decision in the toolbar.
+async function sharedPattern(){
+  const requests=[];const found={id:'synthetic',title:'Synthetic blog',status:'working',next:'draft',approval:'page',expected:'version-1',enabled:true,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},started_at:new Date(Date.now()-3*60000).toISOString(),stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'}]};
+  const f=fixture((url,options)=>{requests.push({url,options,data:options?.body?JSON.parse(options.body):null});return url.startsWith('/api/run?')?found:{...found,noted:'draft'};});f.loadRunner();
+  const text=()=>descendants(f.get('studio-page')).map(e=>e.textContent);
+  // The start form: one line says where this run stops, from the shared review level.
+  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[],profiles:[],agents:{codex:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'draft',minutes:'10',operation:'a'.repeat(32)};sWizard()");
+  assert.ok(text().some(t=>t==='Balanced: it stops for the outline and the draft'),'the stops line follows the review level and the pipeline: '+text().join('|'));
+  const change=descendants(f.get('studio-page')).find(e=>e.tagName==='a'&&e.textContent==='Change');assert.equal(change.href,'/onboarding/#fixture');
+  assert.equal(descendants(f.get('studio-page')).some(e=>['new-engine','new-minutes'].includes(e.id)),false,'the assistant and time limit are defaults, not per-blog decisions');
+  f.run("studio.options.settings.review_level='automatic';studio.draft.mode='ideas';sWizard()");
+  assert.ok(text().some(t=>t==='Automatic draft: it stops for the ideas'),text().join('|'));
+  f.run("studio.options.settings.review_level='step_by_step';studio.draft.mode='write';studio.draft.research='supplied-only';studio.draft.stop='package';sWizard()");
+  assert.ok(text().some(t=>t==='Step by step: it stops for the research plan, the research findings, the outline, the draft, the review and the export package'),text().join('|'));
+  // New blog without a task chosen shows the same start cards as Home.
+  f.run("studio.draft={...defaults,mode:null,step:0};sWizard()");
+  assert.equal(f.get('title').textContent,'New blog');assert.ok(descendants(f.get('studio-page')).some(e=>e.className==='pick-card'&&e.textContent==='Write from a brief'));
+  // Settings no longer ask where to stop: the review level governs that.
+  f.run("studio.settings={defaults,workspace:'/synthetic',shared_before:{}};studio.team={};studio.brand=null;sSettings()");
+  assert.equal(descendants(f.get('studio-page')).some(e=>e.id==='settings-stop'),false);
+  // The run: a "now" line under the title, with the step and how long it has taken.
+  f.set('found',found);f.run('studio.screen=\'run\';studio.id=found.id;sRun(found)');
+  const now=descendants(f.get('studio-page')).find(e=>e.className==='now-line');
+  assert.equal(now.textContent,'Drafting · 3 min of up to 10');
+  assert.ok(text().some(t=>/cost is not tracked for a CLI account/.test(t)),'About says once that cost is not tracked');
+  // A note for the next step goes with the next job and stops nothing.
+  const note=descendants(f.get('studio-page')).find(e=>e.id==='note-request');note.value='Mention the gateway.';note.listeners.input();
+  await descendants(f.get('studio-page')).find(e=>e.textContent==='Add the note').listeners.click();
+  assert.deepEqual(requests.find(r=>r.url==='/api/run-note').data,{id:'synthetic',expected:'version-1',request:'Mention the gateway.'});
+  assert.ok(text().some(t=>/goes with the next job/.test(t)));
+  // A time limit that ran out offers more time, and says what a plain retry costs.
+  f.set('found',{...found,status:'failed',enabled:false,started_at:null,error:'This step reached its time limit. Retry or continue in chat.'});f.run('sRun(found)');
+  const more=f.get('actions').children.find(e=>e.textContent==='Try again with more time');assert.equal(more.className,'button button-filled');
+  assert.ok(text().some(t=>t==='Try again re-runs the draft from the start with the same 10-minute limit. More time doubles it to 20 minutes.'),text().join('|'));
+  await more.listeners.click();
+  assert.deepEqual(requests.find(r=>r.url==='/api/run-retry').data,{id:'synthetic',expected:'version-1',seconds:1200});
+  // Copy Markdown sits beside the download.
+  const shown={id:found.id,title:found.title,name:'DRAFT.md',stage:'draft',label:'Draft',expected:found.expected,status:'draft',content:'# Draft',notes:'',checks:[],previous:null,diff:[]};
+  f.set('shown',shown);f.run("studio.screen='gate';studio.found=found;sGate({...found,status:'waiting-for-approval'},shown)");
+  assert.ok(descendants(f.get('studio-page')).some(e=>e.textContent==='Copy Markdown'));
+  // A phone keeps one decision in the toolbar and folds the rest into the menu.
+  f.run("window.matchMedia=query=>({matches:/max-width/.test(query)});studio.screen='run';sRun({...found,status:'waiting-for-approval',enabled:true,error:'',stages:[found.stages[0],{...found.stages[1],status:'draft'}]})");
+  const actions=f.get('actions').children;
+  assert.equal(actions.filter(e=>e.tagName==='button').length,1,'one action stays in the toolbar on a phone');
+  assert.equal(actions[0].textContent,'Review Draft');assert.equal(actions[0].className,'button button-filled');
+  const menu=actions.find(e=>e.tagName==='details');assert.equal(menu.className,'menu');
+  assert.deepEqual(descendants(menu).filter(e=>e.className==='menu-item').map(e=>e.textContent),['Edit manuscript','Pause']);
+  f.run('delete window.matchMedia');
+}
+

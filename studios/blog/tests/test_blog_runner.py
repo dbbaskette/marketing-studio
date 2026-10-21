@@ -18,7 +18,9 @@ import blog_worker
 import management
 
 
-class BlogRunnerTests(Fixture):
+class RunnerCase(Fixture):
+    """A disposable workspace with the runner helpers every test uses."""
+
     def setUp(self):
         super().setUp()
         environment = patch.dict(
@@ -87,6 +89,8 @@ class BlogRunnerTests(Fixture):
             }
         )
 
+
+class BlogRunnerTests(RunnerCase):
     def test_profiles_are_saved_and_background_worker_gets_the_saved_main(self):
         from studio_core import studios_config
 
@@ -1085,3 +1089,101 @@ class RunnerHubTests(Fixture):
             previous = runner.document(other, local_id, 'outline')['previous']
             self.assertEqual(previous, '# Outline\nSynthetic argument.')
             runner.ENGINES.pop(str(other), None)
+
+
+class SharedPatternTests(RunnerCase):
+    """What every studio's run screen says the same way: the stops, the "now" line, honest
+    retries and a note for the next job."""
+
+    def worker(self, calls=None):
+        def worker(*args, **kwargs):
+            if calls is not None:
+                calls.append(kwargs)
+            return {'content': '# Synthetic stage\nSynthetic writing.', 'notes': 'Checked.'}
+
+        return worker
+
+    def test_settings_say_the_shared_review_level(self):
+        import studios_config
+
+        self.assertEqual(runner.settings(self.root)['review_level'], 'step_by_step')
+        studios_config.update({'review': {'level': 'balanced'}})
+        self.assertEqual(runner.settings(self.root)['review_level'], 'balanced')
+
+    def test_the_worker_records_when_it_started_and_the_page_reads_it(self):
+        found = self.create(page=True, stop='draft')
+        engine = runner.Engine(self.root, worker=self.worker())
+        self.addCleanup(engine.close)
+        seen = []
+
+        def worker(*args, **kwargs):
+            seen.append(engine.describe(found['id']))
+            return self.worker()(*args, **kwargs)
+
+        engine.worker = worker
+        engine.control(found['id'], 'resume')
+        self.assertIsNone(engine.describe(found['id'])['started_at'])
+        engine.once(found['id'])
+        self.assertEqual(seen[0]['status'], 'working')
+        self.assertRegex(seen[0]['started_at'], r'^\d{4}-\d\d-\d\dT')
+        self.assertIsNone(engine.describe(found['id'])['started_at'],
+                          'a job that ended is not still timed')
+
+    def test_the_listing_puts_the_blog_that_changed_last_first(self):
+        first = self.create(page=True)
+        second = self.create(page=True, title='A later synthetic blog')
+        listed = [row['id'] for row in runner.catalog(self.root)['items']]
+        self.assertEqual(listed, [second['id'], first['id']])
+        self.approve(self.submit(first, page=True), page=True)
+        listed = [row['id'] for row in runner.catalog(self.root)['items']]
+        self.assertEqual(listed, [first['id'], second['id']])
+        self.assertTrue(all(row['touched'] for row in runner.catalog(self.root)['items']))
+
+    def test_try_again_with_more_time_raises_the_step_limit(self):
+        found = self.create(page=True, stop='draft')
+        engine = runner.engine(self.root)
+        self.addCleanup(engine.close)
+        engine.keep_local(found['id'], {'enabled': False, 'status': 'failed',
+                                        'error': 'This step reached its time limit.'})
+        shown = engine.describe(found['id'])
+        again = runner.dispatch(self.root, 'retry',
+                                {'id': found['id'], 'expected': shown['expected'], 'seconds': 1200})
+        self.assertEqual(again['seconds'], 1200)
+        self.assertEqual(again['status'], 'queued')
+        self.assertEqual(runner.load(self.root, found['id'])[2]['seconds'], 1200)
+        shown = engine.describe(found['id'])
+        with self.assertRaisesRegex(ValueError, 'between 30 and 3600'):
+            runner.dispatch(self.root, 'retry',
+                            {'id': found['id'], 'expected': shown['expected'], 'seconds': 9999})
+        with self.assertRaisesRegex(ValueError, 'Unknown run field'):
+            runner.dispatch(self.root, 'approve',
+                            {'id': found['id'], 'expected': shown['expected'], 'seconds': 1200})
+
+    def test_a_note_goes_with_the_next_job_without_stopping_it(self):
+        calls = []
+        found = self.create(page=True, stop='draft')
+        engine = runner.engine(self.root)
+        self.addCleanup(engine.close)
+        engine.worker = self.worker(calls)
+        engine.control(found['id'], 'resume')
+        engine.once(found['id'])
+        found = self.approve(engine.describe(found['id']), page=True)
+        self.assertEqual(engine.describe(found['id'])['status'], 'queued')
+        noted = runner.dispatch(self.root, 'note', {'id': found['id'], 'expected': found['expected'],
+                                                     'request': 'Mention the fictional gateway.'})
+        self.assertEqual(noted['status'], 'queued', 'a note stops nothing')
+        self.assertEqual(noted['noted'], 'draft')
+        self.assertEqual(next(row['request'] for row in noted['stages'] if row['stage'] == 'draft'),
+                         'Mention the fictional gateway.')
+        noted = runner.dispatch(self.root, 'note', {'id': found['id'], 'expected': noted['expected'],
+                                                     'request': 'Keep it short.'})
+        self.assertEqual(next(row['request'] for row in noted['stages'] if row['stage'] == 'draft'),
+                         'Mention the fictional gateway.\nKeep it short.')
+        engine.once(found['id'])
+        self.assertEqual(calls[-1]['payload']['changes'] if 'payload' in calls[-1] else
+                         runner.job(self.root, found['id'])[1]['changes'],
+                         'Mention the fictional gateway.\nKeep it short.')
+        with self.assertRaisesRegex(ValueError, 'up to 8000'):
+            runner.dispatch(self.root, 'note', {'id': found['id'],
+                                                 'expected': engine.describe(found['id'])['expected'],
+                                                 'request': ''})
