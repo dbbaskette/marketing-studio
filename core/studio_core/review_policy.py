@@ -48,7 +48,9 @@ def automatic(record, product, gate, last=None):
     if product == 'blog':
         return gate not in (('outline', last) if chosen == 'balanced' else (last,))
     if product == 'training':
-        return not gate.startswith('review:') and gate not in ('documents', 'intake', 'deck')
+        # Balanced reads the research plan: a short read, and the cheapest decision there is.
+        return not gate.startswith('review:') and gate not in ('documents', 'intake', 'deck') \
+            and not (chosen == 'balanced' and gate == 'gate:research-plan')
     raise ValueError('Unknown studio review policy.')
 
 

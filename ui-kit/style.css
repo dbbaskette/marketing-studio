@@ -2733,6 +2733,26 @@ a.button {
 .review-bundle-body textarea { width: 100%; min-height: 6rem; margin: 0.6rem 0; font: inherit; }
 .review-bundle summary:focus-visible { outline: 2px solid var(--link); outline-offset: 3px; }
 
+/* Each item of a combined review is marked as it is read; the marked requests go together
+   from a bar that stays at the bottom of the review while it is scrolled. */
+.review-marks { margin-top: 0.8rem; }
+.review-request { margin-top: 0.6rem; }
+.review-request > .note-label { display: block; font-weight: 600; }
+.review-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin-top: 0.5rem;
+  padding: 0.9rem 0 0.2rem;
+  background: var(--card);
+  border-top: 1px solid var(--paper-line);
+}
+.review-bar > * + * { margin-top: 0.6rem; }
+@media (max-width: 52rem) {
+  .review-bar { padding-bottom: 0.9rem; }
+  .review-bar > .bar > .button { flex: 1 1 auto; }
+}
+
 /* Training choices stay opaque; material is reserved for the shared shell. */
 body[data-product="Training Studio"] .training-options {
   margin-block: 1rem;

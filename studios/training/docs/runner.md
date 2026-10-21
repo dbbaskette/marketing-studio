@@ -155,10 +155,14 @@ materials appear before the collapsible production steps. If another studio
 changes the review preference while this form is open, starting is refused
 before any files are made; the page reloads the preference and keeps the answers.
 
-The sequence below describes Step by step review. Balanced groups the teaching
-plan and finished-material decisions; Automatic draft brings the finished
-materials for review. Only selected material stages run. Earlier trainings keep
-the review policy they started with.
+The sequence below describes Step by step review. Balanced stops for the research
+questions, then groups the teaching plan and finished-material decisions;
+Automatic draft brings the finished materials for review. A training can choose
+its own review level on the last step of the form; the shared level is the default. Only selected material stages run. Earlier trainings keep
+the review level they started with. The research-plan stop is part of what Balanced
+means, not a new version of it: it applies to any Balanced training that has not
+reached its research plan yet, including one started earlier, and a run already past
+its plan is unaffected.
 
 | The runner does this on its own | Then it stops for you |
 | --- | --- |
@@ -174,6 +178,8 @@ the review policy they started with.
 | Makes the copies you asked for and writes the index | Nothing: it says it is finished, and what is not ready |
 
 At each stop the page shows the document, what was checked for you, and the agent's own notes on its draft, labelled as its judgment. Ask for changes in your own words and the runner makes them and brings the new version back.
+
+**The combined reviews.** Under Balanced and Automatic draft, the direction and the finished materials come to you together, on the run. Mark what needs changes as you read, say what should change in each, and send every request at once: the review says what each change is written again from, so a change to the research is known to rewrite every level's blueprint, guide, brief and deck direction before it is sent. Approving is confirmed in a sheet that says what it commits to, with what a deck of this size has cost before. While a combined review waits, each file it covers is read-only on its own page, with one way back to the review: nothing can restart a step from two places at once. Leaving the deck out is still allowed from there. A Yoodli scenario's page offers each of its fields to copy on its own, ready for the box of the same name in Yoodli's Builder.
 
 With levels, every blueprint is drafted first. Then each level is finished in turn, lowest first.
 
@@ -220,6 +226,8 @@ Your documents stay on this computer. Passages quoted from them appear in the re
 A training's run shows every step, how long each took and what it cost, and what each agent at work is doing now. From there you can:
 
 - **Pause.** The step in hand finishes; nothing new starts until you resume.
+- **Finish this level, then wait.** The level in hand is finished, and nothing is started for another level until you resume. Offered while a step for one level is in hand.
+- **Skip the deck for now.** The deck is left out, with a reason kept with the training, before anything of it is drawn. You can bring it back later from the deck's own page.
 - **Stop.** The agents at work are ended, and so is anything a step is running, such as a slide preview. Nothing they started is left running. Everything already kept stays. Resume carries on from there.
 - **Try again**, when a step failed. A step is tried up to three times, with the reason for the last failure given to the next try. Then the training stops and says what went wrong and what was kept.
 - **Answer a question.** An agent that needs something only you know can ask. The run waits for your answer.
