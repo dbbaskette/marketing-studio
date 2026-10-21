@@ -23,7 +23,7 @@ Generated from `studio.py`; use `--help` on a listed command for required inputs
 | `studio.py library preview` | `--collection` |
 | `studio.py library import` | `--preview`, `--limit`, `--retry` |
 | `studio.py library voice-links` | `--file`, `--author`, `--site`, `--import`, `--keep`, `--retry`, `--purpose` |
-| `studio.py library find` | `--reusable-only`, `--query`, `--status`, `--collection`, `--author`, `--topic`, `--product`, `--since`, `--until`, `--limit`, `--offset` |
+| `studio.py library find` | `--reusable-only`, `--query`, `--status`, `--collection`, `--author`, `--topic`, `--product`, `--since`, `--until`, `--role`, `--kind`, `--limit`, `--offset` |
 | `studio.py library curator` | `--harness` |
 | `studio.py library analyze` | `--id` |
 | `studio.py library curate` | `--id`, `--file` |

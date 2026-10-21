@@ -391,7 +391,7 @@ def checked_google(root, entry):
     }
 
 
-def save_upload(root, staging, checked, purpose, author=None, analyze=True):
+def save_upload(root, staging, checked, purpose, author=None, analyze=True, library=None):
     with (
         tempfile.TemporaryDirectory(dir=staging) as temp,
         source_curator.skipping(analyze is False),
@@ -411,6 +411,7 @@ def save_upload(root, staging, checked, purpose, author=None, analyze=True):
                 author=author or None,
                 note='Uploaded through the local editorial desk.',
                 status=checked['status'],
+                library=library,
             ),
         )
 
@@ -422,7 +423,7 @@ def upload_files(root, data, staging, ledger, fingerprint):
     recorded on every source it saves."""
     import sample_intake
 
-    if set(data) - {'operation', 'files', 'purpose', 'keep', 'analyze', 'author'}:
+    if set(data) - {'operation', 'files', 'purpose', 'keep', 'analyze', 'author', 'kind'}:
         raise ValueError('Unknown upload field.')
     files = data.get('files')
     if not isinstance(files, list) or not files or len(files) > MAX_UPLOAD_FILES:
@@ -435,6 +436,8 @@ def upload_files(root, data, staging, ledger, fingerprint):
     if data.get('keep') and purpose == 'material':
         purpose = 'reference'
     author = studio.checked_author(data['author']) if data.get('author') else None
+    kind = data.get('kind') or None
+    blog_library.library_fields(root, kind=kind)  # Refused before anything is saved.
     entries = [dict(entry) if isinstance(entry, dict) else {} for entry in files]
     exports = sum('linkedin' in entry for entry in entries)
     if exports > 1:
@@ -470,8 +473,22 @@ def upload_files(root, data, staging, ledger, fingerprint):
         for entry in checked:
             chosen = entry.get('purpose', purpose)
             whose = author or entry.get('author')
+            # A kept file is a library item: it says where it came from and its kind of post.
+            fields = (
+                blog_library.library_fields(
+                    root, kind=kind, origin_kind='google-doc' if entry.get('link') else 'upload'
+                )
+                if chosen != 'material'
+                else None
+            )
             source = save_upload(
-                root, staging, entry, entry['purposes'], whose, analyze=data.get('analyze', True)
+                root,
+                staging,
+                entry,
+                entry['purposes'],
+                whose,
+                analyze=data.get('analyze', True),
+                library=fields,
             )
             saved.append(source['id'])
             if chosen != 'material':
@@ -555,6 +572,7 @@ def upload(root, data):
         'analyze',
         'files',
         'keep',
+        'kind',
     }:
         raise ValueError('Unknown upload field.')
     if not isinstance(data.get('analyze', True), bool):
@@ -593,6 +611,11 @@ def upload(root, data):
         )
     if data.get('author'):
         studio.checked_author(data['author'])
+    fields = (
+        blog_library.library_fields(root, kind=data.get('kind') or None, origin_kind='upload')
+        if purpose != 'material'
+        else None
+    )
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
     # An unchecked "Summarize and tag" keeps this file's text away from the analysis CLI.
     # An example of the kind of post is a kept reference with inspiration, as on the files screen.
@@ -603,6 +626,7 @@ def upload(root, data):
         ['reference', 'inspiration'] if purpose == 'inspiration' else purpose,
         data.get('author'),
         data.get('analyze', True),
+        library=fields,
     )
     result = {
         'source': share(root, 'source', source) if purpose != 'material' else source,
@@ -1985,6 +2009,8 @@ def view(root, name, query):
             offset,
             arg('retired') == 'true' or arg('status') == 'retired',
             status=arg('status'),
+            role=arg('role'),
+            kind=arg('kind'),
         )
     if name == 'memory':
         return memories(root, limit, offset, arg('query', ''))

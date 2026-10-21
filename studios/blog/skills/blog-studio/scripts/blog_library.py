@@ -42,6 +42,42 @@ UNREADABLE_PDF = (
     'This PDF could not be read, so it needs text. Export its text and upload that instead.'
 )
 EMPTY_PDF = 'No text was found in this PDF, so it needs text. A scanned image needs OCR first.'
+# Where a library item came from: a blog finished here, a file, a link, a Google Doc or a
+# bulk import of old blogs.
+ORIGIN_KINDS = ('written-here', 'upload', 'link', 'google-doc', 'import')
+# What an item is for, as the library filters it: facts the writing may quote, an example
+# of the kind of post, or a sample of a voice or a style.
+ROLES = ('facts', 'example', 'voice-sample', 'style-sample')
+
+
+def library_fields(root, kind=None, origin_kind=None, article=None):
+    """The team library's fields of one source: its kind of post (a style id), where it came
+    from and, for a blog written here, the blog. Only given values appear, so a record saved
+    before these fields existed keeps its shape."""
+    found = {}
+    if kind:
+        import styles
+
+        if not isinstance(kind, str) or styles.name_of(root, kind) is None:
+            raise ValueError('Choose a listed kind of post.')
+        found['kind'] = kind
+    if origin_kind:
+        if origin_kind not in ORIGIN_KINDS:
+            raise ValueError(
+                'A library item comes from a blog written here, an upload, a link, a Google '
+                'Doc or an import.'
+            )
+        found['origin_kind'] = origin_kind
+    if article:
+        if not isinstance(article, str):
+            raise ValueError('ID must contain lowercase letters, digits, and hyphens (max 80).')
+        found['article'] = studio.identifier(article)
+    return found
+
+
+def role_of(record):
+    """facts or example, from a source's purposes; a sample is listed by its own purpose too."""
+    return 'example' if 'inspiration' in (record.get('purposes') or []) else 'facts'
 
 
 def canonical(url):
@@ -735,8 +771,10 @@ def import_batch(
     delay=0.25,
     selected=None,
     analyze=True,
+    origin_kind='import',
 ):
-    """Import one bounded batch. analyze=False saves the posts without sending text to the analysis CLI."""
+    """Import one bounded batch. analyze=False saves the posts without sending text to the
+    analysis CLI; origin_kind says where a post new to the library came from."""
     if not re.fullmatch(r'[a-f0-9]{32}', preview_id) or not 1 <= limit <= MAX_BATCH:
         raise ValueError('Choose a valid preview and batch size 1–25.')
     path = folder(root) / (preview_id + '.json')
@@ -913,6 +951,12 @@ def import_batch(
                 }
             prior_metadata = record.get('library', {})
             metadata['curation'] = prior_metadata.get('curation', 'active')
+            # The library's own fields stay as they were saved; a new post says where it came from.
+            for field in ('kind', 'origin_kind', 'article'):
+                if field in prior_metadata:
+                    metadata[field] = prior_metadata[field]
+            if not prior_metadata and origin_kind:
+                metadata.update(library_fields(root, origin_kind=origin_kind))
             for field in ('topics', 'products'):
                 if field not in entry:
                     metadata[field] = prior_metadata.get(field, [])
@@ -1090,6 +1134,8 @@ def search_index(database, rows, signature, filters):
         include_retired,
         reusable_only,
         status,
+        role,
+        kind,
     ) = filters
     with closing(sqlite3.connect(database)) as db, db:
         database.chmod(0o600)
@@ -1124,6 +1170,7 @@ def search_index(database, rows, signature, filters):
                     'revision': record['revision'],
                     'sha256': record.get('content_sha256'),
                     'purposes': record.get('purposes', []),
+                    'role': role_of(record),
                     'retrieved_at': record.get('retrieved_at'),
                     'analysis': record.get('analysis', {}),
                     'limitations': record.get('note', '')[:1000],
@@ -1143,6 +1190,9 @@ def search_index(database, rows, signature, filters):
                             'historical',
                             'curation',
                             'extraction',
+                            'kind',
+                            'origin_kind',
+                            'article',
                         )
                     },
                     'historical': metadata.get('historical') is True,
@@ -1182,6 +1232,16 @@ def search_index(database, rows, signature, filters):
         elif status:
             clauses.append("json_extract(data, '$.status') = ?")
             params.append(status)
+        has = "EXISTS (SELECT 1 FROM json_each(data, '$.purposes') WHERE value = '%s')"
+        if role == 'example':
+            clauses.append(has % 'inspiration')
+        elif role == 'facts':
+            clauses.append(has % 'reference' + ' AND NOT ' + has % 'inspiration')
+        elif role:
+            clauses.append(has % role)
+        if kind:
+            clauses.append("json_extract(data, '$.library.kind') = ?")
+            params.append(kind)
         if reusable_only:
             clauses.extend(
                 [
@@ -1231,11 +1291,19 @@ def catalog(
     include_retired=False,
     reusable_only=False,
     status=None,
+    role=None,
+    kind=None,
 ):
     if not 1 <= limit <= 50 or offset < 0:
         raise ValueError('Choose limit 1–50 and nonnegative offset.')
     if status not in (None, '', 'ready', 'pending', 'unavailable', 'retired', 'needs-analysis'):
         raise ValueError('Choose a listed library status.')
+    if role not in (None, '', *ROLES):
+        raise ValueError(
+            'Choose a listed library role: facts, example, voice-sample or style-sample.'
+        )
+    if kind is not None and not isinstance(kind, str):
+        raise ValueError('Choose a listed kind of post.')
     rows = source_rows(root)
     signature = sha(
         encoded(
@@ -1287,6 +1355,8 @@ def catalog(
         include_retired,
         reusable_only,
         status,
+        role or None,
+        kind or None,
     )
     try:
         total, found, rebuilt = search_index(database, rows, signature, filters)
@@ -1302,10 +1372,17 @@ def catalog(
                 'The reference index could not be rebuilt. Saved references are unchanged; ask Blog Studio in chat to clear the local cache.'
             ) from again
     names = {key: value['name'] for key, value in collections(root).items()}
+    import styles
+
+    kinds = {}
     for entry in found:
         entry['collection_names'] = [
             names.get(key, key) for key in entry['library'].get('collections', [])
         ]
+        chosen = entry['library'].get('kind')
+        if chosen and chosen not in kinds:
+            kinds[chosen] = styles.name_of(root, chosen)
+        entry['kind_name'] = kinds.get(chosen) if chosen else None
     return {
         'items': found,
         'total': total,
@@ -1565,6 +1642,8 @@ def add_parser(groups):
     p.add_argument('--product')
     p.add_argument('--since')
     p.add_argument('--until')
+    p.add_argument('--role', choices=ROLES, help='Facts, examples, or voice or style samples')
+    p.add_argument('--kind', help='A kind of post (style ID)')
     p.add_argument('--limit', type=int, default=20)
     p.add_argument('--offset', type=int, default=0)
     p = commands.add_parser('curator')
@@ -1620,6 +1699,8 @@ def command(root, args):
             reusable_only=getattr(args, 'reusable_only', False),
             status=getattr(args, 'status', None),
             include_retired=getattr(args, 'status', None) == 'retired',
+            role=getattr(args, 'role', None),
+            kind=getattr(args, 'kind', None),
         )
     if args.action == 'preview':
         return preview(root, args.collection)

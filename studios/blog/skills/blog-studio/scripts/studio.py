@@ -477,6 +477,10 @@ def source_command(root, args):
         }
         if extraction:
             record['extraction'] = {k: v for k, v in extraction.items() if k != 'text'}
+        # The team library's fields, when the caller gave any: a kind of post and an origin.
+        library = getattr(args, 'library', None)
+        if library:
+            record['library'] = dict(library)
         persist(
             directory, 'sources', record
         )  # Recoverable intake before a potentially slow CLI call.

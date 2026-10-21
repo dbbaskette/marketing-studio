@@ -567,6 +567,7 @@ def run(root, data, reader=None, delay=0.25):
                 delay=delay,
                 selected=wanted,
                 analyze=False,
+                origin_kind='link',
             )
             manifest = studio.read_json(manifest_path)
     from hub_workspace import active
