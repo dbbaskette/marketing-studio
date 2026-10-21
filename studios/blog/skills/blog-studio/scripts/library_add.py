@@ -168,6 +168,21 @@ def preview(root, data):
     }
 
 
+def publish(root, ident, problems):
+    """Publish one changed library item to the selected Team Hub without syncing: an
+    operation's status() syncs once at the end, as a list of links import does, so a group
+    of twenty is one fetch and push, not twenty. A refusal is noted, never raised."""
+    from hub_workspace import active
+
+    adapter = active(root)
+    if adapter is None:
+        return
+    try:
+        adapter._publish('sources', ident)
+    except (HubError, OSError, ValueError) as exc:
+        problems[ident] = str(exc)[:400]
+
+
 def _collection_name(root, shown):
     return blog_library.unique_name(root, 'Links from ' + shown)
 
@@ -204,7 +219,7 @@ def add(root, data):
     from hub_workspace import active
 
     adapter = active(root)
-    receipts = []
+    changed, problems = [], {}
     for entry in found['entries']:
         if entry['filename'] in state['files']:
             continue
@@ -213,8 +228,8 @@ def add(root, data):
         source = management.save_upload(
             root, staging, entry, found['purposes'], whose, analyze=False, library=fields
         )
-        shared = management.share(root, 'source', source)
-        receipts.append(management.receipt(root, 'Added to the library', shared, 'source'))
+        changed.append(source['id'])
+        publish(root, source['id'], problems)
         state['files'][entry['filename']] = {
             'id': source['id'],
             'kind': 'google-doc' if entry.get('link') else 'file',
@@ -233,7 +248,9 @@ def add(root, data):
                 if row:
                     ident = adapter._checkout(row['id']) if row['location'] == 'hub' else row['id']
                     reused[link] = ident
-                    _adopt(root, ident, found, receipts)
+                    if _adopt(root, ident, found):
+                        changed.append(ident)
+                        publish(root, ident, problems)
                 else:
                     fresh.append(link)
             manifest = None
@@ -281,9 +298,7 @@ def add(root, data):
                     },
                 )
                 budget -= len(wanted)
-    result = status(root, path.stem)
-    result['receipts'] = receipts
-    return result
+    return status(root, path.stem, changed=changed, problems=problems)
 
 
 def _author_for(mode, bylines):
@@ -293,9 +308,9 @@ def _author_for(mode, bylines):
     return mode or None
 
 
-def _adopt(root, ident, found, receipts):
+def _adopt(root, ident, found):
     """A post already in the library takes this request's role, kind and typed author in a
-    new revision, when any of them is new to it."""
+    new revision, when any of them is new to it. True when it changed."""
     directory, record = studio.item(root, 'sources', ident)
     purposes = list(record.get('purposes') or [])
     purposes += [p for p in found['purposes'] if p not in purposes]
@@ -308,14 +323,13 @@ def _adopt(root, ident, found, receipts):
         record.get('library'),
         record.get('author'),
     ):
-        return
+        return False
     blog_library.save_revision(directory, record)
     record.update(
         purposes=purposes, library=metadata, author=author, revision=record['revision'] + 1
     )
     studio.persist(directory, 'sources', record)
-    shared = management.share(root, 'source', record)
-    receipts.append(management.receipt(root, 'Added to the library', shared, 'source'))
+    return True
 
 
 def _rows(root, state):
@@ -413,8 +427,10 @@ def groups_of(rows):
     return groups, held
 
 
-def status(root, operation):
-    """Where an add-to-library operation stands: every item, the authors and what is next."""
+def status(root, operation, sync=True, changed=(), problems=None):
+    """Where an add-to-library operation stands: every item, the authors and what is next.
+    With a Team Hub selected it syncs once, for everything this request published, unless
+    links are still to come or `sync` is False (a read before changes)."""
     path = ledger_path(root, operation)
     if not path.is_file():
         raise ValueError('This add-to-library operation is not known here. Check the items again.')
@@ -458,12 +474,15 @@ def status(root, operation):
         'remaining': counts['pending'],
         'groups': groups,
         'held': held,
+        'changed': list(changed),
         'next_step': ' '.join(words) or 'Every item is in the library.',
     }
+    if problems:
+        result['sharing_problems'] = problems
     from hub_workspace import active
 
     adapter = active(root)
-    if adapter and not counts['pending']:
+    if sync and adapter and not counts['pending']:
         try:
             result['hub_sync'] = adapter.hub.sync()
         except (HubError, OSError):
@@ -496,7 +515,7 @@ def set_author(root, data):
     if set(data) != {'operation', 'ids', 'author'}:
         raise ValueError('Name the items and their author.')
     author = studio.checked_author(data.get('author'))
-    receipts = []
+    changed, problems = [], {}
     for ident in _mine(root, data['operation'], data.get('ids')):
         directory, record = studio.item(root, 'sources', ident)
         if record.get('author') == author:
@@ -504,11 +523,9 @@ def set_author(root, data):
         blog_library.save_revision(directory, record)
         record.update(author=author, revision=record['revision'] + 1)
         studio.persist(directory, 'sources', record)
-        shared = management.share(root, 'source', record)
-        receipts.append(management.receipt(root, 'Library item author', shared, 'source'))
-    result = status(root, data['operation'])
-    result['receipts'] = receipts
-    return result
+        changed.append(ident)
+        publish(root, ident, problems)
+    return status(root, data['operation'], changed=changed, problems=problems)
 
 
 def mark_samples(root, data):
@@ -518,13 +535,13 @@ def mark_samples(root, data):
 
     if set(data) - {'operation', 'authors'}:
         raise ValueError('Unknown sample field.')
-    current = status(root, data['operation'])
+    current = status(root, data['operation'], sync=False)
     wanted = data.get('authors')
     if wanted is not None and (
         not isinstance(wanted, list) or any(not isinstance(v, str) for v in wanted)
     ):
         raise ValueError('Name the author groups to mark.')
-    receipts = []
+    changed, problems = [], {}
     for group in current['groups']:
         if wanted is not None and group['author'] not in wanted:
             continue
@@ -542,12 +559,9 @@ def mark_samples(root, data):
             except ValueError:
                 continue  # A post without text cannot be a sample; it stays a reference.
             if result['changed']:
-                _, record = studio.item(root, 'sources', ident)
-                shared = management.share(root, 'source', record)
-                receipts.append(management.receipt(root, 'Sample source', shared, 'source'))
-    result = status(root, data['operation'])
-    result['receipts'] = receipts
-    return result
+                changed.append(ident)
+                publish(root, ident, problems)
+    return status(root, data['operation'], changed=changed, problems=problems)
 
 
 SELECTION_ACTIONS = ('style-learn', 'voice-learn', 'blog')

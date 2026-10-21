@@ -484,9 +484,10 @@ class AddTests(RunnerCase):
         )
         self.assertEqual(
             management.dispatch(self.root, 'library-add-samples', {'operation': 'd' * 32})[
-                'receipts'
+                'changed'
             ],
             [],
+            'marking again changes nothing',
         )
         self.assertIn('Learn a voice from a group', marked['next_step'])
         # Learning still asks before any analysis.
@@ -864,6 +865,69 @@ class HubItemTests(RunnerCase):
         with patch('hub_workspace.active', return_value=None):
             with self.assertRaisesRegex(ValueError, 'Team Hub'):
                 management.dispatch(other, 'library-selection', {'action': 'blog', 'ids': [hub]})
+
+
+class HubSyncTests(RunnerCase):
+    """I6: a group's changes are published one by one and the Team Hub syncs once."""
+
+    def test_marking_or_renaming_a_group_syncs_the_hub_once(self):
+        import hub
+        import hub_workspace
+
+        provider = FakeProvider(self.base / 'remotes')
+        registry = Registry(self.base / 'hubs', provider)
+        ident = registry.create('fixture/count', 'Count')['hub']
+        adapter = Workspace(self.root, registry.hub(ident))
+        calls, real = [], hub.Hub.sync
+
+        def counted(hub_self, *args, **kwargs):
+            calls.append(1)
+            return real(hub_self, *args, **kwargs)
+
+        names = ['p%d' % n for n in range(8)]
+        reader = Pages({SITE + n + '/': page(n.upper(), 'Darin Zook') for n in names})
+        request = {
+            'links': ''.join(SITE + n + '/\n' for n in names),
+            'role': 'facts',
+            'author': '*each',
+            'kind': '',
+        }
+        with (
+            patch.object(hub_workspace, 'active', return_value=adapter),
+            patch.object(hub.Hub, 'sync', counted),
+            patch.object(library, 'fetch', reader),
+            patch.object(library.time, 'sleep', lambda seconds: None),
+        ):
+            shown = management.dispatch(self.root, 'library-add-preview', request)
+            added = management.dispatch(
+                self.root,
+                'library-add',
+                {**request, 'operation': 'a' * 32, 'expected': shown['expected']},
+            )
+            group = added['groups'][0]['ids']
+            calls.clear()
+            marked = management.dispatch(self.root, 'library-add-samples', {'operation': 'a' * 32})
+            self.assertEqual(len(calls), 1, 'one sync for a group of eight')
+            self.assertEqual(len(marked['groups'][0]['samples']), 8)
+            self.assertIn(marked['sharing'], ('shared', 'synchronized'))
+            calls.clear()
+            renamed = management.dispatch(
+                self.root,
+                'library-add-author',
+                {'operation': 'a' * 32, 'ids': group, 'author': 'D. Zook'},
+            )
+            self.assertEqual(len(calls), 1, 'one sync for a renamed group')
+            self.assertEqual(renamed['groups'][0]['author'], 'D. Zook')
+            graph = adapter.hub.graph()
+        shared = [
+            graph['revisions'][heads[0]]['data']['studio']
+            for heads in graph['heads'].values()
+            if graph['revisions'][heads[0]]['kind'] == 'source'
+        ]
+        self.assertEqual(len(shared), 8)
+        self.assertTrue(
+            all(s['author'] == 'D. Zook' and 'voice-sample' in s['purposes'] for s in shared)
+        )
 
 
 class FinishTests(RunnerCase):
