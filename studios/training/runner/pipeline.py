@@ -1797,7 +1797,8 @@ def review_work(root: Path, found: Survey, step: Step, error: str | None) -> Wor
             'and the objectives. Hand in what you find with submit_assessment, then say '
             'which slides address each objective with submit_coverage.'
             + _again(None, None, error, [], 'the review'))
-    prepared = {'inputs': {'the review': deck.asked(objectives, slides, earlier)},
+    prepared = {'inputs': {'the review': deck.asked(objectives, slides, earlier,
+                                                    last.get('screens'))},
                 'ask': False,
                 'review': {'preview': str(work / last['preview']), 'deck': last['deck'],
                            'slides': slides, 'objectives': list(objectives),
@@ -1817,7 +1818,8 @@ def _judging_work(root: Path, step: Step, mine: Deck, slides: list[dict], object
             'and the objectives. Hand in your judgement of every criterion of every slide with '
             'submit_judgements, then say which slides address each objective with '
             'submit_coverage.' + _again(None, None, error, [], 'the review'))
-    prepared = {'inputs': {'the review': deck.judging(objectives, slides, packets, earlier)},
+    prepared = {'inputs': {'the review': deck.judging(objectives, slides, packets, earlier,
+                                                      last.get('screens'))},
                 'ask': False,
                 'review': {'preview': str(work / last['preview']), 'deck': last['deck'],
                            'slides': slides, 'objectives': list(objectives),

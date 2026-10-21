@@ -2099,6 +2099,8 @@ class Engine(Reviewing):
             slides = worker_tools.pictures(shown, folder / seen, shots)
             home.write_json(shots / pipeline.ABOUT, {'deck': shown['deckSha256'], 'slides': [
                 {key: slide[key] for key in ('number', 'id', 'title')} for slide in slides]})
+            screens = deck.screened(self._screened(folder, slides) if judged else slides,
+                                    shown.get('repair'), self._audit_now(file, found.session))
         except (WorkspaceError, OSError, KeyError, ValueError, TypeError) as refusal:
             shutil.rmtree(folder, ignore_errors=True)
             shutil.rmtree(shots, ignore_errors=True)
@@ -2128,10 +2130,34 @@ class Engine(Reviewing):
                                for ident, fingerprint in (made.get('assets') or {}).items()}}
                    if mine.start.get('assets') is not None else {}),
                 **({'judged': shown['judged']} if judged else {}),
-                'deck': shown['deckSha256'], 'slides': slides})
+                'deck': shown['deckSha256'], 'slides': slides, 'screens': screens})
+            # What the screens send back is drawn again before anyone reviews it, within the
+            # rounds a deck has: the last round is always reviewed.
+            back = deck.sent_back(screens)
+            if back and len(rounds) <= deck.REPAIRS:
+                rounds[-1]['review'] = {'findings': back, 'weakest': None, 'coverage': {},
+                                        'by': 'screen', 'at': home.now()}
             self._note(root, level, rounds=rounds)
             self._done(root, it, clock, f'put {workspace.label(it.artifact)} together: '
                        f"{len(slides)} slide{'' if len(slides) == 1 else 's'}")
+
+    def _audit_now(self, file: Path, session: dict) -> dict | None:
+        """The brand's audit of a deck as it was just rendered, for the screens a review
+        is given; None when it cannot be run, which stops nothing."""
+        try:
+            return self._skill().audit(file, *pipeline.brand_of(session))
+        except (WorkspaceError, OSError, ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _screened(folder: Path, slides: list[dict]) -> list[dict]:
+        """A deck reviewed against its design keeps what the slides tool found of each slide
+        in its packets: each slide as a preview gives it, with those findings."""
+        packets = home.read_json(folder / 'packets.json', [])
+        found = {packet.get('slide', {}).get('slide'): packet.get('findings') or []
+                 for packet in packets if isinstance(packet, dict)}
+        return [{**slide, 'findings': [finding for finding in found.get(slide['id']) or ()
+                                       if isinstance(finding, dict)]} for slide in slides]
 
     def _rendered(self, folder: Path, design: Path, how: dict) -> dict:
         """Have the slides tool render a whole deck compiled against its approved design and

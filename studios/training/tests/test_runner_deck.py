@@ -443,6 +443,31 @@ class RuleTests(JobCase):
         section['slides'][0]['provenance'] = 'Findings g1, g7'
         self.assertEqual(deck.kept(section, spec), [])
 
+    def test_screens_and_the_audit_send_back_split_points_and_clusters_of_overlap(self):
+        slides = [{'number': 1, 'id': 'a', 'title': 'A', 'findings': [
+                       {'severity': 'warn', 'code': 'split-point'},
+                       {'severity': 'info', 'code': 'note'}]},
+                  {'number': 2, 'id': 'b', 'title': 'B', 'findings': []},
+                  {'number': 3, 'id': 'c', 'title': 'C', 'findings': [
+                       {'severity': 'warn', 'code': 'density'}]}]
+        audit = {'warnings': [{'code': 'TEXT_OVERLAP_RISK', 'slide': 2}] * 3
+                 + [{'code': 'TEXT_OVERLAP_RISK', 'slide': 3}, {'code': 'x', 'slide': 9}]}
+        screens = deck.screened(slides, None, audit)
+        self.assertEqual([(entry['slide'], entry['codes']) for entry in screens], [
+            ('a', {'split-point': 1}), ('b', {'TEXT_OVERLAP_RISK': 3}),
+            ('c', {'density': 1, 'TEXT_OVERLAP_RISK': 1})])
+        self.assertEqual([finding['slide'] for finding in deck.sent_back(screens)], ['a', 'b'])
+        # The tool's own grouping, when it gives one, is taken as it is.
+        repair = {'blocking': ['c'], 'slides': [
+            {'slide': 'c', 'number': 3, 'blocking': True, 'codes': {'text-overflow': 1}}]}
+        screens = deck.screened(slides, repair)
+        self.assertEqual(screens, [{'slide': 'c', 'number': 3,
+                                    'codes': {'text-overflow': 1}, 'blocking': True}])
+        [back] = deck.sent_back(screens)
+        self.assertIn('blocks delivery', back['note'])
+        self.assertEqual(deck.to_repair(deck.sent_back(screens),
+                                        [{'id': 'section-1', 'slides': ['c']}]), ['section-1'])
+
     def test_only_a_major_finding_about_drawing_sends_a_section_back(self):
         slides = [{'id': slide['id'], 'number': number}
                   for number, slide in enumerate(OUTLINE['slides'], start=1)]
@@ -1228,6 +1253,33 @@ class FlowTests(DeckCase):
         self.assertEqual(given['slides'][1]['points'][0]['parts'], ['Batch one', 'Batch two'])
         self.assertIn('## Diagram parts', (start / 'given' / 'section-1.md').read_text())
 
+    def test_what_the_screens_send_back_is_drawn_again_before_any_review(self):
+        self.slides.findings['what-it-does'] = [
+            {'severity': 'error', 'code': 'split-point', 'detail': 'A point is split.'}]
+        root = self.begin()
+        self.drawn(root)
+        rounds = self.built(root)['rounds']
+        # Drawn again within its limits, unreviewed until the last round, which always is.
+        self.assertEqual(len(rounds), deck.REPAIRS + 1)
+        self.assertEqual([made['review'].get('by') for made in rounds], ['screen', 'screen', None])
+        self.assertEqual(self.kinds().count('review'), 1)
+        [back] = rounds[0]['review']['findings']
+        self.assertEqual((back['slide'], back['severity'], back['about']),
+                         ('what-it-does', 'major', 'drawing'))
+        self.assertIn('split across shapes', back['note'])
+        told = deck.told(rounds[0]['review']['findings'],
+                         [{'number': 2, 'id': 'what-it-does', 'title': 'Steps'}])
+        self.assertIn('split across shapes', told)
+        # The tool's screens and the brand's audit of the rendered deck, slide by slide.
+        first = rounds[-1]['screens'][0]
+        self.assertEqual((first['slide'], first['blocking'], first['codes']['split-point'],
+                          first['codes']['SMALL_TEXT']), ('what-it-does', True, 1, 1))
+        said = deck.asked({'O1': 'Describe'}, rounds[-1]['slides'], None, rounds[-1]['screens'])
+        self.assertIn('## Look for these too', said)
+        self.assertIn('like a wireframe', said)
+        self.assertIn('`what-it-does`: SMALL_TEXT ×1, split-point ×1', said)
+        self.assertEqual(workspace.status(root)['gate'], 'deck')
+
     def test_a_tool_that_finds_split_points_compiles_against_the_approved_outline(self):
         self.slides.listed = {*self.slides.listed, 'compose-split-point'}
         root = self.begin()
@@ -1300,7 +1352,9 @@ class FlowTests(DeckCase):
         self.assertEqual(saved, (root / 'work' / 'deck' / last['file']).read_bytes(),
                          'the deck that is saved is the deck that was previewed')
         self.assertEqual(workspace.sha256_file(root / 'deck.pptx'), last['deck'])
-        self.assertEqual(self.brand.audited, [(saved, 'example-co', 'light')])
+        # Audited as it was rendered, for the review's screens, and as it was kept.
+        self.assertEqual(len(self.brand.audited), 2)
+        self.assertEqual(self.brand.audited[-1], (saved, 'example-co', 'light'))
         self.assertNotIn('render', [call[0] for call in self.slides.calls],
                          'a fresh render would be another file than the one reviewed')
         entry = workspace.load(root)['artifacts']['deck']

@@ -115,6 +115,7 @@ ABOUT_WORDS = {'drawing': 'how it is drawn', 'content': 'what it says',
                'concept': 'the visual concept it was approved with'}
 MARKED = 'Looked at at full size, slide by slide, by a reviewer that drew none of the deck.'
 NOTE = 12               # the shortest note the slides tool takes for a finding
+CLUSTER = 3             # overlap findings on one slide that send it back to be drawn again
 PARTS = 8               # short labels one point may give the parts of a diagram
 PART_WORDS = 6          # words one of them may hold, as the slides tool allows
 TEXTS = ('text', 'value', 'label', 'title')     # where a drawing's node holds its words
@@ -164,6 +165,13 @@ QUESTIONS = (
     'layout unless they are meant to be compared?',
     'Does every picture and icon explain something?',
 )
+LOOKS_UNFINISHED = (
+    'Does the slide look finished, or like a wireframe: outline boxes on white, no colour '
+    "from the deck's direction where a product, an actor or a state is named, no icon where "
+    'a recognisable thing is named?',
+    "Is any approved point's sentence split across shapes, or does text sit on text?",
+    'Does the slide show a team\'s bookkeeping, such as finding, objective or blueprint IDs '
+    "or a scenario's slug, where the audience reads it?")
 WORD = re.compile(r"[^\W_]+(?:['’.-][^\W_]+)*")
 KEY_POINT = re.compile(r'^- (K\d+\.\d+):\s*(.+?)\s*(?:\[[^\]]*\]\s*)*$')
 POINTER = re.compile(r'Read `references/[^\n]*')
@@ -1168,6 +1176,68 @@ def remains(findings) -> str:
             + f" thing{'' if len(left) == 1 else 's'} wrong.")
 
 
+def screened(slides: list[dict], repair=None, audit=None) -> list[dict]:
+    """What the slides tool's screens and the brand's audit found on each slide of a whole
+    deck, before anyone reviews it: {'slide', 'number', 'codes': {code: count},
+    'blocking'}, a slide with nothing found left out. `slides` are the round's, with the
+    findings each preview gave; `repair` is the tool's own grouping of them, when it gives
+    one; `audit` the brand's, whose warnings name a slide by its number."""
+    by_number = {slide['number']: slide for slide in slides}
+    found: dict = {}
+
+    def add(slide, code, blocking=False, many=1) -> None:
+        if not slide or not code:
+            return
+        entry = found.setdefault(slide['id'], {'slide': slide['id'], 'number': slide['number'],
+                                               'codes': {}, 'blocking': False})
+        entry['codes'][str(code)] = entry['codes'].get(str(code), 0) + many
+        entry['blocking'] = entry['blocking'] or blocking
+
+    clusters = (repair or {}).get('slides') if isinstance(repair, dict) else None
+    if isinstance(clusters, list):
+        ids = {slide['id']: slide for slide in slides}
+        for cluster in clusters:
+            if not isinstance(cluster, dict):
+                continue
+            for code, many in (cluster.get('codes') or {}).items():
+                add(ids.get(cluster.get('slide')), code, bool(cluster.get('blocking')),
+                    many if isinstance(many, int) else 1)
+    else:
+        for slide in slides:
+            for finding in slide.get('findings') or ():
+                if finding.get('severity') in ('warn', 'error'):
+                    add(slide, finding.get('code'), finding.get('severity') == 'error')
+    for warning in (audit or {}).get('warnings') or ():
+        if isinstance(warning, dict):
+            add(by_number.get(warning.get('slide')), warning.get('code'))
+    return sorted(found.values(), key=lambda entry: entry['number'])
+
+
+def sent_back(screens: list[dict]) -> list[dict]:
+    """The slides the screens send back to be drawn again before a review, as findings
+    about how each is drawn: one that blocks delivery, one with a sentence split across
+    shapes, and one where text overlaps text again and again."""
+    made = []
+    for entry in screens:
+        codes = entry['codes']
+        split = any('split' in code.lower() for code in codes)
+        overlaps = sum(many for code, many in codes.items() if 'overlap' in code.lower())
+        if not (entry['blocking'] or split or overlaps >= CLUSTER):
+            continue
+        why = (['a sentence of an approved point is split across shapes'] if split else []) \
+            + ([f'text overlaps text {overlaps} times'] if overlaps >= CLUSTER else []) \
+            + (['the slides tool found what blocks delivery'] if entry['blocking'] else [])
+        made.append({'slide': entry['slide'], 'number': entry['number'], 'severity': 'major',
+                     'about': ABOUT[0], 'criterion': 'screen', 'category': 'fit-defect',
+                     'note': 'Before any review, the screens found that ' + '; '.join(why)
+                             + ' (' + ', '.join(f'{code} ×{many}' for code, many in
+                                                 sorted(codes.items())) + ').',
+                     'fix': 'Keep each point whole in one shape, give every text room of its '
+                            'own, and look at the slide again before handing it in.',
+                     'by': 'screen'})
+    return made
+
+
 def told(findings, slides: list[dict]) -> str:
     """What a review found on some slides, as their composer is told it."""
     lines = ['# What the review found in your section', '',
@@ -1193,9 +1263,27 @@ def told(findings, slides: list[dict]) -> str:
     return '\n'.join(lines)
 
 
-def asked(objectives: dict, slides: list[dict], earlier=None) -> str:
+def _looked(screens) -> list[str]:
+    """What a reviewer is told to look for beyond the questions, and what the screens and
+    the brand's audit already found, slide by slide."""
+    lines = ['', '## Look for these too', '',
+             'Answer them inside the questions or criteria you are given: a wireframe look '
+             'or visible bookkeeping is at least `major`, a split sentence or text on text '
+             'is `major` and about `drawing`.', '']
+    lines += [f'- {question}' for question in LOOKS_UNFINISHED]
+    if screens:
+        lines += ['', 'The screens and the brand\'s audit found these. Each is a prompt to '
+                  'look, not a verdict:', '']
+        lines += [f"- Slide {entry['number']}, `{entry['slide']}`: " + ', '.join(
+            f'{code} ×{many}' for code, many in sorted(entry['codes'].items()))
+            for entry in screens]
+    return lines
+
+
+def asked(objectives: dict, slides: list[dict], earlier=None, screens=None) -> str:
     """What a reviewer is asked: the questions, how grave a "no" is, the slides, the
-    objectives, and on a later round what was found before."""
+    objectives, what to look for beyond the questions with what the screens found, and on
+    a later round what was found before."""
     lines = ['# The review', '', '## The questions, asked of every slide', '']
     lines += [f'{number}. {question}' for number, question in enumerate(QUESTIONS, start=1)]
     lines += ['', '## How grave a "no" is', '',
@@ -1206,6 +1294,7 @@ def asked(objectives: dict, slides: list[dict], earlier=None) -> str:
     lines += [f"- {slide['number']}. `{slide['id']}`: \"{slide['title']}\"" for slide in slides]
     lines += ['', '## The objectives', '']
     lines += [f'- {ident}: {text}' for ident, text in objectives.items()]
+    lines += _looked(screens)
     if earlier:
         lines += ['', '## What an earlier review found', '',
                   'These slides were drawn again since. Look for each of these, and where '
@@ -1229,7 +1318,8 @@ def to_outline(findings) -> list[dict]:
 
 # --- a review against the approved design ------------------------------------------------
 
-def judging(objectives: dict, slides: list[dict], packets: list[dict], earlier=None) -> str:
+def judging(objectives: dict, slides: list[dict], packets: list[dict], earlier=None,
+            screens=None) -> str:
     """What a reviewer is asked of a deck reviewed against its approved design: the slides
     tool's criteria, how grave a "no" is and what it can be about, each slide with what the
     tool gives of it, the objectives, and on a later round what was found before. `packets`
@@ -1276,6 +1366,7 @@ def judging(objectives: dict, slides: list[dict], packets: list[dict], earlier=N
                   for found in packet.get('findings') or ()]
     lines += ['', '## The objectives', '']
     lines += [f'- {ident}: {text}' for ident, text in objectives.items()]
+    lines += _looked(screens)
     if earlier:
         lines += ['', '## What an earlier review found', '',
                   'These slides were drawn again since. Look for each of these, and where '
