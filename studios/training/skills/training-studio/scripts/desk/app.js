@@ -1650,51 +1650,119 @@ function cell(label, ...children) {
   return add(node, ...children);
 }
 
-function statusRow(training) {
+// The run of a listed training as the status screen knows it: what the runner said of
+// every run, where it answered, or else what the list itself carries of the run.
+function statusRunOf(training) {
+  const runs = view.status ? list(view.status.runs) : [];
+  const found = runs.find((run) => run.path === training.path);
+  if (found) return statusOf(found);
+  return training.run ? statusOf({ path: training.path, title: training.title,
+    levels: training.levels, run: training.run }) : null;
+}
+
+// What is left before a training is ready: the files still to make while it is in
+// progress, or what is in the way of one whose files are all made.
+function leftLine(training) {
+  if (!training || training.error || training.ready || !given(training.to_make)) return null;
+  if (training.to_make) return make('p', 'quiet', 'Still to make: ' + training.to_make);
+  if (!training.blocking) return null;
+  const go = capsule('In the way: ' + count(training.blocking, 'thing', 'things'), 'link',
+    openTraining(training), 'in-the-way ' + training.path);
+  go.setAttribute('aria-label', 'See what is in the way of ' + (training.title || 'Untitled'));
+  return add(make('p', ''), go);
+}
+
+// When a training last moved: now, while a worker of its run is in hand; otherwise its
+// newest activity, which the runner's tries count towards, or its last touch.
+function activityCell(training, found) {
+  if (found && found.state === 'working' && !queued(found)) {
+    return cell('Last activity', make('span', '', 'Working now'));
+  }
+  return cell('Last activity', when(training.activity_at || training.touched_at));
+}
+
+function statusRow(training, found) {
   const row = make('tr');
   const name = make('th');
   name.scope = 'row';
-  add(name, make('span', 'row-title', training.title || 'Untitled'),
+  const title = training.title || 'Untitled';
+  add(name, make('span', 'row-title', title),
     levelsText(training.levels) ? make('span', 'quiet', levelsText(training.levels)) : null);
-  const go = capsule('Open', 'quiet', openTraining(training), 'open ' + training.path);
-  go.setAttribute('aria-label', 'Open ' + (training.title || 'Untitled'));
+  const go = capsule('Open', 'quiet', found && !training.error
+    ? () => show('run', { path: training.path }) : openTraining(training),
+  'open ' + training.path);
+  go.setAttribute('aria-label', 'Open ' + title);
   if (training.error) {
-    return add(row, name, cell('Stage', '—'),
-      cell('Where it is', state('off', 'Cannot be read'), make('p', 'quiet', training.error)),
-      cell('Last changed', when(training.touched_at)), cell('In the way', '—'), cell('', go));
+    return add(row, name,
+      cell('Doing now', state('off', 'Cannot be read'), make('p', 'quiet', training.error)),
+      cell('Cost', '—'), cell('Last activity', when(training.touched_at)), cell('', go));
   }
-  const [shape, words] = standingOf(training);
+  // What the runner said of the run, where it did, is the freshest word on a listed
+  // training; the list's own words still decide what is said at a gate or when only the
+  // deck is left. A run the list does not know is read as the runner gave it.
+  const known = found && training.stage ? { ...training,
+    run: { ...(training.run || {}), state: found.state, sentence: found.sentence } } : training;
+  const [shape, words] = found && queued(found) ? ['none', 'Waiting its turn']
+    : found && !training.stage ? statusWords(found) : standingOf(known);
+  const says = found && !training.stage ? found.sentence : saysOf(known);
   return add(row, name,
-    cell('Stage', training.stage_name),
-    cell('Where it is', state(shape, words), make('p', 'quiet', saysOf(training))),
-    cell('Last changed', when(training.touched_at)),
-    cell('In the way', training.blocking ? count(training.blocking, 'thing', 'things')
-      : 'Nothing'),
+    cell('Doing now', state(shape, words),
+      // A question, a problem, or documents to add: it does nothing more until you come.
+      found && found.needs ? add(make('p', ''), make('strong', '', 'It needs you.')) : null,
+      says ? make('p', 'quiet', says) : null,
+      found && queued(found) ? make('p', 'quiet', queueSays(found.queue)) : null,
+      noticeLine(found || training), leftLine(training)),
+    cell('Cost', found ? spentSays(found.spent) : '—'),
+    activityCell(training, found),
     cell('', go));
 }
 
-// Every training on this computer, as a part of the status screen: a row for each, built
-// again only when its own training has changed.
+// How many trainings work at once is this computer's own limit, set where the set-up is
+// changed.
+function turnsLine() {
+  const limit = view.status ? Number(view.status.limit) || 0 : 0;
+  return limit ? make('p', 'quiet', 'Up to ' + count(limit, 'training works',
+    'trainings work') + ' at once on this computer. Any more wait their turn.') : null;
+}
+
+// Every training on this computer, once, as a part of the status screen: what each is
+// doing now, what its run has cost, and when it last moved. A row is built again only
+// when its own training or run has changed. A run the runner lists of a training the
+// list does not know is a row of its own.
 function trainingsTable() {
   // A training a teammate runs is listed apart, under their name.
   const shown = view.listing.filter((training) => !elsewhere(training));
-  if (!shown.length) {
-    return ['no trainings', [], () => add(card('Trainings'),
-      make('p', 'quiet', 'There are no trainings on this computer yet.'))];
-  }
-  return ['trainings', [], () => {
+  const known = new Set(shown.map((training) => training.path));
+  const extra = (view.status ? list(view.status.runs) : [])
+    .filter((run) => !known.has(run.path)).map(statusOf);
+  const rows = [...shown.map((training) => [training, statusRunOf(training)]),
+    ...extra.map((found) => [{ path: found.path, title: found.title, levels: found.levels,
+      notice: '' }, found])];
+  const about = [Boolean(view.runner), view.status && view.status.limit,
+    view.status && view.status.background, Boolean(view.status), rows.length > 0];
+  return ['trainings', about, () => {
+    const node = card('Trainings on this computer');
+    if (!rows.length) {
+      return add(node, make('p', 'quiet', 'There are no trainings on this computer yet.'),
+        turnsLine(), backgroundLine());
+    }
     const table = make('table', 'table');
     const head = make('tr');
-    for (const title of ['Training', 'Stage', 'Where it is', 'Last changed', 'In the way',
-      '']) {
+    for (const title of ['Training', 'Doing now', 'Cost', 'Last activity', '']) {
       const top = make('th', '', title);
       top.scope = 'col';
       if (!title) add(top, make('span', 'offscreen', 'Open'));
       head.append(top);
     }
-    return add(card('Trainings'), add(table, add(make('thead'), head), make('tbody')));
-  }, (node) => fit(node.querySelector('tbody'), shown.map((training) => ['row ' + training.path,
-    [training, unclaimed(training)], () => statusRow(training)]))];
+    return add(node, turnsLine(), backgroundLine(),
+      add(table, add(make('thead'), head), make('tbody')));
+  }, (node) => {
+    const body = node.querySelector('tbody');
+    if (body) {
+      fit(body, rows.map(([training, found]) => ['row ' + training.path,
+        [training, unclaimed(training), found], () => statusRow(training, found)]));
+    }
+  }];
 }
 
 function fact(found, optional) {
@@ -1782,16 +1850,13 @@ function drawStatus(fresh) {
   const check = capsule(view.checking ? 'Checking…' : view.computer ? 'Check this computer again'
     : 'Check this computer', 'filled', checkComputer, 'check-computer');
   check.disabled = view.checking;
-  const runs = view.status ? list(view.status.runs).map(statusOf) : [];
   const theirs = view.status ? list(view.status.elsewhere).map(statusOf)
     : teammates().map(statusOf);
   placeParts({ title: 'Status', actions: [check],
     mark: ['Status', view.checking, Boolean(view.computer)] }, [
-    ['runs', [Boolean(view.runner), view.status && view.status.limit,
-      view.status && view.status.background, Boolean(view.status), runs], runsCard],
+    trainingsTable(),
     ['teammates', [Boolean(view.runner), Boolean(view.status), theirs, teamSpace(),
       view.fetching, view.fetched], teammatesCard],
-    trainingsTable(),
     ['versions', [upkeepOf(), view.restarting], versionsCard],
     ['skills', [upkeepOf()], skillsCard],
     ['studios', studiosMark(), studiosStatusCard],
@@ -6294,48 +6359,6 @@ function spentSays(spent) {
   if (given(spent.dollars)) return money(spent.dollars);
   return given(spent.tokens) ? Number(spent.tokens).toLocaleString() + ' tokens'
     : 'Not reported yet';
-}
-
-// Every run on this computer: what each is doing, and what it has cost.
-function runsCard() {
-  if (!view.runner || !view.status) return null;
-  const runs = list(view.status.runs).map(statusOf);
-  const node = card('Running on this computer');
-  const limit = Number(view.status.limit) || 0;
-  // How many work at once is this computer's own limit, set where the set-up is changed.
-  const turns = limit ? make('p', 'quiet', 'Up to ' + count(limit, 'training works',
-    'trainings work') + ' at once on this computer. Any more wait their turn.') : null;
-  if (!runs.length) {
-    return add(node, make('p', 'quiet', 'Nothing is running on this computer right now.'),
-      turns, backgroundLine());
-  }
-  const table = make('table', 'table');
-  const head = make('tr');
-  for (const title of ['Training', 'What it is doing', 'Cost so far', '']) {
-    const top = make('th', '', title);
-    top.scope = 'col';
-    if (!title) add(top, make('span', 'offscreen', 'Open'));
-    head.append(top);
-  }
-  const body = make('tbody');
-  for (const found of runs) {
-    const name = make('th');
-    name.scope = 'row';
-    add(name, make('span', 'row-title', found.title),
-      levelsText(found.levels) ? make('span', 'quiet', levelsText(found.levels)) : null);
-    const go = capsule('Open', 'quiet', () => show('run', { path: found.path }),
-      'run ' + found.path);
-    go.setAttribute('aria-label', 'Open the run of ' + found.title);
-    add(body, add(make('tr'), name,
-      cell('What it is doing', state(...statusWords(found)),
-        // A question, a problem, or documents to add: it does nothing more until you come.
-        found.needs ? add(make('p', ''), make('strong', '', 'It needs you.')) : null,
-        found.sentence ? make('p', 'quiet', found.sentence) : null,
-        queued(found) ? make('p', 'quiet', queueSays(found.queue)) : null,
-        noticeLine(found)),
-      cell('Cost so far', spentSays(found.spent)), cell('', go)));
-  }
-  return add(node, turns, backgroundLine(), add(table, add(make('thead'), head), body));
 }
 
 // What last went wrong in what the runner does by itself in the background, in its own

@@ -2149,7 +2149,8 @@ class PageScriptTests(ScriptedPage, PageCase):
         status = shots['status']
         self.assertEqual((status['heading'], status['filled'], status['current']),
                          ('Status', ['Check this computer'], ['Status']))
-        for shown in ('Rolling restarts', 'Blueprint', 'Waiting for you', 'This computer',
+        for shown in ('Rolling restarts', 'Waiting for you',
+                      'The blueprint is waiting for your review.', 'This computer',
                       'It asks each one for its version and nothing more.'):
             self.assertIn(shown, status['text'])
         checked = shots['checked']
@@ -6120,12 +6121,16 @@ class TeamScreenTests(ScriptedPage, PageCase):
         shots = result['snapshots']
         status = shots['status']
         text = status['text'].replace('\n', '')
-        for shown in ('Running on this computer', 'Up to 2 trainings work at once on this '
+        # One table, each training once: a run the list knows is its row, with the list's
+        # own count of what is still to make; a run the list does not know is a row of its
+        # own. A working run's last activity is now; a run with no record here says so.
+        for shown in ('Trainings on this computer', 'Up to 2 trainings work at once on this '
                       'computer. Any more wait their turn.',
-                      'Rolling restartsWorking on its own' + going
-                      + '$1.25', 'Canary releasesWaiting its turnWaiting for its turn.'
+                      'Rolling restartsWorking on its own' + going + 'Still to make: ',
+                      '$1.25Working nowOpen', 'Canary releasesWaiting its turnWaiting for its turn.'
                       'It is waiting its turn: 1 training is ahead of it.',
-                      'when its turn comes.' + broken + '5,200 tokens', 'Failover drillsWaiting for youIt needs you.' + asks,
+                      'when its turn comes.' + broken + '5,200 tokensnot recorded',
+                      'Failover drillsWaiting for youIt needs you.' + asks + '$0.40not recorded',
                       'Run by your teammates',
                       'Blue-green deploysPat runs it from another computer, and took it '
                       '3 hours ago.Last shared 2 hours ago. Then, the blueprint was waiting '
@@ -6145,8 +6150,10 @@ class TeamScreenTests(ScriptedPage, PageCase):
             self.assertIn(said, shots[name]['text'], name)
             self.assertEqual(shots[name]['focus'], look, name)
         self.assertEqual(self.posts(result), [('/api/fetch', {})] * 4)
+        self.assertNotIn('Running on this computer', text)
+        self.assertNotIn('Last changed', text)
         # This computer's own are first, the team's apart, and the check stays where it was.
-        self.assertLess(text.index('Running on this computer'),
+        self.assertLess(text.index('Trainings on this computer'),
                         text.index('Run by your teammates'))
         self.assertLess(text.index('Run by your teammates'),
                         text.index('See whether this computer has what a training needs'))
@@ -6157,15 +6164,65 @@ class TeamScreenTests(ScriptedPage, PageCase):
         self.assertIn('Pat is running this training', shots['theirs']['text'])
         self.assertEqual(self.asked(result, 'run'), [f'/api/run?{urlencode({"path": theirs})}'])
 
-        # A team with nothing running says so, and never leaves a gap.
+        # A team with nothing running still lists the trainings here, and says so of the
+        # team, and never leaves a gap.
         answers = self.answers(**{'GET /api/status': [ok({'limit': 1, 'runs': [],
                                                           'elsewhere': []})]})
         result = self.run_page(answers, [{'click': 'Status'}, {'snapshot': 'quiet'}])
-        for shown in ('Nothing is running on this computer right now.',
+        for shown in ('Rolling restarts', 'In progress',
                       'Up to 1 training works at once on this computer.',
                       'No teammate is running a training right now, as far as this computer '
                       'has been told.'):
             self.assertIn(shown, result['snapshots']['quiet']['text'])
+
+    def test_status_lists_each_training_once_with_what_it_does_its_cost_and_its_last_activity(self):
+        self.started()
+        held, done = self.another('held'), self.another('done')
+        going = 'Investigating sources and writing the report (job 1 of 2).'
+        stuck, ready = 'Finished, but not ready to use.', 'Finished. Everything is approved.'
+        found = self.read('trainings')
+        for item in found['body']['trainings']:
+            item['run'] = None
+            if item['path'] == str(self.root):
+                # Working now, with most of its files still to make. The touch is old; the
+                # run's own activity is what the page shows.
+                item.update(run={'state': 'working', 'sentence': going}, state='in-progress',
+                            sentence=going, to_make=6, blocking=6, ready=False,
+                            touched_at='2020-01-01T00:00:00Z',
+                            activity_at='2020-01-01T00:00:00Z')
+            elif item['path'] == str(held):
+                # Every file made, and two things in the way of its being ready.
+                item.update(state='in-progress', sentence=stuck, to_make=0, blocking=2,
+                            ready=False, activity_at=earlier(hours=3))
+            else:
+                item.update(state='finished', sentence=ready, to_make=0, blocking=0,
+                            ready=True, activity_at=earlier(minutes=5))
+        status = ok({'limit': 2, 'elsewhere': [], 'runs': [
+            {'path': str(self.root), 'id': 'rolling-restarts', 'title': 'Rolling restarts',
+             'state': 'working', 'sentence': going, 'queue': None, 'needs': False,
+             'spent': {'dollars': 1.25, 'tokens': 48000}, 'notice': None, 'driver': None}]})
+        answers = self.answers(**{'GET /api/trainings': [found], 'GET /api/status': [status],
+                                  'GET /api/training': [self.read('training', path=str(held))]})
+        result = self.run_page(answers, [
+            {'click': 'Status'}, {'snapshot': 'status'},
+            {'click': 'See what is in the way of Held'}, {'snapshot': 'opened'}])
+        shown = result['snapshots']['status']
+        text = shown['text'].replace('\n', '')
+        # One table: each training once, with what it is doing, its cost and its last
+        # activity. A running training's last activity is now, whatever its record says.
+        self.assertIn('Trainings on this computer', text)
+        self.assertIn('Up to 2 trainings work at once on this computer. Any more wait their '
+                      'turn.', text)
+        self.assertIn('Rolling restartsWorking on its own' + going + 'Still to make: 6'
+                      '$1.25Working now', text)
+        self.assertIn('HeldIn progress' + stuck + 'In the way: 2 things—3 hours ago', text)
+        self.assertIn('DoneFinished' + ready + '—5 minutes ago', text)
+        self.assertEqual(text.count('Rolling restarts'), 1)
+        for absent in ('Running on this computer', 'Last changed', 'Trainings\nTraining',
+                       'In the way: 6', 'years ago', 'Jan 1, 2020'):
+            self.assertNotIn(absent, shown['text'])
+        self.assertEqual(shown['filled'], ['Check this computer'])
+        self.assertEqual(result['snapshots']['opened']['heading'], 'Held')
 
     def test_what_last_went_wrong_in_the_background_is_on_the_status_screen(self):
         self.started()
@@ -6176,9 +6233,9 @@ class TeamScreenTests(ScriptedPage, PageCase):
             'background': {'at': '2020-01-02T03:04:05Z', 'says': says}})]})
         result = self.run_page(answers, [{'click': 'Status'}, {'snapshot': 'status'}])
         text = result['snapshots']['status']['text'].replace('\n', '')
-        self.assertIn('Nothing is running on this computer right now.Up to 1 training works at '
-                      'once on this computer. Any more wait their turn.' + says + ' This was ',
-                      text)
+        self.assertIn('Trainings on this computerUp to 1 training works at once on this '
+                      'computer. Any more wait their turn.' + says + ' This was ', text)
+        self.assertLess(text.index(says), text.index('Rolling restarts'))
 
     def test_the_computers_own_notification_is_switched_in_settings(self):
         self.started()
