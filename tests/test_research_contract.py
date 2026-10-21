@@ -44,6 +44,50 @@ class HelperAnswerTests(unittest.TestCase):
         self.assertEqual(contract.answered(['status'], 1, '{}'), False)
         self.assertEqual(contract.answered(('synthesis', 'verify'), 1, '{}'), True)
 
+class ReviewRefusedTests(unittest.TestCase):
+    """What a research check that still objects after its last round says, and keeps."""
+
+    def case(self, review):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        case = Path(temp.name)
+        if review is not None:
+            (case / 'review.json').write_text(review if isinstance(review, str) else json.dumps(review))
+        return case
+
+    def test_objections_name_each_unsupported_verdict_and_an_assessment_asking_for_revision(self):
+        case = self.case({
+            'facts': [{'id': 'fact-a', 'verdict': 'supported', 'note': 'Checked.'},
+                      {'id': 'fact-b', 'verdict': 'unsupported', 'note': 'The  source does\nnot say so.'}],
+            'findings': [{'id': 'instance-min', 'verdict': 'narrow', 'note': ''}],
+            'prose': [{'id': 'brief:teaching:0', 'verdict': 'supported', 'note': 'Fine.'}],
+            'assessment': {'coverage': 'needs-revision', 'usefulness': 'adequate', 'note': 'Alternatives are missing.'}})
+        self.assertEqual(contract.objections(case), [
+            'fact-b (unsupported): The source does not say so.',
+            'instance-min (narrow): no note',
+            'Coverage needs revision: Alternatives are missing.'])
+        self.assertEqual(contract.objections(self.case(None)), [])
+        self.assertEqual(contract.objections(self.case('{broken')), [])
+        self.assertEqual(contract.objections(self.case([1, 2])), [])
+
+    def test_the_refusal_says_how_many_objections_and_the_first_of_them(self):
+        refusal = contract.ReviewRefused(['fact-b (unsupported): The source does not say so.',
+                                          'Coverage needs revision: Alternatives are missing.',
+                                          'instance-min (narrow): no note'], 3)
+        self.assertEqual(str(refusal), (
+            'The independent check of the research still needs changes after 3 rounds of '
+            'correction: 3 objections, such as fact-b (unsupported): The source does not say so. '
+            'Coverage needs revision: Alternatives are missing. The draft report and the check’s '
+            'notes are saved for correction.'))
+        self.assertEqual((refusal.rounds, len(refusal.objections)), (3, 3))
+        self.assertIsInstance(refusal, ValueError)
+        bare = contract.ReviewRefused([], 3)
+        self.assertIn('did not say what: read the saved check.', str(bare))
+        long = contract.ReviewRefused(['x' * 400], 3)
+        self.assertIn('x' * 159 + '…', str(long))
+        self.assertNotIn('x' * 161, str(long))
+
+
 def fake_runtime(folder, version, text):
     """Just enough of an installed helper for its capability to be described."""
     (folder / 'scripts/lib').mkdir(parents=True)
