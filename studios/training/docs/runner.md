@@ -159,7 +159,10 @@ The sequence below describes Step by step review. Balanced stops for the researc
 questions, then groups the teaching plan and finished-material decisions;
 Automatic draft brings the finished materials for review. A training can choose
 its own review level on the last step of the form; the shared level is the default. Only selected material stages run. Earlier trainings keep
-the review policy they started with.
+the review level they started with. The research-plan stop is part of what Balanced
+means, not a new version of it: it applies to any Balanced training that has not
+reached its research plan yet, including one started earlier, and a run already past
+its plan is unaffected.
 
 | The runner does this on its own | Then it stops for you |
 | --- | --- |

@@ -2372,8 +2372,10 @@ function inChat(found) {
 function gateActions(found) {
   // A training someone else runs is read here, and decided where it runs. A file a
   // combined review covers is decided there.
-  if (found.approval !== 'page' || view.newer || reads(found.path) || found.combined) return [];
-  const offers = list(found.decisions);
+  if (found.approval !== 'page' || view.newer || reads(found.path)) return [];
+  // While a combined review covers the file, only a stage can be left out or brought back.
+  const offers = list(found.decisions).filter((offer) => !found.combined
+    || ['skip', 'restore'].includes(offer));
   const lead = offers.includes('approve') ? 'approve' : offers.includes('restore') ? 'restore'
     : found.status === 'stale' && offers.includes('rebuild') ? 'rebuild' : '';
   const actions = [];
@@ -5483,9 +5485,14 @@ function combinedConfirm() {
   const confirm = capsule(spec.send, 'filled', () => decideCombined(review, 'approve', null,
     null, confirm, problem), 'send');
   const what = review.phase === 'direction' ? 'the direction' : 'the finished materials';
+  // Requests marked but not sent are said before the approval goes without them.
+  const held = marked(review).length;
   return [sheetTitle(spec.title(what)), make('p', '', spec.says),
-    make('p', '', commitsSays(review)), problem,
-    add(make('div', 'bar'), confirm, capsule('Cancel', 'quiet', closeSheet, 'cancel'))];
+    make('p', '', commitsSays(review)),
+    held ? state('late', count(held, 'item is', 'items are') + ' marked for changes. Approving '
+      + 'does not send ' + (held === 1 ? 'it' : 'them') + '.') : null, problem,
+    add(make('div', 'bar'), confirm, capsule('Cancel', 'quiet', closeSheet, 'cancel'))]
+    .filter(Boolean);
 }
 
 async function decideCombined(review, decision, target, note, pressed,

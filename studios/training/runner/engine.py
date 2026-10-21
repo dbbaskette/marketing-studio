@@ -219,6 +219,9 @@ MODELS_MISSED = 60      # seconds before a list that could not be made is asked 
 LOOKED_FOR = 300        # seconds a look at what this computer has for a deck is reused
 BUSY_TRIES = 20         # times a finding is offered while another save holds the lock
 ACTIONS = ('pause', 'resume', 'stop', 'retry', 'finish-level')
+# The stages that are for the whole training, before each level is built in turn: a level's
+# blueprint is drafted among them, so finishing "this level" means nothing there yet.
+WHOLE_TRAINING = ('intake', 'research-plan', 'research', 'blueprint')
 DRIVING = ('take', 'hand-over')
 FETCH_EVERY = 180       # seconds between fetches while the runner serves
 TICK = 15               # seconds between looks at whether to notify
@@ -925,7 +928,9 @@ class Engine(Reviewing):
             raise WorkspaceError(ready.problem)
         with self.files:
             record = new_record(agent, model, chosen, form['source_scope'], effort)
-            if form.get('review_seen', review_policy.level(record)) != review_policy.level(record):
+            # An older page sends only the level it saw as `review_level`: that is checked too.
+            current = review_policy.level(record)
+            if form.get('review_seen', form.get('review_level', current)) != current:
                 raise WorkspaceError('The shared review preference changed while this form '
                                      'was open. Review the updated preference before '
                                      'starting. Nothing was started.')
@@ -1137,10 +1142,14 @@ class Engine(Reviewing):
                         self._policy_accept(root, step.step)
                     continue
                 if self._resting(record) or step.kind not in (*WORK, 'deck'):
+                    if record.get('halt_after') is not None and not self._resting(record):
+                        self._wait_arrived(root)  # a review or a gate: the wait asked for
                     return
                 # Asked to finish one level and then wait: work for another level waits.
+                # What has no level of its own, such as the index, is not another level.
+                level = self._level(step.step)
                 if record.get('halt_after') is not None and step.kind in ('agent', 'code') \
-                        and self._level(step.step) != record['halt_after']:
+                        and level is not None and level != record['halt_after']:
                     self._level_finished(root)
                     continue
                 if self._away(found) and step.step.id != 'package':
@@ -1207,6 +1216,16 @@ class Engine(Reviewing):
             record['halt'], record['halt_after'] = 'paused', None
             self._store(root, record)
             self._commit(root, f'level {level} finished; paused as asked on the page')
+
+    def _wait_arrived(self, root: Path) -> None:
+        """The run waits for the person anyway, so there is no longer a level to finish
+        first: note that the wait they asked for has arrived."""
+        with self.files:
+            record = self._load(root)
+            level = record.get('halt_after')
+            record['halt_after'] = None
+            self._store(root, record)
+            self._commit(root, f'level {level} finished; waiting as asked on the page')
 
     def _trouble(self, root: Path, failure: Exception) -> None:
         """Stop a training on something the runner did not expect, and say what."""
@@ -2937,8 +2956,9 @@ class Engine(Reviewing):
                 if state != 'working':
                     raise WorkspaceError('Only a training that is working can finish its '
                                          f'level first. This one is {STATES[state]}.')
-                level = self._level(self._survey(root, record).next.step)
-                if level is None:
+                ahead = self._survey(root, record).next.step
+                level = self._level(ahead)
+                if level is None or ahead.stage in WHOLE_TRAINING:
                     raise WorkspaceError('What is in hand is for the whole training, not for '
                                          'one level, so there is no level to finish first.')
                 record['halt_after'] = level
@@ -3589,14 +3609,16 @@ class Engine(Reviewing):
         can be finished before the run waits, `finishing` the level it was asked to finish,
         and `skip_deck` says the deck is wanted and nothing of it is drawn yet, so it can be
         left out from here."""
-        level = self._level(found.next.step) if found.next.step else None
+        ahead = found.next.step
+        level = self._level(ahead) if ahead else None
+        building = level is not None and ahead.stage not in WHOLE_TRAINING
         wanted = 'deck' in pipeline.wanted(found.session)
         started = any(name.startswith('deck-start') for name in found.done) or any(
             found.state.get(workspace.qualify('deck', each), 'not-started') != 'not-started'
             for each in found.session['levels'] or [None])
-        return {'finish_level': (level if mine and state == 'working'
+        return {'finish_level': (level if mine and building and state == 'working'
                                  and record.get('halt_after') is None else None),
-                'finishing': record.get('halt_after') if mine else None,
+                'finishing': record.get('halt_after') if mine and state == 'working' else None,
                 'skip_deck': bool(mine and wanted and not started and found.next.kind != 'deck'
                                   and state in ('working', 'waiting', 'paused'))}
 

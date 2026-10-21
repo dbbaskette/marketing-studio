@@ -2834,6 +2834,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       'blueprint and Deck direction · Level 101.', two['text'])
         self.assertIn('Send 2 requests', two['buttons'])
         confirm = result['snapshots']['confirm']['sheet']
+        self.assertIn('2 items are marked for changes. Approving does not send them.', confirm)
         self.assertIn('writes the learner guide and brief for each of the 2 levels, and the deck '
                       'is then drawn: a deck of this size has cost about $3.50 and about 12 minutes '
                       'of agent time before', confirm)
@@ -2895,15 +2896,21 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'GET /api/trainings': [self.listed('waiting', waits)],
             'GET /api/training': [self.detail('waiting', waits)],
             'GET /api/run': [waiting],
-            'GET /api/gate': [self.gate_as_the_runner_gives_it('blueprint', combined=combined)]})
+            'GET /api/gate': [self.gate_as_the_runner_gives_it(
+                'blueprint', combined=combined,
+                decisions=['approve', 'revise', 'rebuild', 'skip'])]})
         result = self.run_page(answers, [
             {'click': 'Review the blueprint'}, {'snapshot': 'gate'},
+            {'click': 'More'}, {'snapshot': 'more'},
             {'click': 'Request changes in the direction review'}, {'snapshot': 'review'}])
         gate = result['snapshots']['gate']
         self.assertEqual(gate['heading'], 'The blueprint')
+        # Only a stage can be left out from here; the file itself is decided in the review.
         self.assertEqual((gate['toolbarButtons'], gate['filled']), ([], []))
-        self.assertNotIn('Approve', gate['buttons'])
-        self.assertNotIn('Ask for changes', gate['buttons'])
+        self.assertIn('More', gate['buttons'])
+        self.assertIn('Skip this stage', result['snapshots']['more']['buttons'])
+        for absent in ('Approve', 'Ask for changes', 'Rebuild it'):
+            self.assertNotIn(absent, result['snapshots']['more']['buttons'])
         self.assertIn('part of the direction review that is waiting for you', gate['text'])
         review = result['snapshots']['review']
         self.assertEqual(review['heading'], 'Rolling restarts')

@@ -53,12 +53,15 @@ class FlowCase(StudioCase):
 class ToTheEndTests(FlowCase):
     def test_a_changed_review_preference_refuses_start_before_making_any_files(self):
         before = sorted(self.space.repo.iterdir())
-        form = pipeline.check_form({**FORM, 'review_seen': 'step_by_step',
-                                    'review_level': 'step_by_step'})
-        with mock.patch('studio_core.review_policy.capture',
-                        return_value={'schema': 1, 'level': 'automatic'}):
-            with self.assertRaisesRegex(WorkspaceError, 'review preference changed'):
-                self.engine.start(form)
+        # A page from before the per-training choice sends only the level it saw.
+        for sent in ({'review_seen': 'step_by_step', 'review_level': 'step_by_step'},
+                     {'review_level': 'step_by_step'}):
+            form = pipeline.check_form({**FORM, **sent})
+            with self.subTest(sent=sent), mock.patch(
+                    'studio_core.review_policy.capture',
+                    return_value={'schema': 1, 'level': 'automatic'}):
+                with self.assertRaisesRegex(WorkspaceError, 'review preference changed'):
+                    self.engine.start(form)
         self.assertEqual(sorted(self.space.repo.iterdir()), before)
         self.assertEqual(self.workers.jobs, [])
 

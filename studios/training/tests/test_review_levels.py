@@ -85,6 +85,34 @@ class ReviewLevelsTests(DeckCase):
         self.assertNotIn('section', self.kinds(since))
         self.assertNotIn('deck', workspace.load(root)['settings']['stages'])
 
+    def test_the_plan_stop_reaches_a_balanced_run_started_earlier_unless_it_is_past_it(self):
+        # The saved policy is not versioned: the stop is what Balanced means. A training
+        # started before the stop existed and not yet at its plan gets it; one already past
+        # its plan is left where it is.
+        from runner_support import fails
+
+        def before(record, product, gate, last=None):
+            return not gate.startswith('review:') and gate not in ('documents', 'intake', 'deck')
+
+        with mock.patch.object(review_policy, 'automatic', before):
+            self.workers.then('research-plan', fails(), fails(), fails())  # every try
+            with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
+                early = self.begin(title='Started earlier')
+                past = self.begin(title='Already past its plan')
+            self.assertEqual(self.view(early)['state'], 'failed')
+            self.assertEqual(self.view(past)['review']['phase'], 'direction')
+        self.assertEqual(self.engine._load(early)['review_policy'], {'schema': 1, 'level': 'balanced'})
+        # The one not yet at its plan stops there once it gets there.
+        self.engine.act(early, 'retry')
+        shown = self.view(early)
+        self.assertEqual((shown['state'], shown['review']), ('waiting', None))
+        self.assertEqual(workspace.status(early)['gate'], 'research-plan')
+        # The one already past it is not asked again.
+        shown = self.view(past)
+        self.assertEqual(shown['review']['phase'], 'direction')
+        self.assertEqual(workspace.load(past)['artifacts']['research-plan']['approved']['by'],
+                         'review-policy')
+
     def test_automatic_continues_past_the_research_plan(self):
         root, shown = self.choose('automatic')
         plan = self.steps(root)['gate:research-plan']
