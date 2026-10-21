@@ -99,15 +99,17 @@ runs in Blog Studio, Presentation Studio and Training Studio save this choice.
 
 | Choice | Reviews |
 | --- | --- |
-| Balanced (default) | Research and the planned direction together, then finished work |
+| Balanced (default) | Research and the planned direction together, then finished work. Training Studio also stops for the research plan first |
 | Automatic draft | Finished work only |
 | Step by step | Every existing stage |
 
 Presentation Studio's direction review includes research, editable outline and a
 rendered brand sample. Blog Studio includes research with the outline, and the
 writing, independent review and requested export package at the final stop.
-Training Studio groups all selected levels into one direction review with sample
-slides, then one review of the completed documents, decks and scenarios.
+Training Studio reads the research plan before any research is run, then groups
+all selected levels into one direction review with sample slides, then one review
+of the completed documents, decks and scenarios. Its start form can choose a
+level for that one training; the shared level is the default.
 
 Automatic continuation is recorded as policy acceptance, never as your personal
 approval. Source scope, validation, visual review, bounded repairs, questions,

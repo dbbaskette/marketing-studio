@@ -50,6 +50,8 @@ What a caller needs to know
   - `/api/run` {"path", "action"}: pause, resume, stop, retry or undo; answers the view.
   - `/api/decide` {"path", "gate", "decision", "note"?, "extra"?}: the only way a gate
     moves; answers the view. `/api/answer` {"path", "id", "answer"}: a worker's question.
+  - `/api/note` {"path", "expected", "text"}: a note for the next step, which goes with
+    the next job that starts and stops nothing; `expected` is the view's `note.expected`.
   - `/api/share` {}, `/api/fetch` {}, `/api/drive` {"path", "action": take|hand-over},
     `/api/publish` {"path"}, `/api/delete` {"path", "title"}, `/api/bring` {"path"}: a
     deck this computer knows from outside the workspace, copied in (`engine.bring`).
@@ -100,7 +102,8 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/deci
           '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
           '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
           '/api/versions', '/api/brand', '/api/brand/install', '/api/shared',
-          '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen')
+          '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
+          '/api/note')
 PNG = 'image/png'
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
@@ -313,6 +316,10 @@ class RunnerPage(server.Page):
             return server.as_json(HTTPStatus.OK, self.decide(sent))
         if path == '/api/answer':
             return server.as_json(HTTPStatus.OK, self.answered(sent))
+        if path == '/api/note':
+            return server.as_json(HTTPStatus.OK, self.engine.note(
+                self.deck(server.text(sent, 'path')), server.text(sent, 'text'),
+                server.text(sent, 'expected')))
         if path == '/api/share':
             return server.as_json(HTTPStatus.OK, self.engine.share())
         if path == '/api/fetch':

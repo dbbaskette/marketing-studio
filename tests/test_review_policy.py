@@ -41,6 +41,15 @@ class ReviewPolicyTests(IsolatedHome):
             self.assertTrue(review.automatic(run, 'blog', gate, 'package'))
         self.assertFalse(review.automatic(run, 'blog', 'outline', 'package'))
         self.assertFalse(review.automatic(run, 'blog', 'package', 'package'))
+        # Training Studio: Balanced reads the research plan, then the direction and the
+        # finished materials together. Automatic draft reads only the finished materials.
+        for mode, stops in [('balanced', {'gate:research-plan'}), ('automatic', set())]:
+            run = {'review_policy': {'schema': 1, 'level': mode}}
+            for gate in ('gate:research-plan', 'gate:research', 'gate:blueprint', 'gate:document'):
+                self.assertEqual(review.automatic(run, 'training', gate), gate not in stops, (mode, gate))
+            for gate in ('review:direction', 'review:final', 'documents', 'intake', 'deck'):
+                self.assertFalse(review.automatic(run, 'training', gate), (mode, gate))
+        run = {'review_policy': {'schema': 1, 'level': 'balanced'}}
         review.receipt(run, 'research', {'hash': 'exact'}, 'today')
         self.assertEqual(run['review_events'][0]['by'], 'review-policy')
         self.assertEqual(run['review_events'][0]['decision'], 'continued-automatically')

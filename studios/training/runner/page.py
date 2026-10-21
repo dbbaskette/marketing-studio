@@ -166,7 +166,7 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
-          '/api/brand', '/api/brand/install', '/api/shared')
+          '/api/brand', '/api/brand/install', '/api/shared', '/api/note')
 PNG = 'image/png'
 DOCUMENTS = '/api/documents'
 ASSET = '/api/asset'
@@ -241,6 +241,7 @@ class RunnerPage(desk.Page):
         """The desk's gate. A practice scenario's also says whose file it is, and a Yoodli
         scenario's names the scenario it was laid out from, to show beside it."""
         shown = desk.gate(path, name)
+        shown['combined'] = self.engine.reviewing(path)
         kind = workspace.split(name)[0].partition(':')[0]
         if kind == 'scenario':
             shown['whose'] = self.engine.whose(path, name)
@@ -388,6 +389,7 @@ class RunnerPage(desk.Page):
         with self.engine.files:
             self.engine.hold(path)
             try:   # a deck the slides tool presented has the approval sent to it first
+                self.engine.refuse_while_reviewing(path, decision)
                 self.engine.deck_decided(path, target, decision, note, seen)
             except WorkspaceError as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
@@ -474,6 +476,11 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.act(sent))
         if path == '/api/answer':
             return desk.as_json(HTTPStatus.OK, self.answered(sent))
+        if path == '/api/note':
+            path = desk.text(sent, 'path')
+            self.run(path)
+            return desk.as_json(HTTPStatus.OK, self.engine.note(
+                path, desk.text(sent, 'text'), desk.text(sent, 'expected')))
         if path == DOCUMENTS:
             return desk.as_json(HTTPStatus.OK, self.supplied(sent))
         if path == '/api/copies':
@@ -487,7 +494,7 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.engine.review_decide(
                 desk.text(sent, 'path'), desk.text(sent, 'expected'),
                 desk.text(sent, 'decision'), desk.text(sent, 'target', False),
-                desk.text(sent, 'note', False)))
+                desk.text(sent, 'note', False), self.requests(sent)))
         if path == '/api/outline':
             return desk.as_json(HTTPStatus.OK, self.outline(sent))
         if path == '/api/redesign':
@@ -582,6 +589,20 @@ class RunnerPage(desk.Page):
                                             restrictions or None)
         except WorkspaceError as refusal:
             raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+
+    @staticmethod
+    def requests(sent: dict) -> list | None:
+        """The change requests a combined review sends together, each a target and a
+        note, or None when it sends one the old way or none at all."""
+        asked = sent.get('requests')
+        if asked is None:
+            return None
+        if not isinstance(asked, list) or not all(
+                isinstance(ask, dict) and isinstance(ask.get('target'), str)
+                and isinstance(ask.get('note'), str) for ask in asked):
+            raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give requests as a list, each with a '
+                               'target and a note.')
+        return [{'target': ask['target'], 'note': ask['note']} for ask in asked]
 
     def act(self, sent: dict) -> dict:
         path, action = desk.text(sent, 'path'), desk.text(sent, 'action')

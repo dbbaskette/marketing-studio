@@ -621,6 +621,107 @@ class QuestionTests(StudioCase):
         self.assertIsNone(self.view(root)['question'])
 
 
+class NoteTests(StudioCase):
+    """A note for the next step goes with the next job that starts, once, and stops nothing."""
+
+    def test_a_note_goes_with_the_next_job_only_and_is_kept_in_history(self):
+        root = self.start()
+        self.assertEqual(workspace.status(root)['gate'], 'research-plan')
+        before = len(self.workers.jobs)
+        self.assertEqual(self.view(root)['note'], {'pending': None, 'used': [], 'expected': '0'})
+        noted = self.engine.note(root, '  Lean on the operator handbook.  ', '0')
+        self.assertEqual((noted['note']['pending']['text'], noted['note']['expected']),
+                         ('Lean on the operator handbook.', '1'))
+        self.assertEqual(self.log()[-1], 'Rolling restarts: note for the next step: Lean on '
+                         'the operator handbook.')
+        with self.assertRaisesRegex(WorkspaceError, 'The note changed'):
+            self.engine.note(root, 'Keep each answer short.', '0')
+        noted = self.engine.note(root, 'Keep each answer short.', '1')
+        self.assertEqual(noted['note']['pending']['text'], 'Keep each answer short.')
+        self.assertIn('Rolling restarts: replace the note for the next step: Keep each answer '
+                      'short.', self.log())
+        self.assertEqual(len(self.workers.jobs), before, 'nothing started for a note')
+        self.decide(root, 'research-plan')
+        started = [job for seen, job, spec in self.workers.jobs[before:]]
+        self.assertGreater(len(started), 1)
+        carried = [job for job in started
+                   if '## Note from the author for this step' in job.task]
+        self.assertEqual(len(carried), len(started),
+                         'every research question worked on together carries it')
+        self.assertIn('> Keep each answer short.', carried[0].task)
+        self.assertNotIn('operator handbook', carried[0].task)
+        record = self.record(root)
+        self.assertIsNone(record['pending_note'])
+        self.assertEqual([(note['text'], note['step'].partition(':')[0])
+                          for note in record['notes_used']],
+                         [('Keep each answer short.', 'research')])
+        shown = self.view(root)['note']
+        self.assertEqual((shown['pending'], shown['used'][0]['text'], shown['expected']),
+                         (None, 'Keep each answer short.', '3'))
+        self.assertTrue(any(line.startswith('Rolling restarts: the note for the next step goes '
+                                            'with: Researching the question ')
+                            for line in self.log()))
+
+    def test_a_note_made_while_a_job_runs_waits_for_the_next_one(self):
+        def noting(tools, job):
+            [root] = self.engine.trainings()
+            self.engine.note(root, 'Name the two platforms.')
+            return self.workers.research_plan(tools, job)
+        self.workers.then('research-plan', noting)
+        root = self.start()
+        self.assertNotIn('Note from the author', self.workers.of('research-plan')[0].task,
+                         'nothing reaches a job already running')
+        self.assertEqual(self.view(root)['note']['pending']['text'], 'Name the two platforms.')
+        self.decide(root, 'research-plan')
+        carried = [job for seen, job, spec in self.workers.jobs
+                   if 'Name the two platforms.' in job.task]
+        self.assertEqual(len(carried), len(self.workers.of('question')))
+        self.assertEqual(len(self.record(root)['notes_used']), 1, 'history records it once')
+
+    def test_a_try_again_at_a_question_carries_the_note_and_a_reviewer_takes_none(self):
+        self.workers.then('question', fails())
+        root = self.start()
+        self.engine.note(root, 'Cite the handbook.\r\nNothing else.')
+        self.decide(root, 'research-plan')
+        questions = self.workers.of('question')
+        self.assertGreater(len(questions), len(QUESTIONS), 'one question was tried again')
+        for job in questions:
+            self.assertIn('> Cite the handbook.\n> Nothing else.', job.task)
+        # A reviewer's job leaves a waiting note for the next writer.
+        self.engine.note(root, 'For the blueprint.')
+        work = pipeline.Work('guidance', 'task', 'write', {'review': {}})
+        for ident in ('deck-review@201', 'research-review'):
+            step = pipeline.Step(ident, 'agent', 'Review it', 'Reviewing it', 'deck')
+            self.assertIs(self.engine._noted(root, step, work), work)
+        self.assertEqual(self.record(root)['pending_note']['text'], 'For the blueprint.')
+        self.assertTrue(all(note.get('done') for note in self.record(root)['notes_used']),
+                        'a later step\'s job closed the research notes')
+
+    def test_a_note_is_refused_when_empty_too_long_finished_or_stopped(self):
+        root = self.start()
+        with self.assertRaisesRegex(WorkspaceError, 'Write the note first'):
+            self.engine.note(root, '   ')
+        with self.assertRaisesRegex(WorkspaceError, 'at most 2000 characters'):
+            self.engine.note(root, 'x' * 2001)
+        self.engine.act(root, 'stop')
+        with self.assertRaisesRegex(WorkspaceError, 'stopped'):
+            self.engine.note(root, 'Too late.')
+        self.engine.act(root, 'resume')
+        self.to_end(root)
+        self.assertEqual(self.state(root), 'done')
+        with self.assertRaisesRegex(WorkspaceError, 'finished'):
+            self.engine.note(root, 'Too late.')
+        self.assertIsNone(self.record(root).get('pending_note'))
+
+    def test_a_stuck_training_takes_no_note(self):
+        root = self.start()
+        stuck = pipeline.Next('stuck', why='Its folder cannot be read.')
+        found = self.engine._survey(root, self.record(root))
+        with mock.patch.object(self.engine, '_survey', return_value=replace(found, next=stuck)):
+            with self.assertRaisesRegex(WorkspaceError, 'cannot go on'):
+                self.engine.note(root, 'Too late.')
+
+
 class ResearchTests(StudioCase):
     def test_a_question_that_fails_three_times_is_named_at_the_gate(self):
         self.workers.then('question:health-checks', fails(SLOW, 'timeout'),
@@ -909,6 +1010,93 @@ class HaltTests(StudioCase):
         self.assertIn('Rolling restarts: paused on the page', self.log())
         self.assertIn('Rolling restarts: resumed on the page', self.log())
 
+    def test_finishing_the_level_in_hand_pauses_before_the_next_level_starts(self):
+        asked = []
+
+        def finishes(tools, job):
+            asked.append(self.engine.act(self.space.training('rolling-restarts'), 'finish-level'))
+            return self.workers.document(tools, job)
+
+        self.workers.then('document', finishes)
+        with mock.patch('studio_core.review_policy.capture',
+                        return_value={'schema': 1, 'level': 'automatic'}):
+            root = self.start(levels=['101', '201'], materials=['document'])
+        self.assertEqual((asked[0]['state'], asked[0]['controls']['finishing'],
+                          asked[0]['controls']['finish_level']), ('working', '101', None))
+        view = self.view(root)
+        self.assertEqual((view['state'], view['sentence']),
+                         ('paused', 'Paused. Nothing new starts until you resume.'))
+        # The level 101 guide was finished; the level 201 guide was not started.
+        self.assertEqual(len(self.workers.of('document')), 1)
+        self.assertEqual(view['controls'], {'finish_level': None, 'finishing': None,
+                                            'skip_deck': False})
+        self.assertIn('Rolling restarts: level 101 finished; paused as asked on the page', self.log())
+        self.refused(root, 'finish-level', 'Only a training that is working can finish its '
+                     'level first. This one is paused.')
+        resumed = self.engine.act(root, 'resume')
+        self.assertEqual((resumed['state'], resumed['review']['phase']), ('waiting', 'final'))
+        self.assertEqual(len(self.workers.of('document')), 2)
+
+    def test_a_blueprint_is_for_the_whole_training_so_it_has_no_level_to_finish_first(self):
+        # Every level's blueprint is drafted before any level is built, so "finish this
+        # level" means nothing there yet, and nothing pauses after the first blueprint.
+        refused, seen = [], []
+
+        def tries(tools, job):
+            seen.append(self.engine.view(self.space.training('rolling-restarts'))['controls'])
+            with self.assertRaisesRegex(WorkspaceError, 'whole training') as caught:
+                self.engine.act(self.space.training('rolling-restarts'), 'finish-level')
+            refused.append(str(caught.exception))
+            return self.workers.blueprint(tools, job)
+
+        self.workers.then('blueprint', tries)
+        with mock.patch('studio_core.review_policy.capture',
+                        return_value={'schema': 1, 'level': 'automatic'}):
+            root = self.start(levels=['101', '201'], materials=['document'])
+        self.assertEqual(len(refused), 1)
+        self.assertEqual((seen[0]['finish_level'], seen[0]['finishing']), (None, None))
+        shown = self.view(root)
+        self.assertEqual((shown['state'], shown['review']['phase']), ('waiting', 'final'))
+        self.assertEqual(len(self.workers.of('document')), 2)
+
+    def test_finishing_the_only_level_arrives_at_the_wait_without_pausing(self):
+        asked = []
+
+        def finishes(tools, job):
+            asked.append(self.engine.act(self.space.training('rolling-restarts'), 'finish-level'))
+            return self.workers.document(tools, job)
+
+        self.workers.then('document', finishes)
+        with mock.patch('studio_core.review_policy.capture',
+                        return_value={'schema': 1, 'level': 'automatic'}):
+            root = self.start(levels=['101'], materials=['document'])
+        self.assertEqual(asked[0]['controls']['finishing'], '101')
+        # The final review is the wait: nothing pauses before it, and nothing is left to
+        # pause before the index afterwards.
+        shown = self.view(root)
+        self.assertEqual((shown['state'], shown['review']['phase']), ('waiting', 'final'))
+        self.assertEqual(shown['controls'], {'finish_level': None, 'finishing': None,
+                                             'skip_deck': False})
+        self.assertIsNone(self.engine._load(root).get('halt_after'))
+        self.assertIn('Rolling restarts: level 101 finished; waiting as asked on the page', self.log())
+        shown = self.engine.review_decide(root, shown['review']['expected'], 'approve')
+        self.assertEqual(shown['state'], 'done')
+
+    def test_a_step_for_the_whole_training_has_no_level_to_finish_first(self):
+        refused = []
+
+        def tries(tools, job):
+            with self.assertRaisesRegex(WorkspaceError, 'whole training') as caught:
+                self.engine.act(self.space.training('rolling-restarts'), 'finish-level')
+            refused.append(str(caught.exception))
+            return self.workers.research_plan(tools, job)
+
+        self.workers.then('research-plan', tries)
+        root = self.start(levels=['101'])
+        self.assertEqual(len(refused), 1)
+        self.assertEqual(self.state(root), 'waiting')
+        self.assertIsNone(self.engine._load(root).get('halt_after'))
+
     def test_a_stopped_training_stays_stopped_until_it_is_resumed(self):
         root = self.start()
         stopped = self.engine.act(root, 'stop')
@@ -994,7 +1182,7 @@ class HaltTests(StudioCase):
         self.refused(root, 'resume', 'This training is not paused or stopped, so there is '
                      'nothing to resume.')
         self.refused(root, 'retry', 'Nothing here failed, so there is nothing to try again.')
-        self.refused(root, 'restart', 'A run can be asked to: pause, resume, stop, retry.')
+        self.refused(root, 'restart', 'A run can be asked to: pause, resume, stop, retry, finish-level.')
 
         self.workers.then('research-plan', fails(), fails(), fails())
         failed = self.start(title='Health checks')

@@ -53,13 +53,37 @@ class FlowCase(StudioCase):
 class ToTheEndTests(FlowCase):
     def test_a_changed_review_preference_refuses_start_before_making_any_files(self):
         before = sorted(self.space.repo.iterdir())
-        form = pipeline.check_form({**FORM, 'review_level': 'step_by_step'})
-        with mock.patch('studio_core.review_policy.capture',
-                        return_value={'schema': 1, 'level': 'automatic'}):
-            with self.assertRaisesRegex(WorkspaceError, 'review preference changed'):
-                self.engine.start(form)
+        # A page from before the per-training choice sends only the level it saw.
+        for sent in ({'review_seen': 'step_by_step', 'review_level': 'step_by_step'},
+                     {'review_level': 'step_by_step'}):
+            form = pipeline.check_form({**FORM, **sent})
+            with self.subTest(sent=sent), mock.patch(
+                    'studio_core.review_policy.capture',
+                    return_value={'schema': 1, 'level': 'automatic'}):
+                with self.assertRaisesRegex(WorkspaceError, 'review preference changed'):
+                    self.engine.start(form)
         self.assertEqual(sorted(self.space.repo.iterdir()), before)
         self.assertEqual(self.workers.jobs, [])
+
+    def test_a_training_can_choose_its_own_review_level(self):
+        # The shared level is Balanced; this training asks for Automatic draft, and runs
+        # under it: no stop for the research plan, no direction review.
+        form = pipeline.check_form({**FORM, 'review_seen': 'balanced',
+                                    'review_level': 'automatic'})
+        with mock.patch('studio_core.review_policy.capture',
+                        return_value={'schema': 1, 'level': 'balanced'}):
+            made = self.engine.start(form)
+        root = Path(made['path'])
+        self.assertEqual(made['gates'], 1)
+        record = self.engine._load(root)
+        self.assertEqual(record['review_policy'], {'schema': 1, 'level': 'automatic'})
+        self.assertEqual(workspace.load(root)['review_policy'], record['review_policy'])
+        shown = self.view(root)
+        self.assertIsNone(shown['problem'], shown)
+        self.assertEqual((shown['review_level'], shown['review']['phase']), ('automatic', 'final'))
+        for value in ('all', 7):
+            with self.assertRaisesRegex(WorkspaceError, 'supported review preference'):
+                pipeline.check_form({**FORM, 'review_level': value})
 
     def test_selected_materials_finish_without_unrequested_workers_or_gates(self):
         for materials, gates, writers in (
