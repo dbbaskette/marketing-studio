@@ -43,13 +43,24 @@ future blogs; existing runs keep their choices. **Status → Check this
 computer** shares setup’s read-only checks and next steps. You can run the same
 report with `sh ~/.local/share/blog-studio/studio check`.
 
-Choose **New blog** and work through three steps: topic and audience; mode and
-voice and optional brand; sources, assistant and limits. Choose **Write a blog**, **Outline only**,
+Choose **New blog**, pick a task, and work through two steps. **Your brief** asks for
+the topic and reader, **Write as** (your default voice, another saved voice, no
+particular voice, or **Learn a new voice…**) and **Kind of post** (a starter or
+learned style: the shape of the piece, while the voice is how it sounds). A
+manuscript keeps its own voice unless you pick one. **Start writing** adds optional
+sources and research, and **Tone, author and brand**; the tone is a nudge on top
+of the voice. Choose **Write a blog**, **Outline only**,
 **Revise a draft**, or **Review a draft**. Revision and review accept an uploaded
 manuscript or a saved readable source; the original is retained. You can upload
 references in the wizard too. The assistant receives only selected source and
 voice context plus this blog's saved writing preferences, memories and explicitly
 selected team context. Oversized context is refused rather than silently cut.
+
+Open **Tools → Voices and styles** (also in **Library and team tools** and
+**Settings**) to learn a voice from samples, a LinkedIn export or links to posts, and
+to learn, edit or retire styles. A run's **About this blog** shows its voice and kind
+of post. **Change the voice** asks first once an outline or draft exists, since its
+reviews will need a new look; nothing is rewritten.
 
 ## Start from a Google Doc
 
