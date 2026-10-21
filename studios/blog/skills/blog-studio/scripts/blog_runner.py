@@ -554,7 +554,8 @@ def survey(root, ident, listing=False):
     }
 
 
-def save(root, directory, record, run, event):
+def note_decision(directory, run, event):
+    """Append one decision to the run, keeping its previous state in history."""
     path = studio.inside(directory, STATE)
     if path.exists():
         studio.atomic(
@@ -563,6 +564,10 @@ def save(root, directory, record, run, event):
         )
     run.setdefault('decisions', []).append({'event': event, 'at': studio.now()})
     studio.write_json(path, run)
+
+
+def save(root, directory, record, run, event):
+    note_decision(directory, run, event)
     record['next_step'] = (
         'Continue the guided blog on the page.'
         if run['approval'] == 'page'

@@ -857,6 +857,8 @@ def article_command(root, args):
     elif args.action == 'voice':
         if args.profile:
             record['voice'] = {'mode': 'profile', **voice_pin(root, args.profile, args.revision)}
+            if args.tone:
+                record['voice']['tone'] = args.tone  # A nudge on top of the voice.
         else:
             record['voice'] = {'mode': args.voice, 'tone': args.tone or ''}
     elif args.action == 'review':

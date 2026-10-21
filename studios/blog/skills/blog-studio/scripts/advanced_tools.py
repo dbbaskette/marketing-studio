@@ -52,6 +52,53 @@ def history_preview(root, ident, revision):
     )
 
 
+def apply_voice(root, ident, selected, confirmed):
+    """Switch a blog's voice as the chat `article voice` command does, so its reviews go
+    stale. Once an outline or draft exists the person confirms it, and a guided run
+    records it as a decision. The pinned style and any tone nudge stay as they are."""
+    import blog_runner
+
+    folder, record = studio.item(root, 'articles', ident)
+    written = any((folder / name).is_file() for name in ('OUTLINE.md', 'DRAFT.md', 'ORIGINAL.md'))
+    if written and not confirmed:
+        raise ValueError(
+            'This blog has a saved outline or draft. Confirm the change of voice: its reviews '
+            'will need a new look; nothing is rewritten.'
+        )
+    before = record.get('voice') or {}
+    if before.get('mode') != 'profile' or (before['profile_id'], before['revision']) != (
+        selected['id'],
+        selected['revision'],
+    ):
+        studio.article_command(
+            root,
+            SimpleNamespace(
+                action='voice',
+                id=ident,
+                profile=selected['id'],
+                revision=selected['revision'],
+                voice='preserve',
+                tone=before.get('tone') or None,
+            ),
+        )
+        if (folder / blog_runner.STATE).is_file():
+            directory, _, run = blog_runner.load(root, ident)
+            blog_runner.note_decision(
+                directory,
+                run,
+                'Voice changed to '
+                + selected['name']
+                + ' (revision '
+                + str(selected['revision'])
+                + ')',
+            )
+    _, record = studio.item(root, 'articles', ident)
+    result = {'id': ident, 'voice': record['voice'], 'status': 'voice-selected'}
+    if (folder / blog_runner.STATE).is_file():
+        result['run'] = blog_runner.engine(root).describe(ident)
+    return result
+
+
 SAMPLE_PURPOSES = ('voice-sample', 'style-sample')
 
 
@@ -169,13 +216,7 @@ def dispatch(root, data):
                 raise ValueError(
                     'Choose an active profile; existing pinned work remains unchanged.'
                 )
-            folder, record = studio.item(root, 'articles', current['id'])
-            record['voice'] = {
-                'mode': 'profile',
-                **studio.voice_pin(root, selected['id'], selected['revision']),
-            }
-            studio.persist(folder, 'articles', record)
-            return {'id': current['id'], 'voice': record['voice'], 'status': 'voice-selected'}
+            return apply_voice(root, current['id'], selected, data.get('confirmed') is True)
     if action == 'variant-save':
         import article_tools
 

@@ -741,3 +741,120 @@ class SourcePurposeTests(Fixture):
             self.mark(material, 'voice-sample', 'Avery')
         for ident in (ready['id'], pending['id'], material):
             self.assertEqual(studio.item(self.root, 'sources', ident)[1]['revision'], 1)
+
+
+class VoiceApplyTests(Fixture):
+    """Changing a blog's voice is a recorded decision: confirmed once writing exists."""
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+
+    def voice(self, name):
+        self.file.write_text(name + ' writes short direct sentences.')
+        return self.command(
+            'profile',
+            'create',
+            '--name',
+            name,
+            '--guide-file',
+            str(self.file),
+            '--status',
+            'confirmed',
+        )
+
+    def apply(self, ident, profile, **extra):
+        import management
+
+        current = manuscript_editor.read(self.root, ident)
+        return management.dispatch(
+            self.root,
+            'tool-action',
+            {
+                'action': 'voice-apply',
+                'id': ident,
+                'profile': profile,
+                'expected': current['expected'],
+                **extra,
+            },
+        )
+
+    def test_a_blog_with_a_draft_needs_a_confirmed_switch_that_stales_its_reviews(self):
+        ident = self.article()
+        blake = self.voice('Blake')
+        review = self.base / 'review.json'
+        review.write_text('{"findings": []}')
+        self.command(
+            'article',
+            'review',
+            '--id',
+            ident,
+            '--check',
+            'proofread',
+            '--status',
+            'current',
+            '--file',
+            str(review),
+        )
+        directory, before = studio.item(self.root, 'articles', ident)
+        with self.assertRaisesRegex(ValueError, 'Confirm'):
+            self.apply(ident, blake['id'])
+        self.assertEqual(studio.item(self.root, 'articles', ident)[1], before)
+        result = self.apply(ident, blake['id'], confirmed=True)
+        self.assertEqual(result['status'], 'voice-selected')
+        self.assertEqual(
+            result['voice'], {'mode': 'profile', 'profile_id': blake['id'], 'revision': 1}
+        )
+        self.assertNotIn('run', result)
+        self.assertEqual(len(result['receipts']), 1)
+        _, after = studio.item(self.root, 'articles', ident)
+        self.assertEqual(
+            studio.freshness(self.root, directory, after)['proofread']['status'], 'stale'
+        )
+
+    def test_a_guided_run_records_the_change_and_keeps_its_style_and_tone(self):
+        avery, blake = self.voice('Avery'), self.voice('Blake')
+        found = blog_runner.create(
+            self.root,
+            {
+                'title': 'Synthetic gateway guide',
+                'audience': 'New authors',
+                'goal': 'Explain a fictional gateway',
+                'research': 'none',
+                'profile': avery['id'],
+                'tone': 'Warm',
+                'style': 'how-to',
+            },
+            'page',
+        )
+        ident = found['id']
+        empty = self.apply(ident, blake['id'])
+        self.assertEqual(empty['run']['voice_name'], 'Blake', 'no writing yet: no confirmation')
+        found = blog_runner.submit(
+            self.root,
+            ident,
+            'outline',
+            {'content': '# Outline\nSynthetic argument.', 'notes': ''},
+            empty['run']['expected'],
+            page=True,
+        )
+        with self.assertRaisesRegex(ValueError, 'Confirm'):
+            self.apply(ident, avery['id'])
+        result = self.apply(ident, avery['id'], confirmed=True)
+        self.assertEqual(
+            result['voice'],
+            {'mode': 'profile', 'profile_id': avery['id'], 'revision': 1, 'tone': 'Warm'},
+        )
+        self.assertEqual(result['run']['voice_name'], 'Avery')
+        self.assertEqual(result['run']['style_name'], 'How-to and tutorial')
+        events = [row['event'] for row in result['run']['decisions']]
+        self.assertEqual(
+            events[-3:],
+            [
+                'Voice changed to Blake (revision 1)',
+                'Submitted outline',
+                'Voice changed to Avery (revision 1)',
+            ],
+        )
+        _, record = studio.item(self.root, 'articles', ident)
+        self.assertEqual(record['style'], {'style_id': 'how-to', 'revision': 1})
