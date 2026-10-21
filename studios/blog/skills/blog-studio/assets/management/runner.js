@@ -614,7 +614,8 @@ function sSamePassage(left,right){return left.kind==='edit'&&right.kind==='edit'
 // The finish: a finished run's Done card, deleting with the typed title, what was recently
 // deleted, and the ideas a gate offers as picks.
 function sDoneCard(found){
-  const read=async()=>{const shown=await api('run-file?'+new URLSearchParams({id:found.id,stage:'draft'}));return {content:shown.content,name:shown.name||'DRAFT.md'};};
+  // The draft is a stage of a written blog; a reviewed or revised manuscript is read as one.
+  const read=async()=>{if((found.stages||[]).some(row=>row.stage==='draft')){const shown=await api('run-file?'+new URLSearchParams({id:found.id,stage:'draft'}));return {content:shown.content,name:shown.name||'DRAFT.md'};}const manuscript=await api('manuscript?id='+encodeURIComponent(found.id));return {content:manuscript.content,name:'DRAFT.md'};};
   const held={url:''},problem=sNode('p','problem');problem.setAttribute('role','alert');
   const copy=sButton('Copy Markdown',async()=>{const shown=await read();if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');await navigator.clipboard.writeText(shown.content);sToast('Markdown copied.');});
   const download=sButton('Download',async()=>sDownload(await read()));
