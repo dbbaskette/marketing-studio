@@ -1741,8 +1741,9 @@ class Engine(Reviewing):
         outline = pipeline.place(root, level, pipeline.OUTLINE)
         if choice == pipeline.DEFAULT_LOOK:
             default = deck_direction.default_look(contract) or {}
+            # Nothing was seen rendered: the brand's default, and the deck says so.
             chosen = {'id': default.get('id') or pipeline.DEFAULT_LOOK,
-                      'name': default.get('id') or "the brand's default",
+                      'name': default.get('id') or "the brand's default", 'shown': 'unrendered',
                       **{key: default.get(key) for key in ('direction', 'house', 'layouts')}}
         else:
             picked = next((look for look in shown.get('looks') or ()
@@ -1752,8 +1753,8 @@ class Engine(Reviewing):
             folder = work / str(shown.get('folder'))
             written = folder / f'outline-{secrets.token_hex(3)}.json'
             try:
-                self._skill().look_choose(folder / 'samples', picked['id'], words,
-                                          outline=outline, write=written)
+                made = self._skill().look_choose(folder / 'samples', picked['id'], words,
+                                                 outline=outline, write=written)
             except WorkspaceError as refusal:
                 if 'changed' in str(refusal).lower():
                     self._note(root, level, look=None)   # drawn again from what it says now
@@ -1762,6 +1763,7 @@ class Engine(Reviewing):
             look = deck_flow.chosen_from(home.read_json(written, None),
                                          deck_direction.contract_of(contract)) or {}
             chosen = {'id': picked['id'], 'name': picked['name'],
+                      'shown': made.get('shown') or 'rendered',
                       'direction': look.get('direction') or picked['direction'],
                       'house': look.get('house') or list(shown.get('house') or ()),
                       'layouts': look.get('layouts') or picked['layouts']}

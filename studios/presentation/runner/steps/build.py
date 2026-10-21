@@ -520,7 +520,7 @@ def export_brand(root, run: dict, brand_skill) -> Path:
         return contract
     shutil.rmtree(root / BRAND, ignore_errors=True)   # a folder an export left half made
     brand_skill.export(root / BRAND, form.get('brand'), form.get('variant'),
-                       delivery=DELIVERY)
+                       delivery=delivery(run))
     write_atomic(root / VERSION, _revision(contract) + '\n')
     guide(root, run, brand_skill)
     return contract
@@ -732,6 +732,14 @@ def layouts(listed, slides: list[dict]) -> dict:
     return chosen
 
 
+def delivery(run: dict) -> str:
+    """How a deck is delivered, one value for its brand export, its look samples and its
+    outline: as the run's form says ('live' for a talk, 'reading' for a handout), else
+    DELIVERY."""
+    said = (run.get('form') or {}).get('delivery')
+    return said if said in ('live', 'reading') else DELIVERY
+
+
 def complete(outline: dict, listed, words: list[str], rules: list[str],
              direction: dict | None = None, knows=frozenset()) -> dict:
     """An approved outline as the slides tool starts a deck from: with its direction, a
@@ -924,7 +932,8 @@ def start(root, run: dict, slides, brand) -> dict:
     try:
         listed = slides.layouts(brand).get('layouts')
         known = slides.knows()
-        whole = complete(outline, listed, _approval(root, run, outline), house(run),
+        whole = complete({**outline, 'delivery': delivery(run)}, listed,
+                         _approval(root, run, outline), house(run),
                          deck_direction.of_file(brand), known)
         home.write_json(source, for_tool(whole, known))
         slides.outline_start(source, brand, folder)

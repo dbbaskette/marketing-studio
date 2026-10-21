@@ -1102,3 +1102,11 @@ class StartAgainTests(Deck):
         spec = work.prepared['artifacts']['section']
         self.assertEqual(sorted(spec['unchanged_slides']),
                          ['the-objection', 'when-capacity-holds'])
+
+
+
+class DeliveryTests(unittest.TestCase):
+    def test_one_delivery_for_the_export_the_looks_and_the_outline(self):
+        self.assertEqual(build.delivery({'form': {'delivery': 'live'}}), 'live')
+        self.assertEqual(build.delivery({'form': {'delivery': 'odd'}}), build.DELIVERY)
+        self.assertEqual(build.delivery({}), build.DELIVERY)

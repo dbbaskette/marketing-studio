@@ -139,7 +139,7 @@ def draw_looks(root, run: dict, brand_skill, renderer, has=lambda name: False) -
         with worker_tools.one_at_a_time(Path(how['lock'])):
             made = brand_skill.look_samples(root / OUTLINE, root / SAMPLES, form.get('brand'),
                                             form.get('variant'), preview=routed['preview'],
-                                            delivery=build.DELIVERY)
+                                            delivery=build.delivery(run))
         manifest = home.read_json(root / SAMPLES / 'looks.json', {})
         looks = deck_flow.sampled(manifest, root / SAMPLES)
         for look in looks:

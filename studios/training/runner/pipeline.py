@@ -1708,7 +1708,7 @@ def look_view(root: Path, found: Survey, level: str | None) -> dict | None:
             'looks': [{key: look.get(key) for key in ('id', 'name', 'useWhen', 'number')}
                       for look in shown.get('looks') or ()],
             'notes': notes,
-            'chosen': ({key: chosen.get(key) for key in ('id', 'name', 'words', 'by')}
+            'chosen': ({key: chosen.get(key) for key in ('id', 'name', 'words', 'by', 'shown')}
                        if chosen else None)}
 
 

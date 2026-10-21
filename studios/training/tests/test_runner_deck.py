@@ -1654,7 +1654,8 @@ class LookTests(DeckCase):
         self.assertEqual(self.brand.chosen, [('example-contrast',
                                               'The strips suit a comparison.')])
         chosen = self.record(root)['deck']['']['look']['chosen']
-        self.assertEqual((chosen['id'], chosen['by']), ('example-contrast', 'page'))
+        self.assertEqual((chosen['id'], chosen['by'], chosen['shown']),
+                         ('example-contrast', 'page', 'rendered'))
         start = root / pipeline.WORK / self.built(root)['start']['folder']
         self.assertEqual(self.built(root)['start']['look'], 'example-contrast')
         given = json.loads((start / 'given' / 'outline.json').read_text())
@@ -1718,6 +1719,7 @@ class LookTests(DeckCase):
         self.assertEqual(workspace.status(root)['gate'], 'deck')
         chosen = self.record(root)['deck']['']['look']['chosen']
         self.assertIn('chose to carry on', chosen['words'])
+        self.assertEqual(chosen['shown'], 'unrendered', 'the look was never seen rendered')
 
     def test_the_brand_refuses_a_pick_for_samples_of_an_older_outline(self):
         root = self.begin()
