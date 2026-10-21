@@ -81,6 +81,8 @@ def main():
     parser.add_argument('studio', choices=('blog', 'presentation', 'training'))
     parser.add_argument('root', type=Path)
     parser.add_argument('--prepare', action='store_true')
+    # Names the Marketing Studio data root that started this bridge; read only from outside.
+    parser.add_argument('--home-data', help=argparse.SUPPRESS)
     args = parser.parse_args()
     handoff = json.loads(os.environ.pop('MARKETING_STUDIO_HANDOFF'))
     shared = handoff['shared']

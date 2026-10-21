@@ -5,11 +5,24 @@ import os
 from pathlib import Path
 import socket
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
 from marketing_studio import cli, control
 from marketing_studio.errors import WorkspaceError
+
+
+def unix_sockets():
+    with tempfile.TemporaryDirectory() as folder, socket.socket(socket.AF_UNIX) as probe:
+        try:
+            probe.bind(str(Path(folder) / 'probe.sock'))
+            return True
+        except OSError:
+            return False
+
+
+UNIX = unix_sockets()
 
 
 class Terminal(io.StringIO):
@@ -113,6 +126,54 @@ class CliTests(Disposable):
             control.Control(other, lambda _: None)
         self.assertEqual((other / 'control.sock').read_text(), 'keep this file')
 
+    @unittest.skipUnless(UNIX, 'Local sockets are not permitted here.')
+    def test_control_accepts_the_running_commands_and_validates_them(self):
+        seen = []
+
+        def handle(action):
+            seen.append(action)
+            return {'answered': action['command']}
+        ipc = control.Control(self.data, handle, shutdown=lambda: None)
+        self.addCleanup(ipc.close)
+        good = ({'command': 'state'}, {'command': 'start', 'studio': 'blog'},
+                {'command': 'stop', 'studio': 'training', 'force': True},
+                {'command': 'stop', 'studio': 'presentation', 'force': False},
+                {'command': 'shutdown'}, {'command': 'open', 'studio': None})
+        for action in good:
+            self.assertEqual(control.request(self.data, action), {'answered': action['command']})
+        bad = ({'command': 'erase'}, {'command': 'stop', 'studio': 'video'},
+               {'command': 'stop', 'studio': 'blog', 'force': 'yes'},
+               {'command': 'start', 'studio': 'blog', 'extra': 1}, ['state'], 'state')
+        for action in bad:
+            self.assertIn('error', control.request(self.data, action))
+        self.assertEqual(seen, list(good))
+
+    @unittest.skipUnless(UNIX, 'Local sockets are not permitted here.')
+    def test_shutdown_replies_before_stopping(self):
+        replied = threading.Event()
+        order = []
+
+        def shutdown():
+            order.append('reply received first' if replied.wait(5) else 'stopped before replying')
+        ipc = control.Control(self.data, lambda action: {'stopping': True}, shutdown=shutdown)
+        self.addCleanup(ipc.close)
+        self.assertEqual(control.request(self.data, {'command': 'shutdown'}), {'stopping': True})
+        replied.set()
+        ipc.thread.join(timeout=0)
+        for _ in range(100):
+            if order:
+                break
+            threading.Event().wait(.05)
+        self.assertEqual(order, ['reply received first'])
+
+    @unittest.skipUnless(UNIX, 'Local sockets are not permitted here.')
+    def test_failed_shutdown_keeps_running(self):
+        called = []
+        ipc = control.Control(self.data, lambda action: {'error': 'Not now.'}, shutdown=lambda: called.append(1))
+        self.addCleanup(ipc.close)
+        self.assertEqual(control.request(self.data, {'command': 'shutdown'}), {'error': 'Not now.'})
+        self.assertEqual(called, [])
+
     def test_long_data_root_has_private_short_socket_path(self):
         long = self.data / ('long' * 50)
         long.mkdir()
@@ -160,6 +221,7 @@ class HomeServerTests(Disposable):
 
     def test_refused_first_studio_open_keeps_serving(self):
         launcher = mock.Mock()
+        launcher.clean_orphans.return_value = []
         launcher.open.side_effect = WorkspaceError('Training Studio stopped before opening.')
         with mock.patch.object(cli, 'Launcher', return_value=launcher), \
                 mock.patch.object(cli.Home, 'configured', return_value=True):

@@ -143,9 +143,24 @@ companions are copied to upstream version folders and linked through upstream di
 paths under their existing install locks. No npm command or companion download is needed
 on the user's computer. Workspaces, assistant sign-ins and gcloud remain external.
 
+## Background start and stop
+
+`marketing-studio start` runs `marketing-studio serve` detached, in its own session,
+with output appended to `home.log`, and waits until the private control socket
+answers. `start`, `stop` and `restart` then use that same-user socket (state,
+start, stop, shutdown); a shutdown is answered first, then stopped the way Ctrl-C
+does, so the server closes its control socket, network listeners and studios in order.
+
+Each studio child is recorded in the data folder's `run/` folder with its process
+and start time, never its link. A stop first lists assistant jobs (codex, claude or
+gemini processes under the studio) and refuses unless `--force` is given. A studio
+left running by a Marketing Studio that stopped abruptly is stopped at the next
+start, unless it has a running job, and by `stop --all`. Only a recorded process
+that still runs this data folder's studio bridge is ever signalled.
+
 ## Optional local-network access
 
-`marketing-studio serve --lan` adds fixed-destination bridges on one private IPv4
+`marketing-studio serve --lan` (or `start --lan`) adds fixed-destination bridges on one private IPv4
 interface. Native servers continue to bind loopback and validate their original
 session keys and origins. Each studio keeps its own browser origin, assets, API
 routes, and session storage. Marketing Studio returns the bridge's private link
