@@ -12,11 +12,15 @@ uses companion commands and the same readable deck records.
 | Import a conversation-created deck | Decks → Bring in a deck | `Engine.bring`; remembered decks only |
 | Review research, classify, revise and approve | Current deck checkpoint | `Engine.decide` and item marks |
 | Retitle, reorder, add or remove outline slides | Outline review | `outline.apply_edits` |
-| Preview a visual storyboard, including unsaved edits | Automatically at Outline; Preview storyboard refreshes edits | Harness Slides `outline draft` |
+| Preview a visual storyboard, including unsaved edits | Automatically at Outline, again 1.5 s after the last edit; Refresh now | Harness Slides `outline draft` |
+| Correct how a document was read, from the direction review | Direction review → That’s wrong | `Engine.decide` with `direction_target: gate:classify` |
 | Confirm identity or change brand | Direction/brand review | Saved contract and cover preview |
 | Request the first native draft before AI critique | New deck → First native build | Run-scoped `initial_review` |
 | Inspect native slides, partial previews and findings | Current deck | `Engine.picture`, build progress |
 | Send revision-bound feedback during section construction | Partial slide preview | `Engine.build_feedback` |
+| Keep feedback that came after its section was drawn, as the slide's mark at the deck review | Partial slide preview → the deck review | `Engine.build_feedback` with the slide's number |
+| Mark slides, with a line against each, and have only their parts drawn again | Deck review, Delivered | `Engine.decide` with `slides` and `slide_notes` |
+| Change what a slide says: back to the outline, marked; only the sections that changed are drawn again | Deck review, Delivered → Change what it says | `Engine.decide` with `direction_target: gate:outline`; `build.start` keeps unchanged sections |
 | Review an unreviewed first draft | Run AI review | `Engine.review_draft` |
 | Accept or revise an unreviewed draft | Use/export draft as-is; Ask for changes | Actual user decision; AI status stays separate |
 | Pause, stop, resume, retry or undo | Current deck toolbar | `Engine.act` |
