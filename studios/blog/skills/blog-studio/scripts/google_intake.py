@@ -50,6 +50,27 @@ def linked(root, file_id):
     return None
 
 
+def material(root, value):
+    """Read a Google Doc as one of a blog's files: its title, link and text. The capture is
+    read with this computer's Google sign-in and nothing of it stays in staging."""
+    file_id = document_id(value)
+    folder = studio.inside(drive.staging_root(root, create=True), 'material-' + uuid.uuid4().hex)
+    folder.mkdir(mode=0o700)
+    try:
+        snapshot = folder / 'snapshot'
+        roundtrip.capture(drive.Client(drive.account_for(root)), file_id, None, snapshot)
+        body = (snapshot / 'document.md').read_text()
+        native = studio.read_json(snapshot / 'native.json')
+    finally:
+        drive.discard(root, folder)
+    text = text_only(body)
+    if not text.strip():
+        raise ValueError('This Google Doc has no text to read.')
+    title = ' '.join(str(native.get('title') or '').split())[:200] or 'Google Doc'
+    link = 'https://docs.google.com/document/d/' + file_id + '/edit'
+    return {'title': title, 'link': link, 'markdown': body, 'text': text}
+
+
 def fingerprint(snapshot):
     return drive.digest(
         drive.encoded(

@@ -1074,7 +1074,7 @@ async function filesJourney(){
   const found={id:'files',title:'From my files',status:'queued',next:'angles',approval:'page',expected:'a1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',mode:'from-files',review_level:'balanced',decisions:[],brief:{goal:'A team post',audience:'To be chosen with the angle.'},stages:[{stage:'angles',label:'Angles',path:'derived/blog-angles.md',status:'pending'}],excerpted:[]};
   const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});
     if(url==='/api/run-options')return {settings:{defaults,review_level:'balanced'},sources:[],profiles:[],agents:{codex:true}};
-    if(url==='/api/upload')return uploaded;
+    if(url==='/api/upload')return (JSON.parse(options.body).files||[]).some(e=>e.google)?{files:[{filename:'Messaging Doc',source:{id:'s9',name:'Messaging Doc'},state:'ready',chars:4200,note:'',link:'https://docs.google.com/document/d/abc/edit'}]}:uploaded;
     if(url==='/api/run-create'||url.startsWith('/api/run?'))return found;
     if(url.startsWith('/api/run-'))return found;
     return {items:[],total:0};});
@@ -1119,13 +1119,27 @@ async function filesJourney(){
   const picker2=byId('files-input');picker2.files=[{name:'a.md',size:2*MiB,arrayBuffer:async()=>new TextEncoder().encode('a').buffer},{name:'b.md',size:2*MiB,arrayBuffer:async()=>new TextEncoder().encode('b').buffer}];
   await picker2.listeners.change();
   assert.deepEqual(requests.filter(r=>r.url==='/api/upload').at(-1).data.files.map(e=>e.filename),['a.md','b.md'],'small files still go up together');
+  // A Google Doc link is one more file: read with this computer's Google sign-in.
+  assert.ok(byId('files-google'),'the files screen takes a Google Doc link');
+  assert.equal(byId('files-google').type,'url');
+  const docAdd=()=>byId('files-google-add'),asked=()=>requests.filter(r=>r.url==='/api/upload'&&r.data.files.some(e=>e.google));
+  await docAdd().listeners.click();
+  assert.equal(asked().length,0,'an empty link sends nothing');
+  assert.ok(text().some(t=>/Paste a Google Doc link first/.test(t)),'and says what to do');
+  byId('files-google').value='https://docs.google.com/document/d/abc/edit';
+  await docAdd().listeners.click();
+  assert.equal(asked().length,1);
+  assert.deepEqual(asked()[0].data.files,[{google:'https://docs.google.com/document/d/abc/edit'}]);
+  assert.equal(asked()[0].data.purpose,'material');assert.match(asked()[0].data.operation,/^[0-9a-f]{32}$/);
+  assert.ok(text().some(t=>/^Messaging Doc$/.test(t)),'the Doc is listed by its title: '+text().join('|'));
+  assert.ok(text().some(t=>/Google Doc · 4,200 characters/.test(t)),'with how much text it has');
   byId('files-goal').value='A team post';byId('files-goal').listeners.input();
   byId('files-web').checked=true;byId('files-web').listeners.change();
   assert.ok(text().some(t=>/stops for the angles/.test(t)));
   await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   const creation=requests.find(r=>r.url==='/api/run-create').data;
   assert.equal(creation.mode,'from-files');assert.equal(creation.research,'web-allowed');assert.equal(creation.goal,'A team post');
-  assert.deepEqual(creation.sources,['s1'],'only files with text are pinned, once');
+  assert.deepEqual(creation.sources,['s1','s9'],'only files with text are pinned, once, the Google Doc among them');
   assert.equal(creation.title,'');assert.equal(creation.stop,'package');
   // The angles gate: picks, a note, or none of these.
   const waiting={...found,status:'waiting-for-approval',expected:'a2',stages:[{...found.stages[0],status:'draft'}],excerpted:['notes']};

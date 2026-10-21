@@ -9,6 +9,7 @@ import os
 import signal
 from pathlib import Path
 import re
+import unicodedata
 import secrets
 import shutil
 import sys
@@ -16,7 +17,7 @@ import tempfile
 import threading
 import traceback
 from types import SimpleNamespace
-from urllib.parse import urlsplit, parse_qs
+from urllib.parse import unquote, urlsplit, parse_qs
 import webbrowser
 
 import studio
@@ -303,16 +304,43 @@ UPLOAD_SUFFIXES = ('.md', '.txt', '.html', '.htm', '.docx', '.pdf')
 MAX_UPLOAD_FILES = 20
 
 
-def checked_upload(root, entry, label='upload'):
+def clean_filename(name):
+    """The name a person gave a file, kept as they wrote it but safe to store: a name is
+    cleaned, never refused for its characters. Downloaded names lose their %20 escapes."""
+    if not isinstance(name, str):
+        raise ValueError('Give the file a name.')
+    if '/' in name or '\\' in name:
+        # A browser sends only a file's own name, never a folder.
+        raise ValueError('Use a file name without folders.')
+    if re.search(r'%[0-9A-Fa-f]{2}', name):
+        name = unquote(name)
+    name = unicodedata.normalize('NFC', name)
+    name = re.sub(r'[\\/]+', '-', name)
+    name = ''.join(ch for ch in name if unicodedata.category(ch) not in ('Cc', 'Cf'))
+    name = ' '.join(name.split())
+    stem, dot, suffix = name.rpartition('.')
+    if not dot:
+        stem, suffix = name, ''
+    stem = stem.strip().lstrip('.-').strip()
+    suffix = ('.' + suffix.strip()) if dot else ''
+    if not stem:
+        raise ValueError('Give the file a name.')
+    while len((stem + suffix).encode()) > 200:
+        stem = stem[:-1].rstrip()
+    return stem + suffix
+
+
+def title_of(filename):
+    """A file's title: its name without the suffix, and without a doubled one (.pdf.pdf)."""
+    stem = Path(filename).stem
+    if Path(stem).suffix.lower() in UPLOAD_SUFFIXES and Path(stem).stem:
+        stem = Path(stem).stem
+    return stem
+
+
+def checked_upload(root, entry):
     """One upload's checked name, bytes and extracted text; nothing is saved here."""
-    filename = entry.get('filename', '')
-    if (
-        not isinstance(filename, str)
-        or not re.fullmatch(r'[\w .()\-]{1,200}', filename)
-        or Path(filename).name != filename
-        or filename.startswith('.')
-    ):
-        raise ValueError('Use a simple ' + label + ' filename.')
+    filename = clean_filename(entry.get('filename', ''))
     suffix = Path(filename).suffix.lower()
     if suffix not in UPLOAD_SUFFIXES:
         raise ValueError('Upload Markdown, text, HTML, DOCX, or PDF.')
@@ -322,7 +350,7 @@ def checked_upload(root, entry, label='upload'):
     text, status, note = blog_library.extract_detail(root, content, suffix)
     if text is not None and len(text.encode()) > blog_library.MAX_TEXT:
         raise ValueError('Extracted text exceeds the shared file limit.')
-    title = entry.get('title') or Path(filename).stem
+    title = entry.get('title') or title_of(filename)
     if not isinstance(title, str) or not 1 <= len(title) <= 500:
         raise ValueError('Use a title under 500 characters.')
     return {
@@ -333,6 +361,33 @@ def checked_upload(root, entry, label='upload'):
         'status': status,
         'note': note,
         'title': title,
+    }
+
+
+def checked_google(root, entry):
+    """A Google Doc link as one more file: read now, saved with the files beside it."""
+    if set(entry) != {'google'}:
+        raise ValueError('Give either a file or a Google Doc link, not both.')
+    import google_intake
+
+    found = google_intake.material(root, entry['google'])
+    if len(found['text'].encode()) > blog_library.MAX_TEXT:
+        raise ValueError('This Google Doc has more text than one file may hold.')
+    try:
+        filename = clean_filename(found['title'] + '.md')
+    except ValueError:
+        filename = 'Google Doc.md'
+    return {
+        'filename': filename,
+        'shown': found['title'],
+        'suffix': '.md',
+        'content': found['markdown'].encode(),
+        'text': found['text'],
+        'status': 'ready',
+        'note': '',
+        'title': found['title'],
+        'origin': found['link'],
+        'link': found['link'],
     }
 
 
@@ -351,7 +406,7 @@ def save_upload(root, staging, checked, purpose, author=None, analyze=True):
                 file=str(path),
                 content=checked['text'],
                 text_file=None,
-                origin=checked['filename'],
+                origin=checked.get('origin', checked['filename']),
                 purpose=[purpose],
                 author=author or None,
                 note='Uploaded through the local editorial desk.',
@@ -376,7 +431,8 @@ def upload_files(root, data, staging, ledger, fingerprint):
     if data.get('keep') and purpose == 'material':
         purpose = 'reference'
     checked = [
-        checked_upload(root, entry if isinstance(entry, dict) else {}, 'file') for entry in files
+        (checked_google if 'google' in entry else checked_upload)(root, entry)
+        for entry in (entry if isinstance(entry, dict) else {} for entry in files)
     ]
     if len({entry['filename'] for entry in checked}) != len(checked):
         raise ValueError('Upload each file once.')
@@ -389,15 +445,16 @@ def upload_files(root, data, staging, ledger, fingerprint):
             if purpose != 'material':
                 source = share(root, 'source', source)
                 receipts.append(receipt(root, 'Uploaded reference', source, 'source'))
-            rows.append(
-                {
-                    'filename': entry['filename'],
-                    'source': source,
-                    'state': entry['status'],
-                    'chars': len(entry['text']) if entry['text'] else 0,
-                    'note': entry['note'],
-                }
-            )
+            row = {
+                'filename': entry.get('shown', entry['filename']),
+                'source': source,
+                'state': entry['status'],
+                'chars': len(entry['text']) if entry['text'] else 0,
+                'note': entry['note'],
+            }
+            if entry.get('link'):
+                row['link'] = entry['link']
+            rows.append(row)
     except BaseException:
         # All or nothing: material saved so far goes, and the same request can be retried.
         if purpose == 'material':
@@ -457,12 +514,7 @@ def upload(root, data):
     if 'files' in data:
         return upload_files(root, data, staging, ledger, fingerprint)
     checked = checked_upload(root, data)
-    filename, text, status, title = (
-        checked['filename'],
-        checked['text'],
-        checked['status'],
-        checked['title'],
-    )
+    text, status, title = checked['text'], checked['status'], checked['title']
     purpose = data.get('purpose', 'reference')
     if purpose not in studio.PURPOSES:
         raise ValueError('Choose a source purpose.')

@@ -2270,12 +2270,19 @@ class MaterialSafetyTests(Fixture):
                 self.upload('6' * 32, ('kept.md', b'Many words.'), keep=True)
 
     def test_filenames_are_plain(self):
-        for name in ('notes\n.md', 'a/b.md', 'quote".md', '.hidden.md'):
+        # A name is kept as written but stored plain: no line breaks, no hidden files.
+        for name, kept in (
+            ('notes\n.md', 'notes.md'),
+            ('quote".md', 'quote".md'),
+            ('.hidden.md', 'hidden.md'),
+            ('Q3 plan (draft) - v2.md', 'Q3 plan (draft) - v2.md'),
+        ):
             with self.subTest(name=name):
-                with self.assertRaisesRegex(ValueError, 'simple'):
-                    self.upload(sha(name.encode())[:32], (name, b'Words.'))
-        result = self.upload('7' * 32, ('Q3 plan (draft) - v2.md', b'Words.'))
-        self.assertEqual(result['files'][0]['state'], 'ready')
+                result = self.upload(sha(name.encode())[:32], (name, b'Words.'))
+                self.assertEqual(result['files'][0]['filename'], kept)
+                self.assertEqual(result['files'][0]['state'], 'ready')
+        with self.assertRaisesRegex(ValueError, 'without folders'):
+            self.upload('7' * 32, ('a/b.md', b'Words.'))
 
     def test_pdftotext_has_a_minute_per_file(self):
         import subprocess
@@ -2509,3 +2516,134 @@ class HubMaterialTests(Fixture):
         # This computer still reads the files for the run.
         _, payload, _ = blog_runner.job(self.root, found['id'])
         self.assertEqual(payload['sources'][0]['text'], 'Unshared material words.')
+
+
+class RealFileNameTests(Fixture):
+    """Files keep the names people give them; a Google Doc link is one more file."""
+
+    def upload(self, operation, *entries):
+        return management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': operation,
+                'purpose': 'material',
+                'analyze': False,
+                'files': list(entries),
+            },
+        )
+
+    def entry(self, name, body=b'Words to read.'):
+        return {'filename': name, 'content': base64.b64encode(body).decode()}
+
+    def test_ordinary_file_names_upload_and_read_back_as_written(self):
+        names = [
+            'Agent%20Platform%20Name%20TBD%20-%20Messaging%20Doc.pdf.pdf',
+            "Q3 plan, v2 – Dan's & Ana's notes #1.md",
+            'Résumé [final] + notes.txt',
+        ]
+        with patch.object(library.shutil, 'which', return_value=None):
+            rows = self.upload('a1' * 16, *[self.entry(name) for name in names])['files']
+        self.assertEqual(
+            [row['filename'] for row in rows],
+            [
+                'Agent Platform Name TBD - Messaging Doc.pdf.pdf',
+                "Q3 plan, v2 – Dan's & Ana's notes #1.md",
+                'Résumé [final] + notes.txt',
+            ],
+        )
+        titles = [studio.item(self.root, 'sources', row['source']['id'])[1]['name'] for row in rows]
+        self.assertEqual(
+            titles,
+            [
+                'Agent Platform Name TBD - Messaging Doc',
+                "Q3 plan, v2 – Dan's & Ana's notes #1",
+                'Résumé [final] + notes',
+            ],
+        )
+
+    def test_a_name_is_cleaned_rather_than_refused(self):
+        rows = self.upload(
+            'b2' * 16,
+            self.entry('..notes\x07draft​.md'),
+            self.entry('   spaced    out   .txt'),
+            self.entry('Q3%2FQ4 plan.md'),
+        )['files']
+        self.assertEqual(
+            [row['filename'] for row in rows], ['notesdraft.md', 'spaced out.txt', 'Q3-Q4 plan.md']
+        )
+        for name in ('../escape.md', 'a/b.md', 'a\\b.md'):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'without folders'):
+                self.upload('e9' * 16, self.entry(name))
+        for name in ('.md', '   .txt', '%2F%2E.md'):
+            with (
+                self.subTest(name=name),
+                self.assertRaisesRegex(ValueError, 'Give the file a name'),
+            ):
+                self.upload('c3' * 16, self.entry(name))
+        with self.assertRaisesRegex(ValueError, 'Upload each file once'):
+            self.upload('d4' * 16, self.entry('a%20b.md'), self.entry('a b.md'))
+
+    def captured(
+        self, title='Messaging Doc', body='# Messaging\n\nThe platform name is still open.'
+    ):
+        def capture(_client, file_id, _revision, snapshot):
+            self.asked = file_id
+            snapshot.mkdir(parents=True)
+            (snapshot / 'document.md').write_text(body)
+            studio.write_json(snapshot / 'native.json', {'title': title})
+            return {'summary': {}}
+
+        return capture
+
+    def test_a_google_doc_link_is_read_as_one_more_file(self):
+        import google_intake
+
+        link = (
+            'https://docs.google.com/document/d/1AbC_dEf-2gHiJkLmNoPqRsTuVwXyZ012345/edit?tab=t.0'
+        )
+        with (
+            patch.object(google_intake.roundtrip, 'capture', self.captured()),
+            patch.object(google_intake.drive, 'Client', lambda account: object()),
+        ):
+            result = self.upload('e5' * 16, {'google': link}, self.entry('plain.txt'))
+            again = self.upload('e5' * 16, {'google': link}, self.entry('plain.txt'))
+        self.assertEqual(result, again)
+        self.assertEqual(self.asked, '1AbC_dEf-2gHiJkLmNoPqRsTuVwXyZ012345')
+        doc, plain = result['files']
+        self.assertEqual(doc['filename'], 'Messaging Doc')
+        self.assertEqual(doc['state'], 'ready')
+        self.assertEqual(doc['chars'], len('# Messaging\n\nThe platform name is still open.'))
+        self.assertEqual(
+            doc['link'],
+            'https://docs.google.com/document/d/1AbC_dEf-2gHiJkLmNoPqRsTuVwXyZ012345/edit',
+        )
+        directory, record = studio.item(self.root, 'sources', doc['source']['id'])
+        self.assertEqual(record['purposes'], ['material'])
+        self.assertEqual(record['name'], 'Messaging Doc')
+        self.assertEqual(record['origin'], doc['link'])
+        self.assertIn('platform name is still open', (directory / 'content.md').read_text())
+        self.assertTrue(studio.material(self.root, doc['source']['id']).is_dir())
+        self.assertEqual(plain['filename'], 'plain.txt')
+        # The capture left nothing behind in Google staging.
+        import google_drive
+
+        staging = google_drive.staging_root(self.root)
+        self.assertEqual(list(staging.iterdir()) if staging.exists() else [], [])
+
+    def test_a_link_that_is_not_a_readable_google_doc_saves_nothing(self):
+        import google_intake
+
+        with self.assertRaisesRegex(ValueError, 'docs.google.com/document'):
+            self.upload('f6' * 16, {'google': 'https://example.com/doc'}, self.entry('a.md'))
+        with (
+            patch.object(google_intake.roundtrip, 'capture', self.captured(body='')),
+            patch.object(google_intake.drive, 'Client', lambda account: object()),
+            self.assertRaisesRegex(ValueError, 'no text'),
+        ):
+            self.upload(
+                'a7' * 16, self.entry('a.md'), {'google': '1AbC_dEf-2gHiJkLmNoPqRsTuVwXyZ012345'}
+            )
+        self.assertFalse((self.root / '.uploads' / 'material').exists())
+        with self.assertRaisesRegex(ValueError, 'Google Doc link'):
+            self.upload('b8' * 16, {'google': 'x', 'filename': 'a.md'})
