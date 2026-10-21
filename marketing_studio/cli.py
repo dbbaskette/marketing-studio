@@ -539,6 +539,8 @@ def main(argv=None):
             signal.signal(signal.SIGINT, server.interrupt)
             try:
                 desk = server.Desk(args.port, page=lambda port: Home(port, launcher))
+                # Studios started from now on can find their way back to this page.
+                launcher.home_port = desk.port
                 if lan:
                     # A separate interface can use the same chosen port as loopback.
                     lan.share('marketing', desk.url, port=desk.port)

@@ -87,7 +87,8 @@ class LinkTests(unittest.TestCase):
         self.assertEqual(sorted(targets), ['address', 'held', "home + '/'", 'settingsAddress()',
                                            'settingsAddress()'])
         self.assertIn("return '/onboarding/#token=' + view.token;", script)
-        self.assertIn('let home = suiteHome(window.location.hash, window.location);', script)
+        self.assertIn('let home = suiteHome(window.location.hash, window.location)\n'
+                      '    || suitePort(document.body?.dataset?.suitePort, window.location);', script)
         out = script[script.index('function outLink('):]
         out = out[:out.index('\n}\n')]
         self.assertIn("WEB_LINK.test(String(address || ''))", out)

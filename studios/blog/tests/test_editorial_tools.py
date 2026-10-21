@@ -1690,6 +1690,31 @@ class ManagementTests(Fixture):
             'Content-Type'
         ) == 'application/json' else body
 
+    def test_page_names_the_marketing_studio_port_only_when_started_by_it(self):
+        server, token = self.start_server()
+        for value, wanted in (
+            ('8790', b'<body data-suite-port="8790" data-product="Blog Studio">'),
+            ('0', None),
+            ('65536', None),
+            ('87x0', None),
+            ('', None),
+            (None, None),
+        ):
+            with self.subTest(value=value):
+                environment = {} if value is None else {'MARKETING_STUDIO_HOME_PORT': value}
+                with patch.dict(os.environ, environment):
+                    if value is None:
+                        os.environ.pop('MARKETING_STUDIO_HOME_PORT', None)
+                    status, page = self.request(server, token, '/')
+                    script = self.request(server, token, '/app.js')[1]
+                self.assertEqual(status, 200)
+                self.assertNotIn(b'data-suite-port="', script)
+                if wanted:
+                    self.assertIn(wanted, page)
+                    self.assertEqual(page.count(b'data-suite-port'), 1)
+                else:
+                    self.assertNotIn(b'data-suite-port', page)
+
     def test_http_auth_host_origin_paths_and_page(self):
         self.article()
         server, token = self.start_server()

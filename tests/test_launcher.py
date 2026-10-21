@@ -110,6 +110,30 @@ time.sleep(60)
             self.assertFalse(self.launcher.children)
         self.assertNotIn(link, (self.root / 'data/logs/training.log').read_text())
 
+    def test_a_studio_is_told_the_home_port_only_once_it_is_known(self):
+        content = """import json, os, time
+handoff = json.loads(os.environ.pop('MARKETING_STUDIO_HANDOFF'))
+with open(os.environ['FIXTURE_SEEN'], 'w') as seen:
+    seen.write(json.dumps(os.environ.get('MARKETING_STUDIO_HOME_PORT')))
+print(json.dumps({'address': 'http://127.0.0.1:12345/'}), flush=True)
+time.sleep(60)
+"""
+        seen = self.root / 'seen.json'
+        # A port inherited from another session is never passed on.
+        inherited = {'FIXTURE_SEEN': str(seen), 'MARKETING_STUDIO_HOME_PORT': '1111'}
+        with self.fixture(content), mock.patch.dict(os.environ, inherited):
+            self.assertIsNone(self.launcher.home_port)
+            self.launcher.open('training', self.preferences, {})
+            self.assertIsNone(json.loads(seen.read_text()))
+            self.launcher.stop('training')
+            for port, told in ((True, None), ('8790', None), (0, None), (65536, None), (8790, '8790')):
+                with self.subTest(port=port):
+                    self.launcher.home_port = port
+                    self.assertEqual(self.launcher.environment().get('MARKETING_STUDIO_HOME_PORT'), told)
+            self.launcher.open('training', self.preferences, {})
+            self.assertEqual(json.loads(seen.read_text()), '8790')
+            self.assertEqual(os.environ['MARKETING_STUDIO_HOME_PORT'], '1111')
+
     def test_failure_and_timeout_stop_the_child(self):
         with self.fixture("import json\nprint(json.dumps({'error':'Fixture refused'}), flush=True)\n"):
             with self.assertRaisesRegex(WorkspaceError, 'Fixture refused'):

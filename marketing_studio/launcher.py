@@ -26,6 +26,8 @@ ROOT = Path(__file__).resolve().parent.parent
 TIMEOUT = 90
 LOG_LINES = 12     # lines of a launch log shown with a failure
 LOG_TAIL = 64_000  # bytes read from its end to find them
+# A studio started from here is told the home page's port, so its page can link back to it.
+HOME_PORT = 'MARKETING_STUDIO_HOME_PORT'
 
 
 def launch_problem(message, log):
@@ -287,6 +289,8 @@ def local_link(link):
 class Launcher:
     def __init__(self, network=None):
         self.network = network
+        # Set once the home page is listening; until then no studio is told a port.
+        self.home_port = None
         self.children = {}
         self.lock = threading.RLock()
         self.closed = False
@@ -402,7 +406,7 @@ class Launcher:
                 stop_group(left)
                 forget(identifier)
             token = secrets.token_urlsafe(32)
-            env = {**os.environ, 'MARKETING_STUDIO_HANDOFF': json.dumps({'token': token, 'shared': shared}),
+            env = {**self.environment(), 'MARKETING_STUDIO_HANDOFF': json.dumps({'token': token, 'shared': shared}),
                    'PYTHONUNBUFFERED': '1'}
             log = state.data_root() / 'logs' / (identifier + '.log')
             log.parent.mkdir(parents=True, exist_ok=True)
@@ -452,6 +456,17 @@ class Launcher:
             record(identifier, process.pid)
             return self.link(identifier, link)
 
+    def environment(self):
+        """This process's environment for a studio, naming the home port only when it is known.
+
+        A port inherited from elsewhere is never passed on; a studio started before the home
+        page listens shows no way back rather than a wrong one."""
+        env = {key: value for key, value in os.environ.items() if key != HOME_PORT}
+        port = self.home_port
+        if type(port) is int and 0 < port < 65536:
+            env[HOME_PORT] = str(port)
+        return env
+
     def link(self, identifier, link):
         return self.network.share(identifier, link) if self.network else link
 
@@ -463,7 +478,7 @@ class Launcher:
                 root = catalog.locate(identifier, preferences.get('paths', {}))
                 if root is None:
                     continue
-                env = {**os.environ, 'MARKETING_STUDIO_HANDOFF': json.dumps(
+                env = {**self.environment(), 'MARKETING_STUDIO_HANDOFF': json.dumps(
                     {'token': secrets.token_urlsafe(32), 'shared': shared})}
                 process = subprocess.Popen(
                     [sys.executable, str(ROOT / 'marketing_studio/bridge.py'), identifier,
