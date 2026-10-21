@@ -627,11 +627,17 @@ class BlogRunnerTests(RunnerCase):
                 management.dispatch(self.root, 'run-create', {})
 
     def test_context_does_not_silently_truncate_sources(self):
+        # An oversized source is excerpted to the budget, and the run says so by name.
         source = self.source('Synthetic evidence ' * 20_000)
-        before = list((self.root / 'articles').iterdir())
-        with self.assertRaisesRegex(ValueError, 'too large'):
-            self.create(sources=[source['id']])
-        self.assertEqual(list((self.root / 'articles').iterdir()), before)
+        found = self.create(sources=[source['id']])
+        self.assertEqual(
+            runner.engine(self.root).describe(found['id'])['excerpted'], ['Specification']
+        )
+        _, record, run = runner.load(self.root, found['id'])
+        kept = runner.inputs(self.root, record, run)['sources'][0]
+        self.assertTrue(kept['excerpted'])
+        self.assertEqual(kept['total_chars'], 19 * 20_000)
+        self.assertLess(kept['kept_chars'], kept['total_chars'])
 
     def test_authenticated_http_pipeline_completes_all_gates(self):
         from urllib.parse import urlsplit
@@ -1789,9 +1795,16 @@ class FromFilesTests(FilesCase):
         self.assertNotIn('excerpted', small)
         self.assertEqual(small['text'], 'Hops add latency.')
         self.assertIn('big', runner.engine(self.root).describe(found['id'])['excerpted'])
-        # Other modes still refuse rather than silently cutting a source.
-        with self.assertRaisesRegex(ValueError, 'too large'):
-            self.create(sources=sources)
+        # A blog from a brief reads the same files, excerpted the same way and pinned to it.
+        found = self.create(sources=sources)
+        _, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(record['material'], sources)
+        payload = runner.inputs(self.root, record, run)
+        self.assertLess(len(json.dumps(payload)), 300_000)
+        self.assertTrue(
+            next(source for source in payload['sources'] if source['name'] == 'big')['excerpted']
+        )
+        self.assertEqual(runner.engine(self.root).describe(found['id'])['excerpted'], ['big'])
 
     def test_a_chat_run_can_write_from_files_too(self):
         sources = self.material(('notes.md', 'Retries cost money.'))
