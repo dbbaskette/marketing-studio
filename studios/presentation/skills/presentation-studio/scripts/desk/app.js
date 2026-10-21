@@ -2903,7 +2903,7 @@ function asksFor(draft) {
     'the research');
   const level = draft.route === 'existing' ? draft.level : null;
   if (!level || level === 'rework') asks.push('the outline');
-  if (!level || ['redesign', 'rework'].includes(level)) asks.push('the brand, on your cover');
+  if (!level || ['redesign', 'rework'].includes(level)) asks.push('the look, from the brand’s samples');
   asks.push('the deck itself');
   return asks;
 }
@@ -4431,6 +4431,8 @@ function stepLabel(run, name) {
 function buildPanel(gate, readonly) {
   const node = card(gate.unreviewed ? 'Unreviewed first draft' : 'The deck');
   const held = chosenFor(gate);
+  // A look chosen from samples nobody saw rendered: said first, in the shared words.
+  if (gate.look_unreviewed) add(node, callout('', make('p', '', gate.look_unreviewed)));
   if (gate.unreviewed) {
     add(node, state('late', 'Unreviewed first draft'), make('p', '',
       'Validated and rendered. AI critique and visual polishing have not run. Exporting or resuming does not start them.'),
@@ -5045,8 +5047,8 @@ function rebrandSheet() {
     decide('changes', '', problem, submit, {brand: held.brand, variant: held.variant || null,
       ...(current?.look ? {direction_target: 'gate:look'} : {})});
   });
-  add(form, brandFields(held, 'rebrand'), make('p', 'quiet', 'Your cover is drawn again in '
-    + 'the one you choose and comes back here for your decision.'), problem,
+  add(form, brandFields(held, 'rebrand'), make('p', 'quiet', 'Its looks are drawn again in '
+    + 'the one you choose and come back here for your decision.'), problem,
   add(make('div', 'bar'), submit, cancel));
   return [title, form];
 }

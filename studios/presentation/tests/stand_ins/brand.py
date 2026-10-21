@@ -173,7 +173,8 @@ class StandIn:
     # brand whose guidance entry does not take the deck's brand.
     guides: bool | str = False
     offers_looks = False
-    unrenderable = ''   # what `look samples` says when it cannot render, as a test sets it
+    unrenderable = ''   # what `look samples --preview` says when it cannot render
+    refuses_unrendered = False   # an older brand: `look choose` without --unrendered
 
     def __init__(self, home: Path | None = None):
         self.calls: list[list[str]] = []
@@ -265,7 +266,9 @@ class StandIn:
         words, options = [], {}
         while rest:
             part = rest.pop(0)
-            if part.startswith('--'):
+            if part == '--unrendered':
+                options['unrendered'] = True
+            elif part.startswith('--'):
                 options[part[2:]] = rest.pop(0) if rest else None
             else:
                 words.append(part)
@@ -320,7 +323,8 @@ class StandIn:
         action = words[0]
         if action == 'samples':
             self._chosen(options)
-            if self.unrenderable:
+            # Rendering is what fails: samples drawn without --preview are kept all the same.
+            if self.unrenderable and options.get('preview'):
                 raise _Said(self.unrenderable)
             outline = json.loads(Path(options['outline']).read_text(encoding='utf-8'))
             content = [one for one in outline.get('slides') or ()
@@ -378,6 +382,11 @@ class StandIn:
         if made.is_file():
             raise _Said('A look is already chosen for these samples; take new samples to '
                         'change it')
+        if options.get('unrendered') and self.refuses_unrendered:
+            raise _Said("look choose does not take --unrendered")
+        if not options.get('unrendered') and any(not one.get('image')
+                                                 for one in manifest['samples']):
+            raise _Said('These samples were not rendered; choose with --unrendered')
         if bool(options.get('outline')) != bool(options.get('write')):
             raise _Said('Use --outline and --write together')
         written = None
@@ -402,7 +411,8 @@ class StandIn:
             target.write_text(json.dumps(written, indent=2) + '\n', encoding='utf-8')
         record = {'schema': 1, 'choice': picked['id'], 'name': picked['name'],
                   'direction': picked['direction'], 'layouts': picked['layouts'],
-                  'house': manifest['house'], 'words': options['words'].strip()}
+                  'house': manifest['house'], 'words': options['words'].strip(),
+                  'shown': 'unrendered' if options.get('unrendered') else 'rendered'}
         made.write_text(json.dumps(record, indent=2), encoding='utf-8')
         return 0, {'status': 'chosen', 'choice': picked['id'], 'name': picked['name'],
                    'direction': picked['direction'], 'layouts': picked['layouts'],

@@ -1,5 +1,7 @@
-"""The brand a deck is made in, shown before any slide is designed: the deck's cover drawn in
-that brand, so the person can see it is the brand they meant, and choose another if not.
+"""The look a deck is drawn in, chosen before any slide is designed: the brand draws one slide
+of the outline in each of its looks, and the person picks one in their words. A brand too old
+to offer looks shows the deck's cover in it instead, so the person can see it is the brand
+they meant, and choose another if not.
 
 What a caller needs to know
 ---------------------------
@@ -9,7 +11,10 @@ What a caller needs to know
     look.rebrand(root, run, brand, variant, brands)         # another brand: the form, brand/
     look.approve(root, run, note=None)                      # the gate approved
 
-- No look is chosen. The sample is the outline's cover, with its approved title and
+- `draw_looks`, `choose`, `choose_default` and `approve` are the brand's look step, as
+  their own docstrings say. Looks that cannot be rendered are drawn again without pictures,
+  so that the brand's default can be chosen knowingly and recorded as never seen rendered.
+- For a brand without looks, no look is chosen. The sample is the outline's cover, with its approved title and
   subtitle, on the template layout the build gives a cover (`build.layouts`), in the brand's
   own direction (`deck_direction.of_file`, else `build.DIRECTION`). An outline with no
   cover is shown the deck's title on one. Nothing is kept from it: when the deck is built, every slide's layout is designed
@@ -22,9 +27,10 @@ What a caller needs to know
   intake.md, and removes the exported contract in brand/, so the next step that needs the
   brand exports the one chosen. It refuses one the brand skill does not list, and the one
   the deck is made in already.
-- `approve` puts the person's words of approval into outline.json (`approval`), takes out a
-  `direction` an earlier version of this step put there, so that the build uses the brand's
-  own colours, and approves the gate.
+- `approve` puts the person's words of approval into outline.json (`approval`), with the
+  chosen look's direction, house style and lead layouts, or the brand's default where none
+  was chosen, keeps in the run whether the look was seen rendered and who chose it, and
+  approves the gate.
 """
 from __future__ import annotations
 
@@ -159,9 +165,29 @@ def draw_looks(root, run: dict, brand_skill, renderer, has=lambda name: False) -
             else:
                 made_here.unlink(missing_ok=True)
         said = ' '.join(getattr(refusal, 'problems', None) or [str(refusal)]).strip()
-        shown = {**base, 'failed': said or type(refusal).__name__}
+        shown = {**base, 'failed': said or type(refusal).__name__,
+                 'unseen': _unseen(root, run, brand_skill)}
     home.write_json(root / SHOWN, shown)
     return shown
+
+
+def _unseen(root: Path, run: dict, brand_skill) -> dict:
+    """The brand's looks drawn again without pictures, where they could not be rendered, so
+    that a choice of its default is recorded with the brand as one nobody saw rendered:
+    {'looks', 'default', 'house'}, the samples kept in SAMPLES. Empty when even that fails."""
+    form = run.get('form') or {}
+    shutil.rmtree(root / SAMPLES, ignore_errors=True)
+    try:
+        brand_skill.look_samples(root / OUTLINE, root / SAMPLES, form.get('brand'),
+                                 form.get('variant'), delivery=build.delivery(run))
+        manifest = home.read_json(root / SAMPLES / 'looks.json', {})
+        return {'looks': [{key: value for key, value in look.items() if key != 'image'}
+                          for look in deck_flow.sampled(manifest, root / SAMPLES)],
+                'default': manifest.get('default'),
+                'house': [str(line) for line in manifest.get('house') or ()]}
+    except (WorkspaceError, OSError, KeyError, TypeError, ValueError):
+        shutil.rmtree(root / SAMPLES, ignore_errors=True)
+        return {}
 
 
 def shown_looks(root) -> dict | None:
@@ -183,12 +209,13 @@ def drop(root) -> None:
     shutil.rmtree(Path(root) / FOLDER, ignore_errors=True)
 
 
-def choose(root, brand_skill, choice, words: str) -> dict | None:
+def choose(root, brand_skill, choice, words: str, by: str = 'page') -> dict | None:
     """Record the look chosen for the deck, in the person's words, and keep it. A look the
     brand drew is chosen with the brand, which checks the approved outline is the one its
     samples were drawn from and writes it again with the look in it (deck_flow.chosen_from
     reads it back). DEFAULT, where none could be rendered, is the brand's own default look.
-    None when the outline changed since the samples, which are then dropped."""
+    `by` is who chose: 'page' for the person, 'review-policy' for the saved level. None when
+    the outline changed since the samples, which are then dropped."""
     root = Path(root)
     shown = shown_looks(root)
     if shown is None:
@@ -199,10 +226,7 @@ def choose(root, brand_skill, choice, words: str) -> dict | None:
     if choice == DEFAULT:
         if not shown.get('failed'):
             raise WorkspaceError(NO_LOOK)
-        default = deck_direction.default_look(contract) or {}
-        record = {'choice': default.get('id') or DEFAULT,
-                  'name': default.get('id') or DEFAULT_NAME,
-                  **{key: default.get(key) for key in ('direction', 'house', 'layouts')}}
+        record = _unseen_default(root, brand_skill, shown, contract, words)
     else:
         picked = next((look for look in shown.get('looks') or () if look['id'] == choice),
                       None)
@@ -219,13 +243,50 @@ def choose(root, brand_skill, choice, words: str) -> dict | None:
             raise
         look = deck_flow.chosen_from(home.read_json(written, None),
                                      deck_direction.contract_of(contract)) or {}
-        record = {'choice': picked['id'], 'name': picked['name'],
+        record = {'choice': picked['id'], 'name': picked['name'], 'shown': 'rendered',
                   'direction': look.get('direction') or picked['direction'],
                   'house': look.get('house') or list(shown.get('house') or ()),
                   'layouts': look.get('layouts') or picked['layouts']}
-    record = {**record, 'words': words.strip(), 'at': home.now()}
+    record = {**record, 'words': words.strip(), 'by': by, 'at': home.now()}
     home.write_json(root / CHOSEN, record)
     return record
+
+
+def _unseen_default(root: Path, brand_skill, shown: dict, contract: Path, words: str) -> dict:
+    """The brand's default look, chosen knowingly where its samples could not be rendered:
+    recorded with the brand as unrendered (`look choose --unrendered`) where it kept samples
+    without pictures and takes that, else read from its deck direction record. Either way
+    it is marked as nobody saw it rendered."""
+    unseen = shown.get('unseen') or {}
+    default = next((look for look in unseen.get('looks') or ()
+                    if look['id'] == unseen.get('default')), None)
+    if default and (root / SAMPLES / 'looks.json').is_file():
+        written = root / FOLDER / f'outline-{secrets.token_hex(3)}.json'
+        try:
+            brand_skill.look_choose(root / SAMPLES, default['id'], words,
+                                    outline=root / OUTLINE, write=written, unrendered=True)
+        except WorkspaceError:
+            written = None   # a brand that does not take it: the record is the studio's own
+        if written:
+            look = deck_flow.chosen_from(home.read_json(written, None),
+                                         deck_direction.contract_of(contract)) or {}
+            return {'choice': default['id'], 'name': default['name'], 'shown': 'unrendered',
+                    'direction': look.get('direction') or default.get('direction'),
+                    'house': look.get('house') or list(unseen.get('house') or ()),
+                    'layouts': look.get('layouts') or default.get('layouts') or {}}
+    brand_default = deck_direction.default_look(contract) or {}
+    return {'choice': brand_default.get('id') or DEFAULT,
+            'name': brand_default.get('id') or DEFAULT_NAME, 'shown': 'unrendered',
+            **{key: brand_default.get(key) for key in ('direction', 'house', 'layouts')}}
+
+
+def default_name(root, shown: dict) -> str:
+    """What the brand's default look is called, for the words recorded with it."""
+    unseen = shown.get('unseen') or {}
+    named = next((look['name'] for look in unseen.get('looks') or ()
+                  if look['id'] == unseen.get('default')), None)
+    return named or (deck_direction.default_look(Path(root) / build.CONTRACT) or {}).get('id') \
+        or DEFAULT_NAME
 
 
 def choose_default(root, brand_skill) -> dict | None:
@@ -241,11 +302,12 @@ def choose_default(root, brand_skill) -> dict | None:
     default = next((look for look in looks if look['id'] == shown.get('default')),
                    looks[0] if looks else None)
     if default is None:
-        named = (deck_direction.default_look(Path(root) / build.CONTRACT) or {}).get('id')
-        return choose(root, brand_skill, DEFAULT,
-                      deck_flow.DEFAULT_WORDS.format(name=named or DEFAULT_NAME))
+        # Nothing could be rendered: the default, used without anyone seeing it, and why.
+        return choose(root, brand_skill, DEFAULT, deck_flow.UNRENDERED_WORDS.format(
+            why=shown.get('failed') or 'no samples', name=default_name(root, shown)),
+            by='review-policy')
     return choose(root, brand_skill, default['id'],
-                  deck_flow.DEFAULT_WORDS.format(name=default['name']))
+                  deck_flow.DEFAULT_WORDS.format(name=default['name']), by='review-policy')
 
 
 def _markdown(form: dict, shown: dict | None = None) -> str:
@@ -317,6 +379,9 @@ def approve(root, run: dict, note: str | None = None, by: str = 'page') -> None:
     words = [f'{"Continued automatically" if by == "review-policy" else "Approved on the page"}, {at}, in {decks.brand_words(run.get("form") or {})}.']
     picked = chosen(root)
     if picked:
+        # Kept in the run, which every computer reads: whether the look was seen rendered.
+        run['look_shown'] = picked.get('shown') or 'rendered'
+        run['look_by'] = picked.get('by') or by
         words.append(f"Look chosen: {picked['name']} ({picked['choice']}). In their words: "
                      f"\"{picked['words']}\"")
     words += [line for line in (said, note) if line]

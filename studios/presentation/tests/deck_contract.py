@@ -8,7 +8,11 @@ given, and the checkpoints the deck paused at for the person, named as studio_co
 names them ('draft', 'look', 'final', or 'direction' for the combined stop). It is written
 as JSON to the file DECK_CONTRACT_OUT names:
 
-    {"outline": [...], "composer": [...], "pauses": {"step_by_step": [...], ...}}
+    {"outline": [...], "composer": [...], "pauses": {"step_by_step": [...], ...},
+     "failing": {"step_by_step": {"pauses": [...], "shown": "unrendered", "by": "page"}, ...}}
+
+`failing` is the same three levels with a brand whose looks cannot be rendered: the person
+carries on knowingly in the brand's default, or the saved level takes it.
 
 Without DECK_CONTRACT_OUT the test is skipped. Nothing real is started and nothing leaves
 this computer.
@@ -44,12 +48,14 @@ class DeckContractTests(StudioCase):
         self.brand.run.guides = True
         self.brand.run.offers_looks = True
 
-    def through(self, level: str) -> list[str]:
+    def through(self, level: str, failing: bool = False) -> list[str]:
         """Run one deck at `level` to its end, approving each stop as the person would,
-        picking a look where one is asked for. Returns the checkpoints it paused at."""
+        picking a look where one is asked for, or, with `failing` looks that cannot be
+        rendered, carrying on knowingly in the brand's default. Returns the checkpoints it
+        paused at; `self.root` is the deck."""
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': level}):
-            root = self.start(title=f'Contract {level}')
+            root = self.root = self.start(title=f"Contract {level}{' failing' if failing else ''}")
         paused = []
         for _ in range(12):
             shown = self.view(root)
@@ -59,8 +65,10 @@ class DeckContractTests(StudioCase):
                 break
             paused.append(gate['name'])
             offered = gate.get('offered') or (gate.get('look') or {}).get('offered')
-            pick = {'look': offered['looks'][0]['id']} \
-                if offered and not offered['chosen'] and offered['looks'] else None
+            pick = None
+            if offered and not offered['chosen']:
+                pick = {'look': 'default'} if offered['failed'] \
+                    else {'look': offered['looks'][0]['id']}
             self.decide(root, gate['name'], 'approve', None, pick)
         self.assertEqual(self.view(root)['state'], 'finished')
         return [found for found in (checkpoint(level, gate) for gate in paused) if found]
@@ -80,6 +88,17 @@ class DeckContractTests(StudioCase):
         contract['pauses'] = pauses
         for level in LEVELS:
             self.assertEqual(tuple(pauses[level]), deck_flow.pauses(level), level)
+        # Looks that cannot be rendered: where each level pauses, that the look was taken
+        # without being seen rendered, and who took it.
+        from runner import decks
+        self.brand.run.unrenderable = 'No renderer here.'
+        failing = {}
+        for level in LEVELS:
+            paused = self.through(level, failing=True)
+            record = decks.read_run(self.root)
+            failing[level] = {'pauses': paused, 'shown': record.get('look_shown'),
+                              'by': record.get('look_by')}
+        contract['failing'] = failing
         Path(os.environ[OUT]).write_text(json.dumps(contract, indent=2) + '\n',
                                          encoding='utf-8')
 

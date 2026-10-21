@@ -374,14 +374,16 @@ class Brand:
                             str(output), *(['--preview', preview] if preview else []))
 
     def look_choose(self, samples: Path, choice: str, words: str, outline: Path | None = None,
-                    write: Path | None = None) -> dict:
+                    write: Path | None = None, unrendered: bool = False) -> dict:
         """Record the look a person chose, in their own words. A second choice is refused.
         With the approved `outline`, the brand refuses one changed since its samples were
         drawn, and writes it again to `write` with the chosen direction, house and lead
-        layouts and the person's words of approval."""
+        layouts and the person's words of approval. `unrendered` records a choice made from
+        samples nobody saw rendered, which the brand then calls an unreviewed draft."""
         return self._answer('look', 'choose', '--samples', str(samples), '--choice', choice,
                             '--words', words, *(['--outline', str(outline), '--write',
-                                                 str(write)] if outline and write else []))
+                                                 str(write)] if outline and write else []),
+                            *(['--unrendered'] if unrendered else []))
 
     def look_status(self, samples: Path) -> dict:
         """Where a set of look samples stands: awaiting a choice, or chosen."""

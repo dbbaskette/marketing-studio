@@ -37,6 +37,7 @@ import tempfile
 from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
+import home
 from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, decks, documents, slides as slides_tool, stages, worker_tools
@@ -263,6 +264,29 @@ def _tail(run: dict, request, error) -> list[str]:
     return lines
 
 
+def research_ids(root) -> list[str]:
+    """The identifiers this deck's research defines, which a slide may not show: its
+    questions, from the plan, and the findings, facts and sources of its reviewed research
+    bundle or of harness-research's own record."""
+    root = Path(root)
+    found = []
+    plan = home.read_json(root / 'research' / 'plan.json', None)
+    found += [entry.get('id') for entry in (plan or {}).get('items') or ()
+              if isinstance(entry, dict)] if isinstance(plan, dict) else []
+    for record in (home.read_json(root / '.harness-research' / 'research.json', None),):
+        if isinstance(record, dict):
+            found += [entry.get('id') for key in ('findings', 'facts', 'sources', 'items')
+                      for entry in record.get(key) or () if isinstance(entry, dict)]
+    try:
+        from studio_core.research_contract import read_bundle
+        facts, _ = read_bundle(root / 'research')
+        found += [entry.get('id') for key in ('findings', 'facts', 'sources')
+                  for entry in facts.get(key) or () if isinstance(entry, dict)]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return sorted({str(ident) for ident in found if ident})
+
+
 def one_line_titles(outline) -> list[str]:
     """A cover, section or closing slide's title is one line: the brand's lead layouts hold
     one, and a second line packed into it is drawn over the artwork. Words that should be
@@ -356,7 +380,8 @@ def outline_work(root, run: dict, request: dict | None, error: str | None, brand
             'finding claims through paraphrase. Excluded finding IDs: ' + ', '.join(sorted(excluded)))
     from runner.steps import build
     return _job(root, run, request, error, brand, slides, kind, None, inputs,
-                [one_line_titles, build.parts_rules, build.provenance_rules], intro, True)
+                [one_line_titles, build.parts_rules,
+                 functools.partial(build.bookkeeping, ids=research_ids(root))], intro, True)
 
 
 def extract_work(root, run: dict, request: dict | None, error: str | None, brand: Path,

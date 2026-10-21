@@ -48,7 +48,9 @@ What a caller needs to know
   for changes sets the gate to 'changes' first and then reopens it (`stages.reopen`), so
   the step that feeds it runs again with the person's note. Asking for changes at gate:look
   is choosing another brand or variant ({'brand', 'variant'}, with no note needed): the
-  deck's contract is exported again for it and its cover drawn again. Asking for changes at
+  deck's contract is exported again for it and its looks drawn again. {'look': 'again'}
+  there, or in the direction review with 'direction_target' gate:look, draws the brand's
+  looks again and approves nothing. Asking for changes at
   gate:build once the deck is delivered builds it again (deliver.again). A line against a
   slide at gate:build ('slide_notes', by number) marks it and goes into its section's brief.
   "Change what it says" is a request for changes at gate:build, or on a delivered deck, with
@@ -952,7 +954,9 @@ class Engine(Jobs, Researching):
                 step = first(record)
                 if step is None:
                     return
-                if step.kind == 'gate' and review_policy.automatic(record, 'presentation', step.name):
+                if step.kind == 'gate' and review_policy.automatic(
+                        record, 'presentation', step.name,
+                        holding=self._holding(root, step.name)):
                     self._policy_gate(root, step)
                     continue
                 if step.kind == 'gate' and gate_state(record, step.name) == 'waiting':
@@ -1083,11 +1087,24 @@ class Engine(Jobs, Researching):
         if space is not None and space.share == gitstate.SHARE[0]:
             self.share_soon()
 
+    def _holding(self, root: Path, gate: str) -> list[str]:
+        """What keeps a gate for the person whatever the saved level: for the deck's own
+        gate, the grave findings its last review still has and the brand audit's errors;
+        nothing for any other gate."""
+        if gate != 'gate:build':
+            return []
+        state = build.read_state(root)
+        last = state['rounds'][-1] if state.get('rounds') else {}
+        audit = state.get('audit') or {}
+        blockers = [line for line in audit.get('messages') or () if str(line).endswith('(error)')]
+        return review_policy.held(((last or {}).get('review') or {}).get('findings'), blockers)
+
     def _policy_gate(self, root: Path, step: stages.Step) -> None:
         """Continue under the saved policy, without claiming a person's approval."""
         with self.files:
             record = self._load(root)
-            if not review_policy.automatic(record, 'presentation', step.name):
+            if not review_policy.automatic(record, 'presentation', step.name,
+                                           holding=self._holding(root, step.name)):
                 raise WorkspaceError('This step needs your review.')
             evidence = getattr(self, f"_show_{step.name.partition(':')[2].replace('-', '_')}")(root, record)
             if step.name == 'gate:look':
@@ -1108,7 +1125,10 @@ class Engine(Jobs, Researching):
             gate = record['gates'].get(step.name) or {}
             record['gates'][step.name] = {**gate, 'state': 'approved', 'by': 'review-policy',
                                           'at': at, 'note': 'Continued automatically.'}
-            review_policy.receipt(record, step.name, evidence, at)
+            # A look chosen from samples nobody saw rendered says so, and why.
+            picked = looks.chosen(root) if step.name == 'gate:look' else None
+            note = picked['words'] if picked and picked.get('shown') == 'unrendered' else None
+            review_policy.receipt(record, step.name, evidence, at, note=note)
             self._store(root, record)
             self._commit(root, f'continue the {WORDS[step.name]} under the saved review level')
 
@@ -1407,7 +1427,7 @@ class Engine(Jobs, Researching):
         with self.files:
             record = self._load(root)
             looks.show_sample(root, record)
-            self._done(root, step, clock, 'draw your cover in your brand', record)
+            self._done(root, step, clock, "draw the brand's looks", record)
 
     def _build_start(self, root: Path, run: _Run, step: stages.Step) -> None:
         contract = self._contract(root)
@@ -2545,11 +2565,13 @@ class Engine(Jobs, Researching):
         return [{'id': ident, 'label': worker['label'], 'started_at': worker['started_at'],
                  'lines': list(worker['lines'])} for ident, worker in live]
 
-    def _timeline(self, record: dict, state: str) -> list[dict]:
+    def _timeline(self, record: dict, state: str, root: Path | None = None) -> list[dict]:
         """stages.timeline, with each step's tries, time, cost and last error."""
         rows, failed = stages.timeline(record), (record.get('halted') or {}).get('step')
         for row in rows:
-            if row['name'].startswith('gate:') and review_policy.automatic(record, 'presentation', row['name']):
+            if row['name'].startswith('gate:') and review_policy.automatic(
+                    record, 'presentation', row['name'],
+                    holding=self._holding(root, row['name']) if root else ()):
                 row['label'] = 'Continue the ' + WORDS[row['name']] + ' automatically'
             tried = attempts(record, row['name'])
             dollars = [attempt['dollars'] for attempt in tried
@@ -2701,9 +2723,8 @@ class Engine(Jobs, Researching):
         picked = looks.chosen(root)
         offered = None
         if shown:
-            notes = [shown['says']] if shown.get('says') else []
-            if shown.get('failed'):
-                notes.insert(0, deck_flow.LOOK_FAILED.format(why=shown['failed']))
+            notes = [deck_flow.LOOK_FAILED.format(why=shown['failed'])] if shown.get('failed') \
+                else [shown['says']] if shown.get('says') else []
             offered = {
                 'looks': [{key: look.get(key) for key in ('id', 'name', 'useWhen', 'number')}
                           for look in shown.get('looks') or ()],
@@ -2723,6 +2744,10 @@ class Engine(Jobs, Researching):
         shown = build.gate_view(root, json.loads(json.dumps(record)))
         last = (build.read_state(root).get('rounds') or [{}])[-1]
         shown['unreviewed'] = decks.user_first(record) and not last.get('review')
+        # A look chosen from samples nobody saw rendered: the deck is an unreviewed draft of
+        # its look until its slides are looked at.
+        shown['look_unreviewed'] = deck_flow.UNREVIEWED \
+            if record.get('look_shown') == 'unrendered' else None
         shown['expected_deck'] = last.get('deck')
         ids = {slide['number']: slide['id'] for slide in last.get('slides') or ()}
         feedback = list(record.get('build_feedback') or [])
@@ -2764,7 +2789,7 @@ class Engine(Jobs, Researching):
             'route': record['route'], 'level': (record.get('form') or {}).get('level'),
             'output': (record.get('form') or {}).get('output'),
             'unreviewed': decks.user_first(record),
-            'state': state, 'sentence': sentence, 'timeline': self._timeline(record, state),
+            'state': state, 'sentence': sentence, 'timeline': self._timeline(record, state, root),
             'gate': self._gate_view(root, record) if not halted else None,
             'driver': who, 'mine': mine, 'notice': self._notice(root, record),
             'taken': None if mine else team.taken(root), 'last_shared': last,

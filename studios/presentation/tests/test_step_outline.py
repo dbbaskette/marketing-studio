@@ -106,31 +106,40 @@ class BriefTests(Case):
 
 
     def test_a_teams_bookkeeping_stays_off_the_slides(self):
+        import functools
         from runner.steps import build
-        rules = self.work().prepared['artifacts']['outline']['rules']
-        self.assertIn(build.provenance_rules, rules)
+        root, run = self.deck()
+        (root / 'research').mkdir()
+        (root / 'research' / 'plan.json').write_text(json.dumps({'items': [{'id': 'q1'}]}))
+        (root / '.harness-research').mkdir()
+        (root / '.harness-research' / 'research.json').write_text(json.dumps(
+            {'findings': [{'id': 'g1'}, {'id': 'g7'}], 'sources': [{'id': 's3'}]}))
+        self.assertEqual(outline.research_ids(root), ['g1', 'g7', 'q1', 's3'])
+        work = outline.outline_work(root, run, None, None, self.brand, slides=self.slides)
+        rules = work.prepared['artifacts']['outline']['rules']
         self.assertIn(build.parts_rules, rules)
-        shown = {'slides': [
-            {'id': 'model01', 'kind': 'content', 'title': 'Compare operations',
-             'source': 'Findings g1, g7; PostgreSQL 18',
-             'points': [{'label': 'Model', 'text': 'operating-model: backups already work.'}]},
-            {'id': 'goals01', 'kind': 'content', 'title': 'Three decisions',
-             'source': 'Blueprint O1–O9'}]}
-        said = build.provenance_rules(shown)
-        self.assertEqual(len(said), 3, said)
-        self.assertIn('model01: source shows "Findings g1"', said[0])
-        self.assertIn("put the IDs in the slide's `provenance`, which goes only into the "
-                      'speaker notes', said[0])
-        self.assertIn("a point's text shows \"operating-model:\"", said[1])
-        fine = {'slides': [{'id': 'model01', 'kind': 'content', 'title': 'Compare operations',
-                            'source': 'The product\'s 4.5 documentation, https://docs.example.com/g1',
-                            'provenance': 'Findings g1, g7', 'points': [
-                                {'label': 'Model', 'text': 'Backups already work.',
-                                 'parts': ['Drain', 'Restart']}]}]}
-        self.assertEqual(build.provenance_rules(fine), [])
-        self.assertEqual(build.parts_rules(fine), [])
-        fine['slides'][0]['provenance'] = ' '
-        self.assertIn('`provenance` is text', ' '.join(build.provenance_rules(fine)))
+        held = next(rule for rule in rules if isinstance(rule, functools.partial))
+        self.assertEqual((held.func, held.keywords), (build.bookkeeping,
+                                                      {'ids': ['g1', 'g7', 'q1', 's3']}))
+        ids = outline.research_ids(root)
+
+        def shows(text):
+            return build.bookkeeping({'slides': [{'id': 's', 'kind': 'content',
+                                                  'title': text}]}, ids)
+
+        # Ordinary words, whatever IDs they look like: the run does not define them.
+        for text in ('O2 sensors', 'g5.xlarge', 'Model O3', 'Research 2024: what changed',
+                     'Research 5G', 'Objectives 2 and 3', 'real-time: a stream',
+                     'follow-up: next week', 'built-in: the operator', 'x86-64: the target'):
+            with self.subTest(text=text):
+                self.assertEqual(shows(text), [])
+        # The run's own findings, named: refused, with where they go.
+        said = shows('Findings g1, g7')
+        self.assertEqual(len(said), 1)
+        self.assertIn('s: title shows "Findings g1, g7"', said[0])
+        self.assertIn("put the IDs in the slide's `provenance`", said[0])
+        self.assertEqual(build.parts_rules({'slides': [{'id': 's', 'points': [
+            {'text': 'One sentence.', 'parts': ['Drain', 'Restart']}]}]}), [])
         for parts in ([], ['x'] * 9, ['one two three four five six seven'], [3]):
             bad = {'slides': [{'id': 's', 'kind': 'content', 'points': [
                 {'text': 'One sentence.', 'parts': parts}]}]}

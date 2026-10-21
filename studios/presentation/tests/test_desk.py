@@ -1091,6 +1091,10 @@ class ScreenTests(ScriptedPage, PageCase):
                          [('changes', {'look': 'again'}), ('approve', {'look': 'default'})])
         self.post('decide', sent[1])
         self.assertEqual(self.run_of(path)['gate']['name'], 'gate:build')
+        # The deck's own gate says its look was chosen without being seen rendered.
+        from studio_core import deck_flow
+        shot = self.deck_screen(path, [{'snapshot': 'deck'}])['snapshots']['deck']
+        self.assertIn(deck_flow.UNREVIEWED, shot['text'])
 
     def test_an_older_brand_says_it_offers_no_looks(self):
         path = self.started()
