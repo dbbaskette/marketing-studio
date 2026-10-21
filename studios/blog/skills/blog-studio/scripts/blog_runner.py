@@ -593,6 +593,7 @@ def create(root, data, approval='conversation'):
         'outline_text',
         'brand',
         'variant',
+        'point',
     }
     if set(data) - allowed:
         raise ValueError('Unknown new-blog field.')
@@ -601,6 +602,12 @@ def create(root, data, approval='conversation'):
         raise ValueError(
             'Choose write, outline, from-outline, ideas, revise, review or from-files.'
         )
+    # I know the point: a blog from files that starts at the outline instead of three angles.
+    point = data.get('point', False)
+    if point not in (True, False):
+        raise ValueError('Say whether you know the point: true or false.')
+    if point and mode != 'from-files':
+        raise ValueError('The point you know starts a blog from files.')
     outline_text = text(
         data.get('outline_text', ''), 'outline', 200_000, required=mode == 'from-outline'
     )
@@ -642,17 +649,18 @@ def create(root, data, approval='conversation'):
     if stop not in ('outline', 'draft', 'review', 'package'):
         raise ValueError('Choose outline, draft, review or export package.')
     from_files = mode == 'from-files'
+    angles_first = from_files and not point
     brief = {
-        'goal': text(data.get('goal', ''), 'goal', required=not from_files)
+        'goal': text(data.get('goal', ''), 'goal', required=not angles_first)
         or 'Write a blog from the uploaded files.',
-        'audience': text(data.get('audience', ''), 'audience', 500, required=not from_files)
+        'audience': text(data.get('audience', ''), 'audience', 500, required=not angles_first)
         or 'To be chosen with the angle.',
     }
     import brand_skill
 
     selected_brand = brand_skill.snapshot(data.get('brand', ''), data.get('variant', ''))
     title = text(
-        data.get('title', ''), 'title', 500, required=not data.get('id') and not from_files
+        data.get('title', ''), 'title', 500, required=not data.get('id') and not angles_first
     )
     if from_files:
         title = title or 'From my files'
@@ -735,10 +743,11 @@ def create(root, data, approval='conversation'):
     )
     pipeline = pipeline[: pipeline.index(stop) + 1]
     if from_files:
-        # Three angles first; the chosen one starts the pipeline above (see choose_angle).
-        pipeline = ['angles']
         record['stop_point'] = stop
         record['mode'] = 'from-files'
+    if angles_first:
+        # Three angles first; the chosen one starts the pipeline above (see choose_angle).
+        pipeline = ['angles']
     run = {
         'schema': 1,
         'approval': approval,
@@ -751,8 +760,13 @@ def create(root, data, approval='conversation'):
         'stages': {},
     }
     if from_files:
-        run['after_angles'] = {'research': research, 'stop': stop}
-        run['files_note'] = text(data.get('goal', ''), 'goal')
+        run['angles'] = angles_first
+        if angles_first:
+            run['after_angles'] = {'research': research, 'stop': stop}
+        # What the person said about the files: their note, or the title and point they know.
+        run['files_note'] = (
+            text(data.get('goal', ''), 'goal') if angles_first else title + '\n' + brief['goal']
+        )
         # The uploaded files this blog pinned; a deletion keeps them with it.
         record['material'] = [
             entry['source_id'] for entry in record['sources'] if 'material' in entry['purposes']
@@ -850,7 +864,13 @@ def submit(root, ident, stage, result, expected, page=False):
         'request': previous.get('request', ''),
         'model_purpose': previous.get('model_purpose', stage),
     }
-    if stage != 'angles' and review_policy.automatic(run, 'blog', stage, run['pipeline'][-1]):
+    if stage != 'angles' and review_policy.automatic(
+        run,
+        'blog',
+        stage,
+        run['pipeline'][-1],
+        first='outline' if 'outline' in run['pipeline'] else 'draft',
+    ):
         _accept(directory, run, stage, 'review-policy')
         review_policy.receipt(run, stage, run['stages'][stage], studio.now())
     save(root, directory, record, run, 'Submitted ' + stage)
@@ -1773,6 +1793,8 @@ def angles(content):
 
 def choose_angle(root, directory, record, run, found, request):
     """The chosen angle becomes the blog's title, point and reader; the normal run follows."""
+    if run.get('angles') is False:
+        raise ValueError('This blog has no angles to choose from.')
     saved = run['stages'].get('angles', {})
     if found['next'] != 'angles' or saved.get('status') != 'draft':
         raise ValueError('Wait for the three angles before choosing one.')
@@ -1853,6 +1875,11 @@ def add_parser(groups):
     create_cmd.add_argument('--mode', choices=MODES, default='write')
     create_cmd.add_argument('--manuscript')
     create_cmd.add_argument('--outline-text')
+    create_cmd.add_argument(
+        '--point',
+        action='store_true',
+        help='With --mode from-files: start at the outline from the title, goal and audience',
+    )
     commands.add_parser('list')
     for name in ('status', 'submit', 'approve', 'changes', 'handoff', 'choose'):
         cmd = commands.add_parser(name)

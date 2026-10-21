@@ -2124,3 +2124,115 @@ class ExampleTests(FilesCase):
                 for check in runner.document(self.root, plain['id'], 'draft')['checks']
             )
         )
+
+
+class PointTests(FilesCase):
+    """I know the point: a blog from files that starts at the outline, with no angles."""
+
+    def point(self, page=True, **extra):
+        return self.from_files(
+            page=page,
+            **{
+                'point': True,
+                'title': 'Announcing the gateway',
+                'goal': 'The gateway is generally available and retries are budgeted.',
+                'audience': 'Platform engineers',
+                **extra,
+            },
+        )
+
+    def test_the_point_builds_the_usual_pipeline_without_angles(self):
+        found = self.point()
+        self.assertEqual(
+            [row['stage'] for row in found['stages']], ['outline', 'draft', 'review', 'package']
+        )
+        self.assertEqual(found['mode'], 'from-files')
+        self.assertEqual(found['next'], 'outline')
+        self.assertEqual(found['title'], 'Announcing the gateway')
+        _, record, run = runner.load(self.root, found['id'])
+        self.assertIs(run['angles'], False)
+        self.assertNotIn('after_angles', run)
+        self.assertEqual(
+            run['brief']['goal'], 'The gateway is generally available and retries are budgeted.'
+        )
+        self.assertEqual(run['brief']['audience'], 'Platform engineers')
+        self.assertEqual(len(record['material']), 2)
+        self.assertEqual(record['stop_point'], 'package')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual([source['name'] for source in payload['sources']], ['notes', 'plain'])
+        self.assertNotIn('three', guidance.lower())
+        # The person's title and point steer which passages of a large file are kept.
+        self.assertIn('gateway', runner.run_terms(record, run))
+        web = self.point(research='web-allowed', stop='draft')
+        self.assertEqual(
+            [row['stage'] for row in web['stages']],
+            ['research-plan', 'research', 'outline', 'draft'],
+        )
+        _, record, run = runner.load(self.root, web['id'])
+        self.assertEqual(record['research_policy'], 'web-allowed')
+        # An angles run says it has angles.
+        _, _, run = runner.load(self.root, self.from_files()['id'])
+        self.assertIs(run['angles'], True)
+
+    def test_the_point_needs_a_title_a_point_and_a_reader(self):
+        for missing in ('title', 'goal', 'audience'):
+            with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, missing):
+                self.point(**{missing: ''})
+        with self.assertRaisesRegex(ValueError, 'from files'):
+            self.create(point=True)
+        with self.assertRaisesRegex(ValueError, 'point'):
+            self.from_files(point='yes')
+
+    def test_develop_refuses_a_blog_without_angles(self):
+        found = self.point()
+        with (
+            studio.locked(self.root),
+            self.assertRaisesRegex(ValueError, 'no angles to choose from'),
+        ):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {'id': found['id'], 'expected': found['expected'], 'request': 'Any heading'},
+            )
+        self.assertEqual(runner.survey(self.root, found['id'])['next'], 'outline')
+        chat = self.point(page=False)
+        args = studio.parser().parse_args(
+            [
+                '--root',
+                str(self.root),
+                'run',
+                'choose',
+                '--id',
+                chat['id'],
+                '--expected',
+                chat['expected'],
+                '--angle',
+                'Any',
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, 'no angles to choose from'):
+            runner.command(self.root, args)
+
+    def test_balanced_reads_the_draft_when_a_run_has_no_outline_stage(self):
+        import studios_config
+
+        studios_config.update({'review': {'level': 'balanced'}})
+        found = self.create(mode='from-outline', outline_text='## Supplied outline', page=True)
+        self.assertEqual([row['stage'] for row in found['stages']], ['draft', 'review', 'package'])
+        found = self.submit(found, page=True)
+        self.assertEqual(found['awaits'], 'decision')
+        self.assertFalse(found['stages'][0]['auto_accepted'])
+        found = self.submit(self.approve(found, page=True), page=True)  # the review
+        self.assertEqual(found['awaits'], 'submission')
+        self.assertTrue(found['stages'][1]['auto_accepted'])
+        found = self.submit(found, page=True)  # the package
+        self.assertEqual(found['awaits'], 'decision')
+        # A run with an outline still reads the outline and continues through the draft.
+        found = self.submit(self.create(page=True), page=True)
+        self.assertEqual(found['awaits'], 'decision')
+        found = self.submit(self.approve(found, page=True), page=True)
+        self.assertEqual(found['awaits'], 'submission')
+        self.assertTrue(found['stages'][1]['auto_accepted'])
+        # The point from files has an outline, so Balanced stops there and at the end.
+        found = self.submit(self.point(), page=True)
+        self.assertEqual(found['awaits'], 'decision')
