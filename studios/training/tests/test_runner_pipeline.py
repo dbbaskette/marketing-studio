@@ -45,6 +45,21 @@ class DefinitionTests(StudioCase):
                          'that cannot make a deck, a training is taken through every other '
                          'stage first')
 
+    def test_a_synthesis_run_names_its_research_as_one_report_checked_independently(self):
+        legacy = next(step for step in pipeline.steps([]) if step.id == 'research')
+        self.assertEqual((legacy.label, legacy.doing),
+                         ('Research each question', 'Researching the questions'))
+        whole = next(step for step in pipeline.steps([], synthesis=True)
+                     if step.id == 'research')
+        self.assertEqual((whole.kind, whole.stage, whole.label, whole.doing), (
+            'agent', 'research',
+            'Investigate the sources and write the report, then check it independently',
+            'Investigating the sources and checking the research'))
+        others = [(step.id, step.label) for step in pipeline.steps([]) if step.id != 'research']
+        self.assertEqual(others, [(step.id, step.label)
+                                  for step in pipeline.steps([], synthesis=True)
+                                  if step.id != 'research'])
+
     def test_a_trainings_steps_are_laid_out_in_the_order_they_are_walked(self):
         plain = pipeline.steps([])
         self.assertEqual([(step.id, step.kind, step.artifact) for step in plain][7:], [

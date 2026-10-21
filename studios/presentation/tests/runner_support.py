@@ -203,6 +203,25 @@ OUTLINE = {'version': 1, 'title': 'Rolling restarts', 'delivery': 'reading', 'mi
      'notes': '1 min. Point to the sandbox.'}]}
 
 
+# Two more content slides, so that the stand-in splits the deck into two sections: the first
+# holds slides 2 to 4, the second slides 5 to 7.
+MORE_SLIDES = [
+    {'id': 'health-checks', 'kind': 'content', 'relation': 'order', 'rhythm': 'breathing',
+     'focal': 'Health first', 'title': 'Health checks start the next batch',
+     'understand': 'The next batch waits for the last one to report healthy.',
+     'points': [{'label': 'Health first',
+                 'text': 'A batch is replaced only once the last one is healthy.'},
+                {'label': 'Wait', 'text': 'A failing check holds the restart.'}],
+     'notes': '4 min. Show the check in the log.', 'sources': ['O1']},
+    {'id': 'rolling-back', 'kind': 'content', 'relation': 'contrast', 'rhythm': 'breathing',
+     'focal': 'Roll back', 'title': 'A failed batch is rolled back, not pushed on',
+     'understand': 'A batch that fails its check is put back as it was.',
+     'points': [{'label': 'Roll back', 'text': 'The failed batch returns to the last version.'},
+                {'label': 'Push on', 'text': 'Carrying on would take capacity down.'}],
+     'notes': '3 min. One example.', 'sources': ['O2']}]
+LONG_OUTLINE = {**OUTLINE, 'slides': [*OUTLINE['slides'][:5], *MORE_SLIDES, OUTLINE['slides'][5]]}
+
+
 def judgements(packets: list[dict], issues=()) -> list[dict]:
     """A reviewer's answer to a review against the design: a pass for every criterion of
     every slide, each with a reason of its own, except those `issues` gives, each as

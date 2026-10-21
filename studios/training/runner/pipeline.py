@@ -156,6 +156,9 @@ HEADINGS = ('Topic', 'Levels', 'Brief', 'Audience', 'Purpose', 'Source scope', '
 GATE = ('Your review of {it}', 'Waiting for your review of {it}')
 COPIES = ('Make the copies of {it}', 'Making the copies of {it}')
 
+SYNTHESIS = ('Investigate the sources and write the report, then check it independently',
+             'Investigating the sources and checking the research')
+
 # The training pipeline: stage, step, kind, and what the step does in the words a list
 # shows and the words a sentence uses. {it} is what the step is about.
 TRAINING = (
@@ -167,6 +170,8 @@ TRAINING = (
     ('research', 'research-start', 'code', 'Hand the approved questions to research',
      'Handing the approved questions to research'),
     ('research', 'research', 'agent', 'Research each question', 'Researching the questions'),
+    # A run with the research contract does the research as one authored report and one
+    # independent check of it, not as a question at a time: `steps` says so in its place.
     ('research', 'research-report', 'code', 'Write {it}', 'Writing {it}'),
     ('research', 'gate:research', 'gate', *GATE),
     ('blueprint', 'blueprint', 'agent', 'Draft {it}', 'Drafting {it}'),
@@ -537,7 +542,7 @@ def _step(stage: str, ident: str, kind: str, label: str, doing: str,
 
 
 def steps(levels, stages=STAGES, practice=None, copies=(), documents: bool = False,
-          own=(), laid=(), deck: bool = False) -> tuple[Step, ...]:
+          own=(), laid=(), deck: bool = False, synthesis: bool = False) -> tuple[Step, ...]:
     """Every step of a training, in the order it is walked.
 
     `stages` are the stages it wants, of those a person may leave out. `practice` gives
@@ -545,12 +550,15 @@ def steps(levels, stages=STAGES, practice=None, copies=(), documents: bool = Fal
     a copy is kept of, and `documents` says the person supplies documents. `own` are the
     scenarios a person wrote, and `laid` those of them they have asked to have laid out.
     `deck` says a deck can be made here: it then has its steps in each level, after the
-    brief, and otherwise one step, last.
+    brief, and otherwise one step, last. `synthesis` says the research is one authored
+    report and one independent check of it, and names the research step so.
     """
     listed, practice = [], practice or {}
 
     def lay(row: tuple, level: str | None = None) -> None:
         stage, ident = row[0], row[1]
+        if ident == 'research' and synthesis:
+            row = (stage, ident, row[2], *SYNTHESIS)
         for scenario in practice.get(level, ()) if stage in EACH_SCENARIO else [None]:
             step = _step(*row, level, scenario)
             if ident.startswith('copies:') and step.artifact not in copies:
@@ -1024,7 +1032,8 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
     missing = cannot(session, deck_here)
     drawn = 'deck' in wanted(session) and not missing
     listed = steps(session['levels'], wanted(session), named, kept, bool(given),
-                   own - asked.keys(), own & asked.keys(), drawn)
+                   own - asked.keys(), own & asked.keys(), drawn,
+                   bool(run.get('research_contract')))
     decks = {level: stands(root, session, state, asked, run, level)
              for level in session['levels'] or [None]} if drawn else {}
     seen = _Seen(root, session, state, asked, found, own, kept,

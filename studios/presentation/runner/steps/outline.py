@@ -254,7 +254,9 @@ def _tail(run: dict, request, error) -> list[str]:
     note = (((run.get('gates') or {}).get(GATE) or {}).get('note')
             or (request or {}).get('note'))
     if note:
-        lines.append(f'The person asked for this change to the outline:\n\n{note}')
+        lines.append(f'The person asked for this change to the outline:\n\n{note}\n\n'
+                     'Keep every slide you do not change exactly as it is, its id included: '
+                     "the deck's drawn sections are kept where the slides did not change.")
     if error:
         lines.append(f'An earlier try at this job did not work: {error}\n'
                      'Take care not to end the same way.')
