@@ -79,11 +79,12 @@ async function check(){
   await sharedPattern();
   await finishAndDelete();
   await filesJourney();
+  await voiceLinksJourney();
   pageDefinesEveryElement();
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','write from my files: one screen, per-file text, angle picks and none of these','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','write from my files: one screen, per-file text, angle picks and none of these','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -1248,4 +1249,53 @@ async function finishAndDelete(){
   note.value='Keep it short.';note.listeners.input();
   await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   assert.deepEqual(requests.find(r=>r.url==='/api/run-develop').data,{id:'synthetic',expected:'version-i',request:'The second angle\nKeep it short.'});
+}
+
+// Published posts from a list of links: the file name suggests the author, the check shows the
+// site scope before anything is fetched, mixed sites ask for one, the import continues until
+// every link is read, a different byline waits for the person, and learning the voice is next.
+async function voiceLinksJourney(){
+  const requests=[],links='# synthetic\nhttps://blog.example/team/one/\nhttps://blog.example/team/two/\n';
+  const preview={status:'ready',author:'Avery Quinn',links:2,in_library:1,to_fetch:1,duplicates:1,comments:1,upgraded:0,unusable:0,skipped:[],left_out:1,shown_scope:'blog.example/team/',scope:'https://blog.example/team/',site:'blog.example',sites:[],posts:[{url:'https://blog.example/team/one/',status:'in-library',title:'One'},{url:'https://blog.example/team/two/',status:'new',title:null}],expected:'check-1'};
+  const mixed={status:'choose-site',author:'Avery Quinn',problem:'These links come from 2 sites.',sites:[{site:'blog.example',shown:'blog.example/team/',links:2},{site:'other.example',shown:'other.example/blog/',links:1}]};
+  const result=kept=>({operation:'x',author:'Avery Quinn',links:2,remaining:0,shown_scope:'blog.example/team/',counts:{imported:1,'in-library':1,failed:0,pending:0,mismatch:kept?0:1,no_text:0,samples:kept?2:1},samples:kept?['s1','s2']:['s1'],results:[{url:'https://blog.example/team/one/',status:'in-library',id:'s1',title:'One',byline:['Avery Quinn'],sample:true},{url:'https://blog.example/team/two/',status:'imported',id:'s2',title:'Two',byline:['Jordan Lee'],mismatch:true,sample:kept,kept}],sharing_message:'Saved in this workspace; no Team Hub selected.',next_step:'Next, learn or update the voice from these samples.'});
+  let imports=0;
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
+    if(url.startsWith('/api/voices'))return {profiles:[],samples:[{id:'s1',name:'One',author:'Avery Quinn'},{id:'s2',name:'Two',author:'Avery Quinn'}]};
+    if(url==='/api/voice-links-preview')return data.site?preview:mixed;
+    if(url==='/api/voice-links-import'){imports++;return imports===1?{...result(false),remaining:1,counts:{...result(false).counts,pending:1}}:result(data.keep.length>0);}
+    return {items:[],total:0};});
+  f.loadRunner();
+  const sheet=()=>descendants(f.get('sheet')),find=label=>sheet().find(e=>e.textContent===label),byId=id=>sheet().find(e=>e.id===id),has=pattern=>sheet().some(e=>pattern.test(e.textContent));
+  await f.run('sVoiceTools()');
+  await find('Add published posts from a list of links').listeners.click();
+  const input=byId('voice-links-file');assert.equal(input.accept,'.txt,text/plain');
+  input.files=[{name:'avery-quinn-blog-links.txt',size:200,text:async()=>links+'https://other.example/blog/three/\n'}];
+  await input.listeners.change();
+  assert.equal(byId('voice-links-author').value,'Avery Quinn','the file name suggests the author');
+  assert.match(byId('voice-links-text').value,/other\.example/);assert.ok(has(/Read avery-quinn-blog-links\.txt/));
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.ok(find('Choose one site'),'mixed sites ask which one to use');
+  await find('Use blog.example/team/ (2 links)').listeners.click();
+  assert.equal(requests.filter(r=>r.url==='/api/voice-links-preview').at(-1).data.site,'blog.example');
+  assert.ok(find('2 posts from blog.example/team/'));assert.ok(has(/^By Avery Quinn$/));
+  assert.ok(has(/1 already in your reference library: reused, not fetched again/));
+  assert.ok(has(/1 new page is fetched once from blog\.example\/team\//));assert.ok(has(/1 links from other sites are left out/));
+  assert.equal(requests.some(r=>r.url==='/api/voice-links-import'),false,'checking imports nothing');
+  await find('Import 2 posts').listeners.click();
+  const sent=requests.filter(r=>r.url==='/api/voice-links-import');
+  assert.equal(sent.length,2,'the import continues until every link is read');
+  assert.equal(sent[0].data.operation,sent[1].data.operation);assert.equal(sent[0].data.expected,'check-1');assert.equal(sent[0].data.author,'Avery Quinn');
+  assert.ok(find('1 of 2 posts are Avery Quinn’s voice samples'));
+  assert.ok(has(/Already in your library · voice sample · byline Avery Quinn/));
+  assert.ok(has(/Imported · byline names Jordan Lee, so it is left out/));
+  const keep=sheet().find(e=>e.tagName==='input'&&e.type==='checkbox');keep.checked=true;keep.listeners.change();
+  await find('Keep the ticked posts as samples').listeners.click();
+  const last=requests.filter(r=>r.url==='/api/voice-links-import').at(-1).data;
+  assert.deepEqual(last.keep,['https://blog.example/team/two/']);assert.equal(last.operation,sent[0].data.operation);assert.equal(last.retry,false);
+  assert.ok(has(/kept as a sample/));assert.ok(has(/Voice learning reads up to ten samples/));
+  await find('Learn Avery Quinn’s voice').listeners.click();
+  assert.equal(byId('learn-voice-name').value,'Avery Quinn');
+  assert.deepEqual(JSON.parse(f.run('JSON.stringify(studio.voiceLearning.new.samples)')),['s1','s2']);
+  assert.equal(sheet().filter(e=>e.tagName==='input'&&e.type==='checkbox'&&e.checked).length,2,'the imported samples are ticked for learning');
 }

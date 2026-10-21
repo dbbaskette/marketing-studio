@@ -500,14 +500,74 @@ function sToolSamples(found,held){
 async function sVoiceTools(article=null){
   const found=await sTaskRead('Author voices','voices');if(!found)return;
   const list=sNode('div');for(const profile of found.profiles)list.append(sCard(profile.name,sNode('p','quiet',`Revision ${profile.revision} · ${profile.status}`),sButton('Read and manage '+profile.name,()=>sVoiceProfile(profile.id,article))));
-  sOpenSheet('Author voices',sNode('p','','Profiles stay provisional until explicitly confirmed. Existing articles keep their pinned revision; choosing a voice never rewrites a manuscript.'),list,sButton('Learn a voice from samples',()=>sLearnVoice(found)),sButton('Upload an authored sample',()=>{sCloseSheet();$('upload-purpose').value='voice-sample';$('upload-blog').checked=false;$('upload-analyze').checked=false;$('upload-dialog').showModal();}),sButton('Write a voice guide',()=>sEditVoice({name:'',guide:'',status:'provisional',sample_ids:[]},found)),sButton('Close',sCloseSheet));
+  sOpenSheet('Author voices',sNode('p','','Profiles stay provisional until explicitly confirmed. Existing articles keep their pinned revision; choosing a voice never rewrites a manuscript.'),list,sButton('Learn a voice from samples',()=>sLearnVoice(found)),sButton('Add published posts from a list of links',()=>sVoiceLinks(found,null,article)),sButton('Upload an authored sample',()=>{sCloseSheet();$('upload-purpose').value='voice-sample';$('upload-blog').checked=false;$('upload-analyze').checked=false;$('upload-dialog').showModal();}),sButton('Write a voice guide',()=>sEditVoice({name:'',guide:'',status:'provisional',sample_ids:[]},found)),sButton('Close',sCloseSheet));
 }
 function sLearnVoice(found,profile=null){
   studio.voiceLearning||={};const held=studio.voiceLearning[profile?.id||'new']||={name:profile?.name||'',samples:[...(profile?.sample_ids||[])],operation:operationId()},form=sNode('form'),problem=sNode('p','problem');problem.setAttribute('role','alert');
-  form.append(sField('learn-voice-name','Author or profile name',held,'name',{required:true,max:200}),sToolSamples(found,held),sNode('p','quiet','Only ready sources classified as authored voice samples are listed. Use the reference library to add and classify permitted samples first.'),problem);
+  form.append(sField('learn-voice-name','Author or profile name',held,'name',{required:true,max:200}),sToolSamples(found,held),sNode('p','quiet','Only ready sources classified as authored voice samples are listed. Add published posts from a list of links, or upload an authored sample, from Author voices.'),problem);
   const check=sNode('input');check.type='checkbox';const confirm=sNode('label','check');confirm.append(check,sNode('span','','I may analyze these authored samples with my selected assistant.'));form.append(confirm);const submit=sNode('button','button','Learn a provisional voice');submit.type='submit';form.append(submit);
   form.addEventListener('submit',async event=>{event.preventDefault();if(!check.checked){problem.textContent='Confirm sample permissions before starting analysis.';return;}submit.disabled=true;try{const job=await api('tool-action',sTaskPayload(held,{action:'job-create',kind:'voice-learn',operation:held.operation,name:held.name,samples:held.samples,profile:profile?.id||null,confirmed:true}));sToolJob(job);}catch(error){problem.textContent=error.message;}finally{submit.disabled=false;}});
   sOpenSheet('Learn an author voice',form,sButton('Cancel',sCloseSheet));
+}
+// Published posts as voice samples: a list of links, checked, then imported through the reference library.
+const LINK_LIST_WORDS=['blog','blogs','link','links','post','posts','url','urls','list','articles'];
+function sAuthorFromFile(name){return String(name||'').replace(/\.[^.]*$/,'').split(/[\s_.-]+/).filter(word=>word&&!/^\d+$/.test(word)&&!LINK_LIST_WORDS.includes(word.toLowerCase())).map(word=>word[0].toUpperCase()+word.slice(1)).join(' ').slice(0,200);}
+function sVoiceLinksHeld(profile){studio.voiceLinks||={};return studio.voiceLinks[profile?.id||'new']||={text:'',file:'',author:profile?.name||'',site:'',operation:operationId(),keep:[],retry:false,shown:null,result:null};}
+function sVoiceLinks(found,profile=null,article=null){
+  const held=sVoiceLinksHeld(profile),form=sNode('form'),problem=sNode('p','problem');problem.setAttribute('role','alert');
+  const box=sNode('div','field'),label=sNode('label','field-label','Text file of links'),input=sNode('input','input');input.type='file';input.accept='.txt,text/plain';input.id='voice-links-file';label.htmlFor=input.id;
+  input.addEventListener('change',async()=>{const file=input.files?.[0];if(!file)return;if(file.size>256*1024){problem.textContent='Choose a text file up to 256 KiB.';return;}try{held.text=await file.text();}catch(error){problem.textContent='This file could not be read as text.';return;}held.file=file.name;if(!held.author.trim())held.author=sAuthorFromFile(file.name);held.site='';held.shown=null;sVoiceLinks(found,profile,article);});
+  box.append(label,input,sNode('p','quiet field-hint',held.file?'Read '+held.file+'. You can still edit the links below.':'One link per line. Blank lines and lines that start with # are ignored.'));
+  form.append(sNode('p','',profile?'Add posts '+profile.name+' published on one site as samples for this voice.':'Use posts an author published on one site as samples for learning their voice.'),box,
+    sField('voice-links-text','Or paste the links',held,'text',{long:true,max:262144,changed:()=>{held.site='';held.shown=null;}}),
+    sField('voice-links-author','Whose posts are these?',held,'author',{required:true,max:200,hint:'Each imported post is saved as this author’s sample. A post whose page names someone else is left out unless you keep it.',changed:()=>{held.shown=null;}}),problem);
+  const submit=sNode('button','button button-filled','Check these links');submit.type='submit';form.append(submit);
+  form.addEventListener('submit',async event=>{event.preventDefault();if(!held.text.trim()){problem.textContent='Choose a text file or paste links first.';return;}if(!held.author.trim()){problem.textContent='Name the author of these posts.';return;}await sVoiceLinksCheck(found,profile,article,held,submit,problem);});
+  sOpenSheet(profile?'Add published posts to '+profile.name:'Add published posts',form,sButton('Back to voices',()=>sVoiceTools(article)));
+}
+async function sVoiceLinksCheck(found,profile,article,held,button,problem){
+  await busy(button,'Checking…',async()=>{try{const shown=await api('voice-links-preview',{text:held.text,author:held.author.trim(),site:held.site||null});if(held.shown?.expected!==shown.expected||!shown.expected){held.operation=operationId();held.keep=[];held.result=null;}held.shown=shown;sVoiceLinksPreview(found,profile,article,held);}catch(error){problem.textContent=error.message;}});
+}
+function sVoiceLinksPreview(found,profile,article,held){
+  const shown=held.shown,problem=sNode('p','problem');problem.setAttribute('role','alert');const back=sButton('Change the links',()=>sVoiceLinks(found,profile,article));
+  if(shown.status==='choose-site'){const choices=sNode('div');for(const site of shown.sites)choices.append(sButton('Use '+site.shown+' ('+site.links+(site.links===1?' link)':' links)'),async button=>{held.site=site.site;await sVoiceLinksCheck(found,profile,article,held,button,problem);},'filled'));return sOpenSheet('Choose one site',sNode('p','',shown.problem),choices,problem,back);}
+  const notes=sNode('ul','rows'),note=text=>notes.append(sAdd(sNode('li','row'),sNode('p','row-says',text)));
+  note(shown.in_library?shown.in_library+' already in your reference library: reused, not fetched again.':'None of these posts is in your reference library yet.');
+  if(shown.to_fetch)note(shown.to_fetch+(shown.to_fetch===1?' new page is':' new pages are')+' fetched once from '+shown.shown_scope+' and saved there.');
+  if(shown.left_out)note(shown.left_out+' links from other sites are left out of this import.');
+  if(shown.duplicates)note(shown.duplicates+' repeated links are counted once.');
+  if(shown.comments)note(shown.comments+' comment lines are ignored.');
+  if(shown.upgraded)note(shown.upgraded+' http:// links are read over https://.');
+  const skipped=shown.unusable?disclosure(shown.unusable+' lines are not usable links',sAdd(sNode('ul','rows'),...shown.skipped.map(row=>sAdd(sNode('li','row'),sAdd(sNode('div','row-text'),sNode('p','row-title','Line '+row.line+': '+row.text),sNode('p','row-says',row.reason)))))):null;
+  const posts=disclosure('The '+shown.links+' links',sAdd(sNode('ul','rows'),...shown.posts.map(post=>sAdd(sNode('li','row'),sAdd(sNode('div','row-text'),link(post.url,post.title||post.url),sNode('p','row-says',post.status==='in-library'?'Already in your library':'New'))))));
+  const start=sButton('Import '+shown.links+(shown.links===1?' post':' posts'),button=>sVoiceLinksImport(found,profile,article,held,button,problem),'filled');
+  sOpenSheet('Check before importing',sCard(shown.links+(shown.links===1?' post from ':' posts from ')+shown.shown_scope,sNode('p','','By '+shown.author+(profile?' · for the voice '+profile.name:''))),notes,skipped,posts,
+    sNode('p','quiet','Posts are saved as historical references in this workspace'+(access.status==='local-only'?'':' and shared like other references')+'. Where a page names its author, a post by someone else is listed for you to keep or leave out. Nothing is analyzed yet.'),problem,start,back);
+}
+async function sVoiceLinksImport(found,profile,article,held,button,problem){
+  const owner=studio.sheet,payload=()=>({operation:held.operation,text:held.text,author:held.author.trim(),site:held.site||null,expected:held.shown.expected,keep:held.keep,retry:held.retry});
+  await busy(button,'Importing…',async()=>{try{let result=await api('voice-links-import',payload());held.retry=false;for(let turns=0;result.remaining>0&&turns<25&&studio.sheet===owner;turns++){button.textContent='Imported '+(result.links-result.remaining)+' of '+result.links+'…';result=await api('voice-links-import',payload());}held.result=result;if(studio.sheet===owner)sVoiceLinksResult(found,profile,article,held);}catch(error){held.retry=false;problem.textContent=error.message;}});
+}
+function sVoiceLinksWords(row){
+  const byline=(row.byline||[]).join(', ');
+  if(row.status==='failed')return 'Not imported: '+row.reason;
+  if(row.status==='pending')return 'Not imported yet';
+  const where=row.status==='in-library'?'Already in your library':'Imported';
+  if(row.no_text)return where+' · no readable text, so not a sample';
+  if(row.kept)return where+' · byline '+byline+' · kept as a sample';
+  if(row.mismatch)return where+' · byline names '+byline+', so it is left out';
+  return where+' · voice sample'+(byline?' · byline '+byline:' · no byline on the page');
+}
+function sVoiceLinksResult(found,profile,article,held){
+  const result=held.result,problem=sNode('p','problem');problem.setAttribute('role','alert');const keep=new Set(held.keep);
+  const list=sNode('ul','rows');for(const row of result.results){const text=sAdd(sNode('div','row-text'),link(row.url,row.title||row.url),sNode('p','row-says',sVoiceLinksWords(row)));const item=sAdd(sNode('li','row'),text);if(row.mismatch&&!row.sample){const label=sNode('label','check'),box=sNode('input','');box.type='checkbox';box.checked=keep.has(row.url);box.addEventListener('change',()=>{if(box.checked)keep.add(row.url);else keep.delete(row.url);});label.append(box,sNode('span','','Keep as '+result.author+'’s sample'));text.append(label);}list.append(item);}
+  const again=extra=>async button=>{Object.assign(held,extra());await sVoiceLinksImport(found,profile,article,held,button,problem);};
+  const learn=result.samples.length?sButton(profile?'Update '+profile.name+' from these samples':'Learn '+result.author+'’s voice',async()=>{const voices=await api('voices');studio.voiceLearning||={};studio.voiceLearning[profile?.id||'new']={name:profile?.name||result.author,samples:[...new Set([...(profile?.sample_ids||[]),...result.samples])].slice(0,10),operation:operationId()};sLearnVoice(voices,profile);},'filled'):null;
+  sOpenSheet('Published posts imported',sCard(result.counts.samples+' of '+result.links+' posts are '+result.author+'’s voice samples',sNode('p','quiet',result.counts.imported+' imported · '+result.counts['in-library']+' already in your library · '+result.counts.failed+' failed · '+result.counts.mismatch+' by someone else'),result.sharing_message?sNode('p','quiet',result.sharing_message):null),list,
+    result.counts.mismatch?sButton('Keep the ticked posts as samples',again(()=>({keep:[...keep]}))):null,
+    result.counts.failed?sButton('Try the failed links again',again(()=>({retry:true}))):null,
+    sNode('p','',result.next_step),result.samples.length?sNode('p','quiet','Voice learning reads up to ten samples; the first ten are ticked for you. You confirm they may be analyzed, then audition the provisional voice before confirming it.'):null,
+    problem,learn,sButton('All voices',()=>sVoiceTools(article)));
 }
 async function sVoiceProfile(id,article){
   const found=await sTaskRead('Voice profile','voice?profile='+encodeURIComponent(id));if(!found)return;
@@ -518,6 +578,7 @@ async function sVoiceProfile(id,article){
     sNode('p','quiet','Sample references: '+(found.sample_ids||[]).join(', ')),
     disclosure('Explicit author rules',sNode('pre','diff',JSON.stringify(found.rules||{},null,2))),
     sButton('Audition this voice',()=>sVoiceAudition(found)),
+    found.status!=='retired'?sButton('Add published posts to this voice',async()=>sVoiceLinks(await api('voices'),found,article)):null,
     article&&found.status!=='retired'?sButton('Use this revision for this article',async button=>busy(button,'Selecting…',async()=>{try{const current=await api('manuscript?id='+encodeURIComponent(article));await api('tool-action',{action:'voice-apply',id:article,profile:id,expected:current.expected});sCloseSheet();await sRoute('editor',article);}catch(error){problem.textContent=error.message;}})):null,
     found.status!=='retired'?sButton('Retire this profile',()=>sOpenSheet('Retire this voice?',sNode('p','','It leaves future voice choices. Existing pinned articles and all profile revisions remain available.'),sButton('Retire it',async button=>busy(button,'Retiring…',async()=>{await api('tool-action',{action:'profile-retire',profile:id,expected:found.expected,confirmed:true});await sVoiceTools(article);})),sButton('Cancel',sCloseSheet))):null,
     problem,sButton('All voices',()=>sVoiceTools(article)),sButton('Close',sCloseSheet));

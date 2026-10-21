@@ -22,6 +22,17 @@ export. It reads only profile background and article HTML, emits JSON, and does
 not extract arbitrary archive paths or import unrelated contacts/messages.
 Normalize selected articles through source intake before adding them to a profile.
 
+For a list of an author's published posts (a `.txt` file or pasted links, one per
+line; `#` comments and blanks ignored), confirm whose posts they are, then run
+`library voice-links --file <list.txt> --author <name>`. It saves nothing and
+reports the link count, the site scope (common host and folder), duplicates,
+unusable lines and posts already in the library. A list mixing sites stops; ask
+which one, then add `--site <host>`. With `--import`, the library's `urls` import
+fetches the new pages (25 per call; repeat the same command to continue) and
+classifies each as a voice sample for that author. A post whose page names
+another author stays out; add `--keep <url>` only if the author wrote it, and
+`--retry` to fetch failed links again. Then learn from up to ten samples.
+
 A few representative samples help; even one can support a provisional guide.
 Ask for favorites when prioritization matters. Extract observed style separately
 from explicit author preferences and factual biography. Do not store unrelated
