@@ -302,6 +302,9 @@ class Workspace:
                 reference['role'] = 'voice'
                 dependencies.append(reference)
                 data['voice'] = {'mode': 'profile', 'ref': reference}
+                if voice.get('tone'):
+                    # Only when set, so an article pinned before tone nudges projects as before.
+                    data['voice']['tone'] = voice['tone']
             guidance = record.get('guidance')
             if guidance:
                 data['guidance'] = {
@@ -861,6 +864,7 @@ class Workspace:
                     'mode': 'profile',
                     'profile_id': resolved[(ref['item'], ref['revision'])],
                     'revision': 1,
+                    **({'tone': data['voice']['tone']} if data['voice'].get('tone') else {}),
                 }
             # A shared pin is a record of which guidance the article used; helpers always run from this installation.
             if data.get('guidance'):

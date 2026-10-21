@@ -666,6 +666,8 @@ def article_record(root, args, value):
         voice = {'mode': 'profile', **voice_pin(root, args.profile)}
     else:
         voice = {'mode': args.voice or 'preserve', 'tone': args.tone or ''}
+    if voice['mode'] == 'profile' and args.tone:
+        voice['tone'] = args.tone  # A nudge on top of the voice, not a replacement for it.
     stops = {
         'existing': 'review',
         'first-draft': 'draft',

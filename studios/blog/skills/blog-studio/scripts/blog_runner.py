@@ -680,6 +680,7 @@ def create(root, data, approval='conversation'):
     profile = data.get('profile') or None
     if profile:
         studio.voice_pin(root, profile)
+    tone = text(data.get('tone', ''), 'tone')
     style = data.get('style') or None
     if style:
         # Refused here if retired or unknown. Checking writes nothing: a starter is copied
@@ -712,7 +713,6 @@ def create(root, data, approval='conversation'):
         # No profile key: the default voice applies. An empty one is "No particular voice":
         # the described tone. An ID pins that voice.
         chose = 'profile' in data
-        tone = text(data.get('tone', ''), 'tone')
         args = SimpleNamespace(
             action='create',
             id=None,
@@ -736,6 +736,8 @@ def create(root, data, approval='conversation'):
         record = studio.article_record(root, args, ident)
         if not chose and record['voice']['mode'] != 'profile':
             record['voice'] = {'mode': 'tone', 'tone': tone}  # No default voice to apply.
+        elif not chose and tone:
+            record['voice']['tone'] = tone  # A nudge on top of the default voice.
         directory = studio.inside(root, 'articles', ident)
     if data.get('id') and mode == 'from-outline' and not existing:
         record['mode'] = 'from-outline'
@@ -751,6 +753,8 @@ def create(root, data, approval='conversation'):
         ]
     if profile:
         record['voice'] = {'mode': 'profile', **studio.voice_pin(root, profile)}
+        if tone:
+            record['voice']['tone'] = tone
     if style:
         record['style'] = studio.style_check(root, style)
     record['research_policy'] = 'supplied-only' if research == 'none' else research

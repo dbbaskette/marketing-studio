@@ -1092,6 +1092,63 @@ class RunnerHubTests(Fixture):
             self.assertEqual(previous, '# Outline\nSynthetic argument.')
             runner.ENGINES.pop(str(other), None)
 
+    def test_a_tone_nudge_travels_with_the_voice_and_older_projections_hold(self):
+        from hub_fixtures import FakeProvider
+        from hub import Registry
+        from hub_workspace import Workspace
+        import hub_workspace
+
+        provider = FakeProvider(self.base / 'remotes')
+        a, b = Registry(self.base / 'a-hubs', provider), Registry(self.base / 'b-hubs', provider)
+        ident = a.create('fixture/voice-tone', 'Voice tone')['hub']
+        b.join('fixture/voice-tone')
+        other = self.base / 'other-author'
+        studio.initialize(other)
+        wa, wb = Workspace(self.root, a.hub(ident)), Workspace(other, b.hub(ident))
+        self.file.write_text('Use short direct sentences.')
+        profile = self.command(
+            'profile',
+            'create',
+            '--name',
+            'Avery',
+            '--guide-file',
+            str(self.file),
+            '--status',
+            'confirmed',
+        )
+        with patch.object(
+            hub_workspace, 'active', side_effect=lambda root: wa if root == self.root else wb
+        ):
+            shared = {}
+            for tone in ('Warm', ''):
+                found = runner.create(
+                    self.root,
+                    {
+                        'title': 'Tone ' + (tone or 'none'),
+                        'audience': 'Authors',
+                        'goal': 'Explain a fixture',
+                        'research': 'none',
+                        'profile': profile['id'],
+                        'tone': tone,
+                    },
+                )
+                shared[tone] = wa.publish_selected({'articles': [found['id']]})['items'][0]
+            revisions = wa.hub.graph()['revisions']
+            projected = {
+                tone: revisions[ref['revision']]['data']['studio']['voice']
+                for tone, ref in shared.items()
+            }
+            self.assertEqual(projected['Warm']['tone'], 'Warm')
+            self.assertEqual(set(projected['']), {'mode', 'ref'}, 'no tone, the same projection')
+            wb.hub.refresh()
+            local_id = wb.checkout_selected({'articles': [shared['Warm']['item']]})['items'][0][
+                'local_id'
+            ]
+            voice = studio.item(other, 'articles', local_id)[1]['voice']
+            self.assertEqual((voice['mode'], voice['tone']), ('profile', 'Warm'))
+            runner.ENGINES.pop(str(other), None)
+            runner.ENGINES.pop(str(self.root), None)
+
 
 class SharedPatternTests(RunnerCase):
     """What every studio's run screen says the same way: the stops, the "now" line, honest
@@ -1740,6 +1797,45 @@ class VoiceChoiceTests(RunnerCase):
         )
         chosen = self.voice_of(self.create(page=True, profile=other['id']))
         self.assertEqual((chosen['mode'], chosen['profile_id']), ('profile', other['id']))
+
+    def test_a_tone_beside_a_voice_is_kept_as_a_nudge(self):
+        import writing_defaults
+
+        mine = self.voice()
+        found = self.create(page=True, profile=mine['id'], tone='Warm')
+        pinned = {'mode': 'profile', 'profile_id': mine['id'], 'revision': 1}
+        self.assertEqual(self.voice_of(found), {**pinned, 'tone': 'Warm'})
+        _, record, run = runner.load(self.root, found['id'])
+        payload = runner.inputs(self.root, record, run)
+        self.assertEqual(payload['voice']['tone'], 'Warm')
+        self.assertIn('Short direct sentences.', payload['voice']['guide'])
+        resolved = writing_defaults.resolve(self.root, record)
+        self.assertEqual(resolved['problems'], [])
+        self.assertEqual(
+            resolved['values']['voice']['value'], {'profile_id': mine['id'], 'revision': 1}
+        )
+        self.assertEqual(
+            self.voice_of(self.create(page=True, profile=mine['id'])),
+            pinned,
+            'without a tone the voice has no tone key, so earlier pins hold',
+        )
+        self.default(mine)
+        self.assertEqual(
+            self.voice_of(self.create(page=True, tone='Warm')), {**pinned, 'tone': 'Warm'}
+        )
+        chat = self.command(
+            'article',
+            'create',
+            '--title',
+            'Chat',
+            '--mode',
+            'first-draft',
+            '--profile',
+            mine['id'],
+            '--tone',
+            'Warm',
+        )
+        self.assertEqual(chat['voice'], {**pinned, 'tone': 'Warm'})
 
     def test_options_name_the_personal_default_voice_and_write_nothing(self):
         self.assertIsNone(runner.options(self.root)['default_voice'])
