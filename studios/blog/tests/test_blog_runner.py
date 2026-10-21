@@ -1694,6 +1694,118 @@ class StyleTests(RunnerCase):
         self.assertFalse((self.root / 'styles' / 'how-to').exists(), 'naming copies nothing')
 
 
+class VoiceChoiceTests(RunnerCase):
+    """The page's Write as: the default voice applies unless the person chose another."""
+
+    def voice(self, name='Avery', guide='Short direct sentences.', status='confirmed'):
+        self.file.write_text(guide)
+        return self.command(
+            'profile', 'create', '--name', name, '--guide-file', str(self.file), '--status', status
+        )
+
+    def default(self, profile):
+        import writing_defaults
+
+        words = ['defaults', 'set', '--scope', 'personal', '--key', 'voice', '--value']
+        value = json.dumps({'profile_id': profile['id'], 'revision': 1})
+        args = studio.parser().parse_args(['--root', str(self.root), *words, value])
+        writing_defaults.command(self.root, args)
+
+    def voice_of(self, found):
+        return studio.item(self.root, 'articles', found['id'])[1]['voice']
+
+    def files(self):
+        return {
+            path.relative_to(self.root): path.read_bytes()
+            for path in self.root.rglob('*')
+            if path.is_file()
+        }
+
+    def test_the_default_voice_applies_unless_the_person_chose_another(self):
+        self.assertEqual(
+            self.voice_of(self.create(page=True, tone='Warm')), {'mode': 'tone', 'tone': 'Warm'}
+        )
+        mine, other = self.voice(), self.voice('Blake', 'Long, careful sentences.')
+        self.default(mine)
+        absent = self.voice_of(self.create(page=True))
+        self.assertEqual(
+            (absent['mode'], absent['profile_id'], absent['revision']), ('profile', mine['id'], 1)
+        )
+        nudged = self.voice_of(self.create(page=True, tone='Warm'))
+        self.assertEqual((nudged['mode'], nudged['profile_id']), ('profile', mine['id']))
+        self.assertEqual(
+            self.voice_of(self.create(page=True, profile='', tone='Warm')),
+            {'mode': 'tone', 'tone': 'Warm'},
+            'No particular voice uses the described tone',
+        )
+        chosen = self.voice_of(self.create(page=True, profile=other['id']))
+        self.assertEqual((chosen['mode'], chosen['profile_id']), ('profile', other['id']))
+
+    def test_options_name_the_personal_default_voice_and_write_nothing(self):
+        self.assertIsNone(runner.options(self.root)['default_voice'])
+        mine = self.voice(status='provisional')
+        self.default(mine)
+        before = self.files()
+        self.assertEqual(
+            runner.options(self.root)['default_voice'],
+            {
+                'scope': 'personal',
+                'profile': mine['id'],
+                'name': 'Avery',
+                'revision': 1,
+                'status': 'provisional',
+            },
+        )
+        self.assertEqual(self.files(), before)
+
+    def test_options_read_a_team_default_voice_without_checking_it_out(self):
+        from types import SimpleNamespace
+
+        item, revision, row = 'a' * 32, 'b' * 32, 'c' * 32
+        graph = {
+            'heads': {'d' * 32: [row]},
+            'revisions': {
+                row: {
+                    'item': 'd' * 32,
+                    'kind': 'context',
+                    'scope': {'level': 'team', 'key': ''},
+                    'status': 'active',
+                    'data': {
+                        'key': 'writing-default:voice',
+                        'value': {'item': item, 'revision': revision},
+                    },
+                },
+                revision: {
+                    'item': item,
+                    'revision': revision,
+                    'kind': 'voice',
+                    'status': 'active',
+                    'title': 'Team voice',
+                    'data': {'studio': {'name': 'Team voice', 'status': 'confirmed'}},
+                },
+            },
+        }
+
+        def checkout(*args):
+            raise AssertionError('reading options checks nothing out')
+
+        adapter = SimpleNamespace(hub=SimpleNamespace(graph=lambda: graph), _checkout=checkout)
+        before = self.files()
+        with patch('hub_workspace.active', return_value=adapter):
+            shown = runner.options(self.root)['default_voice']
+        self.assertEqual(
+            shown,
+            {
+                'scope': 'team',
+                'profile': None,
+                'name': 'Team voice',
+                'revision': revision,
+                'status': 'confirmed',
+            },
+        )
+        self.assertEqual(self.files(), before)
+
+
 class FilesCase(RunnerCase):
     """Uploaded material and a from-files run, for the tests below."""
 

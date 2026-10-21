@@ -709,6 +709,10 @@ def create(root, data, approval='conversation'):
         if existing and stop in ('outline', 'draft') and mode != 'revise':
             raise ValueError('An existing draft starts at review. Choose review or export package.')
     else:
+        # No profile key: the default voice applies. An empty one is "No particular voice":
+        # the described tone. An ID pins that voice.
+        chose = 'profile' in data
+        tone = text(data.get('tone', ''), 'tone')
         args = SimpleNamespace(
             action='create',
             id=None,
@@ -720,8 +724,8 @@ def create(root, data, approval='conversation'):
             else 'first-draft',
             profile=profile,
             author=text(data.get('author', ''), 'author', 200) or None,
-            voice='tone',
-            tone=text(data.get('tone', ''), 'tone'),
+            voice='tone' if chose else None,
+            tone=tone if chose else None,
             audience=brief['audience'],
             blog_type=None,
             review_folder=None,
@@ -730,6 +734,8 @@ def create(root, data, approval='conversation'):
         )
         ident = studio.new_id(title)
         record = studio.article_record(root, args, ident)
+        if not chose and record['voice']['mode'] != 'profile':
+            record['voice'] = {'mode': 'tone', 'tone': tone}  # No default voice to apply.
         directory = studio.inside(root, 'articles', ident)
     if data.get('id') and mode == 'from-outline' and not existing:
         record['mode'] = 'from-outline'
@@ -1509,6 +1515,50 @@ def catalog(root):
     return {'items': rows, 'total': len(rows), 'deleted': blog_delete.deleted(root)}
 
 
+def default_voice(root):
+    """The voice a new blog gets when the page sends no profile: personal or team, or None.
+
+    Reads only. A team default is named from its Team Hub revision without checking it
+    out; creating the blog checks it out, as in chat."""
+    import writing_defaults
+    from hub_workspace import active
+
+    adapter = active(root)
+    try:
+        found = writing_defaults.resolve(root, adapter=adapter)['values'].get('voice')
+    except (ValueError, OSError):
+        return None
+    if not found:
+        return None
+    if found['scope'] == 'team':
+        shared = adapter.hub.graph()['revisions'][found['value']['revision']]
+        saved = (shared.get('data') or {}).get('studio') or {}
+        return {
+            'scope': 'team',
+            'profile': None,
+            'name': saved.get('name') or shared.get('title'),
+            'revision': found['value']['revision'],
+            'status': saved.get('status'),
+        }
+    pin = found['value']
+    try:
+        directory, current = studio.item(root, 'profiles', pin['profile_id'])
+        pinned = studio.read_json(
+            studio.inside(directory, 'revisions', str(pin['revision']), 'record.json')
+        )
+    except (ValueError, OSError):
+        return None
+    if current.get('status') == 'retired':
+        return None  # A new blog cannot take it; creating one says so.
+    return {
+        'scope': found['scope'],
+        'profile': pin['profile_id'],
+        'name': pinned['name'],
+        'revision': pin['revision'],
+        'status': pinned['status'],
+    }
+
+
 def options(root):
     def records(kind):
         result = []
@@ -1536,6 +1586,7 @@ def options(root):
     brand = brand_skill.status()
     brand['default'] = brand_skill.defaults(brand)
     return {
+        'default_voice': default_voice(root),
         'profiles': records('profiles'),
         'styles': styles.catalog(root)['styles'],
         'sources': records('sources'),
