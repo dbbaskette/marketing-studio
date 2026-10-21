@@ -157,7 +157,7 @@ def keep_setup(root):
                         continue
                 except (ValueError, OSError):
                     continue
-            elif path.read_bytes() != studio.SHARED_README:
+            elif path.read_bytes() not in (studio.SHARED_README, *studio.PREVIOUS_SHARED_READMES):
                 continue
             paths.append(name)
         if paths:

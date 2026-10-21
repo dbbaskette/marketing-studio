@@ -12,6 +12,7 @@ Run `... init` if `studio.json` is absent. Load one:
 - [Inspect, remember, correct, or forget context](workspace/context.md)
 - [Sources](workspace/sources.md)
 - [Profiles](workspace/profiles.md)
+- [Styles](workspace/styles.md)
 - [Articles](workspace/articles.md)
 - [Reviews](workspace/reviews.md)
 

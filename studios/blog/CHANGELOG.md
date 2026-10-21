@@ -8,6 +8,21 @@ changes for authors first, then what changes for maintainers.
 - Deleting a blog accepts its title as you type it: case, spacing, curly quotes and
   dashes no longer have to match the stored title exactly, and the sheet says when
   the text is not the title yet. Every card on **Blogs** has **Delete**.
+- **Voices and styles.** A blog takes a voice (how you sound) and a style (the shape of a
+  kind of writing), chosen as **Write as** and **Kind of post** when you start it. Eight
+  starter styles for tech-industry writing are ready to use and editable, and a style can
+  be learned from examples of a kind of writing by anyone. **Tools → Voices and styles**
+  manages both in one place, and **Change the voice** switches a blog's voice, asking
+  first when it already has writing. **More tools** is now simply **Tools**.
+- **Write as someone else.** A voice belongs to one author, so a ghostwriter can keep a
+  voice for each person they write for and start a blog with that person's voice and name.
+- **Bring in writing, yours or an author's you write for.** Import a LinkedIn data export
+  (profile and articles only), paste links or choose a links file of public posts and say
+  whose they are, or use a source already in your references. Each becomes that author's
+  sample, and the sheet offers to learn their voice, or a style, from them.
+- For maintainers: styles are stored beside voices in a `styles` folder (and `.shared/styles`
+  in a team workspace), starters are copied in only when saved, retired or used, and
+  `library voice-links` takes `--purpose style-sample`.
 
 ## 4.3.0 — 2026-10-20
 

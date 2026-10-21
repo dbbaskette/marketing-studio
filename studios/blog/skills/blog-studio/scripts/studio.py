@@ -34,7 +34,11 @@ MODES = (
 )
 CHECKS = ('polish', 'proofread', 'factual-support', 'shape', 'humanization', 'geo')
 SOURCE_CHECKS = ('factual-support', 'geo')
-SHARED_README = b'# Shared Blog Studio material\n\nreferences/ holds selected sources; voices/ holds author profiles; memory/ holds rules and context.\n'
+SHARED_README = b'# Shared Blog Studio material\n\nreferences/ holds selected sources; voices/ holds author profiles; styles/ holds kinds of writing; memory/ holds rules and context.\n'
+# What earlier launches wrote, still recognized as Blog Studio's own file.
+PREVIOUS_SHARED_READMES = (
+    b'# Shared Blog Studio material\n\nreferences/ holds selected sources; voices/ holds author profiles; memory/ holds rules and context.\n',
+)
 
 
 def now():

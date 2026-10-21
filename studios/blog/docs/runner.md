@@ -56,11 +56,8 @@ references in the wizard too. The assistant receives only selected source and
 voice context plus this blog's saved writing preferences, memories and explicitly
 selected team context. Oversized context is refused rather than silently cut.
 
-Open **Tools → Voices and styles** (also in **Library and team tools** and
-**Settings**) to learn a voice from samples, a LinkedIn export or links to posts, and
-to learn, edit or retire styles. A run's **About this blog** shows its voice and kind
-of post. **Change the voice** asks first once an outline or draft exists, since its
-reviews will need a new look; nothing is rewritten.
+Voices and styles are described in [their own section](#voices-and-styles). A run's
+**About this blog** shows its voice and kind of post.
 
 ## Start from a Google Doc
 
@@ -130,6 +127,64 @@ the author's voice; a logo or palette does not imply a company tone.
 The brand repository, release and identity live in the shared settings file.
 Installed skill paths and release-check observations stay in Blog Studio's local
 data folder. Only the selected contract travels with a blog.
+
+## Voices and styles
+
+A **voice** is how one person sounds; a **style** is the shape of a kind of writing,
+such as a product announcement or a how-to. A blog takes one of each: the style decides
+the structure, the voice decides the wording. In **New blog** they are **Write as** and
+**Kind of post**. Open **Tools → Voices and styles** from a blog, or from **Library and
+team tools** and **Settings**.
+
+**Write as** offers your default voice, another saved voice, no particular voice (the
+tone you describe), or **Learn a new voice…**. A manuscript you revise or review keeps its
+own voice unless you pick one, and **Write from my files** uses your default voice when
+one is set. The tone you give is kept as a nudge beside a voice, unless it is just your
+usual default. **Change the voice** on a blog switches its voice for what comes next;
+it asks once when the blog already has writing, since its reviews will need a new look.
+Nothing is rewritten, and the blog's history records the change.
+
+A voice belongs to one author, and that author need not be you. If you ghostwrite, learn
+a voice for each person you write for, from their published posts, and start a blog with
+that voice and, under **Tone, author and brand**, their name. Each voice sample records
+whose writing it is, and the sheets ask before reading anything.
+
+Blog Studio ships eight starter styles for tech-industry writing: product announcement,
+release notes and changelog, technical deep dive, how-to and tutorial, point of view,
+customer story, comparison and evaluation guide, and postmortem and lessons learned.
+They are confirmed and ready to choose from the start. A starter is copied into your
+workspace only when you edit it, retire it or use it for a blog; you can also export
+it. **Learn a style from examples** reads examples of a kind of writing by anyone and
+proposes a guide, which stays provisional until you confirm it.
+
+Voices are learned from writing the author wrote. Bring samples in four ways:
+
+- **Upload an authored sample**, naming the author.
+- **Use as a sample.** A source already in your reference library becomes a voice
+  sample, with the author named; **Use as an example** does the same for a style.
+- **Import a LinkedIn export.** On LinkedIn, open Settings & Privacy, Data privacy,
+  then Get a copy of your data; choose Profile and Articles and wait for the email.
+  Choose the downloaded zip in the sheet. Only `Profile.csv` and the articles are
+  read: the person's name becomes the author, their headline and About text become
+  author background, and each article a voice sample. An export is usually your own;
+  when a colleague hands you theirs, give their name in the sheet. Nothing signs in
+  to LinkedIn, and connections or messages are never read.
+- **Add links to posts.** Paste links, or choose a text file with one link per line;
+  the author is suggested from the file name and you can change it. Blog Studio first
+  shows what it will do: the site, the links already in your library and the ones it
+  will fetch. It then reads each new page once, in batches, and saves it in your
+  reference library under "Published posts by" the author. A post whose byline names
+  someone else is left out unless you keep it; a kept post keeps its published byline.
+  Failed links can be tried again without fetching the rest. LinkedIn pages cannot be
+  read this way; use the export.
+
+**Add links to examples** does the same for a style, without the byline check. From a
+terminal, `library voice-links` does the same work; see
+[commands](commands.md).
+
+Every sample is a source in your reference library, so it follows the same sharing rules
+as any other source. Learned voices and styles stay provisional until you confirm them,
+and an existing blog keeps the revision it was started with.
 
 ## Run and review
 
