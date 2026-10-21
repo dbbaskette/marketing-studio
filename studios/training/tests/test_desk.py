@@ -2545,7 +2545,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn(note, shown['text'])
         self.assertIn('Deck direction', shown['text'])
         self.assertEqual(self.asked(result, 'picture'), [])
-        self.assertIn('Ask for changes to Deck direction', shown['text'])
+        self.assertIn('Needs changes in Deck direction', shown['buttons'])
 
     def test_selected_materials_and_source_permission_are_sent_without_extra_work(self):
         result = self.run_page(self.answers(**{'POST /api/trainings': [
@@ -2650,6 +2650,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     def test_grouped_review_keeps_one_approval_in_the_toolbar_and_recovers_from_refusal(self):
         self.started()
         review = {'phase': 'direction', 'label': 'Review the direction', 'expected': 'v1',
+                  'commits': {'levels': 1, 'materials': ['document'], 'deck': False,
+                              'dollars': None, 'minutes': None},
                   'items': [{'target': 'research', 'label': 'Research', 'text': '# Findings'}]}
         waiting = a_run('waiting', 'Review the direction.')
         waiting['body']['review'] = review
@@ -2662,13 +2664,21 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                 {'status': 409, 'body': {'error': 'The saved review has changed.'}}, working]})
         result = self.run_page(answers, [
             {'click': 'Open Rolling restarts'}, {'snapshot': 'review'},
-            {'click': 'Approve the direction'}, {'snapshot': 'refused'},
-            {'click': 'Approve the direction'}, {'snapshot': 'sent'}])
+            {'click': 'Approve the direction'}, {'snapshot': 'confirm'},
+            {'click': 'Approve'}, {'snapshot': 'refused'},
+            {'click': 'Approve'}, {'snapshot': 'sent'}])
         review_shot = result['snapshots']['review']
         self.assertEqual(review_shot['filled'], ['Approve the direction'])
         self.assertIn('Approve the direction', review_shot['toolbarButtons'])
         self.assertEqual(review_shot['buttons'].count('Approve the direction'), 1)
-        self.assertIn('The saved review has changed.', result['snapshots']['refused']['text'])
+        self.assertEqual(review_shot['sheet'], '')
+        # The approval is confirmed in the sheet, which says what it commits to.
+        confirm = result['snapshots']['confirm']
+        self.assertIn('Approve the direction?', confirm['sheet'])
+        self.assertIn('Approving the direction writes the learner guide for the training', confirm['sheet'])
+        self.assertIn('Approve', confirm['filled'])
+        self.assertEqual(confirm['posts'], 0)
+        self.assertIn('The saved review has changed.', result['snapshots']['refused']['sheet'])
         self.assertEqual(self.posts(result), [('/api/review', {
             'path': str(self.root), 'expected': 'v1', 'decision': 'approve',
             'target': None, 'note': None})] * 2)
@@ -2690,20 +2700,114 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'POST /api/review': [
                 {'status': 409, 'body': {'error': 'Try the updated review.'}}]})
         result = self.run_page(answers, [
-            {'click': 'Open Rolling restarts'}, {'click': 'Request changes'},
-            {'click': 'Ask for changes to Research'}, {'snapshot': 'empty'},
+            {'click': 'Open Rolling restarts'}, {'snapshot': 'unmarked'},
+            {'click': 'Needs changes in Research'}, {'click': 'Send 1 request'}, {'snapshot': 'empty'},
             {'fill': 'What should change in Research', 'value': 'Add a worked example.'},
             {'poll': True}, {'snapshot': 'newer'},
-            {'click': 'Ask for changes to Research'}, {'snapshot': 'refused'}])
-        self.assertIn('Say what should change first.', result['snapshots']['empty']['text'])
+            {'click': 'Send 1 request'}, {'snapshot': 'refused'}])
+        self.assertNotIn('Send 1 request', result['snapshots']['unmarked']['buttons'])
+        self.assertIn('Nothing is marked for changes.', result['snapshots']['unmarked']['text'])
+        self.assertIn('Say what should change in Research first.', result['snapshots']['empty']['text'])
+        self.assertIn('1 item is marked for changes.', result['snapshots']['empty']['text'])
         self.assertEqual(result['snapshots']['empty']['posts'], 0)
         self.assertEqual(self.posts(result), [('/api/review', {
             'path': str(self.root), 'expected': 'v2', 'decision': 'revise',
-            'target': 'research', 'note': 'Add a worked example.'})])
+            'target': None, 'note': None,
+            'requests': [{'target': 'research', 'note': 'Add a worked example.'}]})])
+        # The refresh keeps the mark and what was typed.
         self.assertEqual(result['snapshots']['newer']['fields']['What should change in Research'],
                          'Add a worked example.')
+        self.assertIn('Send 1 request', result['snapshots']['newer']['buttons'])
         self.assertEqual(result['snapshots']['newer']['focus'], 'change-research')
         self.assertIn('Try the updated review.', result['snapshots']['refused']['text'])
+
+    def test_grouped_change_requests_go_together_and_say_what_they_rewrite(self):
+        self.started()
+        waiting = a_run('waiting', 'Review the direction.')
+        waiting['body']['review'] = {
+            'phase': 'direction', 'label': 'Review the direction', 'expected': 'v1',
+            'commits': {'levels': 2, 'materials': ['document', 'brief'], 'deck': True,
+                        'dollars': 3.5, 'minutes': 12},
+            'items': [
+                {'target': 'research', 'label': 'the research report', 'text': '# Findings',
+                 'rewrites': ['the level 101 blueprint', 'the level 101 learner guide',
+                              'the level 201 blueprint', 'Deck direction · Level 101']},
+                {'target': 'blueprint@101', 'label': 'the level 101 blueprint', 'text': '# Plan',
+                 'rewrites': ['the level 101 learner guide', 'Deck direction · Level 101']},
+                {'target': 'outline:101', 'label': 'Deck direction · Level 101',
+                 'text': '### 1. Cover', 'rewrites': []}]}
+        working = a_run('working', 'Writing your materials.')
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', 'Review the direction.')],
+            'GET /api/training': [self.detail('waiting', 'Review the direction.')],
+            'GET /api/run': [waiting], 'POST /api/review': [working]})
+        result = self.run_page(answers, [
+            {'click': 'Open Rolling restarts'}, {'click': 'the level 101 blueprint'},
+            {'click': 'Needs changes in the research report'}, {'snapshot': 'one'},
+            {'fill': 'What should change in the research report', 'value': 'Cite the platform docs.'},
+            {'click': 'Needs changes in the level 101 blueprint'},
+            {'fill': 'What should change in the level 101 blueprint', 'value': 'Add a module on health checks.'},
+            {'snapshot': 'two'}, {'click': 'Approve the direction'}, {'snapshot': 'confirm'},
+            {'key': 'Escape'}, {'click': 'Send 2 requests'}, {'snapshot': 'sent'}])
+        one = result['snapshots']['one']
+        self.assertIn('1 item is marked for changes.', one['text'])
+        self.assertIn('If the research report changes, these are written again from it: the level '
+                      '101 blueprint, the level 101 learner guide, the level 201 blueprint and '
+                      'Deck direction · Level 101.', one['text'])
+        self.assertIn('Send 1 request', one['buttons'])
+        two = result['snapshots']['two']
+        self.assertIn('2 items are marked for changes.', two['text'])
+        self.assertIn('If the research report and the level 101 blueprint change, these are '
+                      'written again from them: the level 101 learner guide, the level 201 '
+                      'blueprint and Deck direction · Level 101.', two['text'])
+        self.assertIn('Send 2 requests', two['buttons'])
+        confirm = result['snapshots']['confirm']['sheet']
+        self.assertIn('writes the learner guide and brief for each of the 2 levels, and the deck '
+                      'is then drawn: a deck of this size has cost about $3.50 and about 12 minutes '
+                      'of agent time before', confirm)
+        self.assertEqual(self.posts(result), [('/api/review', {
+            'path': str(self.root), 'expected': 'v1', 'decision': 'revise',
+            'target': None, 'note': None,
+            'requests': [{'target': 'research', 'note': 'Cite the platform docs.'},
+                         {'target': 'blueprint@101', 'note': 'Add a module on health checks.'}]})])
+        self.assertIn('2 changes requested. Writing your materials.', result['snapshots']['sent']['toasts'])
+
+    def test_on_a_phone_the_combined_review_folds_and_decides_from_the_bottom_bar(self):
+        self.started()
+        waiting = a_run('waiting', 'Review the finished materials.')
+        waiting['body']['review'] = {
+            'phase': 'final', 'label': 'Review the finished materials', 'expected': 'final-v1',
+            'commits': None,
+            'items': [
+                {'target': 'research', 'label': 'Research', 'text': '# Evidence', 'rewrites': []},
+                {'target': 'document@101', 'label': 'Learner guide', 'text': '# Guide', 'rewrites': []},
+                {'target': 'scenario:main', 'label': 'Practice', 'text': '# Practice', 'rewrites': []}]}
+        done = a_run('done', 'This training is done.')
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', 'Review the finished materials.')],
+            'GET /api/training': [self.detail('waiting', 'Review the finished materials.')],
+            'GET /api/run': [waiting], 'POST /api/review': [done]})
+        result = self.run_page(answers, [
+            {'click': 'Open Rolling restarts'}, {'snapshot': 'folded'},
+            {'click': 'Looks good: Learner guide'}, {'snapshot': 'good'},
+            {'click': 'Approve the finished materials'}, {'snapshot': 'confirm'},
+            {'click': 'Approve'}, {'snapshot': 'sent'}], phone=True)
+        folded = result['snapshots']['folded']
+        # Only the first material is open: its marks are on the page, the others' are not.
+        self.assertEqual([name for name in folded['buttons'] if name.startswith('Looks good')],
+                         ['Looks good: Learner guide'])
+        self.assertEqual([name for name in folded['buttons'] if name.startswith('Needs changes')],
+                         ['Needs changes in Learner guide'])
+        # The toolbar's approval and the bar's: the bar is the one under the thumb.
+        self.assertEqual(folded['buttons'].count('Approve the finished materials'), 2)
+        self.assertEqual(folded['filled'], ['Approve the finished materials'])
+        self.assertIn('1 of 3 looked at. Nothing is marked for changes.', result['snapshots']['good']['text'])
+        self.assertIn('Approve the finished materials?', result['snapshots']['confirm']['sheet'])
+        self.assertIn('Approving finishes this draft.', result['snapshots']['confirm']['sheet'])
+        self.assertEqual(self.posts(result), [('/api/review', {
+            'path': str(self.root), 'expected': 'final-v1', 'decision': 'approve',
+            'target': None, 'note': None})])
+        self.assertEqual(result['snapshots']['sent']['sheet'], '')
 
     def test_a_file_the_direction_review_covers_is_read_only_at_its_gate(self):
         self.at_the_blueprint_gate()
@@ -2749,8 +2853,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         result = self.run_page(answers, [
             {'click': 'Open Rolling restarts'}, {'snapshot': 'open'},
             {'click': 'Research'}, {'poll': True}, {'snapshot': 'closed'}])
-        self.assertIn('Request changes', result['snapshots']['open']['buttons'])
-        self.assertNotIn('Request changes', result['snapshots']['closed']['buttons'])
+        self.assertIn('Needs changes in Research', result['snapshots']['open']['buttons'])
+        self.assertNotIn('Needs changes in Research', result['snapshots']['closed']['buttons'])
         self.assertIn('Approve the direction', result['snapshots']['closed']['toolbarButtons'])
         self.assertEqual(self.posts(result), [])
 
@@ -2770,16 +2874,20 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'GET /api/run': [waiting]})
         result = self.run_page(answers, [
             {'click': 'Open Rolling restarts'}, {'snapshot': 'review'},
+            {'click': 'Needs changes in Learner guide'}, {'snapshot': 'marked'},
             {'click': 'Research'}, {'snapshot': 'evidence'}])
         shot = result['snapshots']['review']
         self.assertIn('Approve the finished materials', shot['toolbarButtons'])
         # The guide opens first. Supporting evidence remains one disclosure away.
-        self.assertIn('What should change in Learner guide', shot['text'])
+        self.assertIn('Needs changes in Learner guide', shot['buttons'])
+        self.assertNotIn('What should change in Learner guide', shot['text'])
+        self.assertIn('What should change in Learner guide', result['snapshots']['marked']['text'])
         order = [shot['buttons'].index(label)
                  for label in ['Learner guide', 'Practice', 'Research', 'Teaching plan']]
         self.assertEqual(order, sorted(order))
-        self.assertEqual(shot['buttons'].count('Request changes'), 1)
-        self.assertEqual(result['snapshots']['evidence']['buttons'].count('Request changes'), 2)
+        self.assertEqual(len([name for name in shot['buttons'] if name.startswith('Needs changes')]), 1)
+        self.assertEqual(len([name for name in result['snapshots']['evidence']['buttons']
+                              if name.startswith('Needs changes')]), 2)
         self.assertEqual(self.posts(result), [])
 
     def answers(self, setup=SET_UP, **more) -> dict:
@@ -3583,7 +3691,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             self.assertIn(shown, three['text'])
         self.assertNotIn('not offered yet', three['text'])
         self.assertEqual((three['pressed'], three['posts']),
-                         (['The public web', 'Claude Code'], 0))
+                         (['Step by step', 'The public web', 'Claude Code'], 0))
         self.assertEqual((three['fields']['Its model'], three['fields']['Its reasoning level']),
                          ('', ''))
         self.assertEqual(self.asked(result, 'agents'), ['/api/agents'] * 2)
@@ -3606,7 +3714,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'source_scope': 'public-web', 'deck_target': 'google',
             'brand': {'brand': 'example-co', 'variant': 'dark'},
             'copies': ['google'], 'yoodli': False, 'materials': ['document', 'brief', 'scenario'], 'agent': 'claude', 'model': None,
-            'effort': None})])
+            'effort': None, 'review_level': 'step_by_step'})])
 
         run = shots['run']
         self.assertEqual((run['heading'], run['title']),
@@ -4141,7 +4249,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                     *([{'click': choice}] if choice else []), {'snapshot': 'three'},
                     {'click': 'Start the training'}, {'snapshot': 'run'}])
                 three, landed = result['snapshots']['three'], result['snapshots']['run']
-                self.assertEqual(three['pressed'], [choice or 'The public web'])
+                self.assertEqual(three['pressed'], ['Step by step', choice or 'The public web'])
                 for said in meanings:
                     self.assertIn(said, three['text'])
                 # With documents, the first thing it does is wait for them, and it says so.

@@ -380,6 +380,8 @@ const view = {
   // back was, by stage: each is said until it is tried again or the screen is left. And what
   // is typed in a sheet's note, kept until it is sent, so putting the sheet away loses nothing.
   unmoved: {}, unrestored: {}, notes: {},
+  // What each item of a combined review is marked as on this page, until it is sent.
+  marks: {},
   // The refresh in hand, and whether another was asked for while it was. What the list said
   // of each run whose asks were read, and of the open training when it was last read: each
   // is read again only once that has changed.
@@ -1319,7 +1321,8 @@ function drawSheet() {
   const holder = byId('sheet');
   const shown = view.after || (view.sheet && (view.gate || view.deciding || outlined()
     || TEAM_SHEETS.includes(view.sheet)
-    || ['delete', 'companions', 'upgrade', 'redesign', 'brand'].includes(view.sheet)));
+    || ['delete', 'companions', 'upgrade', 'redesign', 'brand'].includes(view.sheet)
+    || (view.sheet === 'approve-combined' && view.run && view.run.review)));
   holder.hidden = !shown;
   // While a sheet is open it holds the one filled button, so the toolbar's are put away.
   byId('actions').hidden = Boolean(shown);
@@ -1337,6 +1340,7 @@ function drawSheet() {
   else if (view.sheet === 'upgrade') body = upgradeSheet();
   else if (view.sheet === 'redesign') body = redesignSheet();
   else if (view.sheet === 'brand') body = brandSheet();
+  else if (view.sheet === 'approve-combined') body = combinedConfirm();
   else if (TEAM_SHEETS.includes(view.sheet)) body = teamSheet(view.sheet);
   else if (FORMS[view.sheet]) body = noteSheet(view.sheet);
   else body = confirmSheet(view.sheet);
@@ -5288,28 +5292,109 @@ function combinedLabel(review) {
   return 'Approve ' + (review.phase === 'direction' ? 'the direction' : 'the finished materials');
 }
 
+// A narrow screen: the combined review folds everything but the first material away, and
+// its decisions sit in a bar at the bottom, under the thumb.
+function phone() {
+  return Boolean(window.matchMedia && window.matchMedia('(max-width: 52rem)').matches);
+}
+
+// What one item of a combined review is marked as on this page: 'changes', 'good' or ''.
+function markKey(review, item) {
+  return [view.path, review.phase, 'mark', item.target].join('\n');
+}
+
+function noteKeyOf(review, item) {
+  return [view.path, review.phase, item.target].join('\n');
+}
+
+// The change requests marked on a combined review, each a target and what was typed.
+function marked(review) {
+  return review.items.filter((item) => view.marks[markKey(review, item)] === 'changes')
+    .map((item) => ({ target: item.target, note: (view.notes[noteKeyOf(review, item)] || '').trim(),
+      label: item.label, rewrites: list(item.rewrites) }));
+}
+
+// What approving a combined review commits to, said before it is approved.
+function commitsSays(review) {
+  const commits = review.commits;
+  if (review.phase !== 'direction' || !commits) {
+    return 'Approving finishes this draft. Everything is kept as it stands, and publishing '
+      + 'is a separate action.';
+  }
+  const names = { document: 'learner guide', brief: 'brief', scenario: 'practice scenarios',
+    yoodli: 'Yoodli scenarios' };
+  const made = list(commits.materials).map((stage) => names[stage] || stage);
+  const levels = commits.levels > 1 ? 'each of the ' + commits.levels + ' levels' : 'the training';
+  let said = 'Approving the direction ' + (made.length ? 'writes the ' + series(made) + ' for '
+    + levels : 'carries on with ' + levels);
+  if (commits.deck) {
+    const parts = [];
+    if (given(commits.dollars)) parts.push('about ' + money(commits.dollars));
+    if (given(commits.minutes)) parts.push('about ' + lasted(Number(commits.minutes) * 60) + ' of agent time');
+    said += ', and the deck is then drawn' + (parts.length ? ': a deck of this size has cost '
+      + parts.join(' and ') + ' before' : '');
+  }
+  return said + '. It spends from the same limit as the rest of the training.';
+}
+
+// The sheet that confirms a combined approval: the same one a file's approval gets, saying
+// what the approval commits to.
+function combinedConfirm() {
+  const review = view.run && view.run.review;
+  const spec = CONFIRMS.approve;
+  const problem = problemLine();
+  const confirm = capsule(spec.send, 'filled', () => decideCombined(review, 'approve', null,
+    null, confirm, problem), 'send');
+  const what = review.phase === 'direction' ? 'the direction' : 'the finished materials';
+  return [sheetTitle(spec.title(what)), make('p', '', spec.says),
+    make('p', '', commitsSays(review)), problem,
+    add(make('div', 'bar'), confirm, capsule('Cancel', 'quiet', closeSheet, 'cancel'))];
+}
+
 async function decideCombined(review, decision, target, note, pressed,
-  problem = byId('combined-problem')) {
+  problem = byId('combined-problem'), requests = null) {
   if (view.busy) return;
+  // An approval is confirmed first, in the sheet, which says what it commits to.
+  if (decision === 'approve' && view.sheet !== 'approve-combined') {
+    view.deciding = null;
+    openSheet('approve-combined', pressed && pressed.dataset.key)();
+    return;
+  }
   const turn = view.turn;
   const path = view.path;
-  if (decision === 'revise' && !String(note || '').trim()) {
-    say(problem, 'Say what should change first.');
-    return;
+  const asked = decision === 'revise' ? requests || [{ target, note }] : null;
+  if (asked) {
+    const empty = asked.find((ask) => !String(ask.note || '').trim());
+    if (empty) {
+      const named = review.items.find((item) => item.target === empty.target);
+      say(problem, 'Say what should change in ' + (named ? named.label : 'it') + ' first.');
+      focusKey('change-' + review.phase + '-' + empty.target);
+      return;
+    }
   }
   view.busy = true;
   if (pressed) pressed.disabled = true;
   say(problem, '');
   try {
-    const run = await send('review', {path, expected: review.expected,
-      decision, target: target || null, note: note || null});
+    const body = { path, expected: review.expected, decision, target: null, note: null };
+    if (asked && requests) body.requests = asked.map((ask) => ({ target: ask.target, note: ask.note }));
+    else if (asked) Object.assign(body, { target, note });
+    const run = await send('review', body);
     if (turn !== view.turn) return;
-    if (target) delete view.notes[[path, review.phase, target].join('\n')];
+    for (const ask of asked || []) {
+      delete view.notes[[path, review.phase, ask.target].join('\n')];
+      delete view.marks[[path, review.phase, 'mark', ask.target].join('\n')];
+    }
     view.run = run;
     view.busy = false;
+    if (view.sheet === 'approve-combined') {
+      view.sheet = '';
+      drawSheet();
+    }
     paintRun(false);
     toast(decision === 'approve' ? 'Approved. ' + run.sentence
-      : 'Changes requested. ' + run.sentence);
+      : (asked.length === 1 ? 'Changes requested. ' : asked.length + ' changes requested. ')
+        + run.sentence);
     byId('title').focus({preventScroll: true});
     refresh();
   } catch (failure) {
@@ -5320,12 +5405,52 @@ async function decideCombined(review, decision, target, note, pressed,
   } finally { view.busy = false; }
 }
 
+// What is sent when the marked requests go: how many, and what each change is followed by.
+function reviewBar(review, theirs) {
+  const bar = make('div', 'review-bar');
+  const says = make('p', '');
+  const follows = make('p', 'quiet');
+  const problem = alertLine('combined-send-problem');
+  // The toolbar's approval is the one filled button on the screen. On a phone the bar
+  // offers the approval again, under the thumb, once nothing is marked for changes.
+  const send = capsule('', '', () => decideCombined(review, 'revise', null, null, send,
+    problem, marked(review)), 'send-requests');
+  const approve = phone() && !theirs ? capsule(combinedLabel(review), '',
+    () => decideCombined(review, 'approve', null, null, approve), 'approve-combined-bar') : null;
+  const update = () => {
+    const asked = marked(review);
+    const seen = review.items.filter((item) => view.marks[markKey(review, item)]).length;
+    says.textContent = asked.length ? count(asked.length, 'item is', 'items are')
+      + ' marked for changes.' : seen ? seen + ' of ' + review.items.length + ' looked at. '
+      + 'Nothing is marked for changes.' : 'Nothing is marked for changes.';
+    const after = [...new Set(asked.flatMap((ask) => ask.rewrites))]
+      .filter((label) => !asked.some((ask) => ask.label === label));
+    follows.textContent = after.length ? 'If ' + series(asked.map((ask) => ask.label))
+      + (asked.length === 1 ? ' changes, ' : ' change, ') + 'these are written again from '
+      + (asked.length === 1 ? 'it' : 'them') + ': ' + series(after) + '.' : '';
+    follows.hidden = !after.length;
+    send.textContent = 'Send ' + count(asked.length, 'request', 'requests');
+    send.hidden = !asked.length;
+    if (approve) approve.hidden = Boolean(asked.length);
+  };
+  add(bar, says, follows, problem, add(make('div', 'bar'), send, approve));
+  bar.update = update;
+  update();
+  return bar;
+}
+
 function combinedReview(run) {
   const review = run.review;
+  const theirs = run.mine === false;
+  const small = phone();
   const node = card(review.label);
   add(node, make('p', 'lede', review.phase === 'direction'
     ? 'Review the research and teaching direction below. Approve the direction to build your selected materials.'
     : 'Review the completed materials together. Approval finishes this draft; publishing is a separate action.'));
+  if (!theirs) {
+    add(node, make('p', 'quiet', 'Mark what needs changes as you read, and send every request '
+      + 'at once' + (small ? '' : ', or approve from the toolbar') + '.'));
+  }
   const problem = problemLine();
   problem.id = 'combined-problem';
   add(node, problem);
@@ -5333,12 +5458,16 @@ function combinedReview(run) {
   const items = [...review.items];
   if (review.phase === 'final') items.sort((a, b) => Number(material(b)) - Number(material(a)));
   const firstMaterial = items.find(material);
+  const bar = theirs ? null : reviewBar(review, theirs);
   for (const item of items) {
     const detail = add(make('details', 'review-bundle'), make('summary', 'row-title', item.label));
     detail.dataset.key = 'combined-' + review.phase + '-' + item.target;
     const part = make('div', 'review-bundle-body'); add(detail, part);
-    detail.open = Boolean(item.sample || item.sample_note || item.deck_view
-      || (review.phase === 'direction' ? item.target === 'research' : item === firstMaterial));
+    const first = review.phase === 'direction' ? item.target === 'research' : item === firstMaterial;
+    const mark = view.marks[markKey(review, item)] || '';
+    // On a phone everything but the first material is folded away until it is opened.
+    detail.open = small ? first || mark === 'changes'
+      : Boolean(item.sample || item.sample_note || item.deck_view || first);
     if (item.text) add(part, window.TrainingStudioMarkdown.render(item.text));
     if (item.sample) add(part, pictureAt({path: view.path, ...item.sample},
       'Sample slide for ' + item.label, review.expected));
@@ -5355,29 +5484,52 @@ function combinedReview(run) {
       add(part, capsule('Open the saved deck and its review', '', () => show('gate', {path: view.path, artifact: item.target}), 'read-' + item.target));
     }
     if (item.notes) add(part, window.TrainingStudioMarkdown.render(item.notes));
-    if (run.mine !== false) {
-      const changes = add(make('details'), make('summary', '', 'Request changes'));
-      changes.dataset.key = 'request-' + review.phase + '-' + item.target;
+    if (!theirs) {
+      // Marked for changes, the item takes a note; the request goes with the others.
       const request = make('textarea'); request.maxLength = 4000;
       request.id = 'change-' + item.target;
       request.dataset.key = 'change-' + review.phase + '-' + item.target;
       const label = make('label', 'note-label', 'What should change in ' + item.label);
       label.htmlFor = request.id;
       request.setAttribute('aria-label', 'What should change in ' + item.label);
-      const key = [view.path, review.phase, item.target].join('\n');
+      const key = noteKeyOf(review, item);
       request.value = view.notes[key] || '';
-      if (request.value) changes.open = true;
       request.addEventListener('input', () => { view.notes[key] = request.value; });
-      const refusal = alertLine('change-problem-' + item.target);
-      const revise = capsule('Ask for changes to ' + item.label, '',
-        () => decideCombined(review, 'revise', item.target, request.value, revise, refusal),
-        'revise-' + item.target);
-      request.setAttribute('aria-describedby', refusal.id);
-      add(changes, label, request, refusal, revise);
-      add(part, changes);
+      const hint = make('p', 'quiet', list(item.rewrites).length ? 'If it changes, these are '
+        + 'written again from it: ' + series(item.rewrites) + '.' : 'Nothing else is built from it.');
+      const asking = add(make('div', 'review-request'), label, request, hint);
+      asking.hidden = mark !== 'changes';
+      const marks = make('div', 'review-marks chips');
+      marks.setAttribute('role', 'group');
+      marks.setAttribute('aria-label', 'Your view of ' + item.label);
+      const set = (value) => {
+        view.marks[markKey(review, item)] = value;
+        asking.hidden = value !== 'changes';
+        for (const [name, chipNode] of Object.entries(both)) {
+          chipNode.setAttribute('aria-pressed', String(value === name));
+        }
+        if (value === 'changes') request.focus();
+        bar.update();
+      };
+      // Each chip names its item, so the same words on every item are told apart.
+      const both = {
+        changes: chip('Needs changes', mark === 'changes', (on) => set(on ? 'changes' : ''),
+          'needs-' + item.target),
+      };
+      both.changes.setAttribute('aria-label', 'Needs changes in ' + item.label);
+      if (small) {
+        both.good = chip('Looks good', mark === 'good', (on) => set(on ? 'good' : ''),
+          'good-' + item.target);
+        both.good.setAttribute('aria-label', 'Looks good: ' + item.label);
+        add(marks, both.good, both.changes);
+      } else {
+        add(marks, both.changes);
+      }
+      add(part, marks, asking);
     }
     add(node, detail);
   }
+  if (bar) add(node, bar);
   return node;
 }
 

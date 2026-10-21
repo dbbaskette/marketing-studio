@@ -620,7 +620,8 @@ async function app(file) {
     },
     scrollTo() {},
     focus() {},
-    matchMedia: () => ({ matches: false }),
+    // A plan with {phone: true} is a narrow screen: every max-width query matches.
+    matchMedia: (query) => ({ matches: Boolean(plan.phone) && /max-width/.test(query) }),
     setTimeout: (callback, delay) => {
       if (callback.name === 'refresh') report.paces.push(delay);
       return timers.push(callback);

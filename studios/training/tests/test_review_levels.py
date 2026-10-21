@@ -133,6 +133,51 @@ class ReviewLevelsTests(DeckCase):
         self.assertIsNone(shown['problem'], shown)
         self.assertEqual(shown['review']['phase'], 'final')
 
+    def test_change_requests_are_sent_together_and_say_what_they_rewrite(self):
+        root, shown = self.choose('balanced', levels=['101', '201'])
+        items = {item['target']: item for item in shown['review']['items']}
+        self.assertEqual(items['research']['rewrites'], [
+            'the level 101 blueprint', 'the level 101 learner guide', 'the level 101 brief',
+            'the level 201 blueprint', 'the level 201 learner guide', 'the level 201 brief',
+            'Deck direction · Level 101', 'Deck direction · Level 201'])
+        self.assertEqual(items['blueprint@201']['rewrites'], [
+            'the level 201 learner guide', 'the level 201 brief', 'Deck direction · Level 201'])
+        self.assertEqual(items['outline:201']['rewrites'], [])
+        commits = shown['review']['commits']
+        self.assertEqual({key: commits[key] for key in ('levels', 'materials', 'deck')},
+                         {'levels': 2, 'materials': ['document', 'brief', 'scenario'], 'deck': True})
+        self.assertGreater(commits['dollars'], 0)
+        self.assertGreater(commits['minutes'], 0)
+        expected = shown['review']['expected']
+        # Every request is checked before any is recorded.
+        for asked, why in (
+            ([{'target': 'research', 'note': 'More sources.'}, {'target': 'deck', 'note': 'x'}],
+             'from this review'),
+            ([{'target': 'research', 'note': ''}], 'Say what should change'),
+            ([], 'Say what should change'),
+            ([{'target': 'research', 'note': 'One.'}, {'target': 'research', 'note': 'Two.'}],
+             'once for each'),
+        ):
+            with self.subTest(asked=asked), self.assertRaisesRegex(WorkspaceError, why):
+                self.engine.review_decide(root, expected, 'revise', requests=asked)
+        self.assertEqual(workspace.load(root)['requests'], [])
+        self.assertEqual(self.view(root)['review']['expected'], expected)
+        since = len(self.workers.jobs)
+        shown = self.engine.review_decide(root, expected, 'revise', requests=[
+            {'target': 'blueprint@101', 'note': 'Add a module on health checks.'},
+            {'target': 'outline:201', 'note': 'Open with the objection.'}])
+        self.assertIsNone(shown['problem'], shown)
+        self.assertEqual(shown['review']['phase'], 'direction')
+        self.assertNotEqual(shown['review']['expected'], expected)
+        # Both were taken: the level 101 blueprint was written again, and so was what the
+        # level 201 deck says. The research was not. The scripted blueprint comes back
+        # unchanged, so nothing built from it is written again: the core goes by content.
+        self.assertEqual(self.kinds(since), ['blueprint', 'outline'])
+        self.assertIn('request changes to 2 items', self.git('log', '-3', '--format=%s'))
+        shown = self.approve_review(root, shown)
+        self.assertEqual(shown['review']['phase'], 'final')
+        self.assertIsNone(shown['review']['commits'])
+
     def test_final_scenario_revision_does_not_repeat_the_unchanged_direction_review(self):
         root, shown = self.choose('balanced')
         shown = self.approve_review(root, shown)

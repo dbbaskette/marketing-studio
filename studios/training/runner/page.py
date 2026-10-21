@@ -489,7 +489,7 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.engine.review_decide(
                 desk.text(sent, 'path'), desk.text(sent, 'expected'),
                 desk.text(sent, 'decision'), desk.text(sent, 'target', False),
-                desk.text(sent, 'note', False)))
+                desk.text(sent, 'note', False), self.requests(sent)))
         if path == '/api/outline':
             return desk.as_json(HTTPStatus.OK, self.outline(sent))
         if path == '/api/redesign':
@@ -584,6 +584,20 @@ class RunnerPage(desk.Page):
                                             restrictions or None)
         except WorkspaceError as refusal:
             raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+
+    @staticmethod
+    def requests(sent: dict) -> list | None:
+        """The change requests a combined review sends together, each a target and a
+        note, or None when it sends one the old way or none at all."""
+        asked = sent.get('requests')
+        if asked is None:
+            return None
+        if not isinstance(asked, list) or not all(
+                isinstance(ask, dict) and isinstance(ask.get('target'), str)
+                and isinstance(ask.get('note'), str) for ask in asked):
+            raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give requests as a list, each with a '
+                               'target and a note.')
+        return [{'target': ask['target'], 'note': ask['note']} for ask in asked]
 
     def act(self, sent: dict) -> dict:
         path, action = desk.text(sent, 'path'), desk.text(sent, 'action')
