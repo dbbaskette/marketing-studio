@@ -3,6 +3,12 @@
 Releases are published from `skills/blog-studio/VERSION`. Each entry says what
 changes for authors first, then what changes for maintainers.
 
+## Unreleased
+
+- Deleting a blog accepts its title as you type it: case, spacing, curly quotes and
+  dashes no longer have to match the stored title exactly, and the sheet says when
+  the text is not the title yet. Every card on **Blogs** has **Delete**.
+
 ## 4.3.0 — 2026-10-20
 
 - Manuscript **More tools** adds voice learning, auditions and revisions; resumable
