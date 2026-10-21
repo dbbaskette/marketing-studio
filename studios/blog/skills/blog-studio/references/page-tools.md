@@ -41,7 +41,20 @@ while navigating tools but is not a cross-computer transcript or backup.
 **New blog from my files** on Home takes each upload with its role, facts or an
 example of the kind of post (changeable per file until Start), asks whether to find
 three angles or start from the point the person knows, and chooses the voice with
-**Write as**. The Upload dialog's **Use this file as** offers the same example role.
+**Write as** and the shape with **Kind of post**. The Upload dialog's **Use this file
+as** offers the same example role.
+
+**The team library** (Blogs → Library and team tools → Team library) holds every
+finished blog, kept file, link and Google Doc, each with a role, author and kind of
+post. **Add to library** takes files, a list of links and a Doc in one sheet with one
+role, author and kind; **Each post's own author** imports first, reads each page's
+byline, then groups the posts by author to rename, merge, complete, mark as voice
+samples (on by default) and learn a voice per group, with the usual confirmation.
+Filters for role, kind and author; a selection learns a style or a voice from the
+items or starts a blog with them as examples. **From the library** on the files card
+picks items with their library role, changeable for that blog only; a learned kind
+of post pre-ticks its samples. **Settings → Default voice** names a confirmed voice
+for every new blog, and **Interview me** takes **Write as** too.
 
 Conversation methods remain available through the normal operation references.
 The report commands are `studio.py --root WORKSPACE prepublish --id ID` and

@@ -5,6 +5,24 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **One team library.** Every finished blog lands in the library when you choose
+  **Finish**, as a reference and an example of its kind of post by its author; a second
+  Finish updates the same item. Files added to a blog land there too unless you untick
+  **Keep in the team library**. **Add to library** takes files, a list of links and a
+  Google Doc in one sheet with a role, author and kind of post; **Each post's own
+  author** reads every page's byline and groups the posts by author to rename, merge,
+  complete, mark as voice samples and learn a voice from. The library filters by role,
+  kind and author, and a selection learns a style or a voice or starts a blog with the
+  items as examples. **From the library** on the files card picks items as facts or
+  examples for one blog without changing them, and a learned kind of post pre-ticks the
+  examples it was learned from. **Settings** names a default voice, and **Interview me**
+  takes **Write as**.
+- For maintainers: a source's `library` record carries `kind`, `origin_kind` and
+  `article`; `library find` takes `--role` and `--kind`; `run create` takes `--example
+  <id>` and, from the page, `library: [{id, role}]`; `source-role` changes a library
+  reference in a new revision; the desk routes are `library-add-preview`, `library-add`,
+  `library-add-author`, `library-add-samples` and `library-selection`; the personal
+  writing default `voice` is saved from Settings.
 - Deleting a blog accepts its title as you type it: case, spacing, curly quotes and
   dashes no longer have to match the stored title exactly, and the sheet says when
   the text is not the title yet. Every card on **Blogs** has **Delete**.

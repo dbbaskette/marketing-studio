@@ -29,7 +29,12 @@ it does not claim every low-level CLI flag is a browser control.
 | Report-only pre-publish checks | Tools → Pre-publish | `prepublish --id ID` |
 | Advisory topic overlap | Tools → Check topic overlap | `plan --topic TOPIC`, local library index |
 | Board, due dates, owners, ready/published decisions | Blogs → Library and team tools | `editorial` commands; explicit decisions |
-| Source search, collections, analysis, retire/undo | Reference library | `library`/`source`, explicit per-operation analysis |
+| Source search, collections, analysis, retire/undo | Team library | `library`/`source`, explicit per-operation analysis |
+| Every finished blog and kept file in one library, with role, kind of post and author | Finish; the files card's Keep in the team library | `library.origin_kind`, `kind` and `article` on a source; `library find --role --kind --author` |
+| Add files, links and Google Docs to the library; each post's own author | Team library → Add to library | `library-add-preview`, `library-add` (the `urls` import per site with bylines), `library-add-author`, `library-add-samples` through `source-purpose` |
+| Filter the library and learn a style or voice from a selection, or start a blog from it | Team library → filters; selection actions | `library-selection`; `run create --mode from-files` with `library: [{id, role}]` |
+| Pick facts and examples from the library for a blog; a learned style pre-ticks its samples | Your files → From the library; Kind of post | `run create --example <id>`, or `library: [{id, role}]` from the page; the record is unchanged |
+| Default voice for new blogs; Interview me in a voice | Settings → Default voice; Interview me → Write as | Personal writing default `voice`; `interview-start` with `profile` and `revision` |
 | Team workspace, driver, handover, offline retry | Status / team tools | `team`, existing Git decision/sync model |
 | Shared settings, brand, models, review policy | Settings → Shared settings | Shared config with adjacent lock and displayed-value checks |
 | Installation maintenance | Status → Installation maintenance | `marketing-studio doctor/update/rollback/uninstall`; explicit actions |

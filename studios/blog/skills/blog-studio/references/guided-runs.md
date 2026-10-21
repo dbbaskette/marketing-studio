@@ -33,7 +33,10 @@ and `--profile ''` writes in no particular voice. `--tone "description"` is then
 nudge beside the voice (dropped when it equals the settings' tone), or the whole voice
 when none applies. `--style <id>` adds a kind of post. `--author` overrides a saved
 default. Select an installed brand with `--brand ID --variant VARIANT`, or
-`--brand ''` for no brand. Read its pinned guides in `derived/blog-run.json`;
+`--brand ''` for no brand. `--example <id>` reads a team library item as an example of
+the kind of post for this blog only (`--source` reads one with its library role).
+Approving the last stage keeps the draft in the team library as a reference and an
+example, once per blog. Read its pinned guides in `derived/blog-run.json`;
 keep its naming rules separate from the author voice. `--mode write` is the default; `outline` stops at outline. Use
 `--mode revise --manuscript <source-id>` to revise a saved readable source, or
 `--mode review --manuscript <source-id>` to review it without rewriting.

@@ -79,8 +79,12 @@ Once the page is open, use its controls to drive the work:
    the usual outline and draft follow. **Write as** chooses the voice there too: your
    default voice, a saved profile, or no particular voice with a tone.
    A Doc is read with this computer's Google sign-in, so it does not need to be shared.
-   The files stay on this computer unless you keep them in your references, but the
-   blog's outline and draft may quote them and are shared like any other blog.
+   The files land in the **team library** unless you untick **Keep**; then they stay
+   on this computer, though the blog's outline and draft may quote them and are
+   shared like any other blog. Every finished blog lands in the library too, and
+   **From the library** picks finished blogs, files and links as facts or examples
+   for the next one, with no re-adding; **Add to library** takes files, links and
+   Google Docs straight in, by one author or each post's own.
    For a blog already in Google Docs, choose **Open Google Doc** on Home or Blogs,
    preview its link and confirm the manuscript before importing. The same Doc
    stays linked; importing does not start an assistant or change Google.
@@ -156,7 +160,7 @@ repair, or other problems, use the [setup help](docs/troubleshooting.md).
 | Edit and review with others in Google Docs | [Google Docs guide](docs/google-docs.md) |
 | Share a repository with Training and Presentation Studio | [Join a team workspace](docs/team-workspace.md) |
 | Use an existing Team Hub or move selected blogs | [Legacy Team Hubs](docs/team-hub.md) · [Migration](docs/team-workspace.md#bring-selected-work-from-a-legacy-team-hub) |
-| Browse the editorial pipeline or import earlier posts | [Editorial tools and reference library](docs/editorial-desk.md) |
+| Browse the editorial pipeline, the team library or import earlier posts | [Editorial tools and reference library](docs/editorial-desk.md) |
 | Understand where your content goes | [Privacy details](docs/privacy-review.md) |
 
 [What's new](CHANGELOG.md) · [Developer guide](docs/development.md)
