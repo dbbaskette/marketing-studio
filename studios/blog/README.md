@@ -102,9 +102,10 @@ You can leave the browser while it works and return to **Home** to see **Needs
 you**, **In progress**, and **Finished**. Use **Pause after this step** to pause
 between stages, or **Stop** to end a running step. **Blogs** holds your saved
 runs; each card has **Delete**, which asks for the blog's title and keeps the
-blog for 30 days under **Recently deleted**. In **Status**, choose **Check this computer** for assistant and sign-in
-checks, optional Team Hub tools, and instructions for anything missing. You can
-also run `sh ~/.local/share/blog-studio/studio check` from Terminal.
+blog for 30 days under **Recently deleted**. In **Status**, choose **Check this
+computer** for assistant and sign-in checks, optional Team Hub tools, and
+instructions for anything missing. You can also run
+`sh ~/.local/share/blog-studio/studio check` from Terminal.
 
 [All UI controls, stages, and page/chat handoff →](docs/runner.md)
 

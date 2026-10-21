@@ -158,8 +158,9 @@ while retaining the original.
 **Blogs** shows all guided blogs and saved writing. Each card has **Delete**,
 which asks for the blog's title, stops anything running for it and keeps it for
 30 days under **Recently deleted**, where **Restore** brings it back. Open a run
-to see steps and made files. Each review page renders the saved Markdown as a paper document,
-with **Checked for you**, **Worth a look** and **What changed** alongside it.
+to see steps and made files. Each review page renders the saved Markdown as a
+paper document, with **Checked for you**, **Worth a look** and **What changed**
+alongside it.
 Comparisons use the exact last approved version. **Approve** opens a confirmation
 sheet; **Ask for changes** lets you select an earlier stage. A finished or
 paused run returns to **Resume** when you request a revision. A changed version

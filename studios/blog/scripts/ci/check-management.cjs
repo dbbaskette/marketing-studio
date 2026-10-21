@@ -938,9 +938,17 @@ async function guidedRuns(){
     const open=descendants(f.get('sheet'));
     assert.ok(open.some(e=>e.textContent==='Delete Synthetic blog?'),open.map(e=>e.textContent).join('|'));
     f.run('sCloseSheet()');
-    f.run("studio.ordinary=[{id:'plain',title:'A saved draft',author:'Avery',mode:'existing'}];sBlogs()");
-    assert.equal(descendants(content).filter(e=>e.textContent==='Delete').length,2,'saved drafts get Delete too');
-    f.run('access.actions.edit=false;sBlogs()');
+    f.run("studio.ordinary=[{id:'plain',title:'A saved draft',author:'Avery',mode:'existing'},{id:'shared',title:'Hub only',location:'hub'}];sBlogs()");
+    const removes=descendants(content).filter(e=>e.textContent==='Delete');
+    assert.equal(removes.length,2,'saved drafts get Delete, and a blog with no local copy does not');
+    await removes[1].listeners.click();
+    assert.ok(descendants(f.get('sheet')).some(e=>e.textContent==='Delete A saved draft?'),'a saved draft opens the same sheet');
+    f.run('sCloseSheet()');
+    f.run("studio.ordinary=[{id:'driven',title:'Driven elsewhere',team:true,driver:{here:false}}];sBlogs()");
+    const driven=descendants(content).filter(e=>e.textContent==='Delete');
+    assert.equal(driven.length,2);assert.equal(driven[0].disabled,false,'the run driven here can be deleted');
+    assert.equal(driven[1].disabled,true,'a team blog driven elsewhere cannot be deleted from here');
+    f.run("studio.ordinary=[{id:'plain',title:'A saved draft',author:'Avery',mode:'existing'}];access.actions.edit=false;sBlogs()");
     assert.ok(descendants(content).filter(e=>e.textContent==='Delete').every(e=>e.disabled),'Delete follows edit access');
     f.run('access.actions.edit=true;studio.ordinary=[];sBlogs()');
   }
