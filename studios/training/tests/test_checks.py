@@ -506,3 +506,28 @@ class DeckAndPracticeTests(unittest.TestCase):
         self.assertEqual(report['warnings'],
                          ['O3 is a handle objective that no scenario exercises.'])
         self.assertEqual(checks.practice(PARSED, [])['not_exercised'], ['O1', 'O2', 'O3'])
+
+
+class ReadinessTests(unittest.TestCase):
+    """What blocks a training, told apart from what is simply not made yet."""
+
+    def readiness(self, artifacts, **more):
+        return checks.readiness([{'name': name, 'stage': name.partition('@')[0],
+                                  'status': status} for name, status in artifacts],
+                                {}, [], [], {}, [], **more)
+
+    def test_files_not_made_or_approved_yet_are_still_to_make_and_still_block(self):
+        verdict = self.readiness([('research-plan', 'approved'), ('research', 'draft'),
+                                  ('blueprint', 'stale'), ('document', 'not-started'),
+                                  ('deck', 'skipped'), ('yoodli', 'unavailable')])
+        self.assertFalse(verdict['ready'])
+        self.assertEqual(verdict['to_make'], ['research', 'blueprint', 'document'])
+        self.assertEqual(verdict['blocking'], ['research is draft', 'blueprint is stale',
+                                               'document is not-started'])
+
+    def test_a_training_with_every_file_made_has_nothing_to_make_and_may_still_be_blocked(self):
+        verdict = self.readiness([('research-plan', 'approved'), ('document', 'approved')],
+                                 pending_question='Which version?')
+        self.assertEqual((verdict['ready'], verdict['to_make']), (False, []))
+        self.assertEqual(verdict['blocking'],
+                         ['A question is waiting on the user: Which version?'])

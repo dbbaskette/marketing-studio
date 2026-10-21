@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 import runner_support
-from runner_support import OUTLINE, StudioCase, asks, fails, unsettled
+from runner_support import LONG_OUTLINE, OUTLINE, StudioCase, asks, fails, unsettled
 from workspace import WorkspaceError
 
 from runner import decks, marks, stages
@@ -903,3 +903,286 @@ class ModelProfileTests(StudioCase):
         other = self.start(title='Work override', agent='codex', model='own-model', effort='high')
         self.assertEqual(self.record(other)['model_profiles']['mode'], 'single')
         self.assertEqual(self.workers.of('outline')[-1].model, 'own-model')
+
+
+class SayingTests(StudioCase):
+    """Changing what a slide says: the outline is reopened with the slide marked, and only
+    the section that draws it is drawn again once the outline is approved."""
+
+    def setUp(self):
+        super().setUp()
+        self.workers.outline_said = LONG_OUTLINE   # two sections: slides 2-4 and 5-7
+
+    def retitled(self, root: Path, number: int, title: str) -> list[dict]:
+        slides = json.loads(json.dumps(self.view(root)['gate']['slides']))
+        slides[number - 1]['title'] = title
+        # The scripted workers draw the outline they are given, as it now stands.
+        self.workers.outline_said = {**self.workers.outline_said, 'slides': slides}
+        return slides
+
+    def test_changing_what_a_slide_says_reopens_the_outline_and_redraws_its_section(self):
+        root = self.start()
+        self.to_gate(root, 'gate:build')
+        drawn = len(self.workers.of('section'))
+        self.engine.decide(root, 'gate:build', 'changes', None,
+                           {'direction_target': 'gate:outline', 'slides': [3]})
+        self.assertEqual(self.waiting(root), 'gate:outline')
+        gate = self.view(root)['gate']
+        self.assertEqual(gate['saying'], {OUTLINE['slides'][2]['id']: ''})
+        # The outline is as it was: no worker drafted it again.
+        self.assertEqual(len(self.workers.of('outline')), 1)
+        self.assertEqual(self.record(root)['gates']['gate:outline']['round'], 2)
+        edited = self.retitled(root, 3, 'Capacity holds with several instances')
+        self.decide(root, 'gate:outline', 'approve', None, {'edited': edited})
+        # The brand did not change, so it is not checked again.
+        self.assertEqual(self.waiting(root), 'gate:build')
+        again = self.workers.of('section')[drawn:]
+        self.assertEqual([job.task.split('"')[0].strip() for job in again],
+                         ['Draw section 1 of'])
+        state = build.read_state(root)
+        self.assertEqual(sorted(state['sections']), ['section-1', 'section-2'])
+        self.assertTrue(state['sections']['section-2'].get('kept'))
+        shown = self.view(root)['gate']
+        self.assertEqual(shown['slides'][2]['title'], 'Capacity holds with several instances')
+        self.assertEqual(self.record(root)['gates']['gate:build']['round'], 2)
+
+    def test_changing_what_a_delivered_slide_says_builds_and_delivers_a_new_revision(self):
+        root = self.start()
+        self.to_end(root)
+        self.engine.decide(root, 'gate:build', 'changes', 'Say it plainly.',
+                           {'direction_target': 'gate:outline', 'slides': [6]})
+        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertIsNone(decks.delivered(root))
+        self.assertEqual(self.view(root)['gate']['saying'],
+                         {LONG_OUTLINE['slides'][5]['id']: 'Say it plainly.'})
+        edited = self.retitled(root, 6, 'Health checks gate the next batch')
+        self.decide(root, 'gate:outline', 'approve', None, {'edited': edited})
+        self.assertEqual(self.waiting(root), 'gate:build')
+        self.assertEqual([job.task.split('"')[0].strip()
+                          for job in self.workers.of('section')[2:]], ['Draw section 2 of'])
+        self.decide(root, 'gate:build')
+        view = self.view(root)
+        self.assertEqual(view['deliver']['revision'], 2)
+        self.assertEqual(len(view['deliver']['revisions']), 2)
+
+    def test_changing_what_slides_say_needs_their_numbers(self):
+        root = self.start()
+        self.to_gate(root, 'gate:build')
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.decide(root, 'gate:build', 'changes', 'Say it plainly.',
+                               {'direction_target': 'gate:outline'})
+        self.assertEqual(str(caught.exception),
+                         'Name the slides whose words should change, by their numbers.')
+        with self.assertRaises(WorkspaceError):
+            self.engine.decide(root, 'gate:outline', 'changes', 'No.',
+                               {'direction_target': 'gate:outline'})
+        self.assertEqual(self.waiting(root), 'gate:build')
+
+    def test_a_delivered_deck_shows_its_slides_and_what_the_last_build_cost(self):
+        self.workers.cost = 0.25
+        root = self.start()
+        self.to_end(root)
+        shown = self.view(root)['deliver']
+        self.assertEqual([slide['number'] for slide in shown['slides']],
+                         list(range(1, len(LONG_OUTLINE['slides']) + 1)))
+        self.assertEqual(shown['slides'][1]['image'], {'kind': 'build', 'ref': 2})
+        self.assertEqual(shown['slides'][1]['title'], OUTLINE['slides'][1]['title'])
+        # Two sections and a review were drawn by workers, at a quarter dollar each.
+        self.assertEqual(shown['last_build']['dollars'], 0.75)
+        self.assertGreater(shown['last_build']['seconds'], 0)
+
+
+    def test_asking_to_change_words_names_the_slides_and_clears_the_deck_s_note(self):
+        root = self.start()
+        self.to_gate(root, 'gate:build')
+        self.engine.decide(root, 'gate:build', 'changes', 'Tighter.', {'slides': [2]})
+        self.to_gate(root, 'gate:build')
+        self.engine.decide(root, 'gate:build', 'changes', None,
+                           {'direction_target': 'gate:outline', 'slides': [3, 5]})
+        self.assertEqual(self.log()[-1], 'Rolling restarts: ask to change what slides 3 and 5 say')
+        self.assertIsNone(self.record(root)['gates']['gate:build'].get('note'))
+        self.decide(root, 'gate:outline')
+        self.assertIn('Rolling restarts: approve the outline', self.log())
+
+    def test_one_slide_s_words_are_said_in_the_singular(self):
+        root = self.start()
+        self.to_gate(root, 'gate:build')
+        self.engine.decide(root, 'gate:build', 'changes', None,
+                           {'direction_target': 'gate:outline', 'slides': [3]})
+        self.assertEqual(self.log()[-1], 'Rolling restarts: ask to change what slide 3 says')
+
+    def test_the_outline_worker_changes_only_the_marked_slide_and_one_section_is_drawn(self):
+        root = self.start()
+        self.to_gate(root, 'gate:build')
+        drawn = len(self.workers.of('section'))
+        self.engine.decide(root, 'gate:build', 'changes', None,
+                           {'direction_target': 'gate:outline', 'slides': [6]})
+        slides = json.loads(json.dumps(self.view(root)['gate']['slides']))
+        slides[5]['title'] = 'Health checks gate the next batch'
+        self.workers.outline_said = {**self.workers.outline_said, 'slides': slides}
+        self.decide(root, 'gate:outline', 'changes', None,
+                    {'slides': {slides[5]['id']: 'Say that the check gates the batch.'}})
+        task = self.workers.of('outline')[-1].task
+        self.assertIn('Keep every slide you do not change exactly as it is, its id '
+                      'included', task)
+        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.decide(root, 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:build')
+        self.assertEqual([job.task.split('"')[0].strip()
+                          for job in self.workers.of('section')[drawn:]],
+                         ['Draw section 2 of'])
+
+    def test_a_deck_without_an_outline_keeps_its_words_where_they_came_from(self):
+        root = self.start(route='existing', level='polish',
+                          source={'kind': 'upload', 'name': 'old.pptx'},
+                          uploads={'old.pptx': b'PK\x03\x04' + b'stand-in deck'})
+        # The stand-in workers cannot rebuild the stand-in deck, so it is asked at its first
+        # stop: the refusal comes before anything of the deck is looked at.
+        self.assertEqual(self.waiting(root), 'gate:classify')
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.decide(root, 'gate:build', 'changes', None,
+                               {'direction_target': 'gate:outline', 'slides': [1]})
+        self.assertEqual(str(caught.exception), "This deck's words come from the deck you "
+                         'gave: change them there, or ask for changes to the slide.')
+        self.assertEqual(self.waiting(root), 'gate:classify')
+
+    def test_from_the_direction_review_the_words_go_back_to_it(self):
+        from studio_core import review_policy
+        with mock.patch.object(review_policy, 'capture',
+                               return_value={'schema': 1, 'level': 'balanced'}):
+            root = self.start(research=True)
+        self.to_gate(root, 'gate:build')
+        self.engine.decide(root, 'gate:build', 'changes', None,
+                           {'direction_target': 'gate:outline', 'slides': [3]})
+        gate = self.view(root)['gate']
+        self.assertEqual((gate['name'], gate['label']), ('gate:outline', 'Review the direction'))
+        self.assertTrue(gate['expected'])
+        self.assertEqual(gate['saying'], {LONG_OUTLINE['slides'][2]['id']: ''})
+        self.decide(root, 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:build')
+
+    def test_what_the_last_build_cost_counts_every_section_after_a_partial_rebuild(self):
+        self.workers.cost = 0.25
+        root = self.start()
+        self.to_end(root)
+        self.engine.decide(root, 'gate:build', 'changes', None,
+                           {'direction_target': 'gate:outline', 'slides': [6]})
+        edited = self.retitled(root, 6, 'Health checks gate the next batch')
+        self.decide(root, 'gate:outline', 'approve', None, {'edited': edited})
+        self.decide(root, 'gate:build')
+        shown = self.view(root)['deliver']
+        # One section was drawn again, at a quarter dollar, and the deck reviewed again; the
+        # section kept from the build before counts as it did then.
+        self.assertEqual(shown['last_build']['dollars'], 0.75)
+        self.assertEqual(shown['last_build']['sections'], 2)
+
+
+class SlideNoteTests(StudioCase):
+    def setUp(self):
+        super().setUp()
+        self.workers.outline_said = LONG_OUTLINE   # two sections: slides 2-4 and 5-7
+
+    def test_a_note_on_a_slide_at_the_deck_gate_reaches_its_composer(self):
+        root = self.start()
+        self.to_gate(root, 'gate:build')
+        drawn = len(self.workers.of('section'))
+        self.engine.decide(root, 'gate:build', 'changes', None,
+                           {'slides': [2], 'slide_notes': {'2': 'Give the batch more room.',
+                                                           '5': ''}})
+        again = self.workers.of('section')[drawn:]
+        self.assertEqual(len(again), 1)
+        self.assertIn('Slide 2: Give the batch more room.', again[0].task)
+        gated = self.record(root)['gates']['gate:build']
+        self.assertEqual((gated['slides'], gated['slide_notes']),
+                         ([2], {'2': 'Give the batch more room.'}))
+        self.assertEqual(self.waiting(root), 'gate:build')
+
+    def test_a_noted_slide_is_marked_even_when_only_its_note_names_it(self):
+        root = self.start()
+        self.to_gate(root, 'gate:build')
+        drawn = len(self.workers.of('section'))
+        self.engine.decide(root, 'gate:build', 'changes', 'Calmer.',
+                           {'slide_notes': {'6': 'Shorter claim.'}})
+        again = self.workers.of('section')[drawn:]
+        self.assertEqual([job.task.split('"')[0].strip() for job in again],
+                         ['Draw section 2 of'])
+        self.assertIn('Slide 6: Shorter claim.', again[0].task)
+        self.assertEqual(self.record(root)['gates']['gate:build']['slides'], [6])
+
+    def test_feedback_after_a_section_finished_is_kept_as_the_slide_s_mark(self):
+        root = self.start()
+        self.to_gate(root, 'gate:build')
+        self.engine.build_feedback(root, 'a' * 32, 'Name the batch size.', number=3)
+        shown = self.view(root)
+        kept = shown['build_feedback'][-1]
+        self.assertEqual((kept['number'], kept['note'], kept['late']),
+                         (3, 'Name the batch size.', True))
+        third = shown['gate']['slides'][2]
+        self.assertEqual(third['feedback'], ['Name the batch size.'])
+        self.assertEqual(third['kept'], 'Name the batch size.')
+        with self.assertRaises(WorkspaceError):
+            self.engine.build_feedback(root, 'a' * 32, 'Nowhere.', number=99)
+        drawn = len(self.workers.of('section'))
+        self.engine.decide(root, 'gate:build', 'changes', 'Keep the rest.', {'slides': [3]})
+        again = self.workers.of('section')[drawn:]
+        self.assertEqual(len(again), 1)
+        self.assertIn('Slide 3: Name the batch size.', again[0].task)
+        self.assertEqual(self.record(root)['build_feedback'], [])
+
+
+    def test_a_slide_the_deck_does_not_have_is_refused_at_its_gate(self):
+        root = self.start()
+        self.to_gate(root, 'gate:build')
+        drawn = len(self.workers.of('section'))
+        for extra in ({'slides': [99]}, {'slide_notes': {'99': 'Nowhere.'}}):
+            with self.assertRaises(WorkspaceError) as caught:
+                self.engine.decide(root, 'gate:build', 'changes', 'Shorter.', extra)
+            self.assertEqual(str(caught.exception), 'The deck has no slide 99.')
+        self.assertEqual(len(self.workers.of('section')), drawn)
+        self.assertEqual(self.waiting(root), 'gate:build')
+
+    def test_a_kept_note_is_withdrawn_when_the_page_sends_its_lines_without_it(self):
+        root = self.start()
+        self.to_gate(root, 'gate:build')
+        self.engine.build_feedback(root, 'a' * 32, 'Name the batch size.', number=3)
+        drawn = len(self.workers.of('section'))
+        self.engine.decide(root, 'gate:build', 'changes', 'Keep the rest.',
+                           {'slides': [2], 'slide_notes': {}})
+        again = self.workers.of('section')[drawn:]
+        self.assertEqual(len(again), 1)
+        self.assertNotIn('Name the batch size.', again[0].task)
+        gated = self.record(root)['gates']['gate:build']
+        self.assertEqual((gated['slides'], gated['slide_notes']), ([2], None))
+        self.assertEqual(self.record(root)['build_feedback'], [])
+
+
+class DirectionClassifyTests(StudioCase):
+    def test_the_direction_review_shows_the_verdict_and_takes_a_correction(self):
+        from studio_core import review_policy
+        with mock.patch.object(review_policy, 'capture',
+                               return_value={'schema': 1, 'level': 'balanced'}):
+            root = self.start(route='document', research=True,
+                              source={'kind': 'paste', 'text': 'Notes to build a talk from.'})
+        shown = self.view(root)['gate']
+        self.assertEqual(shown['name'], 'gate:outline')
+        self.assertEqual((shown['classify']['kind'], shown['classify']['verdict']),
+                         ('document', 'material'))
+        self.assertEqual(len(self.workers.of('outline')), 1)
+        self.engine.decide(root, 'gate:outline', 'changes', None,
+                           {'direction_target': 'gate:classify', 'kind': 'spec'},
+                           shown['expected'])
+        self.assertEqual(self.record(root)['classified'], 'spec')
+        shown = self.view(root)['gate']
+        self.assertEqual((shown['name'], shown['classify']['verdict'],
+                          shown['classify']['corrected']), ('gate:outline', 'spec', True))
+        self.assertEqual(len(self.workers.of('outline')), 2)
+        self.assertNotIn('research', [step.name for step in stages.steps(self.record(root))])
+        # A spec is not researched: what the research wrote is not read into the outline.
+        self.assertFalse((root / 'research' / 'report.md').exists())
+        self.assertFalse((root / 'research' / 'plan.json').exists())
+        self.assertNotIn('Research report', self.workers.of('outline')[-1].task)
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.decide(root, 'gate:outline', 'changes', None,
+                               {'direction_target': 'gate:classify', 'kind': 'spec'},
+                               shown['expected'])
+        self.assertEqual(str(caught.exception), 'Your document is read as a spec already.')

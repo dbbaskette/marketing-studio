@@ -1730,6 +1730,10 @@ class RunTests(PageCase):
         self.assertIn('no shared repository', said['notice'])
 
 
+STOPPED = ('Stopped. Everything finished before it is kept; the step that was in hand '
+           'starts over on resume.')
+
+
 class ListTests(PageCase):
     """What milestone 1's lists gain."""
 
@@ -1791,9 +1795,7 @@ class ListTests(PageCase):
         found = self.get('trainings')
         item = found['trainings'][0]
         self.assertEqual((found['needs'], item['state'], item['run'], item['sentence']), (
-            0, 'in-progress', {'state': 'stopped', 'sentence': 'Stopped. Everything kept so '
-                               'far is still here.'},
-            'Stopped. Everything kept so far is still here.'))
+            0, 'in-progress', {'state': 'stopped', 'sentence': STOPPED}, STOPPED))
 
     def test_reading_never_starts_or_wakes_a_run(self):
         self.workers.then('research-plan', fails(), fails(), fails(), asks('Which platform?'))

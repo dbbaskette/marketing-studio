@@ -194,19 +194,29 @@ def once(engine):
         ):
             raise ValueError('The tool returned an unreadable result. Retry or adjust the inputs.')
         with studio.locked(root):
-            current = read(root, ident)
-            if current['status'] != 'working' or engine.stop.is_set():
+            current = _working(root, ident)
+            if current is None or engine.stop.is_set():
                 return
             current.update(status='ready', result=result, finished_at=studio.now())
             write(root, current)
     except Exception as error:
         with studio.locked(root):
-            current = read(root, ident)
-            if current['status'] == 'working':
+            current = _working(root, ident)
+            if current is not None:
                 current.update(status='failed', error=str(error)[:1000], finished_at=studio.now())
                 write(root, current)
     finally:
         engine.current = None
+
+
+def _working(root, ident):
+    """The job as saved, while it is still working; None once it was cancelled, finished or
+    removed meanwhile, as when its blog was deleted."""
+    try:
+        current = read(root, ident)
+    except (ValueError, OSError):
+        return None
+    return current if current.get('status') == 'working' else None
 
 
 def listing(root, article=None):

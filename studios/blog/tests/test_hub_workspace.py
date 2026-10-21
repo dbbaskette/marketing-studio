@@ -125,20 +125,40 @@ class HubWorkspaceTests(unittest.TestCase):
             {'id': aid, 'expected': shown['expected'], 'title': shown['title']},
         )
         self.assertTrue(result['deleted'])
-        self.assertIn('stays shared', result['notice'])
+        self.assertIn('leaves the shared list', result['notice'])
         self.assertFalse(studio.inside(self.a, 'articles', aid).exists())
         self.assertNotIn('articles/' + aid, self.wa.state['items'])
         self.assertNotIn('articles/' + aid, Workspace(self.a, self.ha).state['items'])
-        self.assertEqual(self.ha.graph()['heads'][shared['item']], [shared['revision']])
+        graph = self.ha.graph()
+        (head,) = graph['heads'][shared['item']]
+        self.assertEqual(graph['revisions'][head]['status'], 'tombstone')
+        self.assertEqual(graph['revisions'][head]['parents'], [shared['revision']])
+        self.assertIn(shared['revision'], graph['revisions'], 'history stays')
         self.assertEqual(
             [row['title'] for row in management.view(self.a, 'runs', {})['deleted']],
             ['Writing handoffs'],
         )
+        # A removed item is not checked out again; another local blog already bound to the
+        # same shared one blocks the restore.
+        self.hb.refresh()
+        with self.assertRaisesRegex(HubError, 'removed'):
+            self.wb.checkout_selected({'articles': [shared['item']]})
+        self.wa.state['items']['articles/other'] = {'item': shared['item'], 'revision': head}
+        self.wa.persist()
+        studio.inside(self.a, 'articles', 'other').mkdir()
+        with self.assertRaisesRegex(ValueError, 'already bound'):
+            management.dispatch(self.a, 'blog-restore', {'id': aid})
+        studio.inside(self.a, 'articles', 'other').rmdir()
+        del self.wa.state['items']['articles/other']
+        self.wa.persist()
         management.dispatch(self.a, 'blog-restore', {'id': aid})
         self.assertTrue(studio.inside(self.a, 'articles', aid, 'DRAFT.md').is_file())
         binding = Workspace(self.a, self.ha).state['items']['articles/' + aid]
         self.assertEqual(binding['item'], shared['item'])
-        # The restored binding still names the shared revision: there is nothing new to share.
+        graph = self.ha.graph()
+        (head,) = graph['heads'][shared['item']]
+        self.assertEqual(graph['revisions'][head]['status'], 'active', 'it is back on the list')
+        self.assertEqual(binding['revision'], head)
         self.assertEqual(self.wa.publish_selected({'articles': [aid]})['status'], 'synchronized')
 
     def test_original_author_resumes_other_member_edit_without_duplicate_blog(self):

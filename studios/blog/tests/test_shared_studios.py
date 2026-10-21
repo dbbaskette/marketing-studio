@@ -537,7 +537,35 @@ class TeamTests(unittest.TestCase):
         teams.refresh(other)
         self.assertTrue((other / ident / 'session.json').is_file())
 
-    def test_a_blog_another_computer_drives_is_not_deleted_here(self):
+    def test_a_folder_git_has_nothing_to_take_out_is_kept_here_instead(self):
+        import management
+
+        found = self.create()
+        ident = found['id']
+        # A folder git ignores: nothing of it is in the branch, so there is nothing to take out.
+        with open(self.root / '.gitignore', 'a') as ignore:
+            ignore.write('/' + ident + '/\n')
+        support.git(self.root.parent, 'rm', '-r', '-q', '--cached', 'blogs/' + ident)
+        support.git(self.root.parent, 'add', 'blogs/.gitignore')
+        support.git(self.root.parent, 'commit', '-q', '-m', 'Keep one blog out of the branch')
+        self.assertEqual(support.git(self.root.parent, 'ls-files', '--', 'blogs/' + ident), '')
+        shown = blog_runner.survey(self.root, ident)
+        management.dispatch(
+            self.root,
+            'blog-delete',
+            {'id': ident, 'expected': shown['expected'], 'title': found['title']},
+        )
+        self.assertFalse((self.root / ident).exists())
+        kept = self.root / '.blog-runs' / 'deleted' / ident / 'blog' / 'session.json'
+        self.assertTrue(kept.is_file(), 'it is kept here instead')
+        record = studio.read_json(self.root / '.blog-runs' / 'deleted' / (ident + '.json'))
+        self.assertIsNone(record['commit'], 'no unrelated commit is remembered')
+        self.assertNotIn('deletes this blog', support.git(self.root.parent, 'log', '--format=%s'))
+        management.dispatch(self.root, 'blog-restore', {'id': ident})
+        self.assertTrue((self.root / ident / 'session.json').is_file())
+        self.assertEqual(support.git(self.root.parent, 'status', '--porcelain', '--', 'blogs'), '')
+        self.assertTrue(teams.refresh(self.root)['shared'])
+
         import management
 
         found = self.create()

@@ -649,6 +649,10 @@ def readiness(artifacts: list[dict], exports: dict[str, str], outcomes: list[dic
               requests: list[dict] | None = None) -> dict:
     """Whether the training is complete, what blocks it, and what it had to leave out.
 
+    `to_make` names the files not made or approved yet: they block readiness like anything
+    else, but they are the ordinary course of a training in progress, not something in its
+    way, so the page can say "still to make" for them and "in the way" for the rest.
+
     `artifacts` lists each artifact's name, stage and status. `without_scenario` names the
     levels (or '' for a plain training) that want scenarios and have no scenario file.
     `yoodli` says the optional Yoodli stage is wanted, which makes the brief's copy an upload:
@@ -656,8 +660,9 @@ def readiness(artifacts: list[dict], exports: dict[str, str], outcomes: list[dic
     `exports` and `docs` hold only the Word copies and Google Docs this training keeps.
     `requests` are the changes and rebuilds the user asked for that are still open.
     """
-    blocking = [f"{item['name']} is {item['status']}" for item in artifacts
-                if item['status'] not in ('approved', 'skipped', 'unavailable')]
+    unmade = [item for item in artifacts
+              if item['status'] not in ('approved', 'skipped', 'unavailable')]
+    blocking = [f"{item['name']} is {item['status']}" for item in unmade]
     blocking += ['No scenario file found' + (f' for level {level}' if level else '') + '.'
                  for level in without_scenario]
     for outcome in outcomes:
@@ -702,4 +707,5 @@ def readiness(artifacts: list[dict], exports: dict[str, str], outcomes: list[dic
                             'as the file to upload')
         else:
             limitations.append(f'{name} is not in a Google Doc')
-    return {'ready': not blocking, 'blocking': blocking, 'limitations': limitations}
+    return {'ready': not blocking, 'blocking': blocking, 'limitations': limitations,
+            'to_make': [item['name'] for item in unmade]}

@@ -452,6 +452,9 @@ function snapshot() {
     pressed: document.body.querySelectorAll('.seg-option').filter(visible)
       .filter((node) => node.getAttribute('aria-pressed') === 'true').map(name),
     beads: [...new Set(document.body.querySelectorAll('.bead').map((node) => node.dataset.state))],
+    // What a phone reads under a row of beads, where their names have no room.
+    captions: document.body.querySelectorAll('.beads-caption').filter(visible)
+      .map((node) => node.textContent),
     bareBeads: document.body.querySelectorAll('.bead')
       .filter((node) => !name(node.parentNode)).length,
     unnamed,

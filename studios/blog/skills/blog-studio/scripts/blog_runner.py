@@ -912,7 +912,10 @@ def job(root, ident):
         payload['documents']['outline'] = (directory / 'OUTLINE.md').read_text()
     saved = run['stages'].get(stage, {})
     request = saved.get('request', '') or run.get('editor_request', '')
-    payload['changes'] = request
+    # A note for this step is kept beside the run, outside its versioned state, so leaving
+    # one never changes the version a worker is checked against.
+    note = (engine(root).local(ident).get('notes') or {}).get(stage, '')
+    payload['changes'] = '\n'.join(part for part in (request, note) if part)
     if len(json.dumps(payload)) > 600_000:
         raise ValueError('This job needs smaller source excerpts. Continue it in chat.')
     # A request against a version the author has already seen, or their own manuscript,
@@ -1054,6 +1057,22 @@ class Engine:
         self.wake.set()
         return self.describe(ident)
 
+    def note_stage(self, ident, found, local=None):
+        """The stage a note left now would go with: the next job that starts. While a
+        submitted stage waits for a decision, or a worker is on the next stage, that is the
+        stage after it; None when there is no later stage."""
+        if found['complete'] or not found['next']:
+            return None
+        local = self.local(ident) if local is None else local
+        names = [row['stage'] for row in found['stages']]
+        at = names.index(found['next'])
+        busy = found['awaits'] == 'decision' or (
+            local.get('status') == 'working' and self.current == ident
+        )
+        if not busy:
+            return found['next']
+        return names[at + 1] if at + 1 < len(names) else None
+
     def describe(self, ident, listing=False):
         found = survey(self.root, ident, listing)
         local = self.local(ident)
@@ -1080,6 +1099,8 @@ class Engine:
             'team': bool(space(self.root) and space(self.root).address),
             'driver': owner,
             'status': status,
+            'notes': local.get('notes') or {},
+            'note_stage': self.note_stage(ident, found, local),
             # The job's start is timed only while it is the one working here.
             'started_at': local.get('started_at') if status == 'working' else None,
             'touched': decisions[-1]['at'] if decisions else None,
@@ -1319,7 +1340,11 @@ class Engine:
                         state.update(enabled=False, status='failed', error=str(exc)[:500])
                         self.keep_local(path.stem, state)
             if not self.closed.is_set():
-                tool_jobs.once(self)
+                try:
+                    tool_jobs.once(self)
+                except Exception:
+                    # A tool job that failed to be recorded never takes the loop down with it.
+                    self.current = None
             self.wake.wait(1)
             self.wake.clear()
 
@@ -1559,23 +1584,30 @@ def dispatch(root, action, data):
         seconds = data['seconds']
         if type(seconds) is not int or not 30 <= seconds <= 3600:
             raise ValueError('Choose a step time limit between 30 and 3600 seconds.')
+        if found['approval'] != 'page':
+            raise ValueError('Choose Run this from here to move this blog from chat to the page.')
         directory, record, run = load(root, ident)
         run['seconds'] = seconds
         save(root, directory, record, run, f'Step time limit set to {seconds} seconds')
     if action in ('resume', 'retry', 'pause', 'stop'):
         return runner.control(ident, action)
     if action == 'note':
-        # A note for the next job: it goes with the request of the next stage that has not
-        # been written yet, and stops nothing. A stage being worked on now has its request
-        # already, so a note made meanwhile reaches the next version of it.
+        # A note for the next job that starts. It is kept beside the run, in its local
+        # state, never in the versioned record: leaving one stops nothing and changes no
+        # version a running worker is checked against. job() folds it into that stage's
+        # request when the stage starts.
         request = text(data.get('request', ''), 'note', 8000, required=True)
-        if found['complete']:
-            raise ValueError('This blog is finished here. Ask for changes to a stage instead.')
-        directory, record, run = load(root, ident)
-        stage = found['next']
-        saved = run['stages'].setdefault(stage, {'status': 'pending'})
-        saved['request'] = (saved.get('request', '') + '\n' + request).strip()
-        save(root, directory, record, run, 'Noted for ' + stage)
+        stage = runner.note_stage(ident, found)
+        if stage is None:
+            raise ValueError(
+                'There is no later step for a note to go with. Ask for changes to '
+                + (STAGES[found['next']][0].lower() if found['next'] else 'a stage')
+                + ' instead.'
+            )
+        state = runner.local(ident)
+        notes = state.setdefault('notes', {})
+        notes[stage] = (notes.get(stage, '') + '\n' + request).strip()
+        runner.keep_local(ident, state)
         return {**runner.describe(ident), 'noted': stage}
     if action == 'adopt':
         if not found['next'] or not found['content']:

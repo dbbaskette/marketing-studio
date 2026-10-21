@@ -594,6 +594,18 @@ class RunTests(PageCase):
                                    409)['error'], engines.NO_DRIVERS)
 
 
+class WordlessChangeTests(PageCase):
+    def test_a_target_of_another_gate_does_not_stand_in_for_a_note(self):
+        path = self.started()
+        self.to_gate(Path(path), 'gate:build')
+        said = self.decided(path, 'gate:build', 'changes', 400,
+                            extra={'direction_target': 'gate:look', 'brand': 'example'})
+        self.assertEqual(said['error'], engines.NO_NOTE)
+        said = self.decided(path, 'gate:build', 'changes', 400,
+                            extra={'direction_target': 'gate:classify', 'kind': 'spec'})
+        self.assertEqual(said['error'], engines.NO_NOTE)
+
+
 class BuildFeedbackTests(PageCase):
     def test_feedback_survives_a_late_section_result_and_a_duplicate_click(self):
         seen = {}
