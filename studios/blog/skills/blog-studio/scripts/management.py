@@ -466,6 +466,10 @@ def upload(root, data):
     purpose = data.get('purpose', 'reference')
     if purpose not in studio.PURPOSES:
         raise ValueError('Choose a source purpose.')
+    if data.get('as_blog') and purpose == 'material':
+        raise ValueError(
+            'A file uploaded as material cannot start a blog. Upload it as a draft instead.'
+        )
     if data.get('as_blog') and not (text and text.strip()):
         raise ValueError(
             'This file needs text extraction before it can become an editable blog. Upload it as a pending reference first.'

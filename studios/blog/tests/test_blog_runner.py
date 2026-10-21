@@ -1913,16 +1913,31 @@ class FromFilesReviewTests(FilesCase):
             self.assertNotIn(common, words)
 
     def test_deleting_a_blog_keeps_its_files_with_it_and_restore_brings_them_back(self):
+        import base64
+
         ours, shared = self.material(('mine.md', 'Only mine. ' * 20), ('both.md', 'Shared. ' * 20))
+        single = management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': 'c' * 32,
+                'filename': 'single.md',
+                'content': base64.b64encode(b'One file on its own.').decode(),
+                'purpose': 'material',
+                'analyze': False,
+            },
+        )['source']['id']
         found = runner.create(
-            self.root, {'mode': 'from-files', 'sources': [ours, shared], 'goal': 'A post'}, 'page'
+            self.root,
+            {'mode': 'from-files', 'sources': [ours, shared, single], 'goal': 'A post'},
+            'page',
         )
         _, record, _ = runner.load(self.root, found['id'])
-        self.assertEqual(record['material'], [ours, shared])
+        self.assertEqual(record['material'], [ours, shared, single])
         self.create(page=True, sources=[shared])  # another blog pins the second file
         material = self.root / '.uploads' / 'material'
         ledgers = sorted((self.root / '.uploads').glob('*.json'))
-        self.assertEqual(len(ledgers), 1)
+        self.assertEqual(len(ledgers), 2)
         management.dispatch(
             self.root,
             'blog-delete',
@@ -1938,4 +1953,4 @@ class FromFilesReviewTests(FilesCase):
         management.dispatch(self.root, 'blog-restore', {'id': found['id']})
         self.assertTrue((material / ours / 'content.md').is_file())
         _, payload, _ = runner.job(self.root, found['id'])
-        self.assertEqual(len(payload['sources']), 2)
+        self.assertEqual(len(payload['sources']), 3)

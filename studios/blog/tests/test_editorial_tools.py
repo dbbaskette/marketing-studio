@@ -2307,6 +2307,125 @@ class HubMaterialTests(Fixture):
         active.start()
         self.addCleanup(active.stop)
 
+    def material(self, text=b'Unshared material words.'):
+        result = management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': sha(text)[:32],
+                'purpose': 'material',
+                'analyze': False,
+                'files': [
+                    {'filename': 'private-notes.md', 'content': base64.b64encode(text).decode()}
+                ],
+            },
+        )
+        return result['files'][0]['source']['id']
+
+    def assert_unshared(self, text=b'Unshared material words.'):
+        kinds = [revision['kind'] for revision in self.hub.graph()['revisions'].values()]
+        self.assertNotIn('source', kinds)
+        for body in self.hub.files().values():
+            body = body.encode() if isinstance(body, str) else body
+            self.assertNotIn(text, body)
+
+    def test_material_ids_do_not_carry_file_names(self):
+        ident = self.material()
+        self.assertRegex(ident, r'^material-[0-9a-f]{16}$')
+        self.assertEqual(studio.item(self.root, 'sources', ident)[1]['name'], 'private-notes')
+
+    def test_the_chat_path_keeps_material_on_this_computer(self):
+        import io
+        import sys
+        from contextlib import redirect_stdout
+
+        self.file.write_text('Unshared material words.')
+        output = io.StringIO()
+        argv = [
+            'studio.py',
+            '--root',
+            str(self.root),
+            'source',
+            'add',
+            '--name',
+            'Chat notes',
+            '--file',
+            str(self.file),
+            '--purpose',
+            'material',
+        ]
+        with patch.object(sys, 'argv', argv), redirect_stdout(output):
+            self.assertEqual(studio.main(), 0)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result['purposes'], ['material'])
+        self.assertNotIn('hub_sync', result)
+        self.assert_unshared()
+
+    def test_material_cannot_be_attached_under_another_role(self):
+        ident = self.material()
+        article = self.command('article', 'create', '--title', 'Attach', '--mode', 'first-draft')
+        for role in ('reference', 'manuscript'):
+            with self.subTest(role=role):
+                with self.assertRaisesRegex(ValueError, 'uploaded for one blog'):
+                    self.command(
+                        'article',
+                        'attach',
+                        '--id',
+                        article['id'],
+                        '--source',
+                        ident,
+                        '--purpose',
+                        role,
+                    )
+        reference = self.source()
+        with self.assertRaisesRegex(ValueError, 'uploaded for one blog'):
+            self.command(
+                'article',
+                'attach',
+                '--id',
+                article['id'],
+                '--source',
+                reference['id'],
+                '--purpose',
+                'material',
+            )
+        self.command('article', 'attach', '--id', article['id'], '--source', ident)
+        self.assert_unshared()
+
+    def test_material_cannot_become_a_blog_manuscript(self):
+        with self.assertRaisesRegex(ValueError, 'cannot start a blog'):
+            management.dispatch(
+                self.root,
+                'upload',
+                {
+                    'operation': '0' * 32,
+                    'filename': 'draft.md',
+                    'content': base64.b64encode(b'Unshared material words.').decode(),
+                    'purpose': 'material',
+                    'as_blog': True,
+                },
+            )
+        self.assertFalse(
+            (self.root / 'articles').exists() and any((self.root / 'articles').iterdir())
+        )
+        self.assert_unshared()
+
+    def test_the_hub_refuses_a_material_source_however_it_is_reached(self):
+        from hub_store import HubError
+
+        ident = self.material()
+        with self.assertRaisesRegex(HubError, 'stays on this computer'):
+            self.workspace._publish('sources', ident)
+        with self.assertRaisesRegex(HubError, 'stays on this computer'):
+            self.workspace._publish_source_pin(ident, 1)
+        # A pin that claims another role is still skipped: the source record decides.
+        article = self.command('article', 'create', '--title', 'Pinned', '--mode', 'first-draft')
+        directory, record = studio.item(self.root, 'articles', article['id'])
+        record['sources'] = [{'source_id': ident, 'revision': 1, 'purposes': ['reference']}]
+        studio.persist(directory, 'articles', record)
+        self.workspace.publish_selected({'articles': [article['id']]})
+        self.assert_unshared()
+
     def test_material_pins_are_not_published(self):
         import blog_runner
 

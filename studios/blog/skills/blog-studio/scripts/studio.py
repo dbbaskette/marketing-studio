@@ -107,6 +107,21 @@ def material(root, *parts):
     return inside(root, '.uploads', 'material', *parts)
 
 
+MATERIAL_STAYS = (
+    'This file was uploaded for one blog and stays on this computer; it is not shared or '
+    'used as a reference. Upload it again with Keep in my references to share it.'
+)
+
+
+def is_material(root, directory=None, record=None):
+    """Decided by the source itself: its record's purposes, or where its folder lives."""
+    if record is not None and 'material' in record.get('purposes', []):
+        return True
+    if directory is not None:
+        return Path(directory).resolve().is_relative_to(material(root).resolve())
+    return False
+
+
 def item(root, kind, value):
     directory = inside(root, kind, identifier(value))
     metadata = directory / ('session.json' if kind == 'articles' else 'record.json')
@@ -377,7 +392,8 @@ def source_command(root, args):
                 + text_problem
                 + ' Nothing was saved. Add a shorter excerpt with --text-file, or split the source.'
             )
-        value = new_id(args.name)
+        # Material gets an opaque id, so no file name reaches a blog's record or the Hub.
+        value = 'material-' + uuid.uuid4().hex[:16] if local_only else new_id(args.name)
         if local_only:
             inside(root, '.uploads').mkdir(mode=0o700, exist_ok=True)
         directory = material(root, value) if local_only else inside(root, 'sources', value)
@@ -711,6 +727,14 @@ def article_command(root, args):
         record['author'] = checked_author(args.name)
     elif args.action == 'attach':
         source_directory, source = item(root, 'sources', args.source)
+        material_source = is_material(root, source_directory, source)
+        if material_source != ('material' in (args.purpose or source['purposes'])) or (
+            material_source and args.purpose and list(args.purpose) != ['material']
+        ):
+            raise ValueError(
+                'A file uploaded for one blog is attached only as material, and only such a '
+                'file can be. Nothing was changed.'
+            )
         content = inside(source_directory, 'content.md')
         if shared_workspace(root) and content.is_file():
             text_problem, _ = sharing_limits(read_text(content), None, '')
@@ -1208,10 +1232,15 @@ def main():
                         if args.action not in ('compare', 'capabilities', 'status')
                         else None
                     )
+                # One blog's uploaded files stay on this computer: never offered to the Hub.
+                local_material = mutation_group == 'source' and 'material' in (
+                    result.get('purposes') or []
+                )
                 if (
                     mutation_group in ('profile', 'source', 'article')
                     and args.action != 'show'
                     and not (args.action == 'restore' and not args.apply)
+                    and not local_material
                 ):
                     from hub_workspace import active
                     from hub_store import HubError

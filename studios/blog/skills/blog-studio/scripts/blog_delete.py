@@ -183,7 +183,8 @@ def _material_out(root, ident, record):
         moved.append(source)
     for path in studio.inside(root, '.uploads').glob('*.json'):
         try:
-            rows = (studio.read_json(path).get('result') or {}).get('files') or []
+            result = studio.read_json(path).get('result') or {}
+            rows = [*(result.get('files') or []), *([result] if result.get('source') else [])]
             named = {row['source']['id'] for row in rows}
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             continue

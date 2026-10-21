@@ -478,8 +478,6 @@ class TeamTests(unittest.TestCase):
             self.root, {'mode': 'from-files', 'sources': [ident], 'goal': 'A team post'}
         )
         repo = teams.space(self.root).repo
-        self.assertTrue((self.root / '.uploads' / 'material' / ident / 'content.md').is_file())
-        self.assertFalse((self.root / '.shared' / 'references' / ident).exists())
         status = support.git(repo, 'status', '--porcelain', '--untracked-files=all')
         self.assertNotIn('material', status)
         self.assertNotIn(ident, status)
@@ -493,6 +491,13 @@ class TeamTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(pushed.stdout, '')
+        tracked = subprocess.run(
+            ['git', '-C', str(repo), 'grep', '-l', 'Unshared material words', 'HEAD'],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(tracked.stdout, '', 'no committed file holds the words')
+        self.assertFalse((self.root / '.shared' / 'references' / ident).exists())
         # Another computer that takes this blog is told where its files are.
         other = self.other()
         with self.assertRaisesRegex(ValueError, 'stay on the computer'):
@@ -686,6 +691,50 @@ if __name__ == '__main__':
 
 class MigrationTests(unittest.TestCase):
     setUp = TeamTests.setUp
+
+    def test_migration_never_copies_material_into_the_shared_references(self):
+        from hub_fixtures import FakeProvider
+        from hub import Registry
+        from hub_workspace import Workspace
+        import hub_workspace
+
+        legacy = self.base / 'legacy-material'
+        studio.initialize(legacy)
+        registry = Registry(self.base / 'legacy-registry', FakeProvider(self.base / 'legacy-rm'))
+        hub_id = registry.create('fixture/old-material', 'Old material')['hub']
+        adapter = Workspace(legacy, registry.hub(hub_id))
+        notes = self.base / 'private-notes.md'
+        notes.write_text('Unshared material words.\n')
+
+        def run(*words):
+            args = studio.parser().parse_args(['--root', str(legacy), *words])
+            return getattr(studio, args.group + '_command')(legacy, args)
+
+        material = run(
+            'source', 'add', '--name', 'Notes', '--file', str(notes), '--purpose', 'material'
+        )
+        article = run('article', 'create', '--title', 'Migrated material', '--mode', 'first-draft')
+        run('article', 'attach', '--id', article['id'], '--source', material['id'])
+        real_active = hub_workspace.active
+        with patch.object(
+            hub_workspace,
+            'active',
+            side_effect=lambda root: (
+                adapter if Path(root).resolve() == legacy.resolve() else real_active(root)
+            ),
+        ):
+            teams.migrate(self.root, legacy, [article['id']], sources=[material['id']])
+        self.assertTrue((self.root / article['id'] / 'session.json').is_file())
+        self.assertFalse((self.root / '.shared' / 'references' / material['id']).exists())
+        repo = teams.space(self.root).repo
+        history = support.git(repo, 'log', '--all', '--name-only', '--format=')
+        self.assertNotIn(material['id'] + '/', history)
+        found = subprocess.run(
+            ['git', '-C', str(repo), 'grep', '-l', 'Unshared material words', 'HEAD'],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(found.stdout, '')
 
     # Reuse the synthetic repository fixture, with a legacy fake provider kept entirely local.
     def test_selected_migration_is_byte_preserving_and_old_hub_is_unchanged(self):

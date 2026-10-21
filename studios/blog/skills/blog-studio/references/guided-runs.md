@@ -45,7 +45,8 @@ it always waits for the person and is never approved. Then `... run choose --id 
 "<heading>" --note "..."` makes that angle the title, point and reader and starts
 the outline onward (web research first only with `--research web-allowed`); `run
 changes --stage angles` with their note asks for three different ones. Files past
-the run's budget are excerpted and `excerpted` in status names them. `--stop` can be `outline`,
+the run's budget are excerpted and `excerpted` in status names them. The files stay
+on this computer, but the blog's outline and draft may quote them and are shared like any blog. `--stop` can be `outline`,
 `draft`, `review` or `package`. For an existing article, use `--id <article-id>`;
 a saved manuscript starts at review, or use `--mode revise --id <article-id>` to
 start with revision.
