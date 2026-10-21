@@ -762,9 +762,10 @@ def _in_drive(how: dict, made) -> dict:
     known = home.read_json(kept, {}) if kept else {}
     known = known if isinstance(known, dict) else {}
 
-    def remember(ident, url) -> None:
-        if kept and ident and ident != known.get('id'):
-            home.write_json(kept, {**(how.get('named') or {}), 'id': ident, 'url': url})
+    def remember(ident, url, receipt=None) -> None:
+        if kept and ident and (ident != known.get('id') or receipt != known.get('pool')):
+            home.write_json(kept, {**(how.get('named') or {}), 'id': ident, 'url': url,
+                                   **({'pool': receipt} if receipt else {})})
 
     try:
         found = made(known.get('id'))
@@ -772,7 +773,15 @@ def _in_drive(how: dict, made) -> dict:
         left = getattr(refusal, 'left', None) or {}
         remember(left.get('fileId'), left.get('url'))
         raise
-    remember(found.get('fileId'), found.get('url'))
+    # A preview in the slides tool's pool is one of its own few reusable decks: its link is
+    # kept with the receipt that says which preview it holds, and once a newer preview has
+    # replaced it, the link is forgotten rather than shown with someone else's slides.
+    pool = found.get('pool') if isinstance(found.get('pool'), dict) else {}
+    if found.get('remoteReplaced'):
+        if kept:
+            kept.unlink(missing_ok=True)
+        return found
+    remember(found.get('fileId'), found.get('url'), pool.get('receipt'))
     return found
 
 

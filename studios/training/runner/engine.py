@@ -1533,8 +1533,11 @@ class Engine(Reviewing):
         folder = self._previews()
         kept = [home.read_json(path, None) for path in sorted(folder.glob('*.json'))] \
             if folder.is_dir() else []
+        # A preview in the slides tool's pool is its own reusable deck, not a file the runner
+        # left: its link may show another deck's slides by now, so it is not listed.
         return [{key: entry.get(key) for key in ('name', 'url', 'training')}
-                for entry in kept if isinstance(entry, dict) and entry.get('url')]
+                for entry in kept if isinstance(entry, dict) and entry.get('url')
+                and not entry.get('pool')]
 
     def _how(self, root: Path, found: pipeline.Survey, level: str | None) -> dict:
         """How one deck's previews are taken, as `worker_tools.render` takes it."""
