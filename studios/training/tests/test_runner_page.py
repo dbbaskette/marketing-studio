@@ -1606,8 +1606,13 @@ class CombinedReviewTests(PageCase):
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
             path = self.started()
         run = self.get('run', path=path)
+        self.assertEqual((run['state'], run['review'], run['review_level']), ('waiting', None, 'balanced'))
+        shown = self.get('gate', path=path, artifact='research-plan')
+        self.assertEqual((shown['waiting'], shown['decisions'][0]), (True, 'approve'))
+        self.post('decide', {'path': path, 'artifact': 'research-plan', 'decision': 'approve',
+                             'seen': shown['sha256']})
+        run = self.get('run', path=path)
         self.assertEqual(run['review']['phase'], 'direction')
-        self.assertEqual(run['review_level'], 'balanced')
         self.post('review', {'path': path, 'expected': 'old-version', 'decision': 'approve'}, expect=409)
         run = self.post('review', {'path': path, 'expected': run['review']['expected'], 'decision': 'approve'})
         self.assertEqual(run['review']['phase'], 'final')

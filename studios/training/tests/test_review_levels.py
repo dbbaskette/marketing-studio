@@ -1,6 +1,7 @@
 from unittest import mock
-from test_runner_deck import DeckCase
-from runner_support import StudioCase
+from pathlib import Path
+from test_runner_deck import CHOSEN, DeckCase
+from runner_support import FORM, StudioCase
 from runner import pipeline
 import workspace
 from workspace import WorkspaceError
@@ -11,9 +12,41 @@ class ReviewLevelsTests(DeckCase):
     def choose(self, mode, **changes):
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': mode}):
             root = self.begin(**changes)
+        if mode == 'balanced':  # the research plan is read first, before anything is spent
+            self.assertEqual(workspace.status(root)['gate'], 'research-plan', self.view(root))
+            self.decide(root, 'research-plan')
         shown = self.view(root)
         self.assertIsNone(shown['problem'], shown)
         return root, shown
+
+    def test_balanced_reads_the_research_plan_before_anything_is_researched(self):
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
+            made = self.engine.start(pipeline.check_form({**FORM, 'deck_target': 'pptx',
+                                                          'brand': CHOSEN}))
+        root = Path(made['path'])
+        self.assertEqual(made['gates'], 3)
+        shown = self.view(root)
+        self.assertEqual((shown['state'], shown['review']), ('waiting', None))
+        self.assertEqual(workspace.status(root)['gate'], 'research-plan')
+        self.assertEqual(set(self.kinds()), {'research-plan'}, 'nothing is researched before the plan is read')
+        plan = self.steps(root)['gate:research-plan']
+        self.assertEqual((plan['kind'], plan['status']), ('gate', 'waiting'))
+        self.assertNotIn('automatically', plan['label'])
+        shown = self.gate(root, 'research-plan')
+        self.assertEqual((shown['waiting'], shown['decisions'][0]), (True, 'approve'))
+        self.decide(root, 'research-plan')
+        shown = self.view(root)
+        self.assertIsNone(shown['problem'], shown)
+        self.assertEqual(shown['review']['phase'], 'direction')
+        self.assertEqual(workspace.load(root)['artifacts']['research-plan']['approved']['by'], 'page')
+        self.assertEqual(workspace.load(root)['artifacts']['research']['approved']['by'], 'review-policy')
+
+    def test_automatic_continues_past_the_research_plan(self):
+        root, shown = self.choose('automatic')
+        plan = self.steps(root)['gate:research-plan']
+        self.assertEqual((plan['kind'], plan['status']), ('code', 'done'))
+        self.assertIn('automatically', plan['label'])
+        self.assertEqual(workspace.load(root)['artifacts']['research-plan']['approved']['by'], 'review-policy')
 
     def approve_review(self, root, shown):
         return self.engine.review_decide(root, shown['review']['expected'], 'approve')

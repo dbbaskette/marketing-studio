@@ -155,9 +155,10 @@ materials appear before the collapsible production steps. If another studio
 changes the review preference while this form is open, starting is refused
 before any files are made; the page reloads the preference and keeps the answers.
 
-The sequence below describes Step by step review. Balanced groups the teaching
-plan and finished-material decisions; Automatic draft brings the finished
-materials for review. Only selected material stages run. Earlier trainings keep
+The sequence below describes Step by step review. Balanced stops for the research
+questions, then groups the teaching plan and finished-material decisions;
+Automatic draft brings the finished materials for review. A training can choose
+its own review level on the last step of the form; the shared level is the default. Only selected material stages run. Earlier trainings keep
 the review policy they started with.
 
 | The runner does this on its own | Then it stops for you |

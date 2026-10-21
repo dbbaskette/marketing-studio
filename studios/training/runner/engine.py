@@ -955,8 +955,9 @@ class Engine(Reviewing):
         needs = self.deck_needs()
         drawn = bool(form['deck_target'] and form['brand']) and not needs['missing'] \
             and not needs['update']
+        # Balanced stops three times: the research plan, the direction, the finished materials.
         return {'path': str(root), 'id': root.name, 'gates': (pipeline.gates(form, drawn) if review_policy.level(record) == 'step_by_step'
-                                                        else 2 if review_policy.level(record) == 'balanced' else 1)}
+                                                        else 3 if review_policy.level(record) == 'balanced' else 1)}
 
     def _claimed(self, root: Path, space: gitstate.Workspace) -> None:
         """Share the claim a new training was committed with, before any work is done

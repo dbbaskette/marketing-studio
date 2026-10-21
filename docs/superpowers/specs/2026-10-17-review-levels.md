@@ -8,9 +8,12 @@ changes an active run. Invalid saved policies stop rather than grant autonomy.
 Balanced Presentation Studio reviews research, outline and the rendered brand
 sample together, then the rendered deck. Blog Studio reviews research with the
 outline, then the completed writing, review and requested export package.
-Training Studio reviews research and the planned training/deck directions for
-all levels together, then the completed materials for all levels together.
-Automatic draft omits the direction review. Step by step preserves the pipeline.
+Training Studio reads the research plan first (a short read, and the cheapest
+decision there is), then reviews research and the planned training/deck
+directions for all levels together, then the completed materials for all levels
+together. Automatic draft omits the research plan and the direction review.
+Step by step preserves the pipeline. A training may also choose its own level on
+the start form; the shared level is its default.
 
 Retain source scopes, provider permissions, budgets, missing-information stops,
 validation, rendering, visual review, bounded repairs, human change requests,
