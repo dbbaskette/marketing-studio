@@ -69,6 +69,11 @@ DESIGN_READING = ('design guidance',)
 COMPOSER_READING = ('design guidance', 'composition guidance', 'gallery')
 REVIEW_READING = ('review guidance',)
 
+# What a contract between the studios compares of a worker's inputs: the deck's own guidance
+# and the brand's, never the studio's own content.
+SHARED_INPUTS = frozenset({'outline contract', 'composition contract', *OUTLINE_READING,
+                           *DESIGN_READING, *COMPOSER_READING, BRAND_WORKER, *BRAND_OWN})
+
 LOOK_FAILED = ("The brand's looks could not be rendered here ({why}). Nothing was picked for "
                "you: try again, or carry on in the brand's default look.")
 DEFAULT_WORDS = "Automatic draft: the brand's default look, {name}, was used."
