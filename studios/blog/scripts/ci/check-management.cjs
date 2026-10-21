@@ -930,6 +930,20 @@ async function guidedRuns(){
   f.run('access.actions.edit=true');
   f.run('studio.listing=[found];sHome()');
   f.run('studio.ordinary=[];sBlogs()');assert.equal(f.get('title').textContent,'Your blogs');
+  // Every card on Blogs can delete its blog through the same sheet as the run's last screen.
+  {
+    const remove=descendants(content).find(e=>e.textContent==='Delete');
+    assert.ok(remove,'a Blogs card offers Delete');assert.equal(remove.className,'button button-quiet');
+    await remove.listeners.click();
+    const open=descendants(f.get('sheet'));
+    assert.ok(open.some(e=>e.textContent==='Delete Synthetic blog?'),open.map(e=>e.textContent).join('|'));
+    f.run('sCloseSheet()');
+    f.run("studio.ordinary=[{id:'plain',title:'A saved draft',author:'Avery',mode:'existing'}];sBlogs()");
+    assert.equal(descendants(content).filter(e=>e.textContent==='Delete').length,2,'saved drafts get Delete too');
+    f.run('access.actions.edit=false;sBlogs()');
+    assert.ok(descendants(content).filter(e=>e.textContent==='Delete').every(e=>e.disabled),'Delete follows edit access');
+    f.run('access.actions.edit=true;studio.ordinary=[];sBlogs()');
+  }
   assert.ok(descendants(content).some(e=>e.textContent==='Synthetic blog'));
   f.run("studio.computer={checks:[{label:'Codex',status:'action',detail:'Sign-in needed',next_step:'Run codex login'}]};studio.settings={workspace:'/synthetic'};sStatusPage()");
   assert.ok(descendants(content).some(e=>e.textContent==='Run codex login'));

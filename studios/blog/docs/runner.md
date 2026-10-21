@@ -155,8 +155,10 @@ review instead of making a package. A saved draft can enter at review or
 revision. Review mode keeps the manuscript as written; revision makes a new draft
 while retaining the original.
 
-**Blogs** shows all guided blogs and saved writing. Open a run to see steps and
-made files. Each review page renders the saved Markdown as a paper document,
+**Blogs** shows all guided blogs and saved writing. Each card has **Delete**,
+which asks for the blog's title, stops anything running for it and keeps it for
+30 days under **Recently deleted**, where **Restore** brings it back. Open a run
+to see steps and made files. Each review page renders the saved Markdown as a paper document,
 with **Checked for you**, **Worth a look** and **What changed** alongside it.
 Comparisons use the exact last approved version. **Approve** opens a confirmation
 sheet; **Ask for changes** lets you select an earlier stage. A finished or
