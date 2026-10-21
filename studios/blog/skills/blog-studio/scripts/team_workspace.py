@@ -375,7 +375,11 @@ def status(root):
             'workspace': str(root),
             'active_repository': found.address,
             'active_branch': found.branch,
-            'configuration_notice': 'Shared team settings changed. Join the configured repository to use it here; this workspace and its writing are kept.'
+            'configuration_notice': (
+                'Shared team settings changed. Marketing Studio can connect this studio: open '
+                'Marketing Studio and choose Connect on the Blog Studio card, or join the '
+                'configured repository from here. This workspace and its writing are kept.'
+            )
             if (preferences['repository'], preferences['branch'])
             != (found.address or '', found.branch)
             else None,
@@ -397,9 +401,12 @@ def team_before(shared):
     }
 
 
-def join(address, branch='main', share='decision', shared_before=None):
+def join(address, branch=None, share=None, shared_before=None):
+    """Join a team repository in Blog Studio's own clone. A branch left out adopts the
+    clone's own; when to share left out keeps the shared setting. Only the repository, and
+    a branch or sharing mode given here, are written to the shared settings."""
     studios_config.repository(address)
-    if share not in ('decision', 'asked'):
+    if share not in ('decision', 'asked', None):
         raise ValueError('Choose a listed sharing mode.')
     if shared_before is None:
         shared_before = team_before(studios_config.read()[0])
@@ -425,8 +432,11 @@ def join(address, branch='main', share='decision', shared_before=None):
             raise ValueError(
                 'The team folder was kept here but could not be shared. Check repository write access and retry joining.'
             )
+        team = {'repository': address}
+        if branch is not None:
+            team['branch'] = found.branch
         studios_config.update(
-            {'team': {'repository': address, 'branch': found.branch}, 'share': share},
+            {'team': team, **({'share': share} if share is not None else {})},
             expected=shared_before,
         )
         gitstate.remember(found)

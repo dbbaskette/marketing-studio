@@ -246,6 +246,16 @@ decision or only when asked. Setup never changes a repository's visibility.
 Already using a studio? Its existing workspace stays where it is. Shared choices
 are used for new work; existing items retain their saved choices.
 
+Each studio card on the home page says where that studio's work lives: *Connected
+to* the shared repository, *Local Git on this computer*, or *Not connected to the
+shared repository*. Changing the workspace setting never moves a studio by itself.
+When a studio keeps a different workspace, its card offers **Connect**: the studio
+joins the repository through its own join, carries its blogs, trainings or decks
+over, commits and pushes them, and leaves the earlier workspace in place. A studio
+that is working on an assistant job is not connected until that job is done. An
+empty repository works too: the first studio to connect creates the branch with its
+folder, and the others add theirs beside it.
+
 ## Install, update, or step back
 
 All studios ship from this repository with one shared companion pin set. Platform
