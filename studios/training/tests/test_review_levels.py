@@ -15,9 +15,19 @@ class ReviewLevelsTests(DeckCase):
         if mode == 'balanced':  # the research plan is read first, before anything is spent
             self.assertEqual(workspace.status(root)['gate'], 'research-plan', self.view(root))
             self.decide(root, 'research-plan')
-        shown = self.view(root)
+        shown = self.past_decks(root)
         self.assertIsNone(shown['problem'], shown)
         return root, shown
+
+    def past_decks(self, root):
+        """Approve each drawn deck waiting at its own gate, as the person does: a deck is
+        never continued under the saved level."""
+        for _ in range(4):
+            waiting = workspace.status(root)['gate']
+            if not waiting or workspace.split(waiting)[0] != 'deck':
+                break
+            self.decide(root, waiting)
+        return self.view(root)
 
     def test_balanced_reads_the_research_plan_before_anything_is_researched(self):
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
@@ -91,7 +101,7 @@ class ReviewLevelsTests(DeckCase):
         # its plan is left where it is.
         from runner_support import fails
 
-        def before(record, product, gate, last=None):
+        def before(record, product, gate, last=None, holding=()):
             return not gate.startswith('review:') and gate not in ('documents', 'intake', 'deck')
 
         with mock.patch.object(review_policy, 'automatic', before):
@@ -121,7 +131,35 @@ class ReviewLevelsTests(DeckCase):
         self.assertEqual(workspace.load(root)['artifacts']['research-plan']['approved']['by'], 'review-policy')
 
     def approve_review(self, root, shown):
-        return self.engine.review_decide(root, shown['review']['expected'], 'approve')
+        self.engine.review_decide(root, shown['review']['expected'], 'approve')
+        return self.past_decks(root)
+
+    def test_a_drawn_deck_always_comes_to_the_person(self):
+        # Balanced and Automatic draft both stop at the deck itself, before the scenarios
+        # and the final review: the policy never accepts a drawn deck for the person.
+        for mode in ('balanced', 'automatic'):
+            with self.subTest(mode=mode):
+                with mock.patch.object(review_policy, 'capture',
+                                       return_value={'schema': 1, 'level': mode}):
+                    root = self.begin(title=f'Deck stop {mode}')
+                if mode == 'balanced':
+                    self.decide(root, 'research-plan')
+                    shown = self.view(root)
+                    self.engine.review_decide(root, shown['review']['expected'], 'approve')
+                shown = self.view(root)
+                self.assertIsNone(shown['problem'], shown)
+                self.assertEqual(workspace.status(root)['gate'], 'deck')
+                gate = self.steps(root)['gate:deck']
+                self.assertEqual((gate['kind'], gate['status']), ('gate', 'waiting'))
+                self.assertNotIn('automatically', gate['label'])
+                record = self.engine._load(root)
+                self.assertNotIn('gate:deck', [event['gate'] for event in
+                                               record.get('review_events') or ()])
+                self.decide(root, 'deck')
+                shown = self.view(root)
+                self.assertEqual(shown['review']['phase'], 'final')
+                self.assertEqual(workspace.load(root)['artifacts']['deck']['approved']['by'],
+                                 'page')
 
     def test_balanced_all_levels_have_two_combined_reviews(self):
         root, shown = self.choose('balanced', levels=['101', '201'])

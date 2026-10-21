@@ -2361,6 +2361,24 @@ def keep_deck(root: Path, found: Survey, mine: Deck, source: Path | None, link: 
     return entry
 
 
+def holding(root: Path, found: 'Survey', step: Step) -> list[str]:
+    """What keeps a gate for the person whatever the saved review level, a sentence each:
+    for what a deck says, the grave findings a review of its slides sent back to it; for a
+    deck, the grave findings its review still has and its audit's blockers. Nothing for
+    any other gate."""
+    if step.stage != 'deck':
+        return []
+    level = workspace.split(step.artifact)[1]
+    mine = (found.decks or {}).get(level)
+    if bare(step.id) == 'gate:deck-outline':
+        return review_policy.held((returned(mine) or {}).get('findings')) if mine else []
+    if bare(step.id) != 'gate:deck':
+        return []
+    shown = deck_gate(root, found.session, step.artifact)
+    return review_policy.held((shown.get('review') or {}).get('findings'),
+                              (shown.get('audit') or {}).get('blockers'))
+
+
 def deck_gate(root: Path, session: dict, name: str) -> dict:
     """What gate 6 adds for a deck the runner made: the slides whose pictures are on this
     computer, what the review still finds, the brand's audit and the coverage. For a deck

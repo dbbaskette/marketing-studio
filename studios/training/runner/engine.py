@@ -1153,7 +1153,9 @@ class Engine(Reviewing):
                 found = self._survey(root, record)
                 step = found.next
                 if not self._resting(record) and step.kind in ('gate', 'wait', 'outline') \
-                        and review_policy.automatic(record, 'training', step.step.id):
+                        and review_policy.automatic(record, 'training', step.step.id,
+                                                    holding=pipeline.holding(root, found,
+                                                                             step.step)):
                     if pipeline.bare(step.step.id) == 'gate:deck-outline':
                         if step.kind == 'gate':
                             self._ask(root, run, found, step)

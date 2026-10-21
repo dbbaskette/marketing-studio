@@ -38,19 +38,53 @@ def level(record):
     return value['level']
 
 
-def automatic(record, product, gate, last=None):
+# What a reviewer or an audit may still find when a gate comes up: a finding this grave, or
+# an audit blocker, keeps the gate for the person whatever the saved level.
+GRAVE = ('critical', 'major')
+# Training Studio gates the policy never accepts. `documents`, `intake` and `deck` are the
+# person's own steps (adding documents, the form, a deck made in a conversation);
+# `gate:deck` is the drawn slide deck, which, as in Presentation Studio and Blog Studio,
+# always comes to the person.
+TRAINING_KEPT = ('documents', 'intake', 'deck', 'gate:deck')
+
+
+def held(findings=(), blockers=()):
+    """What keeps a gate for the person, a sentence each: every critical or major finding
+    still open, and every blocker an audit found. Empty when nothing does."""
+    kept = []
+    for finding in findings or ():
+        if isinstance(finding, dict) and finding.get('severity') in GRAVE:
+            where = finding.get('slide') or finding.get('number')
+            kept.append(f"{finding['severity'].capitalize()}"
+                        + (f' on {where}' if where else '') + ': '
+                        + str(finding.get('note') or finding.get('detail') or '').strip())
+    for blocker in blockers or ():
+        if isinstance(blocker, dict):
+            kept.append('Audit blocker: ' + str(blocker.get('says') or blocker.get('code')
+                                                or '').strip())
+        elif blocker:
+            kept.append('Audit blocker: ' + str(blocker))
+    return kept
+
+
+def automatic(record, product, gate, last=None, holding=()):
+    """Whether the saved level accepts `gate` without the person. Never while `holding`, what
+    `held()` found still open, has anything in it. A Training Studio gate may carry its
+    level, as `gate:deck@101`: the policy reads the gate without it."""
     chosen = level(record)
-    if chosen == 'step_by_step':
+    if chosen == 'step_by_step' or holding:
         return False
     if product == 'presentation':
-        return gate not in (('gate:outline', 'gate:build') if chosen == 'balanced'
-                            else ('gate:build',))
+        # Rehearsal is the person's own, and never comes up yet.
+        return gate not in (('gate:outline', 'gate:build', 'rehearse') if chosen == 'balanced'
+                            else ('gate:build', 'rehearse'))
     if product == 'blog':
         return gate not in (('outline', last) if chosen == 'balanced' else (last,))
     if product == 'training':
+        base = gate.partition('@')[0]
         # Balanced reads the research plan: a short read, and the cheapest decision there is.
-        return not gate.startswith('review:') and gate not in ('documents', 'intake', 'deck') \
-            and not (chosen == 'balanced' and gate == 'gate:research-plan')
+        return not base.startswith('review:') and base not in TRAINING_KEPT \
+            and not (chosen == 'balanced' and base == 'gate:research-plan')
     raise ValueError('Unknown studio review policy.')
 
 

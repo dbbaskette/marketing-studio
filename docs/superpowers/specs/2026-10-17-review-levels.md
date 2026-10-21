@@ -18,6 +18,21 @@ Balanced means, not a new version of the saved policy: it applies to any Balance
 training that has not reached its research plan yet, including one started
 earlier, and a run already past its plan is unaffected.
 
+Every studio's drawn deck comes to the person under every level: Presentation
+Studio's `gate:build`, Blog Studio's final package and Training Studio's
+`gate:deck` (for each level, as `gate:deck@101`) are never continued by the
+policy. Training Studio then shows the scenarios and the finished materials in
+its final combined review. The policy reads a Training Studio gate without its
+level, and `tests/test_review_policy.py` checks it against every gate ID each
+studio really lays out, so a renamed or new gate is decided rather than slipping
+through by its name.
+
+No gate is continued automatically while a reviewer's critical or major finding
+is still open or an audit has a blocker, whatever the level: the studio stops for
+the person with those findings shown. In Training Studio this keeps what a deck
+says for the person when a review of its slides sends it back with a grave
+finding, and keeps the deck itself.
+
 Retain source scopes, provider permissions, budgets, missing-information stops,
 validation, rendering, visual review, bounded repairs, human change requests,
 work ownership, conflict detection, and explicit publishing/sharing commands.

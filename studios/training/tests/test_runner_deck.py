@@ -1867,6 +1867,27 @@ class JudgedTests(DeckCase):
         self.assertEqual(self.record(root)['deck']['']['returns'][0]['findings'],
                          back['findings'], 'the history is kept')
 
+    def test_a_send_back_waits_for_the_person_whatever_the_review_level(self):
+        # Under Automatic draft what a deck says continues without the person, until a
+        # review of its slides sends it back with a grave finding: then it waits for them.
+        from studio_core import review_policy
+        self.workers.found = [[DRAWING, CONCEPT]]
+        with mock.patch.object(review_policy, 'capture',
+                               return_value={'schema': 1, 'level': 'automatic'}):
+            root = self.begin()
+        view = self.view(root)
+        self.assertIsNone(view['problem'], view)
+        kept = self.record(root)['deck']['']
+        self.assertIsNone(kept['approved'])
+        self.assertEqual(len(kept['returns']), 1)
+        self.assertEqual(kept['returns'][0]['approved']['by'], 'review-policy')
+        self.assertTrue(view['outline']['waiting'])
+        self.assertEqual(view['outline']['worth'][0], pipeline.RETURNED)
+        self.assertEqual(len(self.called('outline_start')), 1, 'nothing is drawn again')
+        found = self.engine._survey(root, self.record(root))
+        self.assertIn('Major on when-capacity-holds',
+                      ' '.join(pipeline.holding(root, found, found.next.step)))
+
     def test_approved_as_it_stands_the_deck_is_drawn_on_with_what_was_found(self):
         self.workers.found = [[DRAWING, CONCEPT]]
         root = self.begin()
