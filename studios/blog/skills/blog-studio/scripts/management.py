@@ -1365,11 +1365,12 @@ def library_import(root, data):
 
 
 def voice_links_route(root, route, data):
-    """Published posts from a list of links, through the library import, as voice samples."""
+    """Published posts from a list of links, through the library import, as voice samples
+    or style samples."""
     import voice_links
 
     if route == 'voice-links-preview':
-        if set(data) - {'text', 'author', 'site'}:
+        if set(data) - {'text', 'author', 'site', 'purpose'}:
             raise ValueError('Unknown voice import field.')
         return voice_links.preview(root, data)
     if not isinstance(data.get('expected'), str):

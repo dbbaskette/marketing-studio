@@ -5,7 +5,7 @@ Generated from `studio.py`; use `--help` on a listed command for required inputs
 | Command | Options |
 | --- | --- |
 | `studio.py run` | — |
-| `studio.py run create` | `--title`, `--author`, `--audience`, `--goal`, `--tone`, `--profile`, `--id`, `--brand`, `--variant`, `--research`, `--stop`, `--engine`, `--seconds`, `--source`, `--mode`, `--manuscript`, `--outline-text` |
+| `studio.py run create` | `--title`, `--author`, `--audience`, `--goal`, `--tone`, `--profile`, `--style`, `--id`, `--brand`, `--variant`, `--research`, `--stop`, `--engine`, `--seconds`, `--source`, `--mode`, `--manuscript`, `--outline-text` |
 | `studio.py run list` | — |
 | `studio.py run status` | `--id` |
 | `studio.py run submit` | `--id`, `--expected`, `--stage`, `--file`, `--notes` |
@@ -22,7 +22,7 @@ Generated from `studio.py`; use `--help` on a listed command for required inputs
 | `studio.py library collections` | — |
 | `studio.py library preview` | `--collection` |
 | `studio.py library import` | `--preview`, `--limit`, `--retry` |
-| `studio.py library voice-links` | `--file`, `--author`, `--site`, `--import`, `--keep`, `--retry` |
+| `studio.py library voice-links` | `--file`, `--author`, `--site`, `--import`, `--keep`, `--retry`, `--purpose` |
 | `studio.py library find` | `--reusable-only`, `--query`, `--status`, `--collection`, `--author`, `--topic`, `--product`, `--since`, `--until`, `--limit`, `--offset` |
 | `studio.py library curator` | `--harness` |
 | `studio.py library analyze` | `--id` |

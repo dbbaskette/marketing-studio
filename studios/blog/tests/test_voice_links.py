@@ -286,6 +286,66 @@ class ImportTests(Fixture):
         self.assertEqual(retried['counts']['samples'], 4)
         self.assertEqual(retried['counts']['failed'], 0)
 
+    def test_links_can_become_style_samples_without_a_byline_check(self):
+        import styles
+
+        reader = Pages(
+            {
+                SITE + 'one/': page('One', 'Someone Else'),
+                SITE + 'two/': page('Two'),
+            }
+        )
+        text = self.links('one', 'two')
+        data = {'text': text, 'author': 'Product announcements', 'purpose': 'style-sample'}
+        shown = voice_links.preview(self.root, data)
+        self.assertEqual(shown['purpose'], 'style-sample')
+        voice = voice_links.preview(self.root, {'text': text, 'author': 'Product announcements'})
+        self.assertNotEqual(shown['expected'], voice['expected'])
+        result = voice_links.run(
+            self.root,
+            {**data, 'operation': 'c' * 32, 'expected': shown['expected']},
+            reader=reader,
+            delay=0,
+        )
+        samples = [row for row in result['results'] if row.get('sample')]
+        self.assertEqual(
+            len(samples), 2, 'a byline naming someone else does not hold a style sample back'
+        )
+        self.assertEqual(result['counts']['mismatch'], 0)
+        for row in samples:
+            _, record = studio.item(self.root, 'sources', row['id'])
+            self.assertIn('style-sample', record['purposes'])
+            self.assertNotIn('voice-sample', record['purposes'])
+            self.assertNotEqual(
+                record.get('author'), 'Product announcements', 'the label is not an author'
+            )
+            self.assertNotEqual(
+                (record.get('library') or {}).get('author'), 'Product announcements'
+            )
+        self.assertEqual(
+            {row['id'] for row in styles.catalog(self.root)['samples']},
+            {row['id'] for row in samples},
+        )
+        self.assertEqual(article_tools.voices(self.root)['samples'], [])
+        self.assertIn('style', result['next_step'])
+        self.assertIn(
+            'Examples: Product announcements',
+            [c['name'] for c in library.collections(self.root).values()],
+        )
+        # The same list as a voice import is a different operation, not this one continued.
+        self.assertNotEqual(
+            voice_links.operation_for(text, 'Product announcements'),
+            voice_links.operation_for(text, 'Product announcements', purpose='style-sample'),
+        )
+        with self.assertRaisesRegex(ValueError, 'voice samples or style samples'):
+            voice_links.preview(self.root, {**data, 'purpose': 'reference'})
+        with self.assertRaisesRegex(ValueError, 'voice samples or style samples'):
+            voice_links.run(
+                self.root,
+                {**data, 'purpose': 'reference', 'operation': 'e' * 32},
+                reader=reader,
+            )
+
     def test_posts_already_in_the_library_are_reused_not_fetched_or_copied(self):
         reader = Pages({SITE + n + '/': page(n, AUTHOR) for n in ('one', 'two', 'three')})
         self.run_links(self.links('one', 'two'), reader)
@@ -389,6 +449,37 @@ class ImportTests(Fixture):
             management.dispatch(
                 self.root, 'voice-links-preview', {'text': text, 'author': AUTHOR, 'x': 1}
             )
+
+    def test_desk_routes_and_command_line_take_style_samples(self):
+        reader = Pages({SITE + 'one/': page('One', 'Someone Else')})
+        text = self.links('one')
+        data = {'text': text, 'author': 'Release notes', 'purpose': 'style-sample'}
+        with patch.object(library, 'fetch', side_effect=reader):
+            shown = management.dispatch(self.root, 'voice-links-preview', data)
+            result = management.dispatch(
+                self.root,
+                'voice-links-import',
+                {**data, 'operation': 'a' * 32, 'expected': shown['expected']},
+            )
+        self.assertEqual(result['counts']['samples'], 1)
+        _, record = studio.item(self.root, 'sources', result['samples'][0])
+        self.assertIn('style-sample', record['purposes'])
+        listing = self.base / 'release-notes.txt'
+        listing.write_text(self.links('two'))
+        reader.pages[SITE + 'two/'] = page('Two', 'Someone Else')
+        args = studio.parser().parse_args(
+            ['--root', str(self.root), 'library', 'voice-links', '--file', str(listing)]
+            + ['--purpose', 'style-sample', '--import']
+        )
+        with (
+            patch.object(library, 'fetch', side_effect=reader),
+            patch.object(library.time, 'sleep'),
+        ):
+            found = library.command(self.root, args)
+        self.assertEqual((found['author'], found['counts']['samples']), ('Release Notes', 1))
+        _, record = studio.item(self.root, 'sources', found['samples'][0])
+        self.assertEqual(record['purposes'].count('style-sample'), 1)
+        self.assertNotIn('voice-sample', record['purposes'])
 
     def test_command_line_checks_then_imports_the_same_list(self):
         listing = self.base / 'avery-quinn-blog-links.txt'
