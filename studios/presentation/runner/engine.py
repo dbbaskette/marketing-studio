@@ -2157,7 +2157,7 @@ class Engine(Jobs, Researching):
         root = self._held(path)
         if not isinstance(text, str) or not text.strip():
             raise WorkspaceError('Write the note first.')
-        text = text.strip()
+        text = text.replace('\r\n', '\n').replace('\r', '\n').strip()
         if len(text) > NEXT_NOTE:
             raise WorkspaceError(f'Say it in at most {NEXT_NOTE} characters.')
         with self.files:

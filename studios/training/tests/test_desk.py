@@ -2348,6 +2348,7 @@ CODEX_MODELS = {'agent': 'codex', 'problem': None, 'levels': ['low', 'medium', '
      'default_level': 'low', 'levels': ['low', 'medium', 'high']}]}
 MODELS = {'GET /api/models?agent=claude': [ok(CLAUDE_MODELS)],
           'GET /api/models?agent=codex': [ok(CODEX_MODELS)]}
+NOTE_BOX = 'Note for the next step'   # on every run of this computer's that has a next step
 RUN_FIELDS = {'state', 'sentence', 'agent', 'model', 'effort', 'steps', 'workers', 'spent',
               'question', 'problem', 'documents', 'copies', 'deck_left', 'finished', 'outline',
               'deck', 'redesign', 'note'}
@@ -2611,9 +2612,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.started()
         going = 'Drafting the research questions.'
         working = a_run('working', going, steps=steps('done', 'working'))
+        long = 'Lean on the operator handbook. ' * 8
         noted = a_run('working', going, steps=steps('done', 'working'), note={
-            'pending': {'text': 'Lean on the operator handbook.', 'at': 'now'}, 'used': [],
-            'expected': '1'})
+            'pending': {'text': long.strip(), 'at': 'now'}, 'used': [], 'expected': '1'})
         answers = self.answers(**{'GET /api/trainings': [self.listed('working', going)],
                                   'GET /api/training': [self.detail('working', going)],
                                   'GET /api/run': [working, working, noted],
@@ -2638,7 +2639,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         sent = shots['noted']
         self.assertIn('Noted. It goes with the next job that starts.', sent['toasts'])
         self.assertIn('Noted for the next step: Lean on the operator handbook.', sent['text'])
-        self.assertIn('Sending another replaces it.', sent['text'])
+        self.assertIn('… Sending another replaces it.', sent['text'])
+        self.assertNotIn(long.strip(), sent['text'], 'a long note is cut short in the hint')
         self.assertIn('Replace the note', sent['buttons'])
         self.assertEqual(sent['fields'][box], '')
 
@@ -4023,10 +4025,10 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertLess(run['text'].index('Needs you'), run['text'].index('All production steps'))
         self.assertIn('The worker on question 3 asks:', run['text'])
         self.assertEqual((shots['typing']['fields'], shots['typing']['focus']),
-                         ({box: 'The newer'}, 'answer-run'))
+                         ({box: 'The newer', NOTE_BOX: ''}, 'answer-run'))
         self.assertEqual(self.posts(result), [('/api/answer', {
             'path': str(self.root), 'id': 'q-7', 'answer': 'The newer one.'})])
-        self.assertEqual((shots['sent']['fields'], shots['sent']['filled']), ({}, []))
+        self.assertEqual((shots['sent']['fields'], shots['sent']['filled']), ({NOTE_BOX: ''}, []))
         self.assertIn(going, shots['sent']['text'])
 
     def test_every_list_shows_running_work_and_guesses_only_where_no_run_is(self):
@@ -4279,7 +4281,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
 
         empty = shots['empty']
         self.assertEqual((empty['heading'], empty['filled'], empty['fields']),
-                         ('Rolling restarts', ['That is all of them'], {pick: ''}))
+                         ('Rolling restarts', ['That is all of them'], {pick: '', NOTE_BOX: ''}))
         for shown in ('Waiting for you', waits, 'Add your documents',
                       'Nothing is researched until you have added them and chosen “That is '
                       'all of them”.', KEPT_HERE,
@@ -4338,7 +4340,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
 
         done = shots['done']
         self.assertIn('That is all of them. It carries on from here.', done['toasts'])
-        self.assertEqual((done['filled'], done['focus'], done['fields']), ([], 'title', {}))
+        self.assertEqual((done['filled'], done['focus'], done['fields']), ([], 'title', {NOTE_BOX: ''}))
         for shown in ('Working on its own', going, 'Your documents',
                       'These were given to the research. ' + KEPT_HERE, 'Notes.MD'):
             self.assertIn(shown, done['text'])

@@ -283,13 +283,12 @@ class NoteTests(StudioCase):
         self.decide(root, 'gate:outline')
         self.decide(root, 'gate:look')
         self.assertEqual(self.waiting(root), 'gate:build')
-        started = [job for seen, job, spec in self.workers.jobs[before:]]
+        started = [job for seen, job, spec in self.workers.jobs[before:] if seen != 'review']
         carried = [job for job in started
                    if '## Note from the author for this step' in job.task]
-        self.assertEqual(len(carried), 1, 'exactly the next job that started took it')
-        self.assertIn('Lead with the risks.', carried[0].task)
+        self.assertEqual(len(carried), len(started), 'every drawing job of the step carries it')
+        self.assertIn('> Lead with the risks.', carried[0].task)
         self.assertNotIn('Keep the restarts section', carried[0].task)
-        self.assertIs(started[0], carried[0], 'it is the first job that started')
         record = self.record(root)
         self.assertIsNone(record['pending_note'])
         self.assertEqual([(note['text'], note['step'].partition(':')[0])
@@ -317,6 +316,52 @@ class NoteTests(StudioCase):
         carried = [job for seen, job, spec in self.workers.jobs
                    if 'Say who runs the restarts.' in job.task]
         self.assertEqual(len(carried), 1)
+
+    def test_a_note_reaches_every_section_drawn_together_and_a_try_again(self):
+        self.workers.then('section', fails())
+        root = self.start()
+        self.to_gate(root, 'gate:look')
+        self.engine.note(root, 'Name the operator on each slide.\r\nKeep the second short.')
+        self.decide(root, 'gate:look')
+        self.assertEqual(self.waiting(root), 'gate:build')
+        sections = self.workers.of('section')
+        self.assertGreaterEqual(len(sections), 2, 'the section was tried again')
+        for job in sections:
+            self.assertIn('> Name the operator on each slide.\n> Keep the second short.',
+                          job.task)
+        self.assertEqual(len(self.workers.of('review')), 1)
+        self.assertNotIn('Note from the author', self.workers.of('review')[0].task,
+                         'a reviewer does not take the note')
+        self.assertEqual([note['text'] for note in self.record(root)['notes_used']],
+                         ['Name the operator on each slide.\nKeep the second short.'],
+                         'history records it once')
+
+    def test_a_reviewer_does_not_take_a_note_which_waits_for_the_next_writer(self):
+        def noting(tools, job):
+            [root] = self.engine.every()
+            self.engine.note(root, 'Say who restarts what.')
+            return self.workers.section(tools, job)
+        self.workers.then('section', *[noting] * 8)
+        root = self.start()
+        self.to_gate(root, 'gate:build')
+        review = self.workers.of('review')[-1]
+        self.assertNotIn('Note from the author', review.task)
+        shown = self.view(root)['note']
+        self.assertEqual(shown['pending']['text'], 'Say who restarts what.',
+                         'the note left while the section was drawn waits past the review')
+        self.assertEqual(self.record(root).get('notes_used', []), [])
+
+    def test_a_note_reaches_every_question_researched_together(self):
+        root = self.start(research=True)
+        self.assertEqual(self.waiting(root), 'gate:research-plan')
+        self.engine.note(root, 'Prefer the vendor\'s own pages.')
+        self.decide(root, 'gate:research-plan')
+        questions = self.workers.of('question')
+        self.assertGreaterEqual(len(questions), 2, 'the questions are researched together')
+        for job in questions:
+            self.assertIn("> Prefer the vendor's own pages.", job.task)
+        self.assertEqual(len(self.record(root)['notes_used']), 1, 'history records it once')
+        self.assertIsNone(self.record(root)['pending_note'])
 
     def test_a_note_is_refused_when_empty_too_long_finished_or_stopped(self):
         root = self.start()

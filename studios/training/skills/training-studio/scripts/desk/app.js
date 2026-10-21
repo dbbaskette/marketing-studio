@@ -4622,8 +4622,9 @@ function notePart(run) {
   box.dataset.key = 'next-note ' + path;
   box.spellcheck = true;
   const hint = make('p', 'quiet field-hint', waiting
-    ? 'Noted for the next step: ' + waiting.text + ' Sending another replaces it.'
-    : 'It goes with the next job that starts, and stops nothing.');
+    ? 'Noted for the next step: ' + shortNote(waiting.text) + ' Sending another replaces it.'
+    : 'It goes with the next job that starts, and stops nothing. A reviewer takes no note: '
+      + 'it waits for the next writer.');
   hint.id = 'next-note-hint';
   box.setAttribute('aria-describedby', 'next-note-hint next-note-problem');
   box.addEventListener('input', () => {
@@ -4633,7 +4634,14 @@ function notePart(run) {
   const problem = alertLine('next-note-problem');
   const go = capsule(waiting ? 'Replace the note' : 'Send the note', '',
     () => sendNote(run, box, problem, go), 'send-note');
+  go.disabled = Boolean(view.busy);
   return add(make('div', 'answer'), label, box, hint, problem, add(make('div', 'bar'), go));
+}
+
+// A note as the hint repeats it: the first line and a half, at most.
+function shortNote(text) {
+  const flat = String(text || '').replace(/\s+/g, ' ').trim();
+  return flat.length > 160 ? flat.slice(0, 159).trimEnd() + '…' : flat;
 }
 
 async function sendNote(run, box, problem, pressed) {

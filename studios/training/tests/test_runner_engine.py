@@ -646,8 +646,9 @@ class NoteTests(StudioCase):
         self.assertGreater(len(started), 1)
         carried = [job for job in started
                    if '## Note from the author for this step' in job.task]
-        self.assertEqual(len(carried), 1, 'exactly one of the jobs that started took it')
-        self.assertIn('Keep each answer short.', carried[0].task)
+        self.assertEqual(len(carried), len(started),
+                         'every research question worked on together carries it')
+        self.assertIn('> Keep each answer short.', carried[0].task)
         self.assertNotIn('operator handbook', carried[0].task)
         record = self.record(root)
         self.assertIsNone(record['pending_note'])
@@ -674,7 +675,27 @@ class NoteTests(StudioCase):
         self.decide(root, 'research-plan')
         carried = [job for seen, job, spec in self.workers.jobs
                    if 'Name the two platforms.' in job.task]
-        self.assertEqual(len(carried), 1)
+        self.assertEqual(len(carried), len(self.workers.of('question')))
+        self.assertEqual(len(self.record(root)['notes_used']), 1, 'history records it once')
+
+    def test_a_try_again_at_a_question_carries_the_note_and_a_reviewer_takes_none(self):
+        self.workers.then('question', fails())
+        root = self.start()
+        self.engine.note(root, 'Cite the handbook.\r\nNothing else.')
+        self.decide(root, 'research-plan')
+        questions = self.workers.of('question')
+        self.assertGreater(len(questions), len(QUESTIONS), 'one question was tried again')
+        for job in questions:
+            self.assertIn('> Cite the handbook.\n> Nothing else.', job.task)
+        # A reviewer's job leaves a waiting note for the next writer.
+        self.engine.note(root, 'For the blueprint.')
+        work = pipeline.Work('guidance', 'task', 'write', {'review': {}})
+        for ident in ('deck-review@201', 'research-review'):
+            step = pipeline.Step(ident, 'agent', 'Review it', 'Reviewing it', 'deck')
+            self.assertIs(self.engine._noted(root, step, work), work)
+        self.assertEqual(self.record(root)['pending_note']['text'], 'For the blueprint.')
+        self.assertTrue(all(note.get('done') for note in self.record(root)['notes_used']),
+                        'a later step\'s job closed the research notes')
 
     def test_a_note_is_refused_when_empty_too_long_finished_or_stopped(self):
         root = self.start()
@@ -691,6 +712,14 @@ class NoteTests(StudioCase):
         with self.assertRaisesRegex(WorkspaceError, 'finished'):
             self.engine.note(root, 'Too late.')
         self.assertIsNone(self.record(root).get('pending_note'))
+
+    def test_a_stuck_training_takes_no_note(self):
+        root = self.start()
+        stuck = pipeline.Next('stuck', why='Its folder cannot be read.')
+        found = self.engine._survey(root, self.record(root))
+        with mock.patch.object(self.engine, '_survey', return_value=replace(found, next=stuck)):
+            with self.assertRaisesRegex(WorkspaceError, 'cannot go on'):
+                self.engine.note(root, 'Too late.')
 
 
 class ResearchTests(StudioCase):
