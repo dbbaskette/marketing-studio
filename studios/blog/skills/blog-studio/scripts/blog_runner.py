@@ -663,6 +663,7 @@ def create(root, data, approval='conversation'):
         'variant',
         'point',
         'revision',
+        'library',
     }
     if set(data) - allowed:
         raise ValueError('Unknown new-blog field.')
@@ -756,10 +757,12 @@ def create(root, data, approval='conversation'):
         raise ValueError('Select at most 50 different sources.')
     for source in sources:
         studio.item(root, 'sources', source)
+    # Library items read with a role for this blog only; the library record is not changed.
+    picked = library_picks(root, data.get('library', []), sources)
     if from_files:
         readable = [
             source
-            for source in sources
+            for source in sources + list(picked)
             if studio.item(root, 'sources', source)[1]['status'] == 'ready'
         ]
         if not readable:
@@ -810,13 +813,13 @@ def create(root, data, approval='conversation'):
     if data.get('id') and mode == 'from-outline' and not existing:
         record['mode'] = 'from-outline'
         record['stop_point'] = stop
-    for source in sources:
+    for source in sources + list(picked):
         _, source_record = studio.item(root, 'sources', source)
         record['sources'] = [s for s in record['sources'] if s['source_id'] != source] + [
             {
                 'source_id': source,
                 'revision': source_record['revision'],
-                'purposes': source_record['purposes'],
+                'purposes': picked.get(source, source_record['purposes']),
             }
         ]
     if profile:
@@ -903,6 +906,33 @@ def create(root, data, approval='conversation'):
         studio.save_artifact(directory, 'draft', manuscript, record, 'supplied manuscript')
     save(root, directory, record, run, 'Created from ' + approval)
     return survey(root, record['id'])
+
+
+LIBRARY_ROLES = {'facts': ['reference'], 'example': ['reference', 'inspiration']}
+
+
+def library_picks(root, chosen, sources):
+    """{id: purposes} for library items read with a role for one blog: `[{id, role}]`, each
+    a library item (never a file uploaded for one blog), no more than 50 with the sources,
+    and none of them twice."""
+    if not isinstance(chosen, list) or len(chosen) + len(sources) > 50:
+        raise ValueError('Pick at most 50 library items and sources together.')
+    picked = {}
+    for entry in chosen:
+        if (
+            not isinstance(entry, dict)
+            or set(entry) != {'id', 'role'}
+            or not isinstance(entry['id'], str)
+            or entry['role'] not in LIBRARY_ROLES
+        ):
+            raise ValueError('Each library item needs its id and a role: facts or example.')
+        if entry['id'] in picked or entry['id'] in sources:
+            raise ValueError('Pick each library item once.')
+        directory, record = studio.item(root, 'sources', entry['id'])
+        if studio.is_material(root, directory, record):
+            raise ValueError('A file uploaded for one blog is not a library item.')
+        picked[entry['id']] = list(LIBRARY_ROLES[entry['role']])
+    return picked
 
 
 def guard(root, ident, expected, page=False):
@@ -2114,6 +2144,12 @@ def add_parser(groups):
     create_cmd.add_argument('--engine', choices=('codex', 'claude'))
     create_cmd.add_argument('--seconds', type=int, default=600)
     create_cmd.add_argument('--source', action='append', default=[])
+    create_cmd.add_argument(
+        '--example',
+        action='append',
+        default=[],
+        help='A library item read as an example of the kind of post for this blog only',
+    )
     create_cmd.add_argument('--mode', choices=MODES, default='write')
     create_cmd.add_argument('--manuscript')
     create_cmd.add_argument('--outline-text')
@@ -2150,9 +2186,12 @@ def command(root, args):
             data = {
                 k: v
                 for k, v in vars(args).items()
-                if k not in ('root', 'group', 'action', 'source', 'compact') and v is not None
+                if k not in ('root', 'group', 'action', 'source', 'example', 'compact')
+                and v is not None
             }
             data['sources'] = args.source
+            if args.example:
+                data['library'] = [{'id': ident, 'role': 'example'} for ident in args.example]
             return create(root, data)
         if args.action == 'submit':
             return submit(

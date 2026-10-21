@@ -82,6 +82,7 @@ async function check(){
   await voiceLinksJourney();
   await libraryAddJourney();
   await libraryScreen();
+  await libraryPicker();
   await wizardVoiceAndKind();
   await voicesAndStyles();
   await voiceCandidates();
@@ -91,7 +92,7 @@ async function check(){
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -1595,6 +1596,62 @@ async function libraryScreen(){
   assert.equal(nodes().find(e=>e.id==='files-role-a').value,'inspiration');
   assert.ok(nodes().some(e=>/900 characters/.test(e.textContent)),'with how much text each has');
   assert.equal(f.run('librarySelection.size'),0,'the selection is used up');
+}
+
+// From the library: a learned kind of post pre-ticks its samples (up to eight, newest first)
+// as examples and a starter none; the picker's filters reach the request; a picked item keeps
+// its library role for this blog only and goes with the run as `library`, not as a source.
+async function libraryPicker(){
+  const requests=[],defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};
+  const sampleIds=Array.from({length:9},(_,n)=>'s'+(n+1));
+  const options={settings:{defaults,review_level:'balanced'},sources:sampleIds.map(id=>({id,name:'Sample '+id,status:id==='s9'?'pending':'ready'})).concat([{id:'lib1',name:'Launch notes',status:'ready'}]),profiles:[],default_voice:null,agents:{codex:true},styles:[{id:'product-announcement',name:'Product announcement',kind:'seed',revision:1,status:'confirmed',sample_ids:[]},{id:'field-notes',name:'Field notes',kind:'learned',revision:2,status:'confirmed',sample_ids:sampleIds}]};
+  const run={id:'created',title:'A synthetic blog',status:'queued',next:'outline',approval:'page',expected:'r1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',decisions:[],brief:{goal:'Explain',audience:'Authors'},stages:[]};
+  const f=fixture((url,o)=>{const data=o?.body?JSON.parse(o.body):null;requests.push({url,data});
+    if(url==='/api/run-options')return options;
+    if(url.startsWith('/api/library?'))return {items:[{id:'lib1',title:'Launch notes',author:'Avery',status:'ready',role:'facts',kind_name:'Product announcement',purposes:['reference'],library:{origin_kind:'upload',kind:'product-announcement'}},{id:'s2',title:'Sample s2',author:'Avery',status:'ready',role:'example',kind_name:'Field notes',purposes:['reference','inspiration','style-sample'],library:{}}],total:2,kinds:[]};
+    if(url==='/api/run-create'||url.startsWith('/api/run?'))return run;
+    return {items:[],total:0};});
+  f.loadRunner();
+  const nodes=()=>descendants(f.get('studio-page')),byId=id=>nodes().find(e=>e.id===id),texts=()=>nodes().map(e=>e.textContent);
+  const choose=(id,value)=>{const select=byId(id);select.value=value;select.listeners.change();};
+  const fill=()=>{for(const [id,value] of [['new-title','A synthetic blog'],['new-goal','Explain'],['new-audience','Authors']]){byId(id).value=value;byId(id).listeners.input();}};
+  const submit=()=>nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const files=()=>JSON.parse(f.run('JSON.stringify((studio.draft.files||[]).map(file=>[file.id,file.role,!!file.library]))'));
+  await f.run("newBlog('',null,'write')");fill();
+  choose('new-style','field-notes');
+  assert.deepEqual(files().map(([id])=>id),['s9','s8','s7','s6','s5','s4','s3','s2'],'a learned kind of post pre-ticks its samples: up to eight, newest first');
+  assert.ok(files().every(([,role,library])=>role==='inspiration'&&library),'each as an example from the library');
+  choose('new-style','product-announcement');assert.deepEqual(files(),[],'a starter pre-ticks nothing');
+  choose('new-style','field-notes');assert.equal(files().length,8);
+  await submit();
+  assert.ok(texts().some(t=>t==='Sample s8'),'the second step lists them: '+texts().join('|'));
+  assert.ok(texts().some(t=>t==='From the library'),'as library items');
+  assert.ok(texts().some(t=>/needs text, so it is not read/.test(t)),'a sample without text says so');
+  assert.equal(byId('files-role-s8').value,'inspiration');
+  await nodes().find(e=>e.attributes['aria-label']==='Remove Sample s8').listeners.click();
+  assert.equal(files().length,7,'unticking removes it');assert.equal(files().some(([id])=>id==='s8'),false);
+  const sheet=()=>descendants(f.get('sheet')),inSheet=id=>sheet().find(e=>e.id===id);
+  await nodes().find(e=>e.textContent==='From the library'&&e.tagName==='button').listeners.click();
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'From the library');
+  assert.ok(inSheet('pick-role')&&inSheet('pick-kind')&&inSheet('pick-author')&&inSheet('pick-query'),'role, kind and author filters and a search box');
+  assert.deepEqual(inSheet('pick-kind').children.map(o=>o.textContent),['Any kind','Product announcement','Field notes']);
+  inSheet('pick-role').value='facts';inSheet('pick-role').listeners.change();inSheet('pick-author').value='Avery';inSheet('pick-author').listeners.input();inSheet('pick-query').value='launch';inSheet('pick-query').listeners.input();
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const asked=requests.filter(r=>r.url.startsWith('/api/library?')).at(-1).url;
+  assert.match(asked,/role=facts/);assert.match(asked,/author=Avery/);assert.match(asked,/query=launch/);
+  assert.equal(inSheet('pick-s2'),undefined,'an item already among the files is not offered again');
+  const pick=inSheet('pick-lib1');pick.checked=true;pick.listeners.change();
+  assert.ok(sheet().some(e=>e.textContent==='Launch notes')&&sheet().some(e=>/Avery · facts · Product announcement/.test(e.textContent)),'each item shows its title, author, role and kind: '+sheet().map(e=>e.textContent).join('|'));
+  await sheet().find(e=>e.textContent==='Add 1 to this blog').listeners.click();
+  assert.equal(f.get('sheet').hidden,true);
+  assert.deepEqual(files().find(([id])=>id==='lib1'),['lib1','material',true],'facts in the library are facts here');
+  byId('files-role-lib1').value='inspiration';await byId('files-role-lib1').listeners.change();
+  assert.equal(requests.some(r=>r.url==='/api/source-role'),false,'a library item changes its role for this blog only');
+  assert.ok(texts().some(t=>/stops for/.test(t)),'the stops line follows');
+  await submit();
+  const sent=requests.filter(r=>r.url==='/api/run-create').at(-1).data;
+  assert.deepEqual(sent.library,[...['s7','s6','s5','s4','s3','s2'].map(id=>({id,role:'example'})),{id:'lib1',role:'example'}],'library items with text go with their roles for this blog');
+  assert.deepEqual(sent.sources,[],'and not as plain sources');assert.equal(sent.style,'field-notes');
 }
 
 // Write as and Kind of post on the first step: what each choice sends, for a new blog and for

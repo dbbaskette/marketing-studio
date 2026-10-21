@@ -596,6 +596,98 @@ class SelectionTests(RunnerCase):
             act(action='blog', ids=[material])
 
 
+class LibraryPickTests(RunnerCase):
+    """Task 6: a run reads library items with a role for this blog only."""
+
+    def items(self):
+        result = management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': 'a' * 32,
+                'purpose': 'material',
+                'keep': True,
+                'analyze': False,
+                'author': 'Avery',
+                'files': [
+                    {**encoded_file('post.md', b'An earlier post. ' * 5), 'purpose': 'inspiration'},
+                    encoded_file('facts.md', b'The gateway retries twice.'),
+                ],
+            },
+        )
+        return [row['source']['id'] for row in result['files']]
+
+    def test_create_pins_library_items_with_the_role_for_this_blog_only(self):
+        example, facts = self.items()
+        found = self.create(
+            library=[{'id': example, 'role': 'facts'}, {'id': facts, 'role': 'example'}]
+        )
+        _, record, run = runner.load(self.root, found['id'])
+        pinned = {s['source_id']: s for s in record['sources']}
+        self.assertEqual(pinned[example]['purposes'], ['reference'])
+        self.assertEqual(pinned[facts]['purposes'], ['reference', 'inspiration'])
+        self.assertEqual(pinned[facts]['revision'], 1)
+        self.assertEqual(record['material'], [])
+        payload = runner.inputs(self.root, record, run)
+        self.assertEqual([s['name'] for s in payload['sources']], ['post'])
+        self.assertEqual([s['name'] for s in payload['examples']], ['facts'])
+        # The library records are unchanged.
+        for ident, purposes in ((example, ['reference', 'inspiration']), (facts, ['reference'])):
+            _, saved = studio.item(self.root, 'sources', ident)
+            self.assertEqual((saved['purposes'], saved['revision']), (purposes, 1))
+        # Library items alone can start a blog from my files; the CLI reads examples too.
+        files = runner.create(
+            self.root,
+            {'mode': 'from-files', 'goal': 'A post', 'library': [{'id': facts, 'role': 'facts'}]},
+            'page',
+        )
+        self.assertEqual(files['next'], 'angles')
+        args = studio.parser().parse_args(
+            [
+                '--root',
+                str(self.root),
+                'run',
+                'create',
+                '--title',
+                'T',
+                '--audience',
+                'A',
+                '--goal',
+                'G',
+                '--research',
+                'none',
+                '--example',
+                facts,
+            ]
+        )
+        chat = runner.command(self.root, args)
+        _, record, _ = runner.load(self.root, chat['id'])
+        self.assertEqual(record['sources'][0]['purposes'], ['reference', 'inspiration'])
+        # Refusals.
+        for chosen, pattern in (
+            ([{'id': facts}], 'id and a role'),
+            ([{'id': facts, 'role': 'voice'}], 'id and a role'),
+            ([{'id': facts, 'role': 'facts'}, {'id': facts, 'role': 'example'}], 'once'),
+            ([{'id': 'no-such-item', 'role': 'facts'}], 'Unknown sources ID'),
+        ):
+            with self.assertRaisesRegex(ValueError, pattern):
+                self.create(library=chosen)
+        with self.assertRaisesRegex(ValueError, 'once'):
+            self.create(sources=[facts], library=[{'id': facts, 'role': 'example'}])
+        material = management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': 'b' * 32,
+                'purpose': 'material',
+                'analyze': False,
+                'files': [encoded_file('m.md', b'Mine.')],
+            },
+        )['files'][0]['source']['id']
+        with self.assertRaisesRegex(ValueError, 'not a library item'):
+            self.create(library=[{'id': material, 'role': 'facts'}])
+
+
 class FinishTests(RunnerCase):
     """Task 2: Finish keeps the approved draft in the library, once per blog."""
 
