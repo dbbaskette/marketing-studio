@@ -742,6 +742,27 @@ class SourcePurposeTests(Fixture):
         for ident in (ready['id'], pending['id'], material):
             self.assertEqual(studio.item(self.root, 'sources', ident)[1]['revision'], 1)
 
+    def test_the_voice_and_style_views_list_sources_that_could_become_samples(self):
+        import article_tools
+        import styles
+
+        ready = self.source('A synthetic paragraph.')
+        pending = self.command(
+            'source', 'add', '--name', 'Scan', '--purpose', 'reference', '--status', 'pending'
+        )
+        self.mark(ready['id'], 'voice-sample', 'Avery')
+        row = lambda ident: {
+            key: studio.item(self.root, 'sources', ident)[1].get(key)
+            for key in ('id', 'name', 'author')
+        }
+        voices = article_tools.voices(self.root)
+        self.assertEqual(voices['candidates'], [])
+        self.assertEqual(voices['pending'], [row(pending['id'])])
+        self.assertEqual([s['id'] for s in voices['samples']], [ready['id']])
+        found = styles.catalog(self.root)
+        self.assertEqual(found['candidates'], [row(ready['id'])])
+        self.assertEqual(found['pending'], [row(pending['id'])])
+
 
 class VoiceApplyTests(Fixture):
     """Changing a blog's voice is a recorded decision: confirmed once writing exists."""

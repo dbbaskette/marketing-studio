@@ -288,7 +288,7 @@ def catalog(root):
             continue
         if 'style-sample' in record.get('purposes', []) and record.get('status') == 'ready':
             samples.append({key: record.get(key) for key in ('id', 'name', 'author', 'revision')})
-    return {'styles': rows, 'samples': samples}
+    return {'styles': rows, 'samples': samples, **studio.sample_choices(root, 'style-sample')}
 
 
 def save(root, data):

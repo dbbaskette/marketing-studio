@@ -99,7 +99,7 @@ def voices(root):
         record = studio.read_json(file)
         if 'voice-sample' in record.get('purposes', []) and record.get('status') == 'ready':
             sources.append({key: record.get(key) for key in ('id', 'name', 'author', 'revision')})
-    return {'profiles': profiles, 'samples': sources}
+    return {'profiles': profiles, 'samples': sources, **studio.sample_choices(root, 'voice-sample')}
 
 
 def article_basis(root, ident):

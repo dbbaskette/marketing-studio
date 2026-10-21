@@ -265,6 +265,28 @@ def style_command(root, args):
     return styles.command(root, args)
 
 
+def sample_choices(root, purpose):
+    """Library sources that could become samples for a voice or style sheet. Reads only.
+
+    `candidates` are ready sources without the purpose; `pending` are sources still
+    waiting for text, whatever their purpose. A file uploaded for one blog is not listed."""
+    candidates, pending = [], []
+    for file in sorted(inside(root, 'sources').glob('*/record.json')):
+        try:
+            record = read_json(file)
+        except (ValueError, OSError):
+            continue
+        purposes = record.get('purposes', [])
+        if 'material' in purposes:
+            continue
+        row = {key: record.get(key) for key in ('id', 'name', 'author')}
+        if record.get('status') != 'ready':
+            pending.append(row)
+        elif purpose not in purposes:
+            candidates.append(row)
+    return {'candidates': candidates, 'pending': pending}
+
+
 def validate_samples(root, values):
     for value in values:
         _, source = item(root, 'sources', value)
