@@ -526,6 +526,34 @@ def design_rules(outline, design) -> list[str]:
             problems.append(f"{entry['id']}: leave out " + ', '.join(f'`{key}`' for key in extra)
                             + '. The title, the copy, the notes and the objectives are taken '
                             'from the outline.')
+    return problems + unjustified(entries)
+
+
+DRAWN = ('diagram', 'regions', 'icon')   # visual families that name things an icon could show
+
+
+def unjustified(entries) -> list[str]:
+    """Each slide drawn as a diagram, regions or icons whose design selects no asset
+    without saying why for that slide: its `asset.reason` names icons (why no icon from the
+    brand's library helps here), and is not a reason copied from another slide."""
+    problems, seen = [], {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        intent = entry.get('intent') if isinstance(entry.get('intent'), dict) else {}
+        visual = intent.get('visual') if isinstance(intent.get('visual'), dict) else {}
+        asset = entry.get('asset') if isinstance(entry.get('asset'), dict) else {}
+        if visual.get('family') not in DRAWN or asset.get('disposition') != 'not-needed':
+            continue
+        reason = asset.get('reason') if isinstance(asset.get('reason'), str) else ''
+        if plain(reason) in seen or 'icon' not in plain(reason):
+            problems.append(f"{entry.get('id')}: its {visual['family']} selects no asset, and "
+                            '`asset.reason` must say why for this slide: which products, '
+                            "actors or things it names, and why no icon from the brand's "
+                            'library helps the learner tell them apart'
+                            + (f" (it repeats {seen[plain(reason)]}'s reason)."
+                               if plain(reason) in seen else '.'))
+        seen.setdefault(plain(reason), entry.get('id'))
     return problems
 
 

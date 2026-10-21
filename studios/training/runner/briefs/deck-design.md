@@ -14,6 +14,6 @@ The title, the visible copy, the notes and the objectives come from the outline:
 
 A composition never asks for a point's sentence to be split across shapes: each point's text is drawn whole in one shape, with its label in it or beside it, and a program refuses anything else. Where a diagram needs parts smaller than a point, give that point `parts` in the outline, two to six short labels of a few words, and say in the composition where each goes. Keep the full sentence as the point's text: it is drawn whole once, or, when the diagram says it all, kept in the notes word for word.
 
-A family that needs an asset (icon, sourced-image or generated-art) needs its asset selected. When it cannot be, the check says so and offers a native diagram instead: propose that, or another treatment that does not depend on the asset.
+A family that needs an asset (icon, sourced-image or generated-art) needs its asset selected. A diagram, regions or icon slide that selects none says why in `asset.reason`, for that slide: which products, actors or things it names, and why no icon from the brand's library helps the learner tell them apart. A reason copied from another slide is refused. When it cannot be, the check says so and offers a native diagram instead: propose that, or another treatment that does not depend on the asset.
 
 The check sends the design to the slides tool, which says slide by slide what it will not take. Nothing is kept by checking. In your notes, say which slides are drawn as text and why, and any asset that is still pending.

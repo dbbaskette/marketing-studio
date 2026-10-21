@@ -470,6 +470,21 @@ class RuleTests(JobCase):
         self.assertEqual(deck.to_repair(deck.sent_back(screens),
                                         [{'id': 'section-1', 'slides': ['c']}]), ['section-1'])
 
+    def test_a_diagram_without_an_asset_says_why_for_that_slide(self):
+        def entry(ident, family, reason, disposition='not-needed'):
+            return {'id': ident, 'intent': {'visual': {'family': family}},
+                    'asset': {'description': 'Native shapes', 'disposition': disposition,
+                              'reason': reason}}
+        same = 'The teaching relation can be drawn directly without an external asset.'
+        found = deck.unjustified([
+            entry('a', 'diagram', same), entry('b', 'regions', same),
+            entry('c', 'text', same), entry('d', 'diagram', same, 'selected'),
+            entry('e', 'diagram', 'Only abstract stages: no product or actor an icon names.'),
+            entry('f', 'diagram', 'Only abstract stages: no product or actor an icon names.')])
+        self.assertEqual([problem.partition(':')[0] for problem in found], ['a', 'b', 'f'])
+        self.assertIn("why no icon from the brand's library helps", found[0])
+        self.assertIn("(it repeats e's reason)", found[2])
+
     def test_only_a_major_finding_about_drawing_sends_a_section_back(self):
         slides = [{'id': slide['id'], 'number': number}
                   for number, slide in enumerate(OUTLINE['slides'], start=1)]
