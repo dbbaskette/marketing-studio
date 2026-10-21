@@ -37,3 +37,23 @@
 .deck-looks-words {
   width: 100%;
 }
+
+/* The deck's wireframe draft, framed: a slide's shape, opaque, scrolled inside its frame. */
+.deck-storyboard {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.deck-storyboard-holder {
+  background: var(--paper, #fff);
+  border: 1px solid var(--paper-line, #d8d8dc);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.deck-storyboard-frame {
+  display: block;
+  width: 100%;
+  height: min(70vh, 40rem);
+  border: 0;
+}

@@ -33,6 +33,17 @@ SECURITY_HEADERS = {
     'Referrer-Policy': 'no-referrer',
     'Cache-Control': 'no-store',
 }
+# A page the studio's own page frames, such as a deck's wireframe draft: never able to run a
+# script, reach the page's key or its API, or load anything, even from this origin.
+FRAMED_HEADERS = {
+    'Content-Security-Policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'; "
+                               'img-src data:; font-src data:',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'SAMEORIGIN',
+    'Referrer-Policy': 'no-referrer',
+    'Cache-Control': 'no-store',
+}
+TICKET_SECONDS = 120     # how long a ticket for a framed page may be used
 BODY_LIMIT = 64_000      # bytes a POST may carry
 NOTE_LIMIT = 10_000      # characters in one text field
 COMPUTER_CACHE = 60      # seconds a look at this computer is reused
@@ -182,6 +193,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def reply(self, status: int, kind: str | None, body: bytes, allow: str | None = None,
               extra: dict | None = None):
+        self._own = {name.lower() for name in (extra or {})}
         self.send_response(status)
         if kind:
             self.send_header('Content-Type', kind)
@@ -195,9 +207,13 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def end_headers(self):
-        """Every response leaves through here, so every response carries these."""
+        """Every response leaves through here, so every response carries these, unless it
+        set a stricter one of its own: a framed page has its own policy."""
+        own = getattr(self, '_own', set())
         for name, value in SECURITY_HEADERS.items():
-            self.send_header(name, value)
+            if name.lower() not in own:
+                self.send_header(name, value)
+        self._own = set()
         super().end_headers()
 
     def send_error(self, code, message=None, explain=None):
@@ -209,6 +225,12 @@ class Handler(BaseHTTPRequestHandler):
         """Nothing is logged: the command's output is one line, and stays one line."""
 
 
+def framed_html(body: bytes) -> tuple:
+    """A page for a frame of the studio's own page: HTML under FRAMED_HEADERS, which sandbox
+    it as if it came from nowhere."""
+    return HTTPStatus.OK, 'text/html; charset=utf-8', body, dict(FRAMED_HEADERS)
+
+
 class Page:
     """What the page may ask for and what it is refused. It holds the key; it has no socket.
 
@@ -217,9 +239,14 @@ class Page:
     ask stays here, in `answer` and `change`.
     """
     reads, writes = READS, WRITES
+    # GET addresses a frame of the page opens. A frame cannot send the key, so it is opened
+    # with a ticket the page was given for one thing, by a request that did send the key.
+    framed: tuple = ()
 
     def __init__(self, port: int):
         self.token = secrets.token_urlsafe(32)
+        self._tickets: dict = {}
+        self._ticketing = threading.Lock()
         self.port = port
         self.hosts = {f'{name}:{port}' for name in (HOST, 'localhost')}
         self._looking = threading.Lock()
@@ -262,6 +289,12 @@ class Page:
                 raise Refusal(HTTPStatus.NOT_FOUND, 'Nothing is served here.')
         if url.path == '/favicon.ico':
             return HTTPStatus.NO_CONTENT, None, b''
+        if url.path in self.framed:
+            query = parse_qs(url.query, keep_blank_values=True)
+            given = query.get('ticket', [])
+            if len(given) != 1 or not given[0]:
+                raise Refusal(HTTPStatus.BAD_REQUEST, 'Give one ticket.')
+            return self.read_framed(url.path, self.redeem(url.path, given[0]))
         if url.path not in self.reads:
             if url.path in self.writes:
                 raise Refusal(HTTPStatus.METHOD_NOT_ALLOWED,
@@ -289,6 +322,33 @@ class Page:
     def read(self, path: str, one) -> tuple:
         """Answer one GET that passed every rule. `one(name)` is a query value."""
         return as_json(HTTPStatus.OK, {'computer': self.computer(look=False)})
+
+    def ticket(self, path: str, scope) -> str:
+        """A ticket for a frame to open `path` with, for `scope` and nothing else, for
+        TICKET_SECONDS. Issue it only to a request that sent the key."""
+        if path not in self.framed:
+            raise ValueError(f'{path} is not opened by a frame.')
+        made = secrets.token_urlsafe(24)
+        now = time.monotonic()
+        with self._ticketing:
+            self._tickets = {key: held for key, held in self._tickets.items()
+                             if held[2] > now}
+            self._tickets[made] = (path, scope, now + TICKET_SECONDS)
+        return made
+
+    def redeem(self, path: str, ticket: str):
+        """What a ticket was issued for, while it holds and only for its own address."""
+        with self._ticketing:
+            held = self._tickets.get(ticket)
+        if not held or held[0] != path or held[2] <= time.monotonic():
+            raise Refusal(HTTPStatus.FORBIDDEN, 'That ticket is not good here, or not any '
+                                                'more. Show it again from the page.')
+        return held[1]
+
+    def read_framed(self, path: str, scope) -> tuple:
+        """Answer a framed GET whose ticket held. A subclass that frames anything answers
+        it, with framed_html for a page."""
+        raise Refusal(HTTPStatus.NOT_FOUND, 'Nothing is served here.')
 
     def check_token(self, headers) -> None:
         supplied = headers.get(TOKEN_HEADER, '')

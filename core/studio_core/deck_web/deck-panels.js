@@ -67,5 +67,30 @@
     return node;
   }
 
-  window.DeckPanels = { lookPicker };
+  // spec: {title, load: () => Promise of the frame's address, note}
+  // The deck's wireframe draft, as the slides tool draws it: what each slide says and how its
+  // points relate, before any design. It is framed from the studio's own server, opened with a
+  // ticket and sandboxed there: it can run no script and reach nothing of the page.
+  function storyboard(spec) {
+    const node = make('div', 'deck-storyboard');
+    node.append(make('p', 'quiet', spec.note || 'A wireframe draft of the deck: what each '
+      + 'slide says and how its points relate, drawn plainly. It is not the design.'));
+    const holder = make('div', 'deck-storyboard-holder');
+    const said = make('p', 'quiet', 'Drawing the draft…');
+    said.setAttribute('role', 'status');
+    holder.append(said);
+    node.append(holder);
+    Promise.resolve().then(spec.load).then((address) => {
+      const frame = make('iframe', 'deck-storyboard-frame');
+      frame.setAttribute('sandbox', '');
+      frame.title = spec.title || 'Wireframe draft of the deck';
+      frame.src = address;
+      holder.replaceChildren(frame);
+    }).catch((failure) => {
+      said.textContent = 'The draft could not be drawn: ' + ((failure && failure.message) || failure);
+    });
+    return node;
+  }
+
+  window.DeckPanels = { lookPicker, storyboard };
 }());
