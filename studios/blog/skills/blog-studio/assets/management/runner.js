@@ -885,9 +885,10 @@ function sLibraryAddPreview(held){
   const start=sButton('Add '+count,button=>sLibraryAddSave(held,button,problem),'filled');
   sOpenSheet('Check before adding',sCard(count,sNode('p','',(shown.role==='example'?'Examples of the kind of post':'Facts')+' · '+who+(shown.kind_name?' · '+shown.kind_name:''))),notes.length?sAdd(sNode('ul','rows'),...notes.map(words=>sAdd(sNode('li','row'),sNode('p','row-says',words)))):null,list,sNode('p','quiet','Nothing is analyzed. With a Team Hub selected, the items are shared like other references.'),problem,start,sButton('Change the items',sLibraryAdd));
 }
-async function sLibraryAddSave(held,button,problem){
+// `retry` fetches the links that failed once more, on the first request only; nothing else is fetched twice.
+async function sLibraryAddSave(held,button,problem,retry=false){
   const owner=studio.sheet,payload=()=>({...sLibraryAddPayload(held),operation:held.operation,expected:held.shown.expected});
-  await busy(button,'Adding…',async()=>{try{let result=await api('library-add',payload());for(let turns=0;result.remaining>0&&turns<40&&studio.sheet===owner;turns++){button.textContent='Added '+(result.items.length-result.remaining)+' of '+result.items.length+'…';result=await api('library-add',payload());}held.result=result;if(studio.screen==='editorial')load().catch(()=>{});if(studio.sheet===owner)sLibraryAddResult(held);}catch(error){problem.textContent=error.message;}});
+  await busy(button,retry?'Trying again…':'Adding…',async()=>{try{let result=await api('library-add',{...payload(),...(retry?{retry:true}:{})});for(let turns=0;result.remaining>0&&turns<40&&studio.sheet===owner;turns++){button.textContent='Added '+(result.items.length-result.remaining)+' of '+result.items.length+'…';result=await api('library-add',payload());}held.result=result;if(studio.screen==='editorial')load().catch(()=>{});if(studio.sheet===owner)sLibraryAddResult(held);}catch(error){problem.textContent=error.message;}});
 }
 function sLibraryAddResult(held){
   const result=held.result,problem=sNode('p','problem');problem.setAttribute('role','alert');
@@ -901,7 +902,8 @@ function sLibraryAddResult(held){
   const held_=sNode('div');for(const item of result.held){const who={author:''};held_.append(sCard(item.title||item.url||'Untitled',sNode('p','quiet',item.reason+' It is a reference, counted for nobody.'),sAdd(sNode('div','bar'),sField('library-add-held-'+item.id,'Whose post is this?',who,'author',{max:200,short:true}),sButton('Set author',()=>who.author.trim()?again('library-add-author',{ids:[item.id],author:who.author.trim()}):null))));}
   const unmarked=result.groups.some(group=>group.samples.length<group.count),mark=sButton('Mark as samples',()=>again('library-add-samples',{}),'filled');mark.disabled=!held.mark;
   const samples=unmarked?sAdd(sNode('div'),sCheck('library-add-mark','Mark the posts as voice samples by their authors',held,'mark','On, every post in a named group becomes that author’s voice sample, in a new source revision that changes no blog. Held posts stay references.',on=>{mark.disabled=!on;}),mark):null;
-  sOpenSheet('Added to the library',sCard(result.counts.imported+' added · '+result.counts['in-library']+' already there · '+result.counts.failed+' failed',sNode('p','quiet',result.sharing_message||''),sNode('p','',result.next_step)),list,result.groups.length?sNode('h3','sheet-part','By author'):null,groups,result.held.length?sNode('h3','sheet-part','Held: no single byline'):null,held_,samples,problem,sButton('Add more',()=>{studio.libraryAdd=null;sLibraryAdd();}),sButton('Close',sCloseSheet));
+  const retry=result.counts.failed&&held.shown?sButton('Try the failed links again',button=>sLibraryAddSave(held,button,problem,true)):null;
+  sOpenSheet('Added to the library',sCard(result.counts.imported+' added · '+result.counts['in-library']+' already there · '+result.counts.failed+' failed',sNode('p','quiet',result.sharing_message||''),sNode('p','',result.next_step),retry),list,result.groups.length?sNode('h3','sheet-part','By author'):null,groups,result.held.length?sNode('h3','sheet-part','Held: no single byline'):null,held_,samples,problem,sButton('Add more',()=>{studio.libraryAdd=null;sLibraryAdd();}),sButton('Close',sCloseSheet));
 }
 // The library screen's selection: learn a style or a voice from the ticked items, or start a
 // blog with them as examples. Learning marks them as samples first, then opens the learn sheet,

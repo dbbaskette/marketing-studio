@@ -18,7 +18,7 @@ import voice_links
 from hub_store import HubError, encoded, sha
 
 EACH = '*each'
-FIELDS = {'operation', 'files', 'links', 'role', 'author', 'kind', 'expected'}
+FIELDS = {'operation', 'files', 'links', 'role', 'author', 'kind', 'expected', 'retry'}
 NO_ROLE = 'Choose facts or an example of the kind of post for these items.'
 
 
@@ -190,7 +190,11 @@ def _collection_name(root, shown):
 def add(root, data):
     """Add the checked items, or continue adding them. Files and the Doc are saved on the
     first call; each call then fetches at most one library batch of links. The same
-    operation with the same request continues; a changed request is refused."""
+    operation with the same request continues; a changed request is refused. `retry` also
+    fetches the links that failed, once more; without it a failed link is not fetched again."""
+    retry = data.get('retry', False)
+    if not isinstance(retry, bool):
+        raise ValueError('Choose whether to retry the failed links: true or false.')
     found = checked(root, data)
     if data.get('expected') != found['expected']:
         raise ValueError(
@@ -282,22 +286,32 @@ def add(root, data):
                 for entry in manifest['candidates']
                 if entry['identity'] not in manifest['results']
             ][:budget]
-            if wanted:
+            failed = [
+                entry['identity']
+                for entry in manifest['candidates']
+                if manifest['results'].get(entry['identity'], {}).get('status') == 'failed'
+            ]
+            defaults = {
+                'purposes': found['purposes'],
+                'author': found['author'],
+                'kind': found['kind'],
+            }
+            for chosen, again in ((wanted, False), (failed if retry else [], True)):
+                chosen = chosen[:budget]
+                if not chosen:
+                    continue
                 blog_library.import_batch(
                     root,
                     saved['preview'],
                     limit=blog_library.MAX_BATCH,
+                    retry=again,
                     reader=blog_library.fetch,
-                    selected=wanted,
+                    selected=chosen,
                     analyze=False,
                     origin_kind='link',
-                    defaults={
-                        'purposes': found['purposes'],
-                        'author': found['author'],
-                        'kind': found['kind'],
-                    },
+                    defaults=defaults,
                 )
-                budget -= len(wanted)
+                budget -= len(chosen)
     return status(root, path.stem, changed=changed, problems=problems)
 
 
@@ -461,7 +475,7 @@ def status(root, operation, sync=True, changed=(), problems=None):
             'Learn a voice from a group: choose up to ten samples, then confirm they may be analyzed.'
         )
     if counts['failed']:
-        words.append('Failed links can be tried again by checking the list again.')
+        words.append('Try the failed links again: only they are fetched, once more.')
     result = {
         'operation': operation,
         'state': 'importing' if counts['pending'] else 'saved',

@@ -1588,6 +1588,13 @@ async function libraryAddJourney(){
   await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   assert.equal(requests.some(r=>r.url==='/api/tool-action'),false,'no learning job without the confirmation');
   assert.ok(has(/Confirm sample permissions/));
+  // A failed link is fetched again only when asked, with the same operation.
+  assert.equal(find('Try the failed links again'),undefined,'no retry without a failure');
+  f.run("studio.libraryAdd.result={...studio.libraryAdd.result,counts:{...studio.libraryAdd.result.counts,failed:1},items:[...studio.libraryAdd.result.items,{kind:'link',url:'https://blog.example/team/gone/',status:'failed',reason:'Source returned HTTP 404.'}]};sLibraryAddResult(studio.libraryAdd)");
+  assert.ok(has(/Not added: Source returned HTTP 404\./));
+  await find('Try the failed links again').listeners.click();
+  const retried=requests.filter(r=>r.url==='/api/library-add').at(-1).data;
+  assert.equal(retried.retry,true);assert.equal(retried.operation,operation,'the same operation');assert.equal(retried.expected,'check-1');
 }
 
 // The library screen: filters for role, kind of post and author reach the request; rows can be

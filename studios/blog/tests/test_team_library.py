@@ -357,6 +357,36 @@ class AddTests(RunnerCase):
             self.add('library-add-preview', {'role': 'facts', 'links': 'not a link'})
         self.assertEqual(len(list((self.root / 'sources').iterdir())), 4)
 
+    def test_a_failed_link_is_fetched_again_when_asked_and_only_then(self):
+        request = {
+            'links': SITE + 'one/\n' + SITE + 'two/\n',
+            'role': 'facts',
+            'author': 'Jordan Lee',
+            'kind': '',
+        }
+        failing = Pages({SITE + 'one/': page('One', 'Jordan Lee')})  # two/ answers 404
+        shown = self.add('library-add-preview', request)
+        data = {**request, 'operation': 'c' * 32, 'expected': shown['expected']}
+        first = self.add('library-add', data, failing)
+        self.assertEqual((first['counts']['imported'], first['counts']['failed']), (1, 1))
+        self.assertIn('Try the failed links again', first['next_step'])
+        fixed = Pages(
+            {SITE + 'one/': page('One', 'Jordan Lee'), SITE + 'two/': page('Two', 'Jordan Lee')}
+        )
+        # The same list checked again keeps its operation: a plain repeat fetches nothing.
+        shown = self.add('library-add-preview', request)
+        self.assertEqual(shown['expected'], data['expected'])
+        self.assertEqual(self.add('library-add', data, fixed)['counts']['failed'], 1)
+        self.assertEqual(fixed.calls, [])
+        # Asking to retry fetches the failed link once more, and nothing else.
+        again = self.add('library-add', {**data, 'retry': True}, fixed)
+        self.assertEqual([call[0] for call in fixed.calls], [SITE + 'two/'])
+        self.assertEqual((again['counts']['imported'], again['counts']['failed']), (2, 0))
+        two = next(row for row in again['items'] if row['url'] == SITE + 'two/')
+        self.assertEqual((two['title'], two['author']), ('Two', 'Jordan Lee'))
+        with self.assertRaisesRegex(ValueError, 'retry'):
+            self.add('library-add', {**data, 'retry': 'yes'}, fixed)
+
     def test_each_posts_own_author_imports_first_then_groups_by_byline(self):
         coauthored = (
             b'<html><head><title>Co</title><script type="application/ld+json">{"author":[{"name":"Avery Quinn"},'
