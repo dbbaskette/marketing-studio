@@ -1,5 +1,6 @@
 """Launch and computer-check behavior with synthetic homes, CLIs and documents."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import importlib.util
 import json
 from pathlib import Path

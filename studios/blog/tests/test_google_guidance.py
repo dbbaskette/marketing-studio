@@ -1,5 +1,6 @@
 """The Google guidance must match the helpers it tells an agent to run. No Google access."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import contextlib
 import io
 from pathlib import Path

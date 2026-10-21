@@ -1,5 +1,6 @@
 """Exact-input reuse and bounded disclosure; no live accounts or models."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import json
 from pathlib import Path
 import tempfile

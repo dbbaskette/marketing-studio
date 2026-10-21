@@ -1,5 +1,6 @@
 """End-to-end local workflow checks, with disposable data and no paid services."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import importlib.util
 import io
 import json

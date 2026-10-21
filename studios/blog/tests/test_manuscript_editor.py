@@ -1,5 +1,6 @@
 """Manuscript workflows with synthetic writing and provider boundaries."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import json
 import sys
 import unittest

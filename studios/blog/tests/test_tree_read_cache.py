@@ -1,5 +1,6 @@
 """Immutable tree reuse stays operation-scoped, bounded and revision-bound."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import os
 from pathlib import Path
 import tempfile

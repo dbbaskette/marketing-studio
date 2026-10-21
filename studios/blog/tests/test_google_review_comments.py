@@ -1,5 +1,6 @@
 """Comment fallback fixtures: no Google login or real document writes."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import contextlib
 import copy
 import json

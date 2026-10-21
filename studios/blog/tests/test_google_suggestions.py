@@ -1,5 +1,6 @@
 """Native suggestions contract fixtures; no live credentials or external writes."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import copy
 import json
 from pathlib import Path

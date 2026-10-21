@@ -1,5 +1,6 @@
 """Page-based Google manuscript intake, using synthetic documents and no accounts."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import copy
 import http.client
 import json

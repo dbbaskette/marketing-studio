@@ -1,5 +1,6 @@
 """Portable generated requests preserve route stops and author input."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 from pathlib import Path
 import json
 import shutil

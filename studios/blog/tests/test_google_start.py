@@ -1,5 +1,6 @@
 """Existing-Doc intake, retained formatting and original-target review; no live Google."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import copy
 import json
 from pathlib import Path

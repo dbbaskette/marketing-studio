@@ -1,5 +1,6 @@
 """User-facing discovery and memory invariants; no live accounts or model calls."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import json
 import shutil
 from pathlib import Path

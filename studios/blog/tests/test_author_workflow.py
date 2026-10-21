@@ -1,5 +1,6 @@
 """Epic 27 observable workflow invariants; disposable files and local Git only."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 from contextlib import redirect_stdout
 import io
 import json

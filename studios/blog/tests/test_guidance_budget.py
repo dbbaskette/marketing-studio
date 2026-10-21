@@ -1,5 +1,6 @@
 """Guidance budgets: wording edits pass, growth past the margin fails, the inventory stays current."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import copy
 import importlib.util
 import json

@@ -1,5 +1,6 @@
 """Google contract fixtures: no Google account, provider writes, or model calls."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import copy
 import json
 from pathlib import Path

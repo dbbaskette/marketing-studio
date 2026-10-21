@@ -1,5 +1,6 @@
 """Managed installation of the whole skill in disposable homes; no sign-in, network or global changes."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import contextlib
 import fcntl
 import importlib.util

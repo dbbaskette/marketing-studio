@@ -1,5 +1,6 @@
 """Team writing handoff using disposable homes and Git repositories."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import io
 import json
 from pathlib import Path

@@ -1,5 +1,6 @@
 """Synthetic shared-root repositories, driver races, offline queues and shared defaults."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import os
 import json
 from pathlib import Path

@@ -1,5 +1,6 @@
 """Import-time analysis preserves evidence, corrections, and retry semantics."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import base64
 import json
 from unittest.mock import patch
