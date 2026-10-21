@@ -58,11 +58,29 @@ Shared as references are today (`share()`, Hub projection, team repository).
    and reads "Keep in the team library"; an item kept lands with its role and the run's
    kind and author. "Just this blog" (unticked) keeps a file as material, as today.
 3. **Add to library.** A sheet on the library screen: files (many), a pasted or uploaded
-   list of links, or a Google Doc link; then role, author (suggested from a file name or
-   byline as voice-from-links does), kind of post. Links go through the existing library
-   import (`urls`) with the voice-links fetcher and scope check; Google Docs through
-   `google_intake.material` then saved as a reference. Every item is listed with its text
-   size and byline before it is kept.
+   list of links, or a Google Doc link; then role, author, kind of post. Links go through
+   the existing library import (`urls`) with the voice-links fetcher and scope check;
+   Google Docs through `google_intake.material` then saved as a reference. Every item is
+   listed with its text size and byline before it is kept.
+
+   **A list of links by many authors.** Owner's words: "just like I can import Darin
+   Zook's posts, we should be able to pass a text file of URLs for all the blogs we want in
+   that library; then you pull the author and they become sample posts for an author as
+   well." The author field offers "Each post's own author" beside a typed name. Then:
+
+   1. *Import first.* Bylines are known only once a page is fetched, so every link is
+      imported as a reference (plus `inspiration` when that role is chosen), split by
+      site scope when the file mixes sites, with `library.author` = the published byline
+      from `voice_links.bylines`.
+   2. *Review the authors.* The sheet groups the results by author, folding variants with
+      `voice_links.same_author` ("Darin Zook · 21, Sam Rivera · 3, No byline · 2"). The
+      person can rename a group, merge two groups, or set an author on a no-byline row.
+      A post with no byline, an organisation byline, or several bylines is held for the
+      person to decide and counted for nobody until then.
+   3. *Mark as samples.* One choice, on by default, adds `voice-sample` to every post in a
+      named group (a new source revision through `source-purpose`, which no longer stales
+      a run that pinned the source). Each group then offers "Learn <name>'s voice", with
+      the existing confirmation before any learning job.
 4. **Import old blogs** stays as it is for bulk imports.
 
 ### 3. Picking from the library

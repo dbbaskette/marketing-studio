@@ -57,7 +57,14 @@ library screen), `index.html`, `check-management.cjs`, `tests/test_editorial_too
 - [ ] Tests: files, a list of links (file or pasted) and a Google Doc each preview with
       text size and byline, then save with role, author and kind; refusals: no role, link
       outside scope, oversized, unreadable; idempotent on retry (`expected` fingerprint).
-- [ ] Implement; links through `blog_library.import_batch` with `analyze=False`.
+- [ ] Tests, "Each post's own author": a mixed-site list imports per site scope; bylines
+      become `library.author`; the results group by author with variants folded; rename
+      and merge a group; set an author on a no-byline row; organisation and co-authored
+      posts held; marking as samples adds `voice-sample` per named group as a new
+      revision without staling a run that pinned the source; "Learn <name>'s voice" is
+      offered per group and still asks before learning.
+- [ ] Implement; links through `blog_library.import_batch` with `analyze=False`;
+      grouping with `voice_links.same_author`; purposes through `source-purpose`.
 - [ ] Commit: "Add files, links and Google Docs to the library in one sheet".
 
 ## Task 5: The library screen
