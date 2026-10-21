@@ -11,8 +11,8 @@ What a caller needs to know
 
 - No look is chosen. The sample is the outline's cover, with its approved title and
   subtitle, on the template layout the build gives a cover (`build.layouts`), in the brand's
-  own colours (`build.DIRECTION`). An outline with no cover is shown the deck's title on
-  one. Nothing is kept from it: when the deck is built, every slide's layout is designed
+  own direction (`deck_direction.of_file`, else `build.DIRECTION`). An outline with no
+  cover is shown the deck's title on one. Nothing is kept from it: when the deck is built, every slide's layout is designed
   from what that slide says.
 - `draw_sample` compiles and previews the cover in work/look/ (never shared) and keeps its
   picture as work/look/sample.png (SAMPLE). Previews are taken one at a time, as
@@ -34,6 +34,7 @@ from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import home
+from studio_core import deck_direction
 from workspace import WorkspaceError, write_atomic
 
 from runner import decks, worker_tools
@@ -62,9 +63,9 @@ def cover(outline: dict, title: str) -> dict:
     return found
 
 
-def composition(outline: dict, title: str, listed) -> dict:
+def composition(outline: dict, title: str, listed, direction: dict | None = None) -> dict:
     """The sample as the slides tool compiles it: the cover alone, on the template layout a
-    cover is given, in the brand's own colours."""
+    cover is given, in the brand's own colours: `direction`, as the build will use it."""
     slide = cover(outline, title)
     laid = {'id': slide.get('id') or COVER, 'title': slide.get('title') or title,
             'layout': build.layouts(listed, [slide])[COVER], 'sources': ['outline'],
@@ -72,7 +73,7 @@ def composition(outline: dict, title: str, listed) -> dict:
     if slide.get('subtitle'):
         laid['subtitle'] = slide['subtitle']
     return {'version': 1, 'title': outline.get('title') or title,
-            'direction': dict(build.DIRECTION), 'slides': [laid]}
+            'direction': dict(direction or build.DIRECTION), 'slides': [laid]}
 
 
 def draw_sample(root, run: dict, slides, renderer) -> Path:
@@ -85,7 +86,8 @@ def draw_sample(root, run: dict, slides, renderer) -> Path:
     folder = root / FOLDER
     try:
         folder.mkdir(parents=True)
-        made = composition(_outline(root), title, slides.layouts(brand).get('layouts'))
+        made = composition(_outline(root), title, slides.layouts(brand).get('layouts'),
+                           deck_direction.of_file(brand)['direction'])
         home.write_json(folder / 'composition.json', made)
         slides.compile(folder / 'composition.json', brand, folder=folder / 'compiled')
         found = worker_tools.render(slides, folder / 'compiled', folder / 'preview',

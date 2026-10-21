@@ -86,6 +86,7 @@ import re
 
 import runner  # noqa: F401  puts the core on the import path
 import checks
+from studio_core import deck_direction
 from workspace import WorkspaceError
 
 PREVIEWS = 4            # times one composer may render its section
@@ -114,26 +115,22 @@ ABOUT_WORDS = {'drawing': 'how it is drawn', 'content': 'what it says',
                'concept': 'the visual concept it was approved with'}
 MARKED = 'Looked at at full size, slide by slide, by a reviewer that drew none of the deck.'
 NOTE = 12               # the shortest note the slides tool takes for a finding
-HOUSE = (
-    'Equals share one size and weight. Never set one of several peers larger, bolder or in '
-    'another colour.',
-    'The focal point is what the title singles out, and never one of several peers. A slide '
-    'that lists equals has a focal that is not one of them.',
-    'Draw nothing the title does not announce.',
-    'Titles and labels are in sentence case. Names and acronyms stay as they are written.',
-    'Boxes have square corners.',
-    "A caveat and a source line go in the slide's own caveat and source fields, never in "
-    'the drawing.',
-    'Leave out badges, labels on arrows and small print wherever the slide reads without '
-    'them.',
-    'An icon is optional. Use one only where it names a recognisable thing, the same icon '
-    'for the same thing, never twice on one slide.',
-)
-DESIGNED_HOUSE = HOUSE[:-1] + (
-    'Draw what the approved design says: its visual, its composition and the assets it '
-    'selected. An icon names a recognisable thing: the same icon for the same concept '
-    'across the deck, never twice on one slide.',
-)
+# The house rules when the brand says nothing of its corners. `house` gives a deck's own.
+HOUSE = deck_direction.house()
+DESIGNED_ICONS = ('Draw what the approved design says: its visual, its composition and the '
+                  'assets it selected. An icon names a recognisable thing: the same icon for '
+                  'the same concept across the deck, never twice on one slide. Where the '
+                  "design selected none, still give a recognisable product, platform, tool or "
+                  "actor its icon from the brand's functional icon library.")
+DESIGNED_HOUSE = HOUSE[:-1] + (DESIGNED_ICONS,)
+
+
+def house(designed: bool = False, square: bool | None = None) -> tuple[str, ...]:
+    """The house rules a deck is drawn by, with square corners only where its brand says."""
+    rules = deck_direction.house(square)
+    return rules[:-1] + (DESIGNED_ICONS,) if designed else rules
+
+
 QUESTIONS = (
     'After three seconds, is the main point clear, and is it the claim in the title?',
     'Does the eye land first on what carries the point?',
@@ -496,13 +493,18 @@ def layouts(listed, slides: list[dict]) -> dict:
     return chosen
 
 
-def complete(outline: dict, listed, words: list[str], designed: bool = False) -> dict:
+def complete(outline: dict, listed, words: list[str], designed: bool = False,
+             look: dict | None = None) -> dict:
     """An approved outline as the slides tool starts a deck from: with the direction, a
     layout for each kind of lead slide, the house rules, and the person's own words of
-    approval. A deck `designed` is drawn from its approved design."""
-    return {**outline, 'delivery': DELIVERY, 'direction': dict(DIRECTION),
+    approval. A deck `designed` is drawn from its approved design. `look` is what
+    `deck_direction.of_file` read from the brand: its direction and its corners. Without
+    it a deck has DIRECTION, and no word on corners."""
+    look = look or {}
+    return {**outline, 'delivery': DELIVERY,
+            'direction': dict(look.get('direction') or DIRECTION),
             'layouts': layouts(listed, slides_of(outline)),
-            'house': list(DESIGNED_HOUSE if designed else HOUSE), 'approval': list(words)}
+            'house': list(house(designed, look.get('square'))), 'approval': list(words)}
 
 
 def lead(part: dict) -> dict:
@@ -548,7 +550,8 @@ One JSON object, the section, handed in with `submit_section`:
 Each slide is `{{{shape}"brief": {{"relation", "focal": the ID of the node that carries the point, "rhythm"}}, "canvas", "connect"?, "caveat"?, "source"?, "notes"}}`. Copy each slide's {copied}caveat, source line and notes exactly as they are given below, and keep every word of every point. The input "composition contract" has the exact format.''',
                  'What you write')
     text = _part(text, 'House style', '\n'.join(
-        f'- {line}' for line in (DESIGNED_HOUSE if design else HOUSE)))
+        f'- {line}' for line in (whole.get('house') or (DESIGNED_HOUSE if design else HOUSE))))
+    text = _part(text, 'Colour', deck_direction.told(whole.get('direction') or DIRECTION))
     if design:
         text = _part(text, 'The approved design', drawn_from(design, named_in(written, whole),
                                                              recorded, by_asset))

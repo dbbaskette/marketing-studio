@@ -5,7 +5,7 @@ import shutil
 import home
 import workspace
 from workspace import WorkspaceError
-from studio_core import review_policy
+from studio_core import deck_direction, review_policy
 from runner import pipeline, deck, worker_tools
 
 PREPARED = ('research-plan', 'research', 'blueprint', 'document', 'brief')
@@ -219,8 +219,9 @@ class Reviewing:
         folder = contained(root, f'{workspace.prefix(level)}work/review-sample')
         shutil.rmtree(folder, ignore_errors=True)
         folder.mkdir(parents=True, exist_ok=True)
-        home.write_json(folder / 'composition.json', {'version': 1, 'title': found.session['title'],
-                        'direction': dict(deck.DIRECTION), 'slides': [laid]})
+        home.write_json(folder / 'composition.json', {
+            'version': 1, 'title': found.session['title'],
+            'direction': deck_direction.of_file(contract)['direction'], 'slides': [laid]})
         tool.compile(folder / 'composition.json', contract, folder=folder / 'compiled')
         shown = worker_tools.render(tool, folder / 'compiled', folder / 'preview',
                                     self._how(root, found, level))

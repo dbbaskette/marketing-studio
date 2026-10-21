@@ -17,6 +17,7 @@ from workspace import WorkspaceError
 
 from runner import decks, worker_tools
 from runner.steps import build, existing
+from studio_core import deck_direction
 from stand_ins.slides import sketch
 
 BY_ID = {slide['id']: slide for slide in OUTLINE['slides']}
@@ -156,12 +157,25 @@ class StartTests(Deck):
             others = [line for name, line in build.FREEDOM.items() if name != level]
             self.assertFalse(any(line in whole['house'] for line in others), level)
         whole, brief = self.started('rework')
-        self.assertEqual(whole['house'], list(build.HOUSE))
+        square = deck_direction.of_file(self.contract)['square']
+        self.assertEqual(whole['house'], list(deck_direction.house(square)))
         self.assertIn('Add no icons', build.FREEDOM['brand-only'])
+
+    def test_house_rules_are_soft_on_peers_and_icons_and_follow_the_brands_corners(self):
+        rules = ' '.join(build.HOUSE)
+        self.assertNotIn('in another colour', rules)
+        self.assertNotIn('An icon is optional', rules)
+        self.assertNotIn(deck_direction.SQUARE, build.HOUSE)
+        self.assertIn('Peers may share a light fill', rules)
+        self.assertIn("brand's functional icon library", rules)
+        self.assertIn(deck_direction.SQUARE, build.house(self.run_, True))
+        self.assertNotIn(deck_direction.SQUARE, build.house(self.run_, None))
 
     def test_start_adds_the_direction_layouts_and_approval(self):
         whole, brief = self.started('rework')
-        self.assertEqual(whole['direction'], build.DIRECTION)
+        self.assertEqual(whole['direction'], deck_direction.of_file(self.contract)['direction'])
+        self.assertIn('meanings', whole['direction'], "the brand's accents carry meanings")
+        self.assertIn('## Colour', brief)
         self.assertEqual(set(whole['layouts']), {'cover', 'closing'})
         self.assertTrue(whole['approval'])
         self.assertIn('submit_section', brief)

@@ -14,6 +14,7 @@ from workspace import WorkspaceError
 
 from runner import decks, marks, stages
 from runner.steps import build
+from studio_core import deck_direction
 
 
 def grave(slides):
@@ -59,7 +60,7 @@ class ScratchTests(StudioCase):
         self.assertIn('in example (light).', kept['approval'][0])
         self.assertEqual(self.waiting(root), 'gate:build')
         started = json.loads((root / build.START / 'outline.json').read_text())
-        self.assertEqual(started['direction'], build.DIRECTION)
+        self.assertEqual(started['direction'], deck_direction.of_file(root / build.CONTRACT)['direction'])
         shown = self.view(root)['gate']
         self.assertEqual([slide['number'] for slide in shown['slides']],
                          list(range(1, len(OUTLINE['slides']) + 1)))

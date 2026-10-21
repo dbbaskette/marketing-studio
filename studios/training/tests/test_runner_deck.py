@@ -147,16 +147,46 @@ class RuleTests(JobCase):
         self.assertIn('## Return', deck.brief('# A brief with none of the headings\n', whole))
 
     def test_a_deck_drawn_from_its_design_draws_its_visuals_and_keeps_the_relevance_rules(self):
-        self.assertIn('An icon is optional', deck.HOUSE[-1], 'a deck without a design as before')
+        self.assertIn("brand's functional icon library", deck.HOUSE[-1])
         self.assertEqual(deck.DESIGNED_HOUSE[:-1], deck.HOUSE[:-1])
         for told in ('Draw what the approved design says', 'names a recognisable thing',
                      'the same icon for the same concept across the deck',
                      'never twice on one slide'):
             self.assertIn(told, deck.DESIGNED_HOUSE[-1])
         self.assertNotIn('optional', ' '.join(deck.DESIGNED_HOUSE))
+        self.assertIn('still give a recognisable product', deck.DESIGNED_HOUSE[-1])
         self.assertEqual(deck.complete(OUTLINE, Slides.LAYOUTS, [])['house'], list(deck.HOUSE))
         self.assertEqual(deck.complete(OUTLINE, Slides.LAYOUTS, [], designed=True)['house'],
                          list(deck.DESIGNED_HOUSE))
+
+    def test_a_deck_takes_its_direction_and_corners_from_its_brand(self):
+        from studio_core import deck_direction
+        # Without a word from the brand: the two colours decks always had, no corners rule.
+        whole = deck.complete(OUTLINE, Slides.LAYOUTS, [])
+        self.assertEqual(whole['direction'], deck.DIRECTION)
+        self.assertNotIn(deck_direction.SQUARE, whole['house'])
+        rules = ' '.join(whole['house'])
+        self.assertNotIn('Never set one of several peers larger, bolder or in another colour',
+                         rules)
+        self.assertIn('Peers may share a light fill', rules)
+        # With the brand's: its direction, with meanings, and square corners where it says.
+        look = {'direction': {'focal': 'headingPrimary', 'neutral': 'canvasSecondary',
+                              'meanings': {'accentAqua': 'The product'},
+                              'motif': 'One shared base.'}, 'square': True}
+        whole = deck.complete(OUTLINE, Slides.LAYOUTS, [], designed=True, look=look)
+        self.assertEqual(whole['direction'], look['direction'])
+        self.assertIn(deck_direction.SQUARE, whole['house'])
+        self.assertEqual(whole['house'][-1], deck.DESIGNED_ICONS)
+        written = Slides._brief(whole, 1, whole['slides'][1:3], '/opt/brand/contract.json',
+                                Path('/opt/work'))
+        given = deck.brief(written, whole)
+        self.assertIn('"meanings": {"accentAqua": "The product"}', given)
+        self.assertIn('## Colour', given)
+        self.assertIn('- `accentAqua`: The product', given)
+        self.assertIn("The deck's recurring device: One shared base.", given)
+        self.assertIn(deck_direction.SQUARE, given)
+        spec = deck.fixed(whole, [whole['slides'][1]['id']], 1)
+        self.assertEqual(spec['direction'], look['direction'])
 
     def test_a_sections_brief_carries_its_approved_design_and_the_icons_across_the_deck(self):
         plan = approved_plan()
@@ -1029,6 +1059,36 @@ class DeckCase(StudioCase):
 
 
 class FlowTests(DeckCase):
+    def test_a_started_deck_is_drawn_in_its_brands_direction(self):
+        from studio_core import deck_direction
+        self.brand.design = {'colors': {'canvasSecondary': '#EEEEEE', 'headingPrimary': '#123456',
+                                        'accentAqua': '#007B8C', 'accentPurple': '#6C4B94'},
+                             'geometry': {'rectangularRadiusPx': 0}}
+        root = self.begin()
+        self.drawn(root)
+        start = root / pipeline.WORK / self.built(root)['start']['folder']
+        given = json.loads((start / 'given' / 'outline.json').read_text())
+        self.assertEqual(given['direction'], deck_direction.built_in({'design': self.brand.design}))
+        self.assertEqual(list(given['direction']['meanings']), ['accentAqua', 'accentPurple'])
+        self.assertIn(deck_direction.SQUARE, given['house'])
+        brief = (start / 'given' / 'section-1.md').read_text()
+        self.assertIn('## Colour', brief)
+        self.assertIn('- `accentPurple`: Another product', brief)
+
+    def test_the_brands_own_deck_direction_is_used_when_it_gives_one(self):
+        from studio_core import deck_direction
+        self.brand.design = {'colors': {'canvasSecondary': '#EEEEEE', 'headingPrimary': '#123456',
+                                        'accentAqua': '#007B8C'}}
+        own = {'focal': 'accentAqua', 'neutral': 'canvasSecondary',
+               'meanings': {'headingPrimary': 'Tanzu'}, 'motif': 'A shared base.'}
+        self.brand.beside = {deck_direction.FILE: json.dumps(own)}
+        root = self.begin()
+        self.drawn(root)
+        start = root / pipeline.WORK / self.built(root)['start']['folder']
+        given = json.loads((start / 'given' / 'outline.json').read_text())
+        self.assertEqual(given['direction'], own)
+        self.assertNotIn(deck_direction.SQUARE, given['house'], 'the brand says nothing of corners')
+
     def test_a_deck_only_bundle_uses_the_blueprint_without_other_material_writers(self):
         root = self.begin(materials=[])
         self.to_outline(root)

@@ -1006,6 +1006,9 @@ class Brand:
 
     def __init__(self):
         self.revision, self.refuse, self.exports, self.audited = 1, {}, [], []
+        # What a test gives the contract to say of how decks look, and what the skill writes
+        # beside it: {file name: text}.
+        self.design, self.beside = None, {}
         self.warnings = [{'code': 'SMALL_TEXT', 'slide': 2, 'says': 'Text under 18 points.'},
                          {'code': 'SMALL_TEXT', 'slide': 3, 'says': 'Text under 18 points.'},
                          {'code': 'HIGH_TEXT_DENSITY', 'slide': 3,
@@ -1028,8 +1031,10 @@ class Brand:
         folder.mkdir(parents=True)
         (folder / 'brand-contract.json').write_text(json.dumps({
             'brand': brand_id, 'variant': variant, 'delivery': delivery,
-            'revision': self.revision}))
+            'revision': self.revision, **({'design': self.design} if self.design else {})}))
         (folder / 'DESIGN.md').write_text('# How Example Co looks\n')
+        for name, text in self.beside.items():
+            (folder / name).write_text(text)
         (folder / 'VOICE.md').write_text(self.VOICE)
         self.exports.append((folder.name, brand_id, variant, delivery))
         return {'contract': str(folder / 'brand-contract.json'),

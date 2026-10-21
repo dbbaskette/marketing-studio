@@ -11,6 +11,7 @@ from workspace import WorkspaceError
 
 from runner import decks
 from runner.steps import build, look
+from studio_core import deck_direction
 
 BRANDS = [{'brand': 'example', 'name': 'Example Co', 'variants': ['light', 'dark']}]
 
@@ -117,7 +118,7 @@ class ApproveTests(Case):
         look.approve(self.root, self.run_)
         build.start(self.root, self.run_, self.slides, self.contract)
         started = json.loads((self.root / build.START / 'outline.json').read_text())
-        self.assertEqual(started['direction'], build.DIRECTION)
+        self.assertEqual(started['direction'], deck_direction.of_file(self.contract)['direction'])
         self.assertNotIn('motif', started['direction'])
 
 

@@ -193,7 +193,7 @@ from pathlib import Path, PurePosixPath
 import runner  # noqa: F401  puts the core on the import path
 import computer
 import home
-from studio_core import model_profiles, review_policy, research_contract
+from studio_core import deck_direction, model_profiles, review_policy, research_contract
 import hub
 import workspace
 from workspace import WorkspaceError
@@ -1907,7 +1907,8 @@ class Engine(Reviewing):
         try:
             listed = home.read_json(work / mine.built['brand']['told'] / 'layouts.json', {})
             whole = deck.complete(mine.outline, (listed or {}).get('layouts'), words,
-                                  designed=plan is not None)
+                                  designed=plan is not None,
+                                  look=deck_direction.of_file(pipeline.contract(root, mine)))
             home.write_json(source, whole)
             self.slides().outline_start(source, pipeline.contract(root, mine), folder)
             sections = []

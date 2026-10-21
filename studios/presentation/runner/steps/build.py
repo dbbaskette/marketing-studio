@@ -84,6 +84,7 @@ from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import home
+from studio_core import deck_direction
 from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, build_progress, decks, slides as slides_tool
@@ -464,21 +465,8 @@ def _read(path: Path) -> str:
 LEADS = ('cover', 'section', 'closing')
 NAMED_LAYOUTS = {'cover': ('title', 'cover'), 'section': ('section', 'divider'),
                  'closing': ('closing', 'end', 'title')}
-HOUSE = (
-    'Equals share one size and weight. Never set one of several peers larger, bolder or in '
-    'another colour.',
-    'The focal point is what the title singles out, and never one of several peers. A slide '
-    'that lists equals has a focal that is not one of them.',
-    'Draw nothing the title does not announce.',
-    'Titles and labels are in sentence case. Names and acronyms stay as they are written.',
-    'Boxes have square corners.',
-    "A caveat and a source line go in the slide's own caveat and source fields, never in "
-    'the drawing.',
-    'Leave out badges, labels on arrows and small print wherever the slide reads without '
-    'them.',
-    'An icon is optional. Use one only where it names a recognisable thing, the same icon '
-    'for the same thing, never twice on one slide.',
-)
+# The house rules when the brand says nothing of its corners; `house` gives a deck's own.
+HOUSE = deck_direction.house()
 FREEDOM = {
     'brand-only': "Keep each slide's composition as close to the original as the brand's "
                   'layouts allow. Add no icons.',
@@ -489,11 +477,12 @@ FREEDOM = {
 POINTER = re.compile(r'Read `references/[^\n]*')
 
 
-def house(run: dict) -> list[str]:
-    """The house rules a deck is drawn by: the runner's own, and for an existing deck the
-    line that says how far its slides may move."""
+def house(run: dict, square: bool | None = None) -> list[str]:
+    """The house rules a deck is drawn by: the runner's own, with square corners only where
+    the brand says so, and for an existing deck the line that says how far its slides may
+    move."""
     level = _level(run) if run.get('route') == 'existing' else None
-    return [*HOUSE, *([FREEDOM[level]] if level in FREEDOM else [])]
+    return [*deck_direction.house(square), *([FREEDOM[level]] if level in FREEDOM else [])]
 
 
 def layouts(listed, slides: list[dict]) -> dict:
@@ -524,12 +513,14 @@ def layouts(listed, slides: list[dict]) -> dict:
     return chosen
 
 
-def complete(outline: dict, listed, words: list[str], rules: list[str]) -> dict:
+def complete(outline: dict, listed, words: list[str], rules: list[str],
+             direction: dict | None = None) -> dict:
     """An approved outline as the slides tool starts a deck from: with its direction, a
     layout for each kind of lead slide, the house rules, and the person's own words of
-    approval."""
+    approval. `direction` is the brand's, as `deck_direction.of_file` reads it; without it
+    the outline's own, or DIRECTION."""
     return {**outline, 'delivery': outline.get('delivery') or DELIVERY,
-            'direction': dict(outline.get('direction') or DIRECTION),
+            'direction': dict(direction or outline.get('direction') or DIRECTION),
             'layouts': layouts(listed, slides_of(outline)), 'house': list(rules),
             'approval': list(words)}
 
@@ -571,6 +562,7 @@ Each slide is `{{"id", "title", "sources", "brief": {{"relation", "focal": the I
                  'What you write')
     text = _part(text, 'House style', '\n'.join(
         f'- {line}' for line in whole.get('house') or HOUSE))
+    text = _part(text, 'Colour', deck_direction.told(whole.get('direction') or DIRECTION))
     text = _part(text, 'Preview', f'''
 `preview_section` renders your whole section and returns a picture of every slide, with what the renderer found. You have {previews} previews. `check_section` is free: use it until the section compiles before you spend a preview.''')
     return _part(text, 'Return', '''
@@ -689,7 +681,9 @@ def start(root, run: dict, slides, brand) -> dict:
     source = work / f'outline-{secrets.token_hex(3)}.json'
     try:
         listed = slides.layouts(brand).get('layouts')
-        whole = complete(outline, listed, _approval(root, run, outline), house(run))
+        look = deck_direction.of_file(brand)
+        whole = complete(outline, listed, _approval(root, run, outline),
+                         house(run, look['square']), look['direction'])
         home.write_json(source, whole)
         slides.outline_start(source, brand, folder)
         sections = []
