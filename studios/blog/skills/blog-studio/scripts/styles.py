@@ -103,6 +103,14 @@ def _read(root, ident):
     raise ValueError(f'Unknown styles ID: {ident}')
 
 
+def name_of(root, ident):
+    """A style's current name, a starter's even before it is copied; None if it is gone."""
+    try:
+        return _read(root, ident)[0]['name']
+    except (ValueError, KeyError, OSError):
+        return None
+
+
 def validate_samples(root, values):
     for value in values:
         _, source = studio.item(root, 'sources', value)

@@ -99,6 +99,7 @@ def compact(root, article_id, limit=5, offset=0):
         'research_policy': record['research_policy'],
         'pins': {
             'voice': record['voice'],
+            'style': record.get('style'),
             'guidance': record.get('guidance'),
             'team': record.get('hub_context'),
         },

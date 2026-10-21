@@ -244,7 +244,9 @@ class Workspace:
                 'guidance_history',
                 'hub_context',
                 'hub_projection',
-                'style',  # a local pin until styles are shared Hub items
+                # A local pin until styles are shared Hub items, so the Hub's edited
+                # fingerprint cannot see a change of style either.
+                'style',
             )
         }
         title = record.get('title') or record.get('name') or local_id

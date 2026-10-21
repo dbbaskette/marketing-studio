@@ -4,6 +4,7 @@ import isolation  # noqa: F401  (first: keeps every test off this computer's own
 import os
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -736,6 +737,62 @@ class MigrationTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(found.stdout, '')
+
+    def test_migration_brings_the_style_a_blog_pins(self):
+        from hub_fixtures import FakeProvider
+        from hub import Registry
+        from hub_workspace import Workspace
+        import hub_workspace
+        import styles
+
+        legacy = self.base / 'legacy-styles'
+        studio.initialize(legacy)
+        registry = Registry(self.base / 'legacy-registry', FakeProvider(self.base / 'legacy-rs'))
+        hub_id = registry.create('fixture/old-styles', 'Old styles')['hub']
+        adapter = Workspace(legacy, registry.hub(hub_id))
+        guide = self.base / 'style-guide.md'
+
+        def run(*words):
+            args = studio.parser().parse_args(['--root', str(legacy), *words])
+            return getattr(studio, args.group + '_command')(legacy, args)
+
+        guide.write_text('Short sections, one observation each.\n')
+        learned = run('style', 'create', '--name', 'Field notes', '--guide-file', str(guide))
+        guide.write_text('Revised field notes.\n')
+        run('style', 'save', '--id', learned['id'], '--guide-file', str(guide))
+        article = run('article', 'create', '--title', 'Styled notes', '--mode', 'first-draft')
+        directory, record = studio.item(legacy, 'articles', article['id'])
+        record['style'] = {'style_id': learned['id'], 'revision': 2}
+        studio.persist(directory, 'articles', record)
+        here = studio.inside(self.root, 'styles', learned['id'])
+        shutil.copytree(legacy / 'styles' / learned['id'], here)
+        shutil.rmtree(here / 'revisions' / '2')  # the same style here, without the pinned revision
+        teams.saved(self.root, message='Keep a style here')
+        real_active = hub_workspace.active
+        with patch.object(
+            hub_workspace,
+            'active',
+            side_effect=lambda root: (
+                adapter if Path(root).resolve() == legacy.resolve() else real_active(root)
+            ),
+        ):
+            with self.assertRaisesRegex(ValueError, 'overwrite local work: the style'):
+                teams.migrate(self.root, legacy, [article['id']])
+            self.assertFalse((self.root / article['id']).exists())
+            shutil.rmtree(here)
+            teams.saved(self.root, message='Remove the style here')
+            teams.migrate(self.root, legacy, [article['id']])
+        self.assertEqual(here, self.root / '.shared' / 'styles' / learned['id'])
+        self.assertEqual(
+            styles.pinned(self.root, {'style_id': learned['id'], 'revision': 2})['guide'],
+            'Revised field notes.\n',
+        )
+        # A starter the legacy workspace never copied needs nothing: it reads as revision 1.
+        self.assertIsNone(teams._style_plan(self.root, legacy, 'how-to', {1}))
+        with self.assertRaisesRegex(ValueError, 'missing'):
+            teams._style_plan(self.root, legacy, 'how-to', {2})
+        tracked = support.git(teams.space(self.root).repo, 'ls-files')
+        self.assertIn('.shared/styles/' + learned['id'] + '/revisions/2/STYLE.md', tracked)
 
     # Reuse the synthetic repository fixture, with a legacy fake provider kept entirely local.
     def test_selected_migration_is_byte_preserving_and_old_hub_is_unchanged(self):

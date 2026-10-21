@@ -1637,6 +1637,13 @@ class StyleTests(RunnerCase):
         self.assertIn('The news is in the first sentence.', payload['style']['guide'])
         self.assertIn('the style wins', guidance)
         self.assertIn('the style wins', blog_worker.POLICY)
+        directory, _, run = runner.load(self.root, found['id'])
+        for check, carried in (('polish', False), ('shape', True)):
+            studio.write_json(
+                studio.inside(directory, runner.STATE), {**run, 'editor_check': check}
+            )
+            self.assertEqual('SELECTED STYLE' in runner.job(self.root, found['id'])[2], carried)
+        studio.write_json(studio.inside(directory, runner.STATE), run)
         guide = self.base / 'style.md'
         guide.write_text('Changed later.')
         self.command('style', 'save', '--id', 'product-announcement', '--guide-file', str(guide))
@@ -1669,8 +1676,22 @@ class StyleTests(RunnerCase):
     def test_a_refused_run_leaves_no_copied_starter(self):
         with self.assertRaises(ValueError):
             self.create(page=True, style='how-to', sources=['no-such-source'])
+        large = self.source('Synthetic gateway detail. ' * 12_000)  # over one job's context
+        with self.assertRaisesRegex(ValueError, 'too large'):
+            self.create(page=True, style='how-to', sources=[large['id']])
         self.assertFalse((self.root / 'styles' / 'how-to').exists())
         self.assertEqual(runner.catalog(self.root)['items'], [])
+
+    def test_a_listing_names_a_style_from_its_current_record_or_starter(self):
+        import styles
+
+        self.assertEqual(styles.name_of(self.root, 'how-to'), 'How-to and tutorial')
+        self.assertIsNone(styles.name_of(self.root, 'no-such-style'))
+        self.assertEqual(
+            runner.style_name(self.root, {'style': {'style_id': 'how-to', 'revision': 1}}),
+            'How-to and tutorial',
+        )
+        self.assertFalse((self.root / 'styles' / 'how-to').exists(), 'naming copies nothing')
 
 
 class FilesCase(RunnerCase):

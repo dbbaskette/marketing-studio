@@ -440,10 +440,9 @@ def style_name(root, record):
     """The pinned style's current name, for listings; None when the run has no style."""
     if not record.get('style'):
         return None
-    try:
-        return studio.item(root, 'styles', record['style']['style_id'])[1]['name']
-    except (ValueError, KeyError):
-        return None
+    import styles
+
+    return styles.name_of(root, record['style']['style_id'])
 
 
 def survey(root, ident, listing=False):
@@ -1023,7 +1022,13 @@ def job(root, ident):
     else:
         guidance = STAGES[stage][2] + '\n\n' + (references / GUIDES[stage]).read_text()
     guidance += '\n\n' + (references / 'style/house.md').read_text()
-    if payload.get('style') and stage in ('outline', 'draft', 'review', 'package'):
+    # A focused edit or a single editor check other than shape keeps to its own scope.
+    if (
+        payload.get('style')
+        and stage in ('outline', 'draft', 'review', 'package')
+        and not edit
+        and run.get('editor_check') in (None, 'shape')
+    ):
         guidance += (
             '\n\nSELECTED STYLE: '
             + payload['style']['name']
