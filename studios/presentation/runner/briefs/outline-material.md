@@ -25,9 +25,11 @@ An outline is one JSON object: `version` 1, a `title`, optionally `audience`, `d
   - understand: one sentence saying what the audience must leave the slide knowing.
   - relation: how the points relate: order, dependency, hierarchy, membership, contrast, parallel, overlap, quantity or none. A relation other than quantity or none needs two or more points. For quantity the first point's label is the figure.
   - points: a list of up to twelve, each with a label, a text or both. They are the real units on the slide, counted from the content.
+  - parts, on a point, when a diagram needs smaller pieces than the point: up to eight short labels, six words at most each. The point's text stays one whole sentence; the labels are drawn as the diagram's parts.
   - focal: what the eye should land on. Give the label of one of the points, or a short statement of its own, which is then shown on the slide as new text. Leave it out when the slide lists or compares equals: it is never one of several peers.
   - rhythm: anchor for structure, dense for information (the default) or breathing for a pause. Four dense slides in a row is a finding; mark one breathing or put a section slide between.
-  - caveat and source: one line each, shown at the foot of the slide.
+  - caveat and source: one line each, shown at the foot of the slide. A source cites only what the audience can look up by name, such as a product's documentation, or is left out.
+  - provenance: the IDs and notes behind the slide, such as the IDs of the research findings it rests on. It goes only into the speaker notes. A program refuses a team's own IDs, and a slug used as a prefix, anywhere the slide shows them: put them here instead.
   - notes: for the speaker. A live deck needs them on every content slide, and no slide depends on them for its meaning.
   - sources: required, one or more IDs saying what the slide rests on: a section of the material, or one ID such as request (the person asked for it) or author_knowledge.
 

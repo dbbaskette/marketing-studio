@@ -1277,6 +1277,25 @@ class LookStepTests(StudioCase):
                       ' '.join(started['approval']))
 
 
+class PreviewRepairEngineTests(StudioCase):
+    def test_a_slide_the_preview_flags_is_drawn_again_before_the_review(self):
+        second = OUTLINE['slides'][1]['id']
+        self.slides.run.screens = {second: [
+            {'severity': 'error', 'code': 'text-overflow', 'detail': 'Text runs off.'}]}
+        root = self.start()
+        self.to_gate(root, 'gate:build')
+        state = build.read_state(root)
+        # The first round went back to its composer before any review; later rounds within
+        # REPAIRS too; the review came after.
+        self.assertEqual(state['repaired'], build.REPAIRS)
+        self.assertIsNone(state['rounds'][0]['review'])
+        self.assertTrue(state['rounds'][0]['preview_repair'])
+        self.assertIsNotNone(state['rounds'][-1]['review'])
+        told = [spec for seen, job, spec in self.workers.jobs if seen == 'section'
+                and any(entry['name'] == 'what the preview found' for entry in spec['inputs'])]
+        self.assertTrue(told)
+
+
 class SlideNoteTests(StudioCase):
     def setUp(self):
         super().setUp()

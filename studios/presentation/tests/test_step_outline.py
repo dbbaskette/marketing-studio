@@ -94,8 +94,7 @@ class BriefTests(Case):
 
     def test_a_lead_slides_title_is_one_line(self):
         work = self.work()
-        self.assertEqual(work.prepared['artifacts']['outline']['rules'],
-                         [outline.one_line_titles])
+        self.assertIn(outline.one_line_titles, work.prepared['artifacts']['outline']['rules'])
         two = {'slides': [{'id': 'end', 'kind': 'closing',
                            'title': 'Thank you\nNext: try it on a test app'},
                           {'id': 'body', 'kind': 'content', 'title': 'One\nTwo'}]}
@@ -104,6 +103,38 @@ class BriefTests(Case):
             'subtitle, or on a content slide before it.'])
         self.assertEqual(outline.one_line_titles({'slides': [
             {'id': 'end', 'kind': 'closing', 'title': 'Thank you'}]}), [])
+
+
+    def test_a_teams_bookkeeping_stays_off_the_slides(self):
+        from runner.steps import build
+        rules = self.work().prepared['artifacts']['outline']['rules']
+        self.assertIn(build.provenance_rules, rules)
+        self.assertIn(build.parts_rules, rules)
+        shown = {'slides': [
+            {'id': 'model01', 'kind': 'content', 'title': 'Compare operations',
+             'source': 'Findings g1, g7; PostgreSQL 18',
+             'points': [{'label': 'Model', 'text': 'operating-model: backups already work.'}]},
+            {'id': 'goals01', 'kind': 'content', 'title': 'Three decisions',
+             'source': 'Blueprint O1–O9'}]}
+        said = build.provenance_rules(shown)
+        self.assertEqual(len(said), 3, said)
+        self.assertIn('model01: source shows "Findings"', said[0])
+        self.assertIn("put the IDs in the slide's `provenance`, which goes only into the "
+                      'speaker notes', said[0])
+        self.assertIn("a point's text shows \"operating-model:\"", said[1])
+        fine = {'slides': [{'id': 'model01', 'kind': 'content', 'title': 'Compare operations',
+                            'source': 'The product\'s 4.5 documentation, https://docs.example.com/g1',
+                            'provenance': 'Findings g1, g7', 'points': [
+                                {'label': 'Model', 'text': 'Backups already work.',
+                                 'parts': ['Drain', 'Restart']}]}]}
+        self.assertEqual(build.provenance_rules(fine), [])
+        self.assertEqual(build.parts_rules(fine), [])
+        fine['slides'][0]['provenance'] = ' '
+        self.assertIn('`provenance` is text', ' '.join(build.provenance_rules(fine)))
+        for parts in ([], ['x'] * 9, ['one two three four five six seven'], [3]):
+            bad = {'slides': [{'id': 's', 'kind': 'content', 'points': [
+                {'text': 'One sentence.', 'parts': parts}]}]}
+            self.assertIn('`parts` gives a point', ' '.join(build.parts_rules(bad)), parts)
 
 
 class RuleTests(Case):

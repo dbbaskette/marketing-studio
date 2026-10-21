@@ -504,7 +504,13 @@ def check_outline(text: str, spec: dict, slides,
     except Refusal as refusal:
         return [str(refusal)], [], [], text
     try:
-        report = slides.outline_check(_draft(scratch, 'outline', kept), spec['brand'])
+        # The tool checks the outline without what it does not know: a point's `parts`
+        # and a slide's `provenance`, on an older tool.
+        known = slides.knows() if hasattr(slides, 'knows') else frozenset()
+        shown = build.for_tool(outline, known)
+        told = kept if shown == outline else json.dumps(
+            shown, indent=2, ensure_ascii=False) + '\n'
+        report = slides.outline_check(_draft(scratch, 'outline', told), spec['brand'])
     except WorkspaceError as refusal:
         found = said_no(refusal)
     else:
@@ -535,11 +541,17 @@ def check_section(text: str, spec: dict, slides,
             pass
     if isinstance(section, dict):
         try:
-            slides.compile(_draft(scratch, 'section', kept), spec['brand'])
+            slides.compile(_draft(scratch, 'section', kept), spec['brand'], **outlined(spec))
         except WorkspaceError as refusal:
             found = said_no(refusal)
     outcomes = [result('section.rules', ours), result('section.compile', found)]
     return held(outcomes), outcomes, [], kept
+
+
+def outlined(spec: dict) -> dict:
+    """What compile is given of the approved outline a section is drawn from, so that a
+    tool that can finds a point's sentence split across shapes: nothing without one."""
+    return {'outline': Path(spec['outline'])} if spec.get('outline') else {}
 
 
 # --- the rules an outline is held to, kept by name ----------------------------------------
@@ -1213,7 +1225,7 @@ class WorkerTools:
             new.parent.mkdir(parents=True, exist_ok=True)
         try:
             self.slides().compile(_draft(self.folder / 'drafts', 'preview', kept),
-                                  spec['brand'], folder=built)
+                                  spec['brand'], folder=built, **outlined(spec))
             found = render(self.slides(), built, taken, spec)
             slides = pictures(found, taken, self.folder / 'shown')
         except WorkspaceError as refusal:

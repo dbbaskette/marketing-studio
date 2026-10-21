@@ -53,7 +53,9 @@ What a caller needs to know
 - `to_draw` is every section not yet drawn, and every section a review or the person sent
   back that was not drawn again since the last round. A review sends back each section with
   a major or critical finding about how one of its slides is drawn, for at most REPAIRS
-  rounds; after that the findings stand for the person.
+  rounds; after that the findings stand for the person. Before any review, the screen of
+  the whole deck's preview sends back each slide with an error, a sentence split across
+  shapes, or OVERLAPS findings about overlap (`preview_repairs`), within the same REPAIRS.
 - `whole` copies the round's contact sheet to contact-sheet.png and records the previewed
   deck and its hash. `render` copies that deck, the one the reviewer looked at, to
   work/deck.pptx once its hash still matches; nothing is rendered afresh. At the 'selected'
@@ -110,6 +112,21 @@ QUESTIONS = (
     'Does every picture and icon explain something?',
 )
 WORD = re.compile(r"[^\W_]+(?:['’.-][^\W_]+)*")
+PARTS = 8               # short labels one point may give the parts of a diagram
+PART_WORDS = 6          # words one of them may hold, as the slides tool allows
+# What the slides tool knows of an outline, by its capability: a point's short `parts` and
+# a slide's `provenance`. A tool without one is handed the outline without it.
+KNOWS = {'compose-split-point': 'parts', 'compose-provenance': 'provenance'}
+# A team's own bookkeeping, which an audience cannot follow: finding, objective and
+# blueprint IDs, and a slug used as a prefix. It goes in `provenance`, never on a slide.
+_ID = r'(?:[gf]\d{1,3}|O\d{1,2})'
+INTERNAL = (re.compile(r'\b(?:Findings?|Blueprint|Objectives?|Research)\b'),
+            re.compile(rf'\b{_ID}(?:\s*[,/–-]\s*{_ID})+\b'),
+            re.compile(rf'^\s*{_ID}(?:[\s,;/–-]+{_ID})*\s*$'),
+            re.compile(r'\bO\d\b'), re.compile(r'\bg\d+\b'),
+            re.compile(r'(?<![\w-])[a-z0-9]+(?:[-_][a-z0-9]+)+:(?=\s|$)'))
+SHOWN = ('title', 'subtitle', 'focal', 'caveat', 'source')   # what a slide shows, by field
+TOOL_OUTLINE = 'tool-outline.json'  # in a start: the outline as the slides tool started from it
 
 
 # --- an outline ----------------------------------------------------------------------------
@@ -127,6 +144,119 @@ def slides_of(outline) -> list[dict]:
     """An outline's slides, leaving out anything that is not one."""
     found = outline.get('slides') if isinstance(outline, dict) else None
     return [slide for slide in found or () if isinstance(slide, dict)]
+
+
+def _parts_of(point: dict) -> list[str]:
+    """A point's short labels for the parts of a diagram, when it gives them."""
+    parts = point.get('parts') if isinstance(point, dict) else None
+    return [part for part in parts if isinstance(part, str)] if isinstance(parts, list) else []
+
+
+def for_tool(outline, knows=frozenset()):
+    """An outline as the slides tool takes it: without the short `parts` labels a point
+    gives its diagram, and without a slide's `provenance`, when the tool does not know
+    them. `knows` holds what it knows, by the names KNOWS gives. The runner keeps its own."""
+    if not isinstance(outline, dict) or not isinstance(outline.get('slides'), list):
+        return outline
+    slides = []
+    for slide in outline['slides']:
+        if not isinstance(slide, dict):
+            slides.append(slide)
+            continue
+        made = dict(slide)
+        if 'provenance' not in knows:
+            made.pop('provenance', None)
+        if 'parts' not in knows and isinstance(slide.get('points'), list):
+            made['points'] = [{key: value for key, value in point.items() if key != 'parts'}
+                              if isinstance(point, dict) else point
+                              for point in slide['points']]
+        slides.append(made)
+    return {**outline, 'slides': slides}
+
+
+def with_provenance(outline, knows=frozenset()):
+    """An outline whose slides' `provenance` the slides tool does not know: each one is
+    added to that slide's notes instead, where a presenter reads it and no slide shows it."""
+    if 'provenance' in knows or not isinstance(outline, dict) \
+            or not isinstance(outline.get('slides'), list):
+        return outline
+    slides = []
+    for slide in outline['slides']:
+        said = slide.get('provenance') if isinstance(slide, dict) else None
+        if isinstance(said, str) and said.strip():
+            notes = slide.get('notes') if isinstance(slide.get('notes'), str) else ''
+            slide = {**{key: value for key, value in slide.items() if key != 'provenance'},
+                     'notes': (notes.rstrip() + '\n\n' if notes.strip() else '')
+                     + f'Provenance: {said.strip()}'}
+        slides.append(slide)
+    return {**outline, 'slides': slides}
+
+
+def internal(text) -> str | None:
+    """The bookkeeping a piece of a slide's visible copy shows, or None when it shows none.
+    A web address is a citation, and is left out."""
+    if not isinstance(text, str):
+        return None
+    bare = re.sub(r'https?://\S+', '', text)
+    for pattern in INTERNAL:
+        found = pattern.search(bare)
+        if found:
+            return found.group(0).strip(' ;.')
+    return None
+
+
+def provenance_rules(outline, slugs=()) -> list[str]:
+    """What the runner refuses because it shows a team's bookkeeping on a slide: finding,
+    objective or blueprint IDs, and scenario slugs, in any visible field. Each problem says
+    where it goes instead."""
+    problems = []
+    told = ('Audiences cannot follow finding, objective or blueprint IDs, or a scenario\'s '
+            'slug. Cite a document the audience can look up by name in `source`, such as '
+            '"the product\'s 4.5 documentation", or leave it out; write a scenario by its '
+            'title in words; and put the IDs in the slide\'s `provenance`, which goes only '
+            'into the speaker notes.')
+    named = [slug for slug in slugs if isinstance(slug, str) and slug]
+    for slide in slides_of(outline):
+        ident = slide.get('id') or 'a slide'
+        if 'provenance' in slide and (not isinstance(slide['provenance'], str)
+                                      or not slide['provenance'].strip()):
+            problems.append(f'{ident}: `provenance` is text: the IDs and notes behind the '
+                            'slide, which no slide shows. Leave it out when there are none.')
+        seen = [(key, slide.get(key)) for key in SHOWN]
+        seen += [(f'a point\'s {key}', point.get(key)) for point in _points(slide)
+                 for key in ('label', 'text')]
+        seen += [("a point's part", part) for point in _points(slide)
+                 for part in _parts_of(point)]
+        for where, text in seen:
+            # A scenario's slug: anywhere when it is hyphenated, as only a slug is, and
+            # otherwise only as a prefix, so that a plain word is not taken for one.
+            found = internal(text) or next(
+                (slug for slug in named if isinstance(text, str) and re.search(
+                    rf'(?<![\w-]){re.escape(slug)}' + (r'(?![\w-])' if re.search('[-_]', slug)
+                                                        else ':'), text)), None)
+            if found:
+                problems.append(f'{ident}: {where} shows {json.dumps(found)}. {told}')
+    return problems
+
+
+def parts_rules(outline) -> list[str]:
+    """A point's short `parts` labels: one to PARTS of them, PART_WORDS words at most each,
+    on a point that keeps its text as one whole sentence."""
+    problems = []
+    for slide in slides_of(outline):
+        for point in _points(slide):
+            if 'parts' not in point:
+                continue
+            parts = point['parts']
+            if not isinstance(point.get('text'), str) or not point['text'].strip() \
+                    or not isinstance(parts, list) or not 1 <= len(parts) <= PARTS \
+                    or not all(isinstance(part, str) and part.strip()
+                               and len(WORD.findall(part)) <= PART_WORDS for part in parts):
+                problems.append(f"{slide.get('id') or 'a slide'}: `parts` gives a point with "
+                                f'a text 1 to {PARTS} short labels, {PART_WORDS} words at '
+                                'most each, for the parts of its diagram. Its text stays one '
+                                'whole sentence.')
+    return problems
 
 
 def fixed(whole: dict, ids: list[str], number: int, strict: bool = False,
@@ -162,11 +292,15 @@ def fixed(whole: dict, ids: list[str], number: int, strict: bool = False,
                         'detail': by_id[ident].get('detail'),
                         'focal': by_id[ident].get('focal'),
                         'sources': list(by_id[ident].get('sources') or ()),
-                        'points': [{'label': point.get('label'), 'text': point.get('text')}
+                        'points': [{'label': point.get('label'), 'text': point.get('text'),
+                                    **({'parts': _parts_of(point)} if _parts_of(point)
+                                       else {})}
                                    for point in _points(by_id[ident])],
                         'caveat': by_id[ident].get('caveat'),
                         'source': by_id[ident].get('source'),
-                        'notes': by_id[ident].get('notes')} for ident in ids]}
+                        'notes': by_id[ident].get('notes'),
+                        **({'provenance': by_id[ident]['provenance']}
+                           if by_id[ident].get('provenance') else {})} for ident in ids]}
 
 
 # --- a section, as it is handed in -------------------------------------------------------
@@ -300,7 +434,9 @@ def kept(section, spec: dict) -> list[str]:
                                 + '. Draw only the approved words.')
         for name, got in (('subtitle', mine.get('subtitle')), ('detail', mine.get('detail')),
                           ('caveat', _caveat(mine)), ('source', mine.get('source')),
-                          ('notes', mine.get('notes'))):
+                          ('notes', mine.get('notes')),
+                          *((('provenance', mine.get('provenance')),)
+                            if 'provenance' in theirs or 'provenance' in mine else ())):
             if not _same(got, theirs.get(name)):
                 problems.append(f'{ident}: `{name}` stays exactly as it was approved'
                                 + (f': {json.dumps(theirs.get(name))}' if theirs.get(name)
@@ -594,13 +730,15 @@ def layouts(listed, slides: list[dict]) -> dict:
 
 
 def complete(outline: dict, listed, words: list[str], rules: list[str],
-             direction: dict | None = None) -> dict:
+             direction: dict | None = None, knows=frozenset()) -> dict:
     """An approved outline as the slides tool starts a deck from: with its direction, a
     layout for each kind of lead slide, the house rules, and the person's own words of
     approval. The outline's own direction, house style and lead layouts are the look the
     person chose, put there when the brand was approved; `direction` is the brand's default
     for a deck without one, and DIRECTION the last resort. The house rules are the look's,
-    then the studio's `rules`."""
+    then the studio's `rules`. A slide's `provenance` joins its notes unless the slides
+    tool `knows` it."""
+    outline = with_provenance(outline, knows)
     styled = [line for line in outline.get('house') or () if isinstance(line, str)
               and line.strip() and line not in rules]
     return {**outline, 'delivery': outline.get('delivery') or DELIVERY,
@@ -782,10 +920,14 @@ def start(root, run: dict, slides, brand) -> dict:
     source = work / f'outline-{secrets.token_hex(3)}.json'
     try:
         listed = slides.layouts(brand).get('layouts')
+        known = slides.knows()
         whole = complete(outline, listed, _approval(root, run, outline), house(run),
-                         deck_direction.of_file(brand))
-        home.write_json(source, whole)
+                         deck_direction.of_file(brand), known)
+        home.write_json(source, for_tool(whole, known))
         slides.outline_start(source, brand, folder)
+        # Kept, so that every compile of this start can name the outline it was approved
+        # as, and a tool that can finds a point's sentence split across shapes.
+        shutil.copyfile(source, folder / TOOL_OUTLINE)
         sections = []
         for part in home.read_json(folder / 'parts.json', {})['parts']:
             ident = Path(part).stem
@@ -968,6 +1110,10 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
     last = state['rounds'][-1] if state['rounds'] else None
     found = [finding for finding in ((last or {}).get('review') or {}).get('findings') or ()
              if finding['slide'] in ids] if drawn else []
+    # Sent back by the screen of the whole deck's preview, before any review.
+    previewed = [entry for entry in (last or {}).get('preview_repair') or ()
+                 if entry.get('slide') in ids] if drawn and section in (
+        state.get('repair') or ()) else []
     note, look = _note(run, request), []
     feedback = [item for item in run.get('build_feedback', []) if item.get('section') == section]
     if feedback:
@@ -991,6 +1137,11 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
             inputs['what the review found'] = told_findings(found, mine)
             lines.append('Your input "what the review found" lists what a reviewer found '
                          'wrong with how some of its slides are drawn.')
+        if previewed:
+            inputs['what the preview found'] = told_preview(previewed, mine)
+            lines.append('Your input "what the preview found" lists the slides the screen of '
+                         'the whole deck sent back: put right what it names, keeping every '
+                         "point's sentence whole in one shape and no text over other text.")
     lines += [f'Your inputs are {", ".join(inputs)}.', 'Hand the section in with '
               'submit_section.']
     if note:
@@ -1010,6 +1161,7 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
                      'text on them: ' + ', '.join(drawn_bare) + '.')
     fixed_spec = fixed(whole, ids, number, strict, bare, placed, titled)
     focused = {finding['slide'] for finding in grave(found) if finding.get('about') == 'drawing'}
+    focused.update(entry['slide'] for entry in previewed)
     asked_numbers = ((run.get('gates') or {}).get('gate:build') or {}).get('slides')
     if asked_numbers and last:
         focused.update(slide['id'] for slide in last['slides'] if slide['number'] in asked_numbers)
@@ -1039,7 +1191,9 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
                 {key: slide[key] for key in ('id', 'title', 'sources', 'layout', 'picture',
                                              'notes') if slide.get(key)},
                 ensure_ascii=False) for slide in set_bare))
+    told_outline = root / began['folder'] / TOOL_OUTLINE
     spec = {'kind': 'section', 'brand': began['brand'], **fixed_spec,
+            **({'outline': str(told_outline.resolve())} if told_outline.is_file() else {}),
             **({'pictures': str((root / began['folder'] / PICTURES).resolve())}
                if (root / began['folder'] / PICTURES).is_dir() else {}),
             'previews': PREVIEWS, **how(root, run, renderer)}
@@ -1122,6 +1276,64 @@ def share_sheet(root) -> None:
         shutil.copyfile(root / sheet, root / SHEET)
 
 
+OVERLAPS = 3            # findings about overlap on one slide that send it back
+CLUSTERS = 'preview-repair-clusters'   # the tool names the slides a preview sends back
+
+
+def preview_repairs(shown: dict, slides: list[dict], clustered: bool = False) -> list[dict]:
+    """The slides the preview of the whole deck sends back to their composers before any
+    review, as {'slide', 'number', 'codes', 'why'}: each with an error-level finding, each
+    whose sentence is split across shapes, and each with OVERLAPS or more findings about
+    overlap. A tool that is `clustered` names them in preview.json's `repair`; for an older
+    one they are found from each slide's own findings."""
+    repair = shown.get('repair') if clustered and isinstance(shown.get('repair'), dict) \
+        else None
+    numbers = {slide['id']: slide['number'] for slide in slides}
+    if repair is not None:
+        blocking = {str(ident) for ident in repair.get('blocking') or ()}
+        listed = {str(entry.get('slide')): [str(code) for code in entry.get('codes') or ()]
+                  for entry in repair.get('slides') or () if isinstance(entry, dict)}
+        blocking |= {str(entry.get('slide')) for entry in repair.get('slides') or ()
+                     if isinstance(entry, dict) and entry.get('blocking')}
+    else:
+        listed = {slide['id']: [str(found.get('code') or '') for found in
+                                slide.get('findings') or () if isinstance(found, dict)]
+                  for slide in slides}
+        blocking = {slide['id'] for slide in slides
+                    if any(isinstance(found, dict) and found.get('severity') == 'error'
+                           for found in slide.get('findings') or ())}
+    back = []
+    for ident in numbers:
+        codes = listed.get(ident) or []
+        why = []
+        if ident in blocking:
+            why.append('the preview found an error on it')
+        if any(code.lower().replace('_', '-') == 'split-point' for code in codes):
+            why.append("a point's sentence is split across shapes")
+        overlaps = sum('overlap' in code.lower() for code in codes)
+        if overlaps >= OVERLAPS:
+            why.append(f'{overlaps} pieces of text overlap')
+        if why:
+            back.append({'slide': ident, 'number': numbers[ident], 'codes': codes,
+                         'why': '; '.join(why)})
+    return back
+
+
+def told_preview(found: list[dict], slides: list[dict]) -> str:
+    """What the preview of the whole deck found on some slides, as their composer is told
+    it."""
+    mine = {entry['slide']: entry for entry in found}
+    lines = ['# What the preview found in your section', '',
+             'The whole deck was rendered and screened before anyone reviewed it. These '
+             'slides came back because of what the screen found.', '']
+    for slide in slides:
+        entry = mine.get(slide['id'])
+        if entry:
+            lines.append(f"- Slide {slide['number']}, `{slide['id']}`: {entry['why']}"
+                         + (f" ({', '.join(entry['codes'])})" if entry['codes'] else '') + '.')
+    return '\n'.join(lines) + '\n'
+
+
 def draw_whole(root, run: dict, slides, renderer) -> dict:
     """`whole`, writing nothing outside work/: the contact sheet waits in the round's
     folder, as its `sheet`, for `share_sheet`."""
@@ -1145,8 +1357,10 @@ def draw_whole(root, run: dict, slides, renderer) -> dict:
             shutil.copyfile(root / made['file'] if made else start_folder / part,
                             folder / part)
         slides.merge(folder / 'parts.json', folder / 'composition.json')
+        told = start_folder / TOOL_OUTLINE
         slides.compile(folder / 'composition.json', Path(began['brand']),
-                       folder=folder / 'compiled')
+                       folder=folder / 'compiled',
+                       **({'outline': told} if told.is_file() else {}))
         previewing = how(root, run, renderer)
         outline = home.read_json(start_folder / 'given/outline.json', {})
         previewing['progress'] = build_progress.begin(root, began['folder'], 'whole',
@@ -1194,8 +1408,18 @@ def draw_whole(root, run: dict, slides, renderer) -> dict:
             'changed': [slide['number'] for slide in slides_kept
                         if before and before.get(slide['number']) != slide['sha256']],
             'slides': slides_kept}
+    # What the screen of this preview sends back, before any review: within REPAIRS rounds,
+    # as a review's drawing findings are.
+    has = getattr(slides, 'has', None)
+    found = preview_repairs(shown, slides_kept, bool(has and has(CLUSTERS)))
+    made['preview_repair'] = found
     state['rounds'].append(made)
     state.update(repair=[], asked=None, deck=None, audit=None, auditNote=None)
+    if found and state.get('repaired', 0) < REPAIRS:
+        wanted = {entry['slide'] for entry in found}
+        state['repair'] = [entry['id'] for entry in began['sections']
+                           if wanted & set(entry['slides'])]
+        state['repaired'] = state.get('repaired', 0) + 1
     write_state(root, state)
     return made
 

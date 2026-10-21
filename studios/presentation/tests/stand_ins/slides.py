@@ -1451,6 +1451,13 @@ class StandIn:
         self.composed = None    # the composition last compiled, to sort its problems by slide
         self.layouts = LAYOUTS  # the template's layouts: name, title, subtitles, pictures
         self.gone: set[str] = set()   # Drive file IDs that cannot be found
+        # Capabilities of a newer tool a test turns on: compose-split-point (a point's
+        # `parts`, and compile's --outline), compose-provenance (a slide's `provenance`)
+        # and preview-repair-clusters (preview.json's `repair`). `screens` adds findings to
+        # a slide's preview, by slide ID, as its screens would find them.
+        self.extra: set[str] = set()
+        self.screens: dict[str, list[dict]] = {}
+        self.outlined: list[str] = []   # the outline each compile named, by file name
         self._busy, self._renders, self._guard = 0, 0, threading.Lock()
 
     def __call__(self, command: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
@@ -1485,7 +1492,9 @@ class StandIn:
         if args == ['version']:   # what it can do, from the version that has the manifest on
             return {'package': 'harness-slides', 'runtimeVersion': MINIMUM,
                     'runtime': '/stand-in/harness-slides',
-                    **({'capabilities': list(CAPABILITIES)} if self.assets else {})}
+                    **({'capabilities': [*(CAPABILITIES if self.assets else ()),
+                                         *sorted(self.extra)]}
+                       if self.assets or self.extra else {})}
         if args[:1] == ['review'] and '--file' in args:
             return self._review_file(args[1:])
         if args[:1] == ['review']:
@@ -1496,7 +1505,9 @@ class StandIn:
         if name not in known:
             raise _Said('Unknown command/action; run --help')
         allowed = known[name] + (LATER.get(name, ()) if self.design else ()) \
-            + (ASSETS.get(name, ()) if self.assets else ())
+            + (ASSETS.get(name, ()) if self.assets else ()) \
+            + (('outline',) if name == 'compose compile'
+               and 'compose-split-point' in self.extra else ())
         options, rest = {}, args[2:]
         if name in SUBJECT and rest and not rest[0].startswith('--'):
             options['subject'] = rest.pop(0)
@@ -1616,7 +1627,35 @@ class StandIn:
             raise _Said('Provide --file outline.json')
         data, contract = _read(options['file']), self.contract(options.get('brand'))
         outline = _load(options['file'])
-        return data, outline, contract, _checked(outline, contract)
+        return data, outline, contract, _checked(self._known(outline), contract)
+
+    def _known(self, outline):
+        """An outline with what this tool knows beyond the older format taken out, once it
+        is checked: a point's `parts` and a slide's `provenance`."""
+        if not isinstance(outline, dict) or not isinstance(outline.get('slides'), list):
+            return outline
+        slides = []
+        for slide in outline['slides']:
+            if isinstance(slide, dict) and 'compose-provenance' in self.extra \
+                    and 'provenance' in slide:
+                if not _str(slide['provenance']):
+                    raise _Said(f"{slide.get('id')}: provenance is text, or omitted")
+                slide = {key: value for key, value in slide.items() if key != 'provenance'}
+            if isinstance(slide, dict) and 'compose-split-point' in self.extra \
+                    and isinstance(slide.get('points'), list):
+                points = []
+                for point in slide['points']:
+                    if isinstance(point, dict) and 'parts' in point:
+                        parts = point['parts']
+                        if not isinstance(parts, list) or not 1 <= len(parts) <= 8 \
+                                or not all(_str(part) and len(part.split()) <= 6
+                                           for part in parts):
+                            raise _Said(f"{slide.get('id')}: parts is 1-8 short labels")
+                        point = {key: value for key, value in point.items() if key != 'parts'}
+                    points.append(point)
+                slide = {**slide, 'points': points}
+            slides.append(slide)
+        return {**outline, 'slides': slides}
 
     def _outline_check(self, options: dict) -> dict:
         data, outline, _, checked = self._outline(options)
@@ -1787,6 +1826,13 @@ class StandIn:
             raise designs.Refusal(SECTION_ALONE, {'code': 'input-invalid'})
         data, contract = _read(options['file']), self.contract(options.get('brand'))
         comp, compiler, compiled = _load(options['file']), _Compiler(contract), None
+        if options.get('outline'):
+            _load(options['outline'])   # the approved outline must be there to be read
+            self.outlined.append(Path(options['outline']).name)
+        if 'compose-provenance' in self.extra and isinstance(comp, dict):
+            comp = {**comp, 'slides': [
+                {key: value for key, value in slide.items() if key != 'provenance'}
+                if isinstance(slide, dict) else slide for slide in comp.get('slides') or ()]}
         self.composed, uses, unresolved = comp, {}, []
         if self.assets:   # an image named by asset ID, from the project's manifest
             comp, uses, unresolved = manifest.resolve(comp, options.get('asset-project')
@@ -2069,6 +2115,7 @@ class StandIn:
                 continue
             findings = [{key: found[key] for key in ('severity', 'code', 'detail')}
                         for found in screened if found['slide'] == slide['id']]
+            findings += [dict(found) for found in self.screens.get(slide['id'], ())]
             image = output / f'slide-{number:02d}.png'
             image.write_bytes(_png(*pictures[-1]))
             slides.append({'id': slide['id'], 'number': number, 'title': slide['title'],
@@ -2089,8 +2136,17 @@ class StandIn:
                                if briefs.get(s['id'], {}).get('relation') else {}),
                             'rhythm': briefs.get(s['id'], {}).get('rhythm', 'dense')}
                            for s in slides]}))
+        repair = {}
+        if 'preview-repair-clusters' in self.extra:
+            listed = [{'slide': one['id'], 'number': one['number'],
+                       'blocking': any(found['severity'] == 'error'
+                                       for found in one['findings']),
+                       'codes': [found['code'] for found in one['findings']], 'objects': []}
+                      for one in slides]
+            repair = {'repair': {'blocking': [one['slide'] for one in listed
+                                              if one['blocking']], 'slides': listed}}
         result = {'schema': 1, 'output': str(output), 'deck': str(deck),
-                  'deckSha256': digest, **review,
+                  'deckSha256': digest, **review, **repair,
                   'renderer': 'Google Slides PDF export' if remote else 'LibreOffice',
                   'emitter': 'native template', **remote, 'slides': slides,
                   'status': 'rendered and screened; open each image and judge it. Screens '

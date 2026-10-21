@@ -35,6 +35,7 @@ What a caller needs to know
     slides.design_check(project)                   # {'plan', 'revision', 'buildAllowed'}
     slides.design_respond(project, reply)          # a person's answer to the question
     slides.capabilities()                          # what it says it has, or None
+    slides.has(name), slides.knows()               # one capability; outline fields it keeps
     slides.assets()                                # whether it keeps an asset manifest
     slides.asset_status(project)                   # {'manifest', 'assets': [{..., 'state'}]}
     slides.asset_check(project, brand=None)        # {'status': 'ready', ...}, or Refused
@@ -420,12 +421,17 @@ class Slides:
         return self._json('compose', 'layouts', '--brand', str(brand))
 
     def compile(self, composition: Path, brand: Path, folder: Path | None = None,
-                design: Path | None = None, section: bool = False) -> dict:
+                design: Path | None = None, section: bool = False,
+                outline: Path | None = None) -> dict:
         """Check a composition, a whole deck or one section. With a new folder, write what
         a preview and a render are made from. With `design`, it is checked against the
-        design approved in that project: as the whole deck, or as one `section`."""
+        design approved in that project: as the whole deck, or as one `section`. With the
+        approved `outline`, on a tool that can (compose-split-point), its preview finds a
+        point's sentence split across shapes."""
         args = ['compose', 'compile', '--file', str(composition), '--brand', str(brand),
-                *_bound(design, section)]
+                *_bound(design, section),
+                *(['--outline', str(outline)] if outline and self.has('compose-split-point')
+                  else [])]
         if folder is None:
             return self._json(*args)
         with _new(folder):
@@ -538,6 +544,18 @@ class Slides:
             self._sections = bool(found) and [problem.get('code') for problem
                                               in found['problems']] == ['input-invalid']
         return self._sections
+
+    def has(self, name: str) -> bool:
+        """Whether the tool's `version` lists this capability. A tool that lists none has
+        none of them."""
+        return name in (self.capabilities() or ())
+
+    def knows(self) -> frozenset:
+        """What this tool knows of an outline beyond its words, by the names build.KNOWS
+        gives: a point's `parts`, a slide's `provenance`."""
+        from runner.steps import build
+        return frozenset(name for capability, name in build.KNOWS.items()
+                         if self.has(capability))
 
     def capabilities(self) -> frozenset | None:
         """What the tool says it has, as `version` lists it, or None when it lists nothing,

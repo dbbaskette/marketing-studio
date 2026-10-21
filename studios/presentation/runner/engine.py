@@ -1570,6 +1570,13 @@ class Engine(Jobs, Researching):
             with self.files:
                 self._done(root, step, time.monotonic(), 'the deck is reviewed')
             return
+        if build.to_draw(root):
+            # The preview's screen sent slides back: they are drawn again, and the deck is
+            # reviewed once they are, as the next step does.
+            with self.files:
+                self._done(root, step, time.monotonic(),
+                           'send back what the preview found before the review')
+            return
         self._review(root, run, step)
 
     def _build_repair(self, root: Path, run: _Run, step: stages.Step) -> None:

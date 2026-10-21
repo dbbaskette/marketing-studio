@@ -341,8 +341,9 @@ def outline_work(root, run: dict, request: dict | None, error: str | None, brand
         inputs['Research selection'] = ('Use only retained findings to shape this presentation. '
             'The report and brief preserve the full reviewed research; do not reintroduce excluded '
             'finding claims through paraphrase. Excluded finding IDs: ' + ', '.join(sorted(excluded)))
+    from runner.steps import build
     return _job(root, run, request, error, brand, slides, kind, None, inputs,
-                [one_line_titles], intro, True)
+                [one_line_titles, build.parts_rules, build.provenance_rules], intro, True)
 
 
 def extract_work(root, run: dict, request: dict | None, error: str | None, brand: Path,

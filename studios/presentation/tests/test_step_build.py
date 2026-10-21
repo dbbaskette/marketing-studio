@@ -44,6 +44,11 @@ def drawn(spec: dict, extra=None) -> str:
                            if wanted.get('image') else shape})
             continue
         slide = sketch(BY_ID[wanted['id']], spec['prefix'])
+        # The approved notes and provenance are copied as the brief gives them.
+        if wanted.get('notes') is not None:
+            slide['notes'] = wanted['notes']
+        if wanted.get('provenance'):
+            slide['provenance'] = wanted['provenance']
         if extra:
             slide['canvas'] = {'type': 'stack', 'direction': 'column',
                                'children': [slide['canvas'], *extra]}
@@ -360,6 +365,144 @@ class LoopTests(Deck):
         made = build.whole(self.root, self.run_, self.slides, 'local')
         self.assertTrue(made['changed'])
         self.assertEqual(build.gate_view(self.root, self.run_)['changed'], made['changed'])
+
+
+class ToolOutlineTests(Deck):
+    """What a newer slides tool knows of the outline: a point's `parts`, and a slide's
+    `provenance`; and the approved outline every compile of the build names."""
+
+    def outlined(self):
+        made = json.loads(json.dumps(OUTLINE))
+        made['slides'][1]['points'][0]['parts'] = ['Drain', 'Restart', 'Rejoin']
+        made['slides'][1]['provenance'] = 'Findings g1, g7'
+        (self.root / 'outline.json').write_text(json.dumps(made), encoding='utf-8')
+        return made
+
+    def test_a_newer_tool_is_given_parts_provenance_and_the_approved_outline(self):
+        self.slides.run.extra = {'compose-split-point', 'compose-provenance'}
+        self.assertEqual(self.slides.knows(), frozenset({'parts', 'provenance'}))
+        made = self.outlined()
+        build.start(self.root, self.run_, self.slides, self.contract)
+        start = self.root / build.START
+        told = json.loads((start / build.TOOL_OUTLINE).read_text())
+        self.assertEqual(told['slides'][1]['points'][0]['parts'], ['Drain', 'Restart', 'Rejoin'])
+        self.assertEqual(told['slides'][1]['provenance'], 'Findings g1, g7')
+        self.assertNotIn('Provenance:', told['slides'][1].get('notes') or '')
+        work = build.section_work(self.root, self.run_, 'section-1', None, None)
+        spec = work.prepared['artifacts']['section']
+        self.assertEqual(Path(spec['outline']).name, build.TOOL_OUTLINE)
+        wanted = next(slide for slide in spec['slides'] if slide['id'] == made['slides'][1]['id'])
+        self.assertEqual(wanted['provenance'], 'Findings g1, g7')
+        self.assertEqual(wanted['points'][0]['parts'], ['Drain', 'Restart', 'Rejoin'])
+        # A composer that leaves the provenance out is refused; one that copies it is not.
+        section = json.loads(drawn(spec))
+        self.assertEqual(build.kept(section, spec), [])
+        dropped = json.loads(json.dumps(section))
+        next(one for one in dropped['slides'] if one['id'] == wanted['id']).pop('provenance')
+        self.assertIn('`provenance` stays exactly as it was approved: "Findings g1, g7"',
+                      ' '.join(build.kept(dropped, spec)))
+        for section_id in build.to_draw(self.root):
+            self.draw(section_id)
+        build.whole(self.root, self.run_, self.slides, 'local')
+        # Every compile of the build, each section's previews and the whole deck, named it.
+        self.assertTrue(self.slides.run.outlined)
+        self.assertEqual(set(self.slides.run.outlined), {build.TOOL_OUTLINE})
+        compiles = [call for call in self.slides.run.calls if call[:2] == ['compose', 'compile']
+                    and '--output' in call]
+        self.assertTrue(all('--outline' in call for call in compiles), compiles)
+
+    def test_the_outline_check_hands_the_tool_only_what_it_knows(self):
+        made = self.outlined()
+        scratch = self.base / 'scratch'
+        scratch.mkdir()
+        spec = {'kind': 'outline', 'brand': str(self.contract), 'rules': []}
+        problems, outcomes, _, kept = worker_tools.check_outline(
+            json.dumps(made), spec, self.slides, scratch)
+        self.assertEqual(problems, [], outcomes)
+        self.assertEqual(json.loads(kept), made, 'the outline itself is kept whole')
+        checked = [call for call in self.slides.run.calls if call[:2] == ['outline', 'check']]
+        sent = json.loads(Path(checked[-1][checked[-1].index('--file') + 1]).read_text())
+        self.assertNotIn('provenance', sent['slides'][1])
+        self.assertNotIn('parts', sent['slides'][1]['points'][0])
+        self.slides.run.extra = {'compose-split-point', 'compose-provenance'}
+        self.slides._asked_capabilities = False
+        worker_tools.check_outline(json.dumps(made), spec, self.slides, scratch)
+        checked = [call for call in self.slides.run.calls if call[:2] == ['outline', 'check']]
+        sent = json.loads(Path(checked[-1][checked[-1].index('--file') + 1]).read_text())
+        self.assertEqual(sent['slides'][1]['provenance'], 'Findings g1, g7')
+
+    def test_an_older_tool_has_provenance_in_the_notes_and_never_sees_parts(self):
+        made = self.outlined()
+        self.assertEqual(self.slides.knows(), frozenset())
+        build.start(self.root, self.run_, self.slides, self.contract)
+        told = json.loads((self.root / build.START / build.TOOL_OUTLINE).read_text())
+        slide = told['slides'][1]
+        self.assertNotIn('provenance', slide)
+        self.assertNotIn('parts', slide['points'][0])
+        self.assertTrue(slide['notes'].endswith('Provenance: Findings g1, g7'))
+        self.assertTrue(slide['notes'].startswith(made['slides'][1]['notes']))
+        for section_id in build.to_draw(self.root):
+            self.draw(section_id)
+        build.whole(self.root, self.run_, self.slides, 'local')
+        self.assertEqual(self.slides.run.outlined, [], 'an older tool is never given --outline')
+
+
+class PreviewRepairTests(Deck):
+    """The screen of the whole deck's preview sends slides back before any review."""
+
+    def test_clusters_are_found_from_the_tools_repair_or_from_each_slides_findings(self):
+        slides = [{'id': 'a', 'number': 1, 'findings': [
+                       {'severity': 'error', 'code': 'text-overflow'}]},
+                  {'id': 'b', 'number': 2, 'findings': [
+                       {'severity': 'warn', 'code': 'SPLIT_POINT'}]},
+                  {'id': 'c', 'number': 3, 'findings': [
+                       {'severity': 'warn', 'code': 'text-overlap'}] * 3},
+                  {'id': 'd', 'number': 4, 'findings': [
+                       {'severity': 'warn', 'code': 'text-overlap'}] * 2}]
+        back = build.preview_repairs({}, slides)
+        self.assertEqual([entry['slide'] for entry in back], ['a', 'b', 'c'])
+        self.assertIn('error', back[0]['why'])
+        self.assertIn('split across shapes', back[1]['why'])
+        self.assertIn('3 pieces of text overlap', back[2]['why'])
+        # A tool with preview-repair-clusters names them itself, and is believed.
+        named = {'repair': {'blocking': ['d'], 'slides': [
+            {'slide': 'c', 'number': 3, 'blocking': False, 'codes': ['split-point'],
+             'objects': []}]}}
+        self.assertEqual([entry['slide'] for entry in
+                          build.preview_repairs(named, slides, clustered=True)], ['c', 'd'])
+        self.assertEqual([entry['slide'] for entry in build.preview_repairs(named, slides)],
+                         ['a', 'b', 'c'], 'an older tool: from each slide\'s findings')
+
+    def overlapping(self):
+        second = OUTLINE['slides'][1]['id']
+        self.slides.run.screens = {second: [
+            {'severity': 'warn', 'code': 'text-overlap', 'detail': 'Text runs into text.'}] * 3}
+        return second
+
+    def test_a_slide_the_preview_flags_is_drawn_again_before_any_review(self):
+        second = self.overlapping()
+        made = self.built()
+        self.assertEqual([entry['slide'] for entry in made['preview_repair']], [second])
+        state = build.read_state(self.root)
+        self.assertEqual((state['repair'], state['repaired']), (['section-1'], 1))
+        self.assertEqual(build.to_draw(self.root), ['section-1'])
+        work = build.section_work(self.root, self.run_, 'section-1', None, None)
+        self.assertIn('3 pieces of text overlap', work.prepared['inputs']['what the preview found'])
+        self.assertIn('what the preview found', work.task)
+        # Bounded: after REPAIRS rounds the slide is left for the review and the person.
+        for _ in range(build.REPAIRS + 1):
+            for section_id in build.to_draw(self.root):
+                self.draw(section_id)
+            build.whole(self.root, self.run_, self.slides, 'local')
+        state = build.read_state(self.root)
+        self.assertEqual(state['repaired'], build.REPAIRS)
+        self.assertEqual(build.to_draw(self.root), [])
+
+    def test_a_tool_that_names_its_clusters_is_followed(self):
+        self.slides.run.extra = {'preview-repair-clusters'}
+        second = self.overlapping()
+        made = self.built()
+        self.assertEqual([entry['slide'] for entry in made['preview_repair']], [second])
 
 
 class DeliveredDeckTests(Deck):
