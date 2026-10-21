@@ -176,6 +176,8 @@ the review policy they started with.
 
 At each stop the page shows the document, what was checked for you, and the agent's own notes on its draft, labelled as its judgment. Ask for changes in your own words and the runner makes them and brings the new version back.
 
+**The combined reviews.** Under Balanced and Automatic draft, the direction and the finished materials come to you together, on the run. Mark what needs changes as you read, say what should change in each, and send every request at once: the review says what each change is written again from, so a change to the research is known to rewrite every level's blueprint, guide, brief and deck direction before it is sent. Approving is confirmed in a sheet that says what it commits to, with what a deck of this size has cost before. While a combined review waits, each file it covers is read-only on its own page, with one way back to the review: nothing can restart a step from two places at once. Leaving the deck out is still allowed from there. A Yoodli scenario's page offers each of its fields to copy on its own, ready for the box of the same name in Yoodli's Builder.
+
 With levels, every blueprint is drafted first. Then each level is finished in turn, lowest first.
 
 **The deck.** Choose "No deck" when you start and the deck is left out. Otherwise you choose its brand and the brand's variant from what your brand skill offers, and whether it is a PowerPoint file or Google Slides. The deck is made for each level after its brief, and you decide twice.
@@ -221,6 +223,8 @@ Your documents stay on this computer. Passages quoted from them appear in the re
 A training's run shows every step, how long each took and what it cost, and what each agent at work is doing now. From there you can:
 
 - **Pause.** The step in hand finishes; nothing new starts until you resume.
+- **Finish this level, then wait.** The level in hand is finished, and nothing is started for another level until you resume. Offered while a step for one level is in hand.
+- **Skip the deck for now.** The deck is left out, with a reason kept with the training, before anything of it is drawn. You can bring it back later from the deck's own page.
 - **Stop.** The agents at work are ended, and so is anything a step is running, such as a slide preview. Nothing they started is left running. Everything already kept stays. Resume carries on from there.
 - **Try again**, when a step failed. A step is tried up to three times, with the reason for the last failure given to the next try. Then the training stops and says what went wrong and what was kept.
 - **Answer a question.** An agent that needs something only you know can ask. The run waits for your answer.
