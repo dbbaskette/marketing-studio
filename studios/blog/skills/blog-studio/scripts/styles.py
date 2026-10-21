@@ -2,25 +2,33 @@
 
 A style lives under styles/<id>/ as record.json, STYLE.md and revisions/<n>/ copies, the
 way a voice profile lives under profiles/. Starter styles ship with the skill under
-assets/styles/ and are copied into a workspace the first time its styles are read or
-pinned. A copied starter that was edited or retired is left alone: a seed is copied only
-when its id is absent.
+assets/styles/. Reading never writes: a starter that is not in the workspace is shown as a
+virtual entry built from the packaged file. A starter is copied into styles/ only when
+someone changes or uses it (save, retire, pin), and from then on the copy is the style:
+an edited or retired starter is never copied back over.
 """
 
 import json
+import os
 from pathlib import Path
 import re
+import shutil
 import tempfile
 from types import SimpleNamespace
+import uuid
 
 import studio
 
 SEEDS = Path(__file__).resolve().parents[1] / 'assets' / 'styles'
+# A starter carries no wall-clock time, so two computers that each copy the same untouched
+# starter write identical files and merge without a conflict.
+SEED_TIME = '2026-10-21T00:00:00+00:00'
 
 
 def parse_seed(text):
     """(name, summary, body) from a starter file's front matter."""
-    match = re.match(r'---\n(.*?)\n---\n(.*)', text, re.S)
+    text = text.removeprefix('﻿').replace('\r\n', '\n')
+    match = re.match(r'---\n(.*?)\n---[ \t]*(?:\n|\Z)(.*)', text, re.S)
     if not match:
         raise ValueError('A starter style needs front matter with name and summary.')
     fields = dict(line.split(':', 1) for line in match.group(1).splitlines() if ':' in line)
@@ -30,17 +38,69 @@ def parse_seed(text):
     return name, summary, match.group(2).strip() + '\n'
 
 
-def seed(root):
-    """Copy every starter whose id is absent. Returns the ids copied."""
-    copied = []
+def starters():
+    """{id: (record, guide)} for every packaged starter, as revision 1 of a confirmed style."""
+    found = {}
     for path in sorted(SEEDS.glob('*.md')):
         ident = studio.identifier(path.stem)
-        if studio.inside(root, 'styles', ident).exists():
-            continue
         name, summary, body = parse_seed(path.read_text(encoding='utf-8'))
-        _create(root, ident, name, body, 'confirmed', [], kind='seed', summary=summary)
-        copied.append(ident)
-    return copied
+        record = {
+            'id': ident,
+            'name': name,
+            'summary': summary,
+            'kind': 'seed',
+            'revision': 1,
+            'status': 'confirmed',
+            'sample_ids': [],
+            'created_at': SEED_TIME,
+        }
+        found[ident] = (record, body)
+    return found
+
+
+def materialize(root, ident):
+    """Copy a starter into the workspace if it is not there. Returns whether it wrote.
+
+    The copy is built beside its destination and moved into place whole, so a copy that
+    stopped half way is never mistaken for a style, and one that another command wrote
+    meanwhile is left as it is.
+    """
+    ident = studio.identifier(ident)
+    found = starters().get(ident)
+    directory = studio.inside(root, 'styles', ident)
+    if found is None or (directory / 'record.json').is_file():
+        return False
+    record, guide = found
+    if directory.exists():  # left by a copy that stopped before it was finished
+        shutil.rmtree(directory)
+    temporary = studio.inside(root, 'styles', '.' + ident + '.' + uuid.uuid4().hex + '.tmp')
+    try:
+        temporary.mkdir(parents=True)
+        studio.atomic(temporary / 'STYLE.md', guide.encode('utf-8'))
+        studio.write_json(temporary / 'record.json', record)
+        snapshot(temporary, record)
+        try:
+            os.replace(temporary, directory)
+        except OSError:
+            if (directory / 'record.json').is_file():
+                return False  # another command copied it first
+            raise
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary, ignore_errors=True)
+    return True
+
+
+def _read(root, ident):
+    """(record, guide) of a style as it is now: the saved one, else the starter, else an error."""
+    ident = studio.identifier(ident)
+    directory = studio.inside(root, 'styles', ident)
+    if (directory / 'record.json').is_file():
+        _, record = studio.item(root, 'styles', ident)
+        return record, (directory / 'STYLE.md').read_text(encoding='utf-8')
+    if ident in starters():
+        return starters()[ident]
+    raise ValueError(f'Unknown styles ID: {ident}')
 
 
 def validate_samples(root, values):
@@ -59,9 +119,9 @@ def snapshot(directory, record):
     studio.atomic(rev / 'STYLE.md', (directory / 'STYLE.md').read_bytes())
 
 
-def _create(root, ident, name, guide, status, samples, kind='learned', summary=''):
+def _create(root, ident, name, guide, status, samples):
     directory = studio.inside(root, 'styles', ident)
-    if directory.exists():
+    if directory.exists() or ident in starters():
         raise ValueError('Style already exists; use save to create a revision.')
     validate_samples(root, samples)
     if status == 'confirmed' and not guide.strip():
@@ -69,27 +129,33 @@ def _create(root, ident, name, guide, status, samples, kind='learned', summary='
     record = {
         'id': ident,
         'name': name,
-        'summary': summary,
-        'kind': kind,
+        'summary': '',
+        'kind': 'learned',
         'revision': 1,
         'status': status,
         'sample_ids': list(samples),
         'created_at': studio.now(),
     }
     directory.mkdir(parents=True)
-    studio.atomic(directory / 'STYLE.md', guide.encode())
+    studio.atomic(directory / 'STYLE.md', guide.encode('utf-8'))
     studio.persist(directory, 'styles', record)
     snapshot(directory, record)
     return record
 
 
 def pin(root, ident, revision=None):
-    """{style_id, revision} for new work; a retired style is refused unless a revision is named."""
-    seed(root)
-    directory, record = studio.item(root, 'styles', ident)
+    """{style_id, revision} for new work; a retired style is refused unless a revision is named.
+
+    Using a starter copies it into the workspace, so the pinned revision is always there.
+    """
+    record, _ = _read(root, ident)
     if revision is None and record['status'] == 'retired':
         raise ValueError('This style is retired. Choose an active style for new work.')
     version = revision or record['revision']
+    if not 1 <= version <= record['revision']:
+        raise ValueError('Unknown style revision.')
+    materialize(root, ident)
+    directory, _ = studio.item(root, 'styles', ident)
     if not (studio.inside(directory, 'revisions', str(version)) / 'record.json').is_file():
         raise ValueError('Unknown style revision.')
     return {'style_id': ident, 'revision': version}
@@ -101,20 +167,29 @@ def pinned(root, selection):
     rev = studio.inside(directory, 'revisions', str(selection['revision']))
     return {
         'name': studio.read_json(rev / 'record.json')['name'],
-        'guide': (rev / 'STYLE.md').read_text(),
+        'guide': (rev / 'STYLE.md').read_text(encoding='utf-8'),
     }
 
 
 def command(root, args):
-    """The style CLI: create, save, show, retire. Mirrors studio.profile_command."""
-    seed(root)
+    """The style CLI: create, save, show, retire. Mirrors studio.profile_command.
+
+    show writes nothing. For a starter that is not in the workspace yet it returns
+    `guide: None` and the starter's text as `guide_text`; for a saved style, `guide` is the
+    path of the revision's STYLE.md as before.
+    """
     if args.action == 'create':
         ident = studio.identifier(args.id) if args.id else studio.new_id(args.name)
         guide = studio.read_text(args.guide_file) if args.guide_file else ''
         return _create(root, ident, args.name, guide, args.status, args.sample)
-    directory, record = studio.item(root, 'styles', args.id)
+    record, guide = _read(root, args.id)
     if args.action == 'show':
         revision = args.revision or record['revision']
+        directory = studio.inside(root, 'styles', record['id'])
+        if not (directory / 'record.json').is_file():
+            if revision != 1:
+                raise ValueError('Unknown style revision.')
+            return {**record, 'guide': None, 'guide_text': guide}
         saved = studio.inside(directory, 'revisions', str(revision))
         if not (saved / 'record.json').exists():
             raise ValueError('Unknown style revision.')
@@ -123,6 +198,8 @@ def command(root, args):
         if args.confirmed is not True or args.expected_revision != record['revision']:
             raise ValueError('Confirm the current style revision before retiring it.')
         if record['status'] != 'retired':
+            materialize(root, record['id'])
+            directory, record = studio.item(root, 'styles', record['id'])
             record.update(status='retired', revision=record['revision'] + 1)
             studio.persist(directory, 'styles', record)
             snapshot(directory, record)
@@ -132,22 +209,25 @@ def command(root, args):
         raise ValueError('Style guide cannot be empty.')
     samples = args.sample if args.sample is not None else record['sample_ids']
     validate_samples(root, samples)
+    materialize(root, record['id'])
+    directory, record = studio.item(root, 'styles', record['id'])
     record['revision'] += 1
     if getattr(args, 'name', None):
         record['name'] = args.name
     record['sample_ids'] = samples
     record['status'] = args.status or record['status']
-    studio.atomic(directory / 'STYLE.md', guide.encode())
+    studio.atomic(directory / 'STYLE.md', guide.encode('utf-8'))
     studio.persist(directory, 'styles', record)
     snapshot(directory, record)
     return record
 
 
 def detail(root, ident):
-    """One style for the page, with the version token its edits are checked against."""
-    seed(root)
-    directory, record = studio.item(root, 'styles', ident)
-    guide = (directory / 'STYLE.md').read_text()
+    """One style for the page, with the version token its edits are checked against.
+
+    A starter not yet in the workspace has the token it keeps once copied unchanged.
+    """
+    record, guide = _read(root, ident)
     return {
         **record,
         'guide': guide,
@@ -156,32 +236,38 @@ def detail(root, ident):
 
 
 def catalog(root):
-    """Every style, starters first, and the ready style samples."""
-    seed(root)
-    found, samples = [], []
+    """Every style, starters first, and the ready style samples. Writes nothing."""
+    found, samples = {}, []
     for file in sorted(studio.inside(root, 'styles').glob('*/record.json')):
+        if file.parent.name.startswith('.'):
+            continue
+        try:
+            found[file.parent.name] = studio.read_json(file)
+        except (ValueError, OSError):
+            continue
+    for ident, (record, _) in starters().items():
+        found.setdefault(ident, record)
+    rows = [
+        {key: record.get(key) for key in ('id', 'name', 'summary', 'kind', 'revision', 'status')}
+        for record in found.values()
+    ]
+    rows.sort(key=lambda row: (row['kind'] != 'seed', (row['name'] or '').lower()))
+    for file in sorted(studio.inside(root, 'sources').glob('*/record.json')):
         try:
             record = studio.read_json(file)
         except (ValueError, OSError):
             continue
-        found.append(
-            {
-                key: record.get(key)
-                for key in ('id', 'name', 'summary', 'kind', 'revision', 'status')
-            }
-        )
-    found.sort(key=lambda row: (row['kind'] != 'seed', (row['name'] or '').lower()))
-    for file in sorted(studio.inside(root, 'sources').glob('*/record.json')):
-        record = studio.read_json(file)
         if 'style-sample' in record.get('purposes', []) and record.get('status') == 'ready':
             samples.append({key: record.get(key) for key in ('id', 'name', 'author', 'revision')})
-    return {'styles': found, 'samples': samples}
+    return {'styles': rows, 'samples': samples}
 
 
 def save(root, data):
     """The page's style-save: a new style, or a revision of one shown at `expected`."""
     selected = data.get('style')
     current = detail(root, selected) if selected else None
+    if current and current['status'] == 'retired':
+        raise ValueError('This style is retired. Restore it in chat, or write a new style.')
     if current and data.get('expected') != current['expected']:
         raise ValueError('This style changed. Reload before saving a revision.')
     status = data.get('status', 'provisional')
@@ -202,7 +288,7 @@ def save(root, data):
         raise ValueError('Choose up to ten examples.')
     with tempfile.TemporaryDirectory(prefix='blog-style-') as scratch:
         file = Path(scratch) / 'STYLE.md'
-        file.write_text(guide)
+        file.write_text(guide, encoding='utf-8')
         result = command(
             root,
             SimpleNamespace(
@@ -228,4 +314,4 @@ def retire(root, data):
             action='retire', id=current['id'], expected_revision=current['revision'], confirmed=True
         ),
     )
-    return {'style': record['id'], 'status': 'retired', 'revision': record['revision']}
+    return {'style': record['id'], 'revision': record['revision'], 'status': 'retired'}

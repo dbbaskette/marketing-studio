@@ -1222,10 +1222,16 @@ def main():
             if not (root / 'studio.json').is_file():
                 raise ValueError('Initialize this workspace first.')
             result = []
-            for folder in sorted(inside(root, args.kind).iterdir()):
-                if folder.is_dir():
-                    _, record = item(root, args.kind, folder.name)
-                    result.append(record)
+            if args.kind == 'styles':
+                # Starters not yet copied into this workspace are listed too, and nothing is written.
+                import styles
+
+                result = styles.catalog(root)['styles']
+            else:
+                for folder in sorted(inside(root, args.kind).iterdir()):
+                    if folder.is_dir():
+                        _, record = item(root, args.kind, folder.name)
+                        result.append(record)
         else:
             if not (root / 'studio.json').is_file():
                 raise ValueError('Initialize this workspace first.')
