@@ -176,6 +176,17 @@ def request(root, data):
     kind = data.get('kind')
     operation = data.get('operation')
     metadata = {}
+    if kind in ('voice-learn', 'style-learn') and data.get('mark') is True:
+        # Items chosen from the library become samples only once their analysis is confirmed.
+        if data.get('confirmed') is True:
+            import library_add
+
+            if kind == 'voice-learn':
+                text(data.get('name'), 'an author/profile name', 200)
+            else:
+                text(data.get('name'), 'a style name', 200)
+                refuse_retired_style(root, {'style': data.get('style')})
+            library_add.mark_for_learning(root, data)
     if kind == 'voice-learn':
         if data.get('confirmed') is not True:
             raise ValueError('Confirm these are permitted authored voice samples before analysis.')

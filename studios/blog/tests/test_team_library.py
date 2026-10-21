@@ -523,6 +523,31 @@ class SelectionTests(RunnerCase):
         )
         return [row['source']['id'] for row in result['files']]
 
+    def disk(self):
+        return {
+            path.relative_to(self.root): path.read_bytes()
+            for path in (self.root / 'sources').rglob('*')
+            if path.is_file()
+        }
+
+    def test_a_learn_selection_takes_ten_readable_items_and_names_the_rest(self):
+        ready = self.items(*['post%d.md' % n for n in range(11)], author='Avery')
+        with patch.object(library.shutil, 'which', return_value=None):
+            scan = self.items('scan.pdf', author='Avery', operation='9')
+        result = management.dispatch(
+            self.root, 'library-selection', {'action': 'style-learn', 'ids': scan + ready}
+        )
+        self.assertEqual([c['id'] for c in result['candidates']], ready[:10])
+        self.assertEqual(result['left_out'], [{'id': ready[10], 'name': 'post10'}])
+        self.assertEqual(
+            result['skipped'],
+            [{'id': scan[0], 'name': 'scan', 'reason': 'It has no readable text yet.'}],
+        )
+        with self.assertRaisesRegex(ValueError, 'readable text'):
+            management.dispatch(
+                self.root, 'library-selection', {'action': 'voice-learn', 'ids': scan}
+            )
+
     def test_the_view_names_the_kinds_and_filters_by_role_kind_and_author(self):
         self.items('one.md', author='Avery')
         shown = management.view(self.root, 'library', {})
@@ -540,30 +565,71 @@ class SelectionTests(RunnerCase):
         theirs = self.items('three.md', author='Jordan', operation='b')
         unnamed = self.items('four.md', operation='c')
         act = lambda **data: management.dispatch(self.root, 'library-selection', data)  # noqa: E731
+        before = self.disk()
+        # Learning offers the items as candidates; nothing is marked or shared yet.
         styled = act(action='style-learn', ids=mine + theirs)
-        self.assertEqual(styled['samples'], mine + theirs)
-        for ident in mine + theirs:
-            _, record = studio.item(self.root, 'sources', ident)
-            self.assertEqual(
-                (record['purposes'], record['revision']), (['reference', 'style-sample'], 2)
-            )
-        self.assertEqual(len(styled['receipts']), 3)
-        self.assertEqual(act(action='style-learn', ids=mine)['receipts'], [], 'already samples')
+        self.assertEqual([c['id'] for c in styled['candidates']], mine + theirs)
+        self.assertEqual(styled['candidates'][0], {'id': mine[0], 'name': 'one', 'author': 'Avery'})
         with self.assertRaisesRegex(ValueError, 'more than one author'):
             act(action='voice-learn', ids=mine + theirs)
         with self.assertRaisesRegex(ValueError, 'whose writing'):
             act(action='voice-learn', ids=unnamed)
+        with self.assertRaisesRegex(ValueError, 'whose writing'):
+            act(action='voice-learn', ids=mine + unnamed)  # never Avery's name for another item
         voiced = act(action='voice-learn', ids=mine + unnamed, author='Avery')
-        self.assertEqual((voiced['samples'], voiced['author']), (mine + unnamed, 'Avery'))
-        _, record = studio.item(self.root, 'sources', unnamed[0])
-        self.assertEqual(
-            (record['author'], record['purposes']), ('Avery', ['reference', 'voice-sample'])
+        self.assertEqual([c['id'] for c in voiced['candidates']], mine + unnamed)
+        self.assertEqual(voiced['author'], 'Avery')
+        with self.assertRaisesRegex(ValueError, 'more than one author'):
+            act(action='voice-learn', ids=mine, author='Jordan')
+        self.assertEqual(act(action='voice-learn', ids=mine)['author'], 'Avery', 'from the items')
+        self.assertEqual(self.disk(), before, 'nothing changes on disk before confirmation')
+        # The learn job marks them when its permission is confirmed, and only then.
+        job = lambda **data: management.dispatch(
+            self.root, 'tool-action', {'action': 'job-create', 'mark': True, **data}
+        )  # noqa: E731
+        with self.assertRaisesRegex(ValueError, 'Confirm'):
+            job(kind='voice-learn', operation='1' * 32, name='Avery', samples=mine + unnamed)
+        with self.assertRaisesRegex(ValueError, 'is by Jordan'):
+            job(
+                kind='voice-learn',
+                operation='2' * 32,
+                name='Avery',
+                samples=mine + theirs,
+                confirmed=True,
+            )
+        self.assertEqual(self.disk(), before, 'a refused job marks nothing')
+        started = job(
+            kind='voice-learn',
+            operation='3' * 32,
+            name='Avery',
+            samples=mine + unnamed,
+            confirmed=True,
         )
+        self.assertEqual(started['kind'], 'voice-learn')
+        for ident in mine + unnamed:
+            _, record = studio.item(self.root, 'sources', ident)
+            self.assertEqual(
+                (record['author'], record['purposes'], record['revision']),
+                ('Avery', ['reference', 'voice-sample'], 2),
+            )
+        job(kind='style-learn', operation='4' * 32, name='Notes', samples=theirs, confirmed=True)
+        _, record = studio.item(self.root, 'sources', theirs[0])
         self.assertEqual(
-            act(action='voice-learn', ids=mine)['author'],
-            'Avery',
-            'the author comes from the items',
+            (record['author'], record['purposes']), ('Jordan', ['reference', 'style-sample'])
         )
+        with self.assertRaisesRegex(ValueError, 'voice-sample'):
+            management.dispatch(
+                self.root,
+                'tool-action',
+                {
+                    'action': 'job-create',
+                    'kind': 'voice-learn',
+                    'operation': '5' * 32,
+                    'name': 'Jordan',
+                    'samples': theirs,
+                    'confirmed': True,
+                },
+            )
         blog = act(action='blog', ids=mine)
         self.assertEqual(
             blog['files'],

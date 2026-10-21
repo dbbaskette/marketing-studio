@@ -1598,8 +1598,9 @@ async function libraryScreen(){
   const rows=[{id:'a',title:'A post',author:'Avery',status:'ready',revision:1,purposes:['reference','inspiration'],role:'example',kind_name:'Product announcement',library:{kind:'product-announcement',origin_kind:'written-here',article:'blog-1'},analysis:{status:'ready'},historical:false,collection_names:[]},{id:'b',title:'B notes',author:'',status:'ready',revision:1,purposes:['reference'],role:'facts',kind_name:null,library:{origin_kind:'upload'},analysis:{},historical:false,collection_names:[]}];
   const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
     if(url.startsWith('/api/library?'))return {items:rows,total:2,kinds:[{id:'product-announcement',name:'Product announcement'},{id:'how-to',name:'How-to'}]};
-    if(url==='/api/library-selection'){if(data.action==='voice-learn'&&askWho&&!data.author)return {__http:400,error:'Say whose writing these items are before learning a voice.'};return data.action==='blog'?{action:'blog',files:[{id:'a',filename:'A post',state:'ready',chars:900,role:'inspiration',library:true},{id:'b',filename:'B notes',state:'ready',chars:300,role:'inspiration',library:true}]}:{action:data.action,samples:data.ids,author:data.author||'Avery',receipts:[]};}
-    if(url.startsWith('/api/styles'))return {styles:[],samples:[{id:'a',name:'A post',author:'Avery'},{id:'b',name:'B notes',author:''}],candidates:[],pending:[]};
+    if(url==='/api/library-selection'){if(data.action==='voice-learn'&&askWho&&!data.author)return {__http:400,error:'Say whose writing these items are before learning a voice.'};return data.action==='blog'?{action:'blog',files:[{id:'a',filename:'A post',state:'ready',chars:900,role:'inspiration',library:true},{id:'b',filename:'B notes',state:'ready',chars:300,role:'inspiration',library:true}]}:{action:data.action,candidates:[{id:'a',name:'A post',author:'Avery'},{id:'b',name:'B notes',author:''}],author:data.action==='voice-learn'?data.author||'Avery':null,left_out:[],skipped:[{id:'c',name:'Scan',reason:'It has no readable text yet.'}]};}
+    if(url==='/api/tool-action')return {id:'j'.repeat(32),kind:data.kind,status:'queued',metadata:{},attempts:0};
+    if(url.startsWith('/api/styles'))return {styles:[],samples:[],candidates:[{id:'a',name:'A post',author:'Avery'},{id:'z',name:'Other',author:''}],pending:[]};
     if(url.startsWith('/api/voices'))return {profiles:[],samples:[{id:'a',name:'A post',author:'Avery'},{id:'b',name:'B notes',author:'Avery'}],candidates:[],pending:[]};
     if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'supplied-only',stop:'package',tone:'Clear',author:''},review_level:'balanced'},sources:[],profiles:[],default_voice:null,agents:{codex:true},styles:[]};
     return {items:[],total:0};});
@@ -1622,6 +1623,16 @@ async function libraryScreen(){
   assert.deepEqual(requests.filter(r=>r.url==='/api/library-selection').at(-1).data,{action:'style-learn',ids:['a','b']});
   assert.equal(f.get('sheet').children[0].children[0].textContent,'Learn a style from examples');
   assert.deepEqual(sheet().filter(e=>e.type==='checkbox'&&e.checked).map(e=>e.value),['a','b'],'the items are ticked as examples');
+  assert.equal(requests.some(r=>r.url==='/api/tool-action'),false,'choosing marks nothing');
+  assert.equal(sheet().some(e=>e.attributes?.['aria-label']==='Use A post as an example'),false,'a ticked item is not offered again below');
+  assert.ok(sheet().some(e=>e.attributes?.['aria-label']==='Use Other as an example'),'other sources still are');
+  assert.ok(sheet().some(e=>e.textContent==='Scan has no readable text yet, so it is skipped.'),'an item without text is named, not a stop');
+  byId('learn-style-name').value='Launch posts';byId('learn-style-name').listeners.input();
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.equal(requests.some(r=>r.url==='/api/tool-action'),false,'nothing before the permission is ticked');
+  byId('learn-style-permission').checked=true;await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const learned=requests.filter(r=>r.url==='/api/tool-action').at(-1).data;
+  assert.deepEqual([learned.kind,learned.samples,learned.mark,learned.confirmed],['style-learn',['a','b'],true,true],'confirming the learning marks the chosen items');
   await f.run("sLibrarySelection('voice-learn',[...librarySelection.values()])");
   assert.equal(f.get('sheet').children[0].children[0].textContent,'Learn an author voice');
   assert.equal(byId('learn-voice-name').value,'Avery','the author comes from the items');

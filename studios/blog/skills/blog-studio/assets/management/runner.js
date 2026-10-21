@@ -566,24 +566,28 @@ async function sVoiceTools(article=null){
     sCard('Styles',sNode('p','quiet','A style is the shape of a kind of writing, such as a product announcement. Starters can be edited like any other.'),failure?sNode('p','problem',failure):(kinds.styles||[]).length?styles:sNode('p','','No styles yet.'),sAdd(sNode('div','bar'),sButton('Learn a style from examples',()=>sLearnStyle(kinds)),sButton('Add links to examples',()=>sVoiceLinks(found,null,article,'style-sample')),sButton('Upload an example',()=>sUploadDialog('style-sample')),sButton('Write a style guide',()=>sEditStyle({name:'',guide:'',status:'provisional',sample_ids:[]},kinds)))),
     sButton('Close',sCloseSheet));
 }
-function sLearnVoice(found,profile=null,preselected=[],background=null,author=''){
+// Items chosen on the library screen are not samples yet: the sheet lists them ticked beside
+// the samples, and they become samples only when the learning is confirmed (`mark`).
+function sWithLibraryItems(found,held){const extra=held.extra||[];if(!extra.length)return found;const known=new Set((found.samples||[]).map(source=>source.id)),added=extra.filter(source=>!known.has(source.id)),ids=new Set(extra.map(source=>source.id));return {...found,samples:[...(found.samples||[]),...added],candidates:(found.candidates||[]).filter(source=>!ids.has(source.id))};}
+function sMarks(held){const ids=new Set((held.extra||[]).map(source=>source.id));return held.samples.some(id=>ids.has(id))?{mark:true}:{};}
+function sLearnVoice(found,profile=null,preselected=[],background=null,author='',extra=null,note=''){
   studio.voiceLearning||={};const held=studio.voiceLearning[profile?.id||'new']||={name:profile?.name||'',samples:[...(profile?.sample_ids||[])],background:null,operation:operationId()},form=sNode('form'),problem=sNode('p','problem');problem.setAttribute('role','alert');
-  if(preselected.length){held.samples=[...preselected].slice(0,10);held.background=background;}
-  if(author)held.name=author;
+  if(preselected.length){held.samples=[...preselected].slice(0,10);held.background=background;held.extra=extra||[];held.note=note;}
+  if(author)held.name=author;found=sWithLibraryItems(found,held);
   const reopen=async()=>sLearnVoice(await api('voices'),profile);
-  form.append(sField('learn-voice-name','Whose voice is this?',held,'name',{required:true,max:200,hint:'The author’s name: yours, or the person you write for.'}),sToolSamples(found,held),sSampleCandidates(found,held,'voice-sample',reopen),sButton('Add links to posts',()=>sVoiceLinks(found,profile,null)),problem);
+  form.append(sField('learn-voice-name','Whose voice is this?',held,'name',{required:true,max:200,hint:'The author’s name: yours, or the person you write for.'}),held.note?sNode('p','quiet',held.note):sNode('span',''),sToolSamples(found,held),sSampleCandidates(found,held,'voice-sample',reopen),sButton('Add links to posts',()=>sVoiceLinks(found,profile,null)),problem);
   const check=sNode('input');check.type='checkbox';check.id='learn-voice-permission';const confirm=sNode('label','check');confirm.append(check,sNode('span','','I have permission to analyze this writing with my selected assistant.'));form.append(confirm);const submit=sNode('button','button','Learn a provisional voice');submit.type='submit';form.append(submit);
-  form.addEventListener('submit',async event=>{event.preventDefault();if(!check.checked){problem.textContent='Confirm sample permissions before starting analysis.';return;}submit.disabled=true;try{const job=await api('tool-action',sTaskPayload(held,{action:'job-create',kind:'voice-learn',operation:held.operation,name:held.name,samples:held.samples,profile:profile?.id||null,background:held.background||null,confirmed:true}));sToolJob(job);}catch(error){problem.textContent=error.message;}finally{submit.disabled=false;}});
+  form.addEventListener('submit',async event=>{event.preventDefault();if(!check.checked){problem.textContent='Confirm sample permissions before starting analysis.';return;}submit.disabled=true;try{const job=await api('tool-action',sTaskPayload(held,{action:'job-create',kind:'voice-learn',operation:held.operation,name:held.name,samples:held.samples,profile:profile?.id||null,background:held.background||null,confirmed:true,...sMarks(held)}));sToolJob(job);}catch(error){problem.textContent=error.message;}finally{submit.disabled=false;}});
   sOpenSheet('Learn an author voice',form,sButton('Cancel',sCloseSheet));
 }
-function sLearnStyle(kinds,style=null,preselected=[],name=''){
+function sLearnStyle(kinds,style=null,preselected=[],name='',extra=null,note=''){
   studio.styleLearning||={};const held=studio.styleLearning[style?.id||'new']||={name:style?.name||'',samples:[...(style?.sample_ids||[])],operation:operationId()},form=sNode('form'),problem=sNode('p','problem');problem.setAttribute('role','alert');
-  if(preselected.length)held.samples=[...preselected].slice(0,10);
-  if(name&&!held.name.trim())held.name=name;
+  if(preselected.length){held.samples=[...preselected].slice(0,10);held.extra=extra||[];held.note=note;}
+  if(name&&!held.name.trim())held.name=name;kinds=sWithLibraryItems(kinds,held);
   const reopen=async()=>sLearnStyle(await api('styles'),style);
-  form.append(sField('learn-style-name','Style name',held,'name',{required:true,max:200,hint:'The kind of writing, such as Product announcement, not a person.'}),sToolSamples(kinds,held,'Examples of this kind of writing'),sSampleCandidates(kinds,held,'style-sample',reopen),sButton('Add links to examples',()=>sVoiceLinks(kinds,null,null,'style-sample')),problem);
+  form.append(sField('learn-style-name','Style name',held,'name',{required:true,max:200,hint:'The kind of writing, such as Product announcement, not a person.'}),held.note?sNode('p','quiet',held.note):sNode('span',''),sToolSamples(kinds,held,'Examples of this kind of writing'),sSampleCandidates(kinds,held,'style-sample',reopen),sButton('Add links to examples',()=>sVoiceLinks(kinds,null,null,'style-sample')),problem);
   const check=sNode('input');check.type='checkbox';check.id='learn-style-permission';const confirm=sNode('label','check');confirm.append(check,sNode('span','','I may analyze these examples with my selected assistant.'));form.append(confirm);const submit=sNode('button','button','Learn a provisional style');submit.type='submit';form.append(submit);
-  form.addEventListener('submit',async event=>{event.preventDefault();if(!check.checked){problem.textContent='Confirm you may analyze these examples before starting.';return;}submit.disabled=true;try{const job=await api('tool-action',sTaskPayload(held,{action:'job-create',kind:'style-learn',operation:held.operation,name:held.name,samples:held.samples,style:style?.id||null,confirmed:true}));sToolJob(job);}catch(error){problem.textContent=error.message;}finally{submit.disabled=false;}});
+  form.addEventListener('submit',async event=>{event.preventDefault();if(!check.checked){problem.textContent='Confirm you may analyze these examples before starting.';return;}submit.disabled=true;try{const job=await api('tool-action',sTaskPayload(held,{action:'job-create',kind:'style-learn',operation:held.operation,name:held.name,samples:held.samples,style:style?.id||null,confirmed:true,...sMarks(held)}));sToolJob(job);}catch(error){problem.textContent=error.message;}finally{submit.disabled=false;}});
   sOpenSheet('Learn a style from examples',form,sButton('Cancel',sCloseSheet));
 }
 async function sStyleDetail(id,article){
@@ -908,13 +912,14 @@ async function sLibrarySelection(action,ids,author=null){
   try{result=await api('library-selection',{action,ids,...(author?{author}:{})});}
   catch(error){if(action!=='voice-learn'||author!==null||!/whose writing/.test(error.message))throw error;
     const held={author:''},problem=sNode('p','problem'),form=sNode('form'),go=sNode('button','button button-filled','Continue');problem.setAttribute('role','alert');go.type='submit';
-    form.append(sField('library-voice-author','Whose writing are these?',held,'author',{required:true,max:200,hint:'Every ticked item becomes this author’s voice sample.'}),problem,go);
-    form.addEventListener('submit',async event=>{event.preventDefault();if(!held.author.trim())return;await busy(go,'Marking…',async()=>{try{await sLibrarySelection(action,ids,held.author.trim());}catch(failure){problem.textContent=failure.message;}});});
+    form.append(sField('library-voice-author','Whose writing are these?',held,'author',{required:true,max:200,hint:'Items without an author become this author’s voice samples, but only once you confirm the learning. An item by someone else is not.'}),problem,go);
+    form.addEventListener('submit',async event=>{event.preventDefault();if(!held.author.trim())return;await busy(go,'Checking…',async()=>{try{await sLibrarySelection(action,ids,held.author.trim());}catch(failure){problem.textContent=failure.message;}});});
     sOpenSheet('Learn a voice from these',form,sButton('Cancel',sCloseSheet));return;}
-  if(result.receipts?.length)savedNotice(result);
   if(action==='blog'){librarySelection.clear();await newBlog('',null,'from-files');if(!studio.draft)return;studio.draft.files=result.files.map(file=>({...file,note:'',link:'',kept:true}));sWizard();return;}
-  if(action==='style-learn'){sLearnStyle(await api('styles'),null,result.samples,'');return;}
-  sLearnVoice(await api('voices'),null,result.samples,null,result.author);
+  // Nothing is marked yet: the learn sheet shows the items ticked, and marks them when confirmed.
+  const words=[result.left_out?.length?sSeries(result.left_out.map(item=>item.name))+(result.left_out.length===1?' is':' are')+' left out: a learning reads up to ten.':'',result.skipped?.length?sSeries(result.skipped.map(item=>item.name))+(result.skipped.length===1?' has':' have')+' no readable text yet, so '+(result.skipped.length===1?'it is':'they are')+' skipped.':''].filter(Boolean).join(' '),ids_=result.candidates.map(item=>item.id);
+  if(action==='style-learn'){sLearnStyle(await api('styles'),null,ids_,'',result.candidates,words);return;}
+  sLearnVoice(await api('voices'),null,ids_,null,result.author,result.candidates,words);
 }
 // The headings of a saved ideas document, each with the line that follows it.
 // New blog from my files: every file goes up at once and says what it has; the run starts from the readable ones.

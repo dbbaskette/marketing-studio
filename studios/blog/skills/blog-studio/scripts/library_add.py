@@ -567,13 +567,18 @@ def mark_samples(root, data):
 SELECTION_ACTIONS = ('style-learn', 'voice-learn', 'blog')
 
 
-def selection(root, data):
-    """The library screen's three actions on a selection. style-learn and voice-learn mark
-    the items as samples (a new source revision each, through source-purpose) and return the
-    sample ids for the learn sheet; blog returns the items as the files of a new blog, each
-    an example, for the page to tick. Nothing starts a job here."""
-    from advanced_tools import source_purpose
+LEARN_LIMIT = 10  # What a learn sheet takes, and a learning job reads.
 
+
+def selection(root, data):
+    """The library screen's three actions on a selection. Nothing is saved, marked or shared
+    here, and nothing starts a job (a Team Hub row is checked out to be read, as a library
+    import does). style-learn and voice-learn return the readable items as candidates for
+    the learn sheet, the first ten, naming those left out and those without text; the
+    purposes are added only when the learning job is confirmed. voice-learn needs whose
+    writing it is: the items' own author when every item names the same one, else an
+    explicit author; one item's author is never given to another. blog returns the items
+    as the files of a new blog, each an example, for the page to tick."""
     if set(data) - {'action', 'ids', 'author'} or data.get('action') not in SELECTION_ACTIONS:
         raise ValueError('Choose a library action: learn a style, learn a voice, or start a blog.')
     entries = data.get('ids')
@@ -615,12 +620,28 @@ def selection(root, data):
                 }
             )
         return {'action': action, 'files': files}
+    readable, skipped = [], []
+    for directory, record in rows:
+        content = directory / 'content.md'
+        if record.get('status') == 'ready' and content.is_file() and content.read_text().strip():
+            readable.append(record)
+        else:
+            skipped.append(
+                {
+                    'id': record['id'],
+                    'name': record['name'],
+                    'reason': 'It has no readable text yet.',
+                }
+            )
+    if not readable:
+        raise ValueError('None of these items has readable text to learn from yet.')
+    chosen, left_out = readable[:LEARN_LIMIT], readable[LEARN_LIMIT:]
     author = data.get('author')
     if action == 'voice-learn':
-        named = [record.get('author') for _, record in rows if record.get('author')]
+        named = [record['author'] for record in chosen if record.get('author')]
         if author:
             author = studio.checked_author(author)
-        elif named:
+        elif named and len(named) == len(chosen):
             author = named[0]
         else:
             raise ValueError('Say whose writing these items are before learning a voice.')
@@ -629,28 +650,77 @@ def selection(root, data):
                 'These items are by more than one author. Select posts by one author, or '
                 'learn a style from them instead.'
             )
-    receipts, samples = [], []
-    for _directory, record in rows:
+    return {
+        'action': action,
+        'candidates': [
+            {'id': r['id'], 'name': r['name'], 'author': r.get('author') or ''} for r in chosen
+        ],
+        'author': author if action == 'voice-learn' else None,
+        'left_out': [{'id': r['id'], 'name': r['name']} for r in left_out],
+        'skipped': skipped,
+    }
+
+
+def mark_for_learning(root, data):
+    """At a confirmed learning job, the chosen items that are not samples yet become samples,
+    each in a new source revision through source-purpose; a voice sample takes the voice's
+    name only when the item names no author. Every item is checked first, so a refusal marks
+    nothing; the Team Hub then syncs once."""
+    from advanced_tools import source_purpose
+
+    purpose = 'voice-sample' if data['kind'] == 'voice-learn' else 'style-sample'
+    samples, name = data.get('samples'), data.get('name')
+    if (
+        not isinstance(samples, list)
+        or not 1 <= len(samples) <= LEARN_LIMIT
+        or any(not isinstance(v, str) for v in samples)
+        or len(set(samples)) != len(samples)
+    ):
+        return []  # The learning job refuses the list itself, with its own words.
+    wanted = []
+    for ident in samples:
+        directory, record = studio.item(root, 'sources', ident)
+        if purpose in record.get('purposes', []):
+            continue
+        if studio.is_material(root, directory, record):
+            raise ValueError('A file uploaded for one blog is not a library item.')
+        content = directory / 'content.md'
+        if (
+            record.get('status') != 'ready'
+            or not content.is_file()
+            or not content.read_text().strip()
+        ):
+            raise ValueError(record['name'] + ' has no readable text to learn from yet.')
+        saved = (record.get('author') or '').strip()
+        if purpose == 'voice-sample' and saved and not voice_links.same_author(saved, name or ''):
+            raise ValueError(
+                record['name'] + ' is by ' + saved + '. Learn ' + saved + '’s voice from it, '
+                'or untick it.'
+            )
+        wanted.append(ident)
+    changed, problems = [], {}
+    for ident in wanted:
         result = source_purpose(
             root,
             {
                 'action': 'source-purpose',
-                'source': record['id'],
-                'purpose': 'voice-sample' if action == 'voice-learn' else 'style-sample',
-                **({'author': author} if action == 'voice-learn' else {}),
+                'source': ident,
+                'purpose': purpose,
+                **({'author': name} if purpose == 'voice-sample' else {}),
             },
         )
-        samples.append(record['id'])
         if result['changed']:
-            _, saved = studio.item(root, 'sources', record['id'])
-            shared = management.share(root, 'source', saved)
-            receipts.append(management.receipt(root, 'Sample source', shared, 'source'))
-    return {
-        'action': action,
-        'samples': samples[:10],
-        'author': author if action == 'voice-learn' else None,
-        'receipts': receipts,
-    }
+            changed.append(ident)
+            publish(root, ident, problems)
+    from hub_workspace import active
+
+    adapter = active(root)
+    if adapter and changed:
+        try:
+            adapter.hub.sync()
+        except (HubError, OSError):
+            pass  # Saved here; the next sync shares the new revisions.
+    return changed
 
 
 def route(root, name, data):
