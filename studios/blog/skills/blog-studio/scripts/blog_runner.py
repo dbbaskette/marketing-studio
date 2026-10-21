@@ -957,6 +957,38 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
     return survey(root, ident)
 
 
+def brief_line(root, record, payload):
+    """Whose voice, which style and what tone, for the worker. In the guidance, not in
+    inputs(), so the stage pins saved before this line hold."""
+    voice = record.get('voice') or {}
+    style = payload.get('style')
+    if voice.get('mode') == 'profile':
+        folder, _ = studio.item(root, 'profiles', voice['profile_id'])
+        pinned = studio.read_json(
+            studio.inside(folder, 'revisions', str(voice['revision']), 'record.json')
+        )
+        line = (
+            'Write as '
+            + pinned['name']
+            + ' (voice guide revision '
+            + str(voice['revision'])
+            + ', '
+            + pinned['status']
+            + ')'
+            + (', in the shape of ' + style['name'] if style else '')
+            + '.'
+        )
+        if voice.get('tone'):
+            line += ' Tone nudge: ' + voice['tone']
+        return line
+    line = (
+        'No author voice is pinned; keep the manuscript’s own voice.'
+        if voice.get('mode') == 'preserve'
+        else 'No author voice is pinned; follow voice.tone.'
+    )
+    return line + (' Write in the shape of ' + style['name'] + '.' if style else '')
+
+
 def job(root, ident):
     found = survey(root, ident)
     stage = found['next']
@@ -1031,6 +1063,7 @@ def job(root, ident):
         )
     else:
         guidance = STAGES[stage][2] + '\n\n' + (references / GUIDES[stage]).read_text()
+    guidance = brief_line(root, record, payload) + '\n\n' + guidance
     guidance += '\n\n' + (references / 'style/house.md').read_text()
     # A focused edit or a single editor check other than shape keeps to its own scope.
     if (

@@ -1837,6 +1837,52 @@ class VoiceChoiceTests(RunnerCase):
         )
         self.assertEqual(chat['voice'], {**pinned, 'tone': 'Warm'})
 
+    def test_the_worker_brief_names_the_voice_style_and_tone(self):
+        mine = self.voice()
+        found = self.create(page=True, profile=mine['id'], tone='Warm', style='how-to')
+        _, record, run = runner.load(self.root, found['id'])
+        pins = runner.inputs(self.root, record, run)
+        guidance = runner.job(self.root, found['id'])[2]
+        self.assertTrue(
+            guidance.startswith(
+                'Write as Avery (voice guide revision 1, confirmed), in the shape of How-to '
+                'and tutorial. Tone nudge: Warm\n\n'
+            ),
+            guidance[:200],
+        )
+        self.assertEqual(runner.inputs(self.root, record, run), pins, 'the line is not an input')
+        self.file.write_text('A later guide.')
+        self.command(
+            'profile',
+            'save',
+            '--id',
+            mine['id'],
+            '--name',
+            'Avery Later',
+            '--guide-file',
+            str(self.file),
+            '--status',
+            'provisional',
+        )
+        self.assertTrue(
+            runner.job(self.root, found['id'])[2].startswith(
+                'Write as Avery (voice guide revision 1, confirmed)'
+            ),
+            'the pinned revision is named, not the latest',
+        )
+        plain = self.create(page=True, profile='', tone='Warm')
+        self.assertTrue(
+            runner.job(self.root, plain['id'])[2].startswith(
+                'No author voice is pinned; follow voice.tone.\n\n'
+            )
+        )
+        bare = self.create(page=True, profile=mine['id'])
+        self.assertTrue(
+            runner.job(self.root, bare['id'])[2].startswith(
+                'Write as Avery Later (voice guide revision 2, provisional).\n\n'
+            )
+        )
+
     def test_options_name_the_personal_default_voice_and_write_nothing(self):
         self.assertIsNone(runner.options(self.root)['default_voice'])
         mine = self.voice(status='provisional')
