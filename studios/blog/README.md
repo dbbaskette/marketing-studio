@@ -68,16 +68,16 @@ Once the page is open, use its controls to drive the work:
    tone, research choice, and step time limit. You can change these later in
    **Settings**. Under **Brand skill**, enter its repository and release or choose
    an installed skill, just as in Training Studio. See [brand setup](docs/runner.md#your-brand-skill).
-2. **Choose New blog.** Work through three short steps: give the topic and
-   audience; choose **Write a blog**, **Outline only**, **Revise a draft**, or
-   **Review a draft**, a voice and an optional brand; then select or upload sources, choose Codex or
-   Claude Code, and set limits. To revise or review, supply the manuscript.
+2. **Choose New blog.** Choose **Write a blog**, **Outline only**, **Revise a draft**,
+   or **Review a draft**; give the topic and audience, then **Write as** (whose
+   voice) and **Kind of post** (the shape of the piece); then upload files or select
+   saved references, and set the tone, author and an optional brand. To revise or review, supply the manuscript.
    To start from your own documents, choose **New blog from my files** on Home: upload
    them or paste Google Doc links and say what each is for, facts that may be quoted or
    an example of the kind of post you want (its shape, never its facts); then pick one
    of three suggested angles, or give the title, the point and the reader yourself, and
-   the usual outline and draft follow. **Write as** chooses the voice: you, when you
-   have set a default voice, a saved profile, or no particular voice with a tone.
+   the usual outline and draft follow. **Write as** chooses the voice there too: your
+   default voice, a saved profile, or no particular voice with a tone.
    A Doc is read with this computer's Google sign-in, so it does not need to be shared.
    The files stay on this computer unless you keep them in your references, but the
    blog's outline and draft may quote them and are shared like any other blog.
@@ -105,9 +105,11 @@ Once the page is open, use its controls to drive the work:
 You can leave the browser while it works and return to **Home** to see **Needs
 you**, **In progress**, and **Finished**. Use **Pause after this step** to pause
 between stages, or **Stop** to end a running step. **Blogs** holds your saved
-runs. In **Status**, choose **Check this computer** for assistant and sign-in
-checks, optional Team Hub tools, and instructions for anything missing. You can
-also run `sh ~/.local/share/blog-studio/studio check` from Terminal.
+runs; each card has **Delete**, which asks for the blog's title and keeps the
+blog for 30 days under **Recently deleted**. In **Status**, choose **Check this
+computer** for assistant and sign-in checks, optional Team Hub tools, and
+instructions for anything missing. You can also run
+`sh ~/.local/share/blog-studio/studio check` from Terminal.
 
 [All UI controls, stages, and page/chat handoff →](docs/runner.md)
 

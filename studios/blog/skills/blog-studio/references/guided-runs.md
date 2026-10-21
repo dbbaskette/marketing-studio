@@ -11,8 +11,8 @@ a paragraph or draft.
 ## Start
 
 For the page, run `... manage --open`. Keep that process running. The page's
-**New blog** wizard selects the brief, mode, sources, voice, research scope,
-assistant, time limit and stop in three steps. **Home** groups work needing a
+**New blog** wizard selects the brief, mode, voice (**Write as**), style (**Kind of
+post**), sources, research scope, assistant, time limit and stop. **Home** groups work needing a
 decision, in progress and finished; **Blogs** opens saved runs. **Settings** saves
 defaults for future page runs on this computer. It runs the assistant through
 each stage and waits for the person's decision. Opening it does not turn on reference analysis.
@@ -26,8 +26,12 @@ research scope and requested stop. Then use:
 ```
 
 Use `--research web-allowed` only for authorized public research, or `none` to
-omit research. `supplied-only` with no selected sources also omits it. Add `--source <id>` for each chosen source and `--profile <id>`
-for a saved voice, or `--tone "description"`. `--author` overrides a saved
+omit research. `supplied-only` with no selected sources also omits it. Add `--source <id>` for each chosen source.
+Without `--profile` the settings' default voice applies, and a revise or review of a
+`--manuscript` keeps that manuscript's own voice; `--profile <id>` pins a saved voice
+and `--profile ''` writes in no particular voice. `--tone "description"` is then a
+nudge beside the voice (dropped when it equals the settings' tone), or the whole voice
+when none applies. `--style <id>` adds a kind of post. `--author` overrides a saved
 default. Select an installed brand with `--brand ID --variant VARIANT`, or
 `--brand ''` for no brand. Read its pinned guides in `derived/blog-run.json`;
 keep its naming rules separate from the author voice. `--mode write` is the default; `outline` stops at outline. Use

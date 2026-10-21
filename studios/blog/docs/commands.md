@@ -5,7 +5,7 @@ Generated from `studio.py`; use `--help` on a listed command for required inputs
 | Command | Options |
 | --- | --- |
 | `studio.py run` | — |
-| `studio.py run create` | `--title`, `--author`, `--audience`, `--goal`, `--tone`, `--profile`, `--id`, `--brand`, `--variant`, `--research`, `--stop`, `--engine`, `--seconds`, `--source`, `--mode`, `--manuscript`, `--outline-text`, `--point` |
+| `studio.py run create` | `--title`, `--author`, `--audience`, `--goal`, `--tone`, `--profile`, `--style`, `--id`, `--brand`, `--variant`, `--research`, `--stop`, `--engine`, `--seconds`, `--source`, `--mode`, `--manuscript`, `--outline-text`, `--point` |
 | `studio.py run list` | — |
 | `studio.py run status` | `--id` |
 | `studio.py run submit` | `--id`, `--expected`, `--stage`, `--file`, `--notes` |
@@ -22,7 +22,7 @@ Generated from `studio.py`; use `--help` on a listed command for required inputs
 | `studio.py library collections` | — |
 | `studio.py library preview` | `--collection` |
 | `studio.py library import` | `--preview`, `--limit`, `--retry` |
-| `studio.py library voice-links` | `--file`, `--author`, `--site`, `--import`, `--keep`, `--retry` |
+| `studio.py library voice-links` | `--file`, `--author`, `--site`, `--import`, `--keep`, `--retry`, `--purpose` |
 | `studio.py library find` | `--reusable-only`, `--query`, `--status`, `--collection`, `--author`, `--topic`, `--product`, `--since`, `--until`, `--limit`, `--offset` |
 | `studio.py library curator` | `--harness` |
 | `studio.py library analyze` | `--id` |
@@ -74,6 +74,11 @@ Generated from `studio.py`; use `--help` on a listed command for required inputs
 | `studio.py profile save` | `--id`, `--name`, `--guide-file`, `--background-file`, `--rules-file`, `--status`, `--sample` |
 | `studio.py profile show` | `--id`, `--revision` |
 | `studio.py profile retire` | `--id`, `--expected-revision`, `--confirmed` |
+| `studio.py style` | — |
+| `studio.py style create` | `--name`, `--id`, `--guide-file`, `--status`, `--sample` |
+| `studio.py style save` | `--id`, `--name`, `--guide-file`, `--status`, `--sample` |
+| `studio.py style show` | `--id`, `--revision` |
+| `studio.py style retire` | `--id`, `--expected-revision`, `--confirmed` |
 | `studio.py source` | — |
 | `studio.py source add` | `--name`, `--file`, `--text-file`, `--origin`, `--purpose`, `--author`, `--note`, `--status` |
 | `studio.py source show` | `--id` |

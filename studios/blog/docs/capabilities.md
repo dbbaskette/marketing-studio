@@ -13,17 +13,21 @@ it does not claim every low-level CLI flag is a browser control.
 | Polish, proofread, humanize, fact check, revise | Manuscript → Polish | Located editor review, article reviews |
 | Choose/adjust edits and comments; save locally | Choose changes → Finish | Version-bound editor proposals and draft save |
 | Send explicit Google feedback | Finish → Send feedback | Reserved, guarded Google suggestion/comment plans |
-| Learn/edit/confirm/audition/export/retire voices | More tools → Author voices | Existing profile revisions and voice guidance |
-| Add published posts as voice samples from a list of links | More tools → Author voices → Add published posts | `library voice-links --file LIST --author NAME`, then `--import`; the library's `urls` import, byline check and voice-sample classification |
-| Apply a voice revision to this article | Voice → Use this revision | Explicit article voice pin; no default mutation |
-| Interview → reviewed outline → requested draft | More tools / creation → Interview me | Existing interview notes, outline and from-outline runner |
-| Compare/restore manuscript checkpoints | More tools → Saved manuscript revisions | `article restore` and `author_workflow.restore` |
-| Reconcile local/Google accepted text | More tools → Compare Google and local text | `google pull --id ID`, then explicit `--accept PREVIEW --expected VERSION --comparison HASH --confirmed`; same three-way compare/accept and fresh read before local save |
-| Channel copy, target counts, named variants | More tools → Repurpose; Saved channel copies | Repurposing guidance and existing article derive; lazy per-copy editing with version guards |
-| Retrieval/citation readiness | More tools → Improve clarity… | Existing GEO guidance, located evidence review |
-| Title/opening/benefit/optional CTA alternatives | More tools → Improve a title or opening | Copywriting guidance, existing selection/editor |
-| Report-only pre-publish checks | More tools → Pre-publish | `prepublish --id ID` |
-| Advisory topic overlap | More tools → Check topic overlap | `plan --topic TOPIC`, local library index |
+| Choose the voice and kind of post for a new blog | New blog → Write as; Kind of post | `run create --profile`, `--style`; no profile means the default voice, or a manuscript's own voice |
+| Learn/edit/confirm/audition/export/retire voices | Tools → Voices and styles (also Library and team tools, Settings) | Existing profile revisions and voice guidance |
+| Learn/edit/confirm/export/retire styles (kinds of writing) | Tools → Voices and styles → Styles | `style` commands and the `style-learn` job; starters are editable |
+| Mark a library source as a voice or style sample | Learn a voice → Use as a sample; Learn a style → Use as an example | Source purpose in a new source revision; a voice sample names its author |
+| Import a LinkedIn export as voice samples | Voices and styles → Import a LinkedIn export | One export per upload; About text as author background, articles as samples |
+| Add published posts as voice or style samples from a list of links | Tools → Voices and styles → Add links to posts (voice samples); Add links to examples (style samples) | `library voice-links --file LIST --author NAME [--purpose style-sample]`, then `--import`; the library's `urls` import, a byline check for voice samples, and voice- or style-sample classification |
+| Apply a voice revision to this article | Voice → Use this revision; Run → About this blog → Change the voice | Explicit article voice pin, confirmed once an outline or draft exists; no default mutation |
+| Interview → reviewed outline → requested draft | Tools / creation → Interview me | Existing interview notes, outline and from-outline runner |
+| Compare/restore manuscript checkpoints | Tools → Saved manuscript revisions | `article restore` and `author_workflow.restore` |
+| Reconcile local/Google accepted text | Tools → Compare Google and local text | `google pull --id ID`, then explicit `--accept PREVIEW --expected VERSION --comparison HASH --confirmed`; same three-way compare/accept and fresh read before local save |
+| Channel copy, target counts, named variants | Tools → Repurpose; Saved channel copies | Repurposing guidance and existing article derive; lazy per-copy editing with version guards |
+| Retrieval/citation readiness | Tools → Improve clarity… | Existing GEO guidance, located evidence review |
+| Title/opening/benefit/optional CTA alternatives | Tools → Improve a title or opening | Copywriting guidance, existing selection/editor |
+| Report-only pre-publish checks | Tools → Pre-publish | `prepublish --id ID` |
+| Advisory topic overlap | Tools → Check topic overlap | `plan --topic TOPIC`, local library index |
 | Board, due dates, owners, ready/published decisions | Blogs → Library and team tools | `editorial` commands; explicit decisions |
 | Source search, collections, analysis, retire/undo | Reference library | `library`/`source`, explicit per-operation analysis |
 | Team workspace, driver, handover, offline retry | Status / team tools | `team`, existing Git decision/sync model |

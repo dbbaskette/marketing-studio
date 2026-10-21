@@ -19,6 +19,7 @@ PURPOSES = (
     'reference',
     'inspiration',
     'voice-sample',
+    'style-sample',
     'author-background',
     'material',  # Uploaded for one blog's run; not a library reference unless kept.
 )
@@ -33,7 +34,11 @@ MODES = (
 )
 CHECKS = ('polish', 'proofread', 'factual-support', 'shape', 'humanization', 'geo')
 SOURCE_CHECKS = ('factual-support', 'geo')
-SHARED_README = b'# Shared Blog Studio material\n\nreferences/ holds selected sources; voices/ holds author profiles; memory/ holds rules and context.\n'
+SHARED_README = b'# Shared Blog Studio material\n\nreferences/ holds selected sources; voices/ holds author profiles; styles/ holds kinds of writing; memory/ holds rules and context.\n'
+# What earlier launches wrote, still recognized as Blog Studio's own file.
+PREVIOUS_SHARED_READMES = (
+    b'# Shared Blog Studio material\n\nreferences/ holds selected sources; voices/ holds author profiles; memory/ holds rules and context.\n',
+)
 
 
 def now():
@@ -57,13 +62,18 @@ def new_id(name):
 
 def inside(root, *parts):
     # Team work is plain blogs/<id>; reusable references and voices live beside it.
-    if parts and parts[0] in ('articles', 'sources', 'profiles') and (root / 'hub.json').is_file():
+    if (
+        parts
+        and parts[0] in ('articles', 'sources', 'profiles', 'styles')
+        and (root / 'hub.json').is_file()
+    ):
         marker = read_json(root / 'hub.json')
         if marker.get('tool') == 'blog-studio':
             mapped = {
                 'articles': (),
                 'sources': ('.shared', 'references'),
                 'profiles': ('.shared', 'voices'),
+                'styles': ('.shared', 'styles'),
             }
             parts = (*mapped[parts[0]], *parts[1:])
     path = root.joinpath(*parts)
@@ -205,7 +215,7 @@ def _initialize(root):
         write_json(manifest, {'schema_version': 1, 'created_at': now()})
     elif read_json(manifest).get('schema_version') != 1:
         raise ValueError('Unsupported workspace version.')
-    for kind in ('profiles', 'sources', 'articles'):
+    for kind in ('profiles', 'sources', 'articles', 'styles'):
         inside(root, kind).mkdir(parents=True, exist_ok=True)
     if (root / 'hub.json').is_file() and read_json(root / 'hub.json').get('tool') == 'blog-studio':
         shared_readme = inside(root, '.shared', 'README.md')
@@ -239,6 +249,51 @@ def voice_pin(root, profile_id, revision=None):
     if not (version_dir / 'record.json').is_file():
         raise ValueError('Unknown profile revision.')
     return {'profile_id': profile_id, 'revision': version}
+
+
+def style_pin(root, style_id, revision=None):
+    import styles
+
+    return styles.pin(root, style_id, revision)
+
+
+def style_check(root, style_id, revision=None):
+    import styles
+
+    return styles.check(root, style_id, revision)
+
+
+def style_command(root, args):
+    import styles
+
+    return styles.command(root, args)
+
+
+def sample_choices(root, purpose):
+    """Library sources that could become samples for a voice or style sheet. Reads only.
+
+    `candidates` are ready sources without the purpose; `pending` are sources still
+    waiting for text, whatever their purpose. A file uploaded for one blog is not listed."""
+    candidates, pending = [], []
+    for file in sorted(inside(root, 'sources').glob('*/record.json')):
+        try:
+            record = read_json(file)
+        except (ValueError, OSError):
+            continue
+        purposes = record.get('purposes', [])
+        if 'material' in purposes:
+            continue
+        row = {key: record.get(key) for key in ('id', 'name', 'author')}
+        content = file.parent / 'content.md'
+        if (
+            record.get('status') != 'ready'
+            or not content.is_file()
+            or not read_text(content).strip()
+        ):
+            pending.append(row)
+        elif purpose not in purposes:
+            candidates.append(row)
+    return {'candidates': candidates, 'pending': pending}
 
 
 def validate_samples(root, values):
@@ -642,6 +697,8 @@ def article_record(root, args, value):
         voice = {'mode': 'profile', **voice_pin(root, args.profile)}
     else:
         voice = {'mode': args.voice or 'preserve', 'tone': args.tone or ''}
+    if voice['mode'] == 'profile' and args.tone:
+        voice['tone'] = args.tone  # A nudge on top of the voice, not a replacement for it.
     stops = {
         'existing': 'review',
         'first-draft': 'draft',
@@ -831,6 +888,8 @@ def article_command(root, args):
     elif args.action == 'voice':
         if args.profile:
             record['voice'] = {'mode': 'profile', **voice_pin(root, args.profile, args.revision)}
+            if args.tone:
+                record['voice']['tone'] = args.tone  # A nudge on top of the voice.
         else:
             record['voice'] = {'mode': args.voice, 'tone': args.tone or ''}
     elif args.action == 'review':
@@ -896,7 +955,7 @@ def parser():
     run_parser(groups)
     groups.add_parser('init')
     listing = groups.add_parser('list')
-    listing.add_argument('kind', choices=('profiles', 'sources', 'articles'))
+    listing.add_argument('kind', choices=('profiles', 'sources', 'articles', 'styles'))
     from blog_library import add_parser as library_parser
 
     library_parser(groups)
@@ -951,6 +1010,26 @@ def parser():
     retire = profiles.add_parser(
         'retire', help='Retire a current voice profile; keep existing pinned revisions'
     )
+    retire.add_argument('--id', required=True)
+    retire.add_argument('--expected-revision', required=True, type=int)
+    retire.add_argument('--confirmed', action='store_true', required=True)
+    style_group = groups.add_parser('style').add_subparsers(dest='action', required=True)
+    create = style_group.add_parser('create')
+    create.add_argument('--name', required=True)
+    create.add_argument('--id')
+    create.add_argument('--guide-file')
+    create.add_argument('--status', choices=('provisional', 'confirmed'), default='provisional')
+    create.add_argument('--sample', action='append', default=[])
+    save = style_group.add_parser('save')
+    save.add_argument('--id', required=True)
+    save.add_argument('--name')
+    save.add_argument('--guide-file', required=True)
+    save.add_argument('--status', choices=('provisional', 'confirmed'))
+    save.add_argument('--sample', action='append')
+    show = style_group.add_parser('show')
+    show.add_argument('--id', required=True)
+    show.add_argument('--revision', type=int)
+    retire = style_group.add_parser('retire')
     retire.add_argument('--id', required=True)
     retire.add_argument('--expected-revision', required=True, type=int)
     retire.add_argument('--confirmed', action='store_true', required=True)
@@ -1096,6 +1175,7 @@ def main():
         team_mutation = args.group in (
             'article',
             'profile',
+            'style',
             'source',
             'run',
             'google',
@@ -1183,10 +1263,16 @@ def main():
             if not (root / 'studio.json').is_file():
                 raise ValueError('Initialize this workspace first.')
             result = []
-            for folder in sorted(inside(root, args.kind).iterdir()):
-                if folder.is_dir():
-                    _, record = item(root, args.kind, folder.name)
-                    result.append(record)
+            if args.kind == 'styles':
+                # Starters not yet copied into this workspace are listed too, and nothing is written.
+                import styles
+
+                result = styles.catalog(root)['styles']
+            else:
+                for folder in sorted(inside(root, args.kind).iterdir()):
+                    if folder.is_dir():
+                        _, record = item(root, args.kind, folder.name)
+                        result.append(record)
         else:
             if not (root / 'studio.json').is_file():
                 raise ValueError('Initialize this workspace first.')
@@ -1209,6 +1295,8 @@ def main():
                     result = command(root, args)
                 elif args.group == 'profile':
                     result = profile_command(root, args)
+                elif args.group == 'style':
+                    result = style_command(root, args)
                 elif args.group == 'source':
                     result = source_command(root, args)
                 elif args.group == 'google':

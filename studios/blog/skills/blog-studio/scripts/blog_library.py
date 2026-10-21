@@ -1532,14 +1532,23 @@ def add_parser(groups):
     p.add_argument('--retry', action='store_true')
     p = commands.add_parser(
         'voice-links',
-        help='Check, then with --import add published posts from a list of links as voice samples',
+        help='Check, then with --import add published posts from a list of links as samples',
     )
     p.add_argument('--file', required=True, help='Text file: one link per line; # comments')
-    p.add_argument('--author', help='Whose posts these are (default: from the file name)')
+    p.add_argument(
+        '--author',
+        help='Whose posts these are, or the label of style examples (default: from the file name)',
+    )
     p.add_argument('--site', help='The one site to import when the list mixes sites')
     p.add_argument('--import', dest='do_import', action='store_true')
     p.add_argument('--keep', action='append', help='A link to keep despite a different byline')
     p.add_argument('--retry', action='store_true', help='Fetch failed links again')
+    p.add_argument(
+        '--purpose',
+        choices=('voice-sample', 'style-sample'),
+        default='voice-sample',
+        help='Voice samples by the author (default), or style samples labelled by --author',
+    )
     p = commands.add_parser('find')
     p.add_argument(
         '--reusable-only',

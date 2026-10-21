@@ -80,11 +80,16 @@ async function check(){
   await finishAndDelete();
   await filesJourney();
   await voiceLinksJourney();
+  await wizardVoiceAndKind();
+  await voicesAndStyles();
+  await voiceCandidates();
+  await runVoiceChange();
+  await toolsAreNamed();
   pageDefinesEveryElement();
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -931,6 +936,28 @@ async function guidedRuns(){
   f.run('access.actions.edit=true');
   f.run('studio.listing=[found];sHome()');
   f.run('studio.ordinary=[];sBlogs()');assert.equal(f.get('title').textContent,'Your blogs');
+  // Every card on Blogs can delete its blog through the same sheet as the run's last screen.
+  {
+    const remove=descendants(content).find(e=>e.textContent==='Delete');
+    assert.ok(remove,'a Blogs card offers Delete');assert.equal(remove.className,'button button-quiet');
+    await remove.listeners.click();
+    const open=descendants(f.get('sheet'));
+    assert.ok(open.some(e=>e.textContent==='Delete Synthetic blog?'),open.map(e=>e.textContent).join('|'));
+    f.run('sCloseSheet()');
+    f.run("studio.ordinary=[{id:'plain',title:'A saved draft',author:'Avery',mode:'existing'},{id:'shared',title:'Hub only',location:'hub'}];sBlogs()");
+    const removes=descendants(content).filter(e=>e.textContent==='Delete');
+    assert.equal(removes.length,2,'saved drafts get Delete, and a blog with no local copy does not');
+    await removes[1].listeners.click();
+    assert.ok(descendants(f.get('sheet')).some(e=>e.textContent==='Delete A saved draft?'),'a saved draft opens the same sheet');
+    f.run('sCloseSheet()');
+    f.run("studio.ordinary=[{id:'driven',title:'Driven elsewhere',team:true,driver:{here:false}}];sBlogs()");
+    const driven=descendants(content).filter(e=>e.textContent==='Delete');
+    assert.equal(driven.length,2);assert.equal(driven[0].disabled,false,'the run driven here can be deleted');
+    assert.equal(driven[1].disabled,true,'a team blog driven elsewhere cannot be deleted from here');
+    f.run("studio.ordinary=[{id:'plain',title:'A saved draft',author:'Avery',mode:'existing'}];access.actions.edit=false;sBlogs()");
+    assert.ok(descendants(content).filter(e=>e.textContent==='Delete').every(e=>e.disabled),'Delete follows edit access');
+    f.run('access.actions.edit=true;studio.ordinary=[];sBlogs()');
+  }
   assert.ok(descendants(content).some(e=>e.textContent==='Synthetic blog'));
   f.run("studio.computer={checks:[{label:'Codex',status:'action',detail:'Sign-in needed',next_step:'Run codex login'}]};studio.settings={workspace:'/synthetic'};sStatusPage()");
   assert.ok(descendants(content).some(e=>e.textContent==='Run codex login'));
@@ -1016,12 +1043,15 @@ async function sharedPattern(){
   const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
   f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[],profiles:[],agents:{codex:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'draft',minutes:'10',operation:'a'.repeat(32)};sWizard()");
   assert.ok(text().some(t=>t==='Balanced: it stops for the outline and the draft'),'the stops line follows the review level and the pipeline: '+text().join('|'));
-  {const voice=descendants(f.get('studio-page')).find(e=>e.id==='new-profile');assert.ok(voice,'the second step chooses the voice');let node=voice,inside=false;while(node){if(node.tagName==='details')inside=true;node=node.parent;}assert.equal(inside,false,'Write as is visible without opening a disclosure');
-   assert.equal(voice.parent.children.find(e=>e.tagName==='label').textContent,'Write as');assert.deepEqual(voice.children.map(o=>o.textContent),['No particular voice'],'without saved profiles, only no particular voice');
-   const tone=descendants(f.get('studio-page')).find(e=>e.id==='new-tone');node=tone;inside=false;while(node){if(node.tagName==='details')inside=true;node=node.parent;}assert.equal(inside,true,'the tone stays in the Voice and brand disclosure');
-   f.run("studio.options.profiles=[{id:'p2',name:'Sam',status:'provisional'}];studio.options.default_voice={profile_id:'p1',name:'Avery'};sWizard()");
-   assert.deepEqual(descendants(f.get('studio-page')).find(e=>e.id==='new-profile').children.map(o=>[o.value,o.textContent]),[['p1','Me'],['p2','Sam (provisional)'],['','No particular voice']]);
-   f.run("studio.options.profiles=[];studio.options.default_voice=null;sWizard()");}
+  {assert.equal(descendants(f.get('studio-page')).some(e=>e.id==='new-profile'),false,'the voice is chosen on the first step, not the second');
+   const tone=descendants(f.get('studio-page')).find(e=>e.id==='new-tone');let node=tone,inside=null;while(node){if(node.tagName==='details'&&!inside)inside=node;node=node.parent;}assert.ok(inside,'the tone stays in a disclosure');
+   assert.ok(descendants(inside).some(e=>e.textContent==='Tone, author and brand'),'the Tone, author and brand disclosure');
+   f.run("studio.draft.step=0;sWizard()");
+   const voice=descendants(f.get('studio-page')).find(e=>e.id==='new-profile');assert.ok(voice,'the first step chooses the voice');node=voice;let hidden=false;while(node){if(node.tagName==='details')hidden=true;node=node.parent;}assert.equal(hidden,false,'Write as is visible without opening a disclosure');
+   assert.equal(descendants(f.get('studio-page')).find(e=>e.tagName==='label'&&e.htmlFor==='new-profile').textContent,'Write as');assert.deepEqual(voice.children.map(o=>o.textContent),['No particular voice (use the described tone)','Learn a new voice…'],'without saved profiles, only no particular voice');
+   f.run("studio.options.profiles=[{id:'p1',name:'Avery',status:'confirmed'},{id:'p2',name:'Sam',status:'provisional'}];studio.options.default_voice={scope:'personal',profile:'p1',name:'Avery',revision:3,status:'confirmed'};studio.draft.profile=null;sWizard()");
+   assert.deepEqual(descendants(f.get('studio-page')).find(e=>e.id==='new-profile').children.map(o=>[o.value,o.textContent]),[['*default','My voice — Avery · confirmed'],['p2','Sam · provisional'],['','No particular voice (use the described tone)'],['*learn','Learn a new voice…']]);
+   f.run("studio.options.profiles=[];studio.options.default_voice=null;studio.draft.profile='';studio.draft.step=1;sWizard()");}
   f.run("studio.options.settings.review_level='balanced';studio.draft.mode='from-outline';studio.draft.stop='package';sWizard()");
   assert.ok(text().some(t=>t==='Balanced: it stops for the draft and the export package'),'Balanced reads the first writing stage a run has: '+text().join('|'));
   f.run("studio.draft.mode='write';studio.draft.stop='draft';sWizard()");
@@ -1091,7 +1121,7 @@ async function sharedPattern(){
   assert.equal(actions.filter(e=>e.tagName==='button').length,1,'one action stays in the toolbar on a phone');
   assert.equal(actions[0].textContent,'Review Draft');assert.equal(actions[0].className,'button button-filled');
   const menu=actions.find(e=>e.tagName==='details');assert.equal(menu.className,'menu');
-  assert.deepEqual(descendants(menu).filter(e=>e.className==='menu-item').map(e=>e.textContent),['Edit manuscript','Pause','More tools']);
+  assert.deepEqual(descendants(menu).filter(e=>e.className==='menu-item').map(e=>e.textContent),['Edit manuscript','Pause','Tools']);
   f.run('delete window.matchMedia');
 }
 
@@ -1106,7 +1136,7 @@ async function filesJourney(){
   const uploaded={files:[{filename:'notes.md',source:{id:'s1',name:'notes'},state:'ready',chars:1200,note:''},{filename:'scan.pdf',source:{id:'s2',name:'scan'},state:'pending',chars:0,note:'This computer has no PDF reader (pdftotext), so this PDF needs text.'}],receipts:[],state:'saved',next_step:'1 of 2 files have text.'};
   const found={id:'files',title:'From my files',status:'queued',next:'angles',approval:'page',expected:'a1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',mode:'from-files',review_level:'balanced',decisions:[],brief:{goal:'A team post',audience:'To be chosen with the angle.'},stages:[{stage:'angles',label:'Angles',path:'derived/blog-angles.md',status:'pending'}],excerpted:[]};
   const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});
-    if(url==='/api/run-options')return {settings:{defaults,review_level:'balanced'},sources:[],profiles:[{id:'p1',name:'Avery',status:'confirmed'},{id:'p2',name:'Sam',status:'provisional'}],default_voice:{profile_id:'p1',revision:3,name:'Avery'},agents:{codex:true}};
+    if(url==='/api/run-options')return {settings:{defaults,review_level:'balanced'},sources:[],profiles:[{id:'p1',name:'Avery',status:'confirmed'},{id:'p2',name:'Sam',status:'provisional'}],default_voice:{scope:'personal',profile:'p1',name:'Avery',revision:3,status:'confirmed'},agents:{codex:true}};
     if(url==='/api/source-role'&&refuseRole)return {__http:400,error:'A started blog read this file as facts; its role stays.'};
     if(url==='/api/upload')return (JSON.parse(options.body).files||[]).some(e=>e.google)?{files:[{filename:'Messaging Doc',source:{id:'s9',name:'Messaging Doc'},state:'ready',chars:4200,note:'',link:'https://docs.google.com/document/d/abc/edit'}]}:uploaded;
     if(url==='/api/source-role')return {id:JSON.parse(options.body).id,role:JSON.parse(options.body).role};
@@ -1125,6 +1155,7 @@ async function filesJourney(){
   assert.ok(byId('files-goal'),'one optional line: what is this for');
   assert.equal(byId('files-web').checked,false,'web research is off by default');
   assert.equal(byId('files-keep').checked,false,'files are not kept in the references by default');
+  assert.equal(nodes().some(e=>e.id==='new-profile'),false);
   const start=()=>nodes().find(e=>e.type==='submit');
   assert.equal(start().disabled,true,'nothing to start before a file has text');
   assert.equal(start().textContent,'Find three angles');
@@ -1133,14 +1164,16 @@ async function filesJourney(){
   const role=()=>byId('files-role');
   assert.equal(role().tagName,'select');assert.equal(role().value,'material');
   assert.deepEqual(role().children.map(o=>[o.value,o.textContent]),[['material','Facts (may be quoted)'],['inspiration','Example of the kind of post']]);
-  // Write as: Me is the default voice, a provisional profile says so, and no voice shows the tone.
+  // Write as: the same choice as the wizard's first step. My voice is the default voice, a
+  // provisional profile says so, and no particular voice shows the tone.
   const voice=()=>byId('files-voice');
-  assert.equal(voice().value,'p1','Me, the personal default voice, is chosen first');
-  assert.deepEqual(voice().children.map(o=>[o.value,o.textContent]),[['p1','Me'],['p2','Sam (provisional)'],['','No particular voice']]);
+  assert.equal(nodes().find(e=>e.tagName==='label'&&e.htmlFor==='files-voice').textContent,'Write as');
+  assert.equal(voice().value,'*default','My voice, the personal default voice, is chosen first');
+  assert.deepEqual(voice().children.map(o=>[o.value,o.textContent]),[['*default','My voice — Avery · confirmed'],['p2','Sam · provisional'],['','No particular voice (use the described tone)'],['*learn','Learn a new voice…']]);
   assert.equal(byId('files-tone'),undefined,'a chosen voice needs no tone');
   voice().value='';voice().listeners.change();
   assert.ok(byId('files-tone'),'no particular voice: the tone field appears');
-  voice().value='p1';voice().listeners.change();
+  voice().value='*default';voice().listeners.change();
   assert.equal(byId('files-tone'),undefined);
   // Every chosen file goes up in one request, as material, each with its role.
   picker.files=[{name:'notes.md',size:12,arrayBuffer:async()=>new TextEncoder().encode('Notes words.').buffer},{name:'scan.pdf',size:4,arrayBuffer:async()=>new TextEncoder().encode('%PDF').buffer}];
@@ -1214,7 +1247,7 @@ async function filesJourney(){
   assert.equal(creation.mode,'from-files');assert.equal(creation.research,'web-allowed');assert.equal(creation.goal,'A team post');
   assert.deepEqual(creation.sources,['s1','s9'],'only files with text are pinned, once, the Google Doc among them');
   assert.equal(creation.title,'');assert.equal(creation.stop,'package');
-  assert.equal(creation.point,false);assert.equal(creation.profile,'p1','Write as reaches the run');assert.equal(creation.revision,3,'Me writes with the default voice\'s pinned revision');
+  assert.equal(creation.point,false);assert.equal(creation.profile,'p1','Write as reaches the run');assert.equal(creation.revision,3,'My voice writes with the default voice\'s pinned revision');
   // I know the point: a title, the point and the reader; the run starts at the outline.
   f.run("studio.screen='new';studio.draft={...studio.options.settings.defaults,mode:'from-files',research:'supplied-only',stop:'package',files:[{id:'s1',filename:'notes.md',state:'ready',chars:1200,note:'',link:'',role:'material'}],web:false,keep:false,profile:'p1',tone:'',goal:'',title:'',audience:'',sources:[],minutes:'10',operation:'b'.repeat(32)};sWizard()");
   const how=()=>nodes().find(e=>e.attributes['aria-label']==='How to start');
@@ -1315,12 +1348,23 @@ async function finishAndDelete(){
   assert.ok(sheet().some(e=>/running will stop/.test(e.textContent)),sheet().map(e=>e.textContent).join('|'));
   const confirm=sheet().find(e=>e.textContent==='Delete Synthetic blog');
   assert.equal(confirm.className,'button button-danger');assert.equal(confirm.disabled,true,'nothing is deleted until the title is typed');
-  const typed=sheet().find(e=>e.id==='delete-title');typed.value='Synthetic';typed.listeners.input();assert.equal(confirm.disabled,true);
+  const typed=sheet().find(e=>e.id==='delete-title'),hint=()=>sheet().find(e=>e.id==='delete-title-hint');
+  assert.equal(hint().hidden,true,'no hint before anything is typed');
+  typed.value='Synthetic';typed.listeners.input();assert.equal(confirm.disabled,true);
+  assert.equal(hint().hidden,false,'a partial title says it is not the title yet');assert.equal(hint().textContent,'Not the title yet.');
+  typed.value='  synthetic  BLOG ';typed.listeners.input();assert.equal(confirm.disabled,false,'case and spacing do not matter');assert.equal(hint().hidden,true);
+  typed.value='“Synthetic” blog';typed.listeners.input();assert.equal(confirm.disabled,true,'added characters still do not match');
   typed.value='Synthetic blog';typed.listeners.input();assert.equal(confirm.disabled,false);
+  assert.equal(typed.attributes?.['aria-describedby']??typed.getAttribute?.('aria-describedby'),'delete-title-hint','the input points at its hint');
   await confirm.listeners.click();
   assert.deepEqual(requests.find(r=>r.url==='/api/blog-delete').data,{id:'synthetic',expected:'version-3',title:'Synthetic blog'});
   assert.equal(f.get('sheet').hidden,true);
-  // More tools offers Delete for a saved blog, and not without one.
+  // A stored title with curly quotes deletes when typed with plain ones.
+  f.run("sDeleteSheet({...found,title:'The \u201cquoted\u201d blog'})");
+  const quoted=sheet().find(e=>e.id==='delete-title'),quotedConfirm=sheet().find(e=>e.textContent==='Delete The \u201cquoted\u201d blog');
+  assert.equal(quotedConfirm.disabled,true);quoted.value='the "quoted" blog';quoted.listeners.input();assert.equal(quotedConfirm.disabled,false,'plain quotes match curly ones');
+  f.run('sCloseSheet()');
+  // Tools offers Delete for a saved blog, and not without one.
   await f.run("sMoreTools('synthetic')");assert.ok(sheet().some(e=>e.textContent==='Delete this blog'&&!e.disabled));
   await f.run('sMoreTools()');assert.ok(sheet().some(e=>e.textContent==='Delete this blog'&&e.disabled));
   f.run('sCloseSheet()');
@@ -1359,13 +1403,15 @@ async function voiceLinksJourney(){
   let imports=0;
   const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
     if(url.startsWith('/api/voices'))return {profiles:[],samples:[{id:'s1',name:'One',author:'Avery Quinn'},{id:'s2',name:'Two',author:'Avery Quinn'}]};
-    if(url==='/api/voice-links-preview')return data.site?preview:mixed;
+    if(url.startsWith('/api/styles'))return {styles:[],samples:[{id:'s1',name:'One',author:'Avery Quinn'},{id:'s2',name:'Two',author:'Avery Quinn'}],candidates:[],pending:[]};
+    if(url==='/api/voice-links-preview')return data.purpose==='style-sample'?{...preview,author:data.author}:data.site?preview:mixed;
+    if(url==='/api/voice-links-import'&&data.purpose==='style-sample')return {...result(true),author:data.author,purpose:'style-sample',results:result(true).results.map(({byline,mismatch,kept,...row})=>row),counts:{...result(true).counts,mismatch:0},next_step:'Next, learn or update a style from these examples.'};
     if(url==='/api/voice-links-import'){imports++;return imports===1?{...result(false),remaining:1,counts:{...result(false).counts,pending:1}}:result(data.keep.length>0);}
     return {items:[],total:0};});
   f.loadRunner();
   const sheet=()=>descendants(f.get('sheet')),find=label=>sheet().find(e=>e.textContent===label),byId=id=>sheet().find(e=>e.id===id),has=pattern=>sheet().some(e=>pattern.test(e.textContent));
   await f.run('sVoiceTools()');
-  await find('Add published posts from a list of links').listeners.click();
+  await find('Add links to posts').listeners.click();
   const input=byId('voice-links-file');assert.equal(input.accept,'.txt,text/plain');
   input.files=[{name:'avery-quinn-blog-links.txt',size:200,text:async()=>links+'https://other.example/blog/three/\n'}];
   await input.listeners.change();
@@ -1395,4 +1441,299 @@ async function voiceLinksJourney(){
   assert.equal(byId('learn-voice-name').value,'Avery Quinn');
   assert.deepEqual(JSON.parse(f.run('JSON.stringify(studio.voiceLearning.new.samples)')),['s1','s2']);
   assert.equal(sheet().filter(e=>e.tagName==='input'&&e.type==='checkbox'&&e.checked).length,2,'the imported samples are ticked for learning');
+  assert.ok(requests.filter(r=>r.url.startsWith('/api/voice-links-')).every(r=>r.data.purpose==='voice-sample'),'voice links say they are voice samples');
+  // Examples of a kind of writing: the same flow, named for the kind, with no byline check.
+  requests.length=0;
+  await f.run("sVoiceLinks({profiles:[],samples:[]},null,null,'style-sample')");
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Add links to examples');
+  assert.equal(sheet().find(e=>e.tagName==='label'&&e.htmlFor==='voice-links-author').textContent,'What kind of writing is this?');
+  assert.equal(byId('voice-links-author-hint').textContent,'For example, Product announcements.');
+  const styleFile=byId('voice-links-file');styleFile.files=[{name:'avery-quinn-blog-links.txt',size:200,text:async()=>links}];await styleFile.listeners.change();
+  assert.equal(byId('voice-links-author').value,'','a kind of writing is not named after the file');
+  byId('voice-links-author').value='Product announcements';byId('voice-links-author').listeners.input();
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.equal(requests.find(r=>r.url==='/api/voice-links-preview').data.purpose,'style-sample');
+  assert.equal(has(/names its author/),false,'no byline wording for examples');
+  await find('Import 2 posts').listeners.click();
+  assert.equal(requests.find(r=>r.url==='/api/voice-links-import').data.purpose,'style-sample');
+  assert.equal(sheet().some(e=>/^Keep /.test(e.textContent)),false,'no byline keep for examples');
+  await find('Learn a style from these').listeners.click();
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Learn a style from examples');
+  assert.equal(byId('learn-style-name').value,'Product announcements');
+  assert.deepEqual(sheet().filter(e=>e.type==='checkbox'&&e.checked).map(e=>e.value),['s1','s2'],'the imported examples are ticked');
+}
+
+// Write as and Kind of post on the first step: what each choice sends, for a new blog and for
+// a manuscript, and Learn a new voice coming back to the wizard with the new voice chosen.
+async function wizardVoiceAndKind(){
+  const requests=[],defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};
+  const styles=[{id:'product-announcement',name:'Product announcement',summary:'Lead with what is new.',kind:'seed',revision:1,status:'confirmed'},{id:'field-notes',name:'Field notes',summary:'',kind:'learned',revision:1,status:'provisional'},{id:'old-notes',name:'Old notes',summary:'',kind:'learned',revision:2,status:'retired'}];
+  const mine={scope:'personal',profile:'mine',name:'Synthetic Author',revision:2,status:'confirmed'};
+  let options={settings:{defaults},sources:[],agents:{codex:true},default_voice:mine,profiles:[{id:'mine',name:'Synthetic Author',status:'confirmed'},{id:'guest',name:'Guest Writer',status:'provisional'}],styles};
+  const run={id:'created',title:'A synthetic blog',status:'queued',next:'outline',approval:'page',expected:'r1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',decisions:[],brief:{goal:'Explain',audience:'Authors'},stages:[]};
+  const f=fixture((url,o)=>{const data=o?.body?JSON.parse(o.body):null;requests.push({url,data});
+    if(url==='/api/run-options')return options;
+    if(url==='/api/run-create'||url.startsWith('/api/run?'))return run;
+    if(url.startsWith('/api/voices'))return {profiles:options.profiles.map(p=>({...p,revision:1})),samples:[],candidates:[],pending:[]};
+    if(url.startsWith('/api/styles'))return {styles,samples:[],candidates:[],pending:[]};
+    if(url==='/api/tool-action'&&data.action==='job-apply')return {profile:'learned',revision:1,status:'provisional',receipts:[]};
+    if(url==='/api/tool-action'&&data.action==='profile-save')return {profile:data.profile||'written',revision:2,status:'provisional',receipts:[]};
+    if(url.startsWith('/api/article?'))return {title:'Uploaded draft',record:{writing_preferences:{audience:'Editors'},...(url.includes('styled')?{style:{style_id:'product-announcement',revision:1}}:{})},view:{}};
+    return {items:[],total:0};});
+  f.loadRunner();
+  const nodes=()=>descendants(f.get('studio-page')),byId=id=>nodes().find(e=>e.id===id),texts=select=>select.children.map(o=>o.textContent);
+  const chosen=id=>{const select=byId(id);return select.children.find(o=>o.value===select.value)?.textContent;};
+  const choose=(id,text)=>{const select=byId(id),option=select.children.find(o=>o.textContent===text);assert.ok(option,text+' in '+texts(select).join('|'));select.value=option.value;select.listeners.change();};
+  const fill=()=>{for(const [id,value] of [['new-title','A synthetic blog'],['new-goal','Explain'],['new-audience','Authors']]){byId(id).value=value;byId(id).listeners.input();}};
+  const submit=()=>nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const start=async()=>{const before=requests.filter(r=>r.url==='/api/run-create').length;await submit();await submit();const sent=requests.filter(r=>r.url==='/api/run-create');assert.equal(sent.length,before+1,'one blog started');return sent.at(-1).data;};
+  await f.run("newBlog('',null,'write')");fill();
+  assert.ok(f.get('actions').children.some(e=>e.textContent==='Tools'));assert.equal(f.get('actions').children.some(e=>e.textContent==='More tools'),false,'tools are not hidden under More tools');
+  // The first step: Write as after the audience, Kind of post beside it, each with its label and hint.
+  const ids=nodes().filter(e=>e.id).map(e=>e.id);
+  assert.ok(ids.indexOf('new-profile')>ids.indexOf('new-audience'),'Write as comes after the audience: '+ids.join('|'));
+  assert.ok(ids.indexOf('new-style')>ids.indexOf('new-profile'),'Kind of post is beside Write as');
+  assert.equal(nodes().find(e=>e.tagName==='label'&&e.htmlFor==='new-profile').textContent,'Write as');
+  assert.equal(nodes().find(e=>e.tagName==='label'&&e.htmlFor==='new-style').textContent,'Kind of post');
+  assert.equal(byId('new-style').attributes['aria-describedby'],'new-style-hint');
+  assert.match(byId('new-style-hint').textContent,/shape of the piece/);assert.match(byId('new-style-hint').textContent,/voice is how it sounds/);
+  assert.equal(byId('new-profile').attributes['aria-describedby'],'new-profile-hint');
+  assert.deepEqual(texts(byId('new-profile')),['My voice — Synthetic Author · confirmed','Guest Writer · provisional','No particular voice (use the described tone)','Learn a new voice…']);
+  assert.equal(chosen('new-profile'),'My voice — Synthetic Author · confirmed','the default voice is chosen by default');
+  assert.deepEqual(texts(byId('new-style')),['No particular kind of post','Product announcement (starter)','Field notes · provisional'],'retired kinds are left out');
+  // Step two keeps tone, author and brand, with the tone as a nudge.
+  await submit();
+  assert.ok(nodes().some(e=>e.textContent==='Tone, author and brand'));
+  assert.equal(byId('new-tone-hint').textContent,'Tone is a nudge on top of the voice.');
+  assert.equal(nodes().some(e=>e.id==='new-profile'),false,'the voice is chosen once, on the first step');
+  await submit();
+  let sent=requests.filter(r=>r.url==='/api/run-create').at(-1).data;
+  assert.equal(sent.profile,'mine','My voice sends the personal default voice');assert.equal(sent.revision,2,'at the revision the default pins');assert.equal(sent.tone,'Clear');assert.equal(sent.style,'');
+  // A team default voice has no local profile: nothing is sent, and the server applies it.
+  options={...options,default_voice:{scope:'team',profile:null,name:'Team Voice',revision:'d'.repeat(32),status:'confirmed'}};
+  await f.run("newBlog('',null,'write')");fill();
+  assert.equal(chosen('new-profile'),'My voice — Team Voice · confirmed');
+  sent=await start();assert.equal(Object.hasOwn(sent,'profile'),false,'a team default voice sends no profile');assert.equal(Object.hasOwn(sent,'revision'),false,'nor a revision');
+  options={...options,default_voice:mine};
+  // A chosen voice and kind are sent as chosen.
+  await f.run("newBlog('',null,'write')");fill();choose('new-profile','Guest Writer · provisional');choose('new-style','Field notes · provisional');
+  sent=await start();assert.equal(sent.profile,'guest');assert.equal(sent.style,'field-notes');
+  await f.run("newBlog('',null,'write')");fill();choose('new-profile','No particular voice (use the described tone)');
+  sent=await start();assert.equal(sent.profile,'','no particular voice uses the described tone');
+  // With no default voice, nothing is left to a default that may be missing or in conflict.
+  options={...options,default_voice:null};
+  await f.run("newBlog('',null,'write')");fill();
+  assert.deepEqual(texts(byId('new-profile')),['Synthetic Author · confirmed','Guest Writer · provisional','No particular voice (use the described tone)','Learn a new voice…']);
+  assert.equal(chosen('new-profile'),'No particular voice (use the described tone)');
+  sent=await start();assert.equal(sent.profile,'');
+  // A manuscript keeps its own voice unless another is picked.
+  options={...options,default_voice:mine};
+  await f.run("newBlog('existing')");fill();
+  assert.deepEqual(texts(byId('new-profile')),['Keep this blog’s voice','Synthetic Author · confirmed','Guest Writer · provisional','Learn a new voice…'],'a saved blog keeps its voice; an empty choice would be ignored');
+  sent=await start();assert.equal(sent.id,'existing');assert.equal(Object.hasOwn(sent,'profile'),false,'keeping the blog’s voice sends no profile');
+  // The interview's outline starts a draft of the same saved blog: its voice is kept too.
+  await f.run("newBlog('existing',null,'from-outline')");fill();byId('new-outline').value='## One';byId('new-outline').listeners.input();
+  assert.deepEqual(texts(byId('new-profile')),['Keep this blog’s voice','Synthetic Author · confirmed','Guest Writer · provisional','Learn a new voice…']);
+  sent=await start();assert.equal(sent.id,'existing');assert.equal(Object.hasOwn(sent,'profile'),false);
+  await f.run("newBlog('existing')");fill();choose('new-profile','Guest Writer · provisional');
+  sent=await start();assert.equal(sent.profile,'guest');
+  // A saved blog with a kind of post keeps it unless another is picked; an empty one keeps it.
+  await f.run("newBlog('styled')");fill();
+  assert.deepEqual(texts(byId('new-style')),['Keep this blog’s kind of post — Product announcement','Product announcement (starter)','Field notes · provisional'],'a saved blog ignores an empty kind of post');
+  assert.equal(chosen('new-style'),'Keep this blog’s kind of post — Product announcement');
+  sent=await start();assert.equal(sent.id,'styled');assert.equal(sent.style,'','keeping the blog’s kind of post sends none');
+  await f.run("newBlog('existing')");fill();
+  assert.equal(texts(byId('new-style'))[0],'No particular kind of post','a saved blog without one offers none');
+  // Learn a new voice opens Voices and styles, and an applied voice comes back chosen.
+  await f.run("newBlog('',null,'write')");fill();choose('new-profile','Learn a new voice…');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.get('sheet').hidden,false);assert.equal(f.get('sheet').children[0].children[0].textContent,'Voices and styles');
+  assert.equal(chosen('new-profile'),'My voice — Synthetic Author · confirmed','the choice is unchanged until a voice is learned');
+  f.set('job',{id:'c'.repeat(32),kind:'voice-learn',status:'ready',metadata:{name:'Learned Voice',samples:['s']},result:{content:'# Learned voice',notes:''},attempts:0});
+  await f.run('sToolJob(job)');
+  options={...options,profiles:[...options.profiles,{id:'learned',name:'Learned Voice',status:'provisional'}]};
+  await descendants(f.get('sheet')).find(e=>e.textContent==='Save provisional voice guide').listeners.click();
+  assert.equal(f.get('sheet').hidden,true);assert.equal(f.run('studio.screen'),'new');
+  assert.equal(chosen('new-profile'),'Learned Voice · provisional','the new voice is chosen');
+  assert.equal(byId('new-title').value,'A synthetic blog','the brief is kept');
+  // Editing a voice that already existed is not a new choice for this brief.
+  f.run("sEditVoice({id:'guest',name:'Guest Writer',guide:'A guide.',status:'provisional',sample_ids:[],rules:{},expected:'p1'},{samples:[]})");
+  options={...options,profiles:[...options.profiles]};
+  const before=chosen('new-profile');
+  await descendants(f.get('sheet')).find(e=>e.textContent==='Save provisional guide').listeners.click();
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Voices and styles','an edited voice returns to Voices and styles');
+  assert.equal(chosen('new-profile'),before,'the brief’s choice is unchanged');
+}
+
+// Voices and styles: one sheet lists both, a style can be read and learned, links open the
+// voice-links flow for either purpose, and a LinkedIn export goes up as one entry whose
+// articles become the voice samples.
+async function voicesAndStyles(){
+  const posts=[];
+  const kinds={styles:[{id:'product-announcement',name:'Product announcement',summary:'Lead with what is new.',kind:'seed',revision:1,status:'confirmed'}],samples:[{id:'example',name:'Launch post',author:''}],candidates:[{id:'memo',name:'Team memo',author:''}],pending:[]};
+  const f=fixture((url,options)=>{
+    if(options?.body)posts.push({url,data:JSON.parse(options.body)});
+    if(url.startsWith('/api/voices'))return {profiles:[{id:'voice',name:'Synthetic Author',revision:1,status:'provisional'}],samples:[{id:'sample',name:'Authored passage',author:'Synthetic Author'},{id:'article',name:'LinkedIn · A first article',author:'Synthetic Author'}],candidates:[],pending:[]};
+    if(url.startsWith('/api/styles'))return kinds;
+    if(url.startsWith('/api/style?'))return {...kinds.styles[0],guide:'# Product announcement\n\nLead with what is new.',sample_ids:[],expected:'style-version'};
+    if(url==='/api/tool-action'){const data=JSON.parse(options.body);if(data.action==='source-purpose')return {source:data.source,revision:2,purposes:['reference',data.purpose],author:null,changed:true,receipts:[]};return {id:'b'.repeat(32),kind:'style-learn',status:'queued',metadata:{name:'Launch note',samples:['example']},attempts:0};}
+    if(url==='/api/upload')return {files:[{filename:'LinkedIn · About',source:{id:'about'},state:'ready',chars:40,note:'',purpose:'author-background',author:'Synthetic Author'},{filename:'LinkedIn · A first article',source:{id:'article'},state:'ready',chars:400,note:'',purpose:'voice-sample',author:'Synthetic Author'}],receipts:[],state:'saved',next_step:'Every file has text.'};
+    return {items:[]};
+  });f.loadRunner();
+  const sheet=()=>descendants(f.get('sheet')),text=()=>sheet().map(e=>e.textContent),find=label=>sheet().find(e=>e.textContent===label);
+  await f.run('sVoiceTools()');
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Voices and styles');
+  for(const label of ['Voices','Styles','Synthetic Author','Learn a voice from samples','Import a LinkedIn export','Add links to posts','Learn a style from examples','Add links to examples','Write a style guide','Product announcement'])assert.ok(text().includes(label),label+' in '+text().join('|'));
+  // Links open the merged voice-links flow, for voices and, from Styles, for style samples.
+  f.run('sVoiceLinks=(found,profile,article,purpose)=>{window.linksOpened=purpose||"voice-sample";}');
+  await find('Add links to posts').listeners.click();assert.equal(f.run('window.linksOpened'),'voice-sample');
+  await f.run('sVoiceTools()');await find('Add links to examples').listeners.click();assert.equal(f.run('window.linksOpened'),'style-sample');
+  await f.run("sStyleDetail('product-announcement')");
+  assert.ok(text().includes('Edit this style guide'));assert.ok(text().includes('Retire this style'));assert.ok(text().some(t=>/^Starter style/.test(t)));
+  // Learning a style needs the permission box, then sends the chosen examples.
+  await f.run('sVoiceTools()');await find('Learn a style from examples').listeners.click();
+  assert.ok(find('Use as an example'),'a reference can become an example of this kind');
+  assert.equal(find('Use as an example').attributes['aria-label'],'Use Team memo as an example');
+  await find('Use as an example').listeners.click();
+  assert.deepEqual(posts.find(p=>p.url==='/api/tool-action').data,{action:'source-purpose',source:'memo',purpose:'style-sample'});
+  posts.length=0;
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.equal(posts.some(p=>p.url==='/api/tool-action'),false,'nothing starts before the permission box is checked');
+  const name=sheet().find(e=>e.id==='learn-style-name');name.value='Launch note';name.listeners.input();
+  const example=sheet().find(e=>e.value==='example');example.checked=true;example.listeners.change();
+  sheet().find(e=>e.id==='learn-style-permission').checked=true;
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const learn=posts.find(p=>p.url==='/api/tool-action').data;
+  assert.equal(learn.kind,'style-learn');assert.equal(learn.name,'Launch note');assert.ok(learn.samples.includes('example'));assert.equal(learn.confirmed,true);
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Learn a style');
+  f.set('styleJob',{id:'b'.repeat(32),kind:'style-learn',status:'ready',metadata:{name:'Launch note',samples:['example']},result:{content:'# Launch note',notes:''},attempts:0});
+  await f.run('sToolJob(styleJob)');
+  assert.ok(text().some(t=>/describes a kind of writing, not a person/.test(t)),text().join('|'));
+  assert.ok(find('Save provisional style guide'));assert.ok(find('Confirm this style guide'));assert.equal(sheet().some(e=>e.textContent==='Save outline for review'),false);
+  // The LinkedIn export goes up as one entry, says what it shares, and sends the author when given.
+  await f.run('sVoiceTools()');await find('Import a LinkedIn export').listeners.click();
+  assert.ok(text().includes('The About text and the articles are saved as sources in your reference library. With a Team Hub selected, they are shared with your team like any other source.'));
+  const file=sheet().find(e=>e.id==='linkedin-file');file.files=[{name:'export.zip',size:4,arrayBuffer:async()=>new Uint8Array([80,75,3,4]).buffer}];
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  let sent=posts.filter(p=>p.url==='/api/upload').at(-1).data;
+  assert.equal(sent.files.length,1);assert.deepEqual(Object.keys(sent.files[0]),['linkedin']);assert.equal(sent.purpose,'voice-sample');assert.equal(sent.analyze,false);
+  assert.equal(Object.hasOwn(sent,'author'),false,'no author unless one is given');
+  const author=sheet().find(e=>e.id==='linkedin-author');author.value='Synthetic Author';author.listeners.input();
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  sent=posts.filter(p=>p.url==='/api/upload').at(-1).data;assert.equal(sent.author,'Synthetic Author');
+  assert.ok(text().includes('Learn Synthetic Author’s voice from these articles'),text().join('|'));
+  f.run("studio.voiceLearning={new:{name:'An older name',samples:[],background:null,operation:'d'.repeat(32)}}");
+  await find('Learn Synthetic Author’s voice from these articles').listeners.click();
+  assert.deepEqual(sheet().filter(e=>e.type==='checkbox'&&e.checked).map(e=>e.value),['article'],'the About text is background, not a sample');
+  assert.equal(sheet().find(e=>e.id==='learn-voice-name').value,'Synthetic Author','the export’s person names the voice');
+  posts.length=0;sheet().find(e=>e.id==='learn-voice-permission').checked=true;
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const job=posts.find(p=>p.url==='/api/tool-action').data;assert.equal(job.kind,'voice-learn');assert.equal(job.background,'about');assert.deepEqual(job.samples,['article']);
+}
+
+// The learn-a-voice sheet shows what can be used: other ready sources become samples by their
+// author, sources without text are listed but cannot be chosen, and uploads are samples.
+async function voiceCandidates(){
+  const requests=[];let marked=false;
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
+    if(url.startsWith('/api/voices'))return {profiles:[],samples:marked?[{id:'talk',name:'Conference talk',author:'Synthetic Author'}]:[],candidates:[{id:'talk',name:'Conference talk',author:'Synthetic Author'},{id:'notes',name:'Untitled notes',author:null}],pending:[{id:'scan',name:'Scanned page',author:''}]};
+    if(url==='/api/tool-action'){marked=true;return {source:data.source,revision:2,purposes:['reference','voice-sample'],author:data.author||'Synthetic Author',changed:true,receipts:[]};}
+    if(url==='/api/upload')return {source:{id:'upload'},state:'ready',chars:20,note:'',receipts:[]};
+    return {items:[]};});
+  f.loadRunner();
+  const sheet=()=>descendants(f.get('sheet')),text=()=>sheet().map(e=>e.textContent),find=label=>sheet().find(e=>e.textContent===label);
+  await f.run('api("voices").then(found=>sLearnVoice(found))');
+  assert.equal(text().some(t=>/reference library/.test(t)&&/classif/.test(t)),false,'no hint sends people to a screen that cannot reclassify');
+  assert.ok(text().includes('Scanned page · needs text'),text().join('|'));
+  assert.equal(sheet().some(e=>e.tagName==='input'&&e.value==='scan'),false,'a source without text cannot be chosen');
+  assert.ok(find('Add links to posts'));
+  assert.equal(find('Use as a sample by Synthetic Author').attributes['aria-label'],'Use Conference talk as a sample by Synthetic Author');
+  const named=sheet().find(e=>e.id==='learn-voice-name');named.value='synthetic author';named.listeners.input();
+  await find('Use as a sample by Synthetic Author').listeners.click();
+  assert.deepEqual(requests.find(r=>r.url==='/api/tool-action').data,{action:'source-purpose',source:'talk',purpose:'voice-sample'});
+  assert.deepEqual(sheet().filter(e=>e.type==='checkbox'&&e.checked).map(e=>e.value),['talk'],'the new sample is ticked');
+  // A source with no author asks whose writing it is.
+  const whose=sheet().find(e=>e.id==='candidate-author-notes');assert.ok(whose,'asks for the author');
+  whose.value='Avery Quinn';whose.listeners.input();
+  assert.equal(find('Use as a sample by Avery Quinn').attributes['aria-label'],'Use Untitled notes as a sample by Avery Quinn');
+  await find('Use as a sample by Avery Quinn').listeners.click();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/tool-action').at(-1).data,{action:'source-purpose',source:'notes',purpose:'voice-sample',author:'Avery Quinn'});
+  assert.equal(JSON.parse(f.run('JSON.stringify(studio.voiceLearning.new.samples)')).includes('notes'),false,'another author’s writing is not ticked for this voice');
+  // An upload here is a voice sample by the named author, never a plain reference.
+  const name=sheet().find(e=>e.id==='learn-voice-name');assert.equal(name.value,'synthetic author');name.value='Synthetic Author';name.listeners.input();
+  const upload=sheet().find(e=>e.id==='learn-voice-upload');upload.files=[{name:'post.md',size:20,arrayBuffer:async()=>new TextEncoder().encode('# A post\n\nText.').buffer}];
+  await upload.listeners.change();
+  const sent=requests.find(r=>r.url==='/api/upload').data;
+  assert.equal(sent.purpose,'voice-sample');assert.equal(sent.author,'Synthetic Author');assert.equal(sent.as_blog,false);assert.equal(sent.analyze,false);
+}
+
+// The run says which voice and kind of post it writes with; Change asks once before a voice
+// change on a blog with an outline or a draft, and stays on the run.
+async function runVoiceChange(){
+  const requests=[];let content='',refuse='';
+  const found={id:'synthetic',title:'Synthetic blog',status:'waiting-for-approval',next:'draft',approval:'page',expected:'run-1',enabled:false,directory:'/synthetic',seconds:600,engine:'codex',mode:'write',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},voice_name:'Synthetic Author',voice_mode:'profile',voice_profile:'voice',voice_revision:1,style_name:'Product announcement',notes:{},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'}]};
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
+    if(url.startsWith('/api/run?'))return found;
+    if(url.startsWith('/api/manuscript?'))return {id:'synthetic',title:'Synthetic blog',content,expected:'m1',proposals:[],findings:[],checks:{},working:false};
+    if(url.startsWith('/api/voices'))return {profiles:[{id:'voice',name:'Synthetic Author',revision:1,status:'confirmed'},{id:'guest',name:'Guest Writer',revision:2,status:'provisional'},{id:'gone',name:'Retired Writer',revision:1,status:'retired'}],samples:[],candidates:[],pending:[]};
+    if(url.startsWith('/api/voice?'))return {id:'guest',name:'Guest Writer',revision:2,status:'provisional',guide:'A guide.',sample_ids:[],expected:'p1'};
+    if(url==='/api/tool-action')return refuse?{__http:409,error:refuse}:{id:data.id,voice:{mode:'profile'},status:'voice-selected',receipts:[],run:found};
+    return {items:[],total:0};});
+  f.loadRunner();
+  const page=()=>descendants(f.get('studio-page')),sheet=()=>descendants(f.get('sheet')),find=label=>sheet().find(e=>e.textContent===label);
+  await f.run("sRoute('run','synthetic','status')");
+  assert.ok(page().some(e=>e.textContent==='Voice: Synthetic Author · Kind of post: Product announcement'),page().map(e=>e.textContent).join('|'));
+  assert.ok(f.get('actions').children.some(e=>e.textContent==='Tools'));
+  await page().find(e=>e.textContent==='Change the voice').listeners.click();
+  const select=sheet().find(e=>e.id==='change-voice');
+  assert.deepEqual(select.children.map(o=>o.textContent),['Synthetic Author · confirmed','Guest Writer · provisional'],'retired voices are left out');
+  assert.equal(select.value,'voice','the current voice is chosen');
+  assert.equal(find('Use this voice').disabled,true,'choosing the current voice changes nothing');
+  assert.ok(sheet().some(e=>/no particular voice, ask in the conversation/.test(e.textContent||'')),'says where no particular voice is chosen');
+  select.value='guest';select.listeners.change();assert.equal(find('Use this voice').disabled,false);
+  await find('Use this voice').listeners.click();
+  assert.equal(requests.some(r=>r.url==='/api/tool-action'),false,'a blog with an outline asks first');
+  assert.ok(sheet().some(e=>e.textContent==='Its reviews will need a new look; nothing is rewritten.'));
+  await find('Change to Guest Writer').listeners.click();
+  assert.deepEqual(requests.find(r=>r.url==='/api/tool-action').data,{action:'voice-apply',id:'synthetic',profile:'guest',expected:'m1',confirmed:true});
+  assert.equal(f.run('studio.screen'),'run','the run stays open');assert.equal(f.get('sheet').hidden,true);
+  // The same voice at a newer revision than the blog pinned is a change it can take.
+  f.set('older',{...found,voice_revision:0});f.run("studio.screen='run';sRun(older)");
+  await page().find(e=>e.textContent==='Change the voice').listeners.click();
+  assert.equal(sheet().find(e=>e.id==='change-voice').value,'voice');assert.equal(find('Use this voice').disabled,false,'a newer revision of the same voice');
+  // A refusal other than the confirmation shows on the sheet's problem line.
+  f.set('fresh',{...found,id:'fresh',stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'pending'}]});f.run('sRun(fresh)');
+  refuse='This blog changed. Reload before changing its voice.';
+  await page().find(e=>e.textContent==='Change the voice').listeners.click();
+  await find('Use this voice').listeners.click();
+  assert.ok(sheet().some(e=>e.className==='problem'&&e.textContent===refuse),'the refusal reaches the sheet: '+sheet().map(e=>e.textContent).join('|'));
+  assert.equal(f.get('sheet').hidden,false,'the sheet stays open');refuse='';
+  // A manuscript's own voice is named as that, not as a described tone; a twin name is not the current voice.
+  f.set('kept',{...found,voice_name:null,voice_mode:'preserve',voice_profile:null,style_name:null});f.run("studio.screen='run';sRun(kept)");
+  assert.ok(page().some(e=>e.textContent==='Voice: the manuscript’s own voice · Kind of post: none'),page().map(e=>e.textContent).join('|'));
+  f.set('toned',{...found,voice_name:null,voice_mode:'tone',voice_profile:null});f.run('sRun(toned)');
+  assert.ok(page().some(e=>e.textContent==='Voice: none (the described tone) · Kind of post: Product announcement'));
+  // From the editor, Use this revision asks first on a blog with a draft, then reopens the
+  // editor, even when the blog has a guided run.
+  requests.length=0;content='# Draft';found.id='edited';
+  f.run("studio.screen='editor';studio.id='edited'");
+  await f.run("sVoiceProfile('guest','edited')");
+  await find('Use this revision for this article').listeners.click();
+  assert.equal(requests.some(r=>r.url==='/api/tool-action'),false,'nothing changes before the confirmation');
+  await find('Change to Guest Writer').listeners.click();
+  const applied=requests.find(r=>r.url==='/api/tool-action').data;assert.equal(applied.confirmed,true);assert.equal(applied.id,'edited');
+  assert.equal(f.run('studio.screen'),'editor','a change made in the editor returns to the editor');
+}
+
+// Tools are not hidden: the library sheet opens Tools and Voices and styles directly, and Settings links to them.
+async function toolsAreNamed(){
+  const f=fixture(url=>{if(url.startsWith('/api/tools'))return {id:null,has_manuscript:false,jobs:[]};if(url.startsWith('/api/voices'))return {profiles:[],samples:[],candidates:[],pending:[]};if(url.startsWith('/api/styles'))return {styles:[],samples:[],candidates:[],pending:[]};return {items:[]};});f.loadRunner();
+  const sheet=()=>descendants(f.get('sheet')),find=label=>sheet().find(e=>e.textContent===label);
+  f.run('sTools()');assert.ok(find('Tools'));assert.equal(sheet().some(e=>e.textContent==='More tools'),false);
+  await find('Tools').listeners.click();assert.equal(f.get('sheet').children[0].children[0].textContent,'Tools');
+  assert.ok(find('Voices and styles'),'the tools sheet opens voices and styles');
+  f.run('sTools()');await find('Voices and styles').listeners.click();assert.equal(f.get('sheet').children[0].children[0].textContent,'Voices and styles');
+  f.run("sCloseSheet();studio.settings={defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''},workspace:'/synthetic'};studio.brand={};studio.team={};sSettings()");
+  const link=descendants(f.get('studio-page')).find(e=>e.tagName==='button'&&e.textContent==='Open voices and styles');assert.ok(link,'Settings links to voices and styles');
+  await link.listeners.click();assert.equal(f.get('sheet').children[0].children[0].textContent,'Voices and styles');
 }

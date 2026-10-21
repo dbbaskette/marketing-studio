@@ -244,6 +244,9 @@ class Workspace:
                 'guidance_history',
                 'hub_context',
                 'hub_projection',
+                # A local pin until styles are shared Hub items, so the Hub's edited
+                # fingerprint cannot see a change of style either.
+                'style',
             )
         }
         title = record.get('title') or record.get('name') or local_id
@@ -299,6 +302,9 @@ class Workspace:
                 reference['role'] = 'voice'
                 dependencies.append(reference)
                 data['voice'] = {'mode': 'profile', 'ref': reference}
+                if voice.get('tone'):
+                    # Only when set, so an article pinned before tone nudges projects as before.
+                    data['voice']['tone'] = voice['tone']
             guidance = record.get('guidance')
             if guidance:
                 data['guidance'] = {
@@ -853,11 +859,12 @@ class Workspace:
                 for r in data['sources']
             ]
             if data['voice'].get('mode') == 'profile':
-                ref = data['voice']['ref']
+                ref, tone = data['voice']['ref'], data['voice'].get('tone')
                 data['voice'] = {
                     'mode': 'profile',
                     'profile_id': resolved[(ref['item'], ref['revision'])],
                     'revision': 1,
+                    **({'tone': tone} if isinstance(tone, str) and 0 < len(tone) <= 2000 else {}),
                 }
             # A shared pin is a record of which guidance the article used; helpers always run from this installation.
             if data.get('guidance'):

@@ -5,7 +5,14 @@ import re
 
 import studio
 
-KINDS = {'voice-learn', 'voice-audition', 'repurpose', 'interview-question', 'interview-outline'}
+KINDS = {
+    'voice-learn',
+    'voice-audition',
+    'style-learn',
+    'repurpose',
+    'interview-question',
+    'interview-outline',
+}
 
 
 def path(root, ident):

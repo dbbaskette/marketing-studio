@@ -387,6 +387,49 @@ class BlogRunnerTests(RunnerCase):
             runner.basis(self.root, directory, record, run, 'draft'), pin({'outline': outline})
         )
 
+    def test_marking_a_pinned_source_as_a_sample_keeps_its_runs_open(self):
+        import management
+
+        source = self.source('A fictional gateway routes synthetic requests.')
+        found = self.approve(self.submit(self.create(sources=[source['id']])))
+        before = runner.survey(self.root, found['id'])
+        _, payload, _ = runner.job(self.root, found['id'])
+        for purpose in ('voice-sample', 'style-sample'):
+            management.dispatch(
+                self.root,
+                'tool-action',
+                {
+                    'action': 'source-purpose',
+                    'source': source['id'],
+                    'purpose': purpose,
+                    'author': 'Avery',
+                },
+            )
+        self.assertEqual(studio.item(self.root, 'sources', source['id'])[1]['revision'], 3)
+        after = runner.survey(self.root, found['id'])
+        self.assertEqual(after['stages'], before['stages'], 'a sample mark is not a change')
+        self.assertEqual(after['expected'], before['expected'], 'stage pins hold')
+        self.assertEqual(runner.job(self.root, found['id'])[1], payload)
+        self.file.write_text('Changed synthetic words.')
+        self.command('source', 'update', '--id', source['id'], '--text-file', str(self.file))
+        with self.assertRaisesRegex(ValueError, 'selected source changed'):
+            runner.survey(self.root, found['id'])
+
+    def test_a_pinned_source_without_its_saved_revision_still_refuses(self):
+        import management
+
+        source = self.source('A fictional gateway routes synthetic requests.')
+        found = self.approve(self.submit(self.create(sources=[source['id']])))
+        management.dispatch(
+            self.root,
+            'tool-action',
+            {'action': 'source-purpose', 'source': source['id'], 'purpose': 'style-sample'},
+        )
+        directory, _ = studio.item(self.root, 'sources', source['id'])
+        shutil.rmtree(directory / 'revisions' / '1')
+        with self.assertRaisesRegex(ValueError, 'selected source changed'):
+            runner.survey(self.root, found['id'])
+
     def test_only_steps_that_use_evidence_receive_sources(self):
         source = self.source('A fictional gateway routes synthetic requests.')
         found = self.create(sources=[source['id']])
@@ -1098,6 +1141,63 @@ class RunnerHubTests(Fixture):
             self.assertEqual(previous, '# Outline\nSynthetic argument.')
             runner.ENGINES.pop(str(other), None)
 
+    def test_a_tone_nudge_travels_with_the_voice_and_older_projections_hold(self):
+        from hub_fixtures import FakeProvider
+        from hub import Registry
+        from hub_workspace import Workspace
+        import hub_workspace
+
+        provider = FakeProvider(self.base / 'remotes')
+        a, b = Registry(self.base / 'a-hubs', provider), Registry(self.base / 'b-hubs', provider)
+        ident = a.create('fixture/voice-tone', 'Voice tone')['hub']
+        b.join('fixture/voice-tone')
+        other = self.base / 'other-author'
+        studio.initialize(other)
+        wa, wb = Workspace(self.root, a.hub(ident)), Workspace(other, b.hub(ident))
+        self.file.write_text('Use short direct sentences.')
+        profile = self.command(
+            'profile',
+            'create',
+            '--name',
+            'Avery',
+            '--guide-file',
+            str(self.file),
+            '--status',
+            'confirmed',
+        )
+        with patch.object(
+            hub_workspace, 'active', side_effect=lambda root: wa if root == self.root else wb
+        ):
+            shared = {}
+            for tone in ('Warm', ''):
+                found = runner.create(
+                    self.root,
+                    {
+                        'title': 'Tone ' + (tone or 'none'),
+                        'audience': 'Authors',
+                        'goal': 'Explain a fixture',
+                        'research': 'none',
+                        'profile': profile['id'],
+                        'tone': tone,
+                    },
+                )
+                shared[tone] = wa.publish_selected({'articles': [found['id']]})['items'][0]
+            revisions = wa.hub.graph()['revisions']
+            projected = {
+                tone: revisions[ref['revision']]['data']['studio']['voice']
+                for tone, ref in shared.items()
+            }
+            self.assertEqual(projected['Warm']['tone'], 'Warm')
+            self.assertEqual(set(projected['']), {'mode', 'ref'}, 'no tone, the same projection')
+            wb.hub.refresh()
+            local_id = wb.checkout_selected({'articles': [shared['Warm']['item']]})['items'][0][
+                'local_id'
+            ]
+            voice = studio.item(other, 'articles', local_id)[1]['voice']
+            self.assertEqual((voice['mode'], voice['tone']), ('profile', 'Warm'))
+            runner.ENGINES.pop(str(other), None)
+            runner.ENGINES.pop(str(self.root), None)
+
 
 class SharedPatternTests(RunnerCase):
     """What every studio's run screen says the same way: the stops, the "now" line, honest
@@ -1348,6 +1448,21 @@ class DeleteTests(RunnerCase):
             self.delete(found, extra=True)
         self.assertTrue(studio.item(self.root, 'articles', found['id']))
         self.assertEqual(runner.catalog(self.root)['deleted'], [])
+
+    def test_delete_accepts_the_title_as_a_person_types_it(self):
+        # Curly quotes, an en dash and a double space in the stored title; plain typing deletes it.
+        found = self.create(page=True, title='From agent “pilots” to governed  production – 2026')
+        with self.assertRaisesRegex(ValueError, 'title'):
+            self.delete(found, title='From agent pilots to production')
+        result = self.delete(found, title='  from agent "pilots" to governed production - 2026 ')
+        self.assertTrue(result['deleted'])
+        self.assertEqual([row['id'] for row in runner.catalog(self.root)['deleted']], [found['id']])
+
+    def test_delete_ignores_a_byte_order_mark_at_the_start_of_the_stored_title(self):
+        # The page's \s counts U+FEFF as a space, so the server must agree.
+        found = self.create(page=True, title='\ufeffMarked gateway guide')
+        result = self.delete(found, title='Marked gateway guide')
+        self.assertTrue(result['deleted'])
 
     def test_delete_stops_the_worker_and_removes_what_this_computer_kept(self):
         entered = threading.Event()
@@ -1610,6 +1725,429 @@ class DeleteTests(RunnerCase):
             runner.engine(self.root).describe(found['id'])['publication'],
             'https://example.com/post',
         )
+
+
+class StyleTests(RunnerCase):
+    """A run pins a style beside its voice, and the writing job reads that revision."""
+
+    def test_a_run_pins_its_style_and_the_job_carries_it(self):
+        self.assertIn(
+            'product-announcement', [row['id'] for row in runner.options(self.root)['styles']]
+        )
+        found = self.create(page=True, style='product-announcement')
+        _, record = studio.item(self.root, 'articles', found['id'])
+        self.assertEqual(record['style'], {'style_id': 'product-announcement', 'revision': 1})
+        self.assertEqual((found['style_name'], found['voice_name']), ('Product announcement', None))
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(payload['style']['name'], 'Product announcement')
+        self.assertIn('The news is in the first sentence.', payload['style']['guide'])
+        self.assertIn('the style wins', guidance)
+        self.assertIn('the style wins', blog_worker.POLICY)
+        directory, _, run = runner.load(self.root, found['id'])
+        for check, carried in (('polish', False), ('shape', True)):
+            studio.write_json(
+                studio.inside(directory, runner.STATE), {**run, 'editor_check': check}
+            )
+            _, checked, guidance = runner.job(self.root, found['id'])
+            self.assertEqual('SELECTED STYLE' in guidance, carried)
+            self.assertEqual(checked['style'] is not None, carried, check)
+            self.assertEqual('Product announcement' in guidance.split('\n', 1)[0], carried)
+        studio.write_json(studio.inside(directory, runner.STATE), run)
+        guide = self.base / 'style.md'
+        guide.write_text('Changed later.')
+        self.command('style', 'save', '--id', 'product-announcement', '--guide-file', str(guide))
+        _, payload, _ = runner.job(self.root, found['id'])
+        self.assertNotIn(
+            'Changed later.', payload['style']['guide'], 'a later save does not move the pin'
+        )
+        self.command(
+            'style',
+            'retire',
+            '--id',
+            'product-announcement',
+            '--expected-revision',
+            '2',
+            '--confirmed',
+        )
+        with self.assertRaisesRegex(ValueError, 'retired'):
+            self.create(page=True, style='product-announcement')
+        with self.assertRaisesRegex(ValueError, 'Unknown styles'):
+            self.create(page=True, style='no-such-style')
+        plain = self.create(page=True)
+        self.assertNotIn('style', studio.item(self.root, 'articles', plain['id'])[1])
+        self.assertIsNone(runner.job(self.root, plain['id'])[1]['style'])
+        _, record, run = runner.load(self.root, plain['id'])
+        self.assertNotIn(
+            'style', runner.inputs(self.root, record, run), 'stage pins saved before styles hold'
+        )
+        self.assertIsNone(plain['style_name'])
+
+    def test_a_minimal_edit_keeps_to_its_request_without_the_style(self):
+        found = self.approve(self.submit(self.create(page=True, style='how-to'), page=True), True)
+        self.assertIsNotNone(runner.job(self.root, found['id'])[1]['style'])
+        found = self.submit(found, '# Draft\nA fictional paragraph.', page=True)
+        found = runner.decide(
+            self.root, found['id'], found['expected'], 'changes', 'Shorten it.', page=True
+        )
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertIn('minimal edit, not a rewrite', guidance)
+        self.assertIsNone(payload['style'])
+        self.assertNotIn('SELECTED STYLE', guidance)
+        self.assertNotIn('How-to', guidance.split('\n', 1)[0])
+
+    def test_a_saved_blog_keeps_its_style_when_none_is_sent(self):
+        ident = self.article()
+        directory, record = studio.item(self.root, 'articles', ident)
+        record['style'] = {'style_id': 'how-to', 'revision': 1}
+        studio.persist(directory, 'articles', record)
+        found = self.create(page=True, id=ident, style='', mode='review', stop='review')
+        _, record = studio.item(self.root, 'articles', found['id'])
+        self.assertEqual(record['style'], {'style_id': 'how-to', 'revision': 1})
+        self.assertEqual(found['style_name'], 'How-to and tutorial')
+
+    def test_a_refused_run_leaves_no_copied_starter(self):
+        with self.assertRaises(ValueError):
+            self.create(page=True, style='how-to', sources=['no-such-source'])
+        large = self.source('Synthetic gateway detail. ' * 12_000)  # over one job's context
+        # Sources are excerpted to their budget on every path; a larger one lets this source
+        # through whole, so the job's context check refuses it after the style was checked.
+        with (
+            patch.object(runner, 'SOURCE_BUDGET', 400_000),
+            self.assertRaisesRegex(ValueError, 'too large'),
+        ):
+            self.create(page=True, style='how-to', sources=[large['id']])
+        self.assertFalse((self.root / 'styles' / 'how-to').exists())
+        self.assertEqual(runner.catalog(self.root)['items'], [])
+
+    def test_a_listing_names_a_style_from_its_current_record_or_starter(self):
+        import styles
+
+        self.assertEqual(styles.name_of(self.root, 'how-to'), 'How-to and tutorial')
+        self.assertIsNone(styles.name_of(self.root, 'no-such-style'))
+        self.assertEqual(
+            runner.style_name(self.root, {'style': {'style_id': 'how-to', 'revision': 1}}),
+            'How-to and tutorial',
+        )
+        self.assertFalse((self.root / 'styles' / 'how-to').exists(), 'naming copies nothing')
+
+
+class VoiceChoiceTests(RunnerCase):
+    """The page's Write as: the default voice applies unless the person chose another."""
+
+    def voice(self, name='Avery', guide='Short direct sentences.', status='confirmed'):
+        self.file.write_text(guide)
+        return self.command(
+            'profile', 'create', '--name', name, '--guide-file', str(self.file), '--status', status
+        )
+
+    def default(self, profile):
+        import writing_defaults
+
+        words = ['defaults', 'set', '--scope', 'personal', '--key', 'voice', '--value']
+        value = json.dumps({'profile_id': profile['id'], 'revision': 1})
+        args = studio.parser().parse_args(['--root', str(self.root), *words, value])
+        writing_defaults.command(self.root, args)
+
+    def voice_of(self, found):
+        return studio.item(self.root, 'articles', found['id'])[1]['voice']
+
+    def files(self):
+        return {
+            path.relative_to(self.root): path.read_bytes()
+            for path in self.root.rglob('*')
+            if path.is_file()
+        }
+
+    def test_the_default_voice_applies_unless_the_person_chose_another(self):
+        self.assertEqual(
+            self.voice_of(self.create(page=True, tone='Warm')), {'mode': 'tone', 'tone': 'Warm'}
+        )
+        mine, other = self.voice(), self.voice('Blake', 'Long, careful sentences.')
+        self.default(mine)
+        absent = self.voice_of(self.create(page=True))
+        self.assertEqual(
+            (absent['mode'], absent['profile_id'], absent['revision']), ('profile', mine['id'], 1)
+        )
+        nudged = self.voice_of(self.create(page=True, tone='Warm'))
+        self.assertEqual((nudged['mode'], nudged['profile_id']), ('profile', mine['id']))
+        self.assertEqual(
+            self.voice_of(self.create(page=True, profile='', tone='Warm')),
+            {'mode': 'tone', 'tone': 'Warm'},
+            'No particular voice uses the described tone',
+        )
+        chosen = self.voice_of(self.create(page=True, profile=other['id']))
+        self.assertEqual((chosen['mode'], chosen['profile_id']), ('profile', other['id']))
+
+    def test_a_tone_beside_a_voice_is_kept_as_a_nudge(self):
+        import writing_defaults
+
+        mine = self.voice()
+        found = self.create(page=True, profile=mine['id'], tone='Warm')
+        pinned = {'mode': 'profile', 'profile_id': mine['id'], 'revision': 1}
+        self.assertEqual(self.voice_of(found), {**pinned, 'tone': 'Warm'})
+        _, record, run = runner.load(self.root, found['id'])
+        payload = runner.inputs(self.root, record, run)
+        self.assertEqual(payload['voice']['tone'], 'Warm')
+        self.assertIn('Short direct sentences.', payload['voice']['guide'])
+        resolved = writing_defaults.resolve(self.root, record)
+        self.assertEqual(resolved['problems'], [])
+        self.assertEqual(
+            resolved['values']['voice']['value'], {'profile_id': mine['id'], 'revision': 1}
+        )
+        self.assertEqual(
+            self.voice_of(self.create(page=True, profile=mine['id'])),
+            pinned,
+            'without a tone the voice has no tone key, so earlier pins hold',
+        )
+        self.default(mine)
+        self.assertEqual(
+            self.voice_of(self.create(page=True, tone='Warm')), {**pinned, 'tone': 'Warm'}
+        )
+        chat = self.command(
+            'article',
+            'create',
+            '--title',
+            'Chat',
+            '--mode',
+            'first-draft',
+            '--profile',
+            mine['id'],
+            '--tone',
+            'Warm',
+        )
+        self.assertEqual(chat['voice'], {**pinned, 'tone': 'Warm'})
+
+    def test_the_worker_brief_names_the_voice_style_and_tone(self):
+        mine = self.voice()
+        found = self.create(page=True, profile=mine['id'], tone='Warm', style='how-to')
+        _, record, run = runner.load(self.root, found['id'])
+        pins = runner.inputs(self.root, record, run)
+        guidance = runner.job(self.root, found['id'])[2]
+        self.assertTrue(
+            guidance.startswith(
+                'Write as Avery (voice guide revision 1, confirmed), in the shape of How-to '
+                'and tutorial. Tone nudge: Warm.\n\n'
+            ),
+            guidance[:200],
+        )
+        self.assertEqual(runner.inputs(self.root, record, run), pins, 'the line is not an input')
+        self.file.write_text('A later guide.')
+        self.command(
+            'profile',
+            'save',
+            '--id',
+            mine['id'],
+            '--name',
+            'Avery Later',
+            '--guide-file',
+            str(self.file),
+            '--status',
+            'provisional',
+        )
+        self.assertTrue(
+            runner.job(self.root, found['id'])[2].startswith(
+                'Write as Avery (voice guide revision 1, confirmed)'
+            ),
+            'the pinned revision is named, not the latest',
+        )
+        plain = self.create(page=True, profile='', tone='Warm')
+        self.assertTrue(
+            runner.job(self.root, plain['id'])[2].startswith(
+                'No author voice is pinned; follow voice.tone.\n\n'
+            )
+        )
+        bare_tone = self.create(page=True, profile='', tone='')
+        self.assertTrue(
+            runner.job(self.root, bare_tone['id'])[2].startswith(
+                'No author voice is pinned; write plainly in the house style.\n\n'
+            )
+        )
+        bare = self.create(page=True, profile=mine['id'])
+        self.assertTrue(
+            runner.job(self.root, bare['id'])[2].startswith(
+                'Write as Avery Later (voice guide revision 2, provisional).\n\n'
+            )
+        )
+
+    def test_options_name_the_personal_default_voice_and_write_nothing(self):
+        self.assertIsNone(runner.options(self.root)['default_voice'])
+        mine = self.voice(status='provisional')
+        self.default(mine)
+        before = self.files()
+        self.assertEqual(
+            runner.options(self.root)['default_voice'],
+            {
+                'scope': 'personal',
+                'profile': mine['id'],
+                'name': 'Avery',
+                'revision': 1,
+                'status': 'provisional',
+            },
+        )
+        self.assertEqual(self.files(), before)
+
+    def team(self, status='confirmed', competing=False):
+        """A stub Team Hub whose only team default is a shared voice."""
+        from types import SimpleNamespace
+
+        item, revision = 'a' * 32, 'b' * 32
+        rows = ['c' * 32, 'e' * 32] if competing else ['c' * 32]
+        revisions = {
+            row: {
+                'item': 'd' * 32,
+                'kind': 'context',
+                'scope': {'level': 'team', 'key': ''},
+                'status': 'active',
+                'data': {
+                    'key': 'writing-default:voice',
+                    'value': {'item': item, 'revision': revision},
+                },
+            }
+            for row in rows
+        }
+        revisions[revision] = {
+            'item': item,
+            'revision': revision,
+            'kind': 'voice',
+            'status': 'active',
+            'title': 'Team voice',
+            'data': {'studio': {'name': 'Team voice', 'status': status}},
+        }
+        graph = {'heads': {'d' * 32: rows}, 'revisions': revisions}
+        return SimpleNamespace(hub=SimpleNamespace(graph=lambda: graph))
+
+    def test_options_name_no_default_voice_they_cannot_use(self):
+        from hub_store import HubError
+
+        for adapter, why in (
+            (self.team(competing=True), 'competing team defaults'),
+            (self.team(status='retired'), 'a retired shared voice'),
+        ):
+            with patch('hub_workspace.active', return_value=adapter):
+                self.assertIsNone(runner.options(self.root)['default_voice'], why)
+        with patch('hub_workspace.active', side_effect=HubError('This Team Hub is not joined.')):
+            shown = runner.options(self.root)
+        self.assertIsNone(shown['default_voice'], 'the wizard opens without its Team Hub')
+        self.assertIn('profiles', shown)
+
+    def test_a_manuscript_keeps_its_own_voice_unless_the_person_picks_one(self):
+        mine = self.voice()
+        self.default(mine)
+        draft = self.source('# A synthetic draft\n\nThe gateway routes requests.')
+        found = self.create(page=True, mode='review', manuscript=draft['id'], tone='Warm')
+        self.assertEqual(self.voice_of(found)['mode'], 'preserve')
+        self.assertTrue(
+            runner.job(self.root, found['id'])[2].startswith(
+                'No author voice is pinned; keep the manuscript’s own voice. Tone nudge: Warm.\n\n'
+            )
+        )
+        existing = self.command(
+            'article', 'create', '--title', 'Imported', '--mode', 'existing', '--voice', 'preserve'
+        )
+        self.file.write_text('# Imported\n\nAn original sentence.')
+        self.command(
+            'article',
+            'save',
+            '--id',
+            existing['id'],
+            '--kind',
+            'original',
+            '--file',
+            str(self.file),
+        )
+        found = self.create(page=True, id=existing['id'], mode='review')
+        self.assertEqual(self.voice_of(found)['mode'], 'preserve')
+        self.assertTrue(
+            runner.job(self.root, found['id'])[2].startswith(
+                'No author voice is pinned; keep the manuscript’s own voice.\n\n'
+            )
+        )
+        picked = self.create(page=True, mode='review', manuscript=draft['id'], profile=mine['id'])
+        self.assertEqual(self.voice_of(picked)['profile_id'], mine['id'])
+
+    def test_a_run_says_how_its_voice_was_chosen(self):
+        mine = self.voice()
+        pinned = self.create(page=True, profile=mine['id'])
+        self.assertEqual(
+            (
+                pinned['voice_mode'],
+                pinned['voice_profile'],
+                pinned['voice_revision'],
+                pinned['voice_name'],
+            ),
+            ('profile', mine['id'], mine['revision'], 'Avery'),
+        )
+        toned = self.create(page=True, profile='', tone='Warm')
+        self.assertEqual(
+            (toned['voice_mode'], toned['voice_profile'], toned['voice_revision']),
+            ('tone', None, None),
+        )
+        draft = self.source('# A synthetic draft\n\nThe gateway routes requests.')
+        kept = self.create(page=True, mode='review', manuscript=draft['id'])
+        self.assertEqual((kept['voice_mode'], kept['voice_profile']), ('preserve', None))
+        self.assertEqual(runner.engine(self.root).describe(kept['id'])['voice_mode'], 'preserve')
+
+    def test_the_settings_default_tone_is_no_nudge(self):
+        mine = self.voice()
+        usual = runner.settings(self.root)['defaults']['tone']
+        self.assertNotIn(
+            'tone', self.voice_of(self.create(page=True, profile=mine['id'], tone=usual))
+        )
+        self.assertEqual(
+            self.voice_of(self.create(page=True, profile='', tone=usual)),
+            {'mode': 'tone', 'tone': usual},
+            'without a voice the tone is the description',
+        )
+        self.default(mine)
+        self.assertNotIn('tone', self.voice_of(self.create(page=True, tone=usual)))
+        self.assertEqual(self.voice_of(self.create(page=True, tone='Warm'))['tone'], 'Warm')
+
+    def test_options_read_a_team_default_voice_without_checking_it_out(self):
+        from types import SimpleNamespace
+
+        item, revision, row = 'a' * 32, 'b' * 32, 'c' * 32
+        graph = {
+            'heads': {'d' * 32: [row]},
+            'revisions': {
+                row: {
+                    'item': 'd' * 32,
+                    'kind': 'context',
+                    'scope': {'level': 'team', 'key': ''},
+                    'status': 'active',
+                    'data': {
+                        'key': 'writing-default:voice',
+                        'value': {'item': item, 'revision': revision},
+                    },
+                },
+                revision: {
+                    'item': item,
+                    'revision': revision,
+                    'kind': 'voice',
+                    'status': 'active',
+                    'title': 'Team voice',
+                    'data': {'studio': {'name': 'Team voice', 'status': 'confirmed'}},
+                },
+            },
+        }
+
+        def checkout(*args):
+            raise AssertionError('reading options checks nothing out')
+
+        adapter = SimpleNamespace(hub=SimpleNamespace(graph=lambda: graph), _checkout=checkout)
+        before = self.files()
+        with patch('hub_workspace.active', return_value=adapter):
+            shown = runner.options(self.root)['default_voice']
+        self.assertEqual(
+            shown,
+            {
+                'scope': 'team',
+                'profile': None,
+                'name': 'Team voice',
+                'revision': revision,
+                'status': 'confirmed',
+            },
+        )
+        self.assertEqual(self.files(), before)
 
 
 class FilesCase(RunnerCase):
@@ -2280,7 +2818,13 @@ class WriteAsTests(RunnerCase):
         found = runner.options(self.root)
         self.assertEqual(
             found['default_voice'],
-            {'profile_id': profile['id'], 'revision': 1, 'name': 'Avery'},
+            {
+                'scope': 'personal',
+                'profile': profile['id'],
+                'name': 'Avery',
+                'revision': 1,
+                'status': 'provisional',
+            },
         )
         self.assertEqual([p['status'] for p in found['profiles']], ['provisional'])
         # Me writes with the pinned revision; an unknown or malformed one is refused.

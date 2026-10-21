@@ -22,9 +22,37 @@ and the files they kept, are let go of when the list is read.
 from datetime import datetime, timedelta, timezone
 import shutil
 import time
+import unicodedata
 
 import studio
 import blog_runner
+
+# Typographic marks a person types as their plain forms.
+PLAIN_MARKS = str.maketrans(
+    {
+        '‘': "'",
+        '’': "'",
+        '‚': "'",
+        '“': '"',
+        '”': '"',
+        '„': '"',
+        '–': '-',
+        '—': '-',
+        '\ufeff': ' ',  # the page's \s counts a byte-order mark as a space
+    }
+)
+
+
+def plain_title(value):
+    """A title as a person would type it: NFKC, plain quotes and dashes, one space between
+    words, no case. Both the typed text and the stored title go through this."""
+    value = unicodedata.normalize('NFKC', value).translate(PLAIN_MARKS)
+    return ' '.join(value.split()).casefold()
+
+
+def same_title(typed, stored):
+    return isinstance(typed, str) and plain_title(typed) == plain_title(stored)
+
 
 KEEP_DAYS = 30
 STOP_WAIT = 30  # seconds a working job may take to end before nothing is deleted
@@ -83,7 +111,7 @@ def check(root, data):
     directory, record, known = versions(root, data['id'])
     if not isinstance(data['expected'], str) or data['expected'] not in known:
         raise ValueError('This blog changed. Reload before deleting it.')
-    if data['title'] != record['title']:
+    if not same_title(data['title'], record['title']):
         raise ValueError(MISTITLED)
     return directory, record
 

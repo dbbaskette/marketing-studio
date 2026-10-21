@@ -52,13 +52,126 @@ def history_preview(root, ident, revision):
     )
 
 
+def apply_voice(root, ident, selected, confirmed):
+    """Switch a blog's voice as the chat `article voice` command does, so its reviews go
+    stale. Once an outline or draft exists the person confirms it, and a guided run
+    records it as a decision. The pinned style and any tone nudge stay as they are."""
+    import blog_runner
+
+    folder, record = studio.item(root, 'articles', ident)
+    before = record.get('voice') or {}
+    same = before.get('mode') == 'profile' and (before['profile_id'], before['revision']) == (
+        selected['id'],
+        selected['revision'],
+    )
+    written = any((folder / name).is_file() for name in ('OUTLINE.md', 'DRAFT.md', 'ORIGINAL.md'))
+    if written and not confirmed and not same:
+        raise ValueError(
+            'This blog has a saved outline or draft. Confirm the change of voice: its reviews '
+            'will need a new look; nothing is rewritten.'
+        )
+    if not same:
+        studio.article_command(
+            root,
+            SimpleNamespace(
+                action='voice',
+                id=ident,
+                profile=selected['id'],
+                revision=selected['revision'],
+                voice='preserve',
+                tone=before.get('tone') or None,
+            ),
+        )
+        if (folder / blog_runner.STATE).is_file():
+            directory, _, run = blog_runner.load(root, ident)
+            blog_runner.note_decision(
+                directory,
+                run,
+                'Voice changed to '
+                + selected['name']
+                + ' (revision '
+                + str(selected['revision'])
+                + ')',
+            )
+    _, record = studio.item(root, 'articles', ident)
+    result = {'id': ident, 'voice': record['voice'], 'status': 'voice-selected'}
+    if (folder / blog_runner.STATE).is_file():
+        result['run'] = blog_runner.engine(root).describe(ident)
+    return result
+
+
+SAMPLE_PURPOSES = ('voice-sample', 'style-sample')
+
+
+def source_purpose(root, data):
+    """Mark a ready reference as a voice or style sample, in a new source revision.
+
+    A voice sample is a person's writing, so it needs whose it is: the author given here
+    when the source names none. A style sample keeps whatever author the source has."""
+    import blog_library
+    import voice_links
+
+    if set(data) - {'action', 'source', 'purpose', 'author'}:
+        raise ValueError('Unknown sample field.')
+    purpose = data.get('purpose')
+    if purpose not in SAMPLE_PURPOSES:
+        raise ValueError('Choose a voice sample or a style sample.')
+    directory, record = studio.item(root, 'sources', data.get('source'))
+    if studio.is_material(root, directory, record):
+        raise ValueError(
+            'This file was uploaded for one blog and stays with it. Upload it again as a '
+            'sample to use it for a voice or a style.'
+        )
+    content = directory / 'content.md'
+    if (
+        record.get('status') != 'ready'
+        or not content.is_file()
+        or not studio.read_text(content).strip()
+    ):
+        raise ValueError(
+            'This source has no readable text yet. Add its text before using it as a sample.'
+        )
+    given = data.get('author') if purpose == 'voice-sample' else None
+    author = studio.checked_author(given) if given not in (None, '') else None
+    saved = (record.get('author') or '').strip()
+    if purpose == 'voice-sample':
+        if not saved and not author:
+            raise ValueError('Say whose writing this is before using it as a voice sample.')
+        if saved and author and not voice_links.same_author(saved, author):
+            raise ValueError(
+                'This source is by ' + saved + '. Use it as a sample of ' + saved + '’s voice.'
+            )
+    purposes = list(record.get('purposes') or [])
+    changed = purpose not in purposes or bool(author and not saved)
+    if changed:
+        blog_library.save_revision(directory, record)
+        if purpose not in purposes:
+            purposes.append(purpose)
+        record['purposes'] = purposes
+        if author and not saved:
+            record['author'] = author
+        record['revision'] += 1
+        studio.persist(directory, 'sources', record)
+    return {
+        'source': record['id'],
+        'revision': record['revision'],
+        'purposes': record['purposes'],
+        'author': record.get('author') or '',
+        'changed': changed,
+    }
+
+
 def dispatch(root, data):
     action = data.get('action')
+    if action == 'source-purpose':
+        return source_purpose(root, data)
     if action in (
         'job-create',
         'job-apply',
         'profile-save',
         'profile-retire',
+        'style-save',
+        'style-retire',
         'interview-answer',
         'interview-start',
         'voice-apply',
@@ -83,6 +196,14 @@ def dispatch(root, data):
             return article_tools.save_profile(root, data)
         if action == 'profile-retire':
             return article_tools.retire_profile(root, data)
+        if action == 'style-save':
+            import styles
+
+            return styles.save(root, data)
+        if action == 'style-retire':
+            import styles
+
+            return styles.retire(root, data)
         if action == 'interview-start':
             return article_tools.start_interview(root, data)
         if action == 'interview-answer':
@@ -96,13 +217,7 @@ def dispatch(root, data):
                 raise ValueError(
                     'Choose an active profile; existing pinned work remains unchanged.'
                 )
-            folder, record = studio.item(root, 'articles', current['id'])
-            record['voice'] = {
-                'mode': 'profile',
-                **studio.voice_pin(root, selected['id'], selected['revision']),
-            }
-            studio.persist(folder, 'articles', record)
-            return {'id': current['id'], 'voice': record['voice'], 'status': 'voice-selected'}
+            return apply_voice(root, current['id'], selected, data.get('confirmed') is True)
     if action == 'variant-save':
         import article_tools
 

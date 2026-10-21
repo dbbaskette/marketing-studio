@@ -5,6 +5,29 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- Deleting a blog accepts its title as you type it: case, spacing, curly quotes and
+  dashes no longer have to match the stored title exactly, and the sheet says when
+  the text is not the title yet. Every card on **Blogs** has **Delete**.
+- **Voices and styles.** A blog takes a voice (how you sound) and a style (the shape of a
+  kind of writing), chosen as **Write as** and **Kind of post** when you start it. Eight
+  starter styles for tech-industry writing are ready to use and editable, and a style can
+  be learned from examples of a kind of writing by anyone. **Tools → Voices and styles**
+  manages both in one place, and **Change the voice** switches a blog's voice, asking
+  first when it already has writing. **More tools** is now simply **Tools**.
+- **Write as someone else.** A voice belongs to one author, so a ghostwriter can keep a
+  voice for each person they write for and start a blog with that person's voice and name.
+- **Bring in writing, yours or an author's you write for.** Import a LinkedIn data export
+  (profile and articles only), paste links or choose a links file of public posts and say
+  whose they are, or use a source already in your references. Each becomes that author's
+  sample, and the sheet offers to learn their voice, or a style, from them.
+- **In chat, a blog takes your default voice** when you do not name one, as on the page,
+  and a revision or review keeps its manuscript's own voice. Ask for no particular voice
+  to write without one; a tone you give beside a voice nudges it, and a kind of post
+  can be named too.
+- For maintainers: styles are stored beside voices in a `styles` folder (and `.shared/styles`
+  in a team workspace), starters are copied in only when saved, retired or used, and
+  `library voice-links` takes `--purpose style-sample`. `run create` applies the default
+  voice without `--profile`, `--profile ''` asks for none, and `--style <id>` pins a style.
 - **Write from a brief** takes every file at once, like New blog from my files: the
   second step lists each file with how much text it has and what it is for, takes a
   Google Doc beside them, and keeps the saved references and research choice in their
@@ -17,13 +40,14 @@ changes for authors first, then what changes for maintainers.
   which passages were carried over from one, under **Checked for you**.
 - **I know the point** starts a blog from files at the outline, from a title, the
   point and the reader, instead of three angles. **Write as** chooses the voice on
-  the files screen and on the wizard's second step: you, a saved profile or none.
+  the files screen as on the wizard's first step: your default voice, at the revision
+  it pins, a saved profile or none.
 - Under Balanced, a blog that starts from your outline stops for you at the draft
   before its package; so does a revision, and an existing blog after changes to its draft.
   A run that selected an inspiration source before this change goes stale, because
   its saved input pins change; review its saved version or ask for changes to go on.
 - For maintainers: `upload` file entries take `purpose`; the `source-role` desk route;
-  `run create --point`; `review_policy.automatic(..., first=)`;
+  `run create --point`; `run-create` takes `revision` beside `profile`; `review_policy.automatic(..., first=)`;
   `text_checks.carried_over`; `synthesis_research.offered`.
 
 ## 4.3.0 — 2026-10-20

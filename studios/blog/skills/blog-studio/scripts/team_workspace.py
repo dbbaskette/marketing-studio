@@ -157,7 +157,7 @@ def keep_setup(root):
                         continue
                 except (ValueError, OSError):
                     continue
-            elif path.read_bytes() != studio.SHARED_README:
+            elif path.read_bytes() not in (studio.SHARED_README, *studio.PREVIOUS_SHARED_READMES):
                 continue
             paths.append(name)
         if paths:
@@ -474,7 +474,7 @@ def _migrate(root, legacy_root, selected, sources=(), profiles=(), memories=()):
         ):
             raise ValueError('Choose an unambiguous legacy memory item.')
         memory_revisions.add(heads[0])
-    plans, seen = [], set()
+    plans, seen, style_pins = [], set(), {}
     while pending:
         group, ident = pending.pop()
         if (group, ident) in seen:
@@ -494,6 +494,11 @@ def _migrate(root, legacy_root, selected, sources=(), profiles=(), memories=()):
             pending.extend(('sources', entry['source_id']) for entry in info['sources'])
             if info['voice'].get('mode') == 'profile':
                 pending.append(('profiles', info['voice']['profile_id']))
+            if info.get('style'):
+                pin = info['style']
+                style_pins.setdefault(studio.identifier(pin['style_id']), set()).add(
+                    pin['revision']
+                )
             memory_revisions.update(
                 ref['revision'] for ref in info.get('hub_context', {}).get('selected', [])
             )
@@ -502,6 +507,10 @@ def _migrate(root, legacy_root, selected, sources=(), profiles=(), memories=()):
         bound = adapter.state['items'].get(group + '/' + ident)
         if bound:
             queue.append(bound['revision'])
+    for ident, revisions in sorted(style_pins.items()):
+        plan = _style_plan(root, legacy_root, ident, revisions)
+        if plan:
+            plans.append(plan)
     queue.extend(memory_revisions)
     while queue:
         revision = queue.pop()
@@ -560,6 +569,52 @@ def _migrate(root, legacy_root, selected, sources=(), profiles=(), memories=()):
         'workspace': str(root),
         'archive': '.shared/legacy/' + adapter.hub.id,
     }
+
+
+def _style_plan(root, legacy_root, ident, revisions):
+    """(folder, destination) to copy a style the selected blogs pin, or None if none is needed.
+
+    The same style already here with every pinned revision is kept, not overwritten.
+    """
+    import styles
+
+    folder = studio.inside(legacy_root, 'styles', ident)
+    if not (folder / 'record.json').is_file():
+        if revisions == {1} and ident in styles.starters():
+            return None  # A starter never copied there reads as its packaged revision 1 here.
+        raise ValueError('A selected blog uses a style that is missing: ' + ident)
+    for revision in sorted(revisions):
+        there = studio.inside(folder, 'revisions', str(revision))
+        if not ((there / 'record.json').is_file() and (there / 'STYLE.md').is_file()):
+            raise ValueError(
+                f'A selected blog uses a style revision that is missing: {ident} revision {revision}'
+            )
+    destination = studio.inside(root, 'styles', ident)
+    if destination.exists():
+        for revision in sorted(revisions):
+            here = studio.inside(destination, 'revisions', str(revision))
+            there = studio.inside(folder, 'revisions', str(revision))
+            same = (here / 'record.json').is_file() and (here / 'STYLE.md').is_file()
+            if same:
+                try:
+                    same = (
+                        studio.read_json(here / 'record.json').get('name')
+                        == studio.read_json(there / 'record.json').get('name')
+                        and (here / 'STYLE.md').read_bytes() == (there / 'STYLE.md').read_bytes()
+                    )
+                except (ValueError, OSError, AttributeError):
+                    same = False
+            if not same:
+                raise ValueError(
+                    'Migration would overwrite local work: the style '
+                    + ident
+                    + ' here does not hold the revision a selected blog uses.'
+                )
+        return None
+    problem = team.unacceptable(folder)
+    if problem:
+        raise ValueError(problem)
+    return folder, destination
 
 
 def add_parser(groups):

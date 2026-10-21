@@ -22,6 +22,22 @@ export. It reads only profile background and article HTML, emits JSON, and does
 not extract arbitrary archive paths or import unrelated contacts/messages.
 Normalize selected articles through source intake before adding them to a profile.
 
+A voice belongs to one author, who may be the person you are writing for rather than
+the person in the chat: a ghostwriter learns Sam Rivera's voice from Sam's posts and
+starts a blog with that voice and Sam Rivera as its author. Name every profile for its
+author and record the author on each sample (`--author`); ask whose writing it is
+before reading it, and keep the permission to analyze it the person's to give. A voice
+is not a style.
+When the author wants a kind of writing learned, such as how product announcements are
+shaped, learn a [style](workspace/styles.md) from examples by anyone and keep it apart
+from the voice; a blog takes one of each, and the page offers them as **Write as** and
+**Kind of post**. Links to public posts arrive through `library voice-links` (add
+`--purpose style-sample` for a style, which skips the byline check) or the page's
+**Tools → Voices and styles → Add links to posts**. A LinkedIn export arrives through
+the page's **Import a LinkedIn export** (the `upload` route), as `author-background` and
+`voice-sample` sources by the person it names. A post kept from another byline keeps
+its published byline in the library.
+
 For a list of an author's published posts (a `.txt` file or pasted links, one per
 line; `#` comments and blanks ignored), confirm whose posts they are, then run
 `library voice-links --file <list.txt> --author <name>`. It saves nothing and

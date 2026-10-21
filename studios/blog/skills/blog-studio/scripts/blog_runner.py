@@ -198,6 +198,28 @@ def load(root, ident):
     return directory, record, run
 
 
+def same_source(folder, source, revision):
+    """Whether a newer source revision carries the pinned one's words unchanged.
+
+    Marking a source as a sample, or naming its author, gives it a new revision without
+    changing what a blog read from it. The payload takes its purposes from the blog's own
+    pin, so a run accepts that revision when the name, status, origin and text equal the
+    pinned revision's saved copy. Without that copy it cannot tell, and refuses."""
+    saved = folder / 'revisions' / str(revision)
+    if not isinstance(revision, int) or not (saved / 'record.json').is_file():
+        return False
+    try:
+        pinned = studio.read_json(saved / 'record.json')
+    except (OSError, ValueError):
+        return False
+    if any(pinned.get(key) != source.get(key) for key in ('name', 'status', 'origin')):
+        return False
+    then, now = saved / 'content.md', folder / 'content.md'
+    if then.is_file() != now.is_file():
+        return False
+    return not now.is_file() or then.read_bytes() == now.read_bytes()
+
+
 def inputs(root, record, run):
     """Exact selected context. Never silently replace a pinned voice with its latest revision."""
     sources = []
@@ -214,7 +236,9 @@ def inputs(root, record, run):
                 raise ValueError(MATERIAL_ELSEWHERE) from None
         folder, source = studio.item(root, 'sources', selected['source_id'])
         path = studio.inside(folder, 'content.md')
-        if selected['revision'] != source['revision']:
+        if selected['revision'] != source['revision'] and not same_source(
+            folder, source, selected['revision']
+        ):
             raise ValueError(
                 'A selected source changed. Reattach its current revision in chat first.'
             )
@@ -286,6 +310,11 @@ def inputs(root, record, run):
         payload['examples'] = examples  # Only when there are any, so saved pins hold.
     if run.get('brand'):
         payload['brand'] = run['brand']
+    if record.get('style'):
+        import styles
+
+        # Only when pinned: a run without a style keeps the stage pins it saved before styles.
+        payload['style'] = styles.pinned(root, record['style'])
     if len(json.dumps(payload)) > 300_000:
         raise ValueError(
             'Selected context is too large for one writing job. Use focused excerpts in chat.'
@@ -433,6 +462,26 @@ def basis(root, directory, record, run, stage, context=None, research=None):
     return studio.digest((pinned + json.dumps(original) + ']').encode())
 
 
+def voice_name(root, record):
+    """The pinned voice's current name, for listings; None for a described tone."""
+    voice = record.get('voice') or {}
+    if voice.get('mode') != 'profile':
+        return None
+    try:
+        return studio.item(root, 'profiles', voice['profile_id'])[1]['name']
+    except (ValueError, KeyError):
+        return None
+
+
+def style_name(root, record):
+    """The pinned style's current name, for listings; None when the run has no style."""
+    if not record.get('style'):
+        return None
+    import styles
+
+    return styles.name_of(root, record['style']['style_id'])
+
+
 def survey(root, ident, listing=False):
     """Stage states. A listing skips the version token and next document a decision needs."""
     directory, record, run = load(root, ident)
@@ -527,6 +576,11 @@ def survey(root, ident, listing=False):
         'expected': revision,
         'directory': str(directory),
         'brief': run['brief'],
+        'voice_name': voice_name(root, record),
+        'voice_mode': (record.get('voice') or {}).get('mode'),
+        'voice_profile': (record.get('voice') or {}).get('profile_id'),
+        'voice_revision': (record.get('voice') or {}).get('revision'),
+        'style_name': style_name(root, record),
         'existing': run['existing'],
         'editor_check': run.get('editor_check'),
         'mode': run.get('mode', 'review' if run['existing'] else 'write'),
@@ -544,7 +598,8 @@ def survey(root, ident, listing=False):
     }
 
 
-def save(root, directory, record, run, event):
+def note_decision(directory, run, event):
+    """Append one decision to the run, keeping its previous state in history."""
     path = studio.inside(directory, STATE)
     if path.exists():
         studio.atomic(
@@ -553,6 +608,10 @@ def save(root, directory, record, run, event):
         )
     run.setdefault('decisions', []).append({'event': event, 'at': studio.now()})
     studio.write_json(path, run)
+
+
+def save(root, directory, record, run, event):
+    note_decision(directory, run, event)
     record['next_step'] = (
         'Continue the guided blog on the page.'
         if run['approval'] == 'page'
@@ -591,6 +650,7 @@ def create(root, data, approval='conversation'):
         'goal',
         'tone',
         'profile',
+        'style',
         'sources',
         'research',
         'stop',
@@ -683,6 +743,14 @@ def create(root, data, approval='conversation'):
         studio.voice_pin(root, profile, revision)
     elif revision is not None:
         raise ValueError('A voice revision needs its profile.')
+    tone = text(data.get('tone', ''), 'tone')
+    # Beside a voice, the tone is a nudge only when the person changed the usual one.
+    nudge = '' if tone == defaults.get('tone') else tone
+    style = data.get('style') or None
+    if style:
+        # Refused here if retired or unknown. Checking writes nothing: a starter is copied
+        # into the workspace only once the whole request has passed, below.
+        studio.style_check(root, style)
     sources = data.get('sources', [])
     if not isinstance(sources, list) or len(sources) > 50 or len(set(sources)) != len(sources):
         raise ValueError('Select at most 50 different sources.')
@@ -707,6 +775,9 @@ def create(root, data, approval='conversation'):
         if existing and stop in ('outline', 'draft') and mode != 'revise':
             raise ValueError('An existing draft starts at review. Choose review or export package.')
     else:
+        # No profile key: the default voice applies. An empty one is "No particular voice":
+        # the described tone. An ID pins that voice.
+        chose = 'profile' in data
         args = SimpleNamespace(
             action='create',
             id=None,
@@ -718,8 +789,8 @@ def create(root, data, approval='conversation'):
             else 'first-draft',
             profile=profile,
             author=text(data.get('author', ''), 'author', 200) or None,
-            voice='tone',
-            tone=text(data.get('tone', ''), 'tone'),
+            voice='tone' if chose else None,
+            tone=(nudge if profile else tone) if chose else None,
             audience=brief['audience'],
             blog_type=None,
             review_folder=None,
@@ -728,6 +799,13 @@ def create(root, data, approval='conversation'):
         )
         ident = studio.new_id(title)
         record = studio.article_record(root, args, ident)
+        if not chose and record['voice']['mode'] == 'preserve' and manuscript:
+            # A revise or review keeps the manuscript's own voice unless one is picked.
+            record['voice'] = {'mode': 'preserve', 'tone': nudge}
+        elif not chose and record['voice']['mode'] != 'profile':
+            record['voice'] = {'mode': 'tone', 'tone': tone}  # No default voice to apply.
+        elif not chose and nudge:
+            record['voice']['tone'] = nudge  # A nudge on top of the default voice.
         directory = studio.inside(root, 'articles', ident)
     if data.get('id') and mode == 'from-outline' and not existing:
         record['mode'] = 'from-outline'
@@ -743,6 +821,10 @@ def create(root, data, approval='conversation'):
         ]
     if profile:
         record['voice'] = {'mode': 'profile', **studio.voice_pin(root, profile, revision)}
+        if nudge:
+            record['voice']['tone'] = nudge
+    if style:
+        record['style'] = studio.style_check(root, style)
     record['research_policy'] = 'supplied-only' if research == 'none' else research
     research = research_scope(research, record['sources'])
     if from_files and research == 'supplied-only':
@@ -809,6 +891,8 @@ def create(root, data, approval='conversation'):
     if selected_brand:
         run['brand'] = selected_brand
     inputs(root, record, run)  # Refuse unusable context before creating a partial blog.
+    if style:
+        record['style'] = studio.style_pin(root, style, record['style']['revision'])
     if not data.get('id'):
         directory.mkdir()
         studio.write_json(studio.inside(root, '.active-article.json'), {'id': record['id']})
@@ -953,6 +1037,44 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
     return survey(root, ident)
 
 
+def tone_nudge(voice):
+    tone = (voice.get('tone') or '').strip()
+    return ' Tone nudge: ' + tone + ('' if tone.endswith(('.', '!', '?')) else '.') if tone else ''
+
+
+def brief_line(root, record, payload):
+    """Whose voice, which style and what tone, for the worker. In the guidance, not in
+    inputs(), so the stage pins saved before this line hold."""
+    voice = record.get('voice') or {}
+    style = payload.get('style')
+    if voice.get('mode') == 'profile':
+        folder, _ = studio.item(root, 'profiles', voice['profile_id'])
+        pinned = studio.read_json(
+            studio.inside(folder, 'revisions', str(voice['revision']), 'record.json')
+        )
+        line = (
+            'Write as '
+            + pinned['name']
+            + ' (voice guide revision '
+            + str(voice['revision'])
+            + ', '
+            + pinned['status']
+            + ')'
+            + (', in the shape of ' + style['name'] if style else '')
+            + '.'
+        )
+        return line + tone_nudge(voice)
+    line = (
+        'No author voice is pinned; keep the manuscript’s own voice.'
+        if voice.get('mode') == 'preserve'
+        else 'No author voice is pinned; follow voice.tone.'
+        if voice.get('tone')
+        else 'No author voice is pinned; write plainly in the house style.'
+    )
+    line += (' Write in the shape of ' + style['name'] + '.') if style else ''
+    return line + (tone_nudge(voice) if voice.get('mode') == 'preserve' else '')
+
+
 def carried(directory, run, payload, writing):
     """Passages of `writing` that came from an example and from nothing the run allows:
     its sources, brief, outline and research facts. Empty without examples."""
@@ -993,6 +1115,7 @@ def job(root, ident):
         raise ValueError('This run is complete.')
     directory, record, run = load(root, ident)
     payload = inputs(root, record, run)
+    payload.setdefault('style', None)
     evidence = payload['sources']  # What the carried-over check may still allow below.
     # The package works from the saved writing, and only evidence checks review against
     # sources. inputs() above still refuses a changed source pin for every step.
@@ -1047,6 +1170,10 @@ def job(root, ident):
         and not (stage == 'review' and run.get('editor_check'))
         and (saved.get('hash') or (stage == 'draft' and run['existing']))
     )
+    # A focused edit or a single editor check other than shape keeps to its own scope, so
+    # it gets no style. The job payload is not hashed; stage pins come from inputs().
+    if edit or run.get('editor_check') not in (None, 'shape'):
+        payload['style'] = None
     references = Path(__file__).resolve().parents[1] / 'references'
     if edit:
         guidance = (
@@ -1062,7 +1189,17 @@ def job(root, ident):
         )
     else:
         guidance = STAGES[stage][2] + '\n\n' + (references / GUIDES[stage]).read_text()
+    guidance = brief_line(root, record, payload) + '\n\n' + guidance
     guidance += '\n\n' + (references / 'style/house.md').read_text()
+    if payload['style'] and stage in ('outline', 'draft', 'review', 'package'):
+        guidance += (
+            '\n\nSELECTED STYLE: '
+            + payload['style']['name']
+            + '. Its guide is in style.guide. The style says the shape of this kind of writing: '
+            'structure, moves, length, headings and register. The selected voice says how its '
+            'author sounds. Where they conflict on wording, the voice wins; where they conflict '
+            'on structure, the style wins. Neither invents facts, experience or sources.'
+        )
     if stage in ('draft', 'review'):
         requested = run.get('editor_check')
         guides = ['modules/blog-voice-check.md', 'style/software.md']
@@ -1543,6 +1680,52 @@ def catalog(root):
     return {'items': rows, 'total': len(rows), 'deleted': blog_delete.deleted(root)}
 
 
+def default_voice(root):
+    """The voice a new blog gets when the page sends no profile: personal or team, or None.
+
+    Reads only. A team default is named from its Team Hub revision without checking it
+    out; creating the blog checks it out, as in chat."""
+    import writing_defaults
+    from hub_store import HubError
+    from hub_workspace import active
+
+    # Whatever stops the read (a Team Hub not joined here, a damaged record), the wizard
+    # still opens: it just offers no default voice.
+    try:
+        adapter = active(root)
+        found = writing_defaults.resolve(root, adapter=adapter)['values'].get('voice')
+        if not found:
+            return None
+        if found['scope'] == 'team':
+            shared = adapter.hub.graph()['revisions'][found['value']['revision']]
+            saved = (shared.get('data') or {}).get('studio') or {}
+            if saved.get('status') == 'retired':
+                return None
+            return {
+                'scope': 'team',
+                'profile': None,
+                'name': saved.get('name') or shared.get('title'),
+                'revision': found['value']['revision'],
+                'status': saved.get('status'),
+            }
+        pin = found['value']
+        directory, current = studio.item(root, 'profiles', pin['profile_id'])
+        pinned = studio.read_json(
+            studio.inside(directory, 'revisions', str(pin['revision']), 'record.json')
+        )
+    except (ValueError, OSError, KeyError, TypeError, HubError):
+        return None
+    if current.get('status') == 'retired':
+        return None  # A new blog cannot take it; creating one says so.
+    return {
+        'scope': found['scope'],
+        'profile': pin['profile_id'],
+        'name': pinned['name'],
+        'revision': pin['revision'],
+        'status': pinned['status'],
+    }
+
+
 def options(root):
     def records(kind):
         result = []
@@ -1565,33 +1748,18 @@ def options(root):
             agents[name] = False
 
     import brand_skill
+    import styles
 
     brand = brand_skill.status()
     brand['default'] = brand_skill.defaults(brand)
-    # Me, on the page's Write as select: the personal default voice, when it still resolves.
-    default_voice = None
-    try:
-        import writing_defaults
-
-        voice = writing_defaults.personal(root)['values'].get('voice')
-        if voice:
-            pin = studio.voice_pin(root, voice['profile_id'], voice['revision'])
-            _, profile = studio.item(root, 'profiles', pin['profile_id'])
-            if profile.get('status') != 'retired':
-                default_voice = {
-                    'profile_id': profile['id'],
-                    'revision': pin['revision'],
-                    'name': profile['name'],
-                }
-    except (ValueError, KeyError, TypeError, OSError):
-        default_voice = None
     return {
+        'default_voice': default_voice(root),
         'profiles': records('profiles'),
+        'styles': styles.catalog(root)['styles'],
         'sources': records('sources'),
         'agents': agents,
         'settings': settings(root),
         'brand': brand,
-        'default_voice': default_voice,
     }
 
 
@@ -1903,6 +2071,7 @@ def add_parser(groups):
         'goal',
         'tone',
         'profile',
+        'style',
         'id',
         'brand',
         'variant',

@@ -1,9 +1,10 @@
-"""Published posts as author voice samples, from a list of links.
+"""Published posts as author voice samples or style samples, from a list of links.
 
 The links go through the reference library's own `urls` import: the same scope check,
 pinned fetch, size limits, extraction and Hub sharing. This module only reads the list,
-derives its site scope, and classifies each saved post as a voice sample for the chosen
-author once its byline (where the page shows one) agrees.
+derives its site scope, and classifies each saved post: as a voice sample for the chosen
+author once its byline (where the page shows one) agrees, or as a style sample, which
+needs no byline and keeps the post's own author.
 """
 
 from html.parser import HTMLParser
@@ -24,10 +25,19 @@ BYLINE_META = ('author', 'article:author', 'parsely-author', 'sailthru.author', 
 BYLINE_CLASSES = {'byline', 'author', 'author-name', 'entry-author', 'post-author'}
 LIST_MARKER = re.compile(r'^(?:[-*•+]|\d+[.)])\s+')
 VOID = ('img', 'br', 'hr', 'input', 'link', 'meta', 'source', 'wbr')
+PURPOSES = ('voice-sample', 'style-sample')
+
+
+def purpose_of(data):
+    """voice-sample (the default) or style-sample; anything else is refused."""
+    purpose = data.get('purpose', 'voice-sample')
+    if purpose not in PURPOSES:
+        raise ValueError('Choose voice samples or style samples.')
+    return purpose
 
 
 def author_from_filename(name):
-    """'darin-zook-blog-links.txt' -> 'Darin Zook': a suggestion the person can change."""
+    """'sam-rivera-blog-links.txt' -> 'Sam Rivera': a suggestion the person can change."""
     stem = Path(str(name or '')).stem
     words = [w for w in re.split(r'[\s_.-]+', stem) if w and w.casefold() not in LIST_WORDS]
     return ' '.join(w[:1].upper() + w[1:] for w in words if not w.isdigit())[:200]
@@ -300,11 +310,16 @@ def library_rows(root):
 
 
 def preview(root, data):
-    """What an import of these links would do. Saves nothing and reaches no network."""
+    """What an import of these links would do. Saves nothing and reaches no network.
+
+    For style samples, `author` is the label of the examples (for example "Product
+    announcements"): it names the collection and is never written as a post's author.
+    """
+    purpose = purpose_of(data)
     author = studio.checked_author(data.get('author'))
     found = parse(data.get('text'), data.get('site'))
     if found['status'] != 'ready':
-        return {**found, 'author': author}
+        return {**found, 'author': author, 'purpose': purpose}
     known = library_rows(root)
     posts = [
         {
@@ -318,11 +333,12 @@ def preview(root, data):
     return {
         **{key: value for key, value in found.items() if key != 'links'},
         'author': author,
+        'purpose': purpose,
         'links': len(posts),
         'in_library': in_library,
         'to_fetch': len(posts) - in_library,
         'posts': posts,
-        'expected': sha(encoded([author, found['scope'], posts])),
+        'expected': sha(encoded([author, found['scope'], posts, purpose])),
         'next_step': 'Check the site and author, then import. Each new page is fetched once from '
         + found['shown_scope']
         + ' and saved in the reference library; posts already there are reused.',
@@ -330,12 +346,22 @@ def preview(root, data):
 
 
 def fingerprint(data):
-    return sha(encoded([data.get('text'), data.get('author'), data.get('site') or '']))
+    return sha(
+        encoded(
+            [
+                data.get('text'),
+                data.get('author'),
+                data.get('site') or '',
+                data.get('purpose', 'voice-sample'),
+            ]
+        )
+    )
 
 
-def operation_for(text, author, site=None):
-    """The same list, author and site always continue the same import (for chat and CLI)."""
-    return sha(encoded(['voice-links', text, author, site or '']))[:32]
+def operation_for(text, author, site=None, purpose='voice-sample'):
+    """The same list, author, site and purpose always continue the same import (for chat
+    and CLI); a voice import and a style import of one list are different operations."""
+    return sha(encoded(['voice-links', text, author, site or '', purpose]))[:32]
 
 
 def ledger_path(root, operation):
@@ -346,9 +372,9 @@ def ledger_path(root, operation):
     return directory / (operation + '.json')
 
 
-def collection_name(root, author):
+def collection_name(root, author, purpose='voice-sample'):
     names = {str(c['name']).strip().casefold() for c in blog_library.collections(root).values()}
-    base = 'Published posts by ' + author
+    base = ('Published posts by ' if purpose == 'voice-sample' else 'Examples: ') + author
     if base.casefold() not in names:
         return base
     dated = base + ' · ' + studio.now()[:10]
@@ -388,7 +414,7 @@ def start(root, data, path, reader):
             root,
             {
                 'key': 'voice-links-' + path.stem[:16],
-                'name': collection_name(root, shown['author']),
+                'name': collection_name(root, shown['author'], shown['purpose']),
                 'type': 'urls',
                 'scope': shown['scope'],
                 'urls': fresh,
@@ -399,6 +425,7 @@ def start(root, data, path, reader):
         'schema': 1,
         'fingerprint': fingerprint(data),
         'author': shown['author'],
+        'purpose': shown['purpose'],
         'scope': shown['scope'],
         'links': [post['url'] for post in shown['posts']],
         'reused': reused,
@@ -409,31 +436,28 @@ def start(root, data, path, reader):
     return state
 
 
-def classify(directory, record, author):
-    """Mark one saved post as this author's voice sample. False when it already is one."""
+def classify(directory, record, author, purpose='voice-sample'):
+    """Mark one saved post as a sample. A voice sample takes the author's name on the
+    record; the library entry keeps the published byline. A style sample keeps whatever
+    author the post has, since a style is not a person's. False when nothing changes."""
     purposes = list(record.get('purposes') or [])
-    library = dict(record.get('library') or {})
-    if 'voice-sample' not in purposes:
-        purposes.append('voice-sample')
-    if (
-        purposes == record.get('purposes')
-        and record.get('author') == author
-        and (not library or library.get('author') == author)
-    ):
+    if purpose not in purposes:
+        purposes.append(purpose)
+    voice = purpose == 'voice-sample'
+    if purposes == record.get('purposes') and (not voice or record.get('author') == author):
         return False
     blog_library.save_revision(directory, record)
     record['purposes'] = purposes
-    record['author'] = author
-    if library:
-        library['author'] = author
-        record['library'] = library
+    if voice:
+        record['author'] = author
     record['revision'] += 1
     studio.persist(directory, 'sources', record)
     return True
 
 
-def sample_status(root, ident, author, kept, changed):
-    """Classify one saved post unless its byline names someone else and it was not kept."""
+def sample_status(root, ident, author, kept, changed, purpose='voice-sample'):
+    """Classify one saved post unless, for a voice sample, its byline names someone else
+    and it was not kept. A style sample has no byline check."""
     directory, record = studio.item(root, 'sources', ident)
     found = {'title': record.get('name')}
     original = record.get('original_path') or ''
@@ -448,17 +472,26 @@ def sample_status(root, ident, author, kept, changed):
     found['byline'] = names
     if record.get('status') != 'ready':
         return {**found, 'no_text': True, 'reason': 'No readable text was found on this page.'}
-    if names and not any(same_author(name, author) for name in names):
+    if purpose == 'voice-sample' and names and not any(same_author(name, author) for name in names):
         found['mismatch'] = True
         if not kept:
             return found
         found['kept'] = True
-    if classify(directory, record, author):
+    owner = record.get('author')
+    moved = (
+        purpose == 'voice-sample'
+        and 'voice-sample' in (record.get('purposes') or [])
+        and owner
+        and not same_author(owner, author)
+    )
+    if classify(directory, record, author, purpose):
         changed.append(record['id'])
+        if moved:
+            found['note'] = "was %s's sample; now %s's" % (owner, author)
     return {**found, 'sample': True}
 
 
-def next_step(counts, samples, author):
+def next_step(counts, samples, author, purpose='voice-sample'):
     words = []
     if counts['pending']:
         words.append(
@@ -470,16 +503,22 @@ def next_step(counts, samples, author):
         )
     if counts['failed']:
         words.append('Failed links can be tried again; nothing else is fetched twice.')
-    if samples:
+    if samples and purpose == 'style-sample':
+        words.append(
+            'Next, learn or update a style from these examples: choose up to ten, then confirm '
+            'they may be analyzed. The style stays provisional until you confirm it.'
+        )
+    elif samples:
         words.append(
             'Next, learn or update the voice from these samples: choose up to ten, then confirm '
             'they may be analyzed. The voice stays provisional until you audition and confirm it.'
         )
-    return ' '.join(words) or 'No post could be used as a voice sample yet.'
+    kind = 'a style sample' if purpose == 'style-sample' else 'a voice sample'
+    return ' '.join(words) or 'No post could be used as ' + kind + ' yet.'
 
 
 def run(root, data, reader=None, delay=0.25):
-    """Import (or continue importing) a list of links and classify them as voice samples.
+    """Import (or continue importing) a list of links and classify them as samples.
 
     One call fetches at most one library batch (25 posts). Repeating the same request
     continues it; already-saved posts are reused, never fetched or copied again. `keep`
@@ -487,8 +526,9 @@ def run(root, data, reader=None, delay=0.25):
     `retry` fetches failed links again.
     """
     reader = reader or blog_library.fetch
-    if set(data) - {'operation', 'text', 'author', 'site', 'expected', 'keep', 'retry'}:
+    if set(data) - {'operation', 'text', 'author', 'site', 'expected', 'keep', 'retry', 'purpose'}:
         raise ValueError('Unknown voice import field.')
+    purpose = purpose_of(data)
     keep = data.get('keep') or []
     if not isinstance(keep, list) or any(not isinstance(v, str) for v in keep):
         raise ValueError('Choose the posts to keep from this import.')
@@ -554,7 +594,7 @@ def run(root, data, reader=None, delay=0.25):
                 row['status'] = 'imported'
         if ident:
             row['id'] = ident
-            row.update(sample_status(root, ident, author, link in keep, changed))
+            row.update(sample_status(root, ident, author, link in keep, changed, purpose))
         rows.append(row)
     if adapter:
         for ident in changed:
@@ -573,6 +613,7 @@ def run(root, data, reader=None, delay=0.25):
     result = {
         'operation': path.stem,
         'author': author,
+        'purpose': purpose,
         'scope': state['scope'],
         'shown_scope': site_of(state['scope']),
         'links': len(rows),
@@ -580,7 +621,7 @@ def run(root, data, reader=None, delay=0.25):
         'counts': counts,
         'samples': samples,
         'results': rows,
-        'next_step': next_step(counts, samples, author),
+        'next_step': next_step(counts, samples, author, purpose),
     }
     if adapter:
         try:
@@ -600,13 +641,19 @@ def command(root, args):
         raise ValueError('Choose a text file of links up to 256 KiB.')
     text = path.read_text(encoding='utf-8')
     author = args.author or author_from_filename(path.name)
+    purpose = getattr(args, 'purpose', None) or 'voice-sample'
+    if not author and purpose == 'style-sample':
+        raise ValueError(
+            'Label these examples with --author, such as "Product announcements"; '
+            'they are collected as "Examples: <label>".'
+        )
     if not author:
         raise ValueError('Name the author these posts belong to with --author.')
-    data = {'text': text, 'author': author, 'site': args.site}
+    data = {'text': text, 'author': author, 'site': args.site, 'purpose': purpose}
     if not args.do_import:
         return preview(root, data)
     data.update(
-        operation=operation_for(text, author, args.site),
+        operation=operation_for(text, author, args.site, purpose),
         keep=args.keep or [],
         retry=args.retry,
     )

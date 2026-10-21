@@ -417,8 +417,12 @@ def save_upload(root, staging, checked, purpose, author=None, analyze=True):
 
 def upload_files(root, data, staging, ledger, fingerprint):
     """Several files under one operation. Material is pinned by a run and stays out of
-    the reference library and the Team Hub unless the person keeps it."""
-    if set(data) - {'operation', 'files', 'purpose', 'keep', 'analyze'}:
+    the reference library and the Team Hub unless the person keeps it. A LinkedIn export
+    expands into its About text and its articles, and an author named for the request is
+    recorded on every source it saves."""
+    import sample_intake
+
+    if set(data) - {'operation', 'files', 'purpose', 'keep', 'analyze', 'author'}:
         raise ValueError('Unknown upload field.')
     files = data.get('files')
     if not isinstance(files, list) or not files or len(files) > MAX_UPLOAD_FILES:
@@ -430,27 +434,47 @@ def upload_files(root, data, staging, ledger, fingerprint):
         raise ValueError('Choose a source purpose.')
     if data.get('keep') and purpose == 'material':
         purpose = 'reference'
+    author = studio.checked_author(data['author']) if data.get('author') else None
+    entries = [dict(entry) if isinstance(entry, dict) else {} for entry in files]
+    exports = sum('linkedin' in entry for entry in entries)
+    if exports > 1:
+        raise ValueError('Upload one LinkedIn export at a time.')
+    if exports and purpose not in ('voice-sample', 'author-background'):
+        # An export's rows are shared writing samples, never material or plain references.
+        raise ValueError(
+            'Upload a LinkedIn export as writing samples: voice samples or author background.'
+        )
     # Each file says what it is for: facts the writing may quote, or an example of the
     # kind of post, which keeps the upload's purpose and adds inspiration.
     checked = []
-    for entry in (dict(entry) if isinstance(entry, dict) else {} for entry in files):
+    for entry in entries:
         role = entry.pop('purpose', 'material')
         if role not in ('material', 'inspiration'):
             raise ValueError('Facts or an example of the kind of post: choose one for each file.')
-        found = (checked_google if 'google' in entry else checked_upload)(root, entry)
-        found['purposes'] = [purpose] + (['inspiration'] if role == 'inspiration' else [])
-        checked.append(found)
+        if 'linkedin' in entry:
+            if role != 'material':
+                raise ValueError('A LinkedIn export is writing samples, not an example of a post.')
+            # Checked whole before the ledger is written: nothing is half-saved on a refusal.
+            for found in sample_intake.checked_linkedin(root, entry, limit=MAX_UPLOAD_FILES - 1):
+                found['purposes'] = [found.get('purpose', purpose)]
+                checked.append(found)
+        else:
+            found = (checked_google if 'google' in entry else checked_upload)(root, entry)
+            found['purposes'] = [purpose] + (['inspiration'] if role == 'inspiration' else [])
+            checked.append(found)
     if len({entry['filename'] for entry in checked}) != len(checked):
         raise ValueError('Upload each file once.')
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
     rows, receipts, saved = [], [], []
     try:
         for entry in checked:
+            chosen = entry.get('purpose', purpose)
+            whose = author or entry.get('author')
             source = save_upload(
-                root, staging, entry, entry['purposes'], analyze=data.get('analyze', True)
+                root, staging, entry, entry['purposes'], whose, analyze=data.get('analyze', True)
             )
             saved.append(source['id'])
-            if purpose != 'material':
+            if chosen != 'material':
                 source = share(root, 'source', source)
                 receipts.append(receipt(root, 'Uploaded reference', source, 'source'))
             row = {
@@ -459,6 +483,8 @@ def upload_files(root, data, staging, ledger, fingerprint):
                 'state': entry['status'],
                 'chars': len(entry['text']) if entry['text'] else 0,
                 'note': entry['note'],
+                'purpose': chosen,
+                'author': whose,
             }
             if entry.get('link'):
                 row['link'] = entry['link']
@@ -1410,11 +1436,12 @@ def library_import(root, data):
 
 
 def voice_links_route(root, route, data):
-    """Published posts from a list of links, through the library import, as voice samples."""
+    """Published posts from a list of links, through the library import, as voice samples
+    or style samples."""
     import voice_links
 
     if route == 'voice-links-preview':
-        if set(data) - {'text', 'author', 'site'}:
+        if set(data) - {'text', 'author', 'site', 'purpose'}:
             raise ValueError('Unknown voice import field.')
         return voice_links.preview(root, data)
     if not isinstance(data.get('expected'), str):
@@ -1484,7 +1511,14 @@ def _dispatch(root, route, data):
             from advanced_tools import dispatch as tool_dispatch
 
             result = tool_dispatch(root, data)
-            if result.get('profile') and data.get('action') in (
+            if data.get('action') == 'source-purpose':
+                # Shared the way an uploaded reference is, once it actually changed.
+                result['receipts'] = []
+                if result['changed']:
+                    _, record = studio.item(root, 'sources', result['source'])
+                    shared = share(root, 'source', record)
+                    result['receipts'] = [receipt(root, 'Sample source', shared, 'source')]
+            elif result.get('profile') and data.get('action') in (
                 'profile-save',
                 'profile-retire',
                 'job-apply',
@@ -1869,10 +1903,25 @@ def view(root, name, query):
             }
         )
         return result
-    if name in ('voices', 'voice', 'interview', 'tool-job', 'variants', 'variant'):
+    if name in (
+        'voices',
+        'voice',
+        'styles',
+        'style',
+        'interview',
+        'tool-job',
+        'variants',
+        'variant',
+    ):
         import article_tools
 
         with studio.locked(root):
+            if name in ('styles', 'style'):
+                import styles
+
+                return (
+                    styles.catalog(root) if name == 'styles' else styles.detail(root, arg('style'))
+                )
             if name == 'variant':
                 return article_tools.variant(root, arg('id'), arg('name'))
             if name == 'variants':
