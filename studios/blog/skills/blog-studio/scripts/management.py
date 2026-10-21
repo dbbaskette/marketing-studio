@@ -299,6 +299,119 @@ def retry_receipt(root, adapter, data):
     return {'receipts': [public_receipt(value)]}
 
 
+UPLOAD_SUFFIXES = ('.md', '.txt', '.html', '.htm', '.docx', '.pdf')
+MAX_UPLOAD_FILES = 20
+
+
+def checked_upload(root, entry, label='upload'):
+    """One upload's checked name, bytes and extracted text; nothing is saved here."""
+    filename = entry.get('filename', '')
+    if (
+        not isinstance(filename, str)
+        or Path(filename).name != filename
+        or len(filename) > 200
+        or filename.startswith('.')
+    ):
+        raise ValueError('Use a simple ' + label + ' filename.')
+    suffix = Path(filename).suffix.lower()
+    if suffix not in UPLOAD_SUFFIXES:
+        raise ValueError('Upload Markdown, text, HTML, DOCX, or PDF.')
+    content = base64.b64decode(entry.get('content', ''), validate=True)
+    if not content or len(content) > blog_library.MAX_BINARY:
+        raise ValueError('Upload a nonempty file of at most 10 MiB.')
+    text, status, note = blog_library.extract_detail(root, content, suffix)
+    if text is not None and len(text.encode()) > blog_library.MAX_TEXT:
+        raise ValueError('Extracted text exceeds the shared file limit.')
+    title = entry.get('title') or Path(filename).stem
+    if not isinstance(title, str) or not 1 <= len(title) <= 500:
+        raise ValueError('Use a title under 500 characters.')
+    return {
+        'filename': filename,
+        'suffix': suffix,
+        'content': content,
+        'text': text,
+        'status': status,
+        'note': note,
+        'title': title,
+    }
+
+
+def save_upload(root, staging, checked, purpose, author=None, analyze=True):
+    with (
+        tempfile.TemporaryDirectory(dir=staging) as temp,
+        source_curator.skipping(analyze is False),
+    ):
+        path = Path(temp) / checked['filename']
+        path.write_bytes(checked['content'])
+        return studio.source_command(
+            root,
+            SimpleNamespace(
+                action='add',
+                name=checked['title'],
+                file=str(path),
+                content=checked['text'],
+                text_file=None,
+                origin=checked['filename'],
+                purpose=[purpose],
+                author=author or None,
+                note='Uploaded through the local editorial desk.',
+                status=checked['status'],
+            ),
+        )
+
+
+def upload_files(root, data, staging, ledger, fingerprint):
+    """Several files under one operation. Material is pinned by a run and stays out of
+    the reference library and the Team Hub unless the person keeps it."""
+    if set(data) - {'operation', 'files', 'purpose', 'keep', 'analyze'}:
+        raise ValueError('Unknown upload field.')
+    files = data.get('files')
+    if not isinstance(files, list) or not files or len(files) > MAX_UPLOAD_FILES:
+        raise ValueError('Upload at most %d files at once, and at least one.' % MAX_UPLOAD_FILES)
+    if not isinstance(data.get('keep', False), bool):
+        raise ValueError('Choose whether to keep these files in your references.')
+    purpose = data.get('purpose', 'material')
+    if purpose not in studio.PURPOSES:
+        raise ValueError('Choose a source purpose.')
+    if data.get('keep') and purpose == 'material':
+        purpose = 'reference'
+    checked = [
+        checked_upload(root, entry if isinstance(entry, dict) else {}, 'file') for entry in files
+    ]
+    if len({entry['filename'] for entry in checked}) != len(checked):
+        raise ValueError('Upload each file once.')
+    studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
+    rows, receipts = [], []
+    for entry in checked:
+        source = save_upload(root, staging, entry, purpose, analyze=data.get('analyze', True))
+        if purpose != 'material':
+            source = share(root, 'source', source)
+            receipts.append(receipt(root, 'Uploaded reference', source, 'source'))
+        rows.append(
+            {
+                'filename': entry['filename'],
+                'source': source,
+                'state': entry['status'],
+                'chars': len(entry['text']) if entry['text'] else 0,
+                'note': entry['note'],
+            }
+        )
+    ready = sum(row['state'] == 'ready' for row in rows)
+    result = {
+        'files': rows,
+        'receipts': receipts,
+        'state': 'saved',
+        'next_step': (
+            'Every file has text.'
+            if ready == len(rows)
+            else '%d of %d files have text; the others need text before a run can read them.'
+            % (ready, len(rows))
+        ),
+    }
+    studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'saved', 'result': result})
+    return result
+
+
 def upload(root, data):
     if set(data) - {
         'operation',
@@ -309,6 +422,8 @@ def upload(root, data):
         'as_blog',
         'author',
         'analyze',
+        'files',
+        'keep',
     }:
         raise ValueError('Unknown upload field.')
     if not isinstance(data.get('analyze', True), bool):
@@ -330,26 +445,15 @@ def upload(root, data):
         raise ValueError(
             'This upload has an uncertain result. Inspect retained work before retrying; do not create a duplicate.'
         )
-    filename = data.get('filename', '')
-    if (
-        not isinstance(filename, str)
-        or Path(filename).name != filename
-        or len(filename) > 200
-        or filename.startswith('.')
-    ):
-        raise ValueError('Use a simple upload filename.')
-    suffix = Path(filename).suffix.lower()
-    if suffix not in ('.md', '.txt', '.html', '.htm', '.docx', '.pdf'):
-        raise ValueError('Upload Markdown, text, HTML, DOCX, or PDF.')
-    content = base64.b64decode(data.get('content', ''), validate=True)
-    if not content or len(content) > blog_library.MAX_BINARY:
-        raise ValueError('Upload a nonempty file of at most 10 MiB.')
-    text, status = blog_library.extract(root, content, suffix)
-    if text is not None and len(text.encode()) > blog_library.MAX_TEXT:
-        raise ValueError('Extracted text exceeds the shared file limit.')
-    title = data.get('title') or Path(filename).stem
-    if not isinstance(title, str) or not 1 <= len(title) <= 500:
-        raise ValueError('Use a title under 500 characters.')
+    if 'files' in data:
+        return upload_files(root, data, staging, ledger, fingerprint)
+    checked = checked_upload(root, data)
+    filename, text, status, title = (
+        checked['filename'],
+        checked['text'],
+        checked['status'],
+        checked['title'],
+    )
     purpose = data.get('purpose', 'reference')
     if purpose not in studio.PURPOSES:
         raise ValueError('Choose a source purpose.')
@@ -361,30 +465,14 @@ def upload(root, data):
         studio.checked_author(data['author'])
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
     # An unchecked "Summarize and tag" keeps this file's text away from the analysis CLI.
-    with (
-        tempfile.TemporaryDirectory(dir=staging) as temp,
-        source_curator.skipping(data.get('analyze') is False),
-    ):
-        path = Path(temp) / filename
-        path.write_bytes(content)
-        source = studio.source_command(
-            root,
-            SimpleNamespace(
-                action='add',
-                name=title,
-                file=str(path),
-                content=text,
-                text_file=None,
-                origin=filename,
-                purpose=[purpose],
-                author=data.get('author') or None,
-                note='Uploaded through the local editorial desk.',
-                status=status,
-            ),
-        )
+    source = save_upload(
+        root, staging, checked, purpose, data.get('author'), data.get('analyze', True)
+    )
     result = {
-        'source': share(root, 'source', source),
+        'source': share(root, 'source', source) if purpose != 'material' else source,
         'state': status,
+        'chars': len(text) if text else 0,
+        'note': checked['note'],
         'next_step': 'Source saved. Pending files need extraction before use.'
         if status != 'ready'
         else 'Source saved; attach it only to the blogs that need it.',
@@ -414,7 +502,11 @@ def upload(root, data):
         ]
         studio.persist(directory, 'articles', article)
         result['article'] = share(root, 'article', article)
-    result['receipts'] = [receipt(root, 'Uploaded reference', result['source'], 'source')]
+    result['receipts'] = (
+        [receipt(root, 'Uploaded reference', result['source'], 'source')]
+        if purpose != 'material'
+        else []
+    )
     if result.get('article'):
         result['receipts'].append(receipt(root, 'Uploaded blog', result['article'], 'article'))
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'saved', 'result': result})

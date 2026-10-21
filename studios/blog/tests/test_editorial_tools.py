@@ -2083,3 +2083,126 @@ class ManagementTests(Fixture):
         for url in assets.urls:
             self.assertTrue(url.startswith('/') and not url.startswith('//'), url)
         self.assertNotIn('admin', html.lower())
+
+
+class MaterialUploadTests(Fixture):
+    """Several files under one operation, as material that stays out of the library."""
+
+    def files(self, *names):
+        return [
+            {'filename': name, 'content': base64.b64encode(body).decode()} for name, body in names
+        ]
+
+    def test_several_files_upload_as_material_outside_the_library(self):
+        import blog_runner
+
+        data = {
+            'operation': 'd' * 32,
+            'purpose': 'material',
+            'analyze': False,
+            'files': self.files(
+                ('notes.md', b'# Notes\n\nThe gateway retries twice.'),
+                ('plain.txt', b'Plain words.'),
+                ('scan.pdf', b'%PDF-fixture'),
+            ),
+        }
+        with patch.object(library.shutil, 'which', return_value=None):
+            first = management.dispatch(self.root, 'upload', data)
+            second = management.dispatch(self.root, 'upload', data)
+        self.assertEqual(first, second)
+        rows = first['files']
+        self.assertEqual([row['filename'] for row in rows], ['notes.md', 'plain.txt', 'scan.pdf'])
+        self.assertEqual([row['state'] for row in rows], ['ready', 'ready', 'pending'])
+        self.assertEqual(rows[0]['chars'], len('# Notes\n\nThe gateway retries twice.'))
+        self.assertEqual(rows[2]['chars'], 0)
+        self.assertIn('pdftotext', rows[2]['note'])
+        self.assertEqual(len(list((self.root / 'sources').iterdir())), 3)
+        for row in rows:
+            _, record = studio.item(self.root, 'sources', row['source']['id'])
+            self.assertEqual(record['purposes'], ['material'])
+        # Material is pinned by a run, not listed as a reference or shared as one.
+        self.assertEqual(blog_runner.options(self.root)['sources'], [])
+        self.assertEqual(library.source_rows(self.root), [])
+        self.assertFalse((self.root / '.desk-receipts').exists())
+        self.assertEqual(first['receipts'], [])
+        # One bad file saves nothing.
+        with self.assertRaisesRegex(ValueError, 'Markdown, text, HTML, DOCX, or PDF'):
+            management.dispatch(
+                self.root,
+                'upload',
+                dict(data, operation='e' * 32, files=self.files(('a.md', b'ok'), ('b.exe', b'x'))),
+            )
+        self.assertEqual(len(list((self.root / 'sources').iterdir())), 3)
+        with self.assertRaisesRegex(ValueError, 'at most 20'):
+            management.dispatch(
+                self.root,
+                'upload',
+                dict(
+                    data,
+                    operation='f' * 32,
+                    files=self.files(*[('f%d.md' % n, b'x') for n in range(21)]),
+                ),
+            )
+
+    def test_kept_files_are_ordinary_references(self):
+        import blog_runner
+
+        result = management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': '1' * 32,
+                'purpose': 'material',
+                'keep': True,
+                'analyze': False,
+                'files': self.files(('kept.md', b'Keep this one.')),
+            },
+        )
+        _, record = studio.item(self.root, 'sources', result['files'][0]['source']['id'])
+        self.assertEqual(record['purposes'], ['reference'])
+        self.assertEqual(len(blog_runner.options(self.root)['sources']), 1)
+        self.assertEqual(len(result['receipts']), 1)
+
+    def test_pdf_text_comes_from_pdftotext_when_it_is_installed(self):
+        import subprocess
+
+        calls = []
+
+        def run(command, **kwargs):
+            calls.append(command)
+            return subprocess.CompletedProcess(
+                command, 0, stdout=b'Words from the PDF.\f', stderr=b''
+            )
+
+        with (
+            patch.object(library.shutil, 'which', return_value='/opt/bin/pdftotext'),
+            patch.object(library.subprocess, 'run', run),
+        ):
+            text, status = library.extract(self.root, b'%PDF-fixture', '.pdf')
+            result = management.dispatch(
+                self.root,
+                'upload',
+                {
+                    'operation': '2' * 32,
+                    'purpose': 'material',
+                    'analyze': False,
+                    'files': self.files(('paper.pdf', b'%PDF-fixture')),
+                },
+            )
+        self.assertEqual((text, status), ('Words from the PDF.', 'ready'))
+        self.assertEqual(calls[0][0], '/opt/bin/pdftotext')
+        self.assertEqual(calls[0][-1], '-')
+        self.assertEqual(result['files'][0]['state'], 'ready')
+        self.assertEqual(result['files'][0]['chars'], len('Words from the PDF.'))
+        failed = subprocess.CompletedProcess([], 1, stdout=b'', stderr=b'Syntax Error')
+        with (
+            patch.object(library.shutil, 'which', return_value='/opt/bin/pdftotext'),
+            patch.object(library.subprocess, 'run', return_value=failed),
+        ):
+            text, status, note = library.extract_detail(self.root, b'%PDF-bad', '.pdf')
+            self.assertEqual((text, status), (None, 'pending'))
+            self.assertIn('could not be read', note)
+        with patch.object(library.shutil, 'which', return_value=None):
+            text, status, note = library.extract_detail(self.root, b'%PDF-bad', '.pdf')
+            self.assertEqual((text, status), (None, 'pending'))
+            self.assertIn('no PDF reader (pdftotext)', note)

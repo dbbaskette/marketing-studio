@@ -1244,6 +1244,8 @@ def options(root):
         result = []
         for path in sorted(studio.inside(root, kind).glob('*/record.json')):
             record = studio.read_json(path)
+            if kind == 'sources' and 'material' in record.get('purposes', []):
+                continue  # Uploaded for one run; chosen on its own screen, not from the library.
             if kind != 'profiles' or record.get('status') != 'retired':
                 result.append(
                     {'id': record['id'], 'name': record['name'], 'status': record['status']}
@@ -1368,7 +1370,11 @@ def dispatch(root, action, data):
         studio.write_json(path, {'id': found['id'], 'fingerprint': fingerprint})
         return runner.control(found['id'], 'resume')
     ident = data.get('id')
-    if set(data) - {'id', 'expected', 'request', 'stage'} - ({'seconds'} if action == 'retry' else set()):
+    if (
+        set(data)
+        - {'id', 'expected', 'request', 'stage'}
+        - ({'seconds'} if action == 'retry' else set())
+    ):
         raise ValueError('Unknown run field.')
     # Every page control is bound to the version the person was shown.
     found = survey(root, ident)

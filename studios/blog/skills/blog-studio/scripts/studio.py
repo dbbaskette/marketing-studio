@@ -20,6 +20,7 @@ PURPOSES = (
     'inspiration',
     'voice-sample',
     'author-background',
+    'material',  # Uploaded for one blog's run; not a library reference unless kept.
 )
 MODES = ('existing', 'first-draft', 'outline-only', 'from-outline', 'interview', 'discover')
 CHECKS = ('polish', 'proofread', 'factual-support', 'shape', 'humanization', 'geo')
