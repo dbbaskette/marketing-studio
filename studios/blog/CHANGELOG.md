@@ -22,7 +22,11 @@ changes for authors first, then what changes for maintainers.
   <id>` and, from the page, `library: [{id, role}]`; `source-role` changes a library
   reference in a new revision; the desk routes are `library-add-preview`, `library-add`,
   `library-add-author`, `library-add-samples` and `library-selection`; the personal
-  writing default `voice` is saved from Settings.
+  writing default `voice` is saved from Settings, checked against `voice_before`. A Team
+  Hub row is named with `location: hub` and checked out before use; `library-add` takes
+  `retry` for failed links; `library-selection` saves nothing, and a confirmed learning
+  job with `mark` makes its chosen items samples. A run reads every source at the
+  revision it pinned, from `revisions/<n>/` when the source has moved on.
 - Deleting a blog accepts its title as you type it: case, spacing, curly quotes and
   dashes no longer have to match the stored title exactly, and the sheet says when
   the text is not the title yet. Every card on **Blogs** has **Delete**.
