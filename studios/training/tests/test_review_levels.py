@@ -159,6 +159,24 @@ class ReviewLevelsTests(DeckCase):
                          ('example-calm', 'page', 'Calm suits a first course.'))
         self.assertTrue(self.brand.written[-1], 'the brand wrote the outline with the look')
 
+    def test_a_review_approved_before_looks_were_offered_stays_approved(self):
+        # A training approved under the code before this: its direction signature had no
+        # looks. An older brand draws none, so nothing of looks enters it now either.
+        from runner import reviews
+        root, shown = self.choose('balanced')
+        session, record = workspace.load(root), self.engine._load(root)
+        before = reviews.contents(root, session, record, 'direction')
+        self.assertFalse([key for key in before['files'] if key.endswith(':looks')])
+        shown = self.approve_review(root, shown)
+        self.assertEqual(shown['review']['phase'], 'final')
+        shown = self.approve_review(root, shown)
+        self.assertEqual(shown['state'], 'done')
+        # Looked at again, as a new runner would after the upgrade, it is still done.
+        other = self.make()
+        other.resume()
+        self.assertEqual(other.view(root)['state'], 'done')
+        self.assertIsNone(other.view(root)['review'])
+
     def test_a_drawn_deck_always_comes_to_the_person(self):
         # Balanced and Automatic draft both stop at the deck itself, before the scenarios
         # and the final review: the policy never accepts a drawn deck for the person.

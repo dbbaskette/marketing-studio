@@ -40,9 +40,12 @@ def contents(root, session, run, phase):
         if phase == 'direction':
             values['files'][f'{level}:sample'] = workspace.sha256_file(
                 contained(root, f'{workspace.prefix(level)}work/review-sample/sample.png'))
-            # The looks the brand drew are part of what is approved with the direction.
+            # The looks the brand drew are part of what is approved with the direction. Only
+            # when there are any: a review approved before looks were offered stays approved.
             shown = pipeline.read_built(root, level).get('look') or {}
-            values['files'][f'{level}:looks'] = [shown.get('folder'), shown.get('outline')]
+            if shown.get('folder') or shown.get('failed'):
+                values['files'][f'{level}:looks'] = [shown.get('folder'), shown.get('outline'),
+                                                     shown.get('failed')]
     return values
 
 
