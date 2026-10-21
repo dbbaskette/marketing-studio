@@ -1224,9 +1224,15 @@ async function finishAndDelete(){
   typed.value='  synthetic  BLOG ';typed.listeners.input();assert.equal(confirm.disabled,false,'case and spacing do not matter');assert.equal(hint().hidden,true);
   typed.value='“Synthetic” blog';typed.listeners.input();assert.equal(confirm.disabled,true,'added characters still do not match');
   typed.value='Synthetic blog';typed.listeners.input();assert.equal(confirm.disabled,false);
+  assert.equal(typed.attributes?.['aria-describedby']??typed.getAttribute?.('aria-describedby'),'delete-title-hint','the input points at its hint');
   await confirm.listeners.click();
   assert.deepEqual(requests.find(r=>r.url==='/api/blog-delete').data,{id:'synthetic',expected:'version-3',title:'Synthetic blog'});
   assert.equal(f.get('sheet').hidden,true);
+  // A stored title with curly quotes deletes when typed with plain ones.
+  f.run("sDeleteSheet({...found,title:'The \u201cquoted\u201d blog'})");
+  const quoted=sheet().find(e=>e.id==='delete-title'),quotedConfirm=sheet().find(e=>e.textContent==='Delete The \u201cquoted\u201d blog');
+  assert.equal(quotedConfirm.disabled,true);quoted.value='the "quoted" blog';quoted.listeners.input();assert.equal(quotedConfirm.disabled,false,'plain quotes match curly ones');
+  f.run('sCloseSheet()');
   // More tools offers Delete for a saved blog, and not without one.
   await f.run("sMoreTools('synthetic')");assert.ok(sheet().some(e=>e.textContent==='Delete this blog'&&!e.disabled));
   await f.run('sMoreTools()');assert.ok(sheet().some(e=>e.textContent==='Delete this blog'&&e.disabled));

@@ -1352,6 +1352,12 @@ class DeleteTests(RunnerCase):
         self.assertTrue(result['deleted'])
         self.assertEqual([row['id'] for row in runner.catalog(self.root)['deleted']], [found['id']])
 
+    def test_delete_ignores_a_byte_order_mark_at_the_start_of_the_stored_title(self):
+        # The page's \s counts U+FEFF as a space, so the server must agree.
+        found = self.create(page=True, title='\ufeffMarked gateway guide')
+        result = self.delete(found, title='Marked gateway guide')
+        self.assertTrue(result['deleted'])
+
     def test_delete_stops_the_worker_and_removes_what_this_computer_kept(self):
         entered = threading.Event()
 

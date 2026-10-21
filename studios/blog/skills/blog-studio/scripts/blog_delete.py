@@ -38,6 +38,7 @@ PLAIN_MARKS = str.maketrans(
         '„': '"',
         '–': '-',
         '—': '-',
+        '\ufeff': ' ',  # the page's \s counts a byte-order mark as a space
     }
 )
 
