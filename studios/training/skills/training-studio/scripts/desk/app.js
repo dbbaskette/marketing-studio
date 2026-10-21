@@ -697,6 +697,63 @@ function chip(label, on, flip, key) {
   return add(node, icon('check'), make('span', '', label));
 }
 
+// Where the shared settings are changed: Marketing Studio's own page, with the key kept in
+// the fragment.
+function settingsAddress() {
+  return '/onboarding/#token=' + view.token;
+}
+
+// The shared review level, as a start form says it.
+const REVIEW_WORDS = { balanced: 'Balanced', automatic: 'Automatic draft',
+  step_by_step: 'Step by step' };
+
+// A phone has the one decision in the toolbar; the rest open from the menu beside it. Which
+// is the lead is the filled button, or else the first.
+function narrow() {
+  return Boolean(window.matchMedia && window.matchMedia('(max-width: 52rem)').matches);
+}
+
+function foldActions(actions) {
+  actions = list(actions).filter(Boolean);
+  if (!narrow() || actions.length < 2) return actions;
+  const lead = actions.find((node) => node.classList && node.classList.contains('button-filled'))
+    || actions[0];
+  const rest = actions.filter((node) => node !== lead);
+  for (const node of rest) if (node.tagName === 'BUTTON') node.className = 'menu-item';
+  const menu = make('details', 'menu');
+  menu.dataset.key = 'more-actions';
+  const opener = make('summary', 'button button-round shine');
+  opener.dataset.key = 'more-actions';
+  opener.setAttribute('aria-label', 'More');
+  return [lead, add(menu, add(opener, icon('more')), add(make('div', 'menu-list'), ...rest))];
+}
+
+// What it is doing now, in one line: the step, how long it has taken, what it has spent and
+// the limit it stops at. Each is left out where it is not known.
+// While nothing else changes, the time in the now line still moves.
+function tickNow(run) {
+  const shown = main().querySelector('.now-line');
+  const fresh = nowLine(run);
+  if (shown && fresh && shown.textContent !== fresh.textContent) {
+    shown.textContent = fresh.textContent;
+  }
+}
+
+function nowLine(run) {
+  if (run.state !== 'working' || run.mine === false || queued(run)) return null;
+  const parts = [];
+  const current = list(run.steps).find((step) => step.status === 'working');
+  if (current) parts.push(current.label);
+  const began = list(run.workers).map((worker) => Date.parse(worker.started_at))
+    .filter((stamp) => !Number.isNaN(stamp));
+  if (began.length) parts.push(lasted((Date.now() - Math.min(...began)) / 1000));
+  const spent = run.spent || {};
+  if (given(spent.dollars)) parts.push(money(spent.dollars) + ' so far');
+  const limits = (view.setup && view.setup.limits) || {};
+  if (given(limits.training_dollars)) parts.push('stops at ' + money(limits.training_dollars));
+  return parts.length ? make('p', 'now-line', parts.join(' · ')) : null;
+}
+
 function money(dollars) {
   return '$' + Number(dollars).toFixed(2);
 }
@@ -1932,7 +1989,7 @@ function drawSettings(fresh) {
   placeParts({ title: 'Settings', mark: ['Settings'] }, [
     ['shared-settings', [Boolean(view.runner)], () => view.runner ? add(card('Shared settings'),
       make('p', '', 'Your assistant, work folder, brand and delivery choices apply across all studios.'),
-      capsule('Change shared settings', 'quiet', () => { location.href = '/onboarding/#token=' + view.token; }, 'shared-settings')) : null],
+      capsule('Change shared settings', 'quiet', () => { location.href = settingsAddress(); }, 'shared-settings')) : null],
     ['workspace', around(), workspaceCard], ['left', around(), leftCard],
     ['alerts', [alerts()], alertsCard], ['notify', around(), notifyCard],
     ['look', [view.setup && view.setup.updates, view.lookRefused], lookCard],
@@ -4031,9 +4088,11 @@ function newDraft() {
   const shared = sharedOf();
   const brand = shared.brand || {};
   return settleDeck({ step: 0, title: '', topic: '', audience: '', purpose: 0,
-    levels: ['101'], brief: 0, time: '', deck: shared.output === 'google' ? 1 : 0,
+    levels: ['101'], brief: 0, time: '',
+    // A deck needs a brand; without one shared, no deck is the default.
+    deck: brand.brand ? (shared.output === 'google' ? 1 : 0) : DECKS.length - 1,
     brand: brand.brand || '', variant: brand.variant || '', copies: [],
-    yoodli: false, materials: MATERIALS.map(([id]) => id), sources: 0, agent: agent.default === 'codex' ? 'codex' : 'claude',
+    yoodli: false, materials: [], sources: 0, agent: agent.default === 'codex' ? 'codex' : 'claude',
     model: agent.model || '', other: false, effort: agent.effort || '', starting: false });
 }
 
@@ -4178,14 +4237,15 @@ function shapeStep(draft) {
   }
   return [add(card('What would you like to make?'),
     make('p', 'quiet', 'Choose only what you need. Research and a teaching plan connect every selected material.'),
-    materialChoices(draft), deck, brand,
+    materialChoices(draft),
+    chips('Levels', LEVELS.map((level) => [level, level]),
+      (level) => draft.levels.includes(level), toggle('levels'), 'level',
+      '101 introduces the subject; 201 applies it; 301 handles trade-offs; 401 explores advanced cases. '
+        + 'Each selected level gets its own materials, and its own cost. Choose none for one training without levels.'),
+    deck, brand,
     field('new-time', 'How long it should take (optional)', draft, 'time',
       { hint: 'The learner’s time, including examples and practice: “30 minutes” or “a half-day workshop”.' }),
     trainingOptions('Depth and reference brief', 'training-depth',
-      chips('Levels', LEVELS.map((level) => [level, level]),
-        (level) => draft.levels.includes(level), toggle('levels'), 'level',
-        '101 introduces the subject; 201 applies it; 301 handles trade-offs; 401 explores advanced cases. '
-          + 'Each selected level gets its own materials. Choose none for one training without levels.'),
       choice('What the brief is about', ['One product or technology', 'A comparison'],
         draft.brief, (index) => { draft.brief = index; }, 'brief')),
     trainingOptions('Extra copies and Yoodli', 'training-copies',
@@ -4215,8 +4275,10 @@ function startStep(draft) {
   };
   told();
   const first = make('p', '');
-  const then = make('p', '');
-  const policy = (view.setup && view.setup.review_level) || 'step_by_step';
+  const then = make('p', 'quiet stops-line');
+  const comes = make('p', 'quiet');
+  // The training's own level, where one is chosen, else the one every studio shares.
+  const policy = draft.review_level || (view.setup && view.setup.review_level) || 'step_by_step';
   draft.review_seen = view.setup && view.setup.review_level;
   const selected = MATERIALS.filter(([id]) => draft.materials.includes(id)).map(([, label]) => label);
   if (DECKS[draft.deck][0]) selected.push(DECKS[draft.deck][1] + ' deck');
@@ -4225,20 +4287,29 @@ function startStep(draft) {
     const supplied = SOURCES[draft.sources][0] !== 'public-web';
     first.textContent = supplied ? 'First, add your documents on the next screen. Research waits until you say they are all added.'
       : 'Research starts after you start the training.';
-    then.textContent = policy === 'balanced'
-      ? 'Balanced review: review the teaching plan, then the finished materials together. Intermediate drafts continue automatically; a deck also has its own review.'
-      : policy === 'automatic'
-        ? 'Automatic draft review: intermediate drafts continue automatically. Review the finished materials together before using them; a deck also has its own review.'
-        : 'Step by step review: at least ' + gatesFor(draft) + ' decisions for research and the selected teaching materials'
+    const stops = policy === 'balanced' ? 'the direction review and the finished materials'
+      : policy === 'automatic' ? 'the finished materials'
+        : 'at least ' + gatesFor(draft) + ' decisions for research and the selected teaching materials'
           + (draft.materials.includes('scenario') ? ', plus each practice scenario' : '')
-          + (draft.yoodli ? ' and each Yoodli layout' : '')
-          + (DECKS[draft.deck][0] ? '. A deck adds two reviews per level when this computer can build it' : '') + '.';
+          + (draft.yoodli ? ' and each Yoodli layout' : '');
+    const change = make('a', '', 'Change');
+    change.href = settingsAddress();
+    then.replaceChildren(make('span', '', REVIEW_WORDS[policy] + ': it stops for ' + stops),
+      make('span', '', ' · '), change);
+    const levels = draft.levels.length ? 'each level' : 'the training';
+    comes.textContent = (policy === 'balanced'
+      ? 'The direction review comes after research and the blueprint, guide and brief for '
+        + levels + ', so the first stop is some minutes in. '
+      : policy === 'automatic' ? 'Intermediate drafts continue automatically. ' : '')
+      + (DECKS[draft.deck][0] ? (policy === 'step_by_step'
+        ? 'A deck adds two reviews per level when this computer can build it.'
+        : 'A deck has its own review.') : '');
   };
   tell();
   return [add(card('Ready to start'), make('p', 'lede', series(selected)),
     make('p', 'quiet', (draft.levels.length ? 'Levels: ' + draft.levels.join(', ') : 'One training without levels')
       + (draft.time ? ' · ' + draft.time : ' · Sized from the teaching plan')),
-    first, then, make('p', 'quiet', 'You can close this page while it works. Saved materials stay available.')),
+    first, then, comes, make('p', 'quiet', 'You can close this page while it works. Saved materials stay available.')),
   add(card('Sources'), ...explained('Where the research looks',
     SOURCES.map((source) => source[1]), SOURCE_SAYS, draft.sources, (index) => {
       draft.sources = index;
@@ -4460,7 +4531,7 @@ function runStanding(run) {
 }
 
 function runIntro(run, training, promised) {
-  const node = add(make('div', 'intro'), state(...runStanding(run)));
+  const node = add(make('div', 'intro'), nowLine(run), state(...runStanding(run)));
   if (list(training.stages).length) add(node, beads(training.stages, false));
   add(node, make('p', 'lede run-says', run.sentence));
   const next = nextGate(run);
@@ -5372,13 +5443,13 @@ function paintRun(fresh) {
   const published = view.issued && view.issued.path === view.path ? view.issued : null;
   const brought = view.adopted && view.adopted.path === view.path ? view.adopted : null;
   placeParts({ title, above, back: true, actions: theirs ? readActions(run, waiting)
-    : runActions(run, waiting, lead),
+    : foldActions(runActions(run, waiting, lead)),
   mark: [title, training.levels, run.state, lead, offered, waiting, outline
     && run.outline.level, theirs, driver, Boolean(run.outline), run.review,
     run.finished] }, [
     ['intro', [run.state, run.sentence, training.stages, promised, view.steered,
       nextGate(run), Boolean(run.problem), runStanding(run), supplying, outline, theirs,
-      run.queue],
+      run.queue, run.steps, run.workers, run.spent],
     () => runIntro(run, training, promised)],
     brought ? ['brought', brought, () => broughtPart(brought)] : null,
     theirs && (driver || !run.finished) ? ['theirs', [driver, lead, run.taken, run.notice,
@@ -5451,6 +5522,8 @@ async function drawRun(fresh) {
     }
     // Someone is in the middle of leaving the deck out. The run waits until they are done.
     if (!view.busy && !view.sheet) paintRun(first);
+    // The intro is kept when nothing in it changed; the time in its now line still moves.
+    tickNow(run);
     // A run just opened is read again at its own pace, not at the list's.
     if (first) later();
   } catch (failure) {

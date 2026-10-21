@@ -38,6 +38,7 @@ const ICONS = {
   warn: ['M12 6v7.5', 'M12 17.5h.01'],
   minus: ['M6.5 12h11'],
   slash: ['M7 17 17 7'],
+  more: ['M6 12h.01', 'M12 12h.01', 'M18 12h.01'],
 };
 const BEAD_ICONS = { done: 'check', review: 'eye', late: 'warn', out: 'minus', off: 'slash' };
 const COMPUTER_WORDS = {
@@ -159,8 +160,8 @@ const PREVIEW_WORDS = { local: 'made with LibreOffice, on this computer',
 const SEVERITIES = { critical: ['late', 'Critical'], major: ['late', 'Major'],
   minor: ['none', 'Minor'] };
 const SERIOUS = ['critical', 'major'];
-// What a finding is about, where drawing again would not put it right.
-const ABOUT_TAGS = { content: 'About what it says', concept: 'About how it was designed' };
+// What a finding is about: how the slide was drawn, or what it says.
+const ABOUT_TAGS = { drawing: 'About how it was drawn', content: 'About what it says' };
 const CLOSE = 'You can close this page; it says when it needs you again.';
 // What a team adds. Each of these is confirmed in the sheet before anything is sent.
 const TEAM_SHEETS = ['take', 'hand-over', 'publish'];
@@ -593,6 +594,40 @@ function oneOf(id, label, options, held, name, changed) {
   if (options.length > 1) return field(id, label, held, name, { options, changed });
   return add(make('div', 'field'), make('p', 'field-label', label),
     make('p', '', options.length ? options[0][1] : 'None'));
+}
+
+// Where the shared settings are changed: Marketing Studio's own page, with the key kept in
+// the fragment.
+function settingsAddress() {
+  return '/onboarding/#token=' + view.token;
+}
+
+// The shared review level, as a start form says it.
+const REVIEW_WORDS = { balanced: 'Balanced', automatic: 'Automatic draft',
+  step_by_step: 'Step by step' };
+
+// A phone has the one decision in the toolbar; the rest open from the menu beside it. Which
+// is the lead is the filled button, or else the first.
+function narrow() {
+  return Boolean(window.matchMedia && window.matchMedia('(max-width: 52rem)').matches);
+}
+
+function foldActions(actions) {
+  actions = list(actions).filter(Boolean);
+  if (!narrow() || actions.length < 2) return actions;
+  const lead = actions.find((node) => node.classList.contains('button-filled')) || actions[0];
+  const rest = actions.filter((node) => node !== lead);
+  for (const node of rest) node.className = 'menu-item';
+  return [lead, moreMenu('More', rest, 'more')];
+}
+
+function moreMenu(label, items, key) {
+  const menu = make('details', 'menu');
+  menu.dataset.key = key;
+  const opener = make('summary', 'button button-round shine');
+  opener.dataset.key = key;
+  opener.setAttribute('aria-label', label);
+  return add(menu, add(opener, icon('more')), add(make('div', 'menu-list'), ...items));
 }
 
 function money(dollars) {
@@ -1650,7 +1685,7 @@ function drawSettings(fresh) {
   placeParts({ title: 'Settings', mark: ['Settings'] }, [
     ['shared-settings', [], () => add(card('Shared settings'),
       make('p', '', 'Your assistant, work folder, brand and delivery choices apply across all studios.'),
-      capsule('Change shared settings', 'quiet', () => { location.href = '/onboarding/#token=' + view.token; }, 'shared-settings'))],
+      capsule('Change shared settings', 'quiet', () => { location.href = settingsAddress(); }, 'shared-settings'))],
     ['workspace', around(), workspaceCard], ['studios', studiosMark(), studiosCard],
     ['defaults', [view.setup], defaultsCard],
     ['alerts', [alerts()], alertsCard], ['notify', around(), notifyCard],
@@ -2789,8 +2824,37 @@ function deckStep(draft) {
 }
 
 function firstDraftChoice(draft) {
-  if (draft.firstDraftExplicit) return draft.firstDraft;
-  return /skip ai review on the first build|show me the first draft without reviewing it|show first draft before ai review/i.test(draft.goal || '');
+  return Boolean(draft.firstDraft);
+}
+
+// The gates that stop for the person under the shared review level, in the words of what
+// they decide: the level's own rule, as review_policy.automatic applies it to a deck.
+function stopsFor(draft) {
+  // A deck's own level, where one is chosen, else the one every studio shares.
+  const level = draft.review_level || (view.setup && view.setup.review_level) || 'step_by_step';
+  const gates = [];
+  if (draft.route !== 'scratch') {
+    gates.push(['gate:classify', draft.route === 'document' ? 'the kind of document'
+      : 'the slides read from your deck']);
+  }
+  if (draft.research && draft.route !== 'existing') {
+    gates.push(['gate:research-plan', 'the research plan'], ['gate:research', 'the research']);
+  }
+  const chosen = draft.route === 'existing' ? draft.level : null;
+  if (!chosen || chosen === 'rework') gates.push(['gate:outline', 'the outline']);
+  if (!chosen || ['redesign', 'rework'].includes(chosen)) gates.push(['gate:look', 'the brand']);
+  gates.push(['gate:build', 'the deck']);
+  const stops = level === 'step_by_step' ? gates : level === 'balanced'
+    ? gates.filter(([name]) => ['gate:outline', 'gate:build'].includes(name))
+    : gates.filter(([name]) => name === 'gate:build');
+  return REVIEW_WORDS[level] + ': it stops for ' + series(stops.map(([, words]) => words));
+}
+
+function stopsLine(draft) {
+  const change = make('a', '', 'Change');
+  change.href = settingsAddress();
+  return add(make('p', 'quiet stops-line'), make('span', '', stopsFor(draft)),
+    make('span', '', ' · '), change);
 }
 
 function aboutStep(draft) {
@@ -2837,25 +2901,31 @@ function startStep(draft) {
       + draftModelWords(draft) + '.';
   };
   const limits = (view.setup && view.setup.limits) || {};
-  return [add(card('How it looks'), brandFields(draft, 'new'),
+  // The options are defaults until they are opened: one line says what they are.
+  const options = make('details', 'card');
+  options.dataset.key = 'new-options';
+  const summary = make('summary', 'card-title', 'Options');
+  const said = make('p', 'quiet', [OUTPUTS[draft.output][1], AGENT_NAMES[draft.agent]
+    + draftModelWords(draft), limitsSays(limits) || 'no limits'].join(' · '));
+  add(options, summary, said,
     ...explained('Delivered as', OUTPUTS.map((one) => one[1]), OUTPUT_SAYS, draft.output,
       (index) => {
         draft.output = index;
-      }, 'new-output')),
-  add(card('The agent that does the drafting'),
-    ...agentFields(draft, 'new', 'For this deck', told)),
-  ...(draft.level === 'selected' ? [] : [add(card('First native build'),
-    chip('Show first draft before AI review', firstDraftChoice(draft), on => {
-      draft.firstDraft = on; draft.firstDraftExplicit = true;
-    }, 'first-draft'), make('p', 'quiet', 'Still validates and renders your slides. Lets you review the first build before AI critique and polishing.'))]),
-  add(card('Limits'), make('p', '', limitsSays(limits)
-    || 'No limits are set for this computer.'),
-  make('p', 'quiet', 'A deck that reaches a limit stops and asks you. The limits are changed '
-    + 'in Settings.')),
+      }, 'new-output'),
+    ...agentFields(draft, 'new', 'For this deck', told),
+    ...(draft.level === 'selected' ? [] : [add(make('div', 'field'),
+      chip('Show first draft before AI review', firstDraftChoice(draft), on => {
+        draft.firstDraft = on; draft.firstDraftExplicit = true;
+      }, 'first-draft'), make('p', 'quiet field-hint', 'Still validates and renders your '
+        + 'slides. Lets you review the first build before AI critique and polishing.'))]),
+    make('p', 'quiet', (limitsSays(limits) || 'No limits are set for this computer.')
+      + ' A deck that reaches a limit stops and asks you. The limits are changed in '
+      + 'Settings.'));
+  return [add(card('How it looks'), brandFields(draft, 'new')), options,
   add(callout('', make('h2', 'aside-title', 'What happens when you start')),
-    make('p', '', 'It starts at once and works on its own. It stops and asks for your '
-      + 'decision on ' + series(asksFor(draft)) + '. From the first decision on, you see the '
-      + 'slides themselves.'),
+    make('p', '', 'It starts at once and works on its own. From the first decision on, you '
+      + 'see the slides themselves.'),
+    stopsLine(draft),
     drafted, make('p', 'quiet', 'This page tells you each time. In between, you can close '
       + 'it.'))];
 }
@@ -2959,7 +3029,7 @@ function formOf(draft) {
     variant: draft.variant || null, output: OUTPUTS[draft.output][0],
     research: draft.route !== 'existing' && draft.research,
     agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null };
-  if (draft.firstDraftExplicit || firstDraftChoice(draft)) form.initial_review = firstDraftChoice(draft) ? 'user-first' : 'standard';
+  if (draft.firstDraftExplicit) form.initial_review = draft.firstDraft ? 'user-first' : 'standard';
   const uploads = {};
   if (draft.route === 'existing') {
     form.level = draft.level;
@@ -3164,14 +3234,43 @@ function deckStanding(run) {
   return runWords(run);
 }
 
+// What it is doing now, in one line: the step, its part, how long it has taken, what it
+// has spent and the limit it stops at. Each is left out where it is not known.
+function nowLine(run) {
+  if (run.state !== 'working' || theirs(run) || queued(run)) return null;
+  const parts = [];
+  const current = list(run.timeline).find((row) => row.state === 'current');
+  if (current) parts.push(current.label);
+  const drawn = run.build_progress && list(run.build_progress.slides).length;
+  if (drawn) parts.push(count(drawn, 'slide drawn', 'slides drawn'));
+  const began = list(run.workers).map((worker) => Date.parse(worker.started_at))
+    .filter((stamp) => !Number.isNaN(stamp));
+  if (began.length) parts.push(lasted((Date.now() - Math.min(...began)) / 1000));
+  const spent = run.spent || {};
+  if (given(spent.dollars)) parts.push(money(spent.dollars) + ' so far');
+  const limits = (view.setup && view.setup.limits) || {};
+  if (given(limits.deck_dollars)) parts.push('stops at ' + money(limits.deck_dollars));
+  return parts.length ? make('p', 'now-line', parts.join(' · ')) : null;
+}
+
+// While nothing else changes, the time in the now line still moves.
+function tickNow(run) {
+  const shown = main().querySelector('.now-line');
+  const fresh = nowLine(run);
+  if (shown && fresh && shown.textContent !== fresh.textContent) {
+    shown.textContent = fresh.textContent;
+  }
+}
+
 function deckIntro(run) {
-  const node = add(make('div', 'intro'), state(...deckStanding(run)),
+  const node = add(make('div', 'intro'), nowLine(run), state(...deckStanding(run)),
     make('p', 'lede run-says', run.sentence));
   const stands = theirs(run) ? '' : run.state;
   if (queued(run) && stands) add(node, make('p', '', queueSays(run.queue)));
   if (stands === 'working') {
     add(node, make('p', 'quiet', 'Nothing is needed from you right now. It carries on by '
-      + 'itself, and this page tells you when it needs you.'));
+      + 'itself, and this page tells you when it needs you. Stop loses the step in hand; '
+      + 'Pause lets it finish.'));
   } else if (stands === 'paused') {
     add(node, make('p', 'quiet', 'Nothing more is started until you resume it. Everything '
       + 'made so far is kept.'));
@@ -3226,7 +3325,12 @@ function timelinePart(run) {
         (found.at === 'later' ? '' : ': ') + words));
     row.append(item);
   }
-  return add(make('section', 'card shine'), make('h2', 'card-title', 'Where it is'), row);
+  const told = stagesOf(run).find((found) => found.waiting)
+    || stagesOf(run).find((found) => found.at === 'current');
+  const caption = told ? make('p', 'beads-caption', told.name + ': ' + stageBead(told)[1]) : null;
+  if (caption) caption.setAttribute('aria-hidden', 'true');
+  return add(make('section', 'card shine'), make('h2', 'card-title', 'Where it is'), row,
+    caption);
 }
 
 // What a step has taken so far.
@@ -3273,10 +3377,25 @@ function problemPart(run, lead) {
   const title = found.state === 'failed' ? (theirs(run) ? 'It has stopped'
     : 'It has stopped, and needs you') : found.state === 'paused' ? 'It is paused'
     : 'It is stopped';
+  const failed = list(run.timeline).find((row) => row.failed)
+    || list(run.timeline).find((row) => row.state === 'current');
+  let again = null;
+  if (found.action === 'retry' && failed) {
+    const took = [given(failed.seconds) ? lasted(failed.seconds) : '',
+      given(failed.dollars) ? money(failed.dollars) : ''].filter(Boolean);
+    const sections = run.build_sections;
+    // A slide build keeps the sections already drawn; any other step starts over.
+    const does = failed.stage === 'build' && sections && sections.total
+      ? 'Try again keeps ' + sections.kept + ' of ' + count(sections.total, 'section', 'sections')
+        + '; the rest are drawn again'
+      : 'Try again re-runs ' + failed.label + ' from the start';
+    again = make('p', 'quiet', does + (took.length ? '; the last try took ' + took.join(' and ')
+      : '') + '.');
+  }
   return callout(found.state === 'failed' ? 'late' : '', make('h2', 'aside-title', title),
     add(make('p', ''), make('strong', '', 'What happened: '), found.why || ''),
     found.kept ? add(make('p', ''), make('strong', '', 'What was kept: '), found.kept) : null,
-    go ? add(make('div', 'bar'), go) : null);
+    again, go ? add(make('div', 'bar'), go) : null);
 }
 
 // A question from a worker, with a box to answer in. What is typed is kept as it is typed.
@@ -3798,7 +3917,9 @@ function outlineRow(gate, slides, index, readonly) {
   up.disabled = index === 0;
   down.disabled = index === slides.length - 1;
   remove.disabled = slides.length < 2;
-  return add(node, add(make('div', 'bar'), ask, up, down, remove));
+  for (const one of [up, down, remove]) one.className = 'menu-item';
+  return add(node, add(make('div', 'bar'), ask,
+    moreMenu('More for “' + title + '”', [up, down, remove], 'slide-more-menu ' + one.id)));
 }
 
 // Whether the outline here differs from the one the deck holds, in a line.
@@ -4642,7 +4763,7 @@ function reviewBar(gate) {
   const tally = make('p', 'quiet');
   tally.id = 'review-tally';
   tally.setAttribute('role', 'status');
-  add(node, tally, alertLine('review-problem'), make('div', 'bar'));
+  add(node, tally, alertLine('review-problem'));
   paintReviewBar(gate, node);
   return node;
 }
@@ -4655,10 +4776,9 @@ function paintReviewBar(gate, node) {
   // Only a tally that changed is read out again: typing in a box against an item changes
   // nothing it counts.
   if (tally.textContent !== made.tally) tally.textContent = made.tally;
-  // What was refused before is not what the marks say now.
+  // What was refused before is not what the marks say now. The one button that sends the
+  // marks is the toolbar's, which says what it will do with them.
   say(problem, '');
-  const go = capsule(made.label, '', () => sendReview(gate, go, problem), 'review-send');
-  node.querySelector('.bar').replaceChildren(go);
 }
 
 // A mark changed: the tally, this button and the toolbar's say so at once.
@@ -4772,7 +4892,12 @@ function rebrandSheet() {
 function undoSheet() {
   const problem = problemLine();
   const confirm = capsule('Undo it', 'filled', () => steer('undo', confirm, problem), 'send');
+  const done = list(view.run && view.run.timeline).filter((row) => row.state === 'done').pop();
+  const took = done ? [given(done.seconds) ? lasted(done.seconds) : '',
+    given(done.dollars) ? money(done.dollars) : ''].filter(Boolean) : [];
   return [sheetTitle('Undo the last step?'),
+    done ? make('p', '', 'Undo: ' + done.label + (took.length ? ' (' + took.join(', ') + ')'
+      : '')) : null,
     make('p', '', 'The last thing done to this deck is taken back, and it carries on from '
       + 'there. Only the last step can be undone, and only while it has not been shared with '
       + 'your team.'),
@@ -4917,18 +5042,19 @@ function paintDeck(fresh) {
   const above = [make('span', '', [route, runs].filter(Boolean).join(' · '))];
   const published = view.issued && view.issued.path === view.path ? view.issued : null;
   const gate = run.gate;
-  placeParts({ title, above, back: true, actions: deckActions(run, lead),
+  placeParts({ title, above, back: true, actions: foldActions(deckActions(run, lead)),
     mark: [title, route, run.state, lead, gate && [gate.name, gate.round], read, driver,
       Boolean(run.question), run.problem,
       gate && REVIEWED.includes(gate.name) && !read ? reviewOf(gate).label : ''] }, [
-    ['intro', [run.state, run.sentence, run.queue, view.steered, read, Boolean(run.problem)],
-      () => deckIntro(run)],
+    ['intro', [run.state, run.sentence, run.queue, view.steered, read, Boolean(run.problem),
+      run.timeline, run.workers, run.spent, run.build_progress && run.build_progress.slides],
+    () => deckIntro(run)],
     ['timeline', [run.timeline, gate && gate.name], () => timelinePart(run)],
     read && (driver || !finished) ? ['theirs', [driver, lead, run.taken, run.notice,
       run.last_shared, run.kept, title], () => theirsPart(run, lead === 'take')] : null,
     !read && run.notice ? ['notice', [run.notice, run.clash, run.kept],
       () => noticePart(run)] : null,
-    run.problem ? ['problem', [run.problem, lead, read],
+    run.problem ? ['problem', [run.problem, lead, read, run.build_sections],
       () => problemPart(run, lead === 'problem')] : null,
     run.question && read ? ['asked', [run.question, driver], () => askedPart(run)] : null,
     run.question && !read ? ['question', [run.question, title],
@@ -4968,6 +5094,7 @@ async function drawDeck(fresh) {
     view.run = run;
     // Someone is in the middle of deciding: the screen waits until they are done.
     if (!view.busy && !view.sheet && !same) paintDeck(first);
+    else if (same) tickNow(run);
     if (first) later();
   } catch (failure) {
     if (turn !== view.turn) return;

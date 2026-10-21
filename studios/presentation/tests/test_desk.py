@@ -287,7 +287,7 @@ class ScreenTests(ScriptedPage, PageCase):
                       'Selected changes'):
             self.assertIn(level, shots['levels']['text'])
         self.assertIn('Chosen: old.pptx', shots['levels']['text'])
-        self.assertIn('the deck itself', shots['last']['text'])
+        self.assertIn('it stops for the slides read from your deck and the deck', shots['last']['text'])
         (address, body), = self.posts(result)
         self.assertEqual(address, '/api/decks')
         self.assertEqual(set(body), {'form', 'uploads'})
@@ -300,13 +300,143 @@ class ScreenTests(ScriptedPage, PageCase):
         made = self.post('decks', body)
         self.assertEqual(self.run_of(made['path'])['gate']['name'], 'gate:classify')
 
-    def deck_screen(self, path: str, steps: list, **more) -> dict:
+    def deck_screen(self, path: str, steps: list, narrow: bool = False, **more) -> dict:
         """The deck screen, opened from home, with the deck as the runner shows it now."""
         title = self.run_of(path)['title']
         needs = any(brief['path'] == path for brief in self.get('decks')['needs'])
         answers = self.answers(**{'GET /api/run': [ok(self.run_of(path))], **more})
         return self.run_page(answers, [{'click': ('Review ' if needs else 'Open ') + title},
-                                       *steps])
+                                       *steps], narrow=narrow)
+
+    def setup_with(self, **more) -> dict:
+        return ok({**self.get('setup'), **more})
+
+    def test_the_start_step_says_where_it_stops_and_folds_the_options(self):
+        from studio_core import review_policy
+        self.assertIn(self.get('setup')['review_level'], review_policy.LEVELS)
+        answers = self.answers(**{'GET /api/setup': [self.setup_with(review_level='balanced')],
+                                  'GET /api/run': [{'status': 404,
+                                                    'body': {'error': 'There is no deck there.'}}]})
+        result = self.run_page(answers, [
+            {'click': 'New deck'}, {'click': 'Start from scratch'},
+            {'fill': 'A short title', 'value': 'Rolling restarts'},
+            {'fill': 'Who is it for?', 'value': 'Operators'},
+            {'fill': 'What should they take away?', 'value': 'Skip AI review on the first build.'},
+            {'click': 'Continue'}, {'snapshot': 'last'}, {'click': 'Options'},
+            {'snapshot': 'opened'}, {'click': 'Start the deck'}])
+        last, opened = result['snapshots']['last'], result['snapshots']['opened']
+        self.assertIn('Balanced: it stops for the outline and the deck', last['text'])
+        self.assertIn('/onboarding/#token=', next(link['href'] for link in last['links']
+                                                   if link['name'] == 'Change'))
+        self.assertNotIn('First native build', last['text'])
+        self.assertNotIn('Show first draft before AI review', last['buttons'])
+        self.assertIn('Options', last['buttons'])
+        self.assertIn('Show first draft before AI review', opened['buttons'])
+        # The goal's words never flip the first draft silently: only the chip does.
+        self.assertEqual(result['errors'], [])
+        posted = [body for address, body in self.posts(result) if address == '/api/decks']
+        self.assertNotIn('initial_review', posted[0]['form'])
+
+    def test_the_goal_text_does_not_flip_the_first_draft_in_the_runner(self):
+        path = self.started(goal='Skip AI review on the first build.')
+        self.assertFalse(self.run_of(path)['unreviewed'])
+        self.assertNotIn('initial_review', json.loads((Path(path) / 'run.json').read_text())
+                         .get('form', {}))
+
+    def test_a_working_deck_says_what_it_does_now_and_for_how_long(self):
+        import datetime
+        path = self.started()
+        shown = self.run_of(path)
+        current = next(row for row in shown['timeline'] if row['state'] != 'done')
+        current['state'] = 'current'
+        started = (datetime.datetime.now(datetime.timezone.utc)
+                   - datetime.timedelta(minutes=3)).isoformat()
+        shown.update(state='working', gate=None, sentence='Drafting the outline.',
+                     spent={'dollars': 0.42, 'tokens': 1200},
+                     workers=[{'id': 'w1', 'label': 'Outline writer', 'started_at': started,
+                               'lines': ['Reading the brief.']}])
+        limits = {**(self.get('setup')['limits'] or {}), 'deck_dollars': 5}
+        result = self.deck_screen(path, [{'snapshot': 'working'}],
+                                  **{'GET /api/run': [ok(shown)],
+                                     'GET /api/setup': [self.setup_with(limits=limits)]})
+        text = result['snapshots']['working']['text']
+        self.assertIn(current['label'] + ' · 3 minutes · $0.42 so far · stops at $5.00', text)
+        self.assertIn('Stop loses the step in hand; Pause lets it finish.', text)
+
+    def test_a_retry_says_what_it_re_runs_and_what_the_last_try_took(self):
+        path = self.started()
+        shown = self.run_of(path)
+        row = next(row for row in shown['timeline'] if row['state'] != 'done')
+        row.update(state='current', failed=True, seconds=120, dollars=0.3)
+        shown.update(state='failed', gate=None, sentence='It has stopped.',
+                     problem={'state': 'failed', 'why': 'The worker stopped.',
+                              'kept': 'Everything made so far.', 'action': 'retry'})
+        result = self.deck_screen(path, [{'snapshot': 'failed'}], **{'GET /api/run': [ok(shown)]})
+        shot = result['snapshots']['failed']
+        self.assertEqual(shot['filled'], ['Try again'])
+        self.assertIn('Try again re-runs ' + row['label'] + ' from the start; the last try took '
+                      '2 minutes and $0.30.', shot['text'])
+
+    def test_a_build_retry_says_how_many_sections_are_kept(self):
+        path = self.started()
+        shown = self.run_of(path)
+        self.assertIsNone(shown['build_sections'], 'nothing built yet')
+        row = next(row for row in shown['timeline'] if row['stage'] == 'build')
+        row.update(state='current', failed=True, seconds=300, dollars=1.1)
+        for other in shown['timeline']:
+            if other is not row and other['state'] == 'current':
+                other['state'] = 'done'
+        shown.update(state='failed', gate=None, sentence='It has stopped.',
+                     build_sections={'total': 4, 'kept': 2},
+                     problem={'state': 'failed', 'why': 'The renderer stopped.',
+                              'kept': 'Two sections.', 'action': 'retry'})
+        result = self.deck_screen(path, [{'snapshot': 'failed'}], **{'GET /api/run': [ok(shown)]})
+        self.assertIn('Try again keeps 2 of 4 sections; the rest are drawn again; the last try '
+                      'took 5 minutes and $1.10.', result['snapshots']['failed']['text'])
+
+    def test_one_approve_decides_and_the_review_bar_only_counts(self):
+        path = self.started()
+        result = self.deck_screen(path, [{'snapshot': 'gate'}])
+        shot = result['snapshots']['gate']
+        self.assertEqual(shot['buttons'].count('Approve'), 1)
+        self.assertEqual(shot['filled'], ['Approve'])
+        self.assertIn('0 slides to change', shot['text'])
+
+    def test_undo_names_the_last_step_with_its_time_and_cost(self):
+        path = self.started()
+        shown = self.run_of(path)
+        done = [row for row in shown['timeline'] if row['state'] == 'done'][-1]
+        done.update(seconds=180, dollars=0.6)
+        result = self.deck_screen(path, [{'click': 'Undo the last step'}, {'snapshot': 'undo'}],
+                                  **{'GET /api/run': [ok(shown)]})
+        self.assertIn('Undo: ' + done['label'] + ' (3 minutes, $0.60)',
+                      result['snapshots']['undo']['sheet'])
+
+    def test_the_timeline_captions_the_stage_it_is_at_for_a_phone(self):
+        path = self.started()
+        result = self.deck_screen(path, [{'snapshot': 'gate'}])
+        self.assertEqual(result['snapshots']['gate']['captions'], ['Outline: Waiting for you'])
+
+    def test_outline_rows_keep_one_button_and_fold_the_rest(self):
+        path = self.started()
+        first = self.run_of(path)['gate']['slides'][0]['title']
+        result = self.deck_screen(path, [{'snapshot': 'closed'}, {'click': f'More for “{first}”'},
+                                         {'snapshot': 'open'}])
+        closed, opened = result['snapshots']['closed'], result['snapshots']['open']
+        self.assertIn(f'Ask for changes to “{first}”', closed['buttons'])
+        self.assertNotIn(f'Move down: “{first}”', closed['buttons'])
+        self.assertIn(f'Move down: “{first}”', opened['buttons'])
+
+    def test_a_phone_keeps_one_decision_in_the_toolbar(self):
+        path = self.started()
+        result = self.deck_screen(path, [{'snapshot': 'phone'}, {'click': 'More'},
+                                         {'snapshot': 'menu'}], narrow=True)
+        phone, menu = result['snapshots']['phone'], result['snapshots']['menu']
+        self.assertEqual(phone['filled'], ['Approve'])
+        self.assertNotIn('Ask for changes', phone['buttons'])
+        self.assertNotIn('Undo the last step', phone['buttons'])
+        self.assertIn('Ask for changes', menu['buttons'])
+        self.assertIn('Undo the last step', menu['buttons'])
 
     def test_every_gate_of_a_deck_from_scratch_is_drawn_and_decided(self):
         path = self.started(research=True)
@@ -554,7 +684,8 @@ class ScreenTests(ScriptedPage, PageCase):
         title = 'Watch each batch of the restart closely'
         result = self.deck_screen(path, [
             {'fill': 'A new slide’s title', 'value': title}, {'click': 'Add the slide'},
-            {'click': f'Move up: “{title}”'}, {'click': 'Approve'}],
+            {'click': f'More for “{title}”'}, {'click': f'Move up: “{title}”'},
+            {'click': 'Approve'}],
             **{'POST /api/decide': [ok(self.run_of(path))]})
         approval = [body for address, body in self.posts(result)
                     if address == '/api/decide'][-1]
@@ -657,7 +788,9 @@ class ScreenTests(ScriptedPage, PageCase):
             {'fill': f"What should change on “{second['title']}”", 'value': 'Shorter.'},
             {'click': f"Ask for changes to “{fourth['title']}”"},
             {'fill': f"What should change on “{fourth['title']}”", 'value': 'Drop it.'},
+            {'click': f"More for “{second['title']}”"},
             {'click': f"Move down: “{second['title']}”"}, {'snapshot': 'moved'},
+            {'click': f"More for “{fourth['title']}”"},
             {'click': f"Remove “{fourth['title']}”"}, {'snapshot': 'removed'},
             {'click': 'Send 1 change'}],
             **{'POST /api/decide': [ok(self.run_of(path))]})
@@ -713,7 +846,7 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.deck_screen(path, [
             {'click': f"Ask for changes to “{second['title']}”"},
             {'fill': f"What should change on “{second['title']}”", 'value': 'Split it.'},
-            {'click': f"Remove “{second['title']}”"},
+            {'click': f"More for “{second['title']}”"}, {'click': f"Remove “{second['title']}”"},
             {'fill': 'Title of slide 2', 'value': 'Batches, one at a time'},
             {'snapshot': 'edited'}, {'click': 'Put it back as drafted'}, {'snapshot': 'back'},
             {'click': 'Approve'}],
