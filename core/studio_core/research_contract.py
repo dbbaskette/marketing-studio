@@ -286,7 +286,7 @@ class Workflow:
         """
         case = inside(root, str(CASE))
         case.mkdir(parents=True, exist_ok=True)
-        for phase in ('author', 'review') * 3:
+        for phase in ('author', 'review') * ROUNDS:
             if phase == 'author':
                 worker = 'author-' + secrets.token_hex(12)
                 guide = '\n\n'.join((self.runtime / 'references' / name).read_text()
@@ -355,9 +355,61 @@ class Workflow:
                     break
         verified = self.command(case, 'verify')
         if verified.get('status') != 'complete' or verified.get('artifact_integrity') == 'failed':
-            raise ValueError('Independent research review needs changes. The draft and review are saved for correction.')
+            raise ReviewRefused(objections(case), ROUNDS)
         facts, manifest = read_bundle(case / 'research')
         return facts, manifest
+
+
+ROUNDS = 3
+
+
+class ReviewRefused(ValueError):
+    """The independent check still objected after every round of correction. The message
+    says what it objected to; `objections` holds every objection for the studio's review."""
+
+    def __init__(self, objections, rounds):
+        self.objections = list(objections)
+        self.rounds = rounds
+        count = len(self.objections)
+        said = ('The independent check of the research still needs changes after '
+                f'{rounds} rounds of correction')
+        if count:
+            said += f': {count} objection' + ('' if count == 1 else 's') + ', such as '
+            said += ' '.join(shortened(note) for note in self.objections[:2])
+        else:
+            said += ', and did not say what: read the saved check.'
+        super().__init__(said + ' The draft report and the check’s notes are saved for correction.')
+
+
+def shortened(note, limit=160):
+    line = ' '.join(str(note).split())
+    return line if len(line) <= limit else line[:limit - 1].rstrip() + '…'
+
+
+def objections(case):
+    """What the last saved review objected to, one sentence each: every verdict that is
+    not supported, with its note, then an assessment that asks for revision."""
+    path = case / 'review.json'
+    try:
+        review = json.loads(path.read_text()) if path.is_file() else {}
+    except ValueError:
+        return []
+    if not isinstance(review, dict):
+        return []
+    found = []
+    for group in ('facts', 'findings', 'prose'):
+        for item in review.get(group) or ():
+            if isinstance(item, dict) and item.get('verdict') not in (None, 'supported'):
+                note = ' '.join(str(item.get('note') or '').split())
+                found.append(f"{item.get('id')} ({item.get('verdict')}): {note or 'no note'}")
+    assessment = review.get('assessment') or {}
+    if isinstance(assessment, dict):
+        asked = [name for name in ('coverage', 'usefulness') if assessment.get(name) == 'needs-revision']
+        if asked:
+            note = ' '.join(str(assessment.get('note') or '').split())
+            found.append(' and '.join(asked).capitalize() + ' need' + ('s' if len(asked) == 1 else '')
+                         + ' revision: ' + (note or 'no note'))
+    return found[:40]
 
 
 def check_json(text, spec):
@@ -498,6 +550,11 @@ def native(engine, root, run, task, sources, product):
 
     try:
         return Workflow(tool.runtime, tool._json).run(root, task, invoke, sources)
+    except ReviewRefused as refusal:
+        # The studio stops at its research step and keeps the objections with the review.
+        failure = WorkspaceError(str(refusal))
+        failure.objections, failure.rounds = refusal.objections, refusal.rounds
+        raise failure from refusal
     except ValueError as error:
         raise WorkspaceError(str(error)) from error
     finally:

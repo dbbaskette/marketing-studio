@@ -254,7 +254,19 @@ class Researching:
                     'requested_changes': record.get('gates', {}).get('gate:research', {}),
                     'source_mode': ('selected' if plan.get('scope') == 'supplied-only'
                                     else 'mixed' if offered else 'public')}
-            research_contract.native(self, root, run, task, offered, 'presentation')
+            try:
+                research_contract.native(self, root, run, task, offered, 'presentation')
+            except WorkspaceError as refusal:
+                if getattr(refusal, 'objections', None) is None:
+                    raise
+                # The check still objected after its last round: stop at the research step
+                # with its objections, so that the person reads them and Try again says
+                # what it re-runs.
+                listed = ''.join('\n- ' + note for note in refusal.objections)
+                self._problem(root, 'research', 'failed', str(refusal), (
+                    'The draft report and the check’s objections are kept under the research '
+                    'folder. The research plan you approved is kept.' + listed))
+                raise Halted()
             with self.files:
                 self._done(root, step, time.monotonic(), 'complete independent research review')
             return
