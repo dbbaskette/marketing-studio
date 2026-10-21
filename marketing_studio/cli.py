@@ -6,6 +6,7 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
+import textwrap
 from contextlib import contextmanager
 
 from . import catalog, computer, control, network, server, session, shared, state
@@ -18,6 +19,10 @@ CHOICES = ((('--bs', '-bs', '--blog'), 'blog'), (('--ps', '-ps', '--presentation
            (('--ts', '-ts', '--training'), 'training'))
 LEADING = frozenset(('-a', '--all', '--force', '--json', *(spelling for flags, _ in CHOICES for spelling in flags)))
 MANAGING = ('start', 'stop', 'restart')
+EARLIER = ('Marketing Studio is running an earlier version; stop it with Ctrl-C in its terminal '
+           'to manage it from here.')
+PAUSED = ('--force is only needed while an assistant is working; between steps a run is paused '
+          'safely and resumes when its studio starts again.')
 EXAMPLES = {
     'start': """examples:
   marketing-studio start                  Marketing Studio only
@@ -30,13 +35,15 @@ Marketing Studio keeps running in the background. Stop it with: marketing-studio
   marketing-studio stop --all             every studio, then Marketing Studio
 
 A studio with a running assistant job is not stopped, because its work so far
-would be lost. Wait for the job, or add --force.""",
+would be lost. Wait for the job, or add --force.
+""" + textwrap.fill(PAUSED, 80),
     'restart': """examples:
   marketing-studio restart --ts           Training Studio
   marketing-studio restart --all          Marketing Studio with its phone access
                                           and port, then the studios that were running
 
-A studio with a running assistant job is not restarted unless you add --force.""",
+A studio with a running assistant job is not restarted unless you add --force.
+""" + textwrap.fill(PAUSED, 80),
 }
 
 
@@ -127,14 +134,21 @@ def offline(args):
             print('\nOpen setup: marketing-studio setup')
         return 0 if report['ready'] else 1
     preferences = state.read()
-    found = session.quietly_current()
+    earlier = False
+    try:
+        found = session.current()
+    except session.EarlierVersion:
+        found, earlier = None, True
+    except (OSError, ValueError, WorkspaceError):
+        found = None  # It is starting or stopping.
     running = {row['id'] for row in found['studios']} if found else set()
     studios = catalog.describe(preferences.get('paths', {}), running.__contains__)
     result = {'version': (ROOT / 'VERSION').read_text().strip(), 'path': str(ROOT),
               'checkout': catalog.checkout(ROOT),
               'setup_complete': Home.configured(shared.read()[0]), 'studios': studios,
               'running': None if found is None else {
-                  'port': found['port'], 'lan': found['lan'], 'studios': found['studios']}}
+                  'port': found['port'], 'lan': found['lan'], 'studios': found['studios']},
+              'earlier_version': earlier}
     if args.json:
         print(json.dumps(result, indent=2))
     else:
@@ -151,6 +165,8 @@ def offline(args):
         if copies:
             print('\nRunning Git checkout copies, not installed releases: ' + ', '.join(copies) + '.'
                   '\nTo run installed releases, use the installed marketing-studio command or set each folder in Settings.')
+        if earlier:
+            print('\n' + EARLIER)
         if found:
             print('\nRunning now:')
             print(f"  Marketing Studio on port {found['port']}, phone access "
@@ -189,10 +205,10 @@ class Report:
         if self.person:
             if self.lines:
                 print('\n'.join(self.lines), flush=True)
-            if problem:
-                print(problem, file=sys.stderr, flush=True)
         else:
-            print(json.dumps({**self.data, **({'problem': problem} if problem else {})}, indent=2), flush=True)
+            print(json.dumps({**self.data, **({'error': problem} if problem else {})}, indent=2), flush=True)
+        if problem:
+            print(problem, file=sys.stderr, flush=True)
         return code
 
 
@@ -231,10 +247,12 @@ def start_studios(report, identifiers, restarted=()):
     return failed
 
 
-def stopped_line(identifier, jobs, earlier=False):
+def stopped_line(identifier, jobs, earlier=False, left=()):
     line = session.name(identifier) + (', left running by an earlier session,' if earlier else '') + ' stopped'
     if jobs:
         line += '; ' + ', '.join(map(describe_job, jobs)) + (' were' if len(jobs) > 1 else ' was') + ' cut off'
+    if left:
+        line += '; ' + ', '.join(map(describe_job, left)) + ' could not be stopped'
     return line + '.'
 
 
@@ -254,9 +272,12 @@ def stop_left_behind(report, identifiers, force):
         rows = []
         for identifier, jobs in left:
             if launcher.stop(identifier):
+                # Assistants run in their own sessions, outside the studio's group.
+                gone = session.end_jobs(jobs) if jobs else []
+                rest = [job for job in jobs if job not in gone]
                 rows.append({'id': identifier, 'name': session.name(identifier), 'result': 'stopped',
-                             'earlier': True, 'cut_off': jobs})
-                report.say(stopped_line(identifier, jobs, earlier=True))
+                             'earlier': True, 'cut_off': gone, 'left': rest})
+                report.say(stopped_line(identifier, gone, True, rest))
         report.data.setdefault('studios', []).extend(rows)
     return None
 
@@ -277,9 +298,9 @@ def stop_running(report, found, identifiers, force):
                 row.update(result='failed', problem=reply['error'])
                 report.say(f"{row['name']} was not stopped: {reply['error']}")
             else:
-                cut = reply.get('jobs') or []
-                row.update(result='stopped', cut_off=cut, earlier=running[identifier]['earlier'])
-                report.say(stopped_line(identifier, cut, running[identifier]['earlier']))
+                cut, rest = reply.get('jobs') or [], reply.get('left') or []
+                row.update(result='stopped', cut_off=cut, left=rest, earlier=running[identifier]['earlier'])
+                report.say(stopped_line(identifier, cut, running[identifier]['earlier'], rest))
         report.data.setdefault('studios', []).append(row)
     return failed
 
@@ -287,8 +308,29 @@ def stop_running(report, found, identifiers, force):
 def cut_off(report):
     """Keep only the stop lines that say which jobs were cut off, before starting again."""
     rows = report.data.pop('studios', [])
-    report.lines = [line for line in report.lines if 'cut off' in line]
+    report.lines = [line for line in report.lines if 'cut off' in line or 'could not be stopped' in line]
     return [{'id': row['id'], 'name': row['name'], 'jobs': row['cut_off']} for row in rows if row.get('cut_off')]
+
+
+def recover(report, wanted):
+    """After a restart failed partway, start again what it stopped, and say what runs."""
+    for row in report.data.get('studios', []):
+        if row.get('result') != 'stopped':
+            continue
+        reply = session.ask({'command': 'start', 'studio': row['id']}) or {'error': 'Marketing Studio stopped.'}
+        if reply.get('error'):
+            report.say(f"{row['name']} could not start again: {reply['error']}")
+        else:
+            row['result'] = 'started again'
+            report.say(f"{row['name']} started again.")
+    found = session.quietly_current()
+    running = {row['id'] for row in found['studios']} if found else set()
+    names = [session.name(identifier) for identifier in catalog.STUDIOS if identifier in running]
+    report.say(('Running: ' + ', '.join(names) + '.') if names else 'No studio is running.')
+    missing = [session.name(identifier) for identifier in wanted if identifier not in running]
+    if missing:
+        report.say('Not running: ' + ', '.join(missing) + '.')
+    report.data['running_studios'] = sorted(running)
 
 
 def busy_in(found, identifiers):
@@ -350,6 +392,7 @@ def manage(args, chosen):
             return refuse(report, busy)
         before = {row['id'] for row in found['studios']}
         if stop_running(report, found, [identifier for identifier in chosen if identifier in before], args.force):
+            recover(report, chosen)
             return report.show(1)
         cut = cut_off(report)
         failed = start_studios(report, chosen, restarted=before)
@@ -368,12 +411,18 @@ def manage(args, chosen):
         return refuse(report, busy)
     before = [row['id'] for row in found['studios']]
     if stop_running(report, found, before, args.force):
+        recover(report, before)
         return report.show(1, 'Marketing Studio was left running.')
     cut = cut_off(report)
     session.stop_home()
     stop_left_behind(report, everything, True)
     cut += cut_off(report)
-    found = session.start_home(session.serving(args.lan or found['lan'], args.port or found['port']))
+    try:
+        found = session.start_home(session.serving(args.lan or found['lan'], args.port or found['port']))
+    except WorkspaceError as failure:
+        report.data.update({'running': False, 'cut_off': cut})
+        again = ' '.join(['marketing-studio start', *map(session.flag, before)])
+        return report.show(1, f'{failure}\nMarketing Studio and its studios are not running. Start them again: {again}')
     report.say('Marketing Studio restarted.')
     running_home(report, found, False)
     failed = start_studios(report, before, restarted=before)
@@ -383,7 +432,14 @@ def manage(args, chosen):
 
 def main(argv=None):
     top = parser()
-    args = top.parse_args(arrange(sys.argv[1:] if argv is None else argv))
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    leading = 0
+    while leading < len(arguments) and arguments[leading] in LEADING:
+        leading += 1
+    if any(value != '--json' for value in arguments[:leading]) and (
+            leading == len(arguments) or arguments[leading] not in MANAGING):
+        top.error('Add start, stop or restart, for example: marketing-studio stop --all')
+    args = top.parse_args(arrange(arguments))
     if args.studio and args.command != 'open':
         top.error('A studio name follows open, for example: marketing-studio open presentation.')
     if args.command in MANAGING:
@@ -397,6 +453,8 @@ def main(argv=None):
         try:
             return manage(args, chosen)
         except (WorkspaceError, OSError, ValueError) as failure:
+            if args.json or not sys.stdout.isatty():
+                print(json.dumps({'error': str(failure)}), flush=True)
             print('Marketing Studio: ' + str(failure), file=sys.stderr)
             return 2
     if args.command == 'serve':

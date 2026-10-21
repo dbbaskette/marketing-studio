@@ -18,7 +18,7 @@ import time
 import unittest
 from unittest import mock
 
-from marketing_studio import cli, control
+from marketing_studio import cli, control, session
 
 ROOT = Path(__file__).resolve().parents[1]
 KEY = 'k' * 43
@@ -112,17 +112,26 @@ class ParserTests(Disposable):
             self.assertEqual(code, 2)
             self.assertIn('Use --all by itself', errors)
 
+    def test_selection_without_a_command_is_explained(self):
+        for arguments in (['--all'], ['-bs', '-ts'], ['--force', '--ts']):
+            code, _, errors = self.run_cli(arguments)
+            self.assertEqual(code, 2)
+            self.assertIn('Add start, stop or restart, for example: marketing-studio stop --all', errors)
+
     def test_help_explains_start_stop_and_force(self):
         top = cli.parser().format_help()
         for name in ('start', 'stop', 'restart'):
             self.assertIn(name, top)
         self.assertIn('--force', cli.parser().commands['stop'].format_help())
+        self.assertIn('between steps a run is paused safely',
+                      ' '.join(cli.parser().commands['stop'].format_help().split()))
         self.assertIn('start --all --lan', cli.parser().commands['start'].format_help())
 
 
 class FakeHome:
     """Answers the control socket the way a running Marketing Studio does."""
-    def __init__(self, data, studios=(), lan=None):
+    def __init__(self, data, studios=(), lan=None, refuse=()):
+        self.refuse = set(refuse)
         self.actions = []
         self.studios = [dict(row) for row in studios]
         self.lan = lan
@@ -138,6 +147,8 @@ class FakeHome:
         if command == 'shutdown':
             return {'stopping': True}
         row = next((row for row in self.studios if row['id'] == action['studio']), None)
+        if action['studio'] in self.refuse:
+            return {'error': 'Fixture refused.'}
         if command == 'start':
             if row is None:
                 self.studios.append({'id': action['studio'], 'name': action['studio'].title() + ' Studio',
@@ -162,8 +173,8 @@ class FakeHome:
 
 @unittest.skipUnless(UNIX, 'Local sockets are not permitted here.')
 class ManagingTests(Disposable):
-    def home(self, studios=(), lan=None):
-        fake = FakeHome(self.data, studios, lan)
+    def home(self, studios=(), lan=None, refuse=()):
+        fake = FakeHome(self.data, studios, lan, refuse)
         self.addCleanup(fake.close)
         return fake
 
@@ -247,6 +258,48 @@ class ManagingTests(Disposable):
         self.assertIn('Training Studio restarted.', output)
         self.assertIn('Blog Studio started.', output)
 
+    def test_a_restart_that_fails_partway_starts_again_what_it_stopped(self):
+        fake = self.home([{'id': 'training', 'name': 'Training Studio', 'jobs': [], 'earlier': False},
+                          {'id': 'blog', 'name': 'Blog Studio', 'jobs': [], 'earlier': False}], refuse={'blog'})
+        code, output, errors = self.run_cli(['restart', '--ts', '--bs'])
+        self.assertEqual(code, 1)
+        self.assertEqual([action['command'] for action in fake.actions if action.get('studio') == 'training'],
+                         ['stop', 'start'])
+        self.assertNotIn({'command': 'start', 'studio': 'blog'}, fake.actions)
+        self.assertIn('Blog Studio was not stopped: Fixture refused.', output)
+        self.assertIn('Training Studio started again.', output)
+        self.assertIn('Running: Blog Studio, Training Studio.', output)
+
+    def test_a_restart_all_that_fails_partway_starts_again_what_it_stopped(self):
+        fake = self.home([{'id': 'training', 'name': 'Training Studio', 'jobs': [], 'earlier': False},
+                          {'id': 'blog', 'name': 'Blog Studio', 'jobs': [], 'earlier': False}], refuse={'blog'})
+        code, output, errors = self.run_cli(['restart', '--all'])
+        self.assertEqual(code, 1)
+        self.assertNotIn('shutdown', fake.commands())
+        self.assertIn('Training Studio started again.', output)
+        self.assertIn('Marketing Studio was left running.', errors)
+
+    def test_a_failed_command_prints_json_for_a_pipe(self):
+        self.home()
+        code, output, errors = self.run_cli(['start', '--port', '8000', '--json'], Terminal())
+        self.assertEqual(code, 1)
+        self.assertIn('already running on port 4321', json.loads(output)['error'])
+        self.assertIn('already running on port 4321', errors)
+
+    def test_status_names_an_earlier_marketing_studio(self):
+        def older(action):
+            raise ValueError('Choose a supported studio command.')
+        ipc = control.Control(self.data, older)
+        self.addCleanup(ipc.close)
+        code, output, _ = self.run_cli(['status'])
+        self.assertEqual(code, 0)
+        self.assertIn('Training Studio', output)
+        self.assertIn('Marketing Studio is running an earlier version; stop it with Ctrl-C in its '
+                      'terminal to manage it from here.', output)
+        code, output, _ = self.run_cli(['status', '--json'])
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(output)['earlier_version'])
+
     def test_status_lists_what_is_running_now(self):
         self.busy()
         code, output, _ = self.run_cli(['status'])
@@ -257,6 +310,22 @@ class ManagingTests(Disposable):
         found = json.loads(output)
         self.assertEqual(found['running']['port'], 4321)
         self.assertNotIn(KEY, output)
+
+
+class ForcedStopTests(unittest.TestCase):
+    def test_only_jobs_that_are_gone_are_reported_cut_off(self):
+        first, second = {**JOB, 'pid': 1001}, {**JOB, 'pid': 1002}
+        launcher = mock.Mock()
+        launcher.jobs.return_value = [first, second]
+        launcher.stop.return_value = True
+        with mock.patch.object(session, 'end_jobs', return_value=[first]) as ended:
+            reply = session.stop_studio(launcher, 'blog', force=True)
+        ended.assert_called_once_with([first, second])
+        self.assertEqual(reply, {'stopped': True, 'jobs': [first], 'left': [second]})
+        launcher.reset_mock()
+        with mock.patch.object(session, 'end_jobs', side_effect=AssertionError('Ended jobs')):
+            self.assertIn('error', session.stop_studio(launcher, 'blog', force=False))
+        launcher.stop.assert_not_called()
 
 
 class NothingRunningTests(Disposable):

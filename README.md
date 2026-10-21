@@ -190,6 +190,8 @@ Marketing Studio data folder.
 A studio that is running an assistant job is not stopped or restarted: its work so
 far would be lost. The command names the job and how long it has run, stops
 nothing, and exits with status 1. Wait for the job, or add `--force` to stop it anyway.
+`--force` is only needed while an assistant is working; between steps a run is paused
+safely and resumes when its studio starts again.
 
 If Marketing Studio stopped abruptly and left a studio running, the next start
 stops it, unless it is still running an assistant job; `marketing-studio status`
