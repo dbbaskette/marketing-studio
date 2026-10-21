@@ -474,6 +474,96 @@ class StudioTests(unittest.TestCase):
         self.assertEqual([f['rule'] for f in result['findings']], ['em-dash', 'banished:delve'])
         self.assertEqual(text_checks.lint('A — phrase.', {})['findings'], [])
 
+    def test_passages_carried_over_from_an_example_are_flagged_and_allowed_text_is_not(self):
+        example = (
+            'When we launched Gateway Prime in March, requests dropped by 42 percent and the '
+            'team at Acme Networks saw p99 latency fall to 18 ms. Read the write-up at '
+            'https://example.invalid/launch for the full numbers. The retry budget held.'
+        )
+        draft = (
+            '# Our launch\n\n'
+            'Requests dropped by 42 percent and the team at Acme Networks saw p99 latency fall to 18 ms.\n\n'
+            'As Acme Networks found, the retry budget held: see https://example.invalid/launch.\n\n'
+            'Our own gateway retries twice, as the notes say, and costs 7 dollars a day.\n\n'
+            '> "requests dropped by 42 percent and the team at Acme Networks saw" is quoted.\n\n'
+            '`https://example.invalid/launch` stays in code.\n'
+        )
+        allowed = ['The gateway retries twice. It costs 7 dollars a day. The retry budget held.']
+        result = text_checks.carried_over(draft, [{'name': 'launch', 'text': example}], allowed)
+        findings = result['findings']
+        self.assertTrue(findings)
+        for finding in findings:
+            self.assertEqual(finding['rule'], 'from-example')
+            self.assertEqual(finding['kind'], 'advisory')
+            self.assertEqual(finding['example'], 'launch')
+            self.assertEqual(draft[finding['start'] : finding['end']], finding['target'])
+        targets = [finding['target'] for finding in findings]
+        self.assertTrue(any('42 percent' in target for target in targets), targets)
+        self.assertTrue(any('18 ms' in target for target in targets), targets)
+        self.assertIn('https://example.invalid/launch', targets)
+        self.assertIn('Acme Networks', targets)
+        # An eight-word run the example and the draft share.
+        self.assertTrue(
+            any(
+                len(target.split()) >= 8 and 'latency fall to 18 ms' in target for target in targets
+            ),
+            targets,
+        )
+        # Allowed text is never a finding, and neither are quotations or code spans.
+        self.assertFalse(any('retry budget held' in target for target in targets), targets)
+        self.assertFalse(any('7 dollars' in target for target in targets), targets)
+        self.assertEqual(targets.count('https://example.invalid/launch'), 1)
+        self.assertFalse(any('is quoted' in target for target in targets), targets)
+        self.assertIn('limitations', result)
+        # Nothing to compare with means nothing found, and the work stays bounded.
+        self.assertEqual(text_checks.carried_over(draft, [], allowed)['findings'], [])
+        self.assertEqual(
+            text_checks.carried_over(draft, [{'name': 'x', 'text': ''}], [])['findings'], []
+        )
+        huge = [{'name': 'n' + str(n), 'text': example * 2000} for n in range(70)]
+        self.assertTrue(text_checks.carried_over(draft, huge, allowed)['findings'])
+
+    def test_carried_over_flags_facts_and_quotations_but_not_shared_shape(self):
+        example = (
+            '## Next Steps\n\nIn 2024 and after, 3 of the 10 of our teams moved. Read More below.\n\n'
+            '## Getting Started\n\nWe moved 3 GB a day through Gateway Prime at 40 percent less cost. '
+            '"Every retry has a price, and the budget pays it twice," the on-call lead told us. '
+            'See https://example.invalid/prime.\n'
+        )
+        draft = (
+            '# Launch\n\n## Next Steps\n\nIn 2024 and after, 3 of our 10 of teams moved on. Read More below.\n\n'
+            '## Getting Started\n\nWe ran Gateway Prime, which now moves 3 GB a day at 40 percent less cost, '
+            'and the lead said "Every retry has a price, and the budget pays it twice," which we took '
+            'to heart; see https://example.invalid/prime.\n\n'
+            'Next Steps are listed above. Acme Networks is not here.\n'
+        )
+        targets = [
+            f['target']
+            for f in text_checks.carried_over(draft, [{'name': 'x', 'text': example}], [])[
+                'findings'
+            ]
+        ]
+        for shape in ('2024 and', '3 of', '10 of', 'Next Steps', 'Getting Started', 'Read More'):
+            self.assertFalse(any(shape in t for t in targets), (shape, targets))
+        for fact in (
+            'Gateway Prime',
+            '3 GB',
+            '40 percent',
+            'https://example.invalid/prime',
+            'Every retry has a price',
+        ):
+            self.assertTrue(any(fact in t for t in targets), (fact, targets))
+        # A sentence start is not a name; mid-sentence, a product name is.
+        self.assertFalse(any(t.startswith('Next Steps') for t in targets), targets)
+        self.assertEqual(
+            text_checks.carried_over(
+                'Read Gateway Prime notes.', [{'name': 'x', 'text': example}], []
+            )['findings'][0]['target'],
+            'Gateway Prime',
+        )
+        # Quotations are still protected from the lint rules.
+        self.assertEqual(text_checks.lint('"delve"', {'banished_words': ['delve']})['findings'], [])
+
     def test_fact_tokens_flag_changes_but_are_not_semantic_certification(self):
         before = 'We saved 20 hours. "A quote" https://example.com/source'
         changed = 'We saved 30 hours. "Another quote" https://example.com/other'

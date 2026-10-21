@@ -189,6 +189,77 @@ time.sleep(60)
             with self.assertRaisesRegex(WorkspaceError, 'too long'):
                 self.launcher.prepare(self.preferences, {})
 
+    def test_prepare_reports_each_studios_workspace_and_connect(self):
+        report = {'prepared': True, 'workspace': {'root': '/work/trainings', 'repository': None, 'branch': 'main'},
+                  'connect': {'from': {'root': '/work/trainings'}, 'to': {'repository': '/team.git'},
+                              'carry': {'trainings': 2}}}
+        content = f"import json\nprint('noise')\nprint(json.dumps({report!r}), flush=True)\n"
+        with self.fixture(content), mock.patch('marketing_studio.catalog.STUDIOS', {'training': catalog.STUDIOS['training']}):
+            self.assertEqual(self.launcher.prepare(self.preferences, {}), {'training': report})
+            self.assertEqual(self.launcher.prepare(self.preferences, {}, only='blog'), {})
+
+    def connecting_bridge(self):
+        """A bridge that serves, and when asked to connect reports what it carried."""
+        return """import json, os, sys, time
+handoff = json.loads(os.environ.pop('MARKETING_STUDIO_HANDOFF'))
+if '--connect' in sys.argv:
+    print(json.dumps({'connected': True, 'carried': {'trainings': 1}, 'left': [],
+                      'to': {'repository': handoff['shared']['team']['repository']}}), flush=True)
+    raise SystemExit(0)
+print(json.dumps({'address': 'http://127.0.0.1:12345/'}), flush=True)
+time.sleep(60)
+"""
+
+    def test_connect_relays_the_report_and_stops_an_idle_studio_first(self):
+        shared = {'team': {'repository': '/team.git', 'branch': 'main'}}
+        with self.fixture(self.connecting_bridge()):
+            found = self.launcher.connect('training', self.preferences, shared)
+            self.assertEqual((found['connected'], found['carried'], found['stopped'], found['name']),
+                             (True, {'trainings': 1}, False, 'Training Studio'))
+            self.assertEqual(found['to'], {'repository': '/team.git'})
+            self.launcher.open('training', self.preferences, shared)
+            process = self.launcher.children['training'][0]
+            if PS:
+                found = self.launcher.connect('training', self.preferences, shared)
+                self.assertTrue(found['stopped'])
+                self.assertIsNotNone(process.poll())
+                self.assertFalse(self.launcher.running('training'))
+            else:
+                # Without a process list nobody can say whether it works on a job: it stays.
+                with self.assertRaisesRegex(WorkspaceError, 'cannot say whether'):
+                    self.launcher.connect('training', self.preferences, shared)
+                self.assertTrue(self.launcher.running('training'))
+            with self.assertRaises(WorkspaceError):
+                self.launcher.connect('other', self.preferences, shared)
+            with mock.patch.dict(os.environ, {'BLOG_STUDIO_INSTALL': str(self.root / 'missing')}):
+                with self.assertRaisesRegex(WorkspaceError, 'not found'):
+                    self.launcher.connect('blog', self.preferences, shared)
+
+    @unittest.skipUnless(PS, 'Listing processes is not permitted here.')
+    def test_connect_refuses_a_studio_with_a_running_job(self):
+        with self.fixture(self.busy_bridge()):
+            self.launcher.open('training', self.preferences, {})
+            self.assertTrue(waited(lambda: self.launcher.jobs('training')))
+            with self.assertRaisesRegex(WorkspaceError, 'is working: codex job'):
+                self.launcher.connect('training', self.preferences, {})
+            self.assertTrue(self.launcher.running('training'))
+
+    def test_connect_refuses_a_running_studio_when_no_process_list_can_say(self):
+        with self.fixture(self.connecting_bridge()):
+            self.launcher.open('training', self.preferences, {})
+            with mock.patch.object(launching.subprocess, 'run', side_effect=FileNotFoundError('ps')):
+                with self.assertRaisesRegex(WorkspaceError, 'cannot say whether it is working.*stop --ts'):
+                    self.launcher.connect('training', self.preferences, {})
+            self.assertTrue(self.launcher.running('training'))
+
+    def test_connect_failure_and_delay_name_the_studio(self):
+        with self.fixture("import json\nprint(json.dumps({'error':'Git identity needed'}), flush=True)\nraise SystemExit(2)\n"):
+            with self.assertRaisesRegex(WorkspaceError, 'Training Studio: Git identity needed'):
+                self.launcher.connect('training', self.preferences, {})
+        with self.fixture('import time\ntime.sleep(60)\n'), mock.patch('marketing_studio.launcher.CONNECT_TIMEOUT', .1):
+            with self.assertRaisesRegex(WorkspaceError, 'too long'):
+                self.launcher.connect('training', self.preferences, {})
+
     def test_pid_file_is_written_and_removed(self):
         record = self.root / 'data/run/training.json'
         with self.fixture(SLEEPER):

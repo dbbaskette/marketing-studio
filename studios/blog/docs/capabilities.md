@@ -8,6 +8,7 @@ it does not claim every low-level CLI flag is a browser control.
 | User task | Page | Skill/CLI contract |
 | --- | --- | --- |
 | Write, outline, explore ideas, use an outline | Home | Guided runs, `run` |
+| New blog from files: each file's role, three angles or the point, Write as | Home → New blog from my files | `upload` entries with `purpose`, `source-role`, `run create --mode from-files [--point]`, `examples` in the worker payload, the `from-example` check |
 | Import Google Doc, local Word/Markdown/text | Polish a document | Google start/capture, source/article intake |
 | Polish, proofread, humanize, fact check, revise | Manuscript → Polish | Located editor review, article reviews |
 | Choose/adjust edits and comments; save locally | Choose changes → Finish | Version-bound editor proposals and draft save |

@@ -254,6 +254,31 @@ const drawings = {
   presentation: '<path d="M3 5h20v14H3zM13 19v5M8 24h10M7 14l4-4 4 3 4-5"/>',
   training: '<path d="m2 9 11-5 11 5-11 5zM6 12v7c4 3 10 3 14 0v-7M24 9v10"/>'
 };
+// What a Connect action did, in one message that stays on the page.
+function connectedWords(done) {
+  const to = done.to?.repository ? `${done.to.repository} (${done.to.branch})` : `local Git at ${done.to?.root}`;
+  if (done.already) return `${done.name} is already connected to ${to}.`;
+  const counts = Object.entries(done.carried || {}).filter(([, count]) => count).map(([noun, count]) => `${count} ${count === 1 ? noun.replace(/s$/, '') : noun}`);
+  let text = `${done.name} is connected to ${to}. ${counts.length ? `Carried over: ${counts.join(', ')}.` : 'There was nothing to carry over.'}`;
+  if (done.left?.length) text += ` Left where it was: ${done.left.map(item => `${item.id} (${item.why})`).join('; ')}`;
+  if (done.from?.root) text += ` Your earlier workspace stays at ${done.from.root}.`;
+  if (done.notice) text += ` ${done.notice}`;
+  if (done.stopped) text += ` ${done.name} was stopped to connect it; open it again.`;
+  return text;
+}
+// What preparing the studios said that should stay on the page: a join whose first push was refused.
+function showNotices() {
+  const studioName = id => snapshot.studios.find(studio => studio.id === id)?.name || id;
+  const notices = Object.entries(snapshot.prepared || {}).filter(([, result]) => result.notice).map(([id, result]) => `${studioName(id)}: ${result.notice}`);
+  if (snapshot.prepare_problem) inform(snapshot.prepare_problem, true);
+  if (!notices.length) return;
+  const message = $('#message'); message.textContent = notices.join(' '); message.hidden = false;
+}
+function savedWords() {
+  const names = Object.entries(snapshot.prepared || {}).filter(([, result]) => result.connect).map(([id]) => snapshot.studios.find(studio => studio.id === id)?.name).filter(Boolean);
+  showNotices();
+  return names.length ? `Shared settings saved. Connect ${names.join(' and ')} from the studio cards to use the new storage.` : 'Shared settings saved.';
+}
 function renderHome() {
   const list = $('#studio-list'); list.replaceChildren();
   for (const studio of snapshot.studios) {
@@ -265,6 +290,28 @@ function renderHome() {
     card.append(icon, element('h3', studio.name, 'studio-name'), element('p', studio.description, 'studio-says'));
     const status = element('p', studio.running ? 'Running' : studio.installed ? `Ready${studio.version ? ` · ${studio.version}` : ''}` : 'Not installed', 'studio-status');
     status.dataset.running = String(studio.running); card.append(status);
+    const link = studio.workspace;
+    if (link) {
+      // Where its work lives, read from the studio's own records.
+      const line = element('p', '', 'studio-link');
+      line.append(stateLine(link.state === 'connected' ? 'done' : link.state === 'disconnected' ? 'review' : 'none', link.summary));
+      if (link.detail) line.append(element('span', link.detail, 'studio-link-detail quiet'));
+      card.append(line);
+    }
+    if (studio.installed && link?.connect) {
+      const connect = element('button', 'Connect', 'button studio-connect'); connect.type = 'button';
+      connect.setAttribute('aria-label', `Connect ${studio.name} to the shared storage`);
+      connect.addEventListener('click', async () => {
+        connect.disabled = true; connect.textContent = 'Connecting…'; $('#problem').hidden = true; $('#message').hidden = true;
+        try {
+          snapshot = await api('connect', {studio: studio.id});
+          const done = snapshot.connected; renderHome();
+          const message = $('#message'); message.textContent = connectedWords(done); message.hidden = false;
+          $(`#studio-list [data-studio="${studio.id}"] .button`)?.focus();
+        } catch (error) { inform(error.message, true); connect.disabled = false; connect.textContent = 'Connect'; }
+      });
+      card.append(connect);
+    }
     if (studio.installed) {
       const label = studio.running ? `Return to ${studio.name}` : `Open ${studio.name}`;
       const button = element('button', label, 'button button-filled');
@@ -358,8 +405,8 @@ form.addEventListener('submit', async event => {
   try {
     const changes = changesForStep(); snapshot = await api('shared', {changes, seen: snapshot.shared});
     if (setup && step < 2) { step++; show('settings'); }
-    else if (setup) { snapshot = await api('setup', {done: true, prepare: true}); if (standalone) return openNative(); setup = false; renderHome(); show('home'); inform('Your studios are ready.'); }
-    else { if (standalone) { await api('setup', {done: true}); return openNative(); } fill(); renderHome(); inform('Shared settings saved.'); }
+    else if (setup) { snapshot = await api('setup', {done: true, prepare: true}); if (standalone) return openNative(); setup = false; renderHome(); show('home'); showNotices(); inform('Your studios are ready.'); }
+    else { if (standalone) { await api('setup', {done: true}); return openNative(); } fill(); renderHome(); inform(savedWords()); }
   } catch (error) { inform(error.message, true); }
   finally { $('#save').disabled = false; }
 });

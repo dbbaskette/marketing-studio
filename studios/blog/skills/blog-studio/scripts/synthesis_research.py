@@ -10,6 +10,17 @@ from urllib.parse import urlsplit
 from studio_core import model_profiles, research_contract
 
 
+def offered(source):
+    """Whether research reads a selected source: a readable reference or uploaded file,
+    never an example of the kind of post, which shows a shape and supplies no facts."""
+    purposes = source['purposes']
+    return (
+        ('reference' in purposes or 'material' in purposes)
+        and 'inspiration' not in purposes
+        and source['status'] == 'ready'
+    )
+
+
 def generate(directory, run, payload, worker, *, seconds, stop):
     import blog_library
     from performance import extract
@@ -58,7 +69,7 @@ def generate(directory, run, payload, worker, *, seconds, stop):
             )
 
         for source in payload['sources']:
-            if 'reference' in source['purposes'] and source['status'] == 'ready':
+            if offered(source):
                 capture(
                     'sources/' + source['id'] + '.txt',
                     source['origin'],

@@ -89,7 +89,7 @@ async function check(){
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','write from my files: one screen, per-file text, angle picks and none of these','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -1037,13 +1037,48 @@ async function contextualTools(){
 // without stopping, and a phone keeps one decision in the toolbar.
 async function sharedPattern(){
   const requests=[];const found={id:'synthetic',title:'Synthetic blog',status:'working',next:'draft',approval:'page',expected:'version-1',enabled:true,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},started_at:new Date(Date.now()-3*60000).toISOString(),note_stage:'review',notes:{},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'},{stage:'review',label:'Review',path:'REVIEW.md',status:'pending'}]};
-  const f=fixture((url,options)=>{requests.push({url,options,data:options?.body?JSON.parse(options.body):null});return url.startsWith('/api/run?')?found:{...found,noted:'draft'};});f.loadRunner();
+  const f=fixture((url,options)=>{requests.push({url,options,data:options?.body?JSON.parse(options.body):null});if(url==='/api/upload')return f.run('studio.api_upload');if(url==='/api/run-create')return found;return url.startsWith('/api/run?')?found:{...found,noted:'draft'};});f.loadRunner();
   const text=()=>descendants(f.get('studio-page')).map(e=>e.textContent);
   // The start form: one line says where this run stops, from the shared review level.
   const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
   f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[],profiles:[],agents:{codex:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'draft',minutes:'10',operation:'a'.repeat(32)};sWizard()");
   assert.ok(text().some(t=>t==='Balanced: it stops for the outline and the draft'),'the stops line follows the review level and the pipeline: '+text().join('|'));
+  {assert.equal(descendants(f.get('studio-page')).some(e=>e.id==='new-profile'),false,'the voice is chosen on the first step, not the second');
+   const tone=descendants(f.get('studio-page')).find(e=>e.id==='new-tone');let node=tone,inside=null;while(node){if(node.tagName==='details'&&!inside)inside=node;node=node.parent;}assert.ok(inside,'the tone stays in a disclosure');
+   assert.ok(descendants(inside).some(e=>e.textContent==='Tone, author and brand'),'the Tone, author and brand disclosure');
+   f.run("studio.draft.step=0;sWizard()");
+   const voice=descendants(f.get('studio-page')).find(e=>e.id==='new-profile');assert.ok(voice,'the first step chooses the voice');node=voice;let hidden=false;while(node){if(node.tagName==='details')hidden=true;node=node.parent;}assert.equal(hidden,false,'Write as is visible without opening a disclosure');
+   assert.equal(descendants(f.get('studio-page')).find(e=>e.tagName==='label'&&e.htmlFor==='new-profile').textContent,'Write as');assert.deepEqual(voice.children.map(o=>o.textContent),['No particular voice (use the described tone)','Learn a new voice…'],'without saved profiles, only no particular voice');
+   f.run("studio.options.profiles=[{id:'p1',name:'Avery',status:'confirmed'},{id:'p2',name:'Sam',status:'provisional'}];studio.options.default_voice={scope:'personal',profile:'p1',name:'Avery',revision:3,status:'confirmed'};studio.draft.profile=null;sWizard()");
+   assert.deepEqual(descendants(f.get('studio-page')).find(e=>e.id==='new-profile').children.map(o=>[o.value,o.textContent]),[['*default','My voice — Avery · confirmed'],['p2','Sam · provisional'],['','No particular voice (use the described tone)'],['*learn','Learn a new voice…']]);
+   f.run("studio.options.profiles=[];studio.options.default_voice=null;studio.draft.profile='';studio.draft.step=1;sWizard()");}
+  f.run("studio.options.settings.review_level='balanced';studio.draft.mode='from-outline';studio.draft.stop='package';sWizard()");
+  assert.ok(text().some(t=>t==='Balanced: it stops for the draft and the export package'),'Balanced reads the first writing stage a run has: '+text().join('|'));
+  f.run("studio.draft.mode='write';studio.draft.stop='draft';sWizard()");
   const change=descendants(f.get('studio-page')).find(e=>e.tagName==='a'&&e.textContent==='Change');assert.equal(change.href,'/onboarding/#fixture');
+  // The second step takes every file at once and lists each one with its text and role; the old one-at-a-time input is gone.
+  {const nodes=()=>descendants(f.get('studio-page')),byId=id=>nodes().find(e=>e.id===id);
+   assert.equal(nodes().some(e=>e.textContent==='Add a document'),false,'no single-file upload on the wizard');
+   const picker=byId('files-input');assert.ok(picker,'the wizard has the files picker');assert.equal(picker.multiple,true);
+   assert.ok(byId('files-role'),'and asks what the files are for');assert.ok(byId('files-google'),'and takes a Google Doc');
+   let node=picker,inside=false;while(node){if(node.tagName==='details')inside=true;node=node.parent;}assert.equal(inside,false,'the files card is in plain view, not inside a disclosure');
+   f.set('uploadedTwo',{files:[{filename:'messaging.md',source:{id:'m1',name:'messaging'},state:'ready',chars:900,note:''},{filename:'old-post.md',source:{id:'m2',name:'old post'},state:'ready',chars:2100,note:''}],receipts:[],state:'saved',next_step:'Every file has text.'});
+   f.run("studio.api_upload=uploadedTwo");
+   picker.files=[{name:'messaging.md',size:9,arrayBuffer:async()=>new TextEncoder().encode('Messaging').buffer},{name:'old-post.md',size:8,arrayBuffer:async()=>new TextEncoder().encode('Old post').buffer}];
+   await picker.listeners.change();
+   const upload=requests.filter(r=>r.url==='/api/upload');assert.equal(upload.length,1,'both files go up in one request');
+   assert.deepEqual(upload[0].data.files.map(e=>e.filename),['messaging.md','old-post.md']);assert.equal(upload[0].data.purpose,'material');assert.equal(upload[0].data.keep,false);
+   const titles=nodes().filter(e=>e.className==='row-title').map(e=>e.textContent);assert.deepEqual(titles,['messaging.md','old-post.md'],'every added file is listed: '+titles.join('|'));
+   assert.ok(text().some(t=>/900 characters/.test(t))&&text().some(t=>/2,100 characters/.test(t)),'each with how much text it has');
+   assert.ok(byId('files-role-m1')&&byId('files-role-m2'),'each with its role');
+   assert.equal(f.run('studio.busy'),false,'the screen is free again after the upload');
+   assert.ok(text().some(t=>t==='Balanced: it stops for the outline and the draft'),'with no research chosen the stops are unchanged: '+text().join('|'));
+   f.run("studio.options.settings.review_level='step_by_step';studio.draft.research='supplied-only';sWizard()");
+   assert.ok(text().some(t=>t==='Step by step: it stops for the research plan, the research findings, the outline and the draft'),'selected sources research counts the files: '+text().join('|'));
+   f.run("studio.options.settings.review_level='balanced';studio.draft.research='none';sWizard()");
+   await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+   const created=requests.find(r=>r.url==='/api/run-create');assert.ok(created,'Start writing creates the run');assert.deepEqual(created.data.sources,['m1','m2'],'the files are the run\'s sources');
+   f.run("studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'draft',minutes:'10',operation:'a'.repeat(32)};sWizard()");}
   assert.equal(descendants(f.get('studio-page')).some(e=>['new-engine','new-minutes'].includes(e.id)),false,'the assistant and time limit are defaults, not per-blog decisions');
   f.run("studio.options.settings.review_level='automatic';studio.draft.mode='ideas';sWizard()");
   assert.ok(text().some(t=>t==='Automatic draft: it stops for the ideas'),text().join('|'));
@@ -1093,47 +1128,86 @@ async function sharedPattern(){
 
 // A real finish: the final stop shows the draft open with Finish, a finished run has a Done
 // card, Delete asks for the typed title and says what is running stops, Blogs lists what was
-// Write from my files: one screen uploads every file at once and says what each has,
+// New blog from my files: one screen uploads every file at once with its role and says what each has,
 // the run starts from the readable ones, and the angles gate offers picks or none of these.
 async function filesJourney(){
-  const requests=[];
+  const requests=[];let refuseRole=false;
   const defaults={engine:'codex',seconds:600,research:'supplied-only',stop:'package',tone:'Clear',author:''};
   const uploaded={files:[{filename:'notes.md',source:{id:'s1',name:'notes'},state:'ready',chars:1200,note:''},{filename:'scan.pdf',source:{id:'s2',name:'scan'},state:'pending',chars:0,note:'This computer has no PDF reader (pdftotext), so this PDF needs text.'}],receipts:[],state:'saved',next_step:'1 of 2 files have text.'};
   const found={id:'files',title:'From my files',status:'queued',next:'angles',approval:'page',expected:'a1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',mode:'from-files',review_level:'balanced',decisions:[],brief:{goal:'A team post',audience:'To be chosen with the angle.'},stages:[{stage:'angles',label:'Angles',path:'derived/blog-angles.md',status:'pending'}],excerpted:[]};
   const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});
-    if(url==='/api/run-options')return {settings:{defaults,review_level:'balanced'},sources:[],profiles:[],default_voice:{scope:'personal',profile:'mine',name:'Synthetic Author',revision:1,status:'confirmed'},agents:{codex:true}};
+    if(url==='/api/run-options')return {settings:{defaults,review_level:'balanced'},sources:[],profiles:[{id:'p1',name:'Avery',status:'confirmed'},{id:'p2',name:'Sam',status:'provisional'}],default_voice:{scope:'personal',profile:'p1',name:'Avery',revision:3,status:'confirmed'},agents:{codex:true}};
+    if(url==='/api/source-role'&&refuseRole)return {__http:400,error:'A started blog read this file as facts; its role stays.'};
     if(url==='/api/upload')return (JSON.parse(options.body).files||[]).some(e=>e.google)?{files:[{filename:'Messaging Doc',source:{id:'s9',name:'Messaging Doc'},state:'ready',chars:4200,note:'',link:'https://docs.google.com/document/d/abc/edit'}]}:uploaded;
+    if(url==='/api/source-role')return {id:JSON.parse(options.body).id,role:JSON.parse(options.body).role};
     if(url==='/api/run-create'||url.startsWith('/api/run?'))return found;
     if(url.startsWith('/api/run-'))return found;
     return {items:[],total:0};});
   f.loadRunner();f.run('sHome()');
   const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),byId=id=>nodes().find(e=>e.id===id);
-  const card=nodes().find(e=>e.className==='pick-card'&&e.textContent==='Write from my files');
-  assert.ok(card,'Home offers Write from my files: '+text().join('|'));
+  const card=nodes().find(e=>e.className==='pick-card'&&e.textContent==='New blog from my files');
+  assert.ok(card,'Home offers New blog from my files: '+text().join('|'));
+  assert.ok(descendants(card).some(e=>/say what each file is for; then find angles, or give the point/.test(e.textContent)),'the card says what the screen does');
   await card.listeners.click();
-  assert.equal(f.get('title').textContent,'Write from my files');
+  assert.equal(f.get('title').textContent,'New blog from my files');
   const picker=byId('files-input');
   assert.equal(picker.type,'file');assert.equal(picker.multiple,true);assert.match(picker.accept,/\.pdf/);
   assert.ok(byId('files-goal'),'one optional line: what is this for');
   assert.equal(byId('files-web').checked,false,'web research is off by default');
   assert.equal(byId('files-keep').checked,false,'files are not kept in the references by default');
-  assert.ok(text().includes('Writes as Synthetic Author · confirmed'),'the default voice is named, without a choice to make');
   assert.equal(nodes().some(e=>e.id==='new-profile'),false);
   const start=()=>nodes().find(e=>e.type==='submit');
   assert.equal(start().disabled,true,'nothing to start before a file has text');
+  assert.equal(start().textContent,'Find three angles');
   assert.ok(text().some(t=>/stops for the angles/.test(t)),'the stops line names the angles: '+text().join('|'));
-  // Every chosen file goes up in one request, as material.
+  // Each upload says what the files are for: facts by default, or an example of the kind of post.
+  const role=()=>byId('files-role');
+  assert.equal(role().tagName,'select');assert.equal(role().value,'material');
+  assert.deepEqual(role().children.map(o=>[o.value,o.textContent]),[['material','Facts (may be quoted)'],['inspiration','Example of the kind of post']]);
+  // Write as: the same choice as the wizard's first step. My voice is the default voice, a
+  // provisional profile says so, and no particular voice shows the tone.
+  const voice=()=>byId('files-voice');
+  assert.equal(nodes().find(e=>e.tagName==='label'&&e.htmlFor==='files-voice').textContent,'Write as');
+  assert.equal(voice().value,'*default','My voice, the personal default voice, is chosen first');
+  assert.deepEqual(voice().children.map(o=>[o.value,o.textContent]),[['*default','My voice — Avery · confirmed'],['p2','Sam · provisional'],['','No particular voice (use the described tone)'],['*learn','Learn a new voice…']]);
+  assert.equal(byId('files-tone'),undefined,'a chosen voice needs no tone');
+  voice().value='';voice().listeners.change();
+  assert.ok(byId('files-tone'),'no particular voice: the tone field appears');
+  voice().value='*default';voice().listeners.change();
+  assert.equal(byId('files-tone'),undefined);
+  // Every chosen file goes up in one request, as material, each with its role.
   picker.files=[{name:'notes.md',size:12,arrayBuffer:async()=>new TextEncoder().encode('Notes words.').buffer},{name:'scan.pdf',size:4,arrayBuffer:async()=>new TextEncoder().encode('%PDF').buffer}];
   await picker.listeners.change();
   const upload=requests.filter(r=>r.url==='/api/upload');
   assert.equal(upload.length,1);
   assert.deepEqual(upload[0].data.files.map(e=>e.filename),['notes.md','scan.pdf']);
+  assert.deepEqual(upload[0].data.files.map(e=>e.purpose),['material','material']);
   assert.equal(upload[0].data.purpose,'material');assert.equal(upload[0].data.keep,false);assert.equal(upload[0].data.analyze,false);
   assert.match(upload[0].data.operation,/^[0-9a-f]{32}$/);
   assert.ok(text().some(t=>/1,200 characters/.test(t)),'each file shows its extracted size: '+text().join('|'));
   assert.ok(text().some(t=>/Needs text/.test(t)),'a file without text says so');
   assert.ok(text().some(t=>/no PDF reader/.test(t)),'and why');
   assert.equal(start().disabled,false);
+  // A file's role can change until Start: the row's select calls source-role.
+  const rowRole=()=>byId('files-role-s1');
+  assert.equal(rowRole().value,'material');
+  rowRole().value='inspiration';await rowRole().listeners.change();
+  assert.deepEqual(requests.find(r=>r.url==='/api/source-role').data,{id:'s1',role:'example'});
+  assert.equal(byId('files-role-s1').value,'inspiration','the row keeps the new role');
+  byId('files-role-s1').value='material';await byId('files-role-s1').listeners.change();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/source-role').at(-1).data,{id:'s1',role:'facts'});
+  assert.equal(f.run('studio.busy'),false,'the screen is free again after a role change');assert.equal(start().disabled,false);
+  // A refused role change goes back to what it was and says why.
+  refuseRole=true;byId('files-role-s1').value='inspiration';await byId('files-role-s1').listeners.change();refuseRole=false;
+  assert.equal(byId('files-role-s1').value,'material','the row shows the role the file kept');
+  assert.ok(text().some(t=>/its role stays/.test(t)),'and says why: '+text().join('|'));
+  assert.equal(f.run('studio.busy'),false);assert.equal(start().disabled,false);
+  // Example files go up with inspiration; the select applies to the next upload.
+  role().value='inspiration';role().listeners.change();
+  byId('files-input').files=[{name:'earlier.md',size:4,arrayBuffer:async()=>new TextEncoder().encode('Post').buffer}];
+  await byId('files-input').listeners.change();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/upload').at(-1).data.files.map(e=>e.purpose),['inspiration']);
+  byId('files-role').value='material';byId('files-role').listeners.change();
   // Keep applies to the files added after it is ticked.
   byId('files-keep').checked=true;byId('files-keep').listeners.change();
   byId('files-input').files=[{name:'more.md',size:4,arrayBuffer:async()=>new TextEncoder().encode('More').buffer}];
@@ -1159,7 +1233,7 @@ async function filesJourney(){
   byId('files-google').value='https://docs.google.com/document/d/abc/edit';
   await docAdd().listeners.click();
   assert.equal(asked().length,1);
-  assert.deepEqual(asked()[0].data.files,[{google:'https://docs.google.com/document/d/abc/edit'}]);
+  assert.deepEqual(asked()[0].data.files,[{google:'https://docs.google.com/document/d/abc/edit',purpose:'material'}],'a Doc has a role too');
   assert.equal(asked()[0].data.purpose,'material');assert.match(asked()[0].data.operation,/^[0-9a-f]{32}$/);
   assert.ok(text().some(t=>/^Messaging Doc$/.test(t)),'the Doc is listed by its title: '+text().join('|'));
   assert.ok(text().some(t=>/Google Doc · 4,200 characters/.test(t)),'with how much text it has');
@@ -1173,6 +1247,26 @@ async function filesJourney(){
   assert.equal(creation.mode,'from-files');assert.equal(creation.research,'web-allowed');assert.equal(creation.goal,'A team post');
   assert.deepEqual(creation.sources,['s1','s9'],'only files with text are pinned, once, the Google Doc among them');
   assert.equal(creation.title,'');assert.equal(creation.stop,'package');
+  assert.equal(creation.point,false);assert.equal(creation.profile,'p1','Write as reaches the run');assert.equal(creation.revision,3,'My voice writes with the default voice\'s pinned revision');
+  // I know the point: a title, the point and the reader; the run starts at the outline.
+  f.run("studio.screen='new';studio.draft={...studio.options.settings.defaults,mode:'from-files',research:'supplied-only',stop:'package',files:[{id:'s1',filename:'notes.md',state:'ready',chars:1200,note:'',link:'',role:'material'}],web:false,keep:false,profile:'p1',tone:'',goal:'',title:'',audience:'',sources:[],minutes:'10',operation:'b'.repeat(32)};sWizard()");
+  const how=()=>nodes().find(e=>e.attributes['aria-label']==='How to start');
+  assert.deepEqual(how().children.filter(e=>e.tagName==='button').map(e=>e.textContent),['Find three angles','I know the point']);
+  assert.equal(byId('files-title'),undefined,'the angles path asks for no title');
+  await how().children.find(e=>e.textContent==='I know the point').listeners.click();
+  assert.ok(byId('files-title')&&byId('files-point')&&byId('files-audience'),'the point path asks for the title, the point and the reader: '+text().join('|'));
+  assert.equal(byId('files-goal'),undefined);
+  assert.equal(start().textContent,'Start writing');
+  assert.ok(text().some(t=>/^Balanced: it stops for the outline and the export package$/.test(t)),'no angles on the point path: '+text().join('|'));
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.ok(text().some(t=>/title, the point/.test(t)),'an empty point is refused on the page: '+text().join('|'));
+  assert.equal(requests.filter(r=>r.url==='/api/run-create').length,1);
+  byId('files-title').value='Announcing the gateway';byId('files-title').listeners.input();
+  byId('files-point').value='It is generally available.';byId('files-point').listeners.input();
+  byId('files-audience').value='Platform engineers';byId('files-audience').listeners.input();
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const pointed=requests.filter(r=>r.url==='/api/run-create').at(-1).data;
+  assert.equal(pointed.point,true);assert.equal(pointed.revision,3);assert.equal(pointed.title,'Announcing the gateway');assert.equal(pointed.goal,'It is generally available.');assert.equal(pointed.audience,'Platform engineers');assert.equal(pointed.mode,'from-files');
   // The angles gate: picks, a note, or none of these.
   const waiting={...found,status:'waiting-for-approval',expected:'a2',stages:[{...found.stages[0],status:'draft'}],excerpted:['notes']};
   const shown={id:'files',title:'From my files',name:'blog-angles.md',stage:'angles',label:'Angles',expected:'a2',status:'draft',content:'# Angles\n\n## Retries are a budget\n\nPlatform engineers · Retries cost · Leans on notes.md\n\n## The gateway is a contract\n\nAPI authors · The contract · Leans on notes.md\n\n## Fewer hops\n\nTeam leads · Hops · Leans on notes.md',notes:'',checks:[],previous:null,diff:[],bundle:[]};
@@ -1180,6 +1274,13 @@ async function filesJourney(){
   f.run("studio.screen='gate';studio.found=waiting;sGate(waiting,shown)");
   const actions=()=>f.get('actions').children.map(e=>e.textContent);
   assert.ok(actions().includes('Choose an angle'),actions().join('|'));assert.ok(actions().includes('None of these'),actions().join('|'));
+  // Checked for you lists the passages a check found, under the check.
+  f.set('copied',{...shown,checks:[{label:'Carried over from an example',passed:false,detail:['42 percent','https://example.invalid/launch']}]});
+  f.run("sGate(waiting,copied)");
+  const items=nodes().filter(e=>e.className==='check-detail quiet');
+  assert.equal(items.length,1,'one detail list for the failing check');
+  assert.deepEqual(items[0].children.map(e=>e.textContent),['42 percent','https://example.invalid/launch']);
+  f.run("sGate(waiting,shown)");
   assert.ok(!actions().some(t=>/Save ideas|Use this|Finish/.test(t)),actions().join('|'));
   assert.ok(text().some(t=>/notes was excerpted|excerpted/.test(t)),'the gate says which files were excerpted: '+text().join('|'));
   const sheet=()=>descendants(f.get('sheet'));
@@ -1407,7 +1508,13 @@ async function wizardVoiceAndKind(){
   assert.equal(nodes().some(e=>e.id==='new-profile'),false,'the voice is chosen once, on the first step');
   await submit();
   let sent=requests.filter(r=>r.url==='/api/run-create').at(-1).data;
-  assert.equal(Object.hasOwn(sent,'profile'),false,'My voice sends no profile, so the default voice applies');assert.equal(sent.tone,'Clear');assert.equal(sent.style,'');
+  assert.equal(sent.profile,'mine','My voice sends the personal default voice');assert.equal(sent.revision,2,'at the revision the default pins');assert.equal(sent.tone,'Clear');assert.equal(sent.style,'');
+  // A team default voice has no local profile: nothing is sent, and the server applies it.
+  options={...options,default_voice:{scope:'team',profile:null,name:'Team Voice',revision:'d'.repeat(32),status:'confirmed'}};
+  await f.run("newBlog('',null,'write')");fill();
+  assert.equal(chosen('new-profile'),'My voice — Team Voice · confirmed');
+  sent=await start();assert.equal(Object.hasOwn(sent,'profile'),false,'a team default voice sends no profile');assert.equal(Object.hasOwn(sent,'revision'),false,'nor a revision');
+  options={...options,default_voice:mine};
   // A chosen voice and kind are sent as chosen.
   await f.run("newBlog('',null,'write')");fill();choose('new-profile','Guest Writer · provisional');choose('new-style','Field notes · provisional');
   sent=await start();assert.equal(sent.profile,'guest');assert.equal(sent.style,'field-notes');

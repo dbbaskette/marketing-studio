@@ -138,8 +138,8 @@ team tools** and **Settings**.
 
 **Write as** offers your default voice, another saved voice, no particular voice (the
 tone you describe), or **Learn a new voice…**. A manuscript you revise or review keeps its
-own voice unless you pick one, and **Write from my files** uses your default voice when
-one is set. The tone you give is kept as a nudge beside a voice, unless it is just your
+own voice unless you pick one, and **New blog from my files** offers the same **Write as**.
+Your personal default voice is pinned at the revision it names. The tone you give is kept as a nudge beside a voice, unless it is just your
 usual default. **Change the voice** on a blog switches its voice for what comes next;
 it asks once when the blog already has writing, since its reviews will need a new look.
 Nothing is rewritten, and the blog's history records the change.

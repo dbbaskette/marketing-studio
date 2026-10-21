@@ -67,10 +67,12 @@ def held(findings=(), blockers=()):
     return kept
 
 
-def automatic(record, product, gate, last=None, holding=()):
+def automatic(record, product, gate, last=None, holding=(), first='outline'):
     """Whether the saved level accepts `gate` without the person. Never while `holding`, what
     `held()` found still open, has anything in it. A Training Studio gate may carry its
-    level, as `gate:deck@101`: the policy reads the gate without it."""
+    level, as `gate:deck@101`: the policy reads the gate without it. A blog under Balanced
+    stops at `first`, its first writing stage (the outline when it has one, else the draft),
+    and at `last`."""
     chosen = level(record)
     if chosen == 'step_by_step' or holding:
         return False
@@ -84,7 +86,7 @@ def automatic(record, product, gate, last=None, holding=()):
         return gate not in (('gate:outline', 'gate:build', 'rehearse') if chosen == 'balanced'
                             else ('gate:build', 'rehearse'))
     if product == 'blog':
-        return gate not in (('outline', last) if chosen == 'balanced' else (last,))
+        return gate not in ((first, last) if chosen == 'balanced' else (last,))
     if product == 'training':
         base = gate.partition('@')[0]
         # Balanced reads the research plan: a short read, and the cheapest decision there is.

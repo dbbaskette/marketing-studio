@@ -28,6 +28,27 @@ changes for authors first, then what changes for maintainers.
   in a team workspace), starters are copied in only when saved, retired or used, and
   `library voice-links` takes `--purpose style-sample`. `run create` applies the default
   voice without `--profile`, `--profile ''` asks for none, and `--style <id>` pins a style.
+- **Write from a brief** takes every file at once, like New blog from my files: the
+  second step lists each file with how much text it has and what it is for, takes a
+  Google Doc beside them, and keeps the saved references and research choice in their
+  own disclosure. Files stay with the blog unless you keep them in your references.
+  Oversized files are excerpted on every path, and a blog pins the files it was given
+  so a deletion keeps them with it.
+- **New blog from my files** asks what each upload is for: facts that may be quoted,
+  or an example of the kind of post. Examples reach the assistant apart from the
+  sources, with no citable ID; research never reads them; the draft and review say
+  which passages were carried over from one, under **Checked for you**.
+- **I know the point** starts a blog from files at the outline, from a title, the
+  point and the reader, instead of three angles. **Write as** chooses the voice on
+  the files screen as on the wizard's first step: your default voice, at the revision
+  it pins, a saved profile or none.
+- Under Balanced, a blog that starts from your outline stops for you at the draft
+  before its package; so does a revision, and an existing blog after changes to its draft.
+  A run that selected an inspiration source before this change goes stale, because
+  its saved input pins change; review its saved version or ask for changes to go on.
+- For maintainers: `upload` file entries take `purpose`; the `source-role` desk route;
+  `run create --point`; `run-create` takes `revision` beside `profile`; `review_policy.automatic(..., first=)`;
+  `text_checks.carried_over`; `synthesis_research.offered`.
 
 ## 4.3.0 — 2026-10-20
 

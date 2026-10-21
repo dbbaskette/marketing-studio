@@ -5,7 +5,7 @@ Generated from `studio.py`; use `--help` on a listed command for required inputs
 | Command | Options |
 | --- | --- |
 | `studio.py run` | — |
-| `studio.py run create` | `--title`, `--author`, `--audience`, `--goal`, `--tone`, `--profile`, `--style`, `--id`, `--brand`, `--variant`, `--research`, `--stop`, `--engine`, `--seconds`, `--source`, `--mode`, `--manuscript`, `--outline-text` |
+| `studio.py run create` | `--title`, `--author`, `--audience`, `--goal`, `--tone`, `--profile`, `--style`, `--id`, `--brand`, `--variant`, `--research`, `--stop`, `--engine`, `--seconds`, `--source`, `--mode`, `--manuscript`, `--outline-text`, `--point` |
 | `studio.py run list` | — |
 | `studio.py run status` | `--id` |
 | `studio.py run submit` | `--id`, `--expected`, `--stage`, `--file`, `--notes` |

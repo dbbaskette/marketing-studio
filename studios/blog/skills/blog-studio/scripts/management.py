@@ -407,7 +407,7 @@ def save_upload(root, staging, checked, purpose, author=None, analyze=True):
                 content=checked['text'],
                 text_file=None,
                 origin=checked.get('origin', checked['filename']),
-                purpose=[purpose],
+                purpose=purpose if isinstance(purpose, list) else [purpose],
                 author=author or None,
                 note='Uploaded through the local editorial desk.',
                 status=checked['status'],
@@ -435,7 +435,7 @@ def upload_files(root, data, staging, ledger, fingerprint):
     if data.get('keep') and purpose == 'material':
         purpose = 'reference'
     author = studio.checked_author(data['author']) if data.get('author') else None
-    entries = [entry if isinstance(entry, dict) else {} for entry in files]
+    entries = [dict(entry) if isinstance(entry, dict) else {} for entry in files]
     exports = sum('linkedin' in entry for entry in entries)
     if exports > 1:
         raise ValueError('Upload one LinkedIn export at a time.')
@@ -444,13 +444,24 @@ def upload_files(root, data, staging, ledger, fingerprint):
         raise ValueError(
             'Upload a LinkedIn export as writing samples: voice samples or author background.'
         )
+    # Each file says what it is for: facts the writing may quote, or an example of the
+    # kind of post, which keeps the upload's purpose and adds inspiration.
     checked = []
     for entry in entries:
+        role = entry.pop('purpose', 'material')
+        if role not in ('material', 'inspiration'):
+            raise ValueError('Facts or an example of the kind of post: choose one for each file.')
         if 'linkedin' in entry:
+            if role != 'material':
+                raise ValueError('A LinkedIn export is writing samples, not an example of a post.')
             # Checked whole before the ledger is written: nothing is half-saved on a refusal.
-            checked.extend(sample_intake.checked_linkedin(root, entry, limit=MAX_UPLOAD_FILES - 1))
+            for found in sample_intake.checked_linkedin(root, entry, limit=MAX_UPLOAD_FILES - 1):
+                found['purposes'] = [found.get('purpose', purpose)]
+                checked.append(found)
         else:
-            checked.append((checked_google if 'google' in entry else checked_upload)(root, entry))
+            found = (checked_google if 'google' in entry else checked_upload)(root, entry)
+            found['purposes'] = [purpose] + (['inspiration'] if role == 'inspiration' else [])
+            checked.append(found)
     if len({entry['filename'] for entry in checked}) != len(checked):
         raise ValueError('Upload each file once.')
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
@@ -460,7 +471,7 @@ def upload_files(root, data, staging, ledger, fingerprint):
             chosen = entry.get('purpose', purpose)
             whose = author or entry.get('author')
             source = save_upload(
-                root, staging, entry, chosen, whose, analyze=data.get('analyze', True)
+                root, staging, entry, entry['purposes'], whose, analyze=data.get('analyze', True)
             )
             saved.append(source['id'])
             if chosen != 'material':
@@ -499,6 +510,37 @@ def upload_files(root, data, staging, ledger, fingerprint):
     }
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'saved', 'result': result})
     return result
+
+
+ROLES = {'facts': ['material'], 'example': ['material', 'inspiration']}
+
+
+def source_role(root, data):
+    """What an uploaded file is for: facts the writing may quote, or an example of the
+    kind of post. A library reference is facts; a file a started blog pinned keeps the
+    role that blog read it with."""
+    if set(data) - {'id', 'role'} or data.get('role') not in ROLES:
+        raise ValueError('Choose facts or example for the file.')
+    directory, record = studio.item(root, 'sources', str(data.get('id', '')))
+    if not studio.is_material(root, directory, record):
+        raise ValueError(
+            'Only a file uploaded for one blog changes its role; a reference is facts. '
+            + studio.MATERIAL_STAYS
+        )
+    for path in studio.inside(root, 'articles').glob('*/session.json'):
+        article = studio.read_json(path)
+        if record['id'] in article.get('material', []) or any(
+            selected.get('source_id') == record['id'] for selected in article.get('sources', [])
+        ):
+            raise ValueError(
+                'A started blog read this file as '
+                + ('an example' if 'inspiration' in record['purposes'] else 'facts')
+                + '; its role stays. Upload it again for a new role.'
+            )
+    if record['purposes'] != ROLES[data['role']]:
+        record['purposes'] = ROLES[data['role']]
+        studio.persist(directory, 'sources', record)
+    return {'id': record['id'], 'role': data['role'], 'purposes': record['purposes']}
 
 
 def upload(root, data):
@@ -553,8 +595,14 @@ def upload(root, data):
         studio.checked_author(data['author'])
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
     # An unchecked "Summarize and tag" keeps this file's text away from the analysis CLI.
+    # An example of the kind of post is a kept reference with inspiration, as on the files screen.
     source = save_upload(
-        root, staging, checked, purpose, data.get('author'), data.get('analyze', True)
+        root,
+        staging,
+        checked,
+        ['reference', 'inspiration'] if purpose == 'inspiration' else purpose,
+        data.get('author'),
+        data.get('analyze', True),
     )
     result = {
         'source': share(root, 'source', source) if purpose != 'material' else source,
@@ -1509,6 +1557,8 @@ def _dispatch(root, route, data):
             return retry_receipt(root, adapter, data)
         if route == 'upload':
             return upload(root, data)
+        if route == 'source-role':
+            return source_role(root, data)
         if route == 'schedule':
             if not data.get('expected'):
                 raise ValueError('Reload this blog before changing its editorial decision.')

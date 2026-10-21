@@ -77,6 +77,11 @@ structure, moves, length, headings and register. The selected voice says how its
 Where they conflict on wording, the voice wins; where they conflict on structure, the style wins.
 Neither invents facts. A style never adds biography or first-person experience."""
 
+POLICY += """\nDocuments in examples show the shape, length, moves and register of the kind of post
+wanted: a selected style says that shape; an example shows it. They are not evidence: no
+fact, figure, name, quotation, link or product detail from an example may appear in the
+writing unless it is also in the sources, the research or the brief."""
+
 
 def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model_selection=None):
     """One process group, disposable working directory, bounded time and output.
