@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import socketserver
 import sys
@@ -37,7 +38,7 @@ SECURITY_HEADERS = {
 # script, reach the page's key or its API, or load anything, even from this origin.
 FRAMED_HEADERS = {
     'Content-Security-Policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'; "
-                               'img-src data:; font-src data:',
+                               "img-src data:; font-src data:; frame-ancestors 'self'",
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'SAMEORIGIN',
     'Referrer-Policy': 'no-referrer',
@@ -225,10 +226,25 @@ class Handler(BaseHTTPRequestHandler):
         """Nothing is logged: the command's output is one line, and stays one line."""
 
 
+# What in a framed page could take the frame somewhere else: a link's address or target, a
+# form's action, a base address, or a refresh. Each is taken out before the page is served.
+LEAVING = (re.compile(rb'\s(?:href|xlink:href|target|action|formaction)\s*=\s*'
+                      rb'(?:"[^"]*"|\'[^\']*\'|[^\s>]+)', re.I),
+           re.compile(rb'<base\b[^>]*>', re.I),
+           re.compile(rb'<meta\b[^>]*http-equiv\s*=\s*["\']?refresh[^>]*>', re.I))
+
+
+def neutralised(body: bytes) -> bytes:
+    """A page with nothing in it that could take its frame to another page when clicked."""
+    for pattern in LEAVING:
+        body = pattern.sub(b'', body)
+    return body
+
+
 def framed_html(body: bytes) -> tuple:
-    """A page for a frame of the studio's own page: HTML under FRAMED_HEADERS, which sandbox
-    it as if it came from nowhere."""
-    return HTTPStatus.OK, 'text/html; charset=utf-8', body, dict(FRAMED_HEADERS)
+    """A page for a frame of the studio's own page: HTML with its links taken out, under
+    FRAMED_HEADERS, which sandbox it as if it came from nowhere."""
+    return HTTPStatus.OK, 'text/html; charset=utf-8', neutralised(body), dict(FRAMED_HEADERS)
 
 
 class Page:
@@ -337,7 +353,10 @@ class Page:
         return made
 
     def redeem(self, path: str, ticket: str):
-        """What a ticket was issued for, while it holds and only for its own address."""
+        """What a ticket was issued for, while it holds and only for its own address. A
+        dictionary lookup is safe here, though its timing is not constant: a ticket is 192
+        random bits (token_urlsafe(24)) that open one page for two minutes, so how long a
+        miss takes says nothing that narrows a guess."""
         with self._ticketing:
             held = self._tickets.get(ticket)
         if not held or held[0] != path or held[2] <= time.monotonic():

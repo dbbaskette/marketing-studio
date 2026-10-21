@@ -42,6 +42,8 @@ class FramedPageTests(unittest.TestCase):
         self.assertNotIn('script', extra['Content-Security-Policy'])
         self.assertEqual((extra['X-Content-Type-Options'], extra['Cache-Control'],
                           extra['X-Frame-Options']), ('nosniff', 'no-store', 'SAMEORIGIN'))
+        self.assertIn("frame-ancestors 'self'", extra['Content-Security-Policy'])
+        self.assertEqual(extra['Referrer-Policy'], 'no-referrer')
         for wrong in ('/api/frame?ticket=made-up', '/api/frame'):
             with self.subTest(wrong=wrong), self.assertRaises(module.Refusal):
                 page.answer(*asked(wrong))
@@ -71,3 +73,19 @@ class FramedPageTests(unittest.TestCase):
         with mock.patch.object(module.BaseHTTPRequestHandler, 'end_headers'):
             handler.end_headers()   # the next response has every one of the page's own
         self.assertIn(('X-Frame-Options', 'DENY'), sent)
+
+
+class NeutralisedTests(unittest.TestCase):
+    def test_nothing_in_a_framed_page_can_take_the_frame_elsewhere(self):
+        page = (b'<base href="https://evil.example/"><meta http-equiv="refresh" '
+                b'content="0;url=https://evil.example"><a href="https://evil.example" '
+                b'target=_top>Out</a><a HREF=\'javascript:x\'>J</a><form action=/x>'
+                b'<button formaction="https://e.example">B</button></form>'
+                b'<svg><a xlink:href="https://e.example"><text>S</text></a></svg><p class="k">ok</p>')
+        made = core.neutralised(page)
+        for gone in (b'href', b'HREF', b'target', b'action', b'<base', b'refresh'):
+            self.assertNotIn(gone, made)
+        self.assertIn(b'<p class="k">ok</p>', made)
+        self.assertIn(b'>Out</a>', made)
+        _, _, body, _ = core.framed_html(page)
+        self.assertEqual(body, made)

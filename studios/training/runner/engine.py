@@ -2892,6 +2892,9 @@ class Engine(Reviewing):
             try:
                 home.write_json(source, deck.for_tool(mine.outline, tool.knows()))
                 tool.outline_draft(source, contract, page)
+                if page.stat().st_size > pipeline.DRAFT_LIMIT:
+                    page.unlink(missing_ok=True)
+                    raise WorkspaceError('The draft is too large to show in the page.')
             finally:
                 source.unlink(missing_ok=True)
             for old in folder.glob('*.html'):
@@ -2904,7 +2907,8 @@ class Engine(Reviewing):
         drafts folder of this training."""
         root, page = Path(root).resolve(), Path(page).resolve()
         if page.suffix != '.html' or page.parent.name != pipeline.DRAFTS \
-                or root not in page.parents or not page.is_file():
+                or root not in page.parents or not page.is_file() \
+                or page.stat().st_size > pipeline.DRAFT_LIMIT:
             raise FileNotFoundError(NO_PICTURE)
         return page.read_bytes()
 
@@ -3863,7 +3867,8 @@ class Engine(Reviewing):
         return mine, who, 'elsewhere', (THEIRS.format(name=who['name']) + LAST.format(
             when=when, then=last['says'])), last
 
-    def _steps(self, record: dict, found: pipeline.Survey, state: str) -> list[dict]:
+    def _steps(self, record: dict, found: pipeline.Survey, state: str,
+               root: Path | None = None) -> list[dict]:
         """Every step of the training, with how it stands and what it has taken."""
         ahead = found.next.step.id if found.next.step else None
         current = 'intake' if ahead == 'gate:intake' else ahead
@@ -3890,7 +3895,10 @@ class Engine(Reviewing):
                 status = 'waiting'
             else:
                 status = 'to-do'
-            automatic = step.kind == 'gate' and review_policy.automatic(record, 'training', step.id)
+            # A gate a grave finding holds is not called automatic: it stops for the person.
+            automatic = step.kind == 'gate' and review_policy.automatic(
+                record, 'training', step.id,
+                holding=pipeline.holding(root, found, step) if root is not None else ())
             listed.append({
                 'id': step.id, 'label': (step.label.replace('Your review of ', 'Continue ') + ' automatically'
                                          if automatic else step.label),
@@ -4054,7 +4062,7 @@ class Engine(Reviewing):
             'model_mode': (record.get('model_profiles') or {}).get('mode', 'single'),
             'review_level': review_policy.level(record),
             'review': self._review_view(root, record, found),
-            'steps': self._steps(record, found, state),
+            'steps': self._steps(record, found, state, root),
             'workers': self._workers(run),
             'spent': {'dollars': dollars, 'tokens': tokens},
             'note': self._note_view(record),

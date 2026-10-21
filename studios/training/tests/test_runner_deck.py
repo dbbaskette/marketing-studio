@@ -1653,7 +1653,9 @@ class DraftPageTests(DeckCase):
         outside = self.base / 'drafts' / 'other.html'
         outside.parent.mkdir()
         outside.write_text('<p>not ours</p>')
-        for wrong in (outside, root / 'deck-handoff.md', made.with_suffix('.json')):
+        too_big = made.with_name('too-big.html')
+        too_big.write_bytes(b'x' * (pipeline.DRAFT_LIMIT + 1))
+        for wrong in (outside, root / 'deck-handoff.md', made.with_suffix('.json'), too_big):
             with self.subTest(wrong=wrong), self.assertRaises(FileNotFoundError):
                 self.engine.draft_page(root, wrong)
 
@@ -2447,6 +2449,8 @@ class JudgedTests(DeckCase):
         found = self.engine._survey(root, self.record(root))
         self.assertIn('Major on when-capacity-holds',
                       ' '.join(pipeline.holding(root, found, found.next.step)))
+        step = self.steps(root)['gate:deck-outline']
+        self.assertNotIn('automatically', step['label'], 'held for the person, not continued')
 
     def test_approved_as_it_stands_the_deck_is_drawn_on_with_what_was_found(self):
         self.workers.found = [[DRAWING, CONCEPT]]

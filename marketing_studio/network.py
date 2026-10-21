@@ -27,7 +27,11 @@ MAX_BODY = 120_000_000
 STATIC = frozenset(('/', '/index.html', '/app.js', '/style.css', '/home.css',
                     '/blog.css', '/runner.js', '/markdown.js', '/deck.css', '/favicon.ico',
                     '/onboarding/', '/onboarding/app.js', '/onboarding/style.css',
-                    '/onboarding/home.css'))
+                    '/onboarding/home.css', '/deck-panels.js', '/deck-panels.css'))
+# GET addresses a studio's page opens in a frame, which cannot send the key: the studio
+# server checks the one-page ticket in its address instead. Every other check still holds.
+FRAMED = {'presentation': frozenset(('/api/deck-draft',)),
+          'training': frozenset(('/api/deck-draft',))}
 
 
 def private_address(value):
@@ -135,7 +139,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 self.headers.get('Sec-Fetch-Mode') == 'navigate' and
                 self.headers.get('Sec-Fetch-Dest') == 'document'):
             return self.send_error(403, 'Cross-site access is unavailable.')
-        if self.command == 'POST' or url.path not in STATIC:
+        framed = self.command == 'GET' and url.path in FRAMED.get(own.identifier, ())
+        if self.command == 'POST' or (url.path not in STATIC and not framed):
             tokens = self.headers.get_all(own.token_header, [])
             if len(tokens) != 1 or not secrets.compare_digest(tokens[0].encode(), own.token.encode()):
                 return self.send_error(403, 'Reopen the private session link to connect.')

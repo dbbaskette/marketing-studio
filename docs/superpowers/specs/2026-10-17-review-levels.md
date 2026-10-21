@@ -37,9 +37,18 @@ decks through their engines with stand-ins and checks they pause alike.
 
 No gate is continued automatically while a reviewer's critical or major finding
 is still open or an audit has a blocker, whatever the level: the studio stops for
-the person with those findings shown. In Training Studio this keeps what a deck
-says for the person when a review of its slides sends it back with a grave
-finding, and keeps the deck itself.
+the person with those findings shown. Both studios pass what holds a gate to the
+policy (`holding`): in Training Studio it keeps what a deck says for the person
+when a review of its slides sends it back with a grave finding, and keeps the
+deck itself; in Presentation Studio it is passed at `gate:build`, which stops
+anyway, so that the rule does not depend on that. A deck that continued past its
+own gate under the saved level before this rule shipped is not held again.
+
+When the brand's looks cannot be rendered, the person may knowingly carry on in
+the brand's default look at the look checkpoint (or in Balanced's combined stop),
+and Automatic draft takes it itself, its receipt saying the samples could not be
+rendered and why. Either way the choice is recorded with the brand as unrendered
+where it can, and the deck's gate calls it an unreviewed draft of its look.
 
 Retain source scopes, provider permissions, budgets, missing-information stops,
 validation, rendering, visual review, bounded repairs, human change requests,
