@@ -2046,3 +2046,65 @@ class ExampleTests(FilesCase):
         self.assertFalse(
             synthesis_research.offered({'purposes': ['material'], 'status': 'pending'})
         )
+
+    def test_the_draft_and_review_say_what_was_carried_over_from_an_example(self):
+        example = (
+            'When we launched Gateway Prime in March, requests dropped by 42 percent. '
+            'Read https://example.invalid/launch for the numbers. Retries cost money.'
+        )
+        facts = self.material(('notes.md', 'Retries cost money. ' * 40))
+        examples = self.example(('launch.md', example))
+        found = self.develop(self.from_files(sources=facts + examples))
+        found = self.approve(self.submit(found, page=True), page=True)  # outline
+        self.assertEqual(found['next'], 'draft')
+        _, payload, _ = runner.job(self.root, found['id'])
+        self.assertEqual(payload['mechanical_checks']['findings'], [])
+        draft = (
+            '# Draft\n\nRequests dropped by 42 percent, as Gateway Prime showed; '
+            'see https://example.invalid/launch. Retries cost money.\n'
+        )
+        found = self.submit(found, draft, page=True)
+        shown = runner.document(self.root, found['id'], 'draft')
+        row = next(check for check in shown['checks'] if 'example' in check['label'])
+        self.assertFalse(row['passed'])
+        self.assertEqual(row['label'], 'Carried over from an example')
+        self.assertIn('https://example.invalid/launch', row['detail'])
+        self.assertTrue(any('42 percent' in line for line in row['detail']), row['detail'])
+        self.assertTrue(all(len(line) <= 120 for line in row['detail']))
+        found = self.approve(found, page=True)
+        _, payload, guidance = runner.job(self.root, found['id'])
+        rules = [finding['rule'] for finding in payload['mechanical_checks']['findings']]
+        self.assertIn('from-example', rules)
+        self.assertIn('unsupported', guidance)
+        self.assertIn('from-example', guidance)
+        found = self.submit(found, page=True)  # the review
+        shown = runner.document(self.root, found['id'], 'review')
+        self.assertFalse(
+            next(check for check in shown['checks'] if 'example' in check['label'])['passed']
+        )
+        # A draft that takes only the example's shape passes, and a run without examples
+        # has no such row.
+        clean = self.develop(
+            self.from_files(
+                sources=self.material(('n.md', 'Retries cost money.'))
+                + self.example(('l.md', example))
+            )
+        )
+        clean = self.approve(self.submit(clean, page=True), page=True)
+        clean = self.submit(clean, '# Draft\n\nRetries cost money, as our notes say.\n', page=True)
+        row = next(
+            check
+            for check in runner.document(self.root, clean['id'], 'draft')['checks']
+            if 'example' in check['label']
+        )
+        self.assertTrue(row['passed'])
+        self.assertEqual(row['label'], 'No passage carried over from an example')
+        self.assertEqual(row['detail'], [])
+        plain = self.develop(self.from_files())
+        plain = self.submit(self.approve(self.submit(plain, page=True), page=True), page=True)
+        self.assertFalse(
+            any(
+                'example' in check['label']
+                for check in runner.document(self.root, plain['id'], 'draft')['checks']
+            )
+        )

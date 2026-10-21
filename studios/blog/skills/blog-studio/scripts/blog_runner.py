@@ -919,6 +919,26 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
     return survey(root, ident)
 
 
+def carried(directory, run, payload, writing):
+    """Passages of `writing` that came from an example and from nothing the run allows:
+    its sources, brief, outline and research facts. Empty without examples."""
+    if not payload.get('examples') or not writing.strip():
+        return []
+    from text_checks import carried_over
+
+    allowed = [source['text'] for source in payload['sources']] + [
+        str(value) for value in run['brief'].values()
+    ]
+    outline = directory / 'OUTLINE.md'
+    if outline.is_file():
+        allowed.append(outline.read_text())
+    if run.get('research_contract') and run['stages'].get('research'):
+        facts, _ = research_contract.read_bundle(directory / 'research')
+        allowed += [str(fact.get('statement', '')) for fact in facts['facts']]
+        allowed.append((directory / 'research/brief.md').read_text())
+    return carried_over(writing, payload['examples'], allowed)['findings']
+
+
 def job(root, ident):
     found = survey(root, ident)
     stage = found['next']
@@ -926,6 +946,7 @@ def job(root, ident):
         raise ValueError('This run is complete.')
     directory, record, run = load(root, ident)
     payload = inputs(root, record, run)
+    evidence = payload['sources']  # What the carried-over check may still allow below.
     # The package works from the saved writing, and only evidence checks review against
     # sources. inputs() above still refuses a changed source pin for every step.
     check = run.get('editor_check')
@@ -1014,10 +1035,16 @@ def job(root, ident):
 
         rules = payload['voice'].get('rules', '{}')
         rules = json.loads(rules) if isinstance(rules, str) else rules
-        payload['mechanical_checks'] = lint(
-            payload['documents'].get('manuscript', payload['documents'].get('draft', '')),
-            rules or {},
-        )
+        writing = payload['documents'].get('manuscript', payload['documents'].get('draft', ''))
+        payload['mechanical_checks'] = lint(writing, rules or {})
+        copied = carried(directory, run, {**payload, 'sources': evidence}, writing)
+        payload['mechanical_checks']['findings'] += copied
+        if copied and stage == 'review':
+            guidance += (
+                '\nmechanical_checks lists, under rule from-example, passages the draft carried '
+                'over from an example of the kind of post. A claim traced to an example and to '
+                'nothing else is unsupported.'
+            )
     if run.get('editor_check') in ('polish', 'humanization'):
         guidance += (
             '\n\n' + (references / 'blogforge/voice/assets/ai-tells/patterns.md').read_text()
@@ -1510,11 +1537,22 @@ def document(root, ident, stage):
         body = path.read_text()
         return {'content': body, **fields(body)}
 
-    directory, _, run = load(root, ident)
+    directory, record, run = load(root, ident)
     if stage not in run['pipeline']:
         raise ValueError('Choose a stage in this blog’s run.')
     path = studio.inside(directory, STAGES[stage][1])
     content = path.read_text()
+    copied = None
+    if stage in ('draft', 'review') and any(
+        'inspiration' in selected['purposes'] for selected in record['sources']
+    ):
+        draft = directory / 'DRAFT.md'
+        copied = carried(
+            directory,
+            run,
+            inputs(root, record, run),
+            draft.read_text() if draft.is_file() else '',
+        )
     previous = None
     approved = run.get('approved', {}).get(stage, '')
     if re.fullmatch('[a-f0-9]{64}', approved):
@@ -1575,7 +1613,20 @@ def document(root, ident, stage):
                 'label': 'Document matches its submitted version and selected inputs',
                 'passed': row['status'] in ('draft', 'approved'),
             },
-        ],
+        ]
+        + (
+            [
+                {
+                    'label': 'Carried over from an example'
+                    if copied
+                    else 'No passage carried over from an example',
+                    'passed': not copied,
+                    'detail': [finding['target'][:120] for finding in copied],
+                }
+            ]
+            if copied is not None
+            else []
+        ),
         'id': ident,
         'title': found['title'],
     }

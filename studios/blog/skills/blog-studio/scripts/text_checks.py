@@ -10,16 +10,21 @@ import re
 import sys
 
 
-def mask_protected(text):
-    patterns = [
-        r'(?ms)^\s*```[^\n]*\n.*?^\s*```[^\n]*(?:\n|$)',
-        r'(?ms)^\s*~~~[^\n]*\n.*?^\s*~~~[^\n]*(?:\n|$)',
-        r'`[^`\n]+`',
-        r'https?://[^\s<>\)]+',
-        r'(?m)^\s*>[^\n]*',
-        r'"[^"\n]+"',
-        r'“[^”\n]+”',
-    ]
+URL = r'https?://[^\s<>\)]+'
+PROTECTED = (
+    r'(?ms)^\s*```[^\n]*\n.*?^\s*```[^\n]*(?:\n|$)',
+    r'(?ms)^\s*~~~[^\n]*\n.*?^\s*~~~[^\n]*(?:\n|$)',
+    r'`[^`\n]+`',
+    URL,
+    r'(?m)^\s*>[^\n]*',
+    r'"[^"\n]+"',
+    r'“[^”\n]+”',
+)
+# The carried-over check reads at most this many examples, this much of each.
+EXAMPLE_LIMIT, EXAMPLE_CHARS, SHINGLE = 60, 200_000, 8
+
+
+def mask_protected(text, patterns=PROTECTED):
     clean = text
     for pattern in patterns:
         clean = re.sub(
@@ -84,6 +89,91 @@ def lint(text, rules):
     return {
         'findings': findings,
         'limitations': 'Mechanical rule matches and repetition hints only; read for meaning and voice. Protected code, URLs, and quotations are excluded.',
+    }
+
+
+def _words(text):
+    """Each word with where it is, casefolded, for runs of words shared between texts."""
+    return [(m.start(), m.end(), m.group().casefold()) for m in re.finditer(r'[^\W_]+', text)]
+
+
+def carried_over(text, examples, allowed):
+    """Passages in `text` that come from one of `examples` ({name, text}) and from none of
+    the `allowed` texts: runs of eight words, numbers with a unit or a percent, URLs and
+    capitalised two-word names. Advisory: it flags, never rewrites, and reads for meaning
+    is still the person's. Code, URLs in code and quotations in `text` are left alone."""
+    text = text[:EXAMPLE_CHARS]
+    clean = mask_protected(text)
+    linkable = mask_protected(text, tuple(p for p in PROTECTED if p != URL))
+    permitted = '\n'.join(str(value or '') for value in allowed).casefold()
+    words = _words(clean)
+    runs = {}
+    for index in range(len(words) - SHINGLE + 1):
+        runs.setdefault(tuple(word for _, _, word in words[index : index + SHINGLE]), []).append(
+            index
+        )
+    allowed_words = [word for _, _, word in _words(permitted)]
+    permitted_runs = {
+        run
+        for index in range(len(allowed_words) - SHINGLE + 1)
+        if (run := tuple(allowed_words[index : index + SHINGLE])) in runs
+    }
+    tokens = [
+        (m.start(1), m.end(1))
+        for m in re.finditer(
+            r'(?=((?<!\w)\d[\d,]*(?:\.\d+)?(?:\s?%|\s?percent\b|\s+[A-Za-z]{1,12}\b)|\b[A-Z][a-z]+ [A-Z][a-z]+\b))',
+            clean,
+        )
+    ] + [
+        (m.start(), m.end() - len(m.group()) + len(m.group().rstrip('.,;:!?')))
+        for m in re.finditer(URL, linkable)
+    ]
+    found = []
+    for example in examples[:EXAMPLE_LIMIT]:
+        body = str(example.get('text') or '')[:EXAMPLE_CHARS]
+        if not body.strip():
+            continue
+        folded = body.casefold()
+        example_words = [word for _, _, word in _words(body)]
+        hits = set()
+        for index in range(len(example_words) - SHINGLE + 1):
+            run = tuple(example_words[index : index + SHINGLE])
+            if run in runs and run not in permitted_runs:
+                hits.update(runs[run])
+        spans = []
+        for index in sorted(hits):
+            start, end = words[index][0], words[index + SHINGLE - 1][1]
+            if spans and index <= spans[-1][2] + SHINGLE - 1:
+                spans[-1] = (spans[-1][0], end, index)
+            else:
+                spans.append((start, end, index))
+        spans = [(start, end) for start, end, _ in spans]
+        for start, end in tokens:
+            token = ' '.join(text[start:end].split()).casefold()
+            if token in folded and token not in permitted:
+                spans.append((start, end))
+        for start, end in spans:
+            found.append(
+                {
+                    'rule': 'from-example',
+                    'kind': 'advisory',
+                    'start': start,
+                    'end': end,
+                    'line': text.count('\n', 0, start) + 1,
+                    'target': text[start:end],
+                    'example': str(example.get('name') or ''),
+                }
+            )
+    findings, edge = [], -1
+    for finding in sorted(found, key=lambda f: (f['start'], -f['end'])):
+        if finding['start'] >= edge:
+            findings.append(finding)
+            edge = finding['end']
+    return {
+        'findings': findings,
+        'limitations': 'Shared runs of eight words, numbers with a unit or a percent, URLs and '
+        'capitalised two-word names only; a paraphrased fact from an example is not found. '
+        'Code and quotations are excluded. Read for meaning.',
     }
 
 
