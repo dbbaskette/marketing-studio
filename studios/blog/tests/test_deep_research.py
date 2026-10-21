@@ -1,5 +1,6 @@
 """Research plans, automatic reports and exact evidence; no live searches or accounts."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import json
 from pathlib import Path
 import subprocess

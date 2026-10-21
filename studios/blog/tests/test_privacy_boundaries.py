@@ -1,5 +1,6 @@
 """No live accounts or external content are used by these privacy regressions."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import io
 import json
 import os

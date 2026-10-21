@@ -1,5 +1,6 @@
 """Synthetic image markup is omitted only from display, with code and prose retained."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 from pathlib import Path
 import sys
 import unittest

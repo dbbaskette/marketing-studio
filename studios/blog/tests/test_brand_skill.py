@@ -1,5 +1,6 @@
 """Real, synthetic brand commands and release repositories; no provider or private content."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import http.client
 import json
 import os

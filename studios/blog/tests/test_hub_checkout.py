@@ -1,5 +1,6 @@
 """Normal Hub checkouts and lossless local migration; no live accounts."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import tempfile
 import shutil
 from pathlib import Path

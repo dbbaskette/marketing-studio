@@ -1,5 +1,6 @@
 """Blog-folder migration preserves revision bytes, queued saves and selected scope."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import json
 import posixpath
 import re

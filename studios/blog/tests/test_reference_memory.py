@@ -1,5 +1,6 @@
 """Ready references can be rediscovered and pinned across blogs without role leakage."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 from unittest.mock import patch
 from test_editorial_tools import Fixture
 import studio

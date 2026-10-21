@@ -1,5 +1,6 @@
 """Formatting round trips against a stateful native-Docs fixture; no live accounts."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import copy
 import io
 import json

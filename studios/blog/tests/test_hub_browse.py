@@ -1,5 +1,6 @@
 """GitHub-facing projections are deterministic and never become canonical memory."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import json
 from pathlib import Path
 import tempfile

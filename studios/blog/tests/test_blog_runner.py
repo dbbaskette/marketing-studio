@@ -1,5 +1,6 @@
 """The same blog, gates and edits through chat commands and the authenticated page."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import json
 import http.client
 import os

@@ -1,5 +1,6 @@
 """Actual desk JavaScript with synthetic DOM/API responses; no browser or accounts."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 from pathlib import Path
 import shutil
 import subprocess

@@ -1,5 +1,6 @@
 """Google transport invariants with disposable files and mocked network/auth."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import io
 import json
 from pathlib import Path

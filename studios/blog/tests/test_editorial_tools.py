@@ -1,5 +1,6 @@
 """Editorial/library/local HTTP behavior using disposable workspaces and Git transports."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import base64
 import http.client
 import io

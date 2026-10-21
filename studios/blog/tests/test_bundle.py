@@ -1,5 +1,6 @@
 """Release archives: reproducible, complete, and installable without the source checkout."""
 
+import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import hashlib
 import importlib.util
 import json
