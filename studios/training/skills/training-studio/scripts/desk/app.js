@@ -4375,8 +4375,11 @@ function startStep(draft) {
     const supplied = SOURCES[draft.sources][0] !== 'public-web';
     first.textContent = supplied ? 'First, add your documents on the next screen. Research waits until you say they are all added.'
       : 'Research starts after you start the training.';
-    const stops = policy === 'balanced' ? 'the research plan, the direction review and the finished materials'
-      : policy === 'automatic' ? 'the finished materials'
+    // A drawn deck always comes to the person, whatever the level.
+    const deck = Boolean(DECKS[draft.deck][0]);
+    const stops = policy === 'balanced' ? 'the research plan, the direction review'
+        + (deck ? ', each drawn deck' : '') + ' and the finished materials'
+      : policy === 'automatic' ? (deck ? 'each drawn deck and ' : '') + 'the finished materials'
         : 'at least ' + gatesFor(draft) + ' decisions for research and the selected teaching materials'
           + (draft.materials.includes('scenario') ? ', plus each practice scenario' : '')
           + (draft.yoodli ? ' and each Yoodli layout' : '');

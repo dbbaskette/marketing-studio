@@ -2727,6 +2727,23 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                     if link['name'] == 'Change'))
                 self.assertEqual(self.posts(result), [])
 
+    def test_start_preview_says_a_drawn_deck_always_stops(self):
+        for policy, phrase in (('balanced', 'Balanced: it stops for the research plan, the '
+                                             'direction review, each drawn deck and the '
+                                             'finished materials'),
+                                ('automatic', 'Automatic draft: it stops for each drawn deck '
+                                              'and the finished materials')):
+            with self.subTest(policy=policy):
+                result = self.run_page(self.answers({**SET_UP, 'review_level': policy}), [
+                    {'click': 'New training'},
+                    {'fill': 'A short title', 'value': 'Restart practice'},
+                    {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
+                    {'fill': 'Who is it for?', 'value': 'New operators'},
+                    {'click': 'Continue'}, {'click': 'PowerPoint'}, {'click': 'Learner guide'},
+                    {'click': 'Continue'}, {'snapshot': 'ready'}])
+                self.assertIn(phrase, result['snapshots']['ready']['text'])
+                self.assertEqual(self.posts(result), [])
+
     def test_a_training_can_pick_its_own_review_level_on_the_last_step(self):
         result = self.run_page(self.answers({**SET_UP, 'review_level': 'balanced'}, **{
             'POST /api/trainings': [

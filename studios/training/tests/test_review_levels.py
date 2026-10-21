@@ -34,7 +34,7 @@ class ReviewLevelsTests(DeckCase):
             made = self.engine.start(pipeline.check_form({**FORM, 'deck_target': 'pptx',
                                                           'brand': CHOSEN}))
         root = Path(made['path'])
-        self.assertEqual(made['gates'], 3)
+        self.assertEqual(made['gates'], 4, 'the plan, the direction, the deck, the materials')
         shown = self.view(root)
         self.assertEqual((shown['state'], shown['review']), ('waiting', None))
         self.assertEqual(workspace.status(root)['gate'], 'research-plan')

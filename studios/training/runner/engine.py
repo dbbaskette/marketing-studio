@@ -985,9 +985,13 @@ class Engine(Reviewing):
         needs = self.deck_needs()
         drawn = bool(form['deck_target'] and form['brand']) and not needs['missing'] \
             and not needs['update']
-        # Balanced stops three times: the research plan, the direction, the finished materials.
-        return {'path': str(root), 'id': root.name, 'gates': (pipeline.gates(form, drawn) if review_policy.level(record) == 'step_by_step'
-                                                        else 3 if review_policy.level(record) == 'balanced' else 1)}
+        # Balanced stops three times: the research plan, the direction, the finished materials;
+        # Automatic draft once, at the finished materials. Each deck drawn here stops too.
+        chosen = review_policy.level(record)
+        decks = max(1, len(form['levels'])) if drawn else 0
+        return {'path': str(root), 'id': root.name, 'gates': (
+            pipeline.gates(form, drawn) if chosen == 'step_by_step'
+            else (3 if chosen == 'balanced' else 1) + decks)}
 
     def _claimed(self, root: Path, space: gitstate.Workspace) -> None:
         """Share the claim a new training was committed with, before any work is done
