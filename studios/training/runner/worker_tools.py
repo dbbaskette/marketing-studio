@@ -574,8 +574,10 @@ def check_outline(text: str, spec: dict, slides,
     budget = spec.get('budget')
     try:
         # The tool checks the outline without the short labels a point gives its diagram.
-        told = kept if deck.for_tool(outline) == outline else json.dumps(
-            deck.for_tool(outline), indent=2, ensure_ascii=False) + '\n'
+        known = slides.knows() if hasattr(slides, 'knows') else frozenset()
+        shown = deck.for_tool(outline, known)
+        told = kept if shown == outline else json.dumps(
+            shown, indent=2, ensure_ascii=False) + '\n'
         report = slides.outline_check(_draft(scratch, 'outline', told), spec['brand'])
     except WorkspaceError as refusal:
         found = said_no(refusal)
@@ -644,6 +646,12 @@ def against(how: dict) -> dict:
     return {'design': Path(how['design']), 'section': bool(how.get('section'))}
 
 
+def outlined(spec: dict) -> dict:
+    """What compile is given of the approved outline a section is drawn from, so that a
+    tool that can finds a point's sentence split across shapes: nothing without one."""
+    return {'outline': Path(spec['outline'])} if spec.get('outline') else {}
+
+
 def check_section(text: str, spec: dict, slides,
                   scratch: Path) -> tuple[list[str], list[dict], list[str], str]:
     """A section: some slides of a deck, drawn. What was fixed before its composer started
@@ -661,7 +669,8 @@ def check_section(text: str, spec: dict, slides,
         kept = json.dumps(section, indent=2, ensure_ascii=False) + '\n'
     if isinstance(section, dict):
         try:
-            slides.compile(_draft(scratch, 'section', kept), spec['brand'], **against(spec))
+            slides.compile(_draft(scratch, 'section', kept), spec['brand'], **against(spec),
+                           **outlined(spec))
         except WorkspaceError as refusal:
             found = said_no(refusal)
     outcomes = [checks.result('section.rules', ours), checks.result('section.compile', found)]
@@ -1285,7 +1294,8 @@ class WorkerTools:
             new.parent.mkdir(parents=True, exist_ok=True)
         try:
             self.slides().compile(_draft(self.folder / 'drafts', 'preview', kept),
-                                  spec['brand'], folder=build, **against(spec))
+                                  spec['brand'], folder=build, **against(spec),
+                                  **outlined(spec))
             found = render(self.slides(), build, taken, spec)
             slides = pictures(found, taken, self.folder / 'shown')
         except WorkspaceError as refusal:

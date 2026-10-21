@@ -28,7 +28,7 @@ Yours: the structure of each slide; which words are labels and which are body; w
 - The focal point is what the title singles out, and never one of several peers. On a slide that lists equals, the focal is what joins them, not one of them.
 - Draw nothing the title does not announce.
 - Keep the brand's body size. Text is never shrunk to fit, and you may not reword what a slide says: change the drawing instead. If the approved words of a slide cannot fit however you draw them, say so when you hand in.
-- A point is one sentence. Keep its text whole in one shape, with its label in that shape or right beside it; a program refuses a sentence split across boxes. Where your brief gives a point short `nodes` labels under "Diagram parts", draw each as a part of the diagram, in a shape of its own, and keep the sentence whole once on the slide, or only in the notes where it already is.
+- A point is one sentence. Keep its text whole in one shape, with its label in that shape or right beside it; a program refuses a sentence split across boxes. Where your brief gives a point short `parts` labels under "Diagram parts", draw each as a part of the diagram, in a shape of its own, and keep the sentence whole once on the slide, or only in the notes where it already is.
 - Use an icon only where it names a recognisable thing. Find one with `search_icons`, which takes one or two plain words.
 - Make your slides differ from each other in layout, and do not echo the slide before or after your section.
 

@@ -1906,11 +1906,15 @@ class Engine(Reviewing):
         words += [approved['note']] if approved.get('note') else []
         try:
             listed = home.read_json(work / mine.built['brand']['told'] / 'layouts.json', {})
+            known = self.slides().knows()
             whole = deck.complete(mine.outline, (listed or {}).get('layouts'), words,
                                   designed=plan is not None,
-                                  look=pipeline.look_of(root, mine))
-            home.write_json(source, deck.for_tool(whole))
+                                  look=pipeline.look_of(root, mine), knows=known)
+            home.write_json(source, deck.for_tool(whole, known))
             self.slides().outline_start(source, pipeline.contract(root, mine), folder)
+            # Kept, so that every compile of this start can name the outline it was
+            # approved as, and a tool that can finds a sentence split across shapes.
+            shutil.copyfile(source, folder / pipeline.TOOL_OUTLINE)
             sections = []
             for part in home.read_json(folder / 'parts.json', {})['parts']:
                 ident = Path(part).stem
@@ -2079,8 +2083,10 @@ class Engine(Reviewing):
                 shutil.copyfile(base / made['file'] if made else start / part, folder / part)
             tool = self.slides()
             tool.merge(folder / 'parts.json', folder / 'composition.json')
+            told = start / pipeline.TOOL_OUTLINE
             tool.compile(folder / 'composition.json', pipeline.contract(root, mine),
-                         folder=folder / 'compiled', **bound)
+                         folder=folder / 'compiled', **bound,
+                         **({'outline': told} if told.is_file() else {}))
             if judged:   # the slides tool renders the deck it reviews, and that is the deck
                 shown = self._rendered(folder, bound['design'], self._how(root, found, level))
             else:

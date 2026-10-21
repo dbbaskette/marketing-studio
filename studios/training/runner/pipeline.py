@@ -113,6 +113,7 @@ JUDGED = 'design'   # a start whose deck the slides tool reviews against its app
 SHOWS = 'deck/review.json'          # what its gate shows of the deck that was saved
 HISTORY = 'deck/history'            # what a deck was, kept when it is drawn again from a design
 WORK = 'work/deck'                  # what it is built with: never shared
+TOOL_OUTLINE = 'tool-outline.json'  # in a start: the outline as the slides tool started from it
 BUILT = f'{WORK}/state.json'        # what this computer has built, and from what
 SHOTS = f'{WORK}/preview'           # the pictures of the last preview of the whole deck
 DRAWN = f'{WORK}/sections'          # the pictures of each section's last preview
@@ -804,13 +805,27 @@ def handoff_text(root: Path, session: dict, level: str | None) -> str:
     """deck-handoff.md for one deck, as the record says it now."""
     scenarios = None
     if 'scenario' in wanted(session):
-        scenarios = sorted(workspace.split(name)[0].partition(':')[2]
-                           for name in practice_names(root, session, level))
+        scenarios = [scenario_title(root, session, name)
+                     for name in sorted(practice_names(root, session, level))]
     return deck.handoff(
         session['title'], level,
         _text(root, session, workspace.qualify('blueprint', level)) or '', answers(root),
         session['settings']['deck_target'], brand_of(session), 'document' in wanted(session),
         scenarios)
+
+
+def scenario_title(root: Path, session: dict, name: str) -> str:
+    """A practice scenario as a slide may name it: the title its file gives, else its ID
+    in words. `operating-model` is "Operating model": never the slug itself."""
+    text = _text(root, session, name) if name in workspace.artifact_names(root, session) \
+        else None
+    heading = next((line[2:].strip() for line in (text or '').splitlines()
+                    if line.startswith('# ') and line[2:].strip()), None)
+    if heading:
+        return re.sub(r'^(?:Practice scenario|Scenario)\s*[:\-–]\s*', '', heading) or heading
+    ident = workspace.split(name)[0].partition(':')[2]
+    words = ident.replace('-', ' ').replace('_', ' ').strip()
+    return words[:1].upper() + words[1:]
 
 
 def practice_names(root: Path, session: dict, level: str | None) -> list[str]:
@@ -1744,6 +1759,8 @@ def section_work(root: Path, found: Survey, step: Step, section: str, error: str
                 'artifacts': {name: {'kind': 'section', 'brand': str(contract(root, mine)),
                                      **deck.fixed(whole, ids, number, design),
                                      'previews': deck.PREVIEWS, **how, **bound,
+                                     **({'outline': str(folder / TOOL_OUTLINE)}
+                                        if (folder / TOOL_OUTLINE).is_file() else {}),
                                      **({'beyond': True} if beyond else {})}}}
     return Work(briefs.guidance('deck-section', repair=again, design=design is not None,
                                 assets='assets' in bound, beyond=beyond), task, 'write',

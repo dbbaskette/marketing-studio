@@ -292,7 +292,7 @@ def drawn(spec: dict, wording=None, placing=None) -> dict:
         # The short labels a point gives its diagram, each a box of its own.
         texts += [{'type': 'box', 'id': f'{stem}_n{number}_{part}', 'text': wording(node)}
                   for number, point in enumerate(slide['points'], start=1)
-                  for part, node in enumerate(point.get('nodes') or (), start=1)]
+                  for part, node in enumerate(point.get('parts') or (), start=1)]
         made = {'id': slide['id'], 'title': slide['title'], 'sources': slide['sources'],
                 'brief': {'relation': 'order', 'focal': f'{stem}_t1', 'rhythm': 'anchor'},
                 'canvas': {'type': 'stack', 'direction': 'column', 'children': [
@@ -516,6 +516,11 @@ class Slides:
     def has(self, name: str) -> bool:
         return name in self.listed
 
+    def knows(self) -> frozenset:
+        from runner import deck
+        return frozenset(known for capability, known in deck.KNOWS.items()
+                         if self.has(capability))
+
     def lacks(self) -> list[str]:
         return list(self.lacking)
 
@@ -637,10 +642,13 @@ class Slides:
             found = designs.refusal(refused, designs.Session(design).revision())
             raise tool.Refused([problem['detail'] for problem in found['problems']], found)
 
-    def compile(self, composition, brand, folder=None, design=None, section=False) -> dict:
+    def compile(self, composition, brand, folder=None, design=None, section=False,
+                outline=None) -> dict:
         from runner import slides
         self._asked('compile', composition, brand, folder,
-                    *([design, f'section={section}'] if design else []))
+                    *([design, f'section={section}'] if design else []),
+                    *([f'outline={Path(outline).name}'] if outline
+                      and self.has('compose-split-point') else []))
         made = self._read(composition)
         text = json.dumps(made)
         problems = [f"{slide.get('id')}: nothing is drawn." for slide in made.get('slides', [])
