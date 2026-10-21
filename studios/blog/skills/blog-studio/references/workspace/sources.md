@@ -16,7 +16,8 @@ need host extraction or stay pending. See [focused context](performance.md) for
 pinned source passages and cache controls. Ready means
 nonempty content was actually read. Preserve provenance and access limitations.
 Repeat `--purpose` for multiple roles: manuscript, outline, reference, inspiration,
-voice-sample, author-background. Article roles may differ from library roles.
+voice-sample, author-background, material (one blog's uploaded files, kept out of
+the library). Article roles may differ from library roles.
 
 Attach only selected material. Source changes do not silently refresh an
 article's chosen context; inspect changed-since-attach and review freshness.
