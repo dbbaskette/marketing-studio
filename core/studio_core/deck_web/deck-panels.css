@@ -1,0 +1,39 @@
+/* The deck panels both studios' pages show. Choices are opaque paper, as forms are. */
+.deck-looks {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.deck-looks-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.deck-look {
+  flex: 1 1 12rem;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+  padding: 0.5rem;
+  background: var(--paper, #fff);
+  border: 1px solid var(--paper-line, #d8d8dc);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.deck-look[aria-checked="true"] {
+  border-color: var(--accent, #6b4fbb);
+  box-shadow: 0 0 0 1px var(--accent, #6b4fbb);
+}
+
+.deck-look-name {
+  font-weight: 600;
+}
+
+.deck-looks-words {
+  width: 100%;
+}

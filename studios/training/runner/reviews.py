@@ -9,7 +9,7 @@ from studio_core import deck_direction, review_policy
 from runner import pipeline, deck, worker_tools
 
 PREPARED = ('research-plan', 'research', 'blueprint', 'document', 'brief')
-DECK_PREPARED = ('deck-handoff', 'deck-brand', 'deck-outline')
+DECK_PREPARED = ('deck-handoff', 'deck-brand', 'deck-outline', 'deck-look')
 
 
 def contained(root, relative):
@@ -40,6 +40,9 @@ def contents(root, session, run, phase):
         if phase == 'direction':
             values['files'][f'{level}:sample'] = workspace.sha256_file(
                 contained(root, f'{workspace.prefix(level)}work/review-sample/sample.png'))
+            # The looks the brand drew are part of what is approved with the direction.
+            shown = pipeline.read_built(root, level).get('look') or {}
+            values['files'][f'{level}:looks'] = [shown.get('folder'), shown.get('outline')]
     return values
 
 
@@ -70,8 +73,15 @@ def group(root, session, run, listed, done):
             ident = workspace.qualify('review-sample', level)
             samples.append(pipeline.Step(ident, 'code', 'Draw a sample slide',
                                          'Drawing a sample slide', 'review', step.artifact))
-            brand = (pipeline.read_built(root, level).get('brand') or {})
+            built = pipeline.read_built(root, level)
+            brand = built.get('brand') or {}
             saved = (run.get('review_samples') or {}).get(level or '') or {}
+            # A brand that drew its looks shows them instead: no cover is drawn for it.
+            if (built.get('look') or {}).get('looks') and (built.get('look') or {}).get(
+                    'outline') == workspace.sha256_file(pipeline.place(root, level,
+                                                                       pipeline.OUTLINE)):
+                completed.add(ident)
+                continue
             # The sample is done when it was drawn from this brand and this outline, or
             # when drawing it from them failed and the review carries the note instead.
             drawn = saved.get('image') and saved['image'] == workspace.sha256_file(
@@ -261,7 +271,11 @@ class Reviewing:
                         'label': 'Deck direction' + (f' · Level {level}' if level else ''),
                         'text': outline_text(pipeline.outline_view(root, found, level))}
                 saved = (record.get('review_samples') or {}).get(level or '') or {}
-                if saved.get('problem') and not saved.get('image'):
+                looks = pipeline.look_view(root, found, level)
+                if looks:
+                    # The draft and the look are approved together: the person picks one.
+                    item['looks'] = looks
+                elif saved.get('problem') and not saved.get('image'):
                     item['sample_note'] = (f"A sample slide could not be drawn: {saved['problem']} "
                                            'The direction can still be reviewed from what the '
                                            'deck says; the slides are drawn and reviewed after '
@@ -302,10 +316,13 @@ class Reviewing:
                 'at': outcome['request']['at'],
                 'left': pipeline.again(root, record, outcome['request'])}
 
-    def review_decide(self, path, expected, decision, target=None, note=None, requests=None):
+    def review_decide(self, path, expected, decision, target=None, note=None, requests=None,
+                      looks=None):
         """Approve a combined review, or ask for changes: to one `target` with a `note`,
         or to several at once as `requests`, each {'target', 'note'}. Every request is
-        checked before any is recorded, so they are taken whole or not at all."""
+        checked before any is recorded, so they are taken whole or not at all. Approving a
+        direction review whose decks the brand drew looks for takes the person's pick for
+        each, as `looks`: {level, or '' for a training without levels: {'choice', 'words'}}."""
         root = self._held(path)
         if decision not in ('approve', 'revise'):
             raise WorkspaceError('Approve the review or ask for changes.')
@@ -323,6 +340,22 @@ class Reviewing:
             if not expected or expected != view['expected']:
                 raise WorkspaceError('The materials changed. Read the latest review before deciding.')
             if decision == 'approve':
+                picks = {}
+                for item in view['items']:
+                    offered = item.get('looks')
+                    if not offered:
+                        continue
+                    level = offered['level']
+                    pick = (looks or {}).get(level or '') if isinstance(looks, dict) else None
+                    choice = pick.get('choice') if isinstance(pick, dict) else None
+                    if choice not in [look['id'] for look in offered['looks']]:
+                        raise WorkspaceError('Pick a look for ' + item['label'].lower()
+                                             + ' before you approve the direction.')
+                    words = pick.get('words') if isinstance(pick.get('words'), str) else ''
+                    picks[level or ''] = {'choice': choice, 'words': words.strip()[:2000],
+                                          'by': 'page', 'at': home.now()}
+                for level, picked in picks.items():
+                    self._decided(record, level or None).setdefault('look', {})['picked'] = picked
                 record.setdefault('review_decisions', {})[phase] = {
                     'signature': expected, 'by': 'page', 'at': home.now()}
             else:

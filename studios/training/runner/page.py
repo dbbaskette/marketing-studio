@@ -496,10 +496,13 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.asset(sent))
         if path == '/api/review':
             self.run(desk.text(sent, 'path'))
+            looks = sent.get('looks')
+            if looks is not None and not isinstance(looks, dict):
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give the looks picked as an object.')
             return desk.as_json(HTTPStatus.OK, self.engine.review_decide(
                 desk.text(sent, 'path'), desk.text(sent, 'expected'),
                 desk.text(sent, 'decision'), desk.text(sent, 'target', False),
-                desk.text(sent, 'note', False), self.requests(sent)))
+                desk.text(sent, 'note', False), self.requests(sent), looks))
         if path == '/api/outline':
             return desk.as_json(HTTPStatus.OK, self.outline(sent))
         if path == '/api/look':

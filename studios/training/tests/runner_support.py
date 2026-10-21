@@ -269,6 +269,12 @@ def left(sentence: str, *why: str) -> str:
     return sentence.format(why=' '.join(why or (NO_SLIDES, NO_BRAND_SKILL)))
 
 
+def brand_skill_refused(lines: list[str]):
+    """The brand skill saying no, as the runner's wrapper raises it."""
+    from runner import brand
+    return brand.Refused(lines)
+
+
 def png(shade: int = 0) -> bytes:
     """A real PNG, one pixel across, in a shade of grey that tells one from another."""
     def chunk(kind: bytes, data: bytes) -> bytes:
@@ -1023,7 +1029,7 @@ class Brand:
         self.design, self.beside = None, {}
         # A brand new enough to offer looks draws one picture for each of these, and
         # records the one chosen. An older one, the default here, offers none.
-        self.offers_looks, self.chosen = False, []
+        self.offers_looks, self.chosen, self.written, self.cannot_render = False, [], [], False
         # A brand that is the entry to slide building: `entry` is what `guides()` says
         # ('brand', 'plain' or None, an older brand), and `guided` each guidance call.
         self.entry, self.guided = None, []
@@ -1113,17 +1119,21 @@ class Brand:
             samples.append({**look, 'image': str(image) if preview else None})
         sheet = output / 'looks.png'
         sheet.write_bytes(png(200))
+        if self.cannot_render and preview:
+            raise brand_skill_refused(['Google Slides could not be reached to render the '
+                                       'looks.'])
         manifest = {'schema': 1, 'status': 'awaiting-choice', 'slide': 'what-it-does',
                     'default': self.LOOKS[0]['id'], 'house': ['Fill cards.', 'Icons.'],
                     'samples': samples, 'sheet': str(sheet), 'preview': preview,
-                    'outline': str(outline)}
+                    'outline': str(outline),
+                    'outlineSha256': hashlib.sha256(Path(outline).read_bytes()).hexdigest()}
         (output / 'looks.json').write_text(json.dumps(manifest))
         return {'status': 'awaiting-choice', 'output': str(output),
                 'default': self.LOOKS[0]['id'], 'sheet': str(sheet),
                 'samples': [{'id': sample['id'], 'name': sample['name'],
                              'image': sample['image']} for sample in samples]}
 
-    def look_choose(self, samples, choice, words) -> dict:
+    def look_choose(self, samples, choice, words, outline=None, write=None) -> dict:
         from runner import brand
         self._asked('look_choose')
         if not words or not words.strip():
@@ -1131,6 +1141,21 @@ class Brand:
         if (Path(samples) / 'choice.json').exists():
             raise brand.Refused(['A look is already chosen for these samples.'])
         picked = next(look for look in self.LOOKS if look['id'] == choice)
+        manifest = json.loads((Path(samples) / 'looks.json').read_text())
+        if outline is not None:
+            bytes_ = Path(outline).read_bytes()
+            if hashlib.sha256(bytes_).hexdigest() != manifest['outlineSha256']:
+                raise brand.Refused(['The outline has changed since the samples were made; '
+                                     'take new samples first'])
+            plan = json.loads(bytes_)
+            Path(write).write_text(json.dumps({
+                **plan, 'direction': picked['direction'],
+                'house': [*(plan.get('house') or []), *manifest['house']],
+                'layouts': {**(plan.get('layouts') or {}), **picked['layouts']},
+                'approval': [*(plan.get('approval') or []),
+                             f"Look chosen: {picked['name']} ({choice}). In their words: "
+                             f'"{words.strip()}"']}))
+        self.written.append(write)
         (Path(samples) / 'choice.json').write_text(json.dumps({'choice': choice,
                                                               'words': words}))
         self.chosen.append((choice, words))

@@ -134,17 +134,30 @@ class ReviewLevelsTests(DeckCase):
         self.engine.review_decide(root, shown['review']['expected'], 'approve')
         return self.past_decks(root)
 
-    def test_balanced_stops_for_the_person_to_pick_the_decks_look(self):
+    def test_balanced_asks_for_the_draft_and_the_look_in_one_stop(self):
         self.brand.offers_looks = True
         root, shown = self.choose('balanced')
-        self.engine.review_decide(root, shown['review']['expected'], 'approve')
+        self.assertEqual(shown['review']['phase'], 'direction')
+        direction, = [item for item in shown['review']['items']
+                      if item['target'].startswith('outline:')]
+        # The brand's looks, never a cover drawn in the studio's own colours.
+        self.assertNotIn('sample', direction)
+        self.assertEqual([look['id'] for look in direction['looks']['looks']],
+                         ['example-contrast', 'example-calm'])
+        self.assertNotIn('review-sample', [call for call in self.slides.calls])
+        with self.assertRaisesRegex(WorkspaceError, 'Pick a look'):
+            self.engine.review_decide(root, shown['review']['expected'], 'approve')
+        self.engine.review_decide(root, shown['review']['expected'], 'approve',
+                                  looks={'': {'choice': 'example-calm',
+                                              'words': 'Calm suits a first course.'}})
         shown = self.view(root)
         self.assertIsNone(shown['problem'], shown)
-        self.assertTrue(shown['look']['waiting'], 'a real stop, not continued by the policy')
-        self.assertEqual(shown['state'], 'waiting')
-        self.engine.look(root, None, 'example-calm', 'Calm suits a first course.')
+        # No second stop for the look: it was picked with the draft.
         self.assertEqual(workspace.status(root)['gate'], 'deck')
-        self.assertEqual(self.engine._load(root)['deck']['']['look']['chosen']['by'], 'page')
+        chosen = self.engine._load(root)['deck']['']['look']['chosen']
+        self.assertEqual((chosen['id'], chosen['by'], chosen['words']),
+                         ('example-calm', 'page', 'Calm suits a first course.'))
+        self.assertTrue(self.brand.written[-1], 'the brand wrote the outline with the look')
 
     def test_a_drawn_deck_always_comes_to_the_person(self):
         # Balanced and Automatic draft both stop at the deck itself, before the scenarios

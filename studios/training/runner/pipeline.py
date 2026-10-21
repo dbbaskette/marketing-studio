@@ -59,7 +59,7 @@ What a caller needs to know
 from __future__ import annotations
 
 import json
-from studio_core import deck_direction, review_policy, research_contract
+from studio_core import deck_direction, deck_flow, review_policy, research_contract
 import re
 import shutil
 from dataclasses import dataclass, field, replace
@@ -123,9 +123,11 @@ THROUGH_DRIVE = ('The looks were rendered through Google Drive, the way this com
 NO_COMMENT = 'Picked {name} on the page, with no comment.'
 NO_ENTRY = ("This brand skill is not the entry to slide building yet, so the deck's workers "
             "read the installed slides tool's own guidance.")
-BRAND_WORKER = 'brand worker guidance'   # what the brand asks be handed to every composer
-BRAND_DESIGN = 'brand design'           # the brand's DESIGN.md, for a brand that gives none
+BRAND_WORKER = deck_flow.BRAND_WORKER   # what the brand asks be handed to every composer
+BRAND_DESIGN = deck_flow.BRAND_OWN[0]    # the brand's DESIGN.md, for a brand that gives none
 AUTOMATIC_LOOK = "Automatic draft: the brand's default look, {name}, was used."
+DEFAULT_LOOK = 'default'   # a choice on the page: carry on in the brand's default look
+AGAIN_LOOK = 'again'       # a choice on the page: draw the looks again
 BUILT = f'{WORK}/state.json'        # what this computer has built, and from what
 SHOTS = f'{WORK}/preview'           # the pictures of the last preview of the whole deck
 DRAWN = f'{WORK}/sections'          # the pictures of each section's last preview
@@ -134,9 +136,10 @@ SEES = ('Your review of what {it} says', 'Waiting for your review of what {it} s
 SECTION = re.compile(r'^section-[1-9]\d{0,2}$')
 # What of the slides tool's own guidance each worker of a deck is handed, by the names
 # `slides.reading()` gives. A composer also gets the example of each relation it draws.
-DRAFTING = ('drafting guidance',)
-DESIGNING = ('design guidance',)    # the outline's writer, when it proposes a design too
-COMPOSING = ('design guidance', 'composition guidance', 'gallery')
+# The same for every studio: studio_core.deck_flow says what each worker of a deck reads.
+DRAFTING = deck_flow.OUTLINE_READING
+DESIGNING = deck_flow.DESIGN_READING    # the outline's writer, when it proposes a design too
+COMPOSING = deck_flow.COMPOSER_READING
 OUTLINE_CHECKED = (
     'The slides tool checked its shape and its own limits.',
     'Every content slide names the objectives it serves, and every objective is served by '
@@ -969,7 +972,8 @@ def stands(root: Path, session: dict, state: dict, asked: dict, run: dict,
     shown = built.get('look') or {}
     drawn_here = bool(said) and shown.get('outline') == said \
         and shown.get('brand') == brand.get('sha256') \
-        and (bool(shown.get('unavailable')) or (work / str(shown.get('folder'))).is_dir())
+        and (bool(shown.get('unavailable') or shown.get('failed'))
+             or (work / str(shown.get('folder'))).is_dir())
     earlier = bool(said) and start.get('outline') == said and 'look' not in start
     if chosen or drawn_here or earlier:
         done.add('deck-look')
@@ -1641,8 +1645,7 @@ def reading_file(name: str) -> str:
 def _brand_for_workers(root: Path, mine: Deck) -> tuple[str, ...]:
     """What of the brand's own a deck's composers and its design's writer are handed: the
     worker guidance its slides entry asks be forwarded unchanged, else its DESIGN.md."""
-    return (BRAND_WORKER,) if _told(root, mine, reading_file(BRAND_WORKER)).strip() \
-        else (BRAND_DESIGN, 'brand slide recipes', 'brand icons')
+    return deck_flow.for_workers(bool(_told(root, mine, reading_file(BRAND_WORKER)).strip()))
 
 
 def _read_also(root: Path, mine: Deck, inputs: dict, names) -> None:
@@ -1692,15 +1695,18 @@ def look_view(root: Path, found: Survey, level: str | None) -> dict | None:
     shown = mine.built.get('look') or {}
     said = workspace.sha256_file(place(root, level, OUTLINE))
     chosen = looked(mine.kept, said)
-    if shown.get('outline') != said or not shown.get('looks'):
+    if shown.get('outline') != said or not (shown.get('looks') or shown.get('failed')):
         return None
     waiting = found.next.kind == 'look' and workspace.split(found.next.step.artifact)[1] \
         == level
-    notes = [THROUGH_DRIVE] if shown.get('route') == 'google' else []
+    notes = [shown['says']] if shown.get('says') else []
+    if shown.get('failed'):
+        notes.insert(0, deck_flow.LOOK_FAILED.format(why=shown['failed']))
     return {'level': level, 'artifact': mine.name, 'waiting': waiting,
+            'failed': bool(shown.get('failed')),
             'default': shown.get('default'), 'sheet': bool(shown.get('sheet')),
             'looks': [{key: look.get(key) for key in ('id', 'name', 'useWhen', 'number')}
-                      for look in shown['looks']],
+                      for look in shown.get('looks') or ()],
             'notes': notes,
             'chosen': ({key: chosen.get(key) for key in ('id', 'name', 'words', 'by')}
                        if chosen else None)}

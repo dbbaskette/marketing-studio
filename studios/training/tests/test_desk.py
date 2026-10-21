@@ -1487,8 +1487,16 @@ class PageFileTests(unittest.TestCase):
                 self.assertNotRegex(self.read(name).replace(f"'{self.SVG}'", "''"),
                                     r'(?i)\b(?:https?|wss?|ftp|data|blob):')
         page = self.read('index.html')
+        # The deck panels are the shared core's, served beside the page from its own origin.
         self.assertEqual(sorted(re.findall(r'(?:src|href)="([^"]*)"', page)),
-                         ['#main', 'app.js', 'markdown.js', 'style.css'])
+                         ['#main', 'app.js', 'deck-panels.css', 'deck-panels.js',
+                          'markdown.js', 'style.css'])
+        panels = Path(desk.__file__).resolve().parent / 'studio_core' / 'deck_web'
+        for name in ('deck-panels.js', 'deck-panels.css'):
+            self.assertNotRegex((panels / name).read_text(),
+                                r'(?i)\b(?:https?|wss?|ftp|data|blob):')
+        for risky in ('innerHTML', 'outerHTML', 'insertAdjacentHTML', 'eval(', 'cssText'):
+            self.assertNotIn(risky, (panels / 'deck-panels.js').read_text())
         styles = self.read('style.css')
         self.assertNotIn('url(', styles)
         self.assertNotIn('@import', styles)
@@ -1512,7 +1520,7 @@ class PageFileTests(unittest.TestCase):
         self.assertNotRegex(page, r'\son[a-z]+\s*=')
         self.assertNotRegex(page, r'<svg\b')
         self.assertEqual(re.findall(r'<script\b[^>]*>(.*?)</script>', page, re.DOTALL),
-                         ['', ''])
+                         ['', '', ''])
 
     def test_the_scripts_never_treat_a_value_as_markup(self):
         for name in ('app.js', 'markdown.js'):
@@ -2830,6 +2838,46 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'target': None, 'note': None})] * 2)
         self.assertIn('Approved. Writing your materials.', result['snapshots']['sent']['toasts'])
         self.assertEqual(result['snapshots']['sent']['sheet'], '')
+
+    def test_the_draft_and_the_look_are_approved_in_one_review(self):
+        self.started()
+        looks = {'level': None, 'artifact': 'deck', 'waiting': False, 'failed': False,
+                 'default': 'example-contrast', 'sheet': False, 'chosen': None,
+                 'notes': ['Rendered through Google Slides, the way this computer renders '
+                           'every preview.'],
+                 'looks': [{'id': 'example-contrast', 'name': 'Against an alternative',
+                            'useWhen': 'Comparisons.', 'number': 1},
+                           {'id': 'example-calm', 'name': 'Calm', 'useWhen': 'Explanations.',
+                            'number': 2}]}
+        review = {'phase': 'direction', 'label': 'Review the direction', 'expected': 'v1',
+                  'commits': {'levels': 1, 'materials': ['document'], 'deck': True,
+                              'dollars': None, 'minutes': None},
+                  'items': [{'target': 'research', 'label': 'Research', 'text': '# Findings'},
+                            {'target': 'outline:', 'label': 'Deck direction',
+                             'text': '### 1. Cover', 'looks': looks}]}
+        waiting = a_run('waiting', 'Review the direction.')
+        waiting['body']['review'] = review
+        working = a_run('working', 'Writing your materials.')
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', 'Review the direction.')],
+            'GET /api/training': [self.detail('waiting', 'Review the direction.')],
+            'GET /api/run': [waiting], 'GET /api/slide': [a_picture()],
+            'POST /api/review': [working]})
+        result = self.run_page(answers, [
+            {'click': 'Open Rolling restarts'}, {'snapshot': 'review'},
+            {'click': 'Approve the direction'}, {'click': 'Approve'}, {'snapshot': 'unpicked'},
+            {'click': 'Cancel'}, {'click': 'Calm'},
+            {'click': 'Approve the direction'}, {'click': 'Approve'}, {'snapshot': 'sent'}])
+        shown = result['snapshots']['review']
+        for said in ('Pick the look of this deck', 'Against an alternative', 'Explanations.',
+                     'Rendered through Google Slides'):
+            self.assertIn(said, shown['text'])
+        self.assertIn('Pick a look for deck direction first.',
+                      result['snapshots']['unpicked']['sheet']
+                      + result['snapshots']['unpicked']['text'])
+        self.assertEqual(self.posts(result), [('/api/review', {
+            'path': str(self.root), 'expected': 'v1', 'decision': 'approve', 'target': None,
+            'note': None, 'looks': {'': {'choice': 'example-calm', 'words': ''}}})])
 
     def test_grouped_change_request_keeps_text_when_the_review_refreshes(self):
         self.started()
@@ -5221,15 +5269,18 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         result = self.run_page(answers, [
             {'click': 'Open Rolling restarts'}, {'see': 'Every look on one sheet'},
             {'snapshot': 'look'},
+            {'click': 'Use this look'}, {'snapshot': 'unpicked'},
+            {'click': 'Calm'},
             {'fill': 'Your words, kept with your choice (optional)',
              'value': 'Calm suits a first course.'},
-            {'click': 'Use Calm'}, {'snapshot': 'chosen'},
+            {'click': 'Use this look'}, {'snapshot': 'chosen'},
         ])
         shown = result['snapshots']['look']
         for said in ('Choose the look of the slide deck.', 'Against an alternative',
                      'the brand’s default', 'Explanations.', 'through Google Drive'):
             self.assertIn(said, shown['text'])
-        self.assertIn('Use Calm', shown['buttons'])
+        self.assertIn('Use this look', shown['buttons'])
+        self.assertIn('Pick a look first.', result['snapshots']['unpicked']['text'])
         self.assertEqual(self.posts(result), [('/api/look', {
             'path': str(self.root), 'level': None, 'choice': 'example-calm',
             'words': 'Calm suits a first course.'})])

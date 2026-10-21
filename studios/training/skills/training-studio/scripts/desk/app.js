@@ -5382,8 +5382,18 @@ function outlinePart(run) {
       + 'quick to change now, and slow to change once the slides are drawn.'));
 }
 
-// The brand's looks for a deck, each drawn on the same slide of what it says. The person
-// picks the one every slide is drawn in, and may say why: their words are kept with it.
+// The brand's looks for a deck, each drawn on the same slide of what it says, in the panel
+// every studio's page shows. The person picks the one every slide is drawn in, and may say
+// why: their words are kept with it. Looks that could not be rendered are never picked
+// blind: the person tries again, or carries on in the brand's default look.
+function lookPicker(look, picked, changed) {
+  return window.DeckPanels.lookPicker({ name: look.artifact, looks: list(look.looks),
+    defaultId: look.default, sheet: look.sheet, notes: list(look.notes), failed: look.failed,
+    picked, changed,
+    picture: (number, alt) => pictureAt({ artifact: look.artifact, section: 'look', number },
+      alt) });
+}
+
 function lookPart(run) {
   const look = run.look;
   const deck = look.level ? 'the level ' + look.level + ' slide deck' : 'the slide deck';
@@ -5391,27 +5401,22 @@ function lookPart(run) {
     make('p', 'quiet', 'The brand drew one slide of what the deck says in each of its looks. '
       + 'The look you choose sets the colours, what each one stands for and how cards are '
       + 'drawn on every slide.'));
-  list(look.notes).forEach((note) => add(node, make('p', 'quiet', note)));
-  if (look.sheet) {
-    add(node, pictureAt({ artifact: look.artifact, section: 'look', number: 0 },
-      'Every look on one sheet'));
-  }
-  const id = 'look-words';
-  const held = view.notes;
-  const words = field(id, 'Your words, kept with your choice (optional)', held, 'look:' + look.artifact,
-    { long: true });
+  const key = 'look:' + look.artifact;
+  const held = view.notes[key] || (view.notes[key] = { choice: '', words: '' });
   const problem = alertLine('look-problem');
-  const choices = make('ul', 'thumbs looks');
-  list(look.looks).forEach((one) => {
-    const named = one.name + (one.id === look.default ? ' · the brand’s default' : '');
-    const pressed = capsule('Use ' + one.name, '', () => chooseLook(look, one.id,
-      held['look:' + look.artifact] || '', problem, pressed), 'look-' + one.id);
-    add(choices, add(make('li', 'thumb look-choice'),
-      pictureAt({ artifact: look.artifact, section: 'look', number: one.number }, one.name),
-      make('p', 'step-name', named), one.useWhen ? make('p', 'quiet', one.useWhen) : null,
-      pressed));
-  });
-  return add(node, choices, words, problem);
+  add(node, lookPicker(look, held, (now) => Object.assign(held, now)), problem);
+  if (look.failed) {
+    const again = capsule('Try again', 'filled',
+      () => chooseLook(look, 'again', '', problem, again), 'look-again');
+    const proceed = capsule('Carry on in the brand’s default look', '',
+      () => chooseLook(look, 'default', '', problem, proceed), 'look-default');
+    return add(node, again, proceed);
+  }
+  const use = capsule('Use this look', 'filled', () => {
+    if (!held.choice) return say(problem, 'Pick a look first.');
+    return chooseLook(look, held.choice, held.words || '', problem, use);
+  }, 'look-use');
+  return add(node, use);
 }
 
 async function chooseLook(look, choice, words, problem, pressed) {
@@ -5668,6 +5673,21 @@ async function decideCombined(review, decision, target, note, pressed,
   say(problem, '');
   try {
     const body = { path, expected: review.expected, decision, target: null, note: null };
+    // The looks picked for each deck go with an approval of the direction.
+    const offered = review.items.filter((item) => item.looks);
+    if (decision === 'approve' && offered.length) {
+      body.looks = {};
+      for (const item of offered) {
+        const held = view.notes['look:' + item.looks.artifact] || {};
+        if (!held.choice) {
+          view.busy = false;
+          if (pressed) pressed.disabled = false;
+          say(problem, 'Pick a look for ' + item.label.toLowerCase() + ' first.');
+          return;
+        }
+        body.looks[item.looks.level || ''] = { choice: held.choice, words: held.words || '' };
+      }
+    }
     if (asked && requests) body.requests = asked.map((ask) => ({ target: ask.target, note: ask.note }));
     else if (asked) Object.assign(body, { target, note });
     const run = await send('review', body);
@@ -5758,10 +5778,17 @@ function combinedReview(run) {
     const mark = view.marks[markKey(review, item)] || '';
     // On a phone everything but the first material is folded away until it is opened.
     detail.open = small ? first || mark === 'changes'
-      : Boolean(item.sample || item.sample_note || item.deck_view || first);
+      : Boolean(item.sample || item.sample_note || item.looks || item.deck_view || first);
     if (item.text) add(part, window.TrainingStudioMarkdown.render(item.text));
     if (item.sample) add(part, pictureAt({path: view.path, ...item.sample},
       'Sample slide for ' + item.label, review.expected));
+    // The draft and the look are approved together: the person picks a look here.
+    if (item.looks && !theirs) {
+      const key = 'look:' + item.looks.artifact;
+      const held = view.notes[key] || (view.notes[key] = { choice: '', words: '' });
+      add(part, make('p', 'step-name', 'Pick the look of this deck'),
+        lookPicker(item.looks, held, (now) => Object.assign(held, now)));
+    }
     // A sample that could not be drawn is said in its place; the review goes on without it.
     if (item.sample_note) add(part, make('p', 'fix', item.sample_note));
     if (item.deck_view) {

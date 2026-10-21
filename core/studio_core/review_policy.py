@@ -2,6 +2,8 @@
 from hashlib import sha256
 import json
 
+from studio_core import deck_flow
+
 LEVELS = ('balanced', 'automatic', 'step_by_step')
 LABELS = {'balanced': 'Balanced', 'automatic': 'Automatic draft',
           'step_by_step': 'Step by step'}
@@ -41,12 +43,9 @@ def level(record):
 # What a reviewer or an audit may still find when a gate comes up: a finding this grave, or
 # an audit blocker, keeps the gate for the person whatever the saved level.
 GRAVE = ('critical', 'major')
-# Training Studio gates the policy never accepts. `documents`, `intake` and `deck` are the
-# person's own steps (adding documents, the form, a deck made in a conversation);
-# `gate:deck` is the drawn slide deck, which, as in Presentation Studio and Blog Studio,
-# always comes to the person.
-TRAINING_KEPT = ('documents', 'intake', 'deck', 'gate:deck')
-TRAINING_BALANCED = ('gate:research-plan', 'gate:deck-look')
+# Training Studio gates the policy never accepts: the person's own steps (adding documents,
+# the form, a deck made in a conversation). A deck's own gates follow studio_core.deck_flow.
+TRAINING_KEPT = ('documents', 'intake', 'deck')
 
 
 def held(findings=(), blockers=()):
@@ -75,6 +74,11 @@ def automatic(record, product, gate, last=None, holding=()):
     chosen = level(record)
     if chosen == 'step_by_step' or holding:
         return False
+    # A deck's checkpoints pause the same way in every studio: the brand's draft, look and
+    # final, as deck_flow.PAUSES says for this level.
+    deck = deck_flow.stops(product, chosen, gate)
+    if deck is not None:
+        return not deck
     if product == 'presentation':
         # Rehearsal is the person's own, and never comes up yet.
         return gate not in (('gate:outline', 'gate:build', 'rehearse') if chosen == 'balanced'
@@ -84,10 +88,8 @@ def automatic(record, product, gate, last=None, holding=()):
     if product == 'training':
         base = gate.partition('@')[0]
         # Balanced reads the research plan: a short read, and the cheapest decision there is.
-        # It also has the person pick a deck's look from the brand's rendered samples, which
-        # Automatic draft leaves to the brand's default.
         return not base.startswith('review:') and base not in TRAINING_KEPT \
-            and not (chosen == 'balanced' and base in TRAINING_BALANCED)
+            and not (chosen == 'balanced' and base == 'gate:research-plan')
     raise ValueError('Unknown studio review policy.')
 
 

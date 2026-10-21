@@ -366,8 +366,16 @@ class Desk:
         self.server.server_close()
 
 
+# The deck panels every studio page shows, served from the shared core beside each page.
+DECK_WEB = Path(__file__).resolve().parent / 'deck_web'
+DECK_PAGES = {'/deck-panels.js': (str(DECK_WEB / 'deck-panels.js'),
+                                  'text/javascript; charset=utf-8'),
+              '/deck-panels.css': (str(DECK_WEB / 'deck-panels.css'), 'text/css; charset=utf-8')}
+
+
 def for_product(name, product, token_header, page_dir, pages, computer, error,
                 reads=READS, writes=WRITES):
+    pages = {**DECK_PAGES, **pages}
     module = fresh_module(__file__, name, {'PRODUCT': product, 'TOKEN_HEADER': token_header,
         'PAGE_DIR': page_dir, 'PAGE': pages, 'computer': computer, 'WorkspaceError': error})
     module.READS, module.WRITES = tuple(reads), tuple(writes)

@@ -360,10 +360,15 @@ class Brand:
                             '--delivery', delivery, '--outline', str(outline), '--output',
                             str(output), *(['--preview', preview] if preview else []))
 
-    def look_choose(self, samples: Path, choice: str, words: str) -> dict:
-        """Record the look a person chose, in their own words. A second choice is refused."""
+    def look_choose(self, samples: Path, choice: str, words: str, outline: Path | None = None,
+                    write: Path | None = None) -> dict:
+        """Record the look a person chose, in their own words. A second choice is refused.
+        With the approved `outline`, the brand refuses one changed since its samples were
+        drawn, and writes it again to `write` with the chosen direction, house and lead
+        layouts and the person's words of approval."""
         return self._answer('look', 'choose', '--samples', str(samples), '--choice', choice,
-                            '--words', words)
+                            '--words', words, *(['--outline', str(outline), '--write',
+                                                 str(write)] if outline and write else []))
 
     def ready(self) -> dict:
         """What the skill's own readiness check finds on this computer. It asks Google

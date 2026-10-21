@@ -58,8 +58,10 @@ class PageFileTests(unittest.TestCase):
         self.assertIn('tests/page_harness.js', taken)
 
     def test_the_page_and_its_stylesheets_are_served_and_nothing_else(self):
+        # The deck panels are the shared core's, served beside every studio page.
         self.assertEqual(set(server.PAGE), {'/', '/index.html', '/app.js', '/markdown.js',
-                                            '/style.css', '/deck.css'})
+                                            '/style.css', '/deck.css', '/deck-panels.js',
+                                            '/deck-panels.css'})
 
     def test_the_page_has_nothing_its_own_policy_would_block(self):
         page = self.read('index.html')

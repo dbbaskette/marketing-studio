@@ -25,6 +25,7 @@ import desk
 import workspace
 from runner import brand as brand_skill
 from runner import briefs, deck, page, pipeline, settings, worker_tools
+from studio_core import deck_flow
 from runner import slides as slides_tool
 from stand_ins import slides as slides_stand_in
 from workspace import WorkspaceError
@@ -1623,7 +1624,8 @@ class LookTests(DeckCase):
                          [('example-contrast', 1), ('example-calm', 2)])
         self.assertEqual((look['default'], look['sheet'], look['chosen']),
                          ('example-contrast', True, None))
-        self.assertEqual(look['notes'], [pipeline.THROUGH_DRIVE], 'previews go through Drive')
+        self.assertEqual(look['notes'], [deck_flow.route('drive')['says']],
+                         "the slides tool's Google preview route, said on the gate")
         self.assertEqual(self.steps(root)['gate:deck-look']['status'], 'waiting')
         self.assertNotIn('outline_start', [call[0] for call in self.slides.calls])
         for number in (0, 1, 2):
@@ -1683,6 +1685,35 @@ class LookTests(DeckCase):
         self.assertIsNotNone(pipeline.looked(self.record(root)['deck'][''],
                              workspace.sha256_file(root / pipeline.OUTLINE)))
         self.assertIsNone(pipeline.looked(self.record(root)['deck'][''], 'another outline'))
+
+    def test_looks_that_cannot_be_rendered_are_not_picked_blind(self):
+        self.brand.cannot_render = True
+        root = self.begin()
+        view = self.looking(root)
+        look = view['look']
+        self.assertTrue(look['waiting'] and look['failed'])
+        self.assertIn('could not be rendered here', look['notes'][0])
+        self.assertIn('Google Slides could not be reached', look['notes'][0])
+        with self.assertRaisesRegex(WorkspaceError, 'one of the looks'):
+            self.engine.look(root, None, 'example-calm')
+        # Tried again, it fails again; then the person carries on in the default.
+        self.engine.look(root, None, pipeline.AGAIN_LOOK)
+        self.assertTrue(self.view(root)['look']['failed'])
+        self.engine.look(root, None, pipeline.DEFAULT_LOOK)
+        self.assertEqual(workspace.status(root)['gate'], 'deck')
+        chosen = self.record(root)['deck']['']['look']['chosen']
+        self.assertIn('chose to carry on', chosen['words'])
+
+    def test_the_brand_refuses_a_pick_for_samples_of_an_older_outline(self):
+        root = self.begin()
+        self.looking(root)
+        outline = root / pipeline.OUTLINE
+        made = json.loads(outline.read_text())
+        made['title'] = 'Changed after the samples'
+        outline.write_text(json.dumps(made))
+        with self.engine.files:
+            self.assertFalse(self.engine._choose_look(root, None, 'example-calm', 'Calm.', 'page'))
+        self.assertIsNone(self.built(root).get('look'), 'drawn again from what it says now')
 
     def test_an_older_brand_offers_no_looks_and_the_deck_carries_on(self):
         self.brand.offers_looks = False

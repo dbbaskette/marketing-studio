@@ -130,7 +130,7 @@ class EveryRealGateTests(unittest.TestCase):
     """The policy against every gate ID each studio really lays out, so a renamed or new
     gate is decided here rather than slipping past by its name."""
     # Where each level stops: a gate's ID without its level or scenario.
-    TRAINING = {'balanced': {'documents', 'intake', 'deck', 'gate:deck', 'gate:deck-look',
+    TRAINING = {'balanced': {'documents', 'intake', 'deck', 'gate:deck',
                              'gate:research-plan', 'review:direction', 'review:final'},
                 'automatic': {'documents', 'intake', 'deck', 'gate:deck',
                               'review:direction', 'review:final'}}
@@ -174,3 +174,43 @@ class EveryRealGateTests(unittest.TestCase):
             for stage in stages:
                 self.assertEqual(review.automatic(run, 'blog', stage, 'package'),
                                  stage not in stops, (mode, stage))
+
+
+class SameDeckPausesTests(unittest.TestCase):
+    """Both studios make a deck the same way: at each level, the brand's checkpoints pause in
+    the same places, whichever studio's own gate or combined stop hosts them."""
+
+    def paused(self, product, level, gates):
+        from studio_core import deck_flow
+        found = set()
+        hosts = deck_flow.HOSTS.get(product, {}).get(level, {})
+        run = {'review_policy': {'schema': 1, 'level': level}}
+        for gate in gates:
+            checkpoint = deck_flow.canonical(product, gate)
+            if checkpoint is None:
+                continue
+            if not review.automatic(run, product, gate, 'package'):
+                hosted = next((stop for stop, host in hosts.items() if host == gate), None)
+                found.add(hosted or checkpoint)
+        found.update(stop for stop, host in hosts.items() if host not in gates or host.startswith('review:'))
+        return found
+
+    def test_each_level_pauses_both_studios_at_the_same_checkpoints(self):
+        from studio_core import deck_flow
+        for level in ('step_by_step', 'balanced', 'automatic'):
+            with self.subTest(level=level):
+                training = self.paused('training', level, training_gates())
+                presentation = self.paused('presentation', level, presentation_gates())
+                self.assertEqual(training, presentation)
+                self.assertEqual(training, set(deck_flow.pauses(level)))
+
+    def test_the_canonical_table(self):
+        from studio_core import deck_flow
+        self.assertEqual(deck_flow.PAUSES, {'step_by_step': ('draft', 'look', 'final'),
+                                            'balanced': ('direction', 'final'),
+                                            'automatic': ('final',)})
+        self.assertIs(deck_flow.stops('training', 'balanced', 'gate:deck-look@101'), False)
+        self.assertIs(deck_flow.stops('training', 'automatic', 'gate:deck'), True)
+        self.assertIs(deck_flow.stops('presentation', 'balanced', 'gate:outline'), True)
+        self.assertIs(deck_flow.stops('presentation', 'balanced', 'gate:look'), False)
+        self.assertIsNone(deck_flow.stops('training', 'balanced', 'gate:brief'))
