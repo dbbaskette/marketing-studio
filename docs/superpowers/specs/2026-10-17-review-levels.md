@@ -18,19 +18,22 @@ Balanced means, not a new version of the saved policy: it applies to any Balance
 training that has not reached its research plan yet, including one started
 earlier, and a run already past its plan is unaffected.
 
-Every studio's drawn deck comes to the person under every level: Presentation
-Studio's `gate:build`, Blog Studio's final package and Training Studio's
-`gate:deck` (for each level, as `gate:deck@101`) are never continued by the
-policy. Training Studio then shows the scenarios and the finished materials in
-its final combined review. The policy reads a Training Studio gate without its
+Decks pause the same way in every studio, by one table in
+`studio_core.deck_flow`. The brand defines three checkpoints: draft approval,
+the look (picked from the brand's rendered samples), and final acceptance of the
+rendered deck. Step by step stops at each. Balanced asks for the draft and the
+look in one combined stop (Training Studio's `review:direction`, Presentation
+Studio's "Review the direction" at `gate:outline`), then the final. Automatic
+draft stops only for the final, and uses the brand's default look, recording
+why. The final is always the deck's own gate (Training Studio's `gate:deck`,
+for each level as `gate:deck@101`; Presentation Studio's `gate:build`), so the
+person's answer there is the one bound to the slides tool's design record;
+Training Studio then still shows the scenarios and finished materials in its
+final combined review. The policy reads a Training Studio gate without its
 level, and `tests/test_review_policy.py` checks it against every gate ID each
-studio really lays out, so a renamed or new gate is decided rather than slipping
-through by its name.
-
-A deck's look is the brand's: its look step renders a slide in each of the
-brand's deck directions. Balanced stops for the person to pick one (Training
-Studio's `gate:deck-look`; Presentation Studio asks for the pick in its combined
-direction review); Automatic draft uses the brand's default look and records why.
+studio really lays out, so a renamed or new gate is decided rather than
+slipping through by its name. `tests/test_deck_contract.py` runs both studios'
+decks through their engines with stand-ins and checks they pause alike.
 
 No gate is continued automatically while a reviewer's critical or major finding
 is still open or an audit has a blocker, whatever the level: the studio stops for
