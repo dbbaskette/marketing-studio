@@ -2,7 +2,9 @@
 
 Marketing Studio adds its own address to the link of a studio it opens. The studio accepts
 it only for the same scheme and host on another port, and then shows a link that targets
-the Marketing Studio tab by name.
+the Marketing Studio tab by name. A phone cannot bring another tab forward, so there Marketing
+Studio opens the studio in its own tab and says so (back=tab); the way back then leaves in that
+same tab, where Marketing Studio still holds its key.
 """
 import json
 import re
@@ -66,6 +68,34 @@ class SuiteLinkTests(unittest.TestCase):
                                       'withHome("http://127.0.0.1:8792/#abc")]')
         self.assertEqual(found, ['http://127.0.0.1:8791/#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790',
                                  'http://127.0.0.1:8792/#abc&home=http%3A%2F%2F127.0.0.1%3A8790'])
+
+    def test_a_phone_opens_a_studio_in_the_same_tab_and_says_so(self):
+        text = HOME.read_text()
+        source = 'const location = {origin: "http://127.0.0.1:8790"};\n' + function(text, 'withHome')
+        found = self.evaluate(source, '[withHome("http://127.0.0.1:8791/#token=abc", true), '
+                                      'withHome("http://127.0.0.1:8791/#token=abc", false)]')
+        self.assertEqual(found, ['http://127.0.0.1:8791/#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790&back=tab',
+                                 'http://127.0.0.1:8791/#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790'])
+        chosen = self.evaluate(function(text, 'inThisTab'), json.dumps([
+            ['(pointer: coarse)'], ['(max-width: 52rem)'], [], ['(hover: hover)']])
+            + '.map((matching) => inThisTab((query) => matching.some((m) => query.includes(m))))')
+        self.assertEqual(chosen, [True, True, False, False])
+        self.assertIn('if (inThisTab(', text)
+
+    def test_studios_leave_in_the_same_tab_when_opened_in_it(self):
+        hashes = ['#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790&back=tab',
+                  '#abc&home=http%3A%2F%2F127.0.0.1%3A8790&back=tab',
+                  '#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790', '#token=abc&back=other', '']
+        for folder in STUDIOS:
+            with self.subTest(studio=folder.relative_to(ROOT).as_posix()):
+                source = (folder / 'app.js').read_text()
+                found = self.evaluate(function(source, 'suiteBack'),
+                                      json.dumps(hashes) + '.map((hash) => suiteBack(hash))')
+                self.assertEqual(found, [True, True, False, False, False])
+                wiring = (folder / 'app.js').read_text() + (folder / 'runner.js').read_text() \
+                    if (folder / 'runner.js').exists() else source
+                self.assertIn("removeAttribute('target')", wiring)
+                self.assertIn('marketing-studio-back', wiring)
 
     def test_studio_pages_hold_a_hidden_link_back(self):
         for folder in STUDIOS:

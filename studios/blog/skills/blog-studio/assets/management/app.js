@@ -9,10 +9,17 @@ function suiteHome(hash, here) {
     && Number(found[3]) > 0 && Number(found[3]) < 65536
     ? found[1] + '//' + found[2] + ':' + found[3] : '';
 }
+// Marketing Studio says when it opened this studio in its own tab, as it does on a phone: the
+// way back then stays in this tab, where Marketing Studio still holds its key.
+function suiteBack(hash) {
+  return new URLSearchParams(String(hash).replace(/^#/, '')).get('back') === 'tab';
+}
 const token = location.hash.slice(1).split('&')[0] || sessionStorage.getItem('blog-studio-session') || '';
 const suite = suiteHome(location.hash, location) || sessionStorage.getItem('marketing-studio-home') || '';
 if(token)sessionStorage.setItem('blog-studio-session',token);
 if(suite)sessionStorage.setItem('marketing-studio-home',suite);
+const suiteTab = suiteBack(location.hash) || sessionStorage.getItem('marketing-studio-back') === 'tab';
+if(suiteTab)sessionStorage.setItem('marketing-studio-back','tab');
 history.replaceState(null, '', location.pathname+(location.search||''));
 let view = 'board', offset = 0, total = 0, memoryEdit = null;
 const limit = 20;

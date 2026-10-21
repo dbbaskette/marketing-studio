@@ -1502,7 +1502,8 @@ class PageFileTests(unittest.TestCase):
         self.assertNotIn('sessionStorage', self.read('markdown.js'))
         # The one thing kept in the tab is the way back to Marketing Studio.
         self.assertEqual(re.findall(r"sessionStorage\.(\w+)\('([\w-]+)'", script),
-                         [('getItem', 'marketing-studio-home'), ('setItem', 'marketing-studio-home')])
+                         [('getItem', 'marketing-studio-home'), ('setItem', 'marketing-studio-home'),
+                          ('getItem', 'marketing-studio-back'), ('setItem', 'marketing-studio-back')])
 
     def test_the_page_has_nothing_its_own_policy_would_block(self):
         page = self.read('index.html')

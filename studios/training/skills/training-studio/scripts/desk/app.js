@@ -7752,6 +7752,11 @@ function suiteHome(hash, here) {
     && Number(found[3]) > 0 && Number(found[3]) < 65536
     ? found[1] + '//' + found[2] + ':' + found[3] : '';
 }
+// Marketing Studio says when it opened this studio in its own tab, as it does on a phone: the
+// way back then stays in this tab, where Marketing Studio still holds its key.
+function suiteBack(hash) {
+  return new URLSearchParams(String(hash).replace(/^#/, '')).get('back') === 'tab';
+}
 
 function linkToken() {
   const found = /(?:^#|&)token=([A-Za-z0-9_-]+)/.exec(window.location.hash);
@@ -7786,6 +7791,14 @@ function begin() {
   }
   if (suite && home) {
     suite.href = home + '/';
+    let back = suiteBack(window.location.hash);
+    try {
+      back = back || sessionStorage.getItem('marketing-studio-back') === 'tab';
+      if (back) sessionStorage.setItem('marketing-studio-back', 'tab');
+    } catch (failure) {
+      // No tab storage: the address in this link is still used.
+    }
+    if (back) suite.removeAttribute('target');
     suite.prepend(icon('suite'));
     suite.hidden = false;
   }
