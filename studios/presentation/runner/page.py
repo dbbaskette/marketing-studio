@@ -306,8 +306,12 @@ class RunnerPage(server.Page):
             return server.as_json(HTTPStatus.OK, self.engine.progress_seen(
                 self.deck(server.text(sent, 'path')), server.text(sent, 'ref')))
         if path == '/api/build-feedback':
+            number = sent.get('number')
+            if number is not None and (type(number) is not int or number < 1):
+                raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Name the slide by its number.')
             return server.as_json(HTTPStatus.OK, self.engine.build_feedback(
-                self.deck(server.text(sent, 'path')), server.text(sent, 'ref'), server.text(sent, 'note')))
+                self.deck(server.text(sent, 'path')), server.text(sent, 'ref'),
+                server.text(sent, 'note'), number))
         if path == '/api/decide':
             return server.as_json(HTTPStatus.OK, self.decide(sent))
         if path == '/api/answer':
@@ -416,8 +420,15 @@ class RunnerPage(server.Page):
         if extra is not None and not isinstance(extra, dict):
             raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Send what comes with a decision as '
                                  'one JSON object.')
-        brand_change = gate == 'gate:look' or (extra or {}).get('direction_target') == 'gate:look'
-        if decision == 'changes' and not brand_change and not (note or '').strip() \
+        # Another brand, a slide whose words go back to the outline, a corrected reading
+        # of the document, or a line against a slide: each says what should change itself.
+        noted, target = (extra or {}).get('slide_notes'), (extra or {}).get('direction_target')
+        wordless = gate == 'gate:look' \
+            or (gate == 'gate:outline' and target in ('gate:look', 'gate:classify')) \
+            or (gate == 'gate:build' and target == 'gate:outline') \
+            or (gate == 'gate:build' and isinstance(noted, dict)
+                and any(str(line or '').strip() for line in noted.values()))
+        if decision == 'changes' and not wordless and not (note or '').strip() \
                 and not (gate in marks.REVIEWED and marks.asks(extra or {})):
             raise server.Refusal(HTTPStatus.BAD_REQUEST, engines.NO_NOTE)
         return self.engine.decide(self.deck(path), gate, decision, note, extra,

@@ -142,3 +142,11 @@
     height: calc(100dvh - 12rem);
   }
 }
+
+/* While the outline is edited, the storyboard drawn from it before stays, greyed, until the
+   new one comes: nothing jumps, and it is plain that it is behind. */
+.storyboard-holder.waiting .storyboard {
+  opacity: 0.45;
+  filter: grayscale(1);
+  transition: opacity 0.2s ease;
+}

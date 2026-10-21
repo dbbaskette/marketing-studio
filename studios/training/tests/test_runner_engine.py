@@ -813,6 +813,93 @@ class ResearchTests(StudioCase):
                          workspace.research_record(root)['run'])
 
 
+class SynthesisWordsTests(StudioCase):
+    """What a run whose research is one authored report and one independent check says
+    while that research is in hand. The record is read as it lies; nothing is run."""
+
+    STAMPS = ('2030-01-01T00:00:00Z', '2030-01-01T00:05:00Z', '2030-01-01T00:10:00Z')
+
+    def test_a_synthesis_run_says_which_of_its_two_jobs_is_in_hand(self):
+        from types import SimpleNamespace
+        root = self.start()
+        self.assertEqual(self.state(root), 'waiting')
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        record['research'] = {'run': 'synthesis', 'plan': 'plan'}
+        record['steps']['research-start'] = {'failed': 0, 'attempts': [
+            {'started_at': self.STAMPS[0], 'ended_at': self.STAMPS[0], 'outcome': 'kept'}]}
+        step = pipeline.Step('research', 'agent', 'Investigate the sources and write the '
+                             'report, then check it independently',
+                             'Investigating the sources and checking the research', 'research')
+        found = SimpleNamespace(next=SimpleNamespace(kind='agent', step=step))
+        run = self.engine._run(root)
+
+        def live(*jobs: str) -> None:
+            run.workers.clear()
+            for job in jobs:
+                run.workers[job] = {'label': job, 'started_at': self.STAMPS[1], 'lines': []}
+
+        def says() -> str:
+            return self.engine._doing(record, found, run)
+
+        first = 'Investigating sources and writing the report (job 1 of 2).'
+        self.assertEqual(says(), first)
+        live('research-author')
+        self.assertEqual(says(), first)
+        live('research-review')
+        self.assertEqual(says(), 'Independently checking the research (job 2 of 2).')
+        # The check asked for corrections: the author's job runs again, then the check.
+        record['steps']['research-review'] = {'failed': 0, 'attempts': [
+            {'started_at': self.STAMPS[1], 'ended_at': self.STAMPS[2], 'outcome': 'kept'}]}
+        live('research-author')
+        self.assertEqual(says(), 'Correcting the research after its independent check '
+                                 '(round 2, job 1 of 2).')
+        live('research-review')
+        self.assertEqual(says(), 'Independently checking the corrected research '
+                                 '(round 2, job 2 of 2).')
+        # A change the person asked for starts the rounds again: the check before it is
+        # not one of this research's rounds.
+        record['research']['again'] = {'at': '2030-01-02T00:00:00Z', 'left': ['synthesis']}
+        live('research-author')
+        self.assertEqual(says(), first)
+        live()
+        self.assertEqual(says(), first)
+
+    def test_the_research_row_carries_both_jobs_time_and_money(self):
+        from types import SimpleNamespace
+        root = self.start()
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        record['steps']['research-author'] = {'failed': 0, 'attempts': [
+            {'started_at': self.STAMPS[0], 'ended_at': self.STAMPS[1], 'seconds': 300.0,
+             'dollars': 0.8, 'tokens': 40000, 'outcome': 'kept', 'error': None}]}
+        record['steps']['research-review'] = {'failed': 1, 'attempts': [
+            {'started_at': self.STAMPS[1], 'ended_at': self.STAMPS[2], 'seconds': 120.5,
+             'dollars': 0.25, 'tokens': 9000, 'outcome': 'failed',
+             'error': 'The agent could not be reached.'}]}
+        step = pipeline.Step('research', 'agent', *pipeline.SYNTHESIS, 'research')
+        found = SimpleNamespace(steps=[step], done=frozenset(),
+                                next=SimpleNamespace(kind='agent', step=step),
+                                research=SimpleNamespace(unread=[]))
+        row, = self.engine._steps(record, found, 'working')
+        self.assertEqual((row['id'], row['status'], row['attempts'], row['seconds'],
+                          row['dollars']), ('research', 'working', 2, 420.5, 1.05))
+
+    def test_a_run_that_researches_each_question_keeps_its_count(self):
+        from types import SimpleNamespace
+        root = self.start()
+        self.assertEqual(self.state(root), 'waiting')
+        record = self.engine._load(root)
+        step = pipeline.Step('research', 'agent', 'Research each question',
+                             'Researching the questions', 'research')
+        found = SimpleNamespace(next=SimpleNamespace(kind='agent', step=step),
+                                research=SimpleNamespace(
+                                    verdicts={'q1': 'supported', 'q2': 'pending',
+                                              'q3': 'pending'}, unread=['q2', 'q3']))
+        self.assertEqual(self.engine._doing(record, found, self.engine._run(root)),
+                         'Researching the questions: 1 of 3 answered so far.')
+
+
 class LimitTests(StudioCase):
     def test_a_training_that_has_spent_what_it_may_stops_and_asks(self):
         settings.save(replace(settings.load(), training_dollars=1.0))
@@ -898,7 +985,8 @@ class HaltTests(StudioCase):
         root = self.start()
         stopped = self.engine.act(root, 'stop')
         self.assertEqual((stopped['state'], stopped['sentence']),
-                         ('stopped', 'Stopped. Everything kept so far is still here.'))
+                         ('stopped', 'Stopped. Everything finished before it is kept; the '
+                                     'step that was in hand starts over on resume.'))
         said = self.decide(root, 'research-plan')
         self.assertEqual(said['said'], 'Approved. This training is not running, so nothing '
                          'more happens until you resume it or try again.')
@@ -940,8 +1028,8 @@ class HaltTests(StudioCase):
         self.assertEqual(still_running(written(pids)), [])
         view = self.view(root)
         self.assertEqual((said[0]['state'], view['state'], view['sentence'], view['problem']),
-                         ('stopped', 'stopped', 'Stopped. Everything kept so far is still '
-                          'here.', None))
+                         ('stopped', 'stopped', 'Stopped. Everything finished before it is kept; '
+                          'the step that was in hand starts over on resume.', None))
         self.assertEqual(self.engine.act(root, 'resume')['state'], 'waiting')
         self.assertEqual(workspace.status(root)['gate'], 'research-plan')
 
@@ -1256,9 +1344,15 @@ class LiveTests(StudioCase):
                                            'Writing its own notes on the draft'])
         self.assertEqual(self.steps(root)['research-plan']['status'], 'working')
         self.assertEqual(self.engine.brief(root)['needs'], False)
+        # The worker's start is the run's last activity, until a try begins or ends later.
+        self.assertEqual(self.engine.brief(root)['busy_since'], worker['started_at'])
+        from runner import page
+        listed = {item['path']: item for item in page.RunnerPage(8765, self.engine).trainings()}
+        self.assertEqual(listed[str(root)]['activity_at'], worker['started_at'])
         go.set()
         self.until(lambda: self.state(root) == 'waiting')
         self.assertEqual(self.view(root)['workers'], [])
+        self.assertIsNone(self.engine.brief(root)['busy_since'])
 
     def test_only_so_many_trainings_work_at_once(self):
         settings.save(replace(settings.load(), parallel=1))

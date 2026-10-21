@@ -2732,6 +2732,7 @@ class Engine(Reviewing):
                 record = self._load(root)
                 record['research']['reviewed'] = True
                 record['research']['reviewed_request'] = (step.request or {}).get('at')
+                record['research'].pop('again', None)
                 self._store(root, record)
                 self._commit(root, 'complete independent research review')
             return
@@ -3208,8 +3209,9 @@ class Engine(Reviewing):
 
     # --- what the page shows -------------------------------------------------------------
 
-    def _doing(self, record: dict, found: pipeline.Survey) -> str:
-        """What a working run is doing now, in a sentence."""
+    def _doing(self, record: dict, found: pipeline.Survey, run: _Run | None = None) -> str:
+        """What a working run is doing now, in a sentence. `run` tells which worker is in
+        hand, where that says more than the record does."""
         step = found.next
         if step.kind == 'gate':
             return f'Getting {pipeline.subject(step.step)} ready for your review.'
@@ -3218,6 +3220,8 @@ class Engine(Reviewing):
             listed = len(mine.start.get('sections') or ())
             return (f'{step.step.doing}: {listed - len(step.questions)} of {listed} drawn '
                     'so far.')
+        if step.step.id == 'research' and record.get('research_contract'):
+            return self._synthesis_doing(record, run)
         if step.step.id == 'research':
             verdicts = found.research.verdicts
             answered = len(verdicts) - len(found.research.unread)
@@ -3228,6 +3232,30 @@ class Engine(Reviewing):
             return f'{step.step.doing} again. The last try did not work: {error}'
         return f'{step.step.doing}.'
 
+    def _synthesis_doing(self, record: dict, run: _Run | None) -> str:
+        """Where research done as one authored report and one independent check stands:
+        which of the two jobs is in hand, and the round, when the check sent the report
+        back for correction. The rounds are counted from the start of this research: the
+        hand-over of the plan, or the last change the person asked for."""
+        with self._lock:
+            live = set(run.workers) if run else set()
+        handed = [attempt['started_at'] for attempt in attempts(record, 'research-start')
+                  if attempt.get('outcome') == 'kept']
+        asked = ((record.get('research') or {}).get('again') or {}).get('at') or ''
+        since = max([*handed, asked, ''])
+        checked = len([attempt for attempt in attempts(record, 'research-review')
+                       if attempt.get('outcome') == 'kept'
+                       and (attempt.get('started_at') or '') >= since])
+        rounds = checked + 1
+        if 'research-review' in live:
+            return ('Independently checking the research (job 2 of 2).' if rounds == 1 else
+                    'Independently checking the corrected research '
+                    f'(round {rounds}, job 2 of 2).')
+        if rounds > 1:
+            return ('Correcting the research after its independent check '
+                    f'(round {rounds}, job 1 of 2).')
+        return 'Investigating sources and writing the report (job 1 of 2).'
+
     def _state(self, record: dict, found: pipeline.Survey, run: _Run,
                report: dict | None = None) -> tuple[str, str]:
         """A run's state, and what is happening in a sentence. `report` is how ready a
@@ -3236,7 +3264,8 @@ class Engine(Reviewing):
         if problem:
             return problem.get('state', 'failed'), problem['what']
         if halt == 'stopped':
-            return 'stopped', 'Stopped. Everything kept so far is still here.'
+            return 'stopped', ('Stopped. Everything finished before it is kept; the step '
+                               'that was in hand starts over on resume.')
         if halt == 'paused':
             return 'paused', ('Pausing. The step in hand finishes first.' if run.workers
                               else 'Paused. Nothing new starts until you resume.')
@@ -3266,7 +3295,7 @@ class Engine(Reviewing):
             return 'working', 'Waiting for its turn. ' + (
                 'It is next.' if not ahead else '1 training is ahead of it.' if ahead == 1
                 else f'{ahead} trainings are ahead of it.')
-        return 'working', self._doing(record, found)
+        return 'working', self._doing(record, found, run)
 
     def _queue(self, run: _Run) -> dict | None:
         """For a training waiting its turn: how many are ahead of it."""
@@ -3354,8 +3383,13 @@ class Engine(Reviewing):
         if state == 'failed' and failed not in [step.id for step in found.steps]:
             failed = current
         listed = []
+        # Research done as one authored report and one independent check records its two
+        # jobs under their own names: the research row carries both.
+        synthesis = bool(record.get('research_contract'))
         for step in found.steps:
             tried = attempts(record, step.id)
+            if step.id == 'research' and synthesis:
+                tried = attempts(record, 'research-author') + attempts(record, 'research-review')
             dollars = [attempt['dollars'] for attempt in tried
                        if attempt.get('dollars') is not None]
             if step.id == failed:
@@ -3440,7 +3474,8 @@ class Engine(Reviewing):
     def _unread(failure: Exception) -> dict:
         """A run in brief whose record or files could not be read."""
         return {'state': 'failed', 'sentence': str(failure), 'needs': True, 'question': None,
-                'mine': True, 'driver': None, 'last_shared': None, 'notice': None}
+                'mine': True, 'driver': None, 'last_shared': None, 'notice': None,
+                'busy_since': None}
 
     def _brief(self, root: Path, record: dict, found: pipeline.Survey | None = None) -> dict:
         """`brief`, from a record already read and, where there is one, a survey already
@@ -3449,14 +3484,19 @@ class Engine(Reviewing):
             found = self._survey(root, record) if found is None else found
         except (WorkspaceError, OSError) as failure:
             return self._unread(failure)
-        state, sentence = self._state(record, found, self._run(root))
+        run = self._run(root)
+        state, sentence = self._state(record, found, run)
         asked = record.get('question')
         needs = bool(asked or record.get('problem') or found.next.kind == 'stuck'
                      or (state == 'waiting' and found.next.kind in ('documents', 'outline', 'review')))
         mine, who, state, sentence, last = self._whose(root, record, found, state, sentence)
+        # When the worker now in hand began: the run's last activity, while it works.
+        with self._lock:
+            began = [worker['started_at'] for worker in run.workers.values()]
         return {'state': state, 'sentence': sentence, 'needs': needs and mine,
                 'question': asked['text'] if asked and mine else None, 'mine': mine,
-                'driver': who, 'last_shared': last, 'notice': self._notice(root, record)}
+                'driver': who, 'last_shared': last, 'notice': self._notice(root, record),
+                'busy_since': max(began) if began and mine else None}
 
     @staticmethod
     def _asking(scope: str) -> str:
