@@ -2499,7 +2499,7 @@ def holding(root: Path, found: 'Survey', step: Step) -> list[str]:
     for what a deck says, the grave findings a review of its slides sent back to it; for a
     deck, the grave findings its review still has and its audit's blockers. Nothing for
     any other gate."""
-    if step.stage != 'deck':
+    if step.stage != 'deck' or not step.artifact:   # the deck made in a conversation has none
         return []
     level = workspace.split(step.artifact)[1]
     mine = (found.decks or {}).get(level)
