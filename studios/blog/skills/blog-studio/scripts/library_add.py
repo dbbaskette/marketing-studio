@@ -550,7 +550,92 @@ def mark_samples(root, data):
     return result
 
 
+SELECTION_ACTIONS = ('style-learn', 'voice-learn', 'blog')
+
+
+def selection(root, data):
+    """The library screen's three actions on a selection. style-learn and voice-learn mark
+    the items as samples (a new source revision each, through source-purpose) and return the
+    sample ids for the learn sheet; blog returns the items as the files of a new blog, each
+    an example, for the page to tick. Nothing starts a job here."""
+    from advanced_tools import source_purpose
+
+    if set(data) - {'action', 'ids', 'author'} or data.get('action') not in SELECTION_ACTIONS:
+        raise ValueError('Choose a library action: learn a style, learn a voice, or start a blog.')
+    ids = data.get('ids')
+    if (
+        not isinstance(ids, list)
+        or not 1 <= len(ids) <= 50
+        or any(not isinstance(v, str) for v in ids)
+        or len(set(ids)) != len(ids)
+    ):
+        raise ValueError('Select one to fifty library items.')
+    rows = []
+    for ident in ids:
+        directory, record = studio.item(root, 'sources', ident)
+        if studio.is_material(root, directory, record):
+            raise ValueError('A file uploaded for one blog is not a library item.')
+        rows.append((directory, record))
+    action = data['action']
+    if action == 'blog':
+        files = []
+        for directory, record in rows:
+            content = directory / 'content.md'
+            text = content.read_text() if content.is_file() else ''
+            files.append(
+                {
+                    'id': record['id'],
+                    'filename': record['name'],
+                    'state': 'ready'
+                    if record.get('status') == 'ready' and text.strip()
+                    else 'pending',
+                    'chars': len(text),
+                    'role': 'inspiration',
+                    'library': True,
+                }
+            )
+        return {'action': action, 'files': files}
+    author = data.get('author')
+    if action == 'voice-learn':
+        named = [record.get('author') for _, record in rows if record.get('author')]
+        if author:
+            author = studio.checked_author(author)
+        elif named:
+            author = named[0]
+        else:
+            raise ValueError('Say whose writing these items are before learning a voice.')
+        if any(not voice_links.same_author(name, author) for name in named):
+            raise ValueError(
+                'These items are by more than one author. Select posts by one author, or '
+                'learn a style from them instead.'
+            )
+    receipts, samples = [], []
+    for _directory, record in rows:
+        result = source_purpose(
+            root,
+            {
+                'action': 'source-purpose',
+                'source': record['id'],
+                'purpose': 'voice-sample' if action == 'voice-learn' else 'style-sample',
+                **({'author': author} if action == 'voice-learn' else {}),
+            },
+        )
+        samples.append(record['id'])
+        if result['changed']:
+            _, saved = studio.item(root, 'sources', record['id'])
+            shared = management.share(root, 'source', saved)
+            receipts.append(management.receipt(root, 'Sample source', shared, 'source'))
+    return {
+        'action': action,
+        'samples': samples[:10],
+        'author': author if action == 'voice-learn' else None,
+        'receipts': receipts,
+    }
+
+
 def route(root, name, data):
+    if name == 'library-selection':
+        return selection(root, data)
     if name == 'library-add-preview':
         return preview(root, data)
     if name == 'library-add':

@@ -885,6 +885,23 @@ function sLibraryAddResult(held){
   const samples=unmarked?sAdd(sNode('div'),sCheck('library-add-mark','Mark the posts as voice samples by their authors',held,'mark','On, every post in a named group becomes that author’s voice sample, in a new source revision that changes no blog. Held posts stay references.',on=>{mark.disabled=!on;}),mark):null;
   sOpenSheet('Added to the library',sCard(result.counts.imported+' added · '+result.counts['in-library']+' already there · '+result.counts.failed+' failed',sNode('p','quiet',result.sharing_message||''),sNode('p','',result.next_step)),list,result.groups.length?sNode('h3','sheet-part','By author'):null,groups,result.held.length?sNode('h3','sheet-part','Held: no single byline'):null,held_,samples,problem,sButton('Add more',()=>{studio.libraryAdd=null;sLibraryAdd();}),sButton('Close',sCloseSheet));
 }
+// The library screen's selection: learn a style or a voice from the ticked items, or start a
+// blog with them as examples. Learning marks them as samples first, then opens the learn sheet,
+// which still asks for permission before any analysis.
+async function sLibrarySelection(action,ids,author=null){
+  if(!ids.length)throw new Error('Tick some library items first.');
+  let result;
+  try{result=await api('library-selection',{action,ids,...(author?{author}:{})});}
+  catch(error){if(action!=='voice-learn'||author!==null||!/whose writing/.test(error.message))throw error;
+    const held={author:''},problem=sNode('p','problem'),form=sNode('form'),go=sNode('button','button button-filled','Continue');problem.setAttribute('role','alert');go.type='submit';
+    form.append(sField('library-voice-author','Whose writing are these?',held,'author',{required:true,max:200,hint:'Every ticked item becomes this author’s voice sample.'}),problem,go);
+    form.addEventListener('submit',async event=>{event.preventDefault();if(!held.author.trim())return;await busy(go,'Marking…',async()=>{try{await sLibrarySelection(action,ids,held.author.trim());}catch(failure){problem.textContent=failure.message;}});});
+    sOpenSheet('Learn a voice from these',form,sButton('Cancel',sCloseSheet));return;}
+  if(result.receipts?.length)savedNotice(result);
+  if(action==='blog'){librarySelection.clear();await newBlog('',null,'from-files');if(!studio.draft)return;studio.draft.files=result.files.map(file=>({...file,note:'',link:'',kept:true}));sWizard();return;}
+  if(action==='style-learn'){sLearnStyle(await api('styles'),null,result.samples,'');return;}
+  sLearnVoice(await api('voices'),null,result.samples,null,result.author);
+}
 // The headings of a saved ideas document, each with the line that follows it.
 // New blog from my files: every file goes up at once and says what it has; the run starts from the readable ones.
 function sCheck(id,label,held,key,hint,changed){const box=sNode('div','field'),row=sNode('label','check'),input=sNode('input','');input.type='checkbox';input.id=id;input.checked=!!held[key];input.addEventListener('change',()=>{held[key]=input.checked;if(changed)changed(input.checked);});row.append(input,sNode('span','',label));box.append(row);if(hint){const note=sNode('p','quiet field-hint',hint);note.id=id+'-hint';input.setAttribute('aria-describedby',note.id);box.append(note);}return box;}

@@ -504,6 +504,98 @@ class AddTests(RunnerCase):
             )
 
 
+class SelectionTests(RunnerCase):
+    """Task 5: the library screen filters, and acts on a selection."""
+
+    def items(self, *names, author=None, operation='a'):
+        result = management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': operation * 32,
+                'purpose': 'material',
+                'keep': True,
+                'analyze': False,
+                'files': [encoded_file(name, b'Words about ' + name.encode()) for name in names],
+                **({'author': author} if author else {}),
+            },
+        )
+        return [row['source']['id'] for row in result['files']]
+
+    def test_the_view_names_the_kinds_and_filters_by_role_kind_and_author(self):
+        self.items('one.md', author='Avery')
+        shown = management.view(self.root, 'library', {})
+        self.assertIn(
+            {'id': 'product-announcement', 'name': 'Product announcement'}, shown['kinds']
+        )
+        self.assertEqual(shown['total'], 1)
+        self.assertEqual(management.view(self.root, 'library', {'role': ['example']})['total'], 0)
+        self.assertEqual(management.view(self.root, 'library', {'role': ['facts']})['total'], 1)
+        self.assertEqual(management.view(self.root, 'library', {'author': ['Avery']})['total'], 1)
+        self.assertEqual(management.view(self.root, 'library', {'kind': ['how-to']})['total'], 0)
+
+    def test_a_selection_learns_a_style_a_voice_or_starts_a_blog(self):
+        mine = self.items('one.md', 'two.md', author='Avery')
+        theirs = self.items('three.md', author='Jordan', operation='b')
+        unnamed = self.items('four.md', operation='c')
+        act = lambda **data: management.dispatch(self.root, 'library-selection', data)  # noqa: E731
+        styled = act(action='style-learn', ids=mine + theirs)
+        self.assertEqual(styled['samples'], mine + theirs)
+        for ident in mine + theirs:
+            _, record = studio.item(self.root, 'sources', ident)
+            self.assertEqual(
+                (record['purposes'], record['revision']), (['reference', 'style-sample'], 2)
+            )
+        self.assertEqual(len(styled['receipts']), 3)
+        self.assertEqual(act(action='style-learn', ids=mine)['receipts'], [], 'already samples')
+        with self.assertRaisesRegex(ValueError, 'more than one author'):
+            act(action='voice-learn', ids=mine + theirs)
+        with self.assertRaisesRegex(ValueError, 'whose writing'):
+            act(action='voice-learn', ids=unnamed)
+        voiced = act(action='voice-learn', ids=mine + unnamed, author='Avery')
+        self.assertEqual((voiced['samples'], voiced['author']), (mine + unnamed, 'Avery'))
+        _, record = studio.item(self.root, 'sources', unnamed[0])
+        self.assertEqual(
+            (record['author'], record['purposes']), ('Avery', ['reference', 'voice-sample'])
+        )
+        self.assertEqual(
+            act(action='voice-learn', ids=mine)['author'],
+            'Avery',
+            'the author comes from the items',
+        )
+        blog = act(action='blog', ids=mine)
+        self.assertEqual(
+            blog['files'],
+            [
+                {
+                    'id': ident,
+                    'filename': name,
+                    'state': 'ready',
+                    'chars': len('Words about ' + name + '.md'),
+                    'role': 'inspiration',
+                    'library': True,
+                }
+                for ident, name in zip(mine, ('one', 'two'), strict=True)
+            ],
+        )
+        with self.assertRaisesRegex(ValueError, 'library action'):
+            act(action='delete', ids=mine)
+        with self.assertRaisesRegex(ValueError, 'one to fifty'):
+            act(action='blog', ids=[])
+        material = management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': 'd' * 32,
+                'purpose': 'material',
+                'analyze': False,
+                'files': [encoded_file('m.md', b'Mine.')],
+            },
+        )['files'][0]['source']['id']
+        with self.assertRaisesRegex(ValueError, 'not a library item'):
+            act(action='blog', ids=[material])
+
+
 class FinishTests(RunnerCase):
     """Task 2: Finish keeps the approved draft in the library, once per blog."""
 

@@ -1591,7 +1591,7 @@ def _dispatch(root, route, data):
             return library_import(root, data)
         if route in ('voice-links-preview', 'voice-links-import'):
             return voice_links_route(root, route, data)
-        if route.startswith('library-add'):
+        if route.startswith('library-add') or route == 'library-selection':
             import library_add
 
             return library_add.route(root, route, data)
@@ -2014,21 +2014,31 @@ def view(root, name, query):
 
         return report(root, arg('topic', ''))
     if name == 'library':
-        return blog_library.catalog(
-            root,
-            arg('query', ''),
-            arg('collection'),
-            arg('author'),
-            arg('topic'),
-            arg('product'),
-            arg('since'),
-            arg('until'),
-            limit,
-            offset,
-            arg('retired') == 'true' or arg('status') == 'retired',
-            status=arg('status'),
-            role=arg('role'),
-            kind=arg('kind'),
+        import styles
+
+        kinds = [
+            {'id': style['id'], 'name': style['name']}
+            for style in styles.catalog(root)['styles']
+            if style['status'] != 'retired'
+        ]
+        return dict(
+            blog_library.catalog(
+                root,
+                arg('query', ''),
+                arg('collection'),
+                arg('author'),
+                arg('topic'),
+                arg('product'),
+                arg('since'),
+                arg('until'),
+                limit,
+                offset,
+                arg('retired') == 'true' or arg('status') == 'retired',
+                status=arg('status'),
+                role=arg('role'),
+                kind=arg('kind'),
+            ),
+            kinds=kinds,
         )
     if name == 'memory':
         return memories(root, limit, offset, arg('query', ''))
