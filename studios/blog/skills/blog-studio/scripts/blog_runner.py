@@ -1541,12 +1541,26 @@ def options(root):
 
     brand = brand_skill.status()
     brand['default'] = brand_skill.defaults(brand)
+    # Me, on the page's Write as select: the personal default voice, when it still resolves.
+    default_voice = None
+    try:
+        import writing_defaults
+
+        voice = writing_defaults.personal(root)['values'].get('voice')
+        if voice:
+            pin = studio.voice_pin(root, voice['profile_id'], voice['revision'])
+            _, profile = studio.item(root, 'profiles', pin['profile_id'])
+            if profile.get('status') != 'retired':
+                default_voice = {'profile_id': profile['id'], 'name': profile['name']}
+    except (ValueError, KeyError, TypeError, OSError):
+        default_voice = None
     return {
         'profiles': records('profiles'),
         'sources': records('sources'),
         'agents': agents,
         'settings': settings(root),
         'brand': brand,
+        'default_voice': default_voice,
     }
 
 

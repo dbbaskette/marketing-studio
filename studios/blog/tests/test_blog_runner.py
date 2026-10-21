@@ -2236,3 +2236,39 @@ class PointTests(FilesCase):
         # The point from files has an outline, so Balanced stops there and at the end.
         found = self.submit(self.point(), page=True)
         self.assertEqual(found['awaits'], 'decision')
+
+
+class WriteAsTests(RunnerCase):
+    """The page's Write as select: Me is the personal default voice, when one is set."""
+
+    def test_options_name_the_personal_default_voice(self):
+        self.assertIsNone(runner.options(self.root)['default_voice'])
+        self.file.write_text('Use short direct sentences. No invented experience.')
+        profile = self.command(
+            'profile', 'create', '--name', 'Avery', '--guide-file', str(self.file)
+        )
+        import writing_defaults
+
+        args = studio.parser().parse_args(
+            [
+                '--root',
+                str(self.root),
+                'defaults',
+                'set',
+                '--scope',
+                'personal',
+                '--key',
+                'voice',
+                '--value',
+                json.dumps({'profile_id': profile['id'], 'revision': 1}),
+            ]
+        )
+        writing_defaults.command(self.root, args)
+        found = runner.options(self.root)
+        self.assertEqual(found['default_voice'], {'profile_id': profile['id'], 'name': 'Avery'})
+        self.assertEqual([p['status'] for p in found['profiles']], ['provisional'])
+        # A default that no longer resolves is simply no default.
+        import shutil
+
+        shutil.rmtree(self.root / 'profiles' / profile['id'])
+        self.assertIsNone(runner.options(self.root)['default_voice'])
