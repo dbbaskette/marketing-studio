@@ -308,8 +308,8 @@ def checked_upload(root, entry, label='upload'):
     filename = entry.get('filename', '')
     if (
         not isinstance(filename, str)
+        or not re.fullmatch(r'[\w .()\-]{1,200}', filename)
         or Path(filename).name != filename
-        or len(filename) > 200
         or filename.startswith('.')
     ):
         raise ValueError('Use a simple ' + label + ' filename.')
@@ -381,21 +381,30 @@ def upload_files(root, data, staging, ledger, fingerprint):
     if len({entry['filename'] for entry in checked}) != len(checked):
         raise ValueError('Upload each file once.')
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
-    rows, receipts = [], []
-    for entry in checked:
-        source = save_upload(root, staging, entry, purpose, analyze=data.get('analyze', True))
-        if purpose != 'material':
-            source = share(root, 'source', source)
-            receipts.append(receipt(root, 'Uploaded reference', source, 'source'))
-        rows.append(
-            {
-                'filename': entry['filename'],
-                'source': source,
-                'state': entry['status'],
-                'chars': len(entry['text']) if entry['text'] else 0,
-                'note': entry['note'],
-            }
-        )
+    rows, receipts, saved = [], [], []
+    try:
+        for entry in checked:
+            source = save_upload(root, staging, entry, purpose, analyze=data.get('analyze', True))
+            saved.append(source['id'])
+            if purpose != 'material':
+                source = share(root, 'source', source)
+                receipts.append(receipt(root, 'Uploaded reference', source, 'source'))
+            rows.append(
+                {
+                    'filename': entry['filename'],
+                    'source': source,
+                    'state': entry['status'],
+                    'chars': len(entry['text']) if entry['text'] else 0,
+                    'note': entry['note'],
+                }
+            )
+    except BaseException:
+        # All or nothing: material saved so far goes, and the same request can be retried.
+        if purpose == 'material':
+            for ident in saved:
+                shutil.rmtree(studio.material(root, ident), ignore_errors=True)
+            ledger.unlink(missing_ok=True)
+        raise
     ready = sum(row['state'] == 'ready' for row in rows)
     result = {
         'files': rows,

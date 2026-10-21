@@ -2116,7 +2116,7 @@ class MaterialUploadTests(Fixture):
         self.assertEqual(rows[0]['chars'], len('# Notes\n\nThe gateway retries twice.'))
         self.assertEqual(rows[2]['chars'], 0)
         self.assertIn('pdftotext', rows[2]['note'])
-        self.assertEqual(len(list((self.root / 'sources').iterdir())), 3)
+        self.assertEqual(len(list((self.root / '.uploads' / 'material').iterdir())), 3)
         for row in rows:
             _, record = studio.item(self.root, 'sources', row['source']['id'])
             self.assertEqual(record['purposes'], ['material'])
@@ -2132,7 +2132,7 @@ class MaterialUploadTests(Fixture):
                 'upload',
                 dict(data, operation='e' * 32, files=self.files(('a.md', b'ok'), ('b.exe', b'x'))),
             )
-        self.assertEqual(len(list((self.root / 'sources').iterdir())), 3)
+        self.assertEqual(len(list((self.root / '.uploads' / 'material').iterdir())), 3)
         with self.assertRaisesRegex(ValueError, 'at most 20'):
             management.dispatch(
                 self.root,
@@ -2206,3 +2206,141 @@ class MaterialUploadTests(Fixture):
             text, status, note = library.extract_detail(self.root, b'%PDF-bad', '.pdf')
             self.assertEqual((text, status), (None, 'pending'))
             self.assertIn('no PDF reader (pdftotext)', note)
+
+
+class MaterialSafetyTests(Fixture):
+    """Material stays local, an upload is all or nothing, and a shared size limit is not
+    asked of files that are never shared."""
+
+    def upload(self, operation, *names, keep=False):
+        return management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': operation,
+                'purpose': 'material',
+                'keep': keep,
+                'analyze': False,
+                'files': [
+                    {'filename': name, 'content': base64.b64encode(body).decode()}
+                    for name, body in names
+                ],
+            },
+        )
+
+    def test_material_lives_outside_the_shared_folders(self):
+        result = self.upload('3' * 32, ('notes.md', b'Local words.'))
+        ident = result['files'][0]['source']['id']
+        directory, record = studio.item(self.root, 'sources', ident)
+        self.assertEqual(directory, self.root / '.uploads' / 'material' / ident)
+        self.assertEqual((directory / 'content.md').read_text(), 'Local words.')
+        self.assertFalse((self.root / 'sources' / ident).exists())
+        self.assertEqual(record['purposes'], ['material'])
+
+    def test_a_failure_part_way_keeps_nothing_and_the_same_request_can_retry(self):
+        calls = []
+        real = management.save_upload
+
+        def flaky(*args, **kwargs):
+            calls.append(args[2]['filename'])
+            if len(calls) == 2:
+                raise OSError('Disk full')
+            return real(*args, **kwargs)
+
+        names = (('one.md', b'First.'), ('two.md', b'Second.'))
+        with patch.object(management, 'save_upload', flaky):
+            with self.assertRaisesRegex(OSError, 'Disk full'):
+                self.upload('4' * 32, *names)
+        material = self.root / '.uploads' / 'material'
+        self.assertEqual(list(material.iterdir()) if material.exists() else [], [])
+        self.assertFalse((self.root / '.uploads' / ('4' * 32 + '.json')).exists())
+        again = self.upload('4' * 32, *names)
+        self.assertEqual([row['state'] for row in again['files']], ['ready', 'ready'])
+        self.assertEqual(len(list(material.iterdir())), 2)
+
+    def test_material_is_not_held_to_the_shared_size_limit(self):
+        with (
+            patch.object(studio, 'shared_workspace', return_value=True),
+            patch.object(studio, 'sharing_limits', return_value=('Too large to share.', None)),
+        ):
+            result = self.upload('5' * 32, ('big.md', b'Many words.'))
+            self.assertEqual(result['files'][0]['state'], 'ready')
+            with self.assertRaisesRegex(ValueError, 'too large to share'):
+                self.upload('6' * 32, ('kept.md', b'Many words.'), keep=True)
+
+    def test_filenames_are_plain(self):
+        for name in ('notes\n.md', 'a/b.md', 'quote".md', '.hidden.md'):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, 'simple'):
+                    self.upload(sha(name.encode())[:32], (name, b'Words.'))
+        result = self.upload('7' * 32, ('Q3 plan (draft) - v2.md', b'Words.'))
+        self.assertEqual(result['files'][0]['state'], 'ready')
+
+    def test_pdftotext_has_a_minute_per_file(self):
+        import subprocess
+
+        seen = {}
+
+        def run(command, **kwargs):
+            seen.update(kwargs)
+            return subprocess.CompletedProcess(command, 0, stdout=b'Words.', stderr=b'')
+
+        with (
+            patch.object(library.shutil, 'which', return_value='/opt/bin/pdftotext'),
+            patch.object(library.subprocess, 'run', run),
+        ):
+            library.extract(self.root, b'%PDF-fixture', '.pdf')
+        self.assertEqual(seen['timeout'], 60)
+
+
+class HubMaterialTests(Fixture):
+    """With a Team Hub selected, a blog written from files shares the blog, not the files."""
+
+    def setUp(self):
+        super().setUp()
+        self.provider = FakeProvider(self.base / 'remotes')
+        self.registry = Registry(self.base / 'hubs', self.provider)
+        self.hub_id = self.registry.create('fixture/material', 'Material')['hub']
+        self.hub = self.registry.hub(self.hub_id)
+        self.workspace = Workspace(self.root, self.hub)
+        active = patch('hub_workspace.active', side_effect=lambda root: self.workspace)
+        active.start()
+        self.addCleanup(active.stop)
+
+    def test_material_pins_are_not_published(self):
+        import blog_runner
+
+        result = management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': '8' * 32,
+                'purpose': 'material',
+                'analyze': False,
+                'files': [
+                    {
+                        'filename': 'private-notes.md',
+                        'content': base64.b64encode(b'Unshared material words.').decode(),
+                    }
+                ],
+            },
+        )
+        ident = result['files'][0]['source']['id']
+        self.assertNotIn('hub_sync', result['files'][0]['source'])
+        found = blog_runner.create(
+            self.root, {'mode': 'from-files', 'sources': [ident], 'goal': 'A team post'}
+        )
+        graph = self.hub.graph()
+        kinds = [revision['kind'] for revision in graph['revisions'].values()]
+        self.assertIn('article', kinds)
+        self.assertNotIn('source', kinds)
+        files = self.hub.files()
+        for body in files.values():
+            body = body.encode() if isinstance(body, str) else body
+            self.assertNotIn(b'Unshared material words.', body)
+        article = next(r for r in graph['revisions'].values() if r['kind'] == 'article')
+        self.assertEqual(article['data']['studio'].get('sources', []), [])
+        self.assertEqual(article['data']['studio'].get('material'), [ident])
+        # This computer still reads the files for the run.
+        _, payload, _ = blog_runner.job(self.root, found['id'])
+        self.assertEqual(payload['sources'][0]['text'], 'Unshared material words.')

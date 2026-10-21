@@ -453,6 +453,51 @@ class TeamTests(unittest.TestCase):
         )
         self.assertEqual(saved['share'], 'decision')
 
+    def test_material_is_never_committed_or_pushed(self):
+        """In a team workspace the uploaded files stay on this computer, outside Git."""
+        import base64
+        import management
+
+        result = management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': '9' * 32,
+                'purpose': 'material',
+                'analyze': False,
+                'files': [
+                    {
+                        'filename': 'private-notes.md',
+                        'content': base64.b64encode(b'Unshared material words.').decode(),
+                    }
+                ],
+            },
+        )
+        ident = result['files'][0]['source']['id']
+        found = blog_runner.create(
+            self.root, {'mode': 'from-files', 'sources': [ident], 'goal': 'A team post'}
+        )
+        repo = teams.space(self.root).repo
+        self.assertTrue((self.root / '.uploads' / 'material' / ident / 'content.md').is_file())
+        self.assertFalse((self.root / '.shared' / 'references' / ident).exists())
+        status = support.git(repo, 'status', '--porcelain', '--untracked-files=all')
+        self.assertNotIn('material', status)
+        self.assertNotIn(ident, status)
+        history = support.git(repo, 'log', '--all', '--name-only', '--format=')
+        self.assertIn(found['id'] + '/session.json', history)
+        self.assertNotIn(ident + '/', history)
+        self.assertNotIn('.uploads', history)
+        pushed = subprocess.run(
+            ['git', '--git-dir', str(self.remote), 'grep', '-l', 'Unshared material words', 'main'],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(pushed.stdout, '')
+        # Another computer that takes this blog is told where its files are.
+        other = self.other()
+        with self.assertRaisesRegex(ValueError, 'stay on the computer'):
+            blog_runner.job(other, found['id'])
+
     def create(self):
         return blog_runner.create(
             self.root,

@@ -40,8 +40,8 @@ Use `--mode from-files --source <id>...` to write from the person's uploaded fil
 (`source add --purpose material` keeps a file out of the reference library; `--goal`
 is their one line about it, `--audience` may be empty): the run starts with an
 `angles` stage. Write three angles, each a `## Title` heading over one line of
-`audience · the point it makes · Leans on <file names>`, and submit it; it always
-waits for the person. Then `... run choose --id <id> --expected <latest> --angle
+`audience · the point it makes · Leans on <file names>` (exactly three), and submit it;
+it always waits for the person and is never approved. Then `... run choose --id <id> --expected <latest> --angle
 "<heading>" --note "..."` makes that angle the title, point and reader and starts
 the outline onward (web research first only with `--research web-allowed`); `run
 changes --stage angles` with their note asks for three different ones. Files past

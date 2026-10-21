@@ -153,6 +153,55 @@ def _forget(root, ident):
         tool_jobs.path(root, job['id']).unlink(missing_ok=True)
 
 
+def _material_out(root, ident, record):
+    """Keep the uploaded files only this blog pinned beside its deleted copy, and drop
+    the upload ledgers that named them. Files another blog pins stay where they are."""
+    pinned = [
+        entry['source_id']
+        for entry in record.get('sources', [])
+        if 'material' in entry.get('purposes', [])
+    ]
+    wanted = list(dict.fromkeys([*record.get('material', []), *pinned]))
+    if not wanted:
+        return []
+    others = set()
+    for session in studio.inside(root, 'articles').glob('*/session.json'):
+        if session.parent.name == ident:
+            continue
+        try:
+            others.update(entry['source_id'] for entry in studio.read_json(session)['sources'])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    moved = []
+    for source in wanted:
+        here = studio.material(root, studio.identifier(source))
+        if source in others or not here.is_dir():
+            continue
+        target = folder(root) / ident / 'material' / source
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(here), str(target))
+        moved.append(source)
+    for path in studio.inside(root, '.uploads').glob('*.json'):
+        try:
+            rows = (studio.read_json(path).get('result') or {}).get('files') or []
+            named = {row['source']['id'] for row in rows}
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            continue
+        if named & set(moved):
+            path.unlink()
+    return moved
+
+
+def _material_back(root, ident):
+    """Put a restored blog's kept files back where its run reads them."""
+    kept = folder(root) / ident / 'material'
+    for directory in sorted(kept.iterdir()) if kept.is_dir() else []:
+        target = studio.material(root, studio.identifier(directory.name))
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(directory), str(target))
+
+
 def _names(path, ident, keys):
     if not path.is_file():
         return False
@@ -231,6 +280,9 @@ def delete(root, data):
             'hub': binding,
         }
         studio.write_json(record_path(root, ident), entry)
+        entry['material'] = _material_out(root, ident, record)
+        if entry['material']:
+            studio.write_json(record_path(root, ident), entry)
         if adapter and binding:
             # As the CLI's remove does: a tombstone takes it off the shared list; history stays.
             tomb = adapter.hub.save(
@@ -321,6 +373,7 @@ def restore(root, data):
         # A teammate, or an earlier try, already brought it back: the record is stale.
         session = directory / 'session.json'
         if session.is_file() and studio.read_json(session).get('title') == record.get('title'):
+            _material_back(root, ident)
             path.unlink(missing_ok=True)
             shutil.rmtree(folder(root) / ident, ignore_errors=True)
             shown = _shown(root, engine, ident)
@@ -377,6 +430,7 @@ def restore(root, data):
         else:
             adapter.state['items']['articles/' + ident] = binding
             adapter.persist()
+    _material_back(root, ident)
     if studio.inside(directory, blog_runner.STATE).is_file():
         state = record.get('local') if isinstance(record.get('local'), dict) else {}
         state.update(enabled=False, status='stopped', error='')

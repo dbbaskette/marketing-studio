@@ -1109,6 +1109,16 @@ async function filesJourney(){
   byId('files-input').files=[{name:'more.md',size:4,arrayBuffer:async()=>new TextEncoder().encode('More').buffer}];
   await byId('files-input').listeners.change();
   assert.equal(requests.filter(r=>r.url==='/api/upload').at(-1).data.keep,true);
+  // Large files go up in several requests, each under the page's request limit.
+  const before=requests.filter(r=>r.url==='/api/upload').length,MiB=1024*1024;
+  byId('files-input').files=[6,6,5].map((size,n)=>({name:'big'+n+'.md',size:size*MiB,arrayBuffer:async()=>new TextEncoder().encode('Big').buffer}));
+  await byId('files-input').listeners.change();
+  const parts=requests.filter(r=>r.url==='/api/upload').slice(before);
+  assert.deepEqual(parts.map(r=>r.data.files.map(e=>e.filename)),[['big0.md'],['big1.md'],['big2.md']],'each request stays under the 15 MiB limit once encoded');
+  assert.equal(new Set(parts.map(r=>r.data.operation)).size,parts.length,'each request has its own operation');
+  const picker2=byId('files-input');picker2.files=[{name:'a.md',size:2*MiB,arrayBuffer:async()=>new TextEncoder().encode('a').buffer},{name:'b.md',size:2*MiB,arrayBuffer:async()=>new TextEncoder().encode('b').buffer}];
+  await picker2.listeners.change();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/upload').at(-1).data.files.map(e=>e.filename),['a.md','b.md'],'small files still go up together');
   byId('files-goal').value='A team post';byId('files-goal').listeners.input();
   byId('files-web').checked=true;byId('files-web').listeners.change();
   assert.ok(text().some(t=>/stops for the angles/.test(t)));

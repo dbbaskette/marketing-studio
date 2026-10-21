@@ -257,6 +257,8 @@ class Workspace:
         else:
             sources = []
             for selected in record['sources']:
+                if 'material' in selected['purposes']:
+                    continue  # One blog's uploaded files stay on this computer.
                 source_id = selected['source_id']
                 _, source_record = self.local_item('sources', source_id)
                 if selected['revision'] != source_record['revision']:

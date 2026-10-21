@@ -454,7 +454,11 @@ def _migrate(root, legacy_root, selected, sources=(), profiles=(), memories=()):
             raise ValueError(problem)
         plans.append((folder, destination))
         if group == 'articles':
-            pending.extend(('sources', entry['source_id']) for entry in info['sources'])
+            pending.extend(
+                ('sources', entry['source_id'])
+                for entry in info['sources']
+                if 'material' not in entry['purposes']
+            )
             if info['voice'].get('mode') == 'profile':
                 pending.append(('profiles', info['voice']['profile_id']))
             memory_revisions.update(

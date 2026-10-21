@@ -83,6 +83,10 @@ DEFAULTS = {
     'author': '',
 }
 MODES = ('write', 'outline', 'from-outline', 'ideas', 'revise', 'review', 'from-files')
+MATERIAL_ELSEWHERE = (
+    'This blog’s uploaded files stay on the computer that added them. Continue it there, '
+    'or start it again here from your files.'
+)
 
 
 def settings(root, data=None):
@@ -199,7 +203,15 @@ def inputs(root, record, run):
     sources = []
     from hub_workspace import portable_origin
 
+    pinned = {selected['source_id'] for selected in record['sources']}
     for selected in record['sources']:
+        if 'material' in selected['purposes'] or selected['source_id'] in record.get(
+            'material', []
+        ):
+            try:
+                studio.item(root, 'sources', selected['source_id'])
+            except ValueError:
+                raise ValueError(MATERIAL_ELSEWHERE) from None
         folder, source = studio.item(root, 'sources', selected['source_id'])
         path = studio.inside(folder, 'content.md')
         if selected['revision'] != source['revision']:
@@ -248,8 +260,10 @@ def inputs(root, record, run):
                     'body': Path(materialized['paths']['BODY.md']).read_text(),
                 }
             )
+    if set(record.get('material', [])) - pinned:
+        raise ValueError(MATERIAL_ELSEWHERE)  # A Team Hub copy carries no uploaded files.
     if run.get('mode') == 'from-files':
-        sources = excerpted(sources, SOURCE_BUDGET, terms(record['title'], run['brief']))
+        sources = excerpted(sources, SOURCE_BUDGET, run_terms(record, run))
     payload = {
         'title': record['title'],
         'author': record.get('author', ''),
@@ -275,16 +289,28 @@ def encoded_size(value):
     return len(json.dumps(value))
 
 
+STOPWORDS = frozenset(
+    'about after again also because been before being blog could does each file files from '
+    'have into just more most much need only other over post same should some such than '
+    'that their them then there these they this those through very want what when where '
+    'which while will with would your uploaded write writing'.split()
+)
+
+
 def terms(*texts):
-    """Words worth matching in a file: the title and brief, without short words."""
+    """Words worth matching in a file: four letters or more, without common words."""
     words = []
     for value in texts:
-        if isinstance(value, dict):
-            value = ' '.join(str(v) for v in value.values())
-        for word in re.findall(r'[^\W\d_]{4,}', str(value).casefold()):
-            if word not in words:
+        for word in re.findall(r'[^\W\d_]{4,}', str(value or '').casefold()):
+            if word not in words and word not in STOPWORDS:
                 words.append(word)
     return words[:12]
+
+
+def run_terms(record, run):
+    """What the person typed about the files and, once chosen, the angle: never defaults."""
+    chosen = run.get('chosen_angle') or {}
+    return terms(run.get('files_note', ''), chosen.get('title', ''), chosen.get('says', ''))
 
 
 def fit(text, limit, wanted=()):
@@ -306,6 +332,10 @@ def fit(text, limit, wanted=()):
                 return False  # Whole paragraphs first; a later pass may cut one to fit.
             piece = piece[: max(0, len(piece) - (size - allowance))]
             while piece and encoded_size(piece) > allowance:
+                piece = piece[: len(piece) * 9 // 10]
+            if not piece:
+                return False
+            while piece and encoded_size(piece + ' […]') > allowance:
                 piece = piece[: len(piece) * 9 // 10]
             if not piece:
                 return False
@@ -699,6 +729,7 @@ def create(root, data, approval='conversation'):
         # Three angles first; the chosen one starts the pipeline above (see choose_angle).
         pipeline = ['angles']
         record['stop_point'] = stop
+        record['mode'] = 'from-files'
     run = {
         'schema': 1,
         'approval': approval,
@@ -712,6 +743,11 @@ def create(root, data, approval='conversation'):
     }
     if from_files:
         run['after_angles'] = {'research': research, 'stop': stop}
+        run['files_note'] = text(data.get('goal', ''), 'goal')
+        # The uploaded files this blog pinned; a deletion keeps them with it.
+        record['material'] = [
+            entry['source_id'] for entry in record['sources'] if 'material' in entry['purposes']
+        ]
     import studios_config
 
     shared, problem = studios_config.read()
@@ -766,6 +802,8 @@ def submit(root, ident, stage, result, expected, page=False):
     if found['next'] != stage:
         raise ValueError('Finish the current stage before submitting another.')
     result = blog_worker.validate(result)
+    if stage == 'angles' and len(angles(result['content'])) != 3:
+        raise ValueError('Return exactly three angles, each under its own ## heading.')
     directory, record, run = load(root, ident)
     if stage == 'research' and run.get('research_contract'):
         research_contract.read_bundle(directory / 'research')
@@ -840,6 +878,10 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
             raise ValueError('Finish the current stage before changing a later stage.')
     if action == 'handoff':
         run['approval'] = 'conversation' if page else 'page'
+    elif action == 'approve' and stage == 'angles':
+        raise ValueError(
+            'Choose one of the angles with run choose, or ask for three different ones.'
+        )
     elif action == 'approve':
         if (
             not stage
@@ -1679,6 +1721,9 @@ def choose_angle(root, directory, record, run, found, request):
     )
     if angle is None:
         raise ValueError('Choose one of the saved angles by its heading.')
+    headings = [item['title'].casefold() for item in angles(doc)]
+    if len(set(headings)) != len(headings):
+        raise ValueError('Two angles share a heading. Ask for three different ones instead.')
     parts = [part.strip() for part in re.split(r'\s[·•|]\s', angle['says'])]
     audience = parts[0] if len(parts) >= 2 else ''
     point = parts[1] if len(parts) >= 2 else angle['says']
@@ -1693,8 +1738,12 @@ def choose_angle(root, directory, record, run, found, request):
     after = run.get('after_angles') or {'research': 'none', 'stop': 'package'}
     pipeline = ['research-plan', 'research'] if after['research'] == 'web-allowed' else []
     pipeline += ['outline', 'draft', 'review', 'package']
-    run['pipeline'] = pipeline[: pipeline.index(after['stop']) + 1]
+    # The angles stay at the head of the run, decided by the pick.
+    run['pipeline'] = ['angles'] + pipeline[: pipeline.index(after['stop']) + 1]
+    run['chosen_angle'] = {'title': angle['title'], 'says': angle['says']}
+    _accept(directory, run, 'angles', 'page' if run['approval'] == 'page' else 'conversation')
     run['stages'] = {
+        'angles': run['stages']['angles'],
         'outline': {
             'status': 'pending',
             'request': (
@@ -1703,9 +1752,11 @@ def choose_angle(root, directory, record, run, found, request):
                 + ('\n' + angle['says'] if angle['says'] else '')
                 + ('\n' + note.strip() if note.strip() else '')
             ),
-        }
+        },
     }
     record['stop_point'] = after['stop']
+    # The brief and title just changed with the pick; the decided angles are pinned to them.
+    run['stages']['angles']['basis'] = basis(root, directory, record, run, 'angles')
     save(root, directory, record, run, 'Chose the angle: ' + angle['title'])
 
 

@@ -597,7 +597,7 @@ def pdf_text(content):
                 [program, '-layout', str(path), '-'],
                 capture_output=True,
                 stdin=subprocess.DEVNULL,
-                timeout=120,
+                timeout=60,
             )
         except (OSError, subprocess.TimeoutExpired):
             return None, UNREADABLE_PDF
