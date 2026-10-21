@@ -75,6 +75,7 @@ async function check(){
   await brandInputs();
   await contextualTools();
   await sharedSettings();
+  await interviewVoice();
   await staleSharedForms();
   await sharedPattern();
   await finishAndDelete();
@@ -92,7 +93,7 @@ async function check(){
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -837,13 +838,54 @@ async function staleSharedForms(){
 
 async function sharedSettings(){
   const requests=[],defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:'Before'},before={engine:'codex',author:'Before'};
-  const f=fixture((url,options)=>{if(options?.method==='POST'){requests.push({url,data:JSON.parse(options.body)});return {defaults,shared_before:before,workspace:'/synthetic'};}if(url==='/api/run-options')return {settings:{defaults},sources:[],profiles:[],agents:{}};if(url==='/api/team')return {};return empty();});
-  f.loadRunner();f.set('defaults',defaults);f.set('before',before);f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic'};studio.screen='settings';sSettings()");
+  const voices=[{id:'mine',name:'Synthetic Author',revision:3},{id:'guest',name:'Guest Writer',revision:1}];
+  const f=fixture((url,options)=>{if(options?.method==='POST'){requests.push({url,data:JSON.parse(options.body)});return {defaults,shared_before:before,workspace:'/synthetic',voice:null,voices};}if(url==='/api/run-options')return {settings:{defaults},sources:[],profiles:[],agents:{}};if(url==='/api/team')return {};return empty();});
+  f.loadRunner();f.set('defaults',defaults);f.set('before',before);f.set('voices',voices);f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic',voice:{profile_id:'mine',revision:3},voices};studio.screen='settings';sSettings()");
   assert.equal(descendants(f.get('studio-page')).filter(e=>e.type==='checkbox').length,0,'shared saves have no second consent toggle');
+  // The default voice: None or a confirmed voice; saved as its exact pin, or null for none.
+  const voice=descendants(f.get('studio-page')).find(e=>e.id==='settings-voice');
+  assert.deepEqual(voice.children.map(o=>[o.value,o.textContent]),[['','None'],['mine','Synthetic Author'],['guest','Guest Writer']]);
+  assert.equal(voice.value,'mine','the saved default is chosen');
   const input=descendants(f.get('studio-page')).find(e=>e.id==='settings-author');input.value='New Author';input.listeners.input();
   await f.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   assert.equal(requests[0].url,'/api/run-settings');assert.equal(requests[0].data.author,'New Author');
   assert.deepEqual(requests[0].data.shared_before,before);assert.equal('for_all_studios' in requests[0].data,false);
+  assert.deepEqual(requests[0].data.voice,{profile_id:'mine',revision:3},'the default voice is saved with its revision');
+  f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic',voice:null,voices};sSettings()");
+  const none=descendants(f.get('studio-page')).find(e=>e.id==='settings-voice');assert.equal(none.value,'','no default: None');
+  none.value='guest';none.listeners.change();
+  await f.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.deepEqual(requests.at(-1).data.voice,{profile_id:'guest',revision:1});
+  f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic',voice:{profile_id:'guest',revision:1},voices};sSettings()");
+  const back=descendants(f.get('studio-page')).find(e=>e.id==='settings-voice');back.value='';back.listeners.change();
+  await f.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.equal(requests.at(-1).data.voice,null,'None removes the default');
+}
+
+// Interview me takes Write as, like a new blog: My voice sends the default's exact pin, a
+// chosen voice its profile, no particular voice an empty one.
+async function interviewVoice(){
+  const requests=[],mine={scope:'personal',profile:'mine',name:'Synthetic Author',revision:2,status:'confirmed'};
+  const f=fixture((url,o)=>{const data=o?.body?JSON.parse(o.body):null;requests.push({url,data});
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''}},sources:[],agents:{codex:true},default_voice:mine,profiles:[{id:'mine',name:'Synthetic Author',status:'confirmed'},{id:'guest',name:'Guest Writer',status:'provisional'}],styles:[]};
+    if(url==='/api/tool-action'&&data.action==='interview-start')return {id:'interviewed',title:data.title,answers:[],notes:'',question:'What is the main point?',expected:'i1',outline:false,outline_content:''};
+    if(url.startsWith('/api/interview?'))return {id:'interviewed',title:'Synthetic interview',answers:[],notes:'',question:'What is the main point?',expected:'i1',outline:false,outline_content:''};
+    return {items:[],total:0};});
+  f.loadRunner();
+  const sheet=()=>descendants(f.get('sheet')),byId=id=>sheet().find(e=>e.id===id);
+  const fill=()=>{for(const [id,value] of [['interview-title','Synthetic interview'],['interview-audience','Developers'],['interview-goal','Explain a gateway']]){byId(id).value=value;byId(id).listeners.input();}};
+  await f.run('sNewInterview()');
+  assert.equal(sheet().find(e=>e.tagName==='label'&&e.htmlFor==='interview-voice').textContent,'Write as','the interview asks whose voice');
+  assert.deepEqual(byId('interview-voice').children.map(o=>o.textContent),['My voice — Synthetic Author · confirmed','Guest Writer · provisional','No particular voice (use the described tone)','Learn a new voice…']);
+  fill();await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  let sent=requests.filter(r=>r.url==='/api/tool-action').at(-1).data;
+  assert.equal(sent.action,'interview-start');assert.equal(sent.title,'Synthetic interview');assert.equal(sent.profile,'mine');assert.equal(sent.revision,2,'My voice sends the default’s exact pin');
+  f.run('studio.interviewDraft=null');await f.run('sNewInterview()');fill();byId('interview-voice').value='guest';byId('interview-voice').listeners.change();
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  sent=requests.filter(r=>r.url==='/api/tool-action').at(-1).data;assert.equal(sent.profile,'guest');assert.equal('revision' in sent,false);
+  f.run('studio.interviewDraft=null');await f.run('sNewInterview()');fill();byId('interview-voice').value='';byId('interview-voice').listeners.change();
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  sent=requests.filter(r=>r.url==='/api/tool-action').at(-1).data;assert.equal(sent.profile,'','no particular voice sends an empty one');
 }
 
 async function brandInputs(){

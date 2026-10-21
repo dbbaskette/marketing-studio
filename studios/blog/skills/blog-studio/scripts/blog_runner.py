@@ -110,8 +110,24 @@ def settings(root, data=None):
         base['engine'] = agent
     if isinstance(name, str) and len(name) <= 200:
         base['author'] = name
+    import writing_defaults
+
     if data is not None:
         data = dict(data)
+        # The personal default voice: a confirmed profile at a revision, or none. It lives in
+        # the private writing defaults, beside the other personal values, never in a Hub.
+        if 'voice' in data:
+            voice = data.pop('voice')
+            if voice is not None and not (
+                isinstance(voice, dict) and set(voice) == {'profile_id', 'revision'}
+            ):
+                raise ValueError('Choose a listed voice, or none.')
+            if voice is not None and not any(
+                found['id'] == voice['profile_id']
+                for found in writing_defaults.confirmed_voices(root)
+            ):
+                raise ValueError('Choose a confirmed voice for the default, or none.')
+            writing_defaults.set_personal(root, 'voice', voice)
         before = data.pop(
             'shared_before',
             {
@@ -163,9 +179,12 @@ def settings(root, data=None):
         review_level = review_policy.snapshot(shared)['level']
     except ValueError:
         review_level = 'step_by_step'
+    personal = writing_defaults.personal(root)['values'].get('voice')
     return {
         'configured': bool(saved) or shared_ready(shared),
         'defaults': base,
+        'voice': personal if isinstance(personal, dict) else None,
+        'voices': writing_defaults.confirmed_voices(root),
         'review_level': review_level,
         'shared_before': {
             'engine': shared.get('assistant', {}).get('agent'),

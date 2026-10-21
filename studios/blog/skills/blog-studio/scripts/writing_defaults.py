@@ -46,6 +46,32 @@ def personal(root):
     return value
 
 
+def set_personal(root, key, value):
+    """Save one personal default (None removes it), validated, in the private defaults file."""
+    config = personal(root)
+    if value is None:
+        config['values'].pop(key, None)
+    else:
+        config['values'][key] = validate(key, value, root)
+    path = studio.inside(root, '.writing-defaults.json')
+    studio.write_json(path, config)
+    path.chmod(0o600)
+    return config['values'].get(key)
+
+
+def confirmed_voices(root):
+    """The confirmed, active voice profiles a personal default may name: [{id, name, revision}]."""
+    found = []
+    for file in sorted(studio.inside(root, 'profiles').glob('*/record.json')):
+        try:
+            record = studio.read_json(file)
+        except (ValueError, OSError):
+            continue
+        if record.get('status') == 'confirmed':
+            found.append({key: record.get(key) for key in ('id', 'name', 'revision')})
+    return found
+
+
 def team_rows(adapter):
     rows = {key: [] for key in KEYS}
     if adapter:

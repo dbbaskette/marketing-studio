@@ -688,6 +688,119 @@ class LibraryPickTests(RunnerCase):
             self.create(library=[{'id': material, 'role': 'facts'}])
 
 
+class DefaultVoiceTests(RunnerCase):
+    """Task 8: the Settings default voice, and Write as for Interview me."""
+
+    def voice(self, name='Avery', status='confirmed'):
+        self.file.write_text('Short direct sentences.')
+        return self.command(
+            'profile', 'create', '--name', name, '--guide-file', str(self.file), '--status', status
+        )
+
+    def test_settings_offer_confirmed_voices_and_save_the_personal_default(self):
+        import writing_defaults
+
+        mine, draft = self.voice(), self.voice('Sam', 'provisional')
+        shown = runner.settings(self.root)
+        self.assertIsNone(shown['voice'])
+        self.assertEqual(shown['voices'], [{'id': mine['id'], 'name': 'Avery', 'revision': 1}])
+        defaults = dict(shown['defaults'])
+        saved = management.dispatch(
+            self.root,
+            'run-settings',
+            {**defaults, 'voice': {'profile_id': mine['id'], 'revision': 1}},
+        )
+        self.assertEqual(saved['voice'], {'profile_id': mine['id'], 'revision': 1})
+        self.assertEqual(
+            saved['defaults'], defaults, 'the voice is beside the defaults, not in them'
+        )
+        self.assertEqual(
+            writing_defaults.personal(self.root)['values']['voice'],
+            {'profile_id': mine['id'], 'revision': 1},
+        )
+        self.assertEqual((self.root / '.writing-defaults.json').stat().st_mode & 0o777, 0o600)
+        self.assertEqual(runner.options(self.root)['default_voice']['profile'], mine['id'])
+        # A new blog takes it; None removes it; a provisional or unknown voice is refused.
+        found = self.create()
+        self.assertEqual(
+            studio.item(self.root, 'articles', found['id'])[1]['voice'],
+            {'mode': 'profile', 'profile_id': mine['id'], 'revision': 1},
+        )
+        self.assertIsNone(
+            management.dispatch(self.root, 'run-settings', {**defaults, 'voice': None})['voice']
+        )
+        self.assertNotIn('voice', writing_defaults.personal(self.root)['values'])
+        for bad in (
+            {'profile_id': draft['id'], 'revision': 1},
+            {'profile_id': 'nobody', 'revision': 1},
+            'avery',
+        ):
+            with self.assertRaisesRegex(ValueError, 'voice'):
+                management.dispatch(self.root, 'run-settings', {**defaults, 'voice': bad})
+        self.assertEqual(
+            management.dispatch(self.root, 'run-settings', defaults)['defaults'], defaults
+        )
+
+    def test_interview_me_writes_as_the_chosen_voice(self):
+        import article_tools
+
+        mine = self.voice()
+        brief = {'title': 'Synthetic interview', 'audience': 'Developers', 'goal': 'Explain'}
+        voice_of = lambda found: studio.item(self.root, 'articles', found['id'])[1]['voice']  # noqa: E731
+        chosen = management.dispatch(
+            self.root,
+            'tool-action',
+            {
+                'action': 'interview-start',
+                'operation': 'a' * 32,
+                'profile': mine['id'],
+                'revision': 1,
+                **brief,
+            },
+        )
+        self.assertEqual(
+            voice_of(chosen), {'mode': 'profile', 'profile_id': mine['id'], 'revision': 1}
+        )
+        again = article_tools.start_interview(
+            self.root, {'operation': 'a' * 32, 'profile': mine['id'], 'revision': 1, **brief}
+        )
+        self.assertEqual(again['id'], chosen['id'], 'the same request resumes the same interview')
+        with self.assertRaisesRegex(ValueError, 'another interview'):
+            article_tools.start_interview(
+                self.root, {'operation': 'a' * 32, 'profile': '', **brief}
+            )
+        none = article_tools.start_interview(
+            self.root, {'operation': 'b' * 32, 'profile': '', **brief}
+        )
+        self.assertEqual(voice_of(none), {'mode': 'preserve', 'tone': ''}, 'no particular voice')
+        plain = article_tools.start_interview(self.root, {'operation': 'c' * 32, **brief})
+        self.assertEqual(
+            voice_of(plain), {'mode': 'preserve', 'tone': ''}, 'no default voice to apply'
+        )
+        management.dispatch(
+            self.root,
+            'run-settings',
+            {
+                **runner.settings(self.root)['defaults'],
+                'voice': {'profile_id': mine['id'], 'revision': 1},
+            },
+        )
+        defaulted = article_tools.start_interview(self.root, {'operation': 'd' * 32, **brief})
+        self.assertEqual(
+            voice_of(defaulted),
+            {'mode': 'profile', 'profile_id': mine['id'], 'revision': 1},
+            'the default voice applies',
+        )
+        with self.assertRaisesRegex(ValueError, 'revision'):
+            article_tools.start_interview(
+                self.root, {'operation': 'e' * 32, 'profile': mine['id'], 'revision': 9, **brief}
+            )
+        with self.assertRaisesRegex(ValueError, 'needs its profile'):
+            article_tools.start_interview(
+                self.root, {'operation': 'f' * 32, 'revision': 1, **brief}
+            )
+
+
 class FinishTests(RunnerCase):
     """Task 2: Finish keeps the approved draft in the library, once per blog."""
 

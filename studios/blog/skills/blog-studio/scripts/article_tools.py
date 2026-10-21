@@ -587,14 +587,25 @@ def start_interview(root, data):
     title = text(data.get('title'), 'an interview title', 200)
     audience = text(data.get('audience'), 'the reader', 2000)
     goal = text(data.get('goal'), 'the main goal', 4000)
+    # Write as, as a new blog takes it: no profile key applies the default voice, an empty
+    # one pins no voice (the interview's own words), an id pins that voice at a revision.
+    profile = data.get('profile') or None
+    revision = data.get('revision')
+    if revision is not None and (type(revision) is not int or revision < 1):
+        raise ValueError('Choose a saved revision of the voice profile.')
+    if profile:
+        studio.voice_pin(root, profile, revision)
+    elif revision is not None:
+        raise ValueError('A voice revision needs its profile.')
+    chose = 'profile' in data
     args = SimpleNamespace(
         id=None,
         title=title,
         mode='interview',
         author=None,
-        profile=None,
-        voice='preserve',
-        tone='',
+        profile=profile,
+        voice='preserve' if chose and not profile else None,
+        tone='' if chose and not profile else None,
         stop='outline',
         research='supplied-only',
         audience=audience,
@@ -603,7 +614,7 @@ def start_interview(root, data):
     )
     operation = data.get('operation')
     ledger = tool_jobs.path(root, operation).with_suffix('.interview')
-    signature = fingerprint([title, audience, goal])
+    signature = fingerprint([title, audience, goal] + ([profile, revision] if chose else []))
     if ledger.exists():
         saved = studio.read_json(ledger)
         if saved['fingerprint'] != signature:
@@ -611,6 +622,10 @@ def start_interview(root, data):
         return interview(root, saved['article'])
     record = studio.article_command(root, SimpleNamespace(action='create', **vars(args)))
     folder, saved = studio.item(root, 'articles', record['id'])
+    if profile:
+        saved['voice'] = {'mode': 'profile', **studio.voice_pin(root, profile, revision)}
+    elif not chose and saved['voice'].get('mode') != 'profile':
+        saved['voice'] = {'mode': 'preserve', 'tone': ''}  # No default voice to apply.
     saved['writing_preferences'] = {
         **saved.get('writing_preferences', {}),
         'audience': audience,
