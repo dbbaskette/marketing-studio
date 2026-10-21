@@ -89,7 +89,7 @@ async function check(){
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -1067,7 +1067,7 @@ async function sharedPattern(){
    picker.files=[{name:'messaging.md',size:9,arrayBuffer:async()=>new TextEncoder().encode('Messaging').buffer},{name:'old-post.md',size:8,arrayBuffer:async()=>new TextEncoder().encode('Old post').buffer}];
    await picker.listeners.change();
    const upload=requests.filter(r=>r.url==='/api/upload');assert.equal(upload.length,1,'both files go up in one request');
-   assert.deepEqual(upload[0].data.files.map(e=>e.filename),['messaging.md','old-post.md']);assert.equal(upload[0].data.purpose,'material');assert.equal(upload[0].data.keep,false);
+   assert.deepEqual(upload[0].data.files.map(e=>e.filename),['messaging.md','old-post.md']);assert.equal(upload[0].data.purpose,'material');assert.equal(upload[0].data.keep,true,'the wizard keeps files in the team library too');
    const titles=nodes().filter(e=>e.className==='row-title').map(e=>e.textContent);assert.deepEqual(titles,['messaging.md','old-post.md'],'every added file is listed: '+titles.join('|'));
    assert.ok(text().some(t=>/900 characters/.test(t))&&text().some(t=>/2,100 characters/.test(t)),'each with how much text it has');
    assert.ok(byId('files-role-m1')&&byId('files-role-m2'),'each with its role');
@@ -1154,7 +1154,9 @@ async function filesJourney(){
   assert.equal(picker.type,'file');assert.equal(picker.multiple,true);assert.match(picker.accept,/\.pdf/);
   assert.ok(byId('files-goal'),'one optional line: what is this for');
   assert.equal(byId('files-web').checked,false,'web research is off by default');
-  assert.equal(byId('files-keep').checked,false,'files are not kept in the references by default');
+  assert.equal(byId('files-keep').checked,true,'files land in the team library by default');
+  assert.equal(byId('files-keep').parent.children[1].textContent,'Keep in the team library');
+  assert.match(byId('files-keep-hint').textContent,/just this blog/);
   assert.equal(nodes().some(e=>e.id==='new-profile'),false);
   const start=()=>nodes().find(e=>e.type==='submit');
   assert.equal(start().disabled,true,'nothing to start before a file has text');
@@ -1182,7 +1184,8 @@ async function filesJourney(){
   assert.equal(upload.length,1);
   assert.deepEqual(upload[0].data.files.map(e=>e.filename),['notes.md','scan.pdf']);
   assert.deepEqual(upload[0].data.files.map(e=>e.purpose),['material','material']);
-  assert.equal(upload[0].data.purpose,'material');assert.equal(upload[0].data.keep,false);assert.equal(upload[0].data.analyze,false);
+  assert.equal(upload[0].data.purpose,'material');assert.equal(upload[0].data.keep,true,'kept in the team library');assert.equal(upload[0].data.analyze,false);
+  assert.equal('author' in upload[0].data,false,'no author until one is named');assert.equal('kind' in upload[0].data,false,'no kind of post until one is chosen');
   assert.match(upload[0].data.operation,/^[0-9a-f]{32}$/);
   assert.ok(text().some(t=>/1,200 characters/.test(t)),'each file shows its extracted size: '+text().join('|'));
   assert.ok(text().some(t=>/Needs text/.test(t)),'a file without text says so');
@@ -1208,11 +1211,19 @@ async function filesJourney(){
   await byId('files-input').listeners.change();
   assert.deepEqual(requests.filter(r=>r.url==='/api/upload').at(-1).data.files.map(e=>e.purpose),['inspiration']);
   byId('files-role').value='material';byId('files-role').listeners.change();
-  // Keep applies to the files added after it is ticked.
-  byId('files-keep').checked=true;byId('files-keep').listeners.change();
+  // A kept file carries the blog's author and kind of post to the library.
+  f.run("studio.draft.author='Avery';studio.draft.style='product-announcement'");
+  byId('files-input').files=[{name:'kept.md',size:4,arrayBuffer:async()=>new TextEncoder().encode('Kept').buffer}];
+  await byId('files-input').listeners.change();
+  const keptUpload=requests.filter(r=>r.url==='/api/upload').at(-1).data;
+  assert.equal(keptUpload.keep,true);assert.equal(keptUpload.author,'Avery');assert.equal(keptUpload.kind,'product-announcement');
+  f.run("studio.draft.author='';studio.draft.style=''");
+  // Unticked, Just this blog: the files added after it stay with the blog, out of the library.
+  byId('files-keep').checked=false;byId('files-keep').listeners.change();
   byId('files-input').files=[{name:'more.md',size:4,arrayBuffer:async()=>new TextEncoder().encode('More').buffer}];
   await byId('files-input').listeners.change();
-  assert.equal(requests.filter(r=>r.url==='/api/upload').at(-1).data.keep,true);
+  assert.equal(requests.filter(r=>r.url==='/api/upload').at(-1).data.keep,false);
+  assert.equal('author' in requests.filter(r=>r.url==='/api/upload').at(-1).data,false,'a file that stays with the blog carries no library fields');
   // Large files go up in several requests, each under the page's request limit.
   const before=requests.filter(r=>r.url==='/api/upload').length,MiB=1024*1024;
   byId('files-input').files=[6,6,5].map((size,n)=>({name:'big'+n+'.md',size:size*MiB,arrayBuffer:async()=>new TextEncoder().encode('Big').buffer}));

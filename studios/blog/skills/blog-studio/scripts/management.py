@@ -533,17 +533,16 @@ ROLES = {'facts': ['material'], 'example': ['material', 'inspiration']}
 
 
 def source_role(root, data):
-    """What an uploaded file is for: facts the writing may quote, or an example of the
-    kind of post. A library reference is facts; a file a started blog pinned keeps the
-    role that blog read it with."""
+    """What a file is for: facts the writing may quote, or an example of the kind of post.
+    A file uploaded for one blog changes in place; a library item changes in a new
+    revision, shared as a reference is. A file a started blog pinned keeps the role that
+    blog read it with."""
     if set(data) - {'id', 'role'} or data.get('role') not in ROLES:
         raise ValueError('Choose facts or example for the file.')
     directory, record = studio.item(root, 'sources', str(data.get('id', '')))
-    if not studio.is_material(root, directory, record):
-        raise ValueError(
-            'Only a file uploaded for one blog changes its role; a reference is facts. '
-            + studio.MATERIAL_STAYS
-        )
+    material = studio.is_material(root, directory, record)
+    if not material and 'reference' not in record.get('purposes', []):
+        raise ValueError('Only a file or a library reference changes between facts and example.')
     for path in studio.inside(root, 'articles').glob('*/session.json'):
         article = studio.read_json(path)
         if record['id'] in article.get('material', []) or any(
@@ -554,10 +553,25 @@ def source_role(root, data):
                 + ('an example' if 'inspiration' in record['purposes'] else 'facts')
                 + '; its role stays. Upload it again for a new role.'
             )
-    if record['purposes'] != ROLES[data['role']]:
-        record['purposes'] = ROLES[data['role']]
+    if material:
+        purposes = ROLES[data['role']]
+    else:
+        # A library item keeps its other purposes (a sample stays a sample); only the example mark moves.
+        purposes = [p for p in record['purposes'] if p != 'inspiration']
+        if data['role'] == 'example':
+            purposes.append('inspiration')
+    changed = record['purposes'] != purposes
+    if changed and not material:
+        blog_library.save_revision(directory, record)
+        record['revision'] += 1
+    if changed:
+        record['purposes'] = purposes
         studio.persist(directory, 'sources', record)
-    return {'id': record['id'], 'role': data['role'], 'purposes': record['purposes']}
+    result = {'id': record['id'], 'role': data['role'], 'purposes': record['purposes']}
+    if changed and not material:
+        shared = share(root, 'source', record)
+        result['receipts'] = [receipt(root, 'Library item role', shared, 'source')]
+    return result
 
 
 def upload(root, data):

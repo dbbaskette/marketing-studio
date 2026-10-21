@@ -60,8 +60,9 @@ name, quotation, link or product detail from one unless the sources, research or
 also say it. Research never reads an example. At draft and review, `mechanical_checks`
 lists passages carried over from an example under rule `from-example`; a claim traced
 to an example and to nothing else is unsupported. Files past
-the run's budget are excerpted and `excerpted` in status names them. The files stay
-on this computer, but the blog's outline and draft may quote them and are shared like any blog. `--stop` can be `outline`,
+the run's budget are excerpted and `excerpted` in status names them. On the page a file is
+kept in the team library (with its role, author and kind of post) unless **Keep** is unticked;
+material stays on this computer, but the blog's outline and draft may quote it and are shared like any blog. `--stop` can be `outline`,
 `draft`, `review` or `package`. For an existing article, use `--id <article-id>`;
 a saved manuscript starts at review, or use `--mode revise --id <article-id>` to
 start with revision.
