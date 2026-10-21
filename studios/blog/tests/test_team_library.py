@@ -801,6 +801,71 @@ class DefaultVoiceTests(RunnerCase):
             )
 
 
+class HubItemTests(RunnerCase):
+    """C2: an item only the Team Hub holds can be picked and acted on, from a teammate's clone."""
+
+    def test_a_teammates_hub_only_item_is_checked_out_to_pick_or_select(self):
+        provider = FakeProvider(self.base / 'remotes')
+        a, b = Registry(self.base / 'a-hubs', provider), Registry(self.base / 'b-hubs', provider)
+        ident = a.create('fixture/library', 'Library')['hub']
+        b.join('fixture/library')
+        other = self.base / 'other'
+        studio.initialize(other)
+        wa, wb = Workspace(self.root, a.hub(ident)), Workspace(other, b.hub(ident))
+        with patch(
+            'hub_workspace.active', side_effect=lambda root: wa if root == self.root else wb
+        ):
+            management.dispatch(
+                self.root,
+                'upload',
+                {
+                    'operation': 'a' * 32,
+                    'purpose': 'material',
+                    'keep': True,
+                    'analyze': False,
+                    'author': 'Avery',
+                    'files': [encoded_file('teammate-post.md', b'A teammate post. ' * 5)],
+                },
+            )
+            wb.hub.refresh()
+            row = library.catalog(other)['items'][0]
+            self.assertEqual(row['location'], 'hub')
+            hub = {'id': row['id'], 'location': 'hub'}
+            # Picked for a blog: checked out here, then pinned as any library item is.
+            found = runner.create(
+                other,
+                {
+                    'title': 'Uses the teammate post',
+                    'audience': 'A',
+                    'goal': 'G',
+                    'research': 'none',
+                    'library': [{**hub, 'role': 'example'}],
+                },
+                'page',
+            )
+            _, record, run = runner.load(other, found['id'])
+            local = record['sources'][0]['source_id']
+            self.assertTrue(local.startswith('hub-' + row['id']))
+            self.assertEqual(record['sources'][0]['purposes'], ['reference', 'inspiration'])
+            self.assertEqual(
+                runner.inputs(other, record, run)['examples'][0]['name'], 'teammate-post'
+            )
+            # Selected on the library screen: the same checkout, never a second copy.
+            blog = management.dispatch(other, 'library-selection', {'action': 'blog', 'ids': [hub]})
+            self.assertEqual([f['id'] for f in blog['files']], [local])
+            self.assertEqual(len(list((other / 'sources').iterdir())), 1)
+            with self.assertRaisesRegex(ValueError, 'local or shared'):
+                management.dispatch(
+                    other,
+                    'library-selection',
+                    {'action': 'blog', 'ids': [{**hub, 'location': 'x'}]},
+                )
+        # Without the Team Hub a shared item cannot be read.
+        with patch('hub_workspace.active', return_value=None):
+            with self.assertRaisesRegex(ValueError, 'Team Hub'):
+                management.dispatch(other, 'library-selection', {'action': 'blog', 'ids': [hub]})
+
+
 class FinishTests(RunnerCase):
     """Task 2: Finish keeps the approved draft in the library, once per blog."""
 

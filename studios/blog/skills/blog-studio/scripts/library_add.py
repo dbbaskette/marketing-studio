@@ -562,13 +562,19 @@ def selection(root, data):
 
     if set(data) - {'action', 'ids', 'author'} or data.get('action') not in SELECTION_ACTIONS:
         raise ValueError('Choose a library action: learn a style, learn a voice, or start a blog.')
-    ids = data.get('ids')
-    if (
-        not isinstance(ids, list)
-        or not 1 <= len(ids) <= 50
-        or any(not isinstance(v, str) for v in ids)
-        or len(set(ids)) != len(ids)
-    ):
+    entries = data.get('ids')
+    if not isinstance(entries, list) or not 1 <= len(entries) <= 50:
+        raise ValueError('Select one to fifty library items.')
+    ids = []
+    for entry in entries:
+        # A local item by its ID, or {id, location} for a row the catalog lists from the Hub.
+        if isinstance(entry, dict) and set(entry) - {'location'} == {'id'}:
+            ids.append(blog_library.local_item(root, entry['id'], entry.get('location', 'local')))
+        elif isinstance(entry, str):
+            ids.append(blog_library.local_item(root, entry))
+        else:
+            raise ValueError('Choose a local or shared library item.')
+    if len(set(ids)) != len(ids):
         raise ValueError('Select one to fifty library items.')
     rows = []
     for ident in ids:

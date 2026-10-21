@@ -80,6 +80,22 @@ def role_of(record):
     return 'example' if 'inspiration' in (record.get('purposes') or []) else 'facts'
 
 
+def local_item(root, ident, location='local'):
+    """The local source ID of a library item the page names by its catalog row: the ID itself,
+    or, for an item only the Team Hub holds, the checkout of its shared head (the same local
+    copy every time, as a library import reuses one)."""
+    if location not in ('local', 'hub') or not isinstance(ident, str):
+        raise ValueError('Choose a local or shared library item.')
+    if location == 'local':
+        return studio.identifier(ident)
+    from hub_workspace import active
+
+    adapter = active(root)
+    if adapter is None:
+        raise ValueError('This item is shared in a Team Hub. Select that Team Hub to use it.')
+    return adapter._checkout(ident)
+
+
 def written_here(root, article):
     """(directory, record) of the library item a blog finished here was kept as, or (None, None)."""
     for file in sorted(studio.inside(root, 'sources').glob('*/record.json')):

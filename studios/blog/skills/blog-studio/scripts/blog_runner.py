@@ -947,26 +947,30 @@ LIBRARY_ROLES = {'facts': ['reference'], 'example': ['reference', 'inspiration']
 
 
 def library_picks(root, chosen, sources):
-    """{id: purposes} for library items read with a role for one blog: `[{id, role}]`, each
-    a library item (never a file uploaded for one blog), no more than 50 with the sources,
-    and none of them twice."""
+    """{id: purposes} for library items read with a role for one blog: `[{id, role}]`, or
+    `[{id, role, location}]` for a row the catalog lists from the Team Hub, which is checked
+    out here first. Each is a library item (never a file uploaded for one blog), no more than
+    50 with the sources, and none of them twice."""
+    import blog_library
+
     if not isinstance(chosen, list) or len(chosen) + len(sources) > 50:
         raise ValueError('Pick at most 50 library items and sources together.')
     picked = {}
     for entry in chosen:
         if (
             not isinstance(entry, dict)
-            or set(entry) != {'id', 'role'}
+            or set(entry) - {'location'} != {'id', 'role'}
             or not isinstance(entry['id'], str)
             or entry['role'] not in LIBRARY_ROLES
         ):
             raise ValueError('Each library item needs its id and a role: facts or example.')
-        if entry['id'] in picked or entry['id'] in sources:
+        ident = blog_library.local_item(root, entry['id'], entry.get('location', 'local'))
+        if ident in picked or ident in sources:
             raise ValueError('Pick each library item once.')
-        directory, record = studio.item(root, 'sources', entry['id'])
+        directory, record = studio.item(root, 'sources', ident)
         if studio.is_material(root, directory, record):
             raise ValueError('A file uploaded for one blog is not a library item.')
-        picked[entry['id']] = list(LIBRARY_ROLES[entry['role']])
+        picked[ident] = list(LIBRARY_ROLES[entry['role']])
     return picked
 
 

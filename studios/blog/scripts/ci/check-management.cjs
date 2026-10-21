@@ -1618,26 +1618,31 @@ async function libraryScreen(){
   assert.match(asked,/role=example/);assert.match(asked,/kind=product-announcement/);assert.match(asked,/author=Avery/);
   assert.equal(f.get('library-selection-count').textContent,'2 selected','the selection survives a reload');
   const sheet=()=>descendants(f.get('sheet')),byId=id=>sheet().find(e=>e.id===id);
-  await f.run("sLibrarySelection('style-learn',[...librarySelection])");
+  await f.run("sLibrarySelection('style-learn',[...librarySelection.values()])");
   assert.deepEqual(requests.filter(r=>r.url==='/api/library-selection').at(-1).data,{action:'style-learn',ids:['a','b']});
   assert.equal(f.get('sheet').children[0].children[0].textContent,'Learn a style from examples');
   assert.deepEqual(sheet().filter(e=>e.type==='checkbox'&&e.checked).map(e=>e.value),['a','b'],'the items are ticked as examples');
-  await f.run("sLibrarySelection('voice-learn',[...librarySelection])");
+  await f.run("sLibrarySelection('voice-learn',[...librarySelection.values()])");
   assert.equal(f.get('sheet').children[0].children[0].textContent,'Learn an author voice');
   assert.equal(byId('learn-voice-name').value,'Avery','the author comes from the items');
-  askWho=true;await f.run("sLibrarySelection('voice-learn',[...librarySelection])");
+  askWho=true;await f.run("sLibrarySelection('voice-learn',[...librarySelection.values()])");
   assert.equal(f.get('sheet').children[0].children[0].textContent,'Learn a voice from these','without an author the page asks');
   byId('library-voice-author').value='Casey Park';byId('library-voice-author').listeners.input();
   await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   assert.deepEqual(requests.filter(r=>r.url==='/api/library-selection').at(-1).data,{action:'voice-learn',ids:['a','b'],author:'Casey Park'});
   assert.equal(byId('learn-voice-name').value,'Casey Park');
-  await f.run("sLibrarySelection('blog',[...librarySelection])");
+  await f.run("sLibrarySelection('blog',[...librarySelection.values()])");
   assert.equal(f.run('studio.screen'),'new');assert.equal(f.run('studio.draft.mode'),'from-files');
   assert.deepEqual(JSON.parse(f.run('JSON.stringify(studio.draft.files.map(file=>[file.id,file.role,file.library]))')),[['a','inspiration',true],['b','inspiration',true]],'the items are the blog’s files, each an example');
   const nodes=()=>descendants(f.get('studio-page'));
   assert.equal(nodes().find(e=>e.id==='files-role-a').value,'inspiration');
   assert.ok(nodes().some(e=>/900 characters/.test(e.textContent)),'with how much text each has');
   assert.equal(f.run('librarySelection.size'),0,'the selection is used up');
+  // A row only the Team Hub holds goes with its location, so the server checks it out first.
+  rows.push({...rows[0],id:'h',title:'Shared post',location:'hub'});await f.run('load()');
+  const shared=results().find(e=>e.attributes?.['aria-label']==='Select Shared post');shared.checked=true;shared.listeners.change();
+  await f.run("sLibrarySelection('blog',[...librarySelection.values()])");
+  assert.deepEqual(requests.filter(r=>r.url==='/api/library-selection').at(-1).data.ids,[{id:'h',location:'hub'}]);
 }
 
 // From the library: a learned kind of post pre-ticks its samples (up to eight, newest first)
@@ -1650,7 +1655,7 @@ async function libraryPicker(){
   const run={id:'created',title:'A synthetic blog',status:'queued',next:'outline',approval:'page',expected:'r1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',decisions:[],brief:{goal:'Explain',audience:'Authors'},stages:[]};
   const f=fixture((url,o)=>{const data=o?.body?JSON.parse(o.body):null;requests.push({url,data});
     if(url==='/api/run-options')return options;
-    if(url.startsWith('/api/library?'))return {items:[{id:'lib1',title:'Launch notes',author:'Avery',status:'ready',role:'facts',kind_name:'Product announcement',purposes:['reference'],library:{origin_kind:'upload',kind:'product-announcement'}},{id:'s2',title:'Sample s2',author:'Avery',status:'ready',role:'example',kind_name:'Field notes',purposes:['reference','inspiration','style-sample'],library:{}}],total:2,kinds:[]};
+    if(url.startsWith('/api/library?'))return {items:[{id:'hub1',title:'Shared notes',author:'Sam',status:'ready',role:'facts',kind_name:null,purposes:['reference'],library:{origin_kind:'upload'},location:'hub'},{id:'lib1',title:'Launch notes',author:'Avery',status:'ready',role:'facts',kind_name:'Product announcement',purposes:['reference'],library:{origin_kind:'upload',kind:'product-announcement'}},{id:'s2',title:'Sample s2',author:'Avery',status:'ready',role:'example',kind_name:'Field notes',purposes:['reference','inspiration','style-sample'],library:{}}],total:2,kinds:[]};
     if(url==='/api/run-create'||url.startsWith('/api/run?'))return run;
     return {items:[],total:0};});
   f.loadRunner();
@@ -1684,7 +1689,8 @@ async function libraryPicker(){
   assert.equal(inSheet('pick-s2'),undefined,'an item already among the files is not offered again');
   const pick=inSheet('pick-lib1');pick.checked=true;pick.listeners.change();
   assert.ok(sheet().some(e=>e.textContent==='Launch notes')&&sheet().some(e=>/Avery · facts · Product announcement/.test(e.textContent)),'each item shows its title, author, role and kind: '+sheet().map(e=>e.textContent).join('|'));
-  await sheet().find(e=>e.textContent==='Add 1 to this blog').listeners.click();
+  const hubPick=inSheet('pick-hub1');hubPick.checked=true;hubPick.listeners.change();
+  await sheet().find(e=>e.textContent==='Add 2 to this blog').listeners.click();
   assert.equal(f.get('sheet').hidden,true);
   assert.deepEqual(files().find(([id])=>id==='lib1'),['lib1','material',true],'facts in the library are facts here');
   byId('files-role-lib1').value='inspiration';await byId('files-role-lib1').listeners.change();
@@ -1692,7 +1698,7 @@ async function libraryPicker(){
   assert.ok(texts().some(t=>/stops for/.test(t)),'the stops line follows');
   await submit();
   const sent=requests.filter(r=>r.url==='/api/run-create').at(-1).data;
-  assert.deepEqual(sent.library,[...['s7','s6','s5','s4','s3','s2'].map(id=>({id,role:'example'})),{id:'lib1',role:'example'}],'library items with text go with their roles for this blog');
+  assert.deepEqual(sent.library,[...['s7','s6','s5','s4','s3','s2'].map(id=>({id,role:'example'})),{id:'hub1',role:'facts',location:'hub'},{id:'lib1',role:'example'}],'library items with text go with their roles for this blog, a Team Hub one with its location');
   assert.deepEqual(sent.sources,[],'and not as plain sources');assert.equal(sent.style,'field-notes');
 }
 
