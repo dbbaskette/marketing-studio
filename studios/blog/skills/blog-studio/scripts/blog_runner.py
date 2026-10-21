@@ -1090,6 +1090,10 @@ def job(root, ident):
         and not (stage == 'review' and run.get('editor_check'))
         and (saved.get('hash') or (stage == 'draft' and run['existing']))
     )
+    # A focused edit or a single editor check other than shape keeps to its own scope, so
+    # it gets no style. The job payload is not hashed; stage pins come from inputs().
+    if edit or run.get('editor_check') not in (None, 'shape'):
+        payload['style'] = None
     references = Path(__file__).resolve().parents[1] / 'references'
     if edit:
         guidance = (
@@ -1107,13 +1111,7 @@ def job(root, ident):
         guidance = STAGES[stage][2] + '\n\n' + (references / GUIDES[stage]).read_text()
     guidance = brief_line(root, record, payload) + '\n\n' + guidance
     guidance += '\n\n' + (references / 'style/house.md').read_text()
-    # A focused edit or a single editor check other than shape keeps to its own scope.
-    if (
-        payload.get('style')
-        and stage in ('outline', 'draft', 'review', 'package')
-        and not edit
-        and run.get('editor_check') in (None, 'shape')
-    ):
+    if payload['style'] and stage in ('outline', 'draft', 'review', 'package'):
         guidance += (
             '\n\nSELECTED STYLE: '
             + payload['style']['name']

@@ -1742,7 +1742,10 @@ class StyleTests(RunnerCase):
             studio.write_json(
                 studio.inside(directory, runner.STATE), {**run, 'editor_check': check}
             )
-            self.assertEqual('SELECTED STYLE' in runner.job(self.root, found['id'])[2], carried)
+            _, checked, guidance = runner.job(self.root, found['id'])
+            self.assertEqual('SELECTED STYLE' in guidance, carried)
+            self.assertEqual(checked['style'] is not None, carried, check)
+            self.assertEqual('Product announcement' in guidance.split('\n', 1)[0], carried)
         studio.write_json(studio.inside(directory, runner.STATE), run)
         guide = self.base / 'style.md'
         guide.write_text('Changed later.')
@@ -1772,6 +1775,19 @@ class StyleTests(RunnerCase):
             'style', runner.inputs(self.root, record, run), 'stage pins saved before styles hold'
         )
         self.assertIsNone(plain['style_name'])
+
+    def test_a_minimal_edit_keeps_to_its_request_without_the_style(self):
+        found = self.approve(self.submit(self.create(page=True, style='how-to'), page=True), True)
+        self.assertIsNotNone(runner.job(self.root, found['id'])[1]['style'])
+        found = self.submit(found, '# Draft\nA fictional paragraph.', page=True)
+        found = runner.decide(
+            self.root, found['id'], found['expected'], 'changes', 'Shorten it.', page=True
+        )
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertIn('minimal edit, not a rewrite', guidance)
+        self.assertIsNone(payload['style'])
+        self.assertNotIn('SELECTED STYLE', guidance)
+        self.assertNotIn('How-to', guidance.split('\n', 1)[0])
 
     def test_a_refused_run_leaves_no_copied_starter(self):
         with self.assertRaises(ValueError):
