@@ -2489,8 +2489,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'A short title', 'value': 'Restart practice'},
             {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
             {'fill': 'Who is it for?', 'value': 'New operators'},
-            {'click': 'Continue'}, {'click': 'No deck'},
-            {'click': 'Reference brief'}, {'click': 'Practice scenarios'},
+            {'click': 'Continue'}, {'click': 'No deck'}, {'click': 'Learner guide'},
             {'click': 'Continue'}, {'click': 'Your documents only'}, {'snapshot': 'ready'},
             {'click': 'Start the training'}, {'snapshot': 'kept'}])
         posted = self.posts(result)
@@ -2501,16 +2500,73 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Research waits', result['snapshots']['ready']['text'])
         self.assertIn('Your answers are still here', result['snapshots']['kept']['text'])
 
+    def test_the_form_starts_with_nothing_chosen_and_the_levels_in_the_open(self):
+        result = self.run_page(self.answers(), [
+            {'click': 'New training'},
+            {'fill': 'A short title', 'value': 'Restart practice'},
+            {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
+            {'fill': 'Who is it for?', 'value': 'New operators'},
+            {'click': 'Continue'}, {'snapshot': 'shape'}])
+        shape = result['snapshots']['shape']
+        for material in ('Learner guide', 'Reference brief', 'Practice scenarios'):
+            self.assertNotIn(material, shape['chosen'])
+        self.assertEqual(shape['pressed'], ['No deck'], 'no deck until a brand is set')
+        self.assertIn('201', shape['buttons'], 'the levels are chips in the open')
+        self.assertIn('101', shape['chosen'])
+
+    def test_a_shared_brand_keeps_the_deck_on_by_default(self):
+        setup = {**SET_UP, 'shared': {'brand': {'brand': 'example-co', 'variant': 'dark'},
+                                      'output': 'pptx'}}
+        result = self.run_page(self.answers(setup), [
+            {'click': 'New training'},
+            {'fill': 'A short title', 'value': 'Restart practice'},
+            {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
+            {'fill': 'Who is it for?', 'value': 'New operators'},
+            {'click': 'Continue'}, {'snapshot': 'shape'}])
+        self.assertEqual(result['snapshots']['shape']['pressed'], ['PowerPoint'])
+
+    def test_a_working_run_says_what_it_does_now_and_for_how_long(self):
+        import datetime
+        self.started()
+        started = (datetime.datetime.now(datetime.timezone.utc)
+                   - datetime.timedelta(minutes=3)).isoformat()
+        going = 'Drafting the research questions.'
+        working = a_run('working', going, steps=steps('done', 'working'), workers=[
+            {'id': 'w1', 'label': 'The research questions', 'started_at': started,
+             'lines': ['Drafting question 4']}], spent={'dollars': 0.4, 'tokens': 18200})
+        answers = self.answers(**{'GET /api/trainings': [self.listed('working', going)],
+                                  'GET /api/training': [self.detail('working', going)],
+                                  'GET /api/run': [working]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'snapshot': 'working'}])
+        self.assertIn('Draft the research questions · 3 minutes · $0.40 so far · stops at '
+                      '$20.00', result['snapshots']['working']['text'])
+
+    def test_a_phone_keeps_one_decision_in_the_toolbar(self):
+        self.started()
+        going = 'Drafting the research questions.'
+        working = a_run('working', going, steps=steps('done', 'working'))
+        answers = self.answers(**{'GET /api/trainings': [self.listed('working', going)],
+                                  'GET /api/training': [self.detail('working', going)],
+                                  'GET /api/run': [working]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'snapshot': 'phone'}, {'click': 'More'},
+                                         {'snapshot': 'menu'}], narrow=True)
+        phone, menu = result['snapshots']['phone'], result['snapshots']['menu']
+        self.assertIn('Pause', phone['buttons'])
+        self.assertNotIn('Stop', phone['buttons'])
+        self.assertIn('Stop', menu['buttons'])
+
     def test_empty_materials_and_missing_yoodli_dependencies_stay_in_the_form(self):
         result = self.run_page(self.answers(), [
             {'click': 'New training'},
             {'fill': 'A short title', 'value': 'Restart practice'},
             {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
             {'fill': 'Who is it for?', 'value': 'New operators'},
-            {'click': 'Continue'}, {'click': 'No deck'},
+            {'click': 'Continue'}, {'click': 'No deck'}, {'click': 'Continue'},
+            {'snapshot': 'empty'},
             {'click': 'Reference brief'}, {'click': 'Extra copies and Yoodli'}, {'click': 'Make scenarios for Yoodli'},
             {'snapshot': 'dependency'}, {'click': 'Practice scenarios'},
-            {'click': 'Learner guide'}, {'click': 'Continue'}, {'snapshot': 'empty'},
             {'click': 'Learner guide'}, {'click': 'Continue'}, {'snapshot': 'ready'}])
         shots = result['snapshots']
         self.assertIn('Select Reference brief and Practice scenarios first', shots['dependency']['text'])
@@ -2521,21 +2577,31 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result), [])
 
     def test_start_preview_describes_the_actual_review_preference(self):
-        for policy, phrase in (('balanced', 'review the teaching plan'),
-                                ('automatic', 'Review the finished materials together'),
-                                ('step_by_step', 'at least 5 decisions')):
+        for policy, phrase in (('balanced', 'Balanced: it stops for the direction review and '
+                                             'the finished materials'),
+                                ('automatic', 'Automatic draft: it stops for the finished '
+                                              'materials'),
+                                ('step_by_step', 'Step by step: it stops for at least 5 '
+                                                 'decisions')):
             with self.subTest(policy=policy):
                 result = self.run_page(self.answers({**SET_UP, 'review_level': policy}), [
                     {'click': 'New training'},
                     {'fill': 'A short title', 'value': 'Restart practice'},
                     {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
                     {'fill': 'Who is it for?', 'value': 'New operators'},
-                    {'click': 'Continue'}, {'click': 'No deck'},
+                    {'click': 'Continue'}, {'click': 'No deck'}, {'click': 'Learner guide'},
+                    {'click': 'Reference brief'},
                     {'click': 'Continue'}, {'snapshot': 'ready'}])
                 text = result['snapshots']['ready']['text']
                 self.assertIn(phrase, text)
+                if policy == 'balanced':
+                    self.assertIn('The direction review comes after research and the '
+                                  'blueprint, guide and brief for each level', text)
                 if policy != 'step_by_step':
                     self.assertNotIn('at least 5 decisions', text)
+                self.assertIn('/onboarding/#token=', next(
+                    link['href'] for link in result['snapshots']['ready']['links']
+                    if link['name'] == 'Change'))
                 self.assertEqual(self.posts(result), [])
 
     def test_a_changed_review_preference_is_reloaded_with_all_answers_kept(self):
@@ -2549,10 +2615,12 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'A short title', 'value': 'Restart practice'},
             {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
             {'fill': 'Who is it for?', 'value': 'New operators'},
-            {'click': 'Continue'}, {'click': 'No deck'}, {'click': 'Continue'},
+            {'click': 'Continue'}, {'click': 'No deck'}, {'click': 'Learner guide'},
+            {'click': 'Continue'},
             {'click': 'Start the training'}, {'snapshot': 'refreshed'},
             {'click': 'Start the training'}, {'snapshot': 'kept'}])
-        self.assertIn('Automatic draft review', result['snapshots']['refreshed']['text'])
+        self.assertIn('Automatic draft: it stops for the finished materials',
+                      result['snapshots']['refreshed']['text'])
         self.assertIn('Your answers are still here', result['snapshots']['refreshed']['text'])
         sent = [body for _, body in self.posts(result)]
         self.assertEqual([body['review_level'] for body in sent], ['step_by_step', 'automatic'])
@@ -3170,8 +3238,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         two = result['snapshots']['two']
         self.assertEqual(two['pressed'], ['Google Slides'])
         self.assertEqual((two['fields']['The deck’s brand'], two['fields']['The brand’s variant'],
-                          two['chosen']), ('example-co', 'dark',
-                                           ['Learner guide', 'Reference brief', 'Practice scenarios']))
+                          two['chosen']), ('example-co', 'dark', ['101']))
         # A brand the brand skill here does not have is not offered: its first one is.
         shared = {'brand': {'brand': 'acme', 'variant': 'dark'}, 'output': 'pptx'}
         answers = self.answers({**SET_UP, 'shared': shared, 'shared_problem': None})
@@ -3367,7 +3434,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'A short title', 'value': 'Rolling restarts'},
             {'fill': 'What should it teach?', 'value': 'How a rolling restart works.'},
             {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
-            {'click': 'Continue'}, {'click': 'Continue'}, {'click': 'Assistant and limits'}, {'snapshot': 'missed'},
+            {'click': 'Continue'}, {'click': 'Learner guide'}, {'click': 'Continue'},
+            {'click': 'Assistant and limits'}, {'snapshot': 'missed'},
             {'click': 'Look again'}, {'snapshot': 'listed'},
             {'fill': level, 'value': 'medium'},
             {'click': 'Start the training'},
@@ -3415,7 +3483,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
             {'click': 'Technical upskilling'},
             {'click': 'Continue'}, {'snapshot': 'two'},
-            {'click': 'Depth and reference brief'}, {'click': '301'}, {'click': 'A comparison'}, {'click': 'Google Slides'}, {'click': 'Deck brand'},
+            {'click': 'Learner guide'}, {'click': 'Reference brief'}, {'click': 'Practice scenarios'},
+            {'click': '301'}, {'click': 'Depth and reference brief'}, {'click': 'A comparison'}, {'click': 'Google Slides'}, {'click': 'Deck brand'},
             {'fill': 'The brand’s variant', 'value': 'dark'}, {'click': 'Extra copies and Yoodli'}, {'click': 'Google Docs'},
             {'fill': 'How long it should take', 'value': '30 minutes', 'stay': True},
             {'enter': 'How long it should take'}, {'click': 'Assistant and limits'}, {'snapshot': 'three'},
@@ -3444,9 +3513,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         two = shots['two']
         self.assertEqual((two['heading'], two['focus']), ('Materials', 'title'))
         self.assertIn('New training · Step 2 of 3', two['text'])
-        # The three materials are shared chips, and every one begins on.
-        self.assertEqual((two['chosen'], two['pressed']),
-                         (['Learner guide', 'Reference brief', 'Practice scenarios'], ['PowerPoint']))
+        # The materials are chips that begin off; the levels are chips in the open, 101 on;
+        # and with no brand shared there is no deck until one is chosen.
+        self.assertEqual((two['chosen'], two['pressed']), (['101'], ['No deck']))
         # The deck's brand is one of those the brand skill lists, and the first to begin with.
         self.assertEqual(two['fields'], {'How long it should take (optional)': ''})
 
@@ -3978,7 +4047,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                 {'fill': 'A short title', 'value': 'Rolling restarts'},
                 {'fill': 'What should it teach?', 'value': 'How a rolling restart works.'},
                 {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
-                {'click': 'Continue'}, *shape, {'click': 'Continue'}]
+                {'click': 'Continue'}, {'click': 'Learner guide'}, *shape, {'click': 'Continue'}]
 
     def test_each_sources_choice_says_what_it_means_and_is_what_is_sent(self):
         self.started()
@@ -3993,7 +4062,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'Both: it reads your documents and researches the public web as well. You add the '
             'documents right after starting, and they stay on this computer.')
         plain = 'at least 5 decisions for research and the selected teaching materials'
-        shaped = [{'click': 'Depth and reference brief'}, {'click': '101'}, {'click': 'No deck'},
+        shaped = [{'click': 'Reference brief'}, {'click': 'Practice scenarios'}, {'click': '101'},
                   {'click': 'Extra copies and Yoodli'}, {'click': 'Make scenarios for Yoodli'}]
         for choice, scope, shape in ((None, 'public-web', []),
                                      ('Your documents only', 'supplied-only', shaped),
@@ -4567,7 +4636,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                 'GET /api/training': [self.detail('working', going)]})
 
         result = self.run_page(answers(SET_UP), [
-            *self.to_the_last_step()[:-1], {'click': 'Deck brand'}, {'snapshot': 'two'},
+            *self.to_the_last_step()[:-1], {'click': 'PowerPoint'}, {'click': 'Deck brand'},
+            {'snapshot': 'two'},
             {'fill': 'The deck’s brand', 'value': 'example-labs'}, {'snapshot': 'other'},
             {'click': 'No deck'}, {'snapshot': 'none'},
             {'click': 'PowerPoint'}, {'click': 'Continue'}, {'snapshot': 'three'},
