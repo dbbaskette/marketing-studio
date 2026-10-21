@@ -1010,7 +1010,7 @@ async function contextualTools(){
 // without stopping, and a phone keeps one decision in the toolbar.
 async function sharedPattern(){
   const requests=[];const found={id:'synthetic',title:'Synthetic blog',status:'working',next:'draft',approval:'page',expected:'version-1',enabled:true,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},started_at:new Date(Date.now()-3*60000).toISOString(),note_stage:'review',notes:{},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'},{stage:'review',label:'Review',path:'REVIEW.md',status:'pending'}]};
-  const f=fixture((url,options)=>{requests.push({url,options,data:options?.body?JSON.parse(options.body):null});return url.startsWith('/api/run?')?found:{...found,noted:'draft'};});f.loadRunner();
+  const f=fixture((url,options)=>{requests.push({url,options,data:options?.body?JSON.parse(options.body):null});if(url==='/api/upload')return f.run('studio.api_upload');if(url==='/api/run-create')return found;return url.startsWith('/api/run?')?found:{...found,noted:'draft'};});f.loadRunner();
   const text=()=>descendants(f.get('studio-page')).map(e=>e.textContent);
   // The start form: one line says where this run stops, from the shared review level.
   const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
@@ -1026,6 +1026,29 @@ async function sharedPattern(){
   assert.ok(text().some(t=>t==='Balanced: it stops for the draft and the export package'),'Balanced reads the first writing stage a run has: '+text().join('|'));
   f.run("studio.draft.mode='write';studio.draft.stop='draft';sWizard()");
   const change=descendants(f.get('studio-page')).find(e=>e.tagName==='a'&&e.textContent==='Change');assert.equal(change.href,'/onboarding/#fixture');
+  // The second step takes every file at once and lists each one with its text and role; the old one-at-a-time input is gone.
+  {const nodes=()=>descendants(f.get('studio-page')),byId=id=>nodes().find(e=>e.id===id);
+   assert.equal(nodes().some(e=>e.textContent==='Add a document'),false,'no single-file upload on the wizard');
+   const picker=byId('files-input');assert.ok(picker,'the wizard has the files picker');assert.equal(picker.multiple,true);
+   assert.ok(byId('files-role'),'and asks what the files are for');assert.ok(byId('files-google'),'and takes a Google Doc');
+   let node=picker,inside=false;while(node){if(node.tagName==='details')inside=true;node=node.parent;}assert.equal(inside,false,'the files card is in plain view, not inside a disclosure');
+   f.set('uploadedTwo',{files:[{filename:'messaging.md',source:{id:'m1',name:'messaging'},state:'ready',chars:900,note:''},{filename:'old-post.md',source:{id:'m2',name:'old post'},state:'ready',chars:2100,note:''}],receipts:[],state:'saved',next_step:'Every file has text.'});
+   f.run("studio.api_upload=uploadedTwo");
+   picker.files=[{name:'messaging.md',size:9,arrayBuffer:async()=>new TextEncoder().encode('Messaging').buffer},{name:'old-post.md',size:8,arrayBuffer:async()=>new TextEncoder().encode('Old post').buffer}];
+   await picker.listeners.change();
+   const upload=requests.filter(r=>r.url==='/api/upload');assert.equal(upload.length,1,'both files go up in one request');
+   assert.deepEqual(upload[0].data.files.map(e=>e.filename),['messaging.md','old-post.md']);assert.equal(upload[0].data.purpose,'material');assert.equal(upload[0].data.keep,false);
+   const titles=nodes().filter(e=>e.className==='row-title').map(e=>e.textContent);assert.deepEqual(titles,['messaging.md','old-post.md'],'every added file is listed: '+titles.join('|'));
+   assert.ok(text().some(t=>/900 characters/.test(t))&&text().some(t=>/2,100 characters/.test(t)),'each with how much text it has');
+   assert.ok(byId('files-role-m1')&&byId('files-role-m2'),'each with its role');
+   assert.equal(f.run('studio.busy'),false,'the screen is free again after the upload');
+   assert.ok(text().some(t=>t==='Balanced: it stops for the outline and the draft'),'with no research chosen the stops are unchanged: '+text().join('|'));
+   f.run("studio.options.settings.review_level='step_by_step';studio.draft.research='supplied-only';sWizard()");
+   assert.ok(text().some(t=>t==='Step by step: it stops for the research plan, the research findings, the outline and the draft'),'selected sources research counts the files: '+text().join('|'));
+   f.run("studio.options.settings.review_level='balanced';studio.draft.research='none';sWizard()");
+   await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+   const created=requests.find(r=>r.url==='/api/run-create');assert.ok(created,'Start writing creates the run');assert.deepEqual(created.data.sources,['m1','m2'],'the files are the run\'s sources');
+   f.run("studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'draft',minutes:'10',operation:'a'.repeat(32)};sWizard()");}
   assert.equal(descendants(f.get('studio-page')).some(e=>['new-engine','new-minutes'].includes(e.id)),false,'the assistant and time limit are defaults, not per-blog decisions');
   f.run("studio.options.settings.review_level='automatic';studio.draft.mode='ideas';sWizard()");
   assert.ok(text().some(t=>t==='Automatic draft: it stops for the ideas'),text().join('|'));

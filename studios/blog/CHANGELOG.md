@@ -5,6 +5,12 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Write from a brief** takes every file at once, like New blog from my files: the
+  second step lists each file with how much text it has and what it is for, takes a
+  Google Doc beside them, and keeps the saved references and research choice in their
+  own disclosure. Files stay with the blog unless you keep them in your references.
+  Oversized files are excerpted on every path, and a blog pins the files it was given
+  so a deletion keeps them with it.
 - **New blog from my files** asks what each upload is for: facts that may be quoted,
   or an example of the kind of post. Examples reach the assistant apart from the
   sources, with no citable ID; research never reads them; the draft and review say

@@ -262,8 +262,7 @@ def inputs(root, record, run):
             )
     if set(record.get('material', [])) - pinned:
         raise ValueError(MATERIAL_ELSEWHERE)  # A Team Hub copy carries no uploaded files.
-    if run.get('mode') == 'from-files':
-        sources = excerpted(sources, SOURCE_BUDGET, run_terms(record, run))
+    sources = excerpted(sources, SOURCE_BUDGET, run_terms(record, run))
     # An example of the kind of post shows its shape; it has no citable source ID.
     examples = [
         {key: value for key, value in source.items() if key != 'id'}
@@ -319,7 +318,12 @@ def terms(*texts):
 def run_terms(record, run):
     """What the person typed about the files and, once chosen, the angle: never defaults."""
     chosen = run.get('chosen_angle') or {}
-    return terms(run.get('files_note', ''), chosen.get('title', ''), chosen.get('says', ''))
+    brief = run.get('brief') or {}
+    return terms(
+        run.get('files_note') or brief.get('goal', ''),
+        chosen.get('title', ''),
+        chosen.get('says', ''),
+    )
 
 
 def fit(text, limit, wanted=()):
@@ -777,10 +781,10 @@ def create(root, data, approval='conversation'):
         run['files_note'] = (
             text(data.get('goal', ''), 'goal') if angles_first else title + '\n' + brief['goal']
         )
-        # The uploaded files this blog pinned; a deletion keeps them with it.
-        record['material'] = [
-            entry['source_id'] for entry in record['sources'] if 'material' in entry['purposes']
-        ]
+    # The uploaded files this blog pinned; a deletion keeps them with it.
+    record['material'] = [
+        entry['source_id'] for entry in record['sources'] if 'material' in entry['purposes']
+    ]
     import studios_config
 
     shared, problem = studios_config.read()
