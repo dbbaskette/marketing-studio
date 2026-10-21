@@ -38,6 +38,24 @@ class ReviewLevelsTests(DeckCase):
         record = self.engine._load(root)
         self.assertEqual(set(record['review_decisions']), {'direction', 'final'})
 
+    def test_a_sample_slide_that_cannot_be_drawn_is_a_note_on_the_direction_review(self):
+        # The renderer refuses, as it does when it is not signed in: the training is not
+        # stopped for it. The direction review comes up with a note in the sample's place.
+        self.slides.refuse['preview'] = ['The renderer could not be started.']
+        root, shown = self.choose('balanced')
+        self.assertEqual(shown['review']['phase'], 'direction')
+        direction, = [item for item in shown['review']['items']
+                      if item['target'].startswith('outline:')]
+        self.assertNotIn('sample', direction)
+        self.assertIn('A sample slide could not be drawn', direction['sample_note'])
+        self.assertIn('The renderer could not be started.', direction['sample_note'])
+        self.assertEqual(self.steps(root)['review-sample']['status'], 'done')
+        # Once the renderer works again, approving the direction goes on to the materials.
+        del self.slides.refuse['preview']
+        shown = self.approve_review(root, shown)
+        self.assertIsNone(shown['problem'], shown)
+        self.assertEqual(shown['review']['phase'], 'final')
+
     def test_automatic_preserves_checks_and_rejects_old_review(self):
         root, shown = self.choose('automatic')
         self.assertEqual(shown['review']['phase'], 'final')
