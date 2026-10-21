@@ -1343,6 +1343,15 @@ class DeleteTests(RunnerCase):
         self.assertTrue(studio.item(self.root, 'articles', found['id']))
         self.assertEqual(runner.catalog(self.root)['deleted'], [])
 
+    def test_delete_accepts_the_title_as_a_person_types_it(self):
+        # Curly quotes, an en dash and a double space in the stored title; plain typing deletes it.
+        found = self.create(page=True, title='From agent “pilots” to governed  production – 2026')
+        with self.assertRaisesRegex(ValueError, 'title'):
+            self.delete(found, title='From agent pilots to production')
+        result = self.delete(found, title='  from agent "pilots" to governed production - 2026 ')
+        self.assertTrue(result['deleted'])
+        self.assertEqual([row['id'] for row in runner.catalog(self.root)['deleted']], [found['id']])
+
     def test_delete_stops_the_worker_and_removes_what_this_computer_kept(self):
         entered = threading.Event()
 
