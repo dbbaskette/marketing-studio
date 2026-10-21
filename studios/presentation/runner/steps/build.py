@@ -758,8 +758,11 @@ def _kept(root: Path, earlier: dict, began: dict, whole: dict) -> dict:
     """The sections drawn before that need no drawing again: each whose slides are the same,
     word for word, in a deck that is otherwise the same too. Each is kept as it was drawn,
     marked `kept`."""
-    if not earlier or {key: value for key, value in earlier['whole'].items() if key != 'slides'} \
-            != {key: value for key, value in whole.items() if key != 'slides'}:
+    # The words of approval are the person's, and say nothing of how a slide is drawn.
+    unchanged = ('slides', 'approval')
+    if not earlier or {key: value for key, value in earlier['whole'].items()
+                       if key not in unchanged} \
+            != {key: value for key, value in whole.items() if key not in unchanged}:
         return {}
     before = {slide['id']: slide for slide in slides_of(earlier['whole'])}
     now = {slide['id']: slide for slide in slides_of(whole)}

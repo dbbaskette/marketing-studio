@@ -62,7 +62,7 @@ class ScratchTests(StudioCase):
         self.assertEqual(started['direction'], build.DIRECTION)
         shown = self.view(root)['gate']
         self.assertEqual([slide['number'] for slide in shown['slides']],
-                         list(range(1, len(LONG_OUTLINE['slides']) + 1)))
+                         list(range(1, len(OUTLINE['slides']) + 1)))
         self.assertEqual(shown['slides'][0]['image'], {'kind': 'build', 'ref': 1})
         self.assertNotIn(str(root), json.dumps(shown))
         self.assertTrue(self.engine.picture(root, 'build', 2).startswith(b'\x89PNG'))
