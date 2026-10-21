@@ -1955,3 +1955,335 @@ class FromFilesReviewTests(FilesCase):
         self.assertTrue((material / ours / 'content.md').is_file())
         _, payload, _ = runner.job(self.root, found['id'])
         self.assertEqual(len(payload['sources']), 3)
+
+
+class ExampleTests(FilesCase):
+    """An example of the kind of post shows its shape and never supplies facts."""
+
+    def example(self, *files):
+        import base64
+        import blog_library
+
+        with patch.object(blog_library.shutil, 'which', return_value=None):
+            result = management.dispatch(
+                self.root,
+                'upload',
+                {
+                    'operation': studio.digest(repr(('example', files)).encode())[:32],
+                    'purpose': 'material',
+                    'analyze': False,
+                    'files': [
+                        {
+                            'filename': name,
+                            'content': base64.b64encode(body.encode()).decode(),
+                            'purpose': 'inspiration',
+                        }
+                        for name, body in files
+                    ],
+                },
+            )
+        return [row['source']['id'] for row in result['files']]
+
+    def develop(self, found, angle='The gateway is a contract'):
+        found = self.submit(found, self.ANGLES, page=True)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {'id': found['id'], 'expected': found['expected'], 'request': angle},
+            )
+        return runner.survey(self.root, found['id'])
+
+    def test_examples_leave_the_sources_and_reach_the_worker_as_examples(self):
+        facts = self.material(('notes.md', 'Retries cost money. ' * 40))
+        examples = self.example(('launch.md', 'We shipped the gateway in March. ' * 40))
+        found = self.from_files(sources=facts + examples)
+        _, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(set(record['material']), set(facts + examples))
+        payload = runner.inputs(self.root, record, run)
+        self.assertEqual([source['name'] for source in payload['sources']], ['notes'])
+        self.assertEqual([source['name'] for source in payload['examples']], ['launch'])
+        self.assertEqual(set(payload['examples'][0]), set(payload['sources'][0]) - {'id'})
+        self.assertEqual(payload['examples'][0]['purposes'], ['material', 'inspiration'])
+        # A run without examples keeps its payload, and its saved pins, as they were.
+        plain = self.from_files()
+        _, record, run = runner.load(self.root, plain['id'])
+        self.assertNotIn('examples', runner.inputs(self.root, record, run))
+        found = self.develop(found)
+        self.assertEqual(found['next'], 'outline')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual([source['name'] for source in payload['examples']], ['launch'])
+        self.assertIn('take their shape, not their facts', guidance)
+        while found['next'] != 'package':
+            _, payload, guidance = runner.job(self.root, found['id'])
+            self.assertEqual(len(payload['examples']), 1, found['next'])
+            self.assertEqual(
+                'take their shape, not their facts' in guidance,
+                found['next'] in ('outline', 'draft'),
+                found['next'],
+            )
+            found = self.approve(self.submit(found, page=True), page=True)
+        _, payload, _ = runner.job(self.root, found['id'])
+        self.assertEqual(payload['examples'], [])
+        self.assertEqual(payload['sources'], [])
+        self.assertIn('shape, length, moves and register', blog_worker.POLICY)
+
+    def test_examples_are_excerpted_under_the_same_budget_and_named(self):
+        big = 'We shipped the gateway in March. ' * 10_000  # 330,000 characters
+        facts = self.material(('small.txt', 'Hops add latency.'))
+        examples = self.example(('big.md', big))
+        found = self.from_files(sources=facts + examples)
+        self.assertEqual(found['excerpted'], ['big'])
+        _, record, run = runner.load(self.root, found['id'])
+        payload = runner.inputs(self.root, record, run)
+        self.assertLess(len(json.dumps(payload)), 300_000)
+        example = payload['examples'][0]
+        self.assertTrue(example['excerpted'])
+        self.assertEqual(example['total_chars'], len(big))
+        self.assertNotIn('excerpted', payload['sources'][0])
+        self.assertIn('big', runner.engine(self.root).describe(found['id'])['excerpted'])
+
+    def test_research_reads_facts_and_references_but_never_an_example(self):
+        import synthesis_research
+
+        for purposes, expected in (
+            (['reference'], True),
+            (['material'], True),
+            (['material', 'inspiration'], False),
+            (['reference', 'inspiration'], False),
+            (['inspiration'], False),
+            (['voice-sample'], False),
+        ):
+            with self.subTest(purposes=purposes):
+                self.assertEqual(
+                    synthesis_research.offered({'purposes': purposes, 'status': 'ready'}),
+                    expected,
+                )
+        self.assertFalse(
+            synthesis_research.offered({'purposes': ['material'], 'status': 'pending'})
+        )
+
+    def test_the_draft_and_review_say_what_was_carried_over_from_an_example(self):
+        example = (
+            'When we launched Gateway Prime in March, requests dropped by 42 percent. '
+            'Read https://example.invalid/launch for the numbers. Retries cost money.'
+        )
+        facts = self.material(('notes.md', 'Retries cost money. ' * 40))
+        examples = self.example(('launch.md', example))
+        found = self.develop(self.from_files(sources=facts + examples))
+        found = self.approve(self.submit(found, page=True), page=True)  # outline
+        self.assertEqual(found['next'], 'draft')
+        _, payload, _ = runner.job(self.root, found['id'])
+        self.assertEqual(payload['mechanical_checks']['findings'], [])
+        draft = (
+            '# Draft\n\nRequests dropped by 42 percent, as Gateway Prime showed; '
+            'see https://example.invalid/launch. Retries cost money.\n'
+        )
+        found = self.submit(found, draft, page=True)
+        shown = runner.document(self.root, found['id'], 'draft')
+        row = next(check for check in shown['checks'] if 'example' in check['label'])
+        self.assertFalse(row['passed'])
+        self.assertEqual(row['label'], 'Carried over from an example')
+        self.assertIn('https://example.invalid/launch', row['detail'])
+        self.assertTrue(any('42 percent' in line for line in row['detail']), row['detail'])
+        self.assertTrue(all(len(line) <= 120 for line in row['detail']))
+        found = self.approve(found, page=True)
+        _, payload, guidance = runner.job(self.root, found['id'])
+        rules = [finding['rule'] for finding in payload['mechanical_checks']['findings']]
+        self.assertIn('from-example', rules)
+        self.assertIn('unsupported', guidance)
+        self.assertIn('from-example', guidance)
+        found = self.submit(found, page=True)  # the review
+        shown = runner.document(self.root, found['id'], 'review')
+        self.assertFalse(
+            next(check for check in shown['checks'] if 'example' in check['label'])['passed']
+        )
+        # A draft that takes only the example's shape passes, and a run without examples
+        # has no such row.
+        clean = self.develop(
+            self.from_files(
+                sources=self.material(('n.md', 'Retries cost money.'))
+                + self.example(('l.md', example))
+            )
+        )
+        clean = self.approve(self.submit(clean, page=True), page=True)
+        clean = self.submit(clean, '# Draft\n\nRetries cost money, as our notes say.\n', page=True)
+        row = next(
+            check
+            for check in runner.document(self.root, clean['id'], 'draft')['checks']
+            if 'example' in check['label']
+        )
+        self.assertTrue(row['passed'])
+        self.assertEqual(row['label'], 'No passage carried over from an example')
+        self.assertEqual(row['detail'], [])
+        plain = self.develop(self.from_files())
+        plain = self.submit(self.approve(self.submit(plain, page=True), page=True), page=True)
+        self.assertFalse(
+            any(
+                'example' in check['label']
+                for check in runner.document(self.root, plain['id'], 'draft')['checks']
+            )
+        )
+
+
+class PointTests(FilesCase):
+    """I know the point: a blog from files that starts at the outline, with no angles."""
+
+    def point(self, page=True, **extra):
+        return self.from_files(
+            page=page,
+            **{
+                'point': True,
+                'title': 'Announcing the gateway',
+                'goal': 'The gateway is generally available and retries are budgeted.',
+                'audience': 'Platform engineers',
+                **extra,
+            },
+        )
+
+    def test_the_point_builds_the_usual_pipeline_without_angles(self):
+        found = self.point()
+        self.assertEqual(
+            [row['stage'] for row in found['stages']], ['outline', 'draft', 'review', 'package']
+        )
+        self.assertEqual(found['mode'], 'from-files')
+        self.assertEqual(found['next'], 'outline')
+        self.assertEqual(found['title'], 'Announcing the gateway')
+        _, record, run = runner.load(self.root, found['id'])
+        self.assertIs(run['angles'], False)
+        self.assertNotIn('after_angles', run)
+        self.assertEqual(
+            run['brief']['goal'], 'The gateway is generally available and retries are budgeted.'
+        )
+        self.assertEqual(run['brief']['audience'], 'Platform engineers')
+        self.assertEqual(len(record['material']), 2)
+        self.assertEqual(record['stop_point'], 'package')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual([source['name'] for source in payload['sources']], ['notes', 'plain'])
+        self.assertNotIn('three', guidance.lower())
+        # The person's title and point steer which passages of a large file are kept.
+        self.assertIn('gateway', runner.run_terms(record, run))
+        web = self.point(research='web-allowed', stop='draft')
+        self.assertEqual(
+            [row['stage'] for row in web['stages']],
+            ['research-plan', 'research', 'outline', 'draft'],
+        )
+        _, record, run = runner.load(self.root, web['id'])
+        self.assertEqual(record['research_policy'], 'web-allowed')
+        # An angles run says it has angles.
+        _, _, run = runner.load(self.root, self.from_files()['id'])
+        self.assertIs(run['angles'], True)
+
+    def test_the_point_needs_a_title_a_point_and_a_reader(self):
+        for missing in ('title', 'goal', 'audience'):
+            with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, missing):
+                self.point(**{missing: ''})
+        with self.assertRaisesRegex(ValueError, 'from files'):
+            self.create(point=True)
+        with self.assertRaisesRegex(ValueError, 'point'):
+            self.from_files(point='yes')
+
+    def test_develop_refuses_a_blog_without_angles(self):
+        found = self.point()
+        with (
+            studio.locked(self.root),
+            self.assertRaisesRegex(ValueError, 'no angles to choose from'),
+        ):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {'id': found['id'], 'expected': found['expected'], 'request': 'Any heading'},
+            )
+        self.assertEqual(runner.survey(self.root, found['id'])['next'], 'outline')
+        chat = self.point(page=False)
+        args = studio.parser().parse_args(
+            [
+                '--root',
+                str(self.root),
+                'run',
+                'choose',
+                '--id',
+                chat['id'],
+                '--expected',
+                chat['expected'],
+                '--angle',
+                'Any',
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, 'no angles to choose from'):
+            runner.command(self.root, args)
+
+    def test_balanced_reads_the_draft_when_a_run_has_no_outline_stage(self):
+        import studios_config
+
+        studios_config.update({'review': {'level': 'balanced'}})
+        found = self.create(mode='from-outline', outline_text='## Supplied outline', page=True)
+        self.assertEqual([row['stage'] for row in found['stages']], ['draft', 'review', 'package'])
+        found = self.submit(found, page=True)
+        self.assertEqual(found['awaits'], 'decision')
+        self.assertFalse(found['stages'][0]['auto_accepted'])
+        found = self.submit(self.approve(found, page=True), page=True)  # the review
+        self.assertEqual(found['awaits'], 'submission')
+        self.assertTrue(found['stages'][1]['auto_accepted'])
+        found = self.submit(found, page=True)  # the package
+        self.assertEqual(found['awaits'], 'decision')
+        # A run with an outline still reads the outline and continues through the draft.
+        found = self.submit(self.create(page=True), page=True)
+        self.assertEqual(found['awaits'], 'decision')
+        found = self.submit(self.approve(found, page=True), page=True)
+        self.assertEqual(found['awaits'], 'submission')
+        self.assertTrue(found['stages'][1]['auto_accepted'])
+        # The point from files has an outline, so Balanced stops there and at the end.
+        found = self.submit(self.point(), page=True)
+        self.assertEqual(found['awaits'], 'decision')
+
+
+class WriteAsTests(RunnerCase):
+    """The page's Write as select: Me is the personal default voice, when one is set."""
+
+    def test_options_name_the_personal_default_voice(self):
+        self.assertIsNone(runner.options(self.root)['default_voice'])
+        self.file.write_text('Use short direct sentences. No invented experience.')
+        profile = self.command(
+            'profile', 'create', '--name', 'Avery', '--guide-file', str(self.file)
+        )
+        import writing_defaults
+
+        args = studio.parser().parse_args(
+            [
+                '--root',
+                str(self.root),
+                'defaults',
+                'set',
+                '--scope',
+                'personal',
+                '--key',
+                'voice',
+                '--value',
+                json.dumps({'profile_id': profile['id'], 'revision': 1}),
+            ]
+        )
+        writing_defaults.command(self.root, args)
+        found = runner.options(self.root)
+        self.assertEqual(
+            found['default_voice'],
+            {'profile_id': profile['id'], 'revision': 1, 'name': 'Avery'},
+        )
+        self.assertEqual([p['status'] for p in found['profiles']], ['provisional'])
+        # Me writes with the pinned revision; an unknown or malformed one is refused.
+        pinned = self.create(profile=profile['id'], revision=1)
+        _, record, _ = runner.load(self.root, pinned['id'])
+        self.assertEqual(
+            record['voice'], {'mode': 'profile', 'profile_id': profile['id'], 'revision': 1}
+        )
+        with self.assertRaisesRegex(ValueError, 'revision'):
+            self.create(profile=profile['id'], revision=99)
+        with self.assertRaisesRegex(ValueError, 'revision'):
+            self.create(profile=profile['id'], revision='1')
+        with self.assertRaisesRegex(ValueError, 'profile'):
+            self.create(revision=1)
+        # A default that no longer resolves is simply no default.
+        import shutil
+
+        shutil.rmtree(self.root / 'profiles' / profile['id'])
+        self.assertIsNone(runner.options(self.root)['default_voice'])

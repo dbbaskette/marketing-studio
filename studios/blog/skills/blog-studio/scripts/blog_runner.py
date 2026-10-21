@@ -264,6 +264,13 @@ def inputs(root, record, run):
         raise ValueError(MATERIAL_ELSEWHERE)  # A Team Hub copy carries no uploaded files.
     if run.get('mode') == 'from-files':
         sources = excerpted(sources, SOURCE_BUDGET, run_terms(record, run))
+    # An example of the kind of post shows its shape; it has no citable source ID.
+    examples = [
+        {key: value for key, value in source.items() if key != 'id'}
+        for source in sources
+        if 'inspiration' in source['purposes']
+    ]
+    sources = [source for source in sources if 'inspiration' not in source['purposes']]
     payload = {
         'title': record['title'],
         'author': record.get('author', ''),
@@ -276,6 +283,8 @@ def inputs(root, record, run):
         'research_policy': record['research_policy'],
         'guidance': (record.get('guidance') or {}).get('revision'),
     }
+    if examples:
+        payload['examples'] = examples  # Only when there are any, so saved pins hold.
     if run.get('brand'):
         payload['brand'] = run['brand']
     if len(json.dumps(payload)) > 300_000:
@@ -523,7 +532,11 @@ def survey(root, ident, listing=False):
         'decisions': run.get('decisions', [])[-30:],
         'publication': (record.get('editorial') or {}).get('publication_url') or None,
         # Files cut to the run's budget, by name, so the page and chat can say so.
-        'excerpted': [source['name'] for source in payload['sources'] if source.get('excerpted')],
+        'excerpted': [
+            source['name']
+            for source in payload['sources'] + payload.get('examples', [])
+            if source.get('excerpted')
+        ],
     }
 
 
@@ -584,6 +597,8 @@ def create(root, data, approval='conversation'):
         'outline_text',
         'brand',
         'variant',
+        'point',
+        'revision',
     }
     if set(data) - allowed:
         raise ValueError('Unknown new-blog field.')
@@ -592,6 +607,12 @@ def create(root, data, approval='conversation'):
         raise ValueError(
             'Choose write, outline, from-outline, ideas, revise, review or from-files.'
         )
+    # I know the point: a blog from files that starts at the outline instead of three angles.
+    point = data.get('point', False)
+    if point not in (True, False):
+        raise ValueError('Say whether you know the point: true or false.')
+    if point and mode != 'from-files':
+        raise ValueError('The point you know starts a blog from files.')
     outline_text = text(
         data.get('outline_text', ''), 'outline', 200_000, required=mode == 'from-outline'
     )
@@ -633,25 +654,31 @@ def create(root, data, approval='conversation'):
     if stop not in ('outline', 'draft', 'review', 'package'):
         raise ValueError('Choose outline, draft, review or export package.')
     from_files = mode == 'from-files'
+    angles_first = from_files and not point
     brief = {
-        'goal': text(data.get('goal', ''), 'goal', required=not from_files)
+        'goal': text(data.get('goal', ''), 'goal', required=not angles_first)
         or 'Write a blog from the uploaded files.',
-        'audience': text(data.get('audience', ''), 'audience', 500, required=not from_files)
+        'audience': text(data.get('audience', ''), 'audience', 500, required=not angles_first)
         or 'To be chosen with the angle.',
     }
     import brand_skill
 
     selected_brand = brand_skill.snapshot(data.get('brand', ''), data.get('variant', ''))
     title = text(
-        data.get('title', ''), 'title', 500, required=not data.get('id') and not from_files
+        data.get('title', ''), 'title', 500, required=not data.get('id') and not angles_first
     )
     if from_files:
         title = title or 'From my files'
         if data.get('id') or manuscript or outline_text:
             raise ValueError('Write from my files starts a new blog from uploaded files.')
     profile = data.get('profile') or None
+    revision = data.get('revision')
+    if revision is not None and (type(revision) is not int or revision < 1):
+        raise ValueError('Choose a saved revision of the voice profile.')
     if profile:
-        studio.voice_pin(root, profile)
+        studio.voice_pin(root, profile, revision)
+    elif revision is not None:
+        raise ValueError('A voice revision needs its profile.')
     sources = data.get('sources', [])
     if not isinstance(sources, list) or len(sources) > 50 or len(set(sources)) != len(sources):
         raise ValueError('Select at most 50 different sources.')
@@ -711,7 +738,7 @@ def create(root, data, approval='conversation'):
             }
         ]
     if profile:
-        record['voice'] = {'mode': 'profile', **studio.voice_pin(root, profile)}
+        record['voice'] = {'mode': 'profile', **studio.voice_pin(root, profile, revision)}
     record['research_policy'] = 'supplied-only' if research == 'none' else research
     research = research_scope(research, record['sources'])
     if from_files and research == 'supplied-only':
@@ -726,10 +753,11 @@ def create(root, data, approval='conversation'):
     )
     pipeline = pipeline[: pipeline.index(stop) + 1]
     if from_files:
-        # Three angles first; the chosen one starts the pipeline above (see choose_angle).
-        pipeline = ['angles']
         record['stop_point'] = stop
         record['mode'] = 'from-files'
+    if angles_first:
+        # Three angles first; the chosen one starts the pipeline above (see choose_angle).
+        pipeline = ['angles']
     run = {
         'schema': 1,
         'approval': approval,
@@ -742,8 +770,13 @@ def create(root, data, approval='conversation'):
         'stages': {},
     }
     if from_files:
-        run['after_angles'] = {'research': research, 'stop': stop}
-        run['files_note'] = text(data.get('goal', ''), 'goal')
+        run['angles'] = angles_first
+        if angles_first:
+            run['after_angles'] = {'research': research, 'stop': stop}
+        # What the person said about the files: their note, or the title and point they know.
+        run['files_note'] = (
+            text(data.get('goal', ''), 'goal') if angles_first else title + '\n' + brief['goal']
+        )
         # The uploaded files this blog pinned; a deletion keeps them with it.
         record['material'] = [
             entry['source_id'] for entry in record['sources'] if 'material' in entry['purposes']
@@ -841,7 +874,13 @@ def submit(root, ident, stage, result, expected, page=False):
         'request': previous.get('request', ''),
         'model_purpose': previous.get('model_purpose', stage),
     }
-    if stage != 'angles' and review_policy.automatic(run, 'blog', stage, run['pipeline'][-1]):
+    if stage != 'angles' and review_policy.automatic(
+        run,
+        'blog',
+        stage,
+        run['pipeline'][-1],
+        first='outline' if 'outline' in run['pipeline'] else 'draft',
+    ):
         _accept(directory, run, stage, 'review-policy')
         review_policy.receipt(run, stage, run['stages'][stage], studio.now())
     save(root, directory, record, run, 'Submitted ' + stage)
@@ -910,6 +949,39 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
     return survey(root, ident)
 
 
+def carried(directory, run, payload, writing):
+    """Passages of `writing` that came from an example and from nothing the run allows:
+    its sources, brief, outline and research facts. Empty without examples."""
+    if not payload.get('examples') or not writing.strip():
+        return []
+    from text_checks import carried_over
+
+    def strings(value):
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, dict):
+            for item in value.values():
+                yield from strings(item)
+        elif isinstance(value, list):
+            for item in value:
+                yield from strings(item)
+
+    allowed = (
+        [source['text'] for source in payload['sources']]
+        + [str(value) for value in run['brief'].values()]
+        + [payload.get('title', '')]
+        + [str(item.get('body', '')) for item in payload.get('team_context', [])]
+    )
+    outline = directory / 'OUTLINE.md'
+    if outline.is_file():
+        allowed.append(outline.read_text())
+    if run.get('research_contract') and run['stages'].get('research'):
+        facts, _ = research_contract.read_bundle(directory / 'research')
+        allowed += list(strings([facts['facts'], facts['findings'], facts.get('sections', [])]))
+        allowed.append((directory / 'research/brief.md').read_text())
+    return carried_over(writing, payload['examples'], allowed)['findings']
+
+
 def job(root, ident):
     found = survey(root, ident)
     stage = found['next']
@@ -917,11 +989,14 @@ def job(root, ident):
         raise ValueError('This run is complete.')
     directory, record, run = load(root, ident)
     payload = inputs(root, record, run)
+    evidence = payload['sources']  # What the carried-over check may still allow below.
     # The package works from the saved writing, and only evidence checks review against
     # sources. inputs() above still refuses a changed source pin for every step.
     check = run.get('editor_check')
     if stage == 'package' or (stage == 'review' and check and check not in studio.SOURCE_CHECKS):
         payload['sources'] = []
+    if stage == 'package':
+        payload['examples'] = []
     if (
         run.get('research_contract')
         and stage not in ('research-plan', 'research')
@@ -1003,10 +1078,16 @@ def job(root, ident):
 
         rules = payload['voice'].get('rules', '{}')
         rules = json.loads(rules) if isinstance(rules, str) else rules
-        payload['mechanical_checks'] = lint(
-            payload['documents'].get('manuscript', payload['documents'].get('draft', '')),
-            rules or {},
-        )
+        writing = payload['documents'].get('manuscript', payload['documents'].get('draft', ''))
+        payload['mechanical_checks'] = lint(writing, rules or {})
+        copied = carried(directory, run, {**payload, 'sources': evidence}, writing)
+        payload['mechanical_checks']['findings'] += copied
+        if copied and stage == 'review':
+            guidance += (
+                '\nmechanical_checks lists, under rule from-example, passages the draft carried '
+                'over from an example of the kind of post. A claim traced to an example and to '
+                'nothing else is unsupported.'
+            )
     if run.get('editor_check') in ('polish', 'humanization'):
         guidance += (
             '\n\n' + (references / 'blogforge/voice/assets/ai-tells/patterns.md').read_text()
@@ -1019,6 +1100,8 @@ def job(root, ident):
                 '\nThe author set aside the saved angles in documents.angles. Propose three '
                 'different angles that honor the author’s request; do not repeat the earlier ones.'
             )
+    if payload.get('examples') and stage in ('outline', 'draft'):
+        guidance += '\nThe documents in examples show the kind of post wanted; take their shape, not their facts.'
     if run.get('mode') == 'ideas' and stage == 'outline':
         guidance += '\nReturn three distinct blog angles with audience, thesis, evidence needed and tradeoffs. Stop for the author to choose; do not draft the blog.'
     if run.get('mode') == 'from-outline':
@@ -1481,12 +1564,30 @@ def options(root):
 
     brand = brand_skill.status()
     brand['default'] = brand_skill.defaults(brand)
+    # Me, on the page's Write as select: the personal default voice, when it still resolves.
+    default_voice = None
+    try:
+        import writing_defaults
+
+        voice = writing_defaults.personal(root)['values'].get('voice')
+        if voice:
+            pin = studio.voice_pin(root, voice['profile_id'], voice['revision'])
+            _, profile = studio.item(root, 'profiles', pin['profile_id'])
+            if profile.get('status') != 'retired':
+                default_voice = {
+                    'profile_id': profile['id'],
+                    'revision': pin['revision'],
+                    'name': profile['name'],
+                }
+    except (ValueError, KeyError, TypeError, OSError):
+        default_voice = None
     return {
         'profiles': records('profiles'),
         'sources': records('sources'),
         'agents': agents,
         'settings': settings(root),
         'brand': brand,
+        'default_voice': default_voice,
     }
 
 
@@ -1497,11 +1598,22 @@ def document(root, ident, stage):
         body = path.read_text()
         return {'content': body, **fields(body)}
 
-    directory, _, run = load(root, ident)
+    directory, record, run = load(root, ident)
     if stage not in run['pipeline']:
         raise ValueError('Choose a stage in this blog’s run.')
     path = studio.inside(directory, STAGES[stage][1])
     content = path.read_text()
+    copied = None
+    if stage in ('draft', 'review') and any(
+        'inspiration' in selected['purposes'] for selected in record['sources']
+    ):
+        draft = directory / 'DRAFT.md'
+        copied = carried(
+            directory,
+            run,
+            inputs(root, record, run),
+            draft.read_text() if draft.is_file() else '',
+        )
     previous = None
     approved = run.get('approved', {}).get(stage, '')
     if re.fullmatch('[a-f0-9]{64}', approved):
@@ -1562,7 +1674,20 @@ def document(root, ident, stage):
                 'label': 'Document matches its submitted version and selected inputs',
                 'passed': row['status'] in ('draft', 'approved'),
             },
-        ],
+        ]
+        + (
+            [
+                {
+                    'label': 'Carried over from an example'
+                    if copied
+                    else 'No passage carried over from an example',
+                    'passed': not copied,
+                    'detail': [finding['target'][:120] for finding in copied],
+                }
+            ]
+            if copied is not None
+            else []
+        ),
         'id': ident,
         'title': found['title'],
     }
@@ -1709,6 +1834,8 @@ def angles(content):
 
 def choose_angle(root, directory, record, run, found, request):
     """The chosen angle becomes the blog's title, point and reader; the normal run follows."""
+    if run.get('angles') is False:
+        raise ValueError('This blog has no angles to choose from.')
     saved = run['stages'].get('angles', {})
     if found['next'] != 'angles' or saved.get('status') != 'draft':
         raise ValueError('Wait for the three angles before choosing one.')
@@ -1789,6 +1916,11 @@ def add_parser(groups):
     create_cmd.add_argument('--mode', choices=MODES, default='write')
     create_cmd.add_argument('--manuscript')
     create_cmd.add_argument('--outline-text')
+    create_cmd.add_argument(
+        '--point',
+        action='store_true',
+        help='With --mode from-files: start at the outline from the title, goal and audience',
+    )
     commands.add_parser('list')
     for name in ('status', 'submit', 'approve', 'changes', 'handoff', 'choose'):
         cmd = commands.add_parser(name)

@@ -37,6 +37,11 @@ wait for review; changed source inputs prevent applying older output. Submitted
 answers/results persist on this computer; unfinished browser text is retained
 while navigating tools but is not a cross-computer transcript or backup.
 
+**New blog from my files** on Home takes each upload with its role, facts or an
+example of the kind of post (changeable per file until Start), asks whether to find
+three angles or start from the point the person knows, and chooses the voice with
+**Write as**. The Upload dialog's **Use this file as** offers the same example role.
+
 Conversation methods remain available through the normal operation references.
 The report commands are `studio.py --root WORKSPACE prepublish --id ID` and
 `studio.py --root WORKSPACE plan --topic TOPIC`; neither changes a manuscript.

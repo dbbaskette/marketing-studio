@@ -44,6 +44,14 @@ class ReviewPolicyTests(IsolatedHome):
             self.assertTrue(review.automatic(run, 'blog', gate, 'package'))
         self.assertFalse(review.automatic(run, 'blog', 'outline', 'package'))
         self.assertFalse(review.automatic(run, 'blog', 'package', 'package'))
+        # Balanced stops at the first writing stage a blog has: the outline when there is
+        # one, else the draft, so a blog from an outline is read before its package.
+        self.assertFalse(review.automatic(run, 'blog', 'draft', 'package', first='draft'))
+        self.assertTrue(review.automatic(run, 'blog', 'draft', 'package', first='outline'))
+        self.assertTrue(review.automatic(run, 'blog', 'review', 'package', first='draft'))
+        automatic_run = {'review_policy': {'schema': 1, 'level': 'automatic'}}
+        self.assertTrue(review.automatic(automatic_run, 'blog', 'draft', 'package', first='draft'))
+        self.assertFalse(review.automatic(automatic_run, 'blog', 'package', 'package', first='draft'))
         # Training Studio: Balanced reads the research plan, then the direction and the
         # finished materials together. Automatic draft reads only the finished materials.
         for mode, stops in [('balanced', {'gate:research-plan'}), ('automatic', set())]:
