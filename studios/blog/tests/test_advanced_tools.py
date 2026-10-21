@@ -668,3 +668,76 @@ class AdvisoryAndOutcomeTests(Fixture):
         self.assertEqual(failure.returncode, 1)
         self.assertEqual(json.loads(failure.stdout)['status'], 'failed')
         self.assertIsNone(json.loads(failure.stdout)['saved'])
+
+
+class SourcePurposeTests(Fixture):
+    """A ready reference becomes a voice or style sample from the page, in a new revision."""
+
+    def mark(self, source, purpose, author=None):
+        import management
+
+        data = {'action': 'source-purpose', 'source': source, 'purpose': purpose}
+        if author is not None:
+            data['author'] = author
+        return management.dispatch(self.root, 'tool-action', data)
+
+    def test_a_ready_source_becomes_a_sample_in_a_new_revision(self):
+        source = self.source('Short sentences about a fictional gateway.')
+        result = self.mark(source['id'], 'voice-sample', 'Avery')
+        self.assertEqual(
+            {key: result[key] for key in ('source', 'revision', 'purposes')},
+            {'source': source['id'], 'revision': 2, 'purposes': ['reference', 'voice-sample']},
+        )
+        self.assertEqual(result['receipts'][0]['sharing'], 'local-only')
+        directory, record = studio.item(self.root, 'sources', source['id'])
+        self.assertEqual((record['author'], record['revision']), ('Avery', 2))
+        kept = studio.read_json(directory / 'revisions' / '1' / 'record.json')
+        self.assertEqual((kept['purposes'], kept['author']), (['reference'], ''))
+        self.assertEqual(
+            (directory / 'revisions' / '1' / 'content.md').read_text(),
+            'Short sentences about a fictional gateway.',
+        )
+        again = self.mark(source['id'], 'voice-sample', 'Avery')
+        self.assertEqual((again['revision'], again['receipts']), (2, []), 'nothing to change')
+        styled = self.mark(source['id'], 'style-sample', 'Someone else')
+        self.assertEqual(styled['purposes'], ['reference', 'voice-sample', 'style-sample'])
+        self.assertEqual(studio.item(self.root, 'sources', source['id'])[1]['author'], 'Avery')
+        with self.assertRaisesRegex(ValueError, 'Avery'):
+            self.mark(source['id'], 'voice-sample', 'Blake')
+
+    def test_refuses_unknown_purposes_pending_sources_material_and_a_missing_author(self):
+        import base64
+        import blog_library
+        import management
+
+        ready = self.source('A synthetic paragraph.')
+        with self.assertRaisesRegex(ValueError, 'voice sample or a style sample'):
+            self.mark(ready['id'], 'reference')
+        with self.assertRaisesRegex(ValueError, 'whose'):
+            self.mark(ready['id'], 'voice-sample')
+        pending = self.command(
+            'source', 'add', '--name', 'Scan', '--purpose', 'reference', '--status', 'pending'
+        )
+        with self.assertRaisesRegex(ValueError, 'readable text'):
+            self.mark(pending['id'], 'style-sample')
+        with patch.object(blog_library.shutil, 'which', return_value=None):
+            uploaded = management.dispatch(
+                self.root,
+                'upload',
+                {
+                    'operation': 'e' * 32,
+                    'purpose': 'material',
+                    'analyze': False,
+                    'files': [
+                        {
+                            'filename': 'notes.md',
+                            'content': base64.b64encode(b'Material words.').decode(),
+                        }
+                    ],
+                },
+            )
+        material = uploaded['files'][0]['source']['id']
+        with self.assertRaisesRegex(ValueError, 'one blog'):
+            self.mark(material, 'voice-sample', 'Avery')
+        for ident in (ready['id'], pending['id'], material):
+            self.assertEqual(studio.item(self.root, 'sources', ident)[1]['revision'], 1)

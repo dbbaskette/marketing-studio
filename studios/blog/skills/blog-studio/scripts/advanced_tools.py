@@ -52,8 +52,71 @@ def history_preview(root, ident, revision):
     )
 
 
+SAMPLE_PURPOSES = ('voice-sample', 'style-sample')
+
+
+def source_purpose(root, data):
+    """Mark a ready reference as a voice or style sample, in a new source revision.
+
+    A voice sample is a person's writing, so it needs whose it is: the author given here
+    when the source names none. A style sample keeps whatever author the source has."""
+    import blog_library
+    import voice_links
+
+    if set(data) - {'action', 'source', 'purpose', 'author'}:
+        raise ValueError('Unknown sample field.')
+    purpose = data.get('purpose')
+    if purpose not in SAMPLE_PURPOSES:
+        raise ValueError('Choose a voice sample or a style sample.')
+    directory, record = studio.item(root, 'sources', data.get('source'))
+    if studio.is_material(root, directory, record):
+        raise ValueError(
+            'This file was uploaded for one blog and stays with it. Upload it again as a '
+            'sample to use it for a voice or a style.'
+        )
+    content = directory / 'content.md'
+    if (
+        record.get('status') != 'ready'
+        or not content.is_file()
+        or not studio.read_text(content).strip()
+    ):
+        raise ValueError(
+            'This source has no readable text yet. Add its text before using it as a sample.'
+        )
+    given = data.get('author')
+    author = studio.checked_author(given) if given not in (None, '') else None
+    saved = (record.get('author') or '').strip()
+    if purpose == 'voice-sample':
+        if not saved and not author:
+            raise ValueError('Say whose writing this is before using it as a voice sample.')
+        if saved and author and not voice_links.same_author(saved, author):
+            raise ValueError(
+                'This source is by ' + saved + '. Use it as a sample of ' + saved + '’s voice.'
+            )
+    purposes = list(record.get('purposes') or [])
+    changed = purpose not in purposes or bool(author and not saved)
+    if changed:
+        blog_library.save_revision(directory, record)
+        if purpose not in purposes:
+            purposes.append(purpose)
+        record['purposes'] = purposes
+        if author and not saved:
+            record['author'] = author
+        record['revision'] += 1
+        studio.persist(directory, 'sources', record)
+    return {
+        'source': record['id'],
+        'revision': record['revision'],
+        'purposes': record['purposes'],
+        'author': record.get('author') or '',
+        'changed': changed,
+    }
+
+
 def dispatch(root, data):
     action = data.get('action')
+    if action == 'source-purpose':
+        return source_purpose(root, data)
     if action in (
         'job-create',
         'job-apply',

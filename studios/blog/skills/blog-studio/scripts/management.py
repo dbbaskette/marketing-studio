@@ -1463,7 +1463,14 @@ def _dispatch(root, route, data):
             from advanced_tools import dispatch as tool_dispatch
 
             result = tool_dispatch(root, data)
-            if result.get('profile') and data.get('action') in (
+            if data.get('action') == 'source-purpose':
+                # Shared the way an uploaded reference is, once it actually changed.
+                result['receipts'] = []
+                if result['changed']:
+                    _, record = studio.item(root, 'sources', result['source'])
+                    shared = share(root, 'source', record)
+                    result['receipts'] = [receipt(root, 'Sample source', shared, 'source')]
+            elif result.get('profile') and data.get('action') in (
                 'profile-save',
                 'profile-retire',
                 'job-apply',
