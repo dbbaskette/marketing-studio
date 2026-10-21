@@ -3,6 +3,21 @@
 Releases are published from `skills/blog-studio/VERSION`. Each entry says what
 changes for authors first, then what changes for maintainers.
 
+## Unreleased
+
+- **New blog from my files** asks what each upload is for: facts that may be quoted,
+  or an example of the kind of post. Examples reach the assistant apart from the
+  sources, with no citable ID; research never reads them; the draft and review say
+  which passages were carried over from one, under **Checked for you**.
+- **I know the point** starts a blog from files at the outline, from a title, the
+  point and the reader, instead of three angles. **Write as** chooses the voice on
+  the files screen and on the wizard's second step: you, a saved profile or none.
+- Under Balanced, a blog that starts from your outline stops for you at the draft
+  before its package.
+- For maintainers: `upload` file entries take `purpose`; the `source-role` desk route;
+  `run create --point`; `review_policy.automatic(..., first=)`;
+  `text_checks.carried_over`; `synthesis_research.offered`.
+
 ## 4.3.0 — 2026-10-20
 
 - Manuscript **More tools** adds voice learning, auditions and revisions; resumable

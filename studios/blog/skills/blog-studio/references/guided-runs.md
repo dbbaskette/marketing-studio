@@ -45,7 +45,17 @@ is their one line about it, `--audience` may be empty): the run starts with an
 it always waits for the person and is never approved. Then `... run choose --id <id> --expected <latest> --angle
 "<heading>" --note "..."` makes that angle the title, point and reader and starts
 the outline onward (web research first only with `--research web-allowed`); `run
-changes --stage angles` with their note asks for three different ones. Files past
+changes --stage angles` with their note asks for three different ones. When the person
+already knows the point, add `--point` with `--title`, `--goal` (the point) and
+`--audience`: the run starts at the outline with no angles stage, and `run choose`
+refuses it. Each file says what it is for: facts the writing may quote (`material`), or
+an example of the kind of post wanted (`--purpose material --purpose inspiration`; a kept
+example is `reference` and `inspiration`). Examples reach the worker under `examples`,
+never `sources`: take their shape, length, moves and register, and no fact, figure,
+name, quotation, link or product detail from one unless the sources, research or brief
+also say it. Research never reads an example. At draft and review, `mechanical_checks`
+lists passages carried over from an example under rule `from-example`; a claim traced
+to an example and to nothing else is unsupported. Files past
 the run's budget are excerpted and `excerpted` in status names them. The files stay
 on this computer, but the blog's outline and draft may quote them and are shared like any blog. `--stop` can be `outline`,
 `draft`, `review` or `package`. For an existing article, use `--id <article-id>`;
@@ -67,7 +77,8 @@ This creates no model process in chat: you do the writing here.
 4. Read `awaits` in the returned status. `submission` means the review level
    accepted that stage (its row shows `auto_accepted`): do not approve it, and
    write the next stage. The default Balanced level waits for the person only at
-   the outline and the final stage; Automatic draft only at the final stage;
+   the first writing stage (the outline, or the draft when the run has no outline
+   stage) and the final stage; Automatic draft only at the final stage;
    Step by step at every stage. `decision` means show the saved document, any
    stages accepted since the last decision, and their limits, then wait for the
    person. Only their explicit approval authorizes

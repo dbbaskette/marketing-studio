@@ -72,10 +72,13 @@ Once the page is open, use its controls to drive the work:
    audience; choose **Write a blog**, **Outline only**, **Revise a draft**, or
    **Review a draft**, a voice and an optional brand; then select or upload sources, choose Codex or
    Claude Code, and set limits. To revise or review, supply the manuscript.
-   To start from your own documents, choose **Write from my files** on Home: upload
-   them or paste Google Doc links, pick one of three suggested angles, and the usual
-   outline and draft follow. A Doc is read with this computer's Google sign-in, so it
-   does not need to be shared.
+   To start from your own documents, choose **New blog from my files** on Home: upload
+   them or paste Google Doc links and say what each is for, facts that may be quoted or
+   an example of the kind of post you want (its shape, never its facts); then pick one
+   of three suggested angles, or give the title, the point and the reader yourself, and
+   the usual outline and draft follow. **Write as** chooses the voice: you, when you
+   have set a default voice, a saved profile, or no particular voice with a tone.
+   A Doc is read with this computer's Google sign-in, so it does not need to be shared.
    The files stay on this computer unless you keep them in your references, but the
    blog's outline and draft may quote them and are shared like any other blog.
    For a blog already in Google Docs, choose **Open Google Doc** on Home or Blogs,
@@ -85,8 +88,9 @@ Once the page is open, use its controls to drive the work:
    the next stage. The progress view shows its steps and the files made so far.
    A new blog can go through research, outline, draft, review, and export package.
 4. **Review when it needs you.** With the default **Balanced** review level,
-   Blog Studio stops for you at the outline, with its research beside it, and
-   at the last step, with the steps since the outline beside it. Other steps
+   Blog Studio stops for you at the outline, with its research beside it (at the
+   draft, for a blog that starts from your outline), and
+   at the last step, with the steps since then beside it. Other steps
    carry on by themselves. **Step by step** stops at every stage. Open the item
    under **Needs you** on Home or choose **Review** on its run. Read the
    document, assistant notes, and any comparison with the last approved version.
