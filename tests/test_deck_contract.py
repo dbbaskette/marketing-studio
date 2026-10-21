@@ -56,3 +56,12 @@ class DeckContractTests(unittest.TestCase):
         self.assertEqual(training['pauses'], {level: list(stops) for level, stops
                                               in deck_flow.PAUSES.items()})
         self.assertIn(deck_flow.BRAND_WORKER, training['composer'])
+        # Looks that cannot be rendered: the same pauses, the brand's default taken knowingly
+        # where the person is asked, by the policy under Automatic draft, and recorded as a
+        # look nobody saw rendered.
+        self.assertEqual(training['failing'], presentation['failing'])
+        self.assertEqual({level: entry['by'] for level, entry in training['failing'].items()},
+                         {'step_by_step': 'page', 'balanced': 'page',
+                          'automatic': 'review-policy'})
+        self.assertEqual({entry['shown'] for entry in training['failing'].values()},
+                         {'unrendered'})

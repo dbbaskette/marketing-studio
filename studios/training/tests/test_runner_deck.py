@@ -397,12 +397,15 @@ class RuleTests(JobCase):
         made['slides'][2]['points'][0]['text'] = 'main: the others carry the load.'
         made['slides'][3]['source'] = 'Blueprint O1–O9; learner guide objectives'
         made['slides'][4]['caveat'] = 'See operating-model: in the guide.'
-        said = ' '.join(deck.rules(made, BLUEPRINT))
-        for found in ('what-it-does: source shows "Findings g1"',
-                      'when-capacity-holds: a point\'s text shows "main"',
-                      'the-objection: source shows "Blueprint O1"',
-                      'check-yourself: caveat shows "operating-model:"'):
+        said = ' '.join(deck.rules(made, BLUEPRINT, known=('g1', 'g7')))
+        self.assertNotIn('source shows', ' '.join(deck.rules(made, BLUEPRINT)).split(
+            'the-objection')[0], 'only the IDs the training itself defines')
+        for found in ('what-it-does: source shows "Findings g1, g7"',
+                      'when-capacity-holds: a point\'s text shows "main:"',
+                      'the-objection: source shows "Blueprint O1"'):
             self.assertIn(found, said)
+        # A hyphenated word that is not one of this training's scenarios is ordinary text.
+        self.assertNotIn('check-yourself', said)
         self.assertIn("put the IDs in the slide's `provenance`", said)
         plain_word = json.loads(json.dumps(OUTLINE))
         plain_word['slides'][1]['points'][0]['text'] = 'The main instances are replaced first.'
@@ -414,7 +417,8 @@ class RuleTests(JobCase):
         fine['slides'][1]['source'] = 'Tanzu for Postgres 4.5 documentation'
         fine['slides'][2]['source'] = 'https://example.com/docs/O1-g7'
         fine['slides'][1]['provenance'] = 'Findings g1, g7; blueprint O1'
-        self.assertEqual(deck.rules(fine, BLUEPRINT), [])
+        fine['slides'][3]['title'] = 'O2 sensors and g5.xlarge nodes, built-in: real-time'
+        self.assertEqual(deck.rules(fine, BLUEPRINT, known=('g1', 'g7')), [])
         self.assertEqual(deck.visible(fine['slides'][1]), deck.visible(
             {**fine['slides'][1], 'provenance': None}), 'provenance is never seen')
         fine['slides'][1]['provenance'] = ' '
@@ -1763,6 +1767,40 @@ class LookTests(DeckCase):
         chosen = self.record(root)['deck']['']['look']['chosen']
         self.assertIn('chose to carry on', chosen['words'])
         self.assertEqual(chosen['shown'], 'unrendered', 'the look was never seen rendered')
+        # Recorded with the brand as a choice nobody saw rendered, from samples it kept
+        # without pictures, and the deck says it is an unreviewed draft of its look.
+        self.assertEqual(self.brand.unrendered[-1], True)
+        self.assertEqual(chosen['id'], 'example-contrast')
+        self.assertIn(deck_flow.UNREVIEWED, (root / 'reviews' / 'deck.md').read_text())
+
+    def test_failed_samples_say_so_and_nothing_else_about_rendering(self):
+        self.brand.cannot_render = True
+        root = self.begin()
+        notes = self.looking(root)['look']['notes']
+        self.assertEqual(len(notes), 1)
+        self.assertNotIn('Rendered through', notes[0])
+
+    def test_a_brand_without_unrendered_choices_still_gets_its_default_knowingly(self):
+        self.brand.cannot_render, self.brand.takes_unrendered = True, False
+        root = self.begin()
+        self.looking(root)
+        self.engine.look(root, None, pipeline.DEFAULT_LOOK)
+        self.assertEqual(workspace.status(root)['gate'], 'deck')
+        self.assertEqual(self.record(root)['deck']['']['look']['chosen']['shown'], 'unrendered')
+
+    def test_automatic_draft_takes_the_default_when_samples_cannot_be_rendered(self):
+        from studio_core import review_policy
+        self.brand.cannot_render = True
+        with mock.patch.object(review_policy, 'capture',
+                               return_value={'schema': 1, 'level': 'automatic'}):
+            root = self.begin()
+        self.assertEqual(workspace.status(root)['gate'], 'deck')
+        chosen = self.record(root)['deck']['']['look']['chosen']
+        self.assertEqual((chosen['by'], chosen['shown']), ('review-policy', 'unrendered'))
+        self.assertIn('could not be rendered', chosen['words'])
+        [event] = [event for event in self.record(root)['review_events']
+                   if event['gate'] == 'gate:deck-look']
+        self.assertIn('Google Slides could not be reached', event['note'])
 
     def test_the_brand_refuses_a_pick_for_samples_of_an_older_outline(self):
         root = self.begin()

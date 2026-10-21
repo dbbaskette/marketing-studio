@@ -177,6 +177,27 @@ class ReviewLevelsTests(DeckCase):
         self.assertEqual(other.view(root)['state'], 'done')
         self.assertIsNone(other.view(root)['review'])
 
+    def test_balanced_offers_a_way_on_when_the_looks_cannot_be_rendered(self):
+        self.brand.offers_looks, self.brand.cannot_render = True, True
+        root, shown = self.choose('balanced')
+        direction, = [item for item in shown['review']['items']
+                      if item['target'].startswith('outline:')]
+        self.assertTrue(direction['looks']['failed'])
+        with self.assertRaisesRegex(WorkspaceError, 'Pick a look'):
+            self.engine.review_decide(root, shown['review']['expected'], 'approve',
+                                      looks={'': {'choice': 'example-calm'}})
+        # Tried again: still not rendered, and the review is back, not approved.
+        shown = self.engine.review_decide(root, shown['review']['expected'], 'approve',
+                                          looks={'': {'choice': pipeline.AGAIN_LOOK}})
+        self.assertEqual(shown['review']['phase'], 'direction')
+        self.assertNotIn('direction', self.engine._load(root).get('review_decisions') or {})
+        # Then the brand's default, chosen knowingly.
+        self.engine.review_decide(root, shown['review']['expected'], 'approve',
+                                  looks={'': {'choice': pipeline.DEFAULT_LOOK}})
+        self.assertEqual(workspace.status(root)['gate'], 'deck')
+        chosen = self.engine._load(root)['deck']['']['look']['chosen']
+        self.assertEqual((chosen['by'], chosen['shown']), ('page', 'unrendered'))
+
     def test_a_drawn_deck_always_comes_to_the_person(self):
         # Balanced and Automatic draft both stop at the deck itself, before the scenarios
         # and the final review: the policy never accepts a drawn deck for the person.

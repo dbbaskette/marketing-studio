@@ -1324,6 +1324,15 @@ def question_work(root: Path, found: Survey, ident: str, request: dict | None,
                 {'finding': ident, 'fetch': not only, 'ask': False, 'sources': offered})
 
 
+def research_ids(root: Path) -> list[str]:
+    """The identifiers the training's research defines: its findings, facts and sources, or
+    its questions, which a slide may not show."""
+    record = workspace.research_record(root) or {}
+    found = [entry.get('id') for key in ('findings', 'facts', 'sources', 'items')
+             for entry in record.get(key) or () if isinstance(entry, dict)]
+    return sorted({str(ident) for ident in found if ident})
+
+
 def findings_text(root: Path) -> str:
     """The research as a worker reads it: each question's ID, verdict, summary and quotes."""
     record = workspace.research_record(root) or {'items': [], 'results': {}}
@@ -1700,9 +1709,8 @@ def look_view(root: Path, found: Survey, level: str | None) -> dict | None:
         return None
     waiting = found.next.kind == 'look' and workspace.split(found.next.step.artifact)[1] \
         == level
-    notes = [shown['says']] if shown.get('says') else []
-    if shown.get('failed'):
-        notes.insert(0, deck_flow.LOOK_FAILED.format(why=shown['failed']))
+    notes = [deck_flow.LOOK_FAILED.format(why=shown['failed'])] if shown.get('failed') \
+        else [shown['says']] if shown.get('says') else []
     return {'level': level, 'artifact': mine.name, 'waiting': waiting,
             'failed': bool(shown.get('failed')),
             'default': shown.get('default'), 'sheet': bool(shown.get('sheet')),
@@ -1779,6 +1787,7 @@ def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
     prepared = {'inputs': inputs,
                 'artifacts': {name: {'kind': 'outline', 'brand': str(contract(root, mine)),
                                      'blueprint': blueprint, 'design': designed,
+                                     'known': research_ids(root),
                                      **({'icons': True} if designed and icons else {})}},
                 'ask': _can_ask(answered)}
     return Work(briefs.guidance('deck-outline', design=designed, icons=designed and icons),
@@ -2376,7 +2385,10 @@ def deck_shows(root: Path, session: dict, mine: Deck, audit: dict, cited: dict |
     review = last['review']
     parsed = checks.parse_blueprint(
         _text(root, session, workspace.qualify('blueprint', mine.level)) or '')
+    chosen = looked(mine.kept, workspace.sha256_file(place(root, mine.level, OUTLINE))) or {}
     return {'rendered': last['deck'], 'round': len(mine.rounds),
+            **({'unreviewed': deck_flow.UNREVIEWED} if chosen.get('shown') == 'unrendered'
+               else {}),
             'slides': [{key: slide[key] for key in ('number', 'id', 'title')}
                        for slide in last['slides']],
             'findings': [{key: finding.get(key) for key in (
@@ -2401,7 +2413,8 @@ def deck_note(shows: dict, request: dict | None, dated: bool) -> list[str]:
     first, the coverage as reviewed, and why this version was made. A deck is never called
     clear while a major finding remains."""
     audit, findings = shows['audit'], shows['findings']
-    lines = ['Checked for you:',
+    lines = [shows['unreviewed'], ''] if shows.get('unreviewed') else []
+    lines += ['Checked for you:',
              "- The brand's own audit "
              + {'ok': 'raised nothing.', 'warnings': 'passed it, with warnings.'}.get(
                  audit['status'], 'holds something against it.')

@@ -86,7 +86,7 @@ import re
 
 import runner  # noqa: F401  puts the core on the import path
 import checks
-from studio_core import deck_direction
+from studio_core import deck_copy, deck_direction
 from workspace import WorkspaceError
 
 PREVIEWS = 4            # times one composer may render its section
@@ -122,18 +122,6 @@ TEXTS = ('text', 'value', 'label', 'title')     # where a drawing's node holds i
 # What the slides tool knows of an outline, by its capability: a point's short `parts` and
 # a slide's `provenance`. A tool without one is handed the outline without it.
 KNOWS = {'compose-split-point': 'parts', 'compose-provenance': 'provenance'}
-# A team's own bookkeeping, which an audience cannot follow: finding, objective and
-# blueprint IDs, and a slug used as a prefix. It goes in `provenance`, never on a slide.
-_ID = r'(?:[gf]\d{1,3}|O\d{1,2})'
-# A bookkeeping word counts only before an ID ("Finding g4", "Blueprint M1"), so a
-# title such as "Research shows" is not refused.
-INTERNAL = (re.compile(r'\b(?:Findings?|Blueprint|Objectives?|Research)\b[\s:#]*'
-                       r'(?:[gfOM]\d{1,3}\b|\d)', re.I),
-            re.compile(rf'\b{_ID}(?:\s*[,/–-]\s*{_ID})+\b'),
-            re.compile(rf'^\s*{_ID}(?:[\s,;/–-]+{_ID})*\s*$'),
-            re.compile(r'\bO\d\b'), re.compile(r'\bg\d+\b'),
-            re.compile(r'(?<![\w-])[a-z0-9]+(?:[-_][a-z0-9]+)+:(?=\s|$)'))
-SHOWN = ('title', 'subtitle', 'focal', 'caveat', 'source')   # what a slide shows, by field
 WHOLE = ('A point is one sentence: keep its text whole in one shape, with its label in that '
          'shape or right beside it. Never split a sentence across boxes. Where a point gives '
          'short `parts` labels, draw them as the parts of its diagram and keep the sentence '
@@ -322,51 +310,19 @@ def with_provenance(outline, knows=frozenset()):
     return {**outline, 'slides': slides}
 
 
-def internal(text) -> str | None:
-    """The bookkeeping a piece of a slide's visible copy shows, or None when it shows none.
-    A web address is a citation, and is left out."""
-    if not isinstance(text, str):
-        return None
-    bare = re.sub(r'https?://\S+', '', text)
-    for pattern in INTERNAL:
-        found = pattern.search(bare)
-        if found:
-            return found.group(0).strip(' ;.')
-    return None
+def known_ids(blueprint: str, more=()) -> set[str]:
+    """The identifiers a training defines, which no slide may show: its blueprint's
+    objectives, modules and key points, and `more`, such as its research's findings, facts
+    and sources."""
+    parsed = checks.parse_blueprint(blueprint)
+    return {*parsed['objectives'], *parsed['modules'],
+            *re.findall(r'\bK\d+\.\d+\b', blueprint), *(str(ident) for ident in more)}
 
 
-def provenance_rules(outline, slugs=()) -> list[str]:
-    """What the runner refuses because it shows a team's bookkeeping on a slide: finding,
-    objective or blueprint IDs, and scenario slugs, in any visible field. Each problem says
-    where it goes instead."""
-    problems = []
-    told = ('Audiences cannot follow finding, objective or blueprint IDs, or a scenario\'s '
-            'slug. Cite a document the audience can look up by name in `source`, such as '
-            '"Tanzu for Postgres 4.5 documentation", or leave it out; write a scenario by its '
-            'title in words; and put the IDs in the slide\'s `provenance`, which goes only '
-            'into the speaker notes.')
-    named = [slug for slug in slugs if isinstance(slug, str) and slug]
-    for slide in slides_of(outline):
-        ident = slide.get('id') or 'a slide'
-        if 'provenance' in slide and (not isinstance(slide['provenance'], str)
-                                      or not slide['provenance'].strip()):
-            problems.append(f'{ident}: `provenance` is text: the IDs and notes behind the '
-                            'slide, which no slide shows. Leave it out when there are none.')
-        seen = [(key, slide.get(key)) for key in SHOWN]
-        seen += [(f'a point\'s {key}', point.get(key)) for point in _points(slide)
-                 for key in ('label', 'text')]
-        seen += [("a point's part", part) for point in _points(slide)
-                 for part in _parts_of(point)]
-        for where, text in seen:
-            # A scenario's slug: anywhere when it is hyphenated, as only a slug is, and
-            # otherwise only as a prefix, so that a plain word is not taken for one.
-            found = internal(text) or next(
-                (slug for slug in named if isinstance(text, str) and re.search(
-                    rf'(?<![\w-]){re.escape(slug)}' + (r'(?![\w-])' if re.search('[-_]', slug)
-                                                        else ':'), text)), None)
-            if found:
-                problems.append(f'{ident}: {where} shows {json.dumps(found)}. {told}')
-    return problems
+def provenance_rules(outline, blueprint: str = '', known=(), slugs=()) -> list[str]:
+    """What the runner refuses because a slide shows the training's own bookkeeping, as
+    studio_core.deck_copy finds it: its IDs and its practice scenarios' slugs."""
+    return deck_copy.problems(slides_of(outline), known_ids(blueprint, known), slugs)
 
 
 def plain(text) -> str:
@@ -404,10 +360,11 @@ def slides_of(outline) -> list[dict]:
     return [slide for slide in found or () if isinstance(slide, dict)]
 
 
-def rules(outline, blueprint: str, budget: int | None = None) -> list[str]:
+def rules(outline, blueprint: str, budget: int | None = None, known=()) -> list[str]:
     """What the runner holds an outline to, beyond the slides tool's own check. Each
     problem is a sentence the worker can act on. `budget` is the most words one slide may
-    show, when the tool has said."""
+    show, when the tool has said. `known` are the IDs the training's research defines,
+    which a slide may not show."""
     if not isinstance(outline, dict) or not slides_of(outline):
         return ['The outline is one JSON object with its slides under "slides".']
     problems = [f'Leave out `{key}`: it is added after you hand the outline in.'
@@ -473,7 +430,7 @@ def rules(outline, blueprint: str, budget: int | None = None) -> list[str]:
                      'gaps. Leave it out.' for gap, text in left_out.items()
                      if plain(text) and plain(text) in said]
     slugs = [entry['id'] for entry in checks.parse_blueprint(blueprint)['practice']]
-    problems += provenance_rules(outline, slugs)
+    problems += provenance_rules(outline, blueprint, known, slugs)
     missing = [objective for objective in objectives if objective not in served]
     if missing:
         problems.append('No slide serves ' + ', '.join(missing) + '. Every objective is '

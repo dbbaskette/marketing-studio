@@ -83,6 +83,11 @@ SHARED_INPUTS = frozenset({'outline contract', 'composition contract', *OUTLINE_
 LOOK_FAILED = ("The brand's looks could not be rendered here ({why}). Nothing was picked for "
                "you: try again, or carry on in the brand's default look.")
 DEFAULT_WORDS = "Automatic draft: the brand's default look, {name}, was used."
+UNRENDERED_WORDS = ("Automatic draft: the brand's looks could not be rendered ({why}), so its "
+                    'default look, {name}, was used without anyone seeing it.')
+UNREVIEWED = ('The look of this deck was chosen without its samples being seen rendered: '
+              'treat the deck as an unreviewed draft of its look until its slides are looked '
+              'at.')
 PROCEED_WORDS = ("The samples could not be rendered, and the person chose to carry on in the "
                  "brand's default look, {name}.")
 

@@ -97,8 +97,11 @@ def fingerprint(value):
     return sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
-def receipt(record, gate, evidence, at):
+def receipt(record, gate, evidence, at, note=None):
+    """Record that the policy continued `gate`, bound to its evidence. `note` says, in words
+    kept as they are, anything the person should know of how, such as a look chosen from
+    samples that could not be rendered, and why."""
     record.setdefault('review_events', []).append({
         'gate': gate, 'by': 'review-policy', 'level': level(record),
         'evidence': fingerprint(evidence), 'at': at,
-        'decision': 'continued-automatically'})
+        'decision': 'continued-automatically', **({'note': str(note)} if note else {})})

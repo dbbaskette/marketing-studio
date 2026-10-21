@@ -587,7 +587,7 @@ def check_outline(text: str, spec: dict, slides,
                  for finding in report.get('findings') or ()]
     outcomes = [checks.result('outline.tool', found),
                 checks.result('outline.rules', deck.rules(outline, spec.get('blueprint') or '',
-                                                          budget))]
+                                                          budget, spec.get('known') or ()))]
     if not spec.get('design'):
         return held(outcomes), outcomes, [], kept
     problems, proposed = check_design(outline, design, slides, scratch,

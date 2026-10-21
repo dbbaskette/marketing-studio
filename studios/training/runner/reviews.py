@@ -333,6 +333,7 @@ class Reviewing:
         if decision == 'revise' and (not isinstance(asked, list) or not asked
                                      or not all(isinstance(ask, dict) for ask in asked)):
             raise WorkspaceError('Say what should change, in at most 4000 characters.')
+        again = []
         with self.files:
             record = self._load(root)
             found = self._survey(root, record)
@@ -351,7 +352,14 @@ class Reviewing:
                     level = offered['level']
                     pick = (looks or {}).get(level or '') if isinstance(looks, dict) else None
                     choice = pick.get('choice') if isinstance(pick, dict) else None
-                    if choice not in [look['id'] for look in offered['looks']]:
+                    # Looks that could not be rendered are never picked blind: drawn again,
+                    # or the brand's default, chosen knowingly.
+                    allowed = [pipeline.DEFAULT_LOOK, pipeline.AGAIN_LOOK] \
+                        if offered.get('failed') else [look['id'] for look in offered['looks']]
+                    if choice == pipeline.AGAIN_LOOK and offered.get('failed'):
+                        again.append(level)
+                        continue
+                    if choice not in allowed:
                         raise WorkspaceError('Pick a look for ' + item['label'].lower()
                                              + ' before you approve the direction.')
                     words = pick.get('words') if isinstance(pick.get('words'), str) else ''
@@ -359,8 +367,13 @@ class Reviewing:
                                           'by': 'page', 'at': home.now()}
                 for level, picked in picks.items():
                     self._decided(record, level or None).setdefault('look', {})['picked'] = picked
-                record.setdefault('review_decisions', {})[phase] = {
-                    'signature': expected, 'by': 'page', 'at': home.now()}
+                # Asked to draw looks again, it is not approved yet: they are drawn again,
+                # and the review comes back with them.
+                for level in again:
+                    self._note(root, level, look=None)
+                if not again:
+                    record.setdefault('review_decisions', {})[phase] = {
+                        'signature': expected, 'by': 'page', 'at': home.now()}
             else:
                 known = [item['target'] for item in view['items']]
                 for ask in asked:
@@ -376,7 +389,9 @@ class Reviewing:
                 for ask in asked:
                     self._request(root, record, decisions, ask['target'], ask['note'])
             self._store(root, record)
-            self._commit(root, 'approve the combined review' if decision == 'approve'
+            self._commit(root, 'draw the looks again for the direction review'
+                         if decision == 'approve' and again else
+                         'approve the combined review' if decision == 'approve'
                          else f'request changes to {len(asked)} items from the combined review'
                          if len(asked) > 1 else 'request changes from the combined review')
         self.carry_on(root)

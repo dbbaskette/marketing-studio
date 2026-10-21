@@ -31,12 +31,15 @@ class DeckContract(DeckCase):
         self.brand.entry, self.brand.offers_looks = 'brand', True
         self.slides.design = True
 
-    def through(self, level: str) -> list[str]:
+    def through(self, level: str, failing: bool = False) -> list[str]:
         """Take one deck to its final checkpoint at `level`, answering every stop, and say
-        which of the brand's checkpoints it paused at."""
+        which of the brand's checkpoints it paused at. `failing`: its looks cannot be
+        rendered, and the brand's default is taken knowingly wherever the person is asked."""
+        self.brand.cannot_render = failing
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': level}):
-            root = self.begin(title=f'Contract {level}')
+            root = self.begin(title=f'Contract {level}{" failing" if failing else ""}')
+        self.root = root
         paused = []
         for _ in range(40):
             view = self.view(root)
@@ -44,15 +47,18 @@ class DeckContract(DeckCase):
             gate = workspace.status(root)['gate']
             if view['review'] and view['review']['phase'] == 'direction':
                 paused.append(deck_flow.canonical('training', 'review:direction') or 'direction')
+                choice = 'default' if failing else 'example-contrast'
                 self.engine.review_decide(root, view['review']['expected'], 'approve',
-                                          looks={'': {'choice': 'example-contrast',
+                                          looks={'': {'choice': choice,
                                                       'words': 'For the contract.'}})
             elif view['outline'] and view['outline']['waiting']:
                 paused.append(deck_flow.canonical('training', 'gate:deck-outline'))
                 self.engine.outline(root, None, 'approve')
             elif view['look'] and view['look']['waiting']:
                 paused.append(deck_flow.canonical('training', 'gate:deck-look'))
-                self.engine.look(root, None, 'example-contrast', 'For the contract.')
+                self.assertEqual(bool(view['look']['failed']), failing)
+                self.engine.look(root, None, 'default' if failing else 'example-contrast',
+                                 'For the contract.')
             elif gate == 'deck':
                 paused.append(deck_flow.canonical('training', 'gate:deck'))
                 return paused
@@ -63,12 +69,18 @@ class DeckContract(DeckCase):
         self.fail('Too many stops.')
 
     def test_the_contract(self):
-        pauses = {level: self.through(level) for level in ('step_by_step', 'balanced',
-                                                           'automatic')}
+        levels = ('step_by_step', 'balanced', 'automatic')
+        pauses = {level: self.through(level) for level in levels}
+        failing = {}
+        for level in levels:
+            stops = self.through(level, failing=True)
+            chosen = self.engine._load(self.root)['deck']['']['look']['chosen']
+            failing[level] = {'pauses': stops, 'shown': chosen['shown'],
+                              'by': chosen['by']}
         jobs = [(kind, spec) for kind, _, spec in self.workers.jobs]
         outline = next(spec for kind, spec in jobs if kind == 'outline')
         composer = next(spec for kind, spec in jobs if kind == 'section')
         Path(OUT).write_text(json.dumps({
             'outline': shared(entry['name'] for entry in outline['inputs']),
             'composer': shared(entry['name'] for entry in composer['inputs']),
-            'pauses': pauses}, indent=2))
+            'pauses': pauses, 'failing': failing}, indent=2))

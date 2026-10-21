@@ -2888,6 +2888,40 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'path': str(self.root), 'expected': 'v1', 'decision': 'approve', 'target': None,
             'note': None, 'looks': {'': {'choice': 'example-calm', 'words': ''}}})])
 
+    def test_looks_that_cannot_be_rendered_offer_a_way_on_in_the_review(self):
+        self.started()
+        failed = 'The brand\u2019s looks could not be rendered here (Google Slides could not be reached).'
+        looks = {'level': None, 'artifact': 'deck', 'waiting': False, 'failed': True,
+                 'default': None, 'sheet': False, 'chosen': None, 'notes': [failed],
+                 'looks': []}
+        review = {'phase': 'direction', 'label': 'Review the direction', 'expected': 'v1',
+                  'commits': {'levels': 1, 'materials': ['document'], 'deck': True,
+                              'dollars': None, 'minutes': None},
+                  'items': [{'target': 'outline:', 'label': 'Deck direction',
+                             'text': '### 1. Cover', 'looks': looks}]}
+        waiting = a_run('waiting', 'Review the direction.')
+        waiting['body']['review'] = review
+        working = a_run('working', 'Drawing the looks.')
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', 'Review the direction.')],
+            'GET /api/training': [self.detail('waiting', 'Review the direction.')],
+            'GET /api/run': [waiting], 'POST /api/review': [working, working]})
+        result = self.run_page(answers, [
+            {'click': 'Open Rolling restarts'}, {'snapshot': 'review'},
+            {'click': 'Try again'}, {'snapshot': 'again'}])
+        self.assertIn(failed, result['snapshots']['review']['text'])
+        self.assertIn('Carry on in the brand\u2019s default look',
+                      result['snapshots']['review']['buttons'])
+        self.assertEqual(self.posts(result), [('/api/review', {
+            'path': str(self.root), 'expected': 'v1', 'decision': 'approve', 'target': None,
+            'note': None, 'looks': {'': {'choice': 'again', 'words': ''}}})])
+        result = self.run_page(answers, [
+            {'click': 'Open Rolling restarts'},
+            {'click': 'Carry on in the brand\u2019s default look'},
+            {'click': 'Approve the direction'}, {'click': 'Approve'}])
+        self.assertEqual(self.posts(result)[-1][1]['looks'],
+                         {'': {'choice': 'default', 'words': ''}})
+
     def test_grouped_change_request_keeps_text_when_the_review_refreshes(self):
         self.started()
         review = {'phase': 'direction', 'label': 'Review the direction', 'expected': 'v1',

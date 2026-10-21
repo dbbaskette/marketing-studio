@@ -1710,10 +1710,26 @@ class Engine(Reviewing):
                 (folder / pipeline.SHEET).write_bytes(worker_tools.picture(sheet))
         except (WorkspaceError, OSError, KeyError, TypeError, ValueError) as refusal:
             shutil.rmtree(folder, ignore_errors=True)
+            why = str(refusal).strip() or type(refusal).__name__
+            # The samples drawn without pictures, so that a choice of the brand's default is
+            # recorded with the brand as one nobody saw rendered. None when even that fails.
+            kept, unseen = None, {}
+            try:
+                folder.mkdir(parents=True)
+                skill.look_samples(outline, folder / 'samples', *pipeline.brand_of(session),
+                                   delivery=deck.DELIVERY)
+                manifest = home.read_json(folder / 'samples' / 'looks.json', {})
+                unseen = {'looks': [{key: value for key, value in look.items()
+                                     if key != 'image'}
+                                    for look in deck_flow.sampled(manifest, folder / 'samples')],
+                          'default': manifest.get('default'),
+                          'house': [str(line) for line in manifest.get('house') or ()]}
+                kept = folder.name
+            except (WorkspaceError, OSError, KeyError, TypeError, ValueError):
+                shutil.rmtree(folder, ignore_errors=True)
             with self.files:
-                self._note(root, level, look={**base, 'failed': str(refusal).strip()
-                                              or type(refusal).__name__,
-                                              'says': rendered['says']})
+                self._note(root, level, look={**base, 'failed': why, 'folder': kept,
+                                              'unseen': unseen})
                 self._done(root, it, clock, f"note that the brand's looks for "
                            f'{workspace.label(it.artifact)} could not be rendered')
             return
@@ -1743,11 +1759,7 @@ class Engine(Reviewing):
         contract = work / str((mine_built.get('brand') or {}).get('contract'))
         outline = pipeline.place(root, level, pipeline.OUTLINE)
         if choice == pipeline.DEFAULT_LOOK:
-            default = deck_direction.default_look(contract) or {}
-            # Nothing was seen rendered: the brand's default, and the deck says so.
-            chosen = {'id': default.get('id') or pipeline.DEFAULT_LOOK,
-                      'name': default.get('id') or "the brand's default", 'shown': 'unrendered',
-                      **{key: default.get(key) for key in ('direction', 'house', 'layouts')}}
+            chosen = self._unseen_default(root, level, shown, contract, outline, words)
         else:
             picked = next((look for look in shown.get('looks') or ()
                            if look['id'] == choice), None)
@@ -1777,6 +1789,35 @@ class Engine(Reviewing):
         self._store(root, record)
         return True
 
+    def _unseen_default(self, root: Path, level, shown: dict, contract: Path, outline: Path,
+                        words: str) -> dict:
+        """The brand's default look, chosen knowingly where its samples could not be
+        rendered: recorded with the brand as unrendered where it kept samples without
+        pictures and takes `--unrendered`, else read from its deck direction record. Either
+        way the deck says nobody saw it rendered."""
+        unseen = shown.get('unseen') or {}
+        default = next((look for look in unseen.get('looks') or ()
+                        if look['id'] == unseen.get('default')), None)
+        folder = pipeline.place(root, level, pipeline.WORK) / str(shown.get('folder'))
+        if default and shown.get('folder') and (folder / 'samples').is_dir():
+            written = folder / f'outline-{secrets.token_hex(3)}.json'
+            try:
+                self._skill().look_choose(folder / 'samples', default['id'], words,
+                                          outline=outline, write=written, unrendered=True)
+            except WorkspaceError:
+                written = None   # a brand that does not take it: the record is the studio's
+            if written:
+                look = deck_flow.chosen_from(home.read_json(written, None),
+                                             deck_direction.contract_of(contract)) or {}
+                return {'id': default['id'], 'name': default['name'], 'shown': 'unrendered',
+                        'direction': look.get('direction') or default.get('direction'),
+                        'house': look.get('house') or list(unseen.get('house') or ()),
+                        'layouts': look.get('layouts') or default.get('layouts') or {}}
+        brand_default = deck_direction.default_look(contract) or {}
+        return {'id': brand_default.get('id') or pipeline.DEFAULT_LOOK,
+                'name': brand_default.get('id') or "the brand's default", 'shown': 'unrendered',
+                **{key: brand_default.get(key) for key in ('direction', 'house', 'layouts')}}
+
     def _look_default(self, root: Path, step: pipeline.Step) -> None:
         """A look gate the saved level does not stop at: the look the person picked in the
         combined direction review, in their words; else the brand's default, saying why."""
@@ -1786,6 +1827,24 @@ class Engine(Reviewing):
             picked = (self._decided(record, level).get('look') or {}).get('picked')
             shown = pipeline.read_built(root, level).get('look') or {}
             looks = shown.get('looks') or []
+            if picked and picked.get('choice') == pipeline.DEFAULT_LOOK and shown.get('failed'):
+                words = picked.get('words') or deck_flow.PROCEED_WORDS.format(
+                    name="the brand's default")
+                self._choose_look(root, level, pipeline.DEFAULT_LOOK, words, 'page')
+                return self._commit(root, "carry on in the brand's default look for "
+                                          f'{workspace.label(step.artifact)}, as picked in the '
+                                          'direction review')
+            if shown.get('failed'):
+                words = deck_flow.UNRENDERED_WORDS.format(why=shown['failed'],
+                                                          name="the brand's default")
+                self._choose_look(root, level, pipeline.DEFAULT_LOOK, words, 'review-policy')
+                record = self._load(root)
+                review_policy.receipt(record, step.id, {'look': pipeline.DEFAULT_LOOK},
+                                      home.now(), note=words)
+                self._store(root, record)
+                return self._commit(root, "use the brand's default look for "
+                                          f'{workspace.label(step.artifact)}: its looks could '
+                                          'not be rendered')
             if picked and picked.get('choice') in [look['id'] for look in looks]:
                 name = next(look['name'] for look in looks if look['id'] == picked['choice'])
                 words = picked.get('words') or pipeline.NO_COMMENT.format(name=name)

@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import signal
 import struct
 import subprocess
@@ -1037,6 +1038,7 @@ class Brand:
         # A brand new enough to offer looks draws one picture for each of these, and
         # records the one chosen. An older one, the default here, offers none.
         self.offers_looks, self.chosen, self.written, self.cannot_render = False, [], [], False
+        self.takes_unrendered, self.unrendered = True, []
         # A brand that is the entry to slide building: `entry` is what `guides()` says
         # ('brand', 'plain' or None, an older brand), and `guided` each guidance call.
         self.entry, self.guided = None, []
@@ -1119,16 +1121,18 @@ class Brand:
         output = Path(output)
         output.mkdir(parents=True)
         samples = []
+        if self.cannot_render and preview:
+            shutil.rmtree(output, ignore_errors=True)   # as the brand removes what it began
+            raise brand_skill_refused(['Google Slides could not be reached to render the '
+                                       'looks.'])
         for number, look in enumerate(self.LOOKS, start=1):
             (output / look['id']).mkdir()
             image = output / look['id'] / 'slide-01.png'
-            image.write_bytes(png(number * 40))
+            if preview:
+                image.write_bytes(png(number * 40))
             samples.append({**look, 'image': str(image) if preview else None})
         sheet = output / 'looks.png'
         sheet.write_bytes(png(200))
-        if self.cannot_render and preview:
-            raise brand_skill_refused(['Google Slides could not be reached to render the '
-                                       'looks.'])
         manifest = {'schema': 1, 'status': 'awaiting-choice', 'slide': 'what-it-does',
                     'default': self.LOOKS[0]['id'], 'house': ['Fill cards.', 'Icons.'],
                     'samples': samples, 'sheet': str(sheet), 'preview': preview,
@@ -1140,9 +1144,18 @@ class Brand:
                 'samples': [{'id': sample['id'], 'name': sample['name'],
                              'image': sample['image']} for sample in samples]}
 
-    def look_choose(self, samples, choice, words, outline=None, write=None) -> dict:
+    def look_choose(self, samples, choice, words, outline=None, write=None,
+                    unrendered=False) -> dict:
         from runner import brand
         self._asked('look_choose')
+        shown = json.loads((Path(samples) / 'looks.json').read_text())['samples']
+        if not all(sample.get('image') for sample in shown) and not unrendered:
+            raise brand.Refused(['The samples have no rendered images, so the person has not '
+                                 'seen them. To record a choice made without seeing them, pass '
+                                 '--unrendered; the deck is then an unreviewed draft.'])
+        if unrendered and not self.takes_unrendered:
+            raise brand.Refused(['look choose does not take --unrendered'])
+        self.unrendered.append(unrendered)
         if not words or not words.strip():
             raise brand.Refused(['Record what the person said when they chose the look.'])
         if (Path(samples) / 'choice.json').exists():

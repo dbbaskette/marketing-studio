@@ -5655,6 +5655,33 @@ function combinedConfirm() {
     .filter(Boolean);
 }
 
+// Looks that could not be rendered, drawn again from the combined review. It approves
+// nothing: the review comes back with what was drawn.
+async function redrawLooks(review, looks, problem, pressed) {
+  if (view.busy) return;
+  const turn = view.turn;
+  view.busy = true;
+  pressed.disabled = true;
+  say(problem, '');
+  let run;
+  try {
+    run = await send('review', { path: view.path, expected: review.expected,
+      decision: 'approve', target: null, note: null,
+      looks: { [looks.level || '']: { choice: 'again', words: '' } } });
+  } catch (failure) {
+    say(problem, failure.message);
+    pressed.disabled = false;
+    view.busy = false;
+    return;
+  }
+  view.busy = false;
+  if (turn !== view.turn) return;
+  view.run = run;
+  toast('The looks are being drawn again. ' + run.sentence);
+  show('run', { path: view.path }, true);
+  refresh();
+}
+
 async function decideCombined(review, decision, target, note, pressed,
   problem = byId('combined-problem'), requests = null) {
   if (view.busy) return;
@@ -5800,6 +5827,19 @@ function combinedReview(run) {
       const held = view.notes[key] || (view.notes[key] = { choice: '', words: '' });
       add(part, make('p', 'step-name', 'Pick the look of this deck'),
         lookPicker(item.looks, held, (now) => Object.assign(held, now)));
+      if (item.looks.failed) {
+        // Nothing is picked blind: the looks are drawn again, or the brand's default is
+        // chosen knowingly, and goes with the approval.
+        const lookProblem = alertLine('look-problem-' + item.looks.artifact);
+        const again = capsule('Try again', '', () => redrawLooks(review, item.looks,
+          lookProblem, again), 'looks-again-' + item.looks.artifact);
+        const proceed = capsule('Carry on in the brand’s default look', '', () => {
+          held.choice = held.choice === 'default' ? '' : 'default';
+          proceed.setAttribute('aria-pressed', String(held.choice === 'default'));
+        }, 'looks-default-' + item.looks.artifact);
+        proceed.setAttribute('aria-pressed', String(held.choice === 'default'));
+        add(part, again, proceed, lookProblem);
+      }
     }
     // A sample that could not be drawn is said in its place; the review goes on without it.
     if (item.sample_note) add(part, make('p', 'fix', item.sample_note));
