@@ -387,6 +387,49 @@ class BlogRunnerTests(RunnerCase):
             runner.basis(self.root, directory, record, run, 'draft'), pin({'outline': outline})
         )
 
+    def test_marking_a_pinned_source_as_a_sample_keeps_its_runs_open(self):
+        import management
+
+        source = self.source('A fictional gateway routes synthetic requests.')
+        found = self.approve(self.submit(self.create(sources=[source['id']])))
+        before = runner.survey(self.root, found['id'])
+        _, payload, _ = runner.job(self.root, found['id'])
+        for purpose in ('voice-sample', 'style-sample'):
+            management.dispatch(
+                self.root,
+                'tool-action',
+                {
+                    'action': 'source-purpose',
+                    'source': source['id'],
+                    'purpose': purpose,
+                    'author': 'Avery',
+                },
+            )
+        self.assertEqual(studio.item(self.root, 'sources', source['id'])[1]['revision'], 3)
+        after = runner.survey(self.root, found['id'])
+        self.assertEqual(after['stages'], before['stages'], 'a sample mark is not a change')
+        self.assertEqual(after['expected'], before['expected'], 'stage pins hold')
+        self.assertEqual(runner.job(self.root, found['id'])[1], payload)
+        self.file.write_text('Changed synthetic words.')
+        self.command('source', 'update', '--id', source['id'], '--text-file', str(self.file))
+        with self.assertRaisesRegex(ValueError, 'selected source changed'):
+            runner.survey(self.root, found['id'])
+
+    def test_a_pinned_source_without_its_saved_revision_still_refuses(self):
+        import management
+
+        source = self.source('A fictional gateway routes synthetic requests.')
+        found = self.approve(self.submit(self.create(sources=[source['id']])))
+        management.dispatch(
+            self.root,
+            'tool-action',
+            {'action': 'source-purpose', 'source': source['id'], 'purpose': 'style-sample'},
+        )
+        directory, _ = studio.item(self.root, 'sources', source['id'])
+        shutil.rmtree(directory / 'revisions' / '1')
+        with self.assertRaisesRegex(ValueError, 'selected source changed'):
+            runner.survey(self.root, found['id'])
+
     def test_only_steps_that_use_evidence_receive_sources(self):
         source = self.source('A fictional gateway routes synthetic requests.')
         found = self.create(sources=[source['id']])

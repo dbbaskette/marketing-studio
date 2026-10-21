@@ -198,6 +198,28 @@ def load(root, ident):
     return directory, record, run
 
 
+def same_source(folder, source, revision):
+    """Whether a newer source revision carries the pinned one's words unchanged.
+
+    Marking a source as a sample, or naming its author, gives it a new revision without
+    changing what a blog read from it. The payload takes its purposes from the blog's own
+    pin, so a run accepts that revision when the name, status, origin and text equal the
+    pinned revision's saved copy. Without that copy it cannot tell, and refuses."""
+    saved = folder / 'revisions' / str(revision)
+    if not isinstance(revision, int) or not (saved / 'record.json').is_file():
+        return False
+    try:
+        pinned = studio.read_json(saved / 'record.json')
+    except (OSError, ValueError):
+        return False
+    if any(pinned.get(key) != source.get(key) for key in ('name', 'status', 'origin')):
+        return False
+    then, now = saved / 'content.md', folder / 'content.md'
+    if then.is_file() != now.is_file():
+        return False
+    return not now.is_file() or then.read_bytes() == now.read_bytes()
+
+
 def inputs(root, record, run):
     """Exact selected context. Never silently replace a pinned voice with its latest revision."""
     sources = []
@@ -214,7 +236,9 @@ def inputs(root, record, run):
                 raise ValueError(MATERIAL_ELSEWHERE) from None
         folder, source = studio.item(root, 'sources', selected['source_id'])
         path = studio.inside(folder, 'content.md')
-        if selected['revision'] != source['revision']:
+        if selected['revision'] != source['revision'] and not same_source(
+            folder, source, selected['revision']
+        ):
             raise ValueError(
                 'A selected source changed. Reattach its current revision in chat first.'
             )
