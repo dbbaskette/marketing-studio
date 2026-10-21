@@ -1961,12 +1961,28 @@ class ExampleTests(FilesCase):
     """An example of the kind of post shows its shape and never supplies facts."""
 
     def example(self, *files):
-        idents = self.material(*files)
-        for ident in idents:
-            folder, record = studio.item(self.root, 'sources', ident)
-            record['purposes'] = ['material', 'inspiration']
-            studio.persist(folder, 'sources', record)
-        return idents
+        import base64
+        import blog_library
+
+        with patch.object(blog_library.shutil, 'which', return_value=None):
+            result = management.dispatch(
+                self.root,
+                'upload',
+                {
+                    'operation': studio.digest(repr(('example', files)).encode())[:32],
+                    'purpose': 'material',
+                    'analyze': False,
+                    'files': [
+                        {
+                            'filename': name,
+                            'content': base64.b64encode(body.encode()).decode(),
+                            'purpose': 'inspiration',
+                        }
+                        for name, body in files
+                    ],
+                },
+            )
+        return [row['source']['id'] for row in result['files']]
 
     def develop(self, found, angle='The gateway is a contract'):
         found = self.submit(found, self.ANGLES, page=True)

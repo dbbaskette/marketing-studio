@@ -2170,6 +2170,114 @@ class MaterialUploadTests(Fixture):
                 ),
             )
 
+    def test_each_file_says_what_it_is_for(self):
+        import blog_runner
+
+        files = self.files(('post.md', b'An earlier post.'), ('notes.md', b'The facts.'))
+        files[0]['purpose'] = 'inspiration'
+        data = {'operation': '7' * 32, 'purpose': 'material', 'analyze': False, 'files': files}
+        with patch.object(library.shutil, 'which', return_value=None):
+            result = management.dispatch(self.root, 'upload', data)
+        example, facts = (row['source']['id'] for row in result['files'])
+        for ident, purposes in ((example, ['material', 'inspiration']), (facts, ['material'])):
+            directory, record = studio.item(self.root, 'sources', ident)
+            self.assertEqual(record['purposes'], purposes)
+            self.assertEqual(directory, self.root / '.uploads' / 'material' / ident)
+            self.assertRegex(ident, r'^material-[0-9a-f]{16}$')
+        self.assertEqual(blog_runner.options(self.root)['sources'], [])
+        self.assertEqual(result['receipts'], [])
+        # Kept, an example is a shared reference that still shows only a shape.
+        kept = management.dispatch(self.root, 'upload', dict(data, operation='8' * 32, keep=True))
+        purposes = [
+            studio.item(self.root, 'sources', row['source']['id'])[1]['purposes']
+            for row in kept['files']
+        ]
+        self.assertEqual(purposes, [['reference', 'inspiration'], ['reference']])
+        self.assertEqual(len(blog_runner.options(self.root)['sources']), 2)
+        self.assertEqual(len(kept['receipts']), 2)
+        # A role that is not facts or an example is refused before anything is saved.
+        bad = self.files(('a.md', b'ok'), ('b.md', b'ok'))
+        bad[1]['purpose'] = 'voice-sample'
+        with self.assertRaisesRegex(ValueError, 'Facts or an example'):
+            management.dispatch(self.root, 'upload', dict(data, operation='9' * 32, files=bad))
+        self.assertEqual(len(list((self.root / '.uploads' / 'material').iterdir())), 2)
+
+    def test_source_role_switches_a_material_file_between_facts_and_example(self):
+        import blog_runner
+
+        with patch.object(library.shutil, 'which', return_value=None):
+            uploaded = management.dispatch(
+                self.root,
+                'upload',
+                {
+                    'operation': 'a' * 32,
+                    'purpose': 'material',
+                    'analyze': False,
+                    'files': self.files(('post.md', b'An earlier post.'), ('mine.md', b'Mine.')),
+                },
+            )
+        ident, pinned = (row['source']['id'] for row in uploaded['files'])
+        role = lambda **data: management.dispatch(self.root, 'source-role', data)  # noqa: E731
+        result = role(id=ident, role='example')
+        self.assertEqual(result['role'], 'example')
+        self.assertEqual(
+            studio.item(self.root, 'sources', ident)[1]['purposes'], ['material', 'inspiration']
+        )
+        self.assertEqual(role(id=ident, role='example'), result)  # idempotent
+        self.assertEqual(role(id=ident, role='facts')['role'], 'facts')
+        self.assertEqual(studio.item(self.root, 'sources', ident)[1]['purposes'], ['material'])
+        self.assertEqual(studio.item(self.root, 'sources', ident)[1]['revision'], 1)
+        with self.assertRaisesRegex(ValueError, 'facts or example'):
+            role(id=ident, role='reference')
+        with self.assertRaisesRegex(ValueError, 'facts or example'):
+            role(id=ident, role='facts', keep=True)
+        with self.assertRaisesRegex(ValueError, 'Unknown sources ID'):
+            role(id='material-0000000000000000', role='facts')
+        reference = self.source()
+        with self.assertRaisesRegex(ValueError, 'uploaded for one blog'):
+            role(id=reference['id'], role='example')
+        self.assertEqual(
+            studio.item(self.root, 'sources', reference['id'])[1]['purposes'], ['reference']
+        )
+        # A file a started blog pinned keeps the role that blog read it with.
+        import studios_config
+
+        studios_config.update({'review': {'level': 'step_by_step'}})
+        blog_runner.create(
+            self.root, {'mode': 'from-files', 'sources': [pinned], 'goal': 'A post'}, 'page'
+        )
+        with self.assertRaisesRegex(ValueError, 'started blog'):
+            role(id=pinned, role='example')
+        self.assertEqual(studio.item(self.root, 'sources', pinned)[1]['purposes'], ['material'])
+        self.assertEqual(role(id=ident, role='example')['role'], 'example')
+
+    def test_the_upload_dialog_saves_an_example_as_a_shared_reference(self):
+        import blog_runner
+
+        result = management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': 'b' * 32,
+                'filename': 'earlier-post.md',
+                'content': base64.b64encode(b'An earlier announcement.').decode(),
+                'purpose': 'inspiration',
+                'as_blog': False,
+                'analyze': False,
+            },
+        )
+        _, record = studio.item(self.root, 'sources', result['source']['id'])
+        self.assertEqual(record['purposes'], ['inspiration'])
+        self.assertTrue((self.root / 'sources' / record['id']).is_dir())
+        self.assertEqual([r['label'] for r in result['receipts']], ['Uploaded reference'])
+        self.assertEqual(
+            [row['id'] for row in blog_runner.options(self.root)['sources']], [record['id']]
+        )
+        html = (
+            Path(management.__file__).resolve().parents[1] / 'assets/management/index.html'
+        ).read_text()
+        self.assertIn('<option value="inspiration">Example of the kind of post</option>', html)
+
     def test_kept_files_are_ordinary_references(self):
         import blog_runner
 

@@ -378,7 +378,7 @@ def source_command(root, args):
             raise ValueError(
                 'Ready source needs nonempty extracted text; use pending/unavailable otherwise.'
             )
-        local_only = list(args.purpose) == ['material']
+        local_only = 'material' in args.purpose  # With inspiration too: an example file.
         text_problem, original_note = (
             (None, None)
             if local_only
