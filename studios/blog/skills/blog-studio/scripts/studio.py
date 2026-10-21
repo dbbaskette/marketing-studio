@@ -280,7 +280,12 @@ def sample_choices(root, purpose):
         if 'material' in purposes:
             continue
         row = {key: record.get(key) for key in ('id', 'name', 'author')}
-        if record.get('status') != 'ready':
+        content = file.parent / 'content.md'
+        if (
+            record.get('status') != 'ready'
+            or not content.is_file()
+            or not read_text(content).strip()
+        ):
             pending.append(row)
         elif purpose not in purposes:
             candidates.append(row)

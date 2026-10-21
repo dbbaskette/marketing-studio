@@ -762,6 +762,11 @@ class SourcePurposeTests(Fixture):
         found = styles.catalog(self.root)
         self.assertEqual(found['candidates'], [row(ready['id'])])
         self.assertEqual(found['pending'], [row(pending['id'])])
+        blank = self.source('Text that goes away.')
+        (studio.item(self.root, 'sources', blank['id'])[0] / 'content.md').write_text('  \n')
+        found = styles.catalog(self.root)
+        self.assertEqual(found['candidates'], [row(ready['id'])], 'no readable text, no sample')
+        self.assertEqual(found['pending'], [row(pending['id']), row(blank['id'])])
 
 
 class VoiceApplyTests(Fixture):
@@ -859,9 +864,14 @@ class VoiceApplyTests(Fixture):
             empty['run']['expected'],
             page=True,
         )
+        found = blog_runner.decide(self.root, ident, found['expected'], 'approve', page=True)
+        self.assertEqual(found['stages'][0]['status'], 'approved')
+        same = self.apply(ident, blake['id'])
+        self.assertEqual(same['run']['decisions'][-1]['event'], 'approve outline', 'the same pin')
         with self.assertRaisesRegex(ValueError, 'Confirm'):
             self.apply(ident, avery['id'])
         result = self.apply(ident, avery['id'], confirmed=True)
+        self.assertEqual(result['run']['stages'][0]['status'], 'stale')
         self.assertEqual(
             result['voice'],
             {'mode': 'profile', 'profile_id': avery['id'], 'revision': 1, 'tone': 'Warm'},
@@ -870,10 +880,11 @@ class VoiceApplyTests(Fixture):
         self.assertEqual(result['run']['style_name'], 'How-to and tutorial')
         events = [row['event'] for row in result['run']['decisions']]
         self.assertEqual(
-            events[-3:],
+            events[-4:],
             [
                 'Voice changed to Blake (revision 1)',
                 'Submitted outline',
+                'approve outline',
                 'Voice changed to Avery (revision 1)',
             ],
         )

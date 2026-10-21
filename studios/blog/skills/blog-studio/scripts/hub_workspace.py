@@ -859,12 +859,12 @@ class Workspace:
                 for r in data['sources']
             ]
             if data['voice'].get('mode') == 'profile':
-                ref = data['voice']['ref']
+                ref, tone = data['voice']['ref'], data['voice'].get('tone')
                 data['voice'] = {
                     'mode': 'profile',
                     'profile_id': resolved[(ref['item'], ref['revision'])],
                     'revision': 1,
-                    **({'tone': data['voice']['tone']} if data['voice'].get('tone') else {}),
+                    **({'tone': tone} if isinstance(tone, str) and 0 < len(tone) <= 2000 else {}),
                 }
             # A shared pin is a record of which guidance the article used; helpers always run from this installation.
             if data.get('guidance'):

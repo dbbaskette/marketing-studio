@@ -686,6 +686,8 @@ def create(root, data, approval='conversation'):
     if profile:
         studio.voice_pin(root, profile)
     tone = text(data.get('tone', ''), 'tone')
+    # Beside a voice, the tone is a nudge only when the person changed the usual one.
+    nudge = '' if tone == defaults.get('tone') else tone
     style = data.get('style') or None
     if style:
         # Refused here if retired or unknown. Checking writes nothing: a starter is copied
@@ -730,7 +732,7 @@ def create(root, data, approval='conversation'):
             profile=profile,
             author=text(data.get('author', ''), 'author', 200) or None,
             voice='tone' if chose else None,
-            tone=tone if chose else None,
+            tone=(nudge if profile else tone) if chose else None,
             audience=brief['audience'],
             blog_type=None,
             review_folder=None,
@@ -739,10 +741,13 @@ def create(root, data, approval='conversation'):
         )
         ident = studio.new_id(title)
         record = studio.article_record(root, args, ident)
-        if not chose and record['voice']['mode'] != 'profile':
+        if not chose and record['voice']['mode'] == 'preserve' and manuscript:
+            # A revise or review keeps the manuscript's own voice unless one is picked.
+            record['voice'] = {'mode': 'preserve', 'tone': nudge}
+        elif not chose and record['voice']['mode'] != 'profile':
             record['voice'] = {'mode': 'tone', 'tone': tone}  # No default voice to apply.
-        elif not chose and tone:
-            record['voice']['tone'] = tone  # A nudge on top of the default voice.
+        elif not chose and nudge:
+            record['voice']['tone'] = nudge  # A nudge on top of the default voice.
         directory = studio.inside(root, 'articles', ident)
     if data.get('id') and mode == 'from-outline' and not existing:
         record['mode'] = 'from-outline'
@@ -758,8 +763,8 @@ def create(root, data, approval='conversation'):
         ]
     if profile:
         record['voice'] = {'mode': 'profile', **studio.voice_pin(root, profile)}
-        if tone:
-            record['voice']['tone'] = tone
+        if nudge:
+            record['voice']['tone'] = nudge
     if style:
         record['style'] = studio.style_check(root, style)
     record['research_policy'] = 'supplied-only' if research == 'none' else research
@@ -962,6 +967,11 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
     return survey(root, ident)
 
 
+def tone_nudge(voice):
+    tone = (voice.get('tone') or '').strip()
+    return ' Tone nudge: ' + tone + ('' if tone.endswith(('.', '!', '?')) else '.') if tone else ''
+
+
 def brief_line(root, record, payload):
     """Whose voice, which style and what tone, for the worker. In the guidance, not in
     inputs(), so the stage pins saved before this line hold."""
@@ -983,15 +993,16 @@ def brief_line(root, record, payload):
             + (', in the shape of ' + style['name'] if style else '')
             + '.'
         )
-        if voice.get('tone'):
-            line += ' Tone nudge: ' + voice['tone']
-        return line
+        return line + tone_nudge(voice)
     line = (
         'No author voice is pinned; keep the manuscript’s own voice.'
         if voice.get('mode') == 'preserve'
         else 'No author voice is pinned; follow voice.tone.'
+        if voice.get('tone')
+        else 'No author voice is pinned; write plainly in the house style.'
     )
-    return line + (' Write in the shape of ' + style['name'] + '.' if style else '')
+    line += (' Write in the shape of ' + style['name'] + '.') if style else ''
+    return line + (tone_nudge(voice) if voice.get('mode') == 'preserve' else '')
 
 
 def job(root, ident):
@@ -1563,32 +1574,34 @@ def default_voice(root):
     Reads only. A team default is named from its Team Hub revision without checking it
     out; creating the blog checks it out, as in chat."""
     import writing_defaults
+    from hub_store import HubError
     from hub_workspace import active
 
-    adapter = active(root)
+    # Whatever stops the read (a Team Hub not joined here, a damaged record), the wizard
+    # still opens: it just offers no default voice.
     try:
+        adapter = active(root)
         found = writing_defaults.resolve(root, adapter=adapter)['values'].get('voice')
-    except (ValueError, OSError):
-        return None
-    if not found:
-        return None
-    if found['scope'] == 'team':
-        shared = adapter.hub.graph()['revisions'][found['value']['revision']]
-        saved = (shared.get('data') or {}).get('studio') or {}
-        return {
-            'scope': 'team',
-            'profile': None,
-            'name': saved.get('name') or shared.get('title'),
-            'revision': found['value']['revision'],
-            'status': saved.get('status'),
-        }
-    pin = found['value']
-    try:
+        if not found:
+            return None
+        if found['scope'] == 'team':
+            shared = adapter.hub.graph()['revisions'][found['value']['revision']]
+            saved = (shared.get('data') or {}).get('studio') or {}
+            if saved.get('status') == 'retired':
+                return None
+            return {
+                'scope': 'team',
+                'profile': None,
+                'name': saved.get('name') or shared.get('title'),
+                'revision': found['value']['revision'],
+                'status': saved.get('status'),
+            }
+        pin = found['value']
         directory, current = studio.item(root, 'profiles', pin['profile_id'])
         pinned = studio.read_json(
             studio.inside(directory, 'revisions', str(pin['revision']), 'record.json')
         )
-    except (ValueError, OSError):
+    except (ValueError, OSError, KeyError, TypeError, HubError):
         return None
     if current.get('status') == 'retired':
         return None  # A new blog cannot take it; creating one says so.

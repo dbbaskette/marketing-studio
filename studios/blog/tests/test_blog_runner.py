@@ -1846,7 +1846,7 @@ class VoiceChoiceTests(RunnerCase):
         self.assertTrue(
             guidance.startswith(
                 'Write as Avery (voice guide revision 1, confirmed), in the shape of How-to '
-                'and tutorial. Tone nudge: Warm\n\n'
+                'and tutorial. Tone nudge: Warm.\n\n'
             ),
             guidance[:200],
         )
@@ -1876,6 +1876,12 @@ class VoiceChoiceTests(RunnerCase):
                 'No author voice is pinned; follow voice.tone.\n\n'
             )
         )
+        bare_tone = self.create(page=True, profile='', tone='')
+        self.assertTrue(
+            runner.job(self.root, bare_tone['id'])[2].startswith(
+                'No author voice is pinned; write plainly in the house style.\n\n'
+            )
+        )
         bare = self.create(page=True, profile=mine['id'])
         self.assertTrue(
             runner.job(self.root, bare['id'])[2].startswith(
@@ -1899,6 +1905,100 @@ class VoiceChoiceTests(RunnerCase):
             },
         )
         self.assertEqual(self.files(), before)
+
+    def team(self, status='confirmed', competing=False):
+        """A stub Team Hub whose only team default is a shared voice."""
+        from types import SimpleNamespace
+
+        item, revision = 'a' * 32, 'b' * 32
+        rows = ['c' * 32, 'e' * 32] if competing else ['c' * 32]
+        revisions = {
+            row: {
+                'item': 'd' * 32,
+                'kind': 'context',
+                'scope': {'level': 'team', 'key': ''},
+                'status': 'active',
+                'data': {
+                    'key': 'writing-default:voice',
+                    'value': {'item': item, 'revision': revision},
+                },
+            }
+            for row in rows
+        }
+        revisions[revision] = {
+            'item': item,
+            'revision': revision,
+            'kind': 'voice',
+            'status': 'active',
+            'title': 'Team voice',
+            'data': {'studio': {'name': 'Team voice', 'status': status}},
+        }
+        graph = {'heads': {'d' * 32: rows}, 'revisions': revisions}
+        return SimpleNamespace(hub=SimpleNamespace(graph=lambda: graph))
+
+    def test_options_name_no_default_voice_they_cannot_use(self):
+        from hub_store import HubError
+
+        for adapter, why in (
+            (self.team(competing=True), 'competing team defaults'),
+            (self.team(status='retired'), 'a retired shared voice'),
+        ):
+            with patch('hub_workspace.active', return_value=adapter):
+                self.assertIsNone(runner.options(self.root)['default_voice'], why)
+        with patch('hub_workspace.active', side_effect=HubError('This Team Hub is not joined.')):
+            shown = runner.options(self.root)
+        self.assertIsNone(shown['default_voice'], 'the wizard opens without its Team Hub')
+        self.assertIn('profiles', shown)
+
+    def test_a_manuscript_keeps_its_own_voice_unless_the_person_picks_one(self):
+        mine = self.voice()
+        self.default(mine)
+        draft = self.source('# A synthetic draft\n\nThe gateway routes requests.')
+        found = self.create(page=True, mode='review', manuscript=draft['id'], tone='Warm')
+        self.assertEqual(self.voice_of(found)['mode'], 'preserve')
+        self.assertTrue(
+            runner.job(self.root, found['id'])[2].startswith(
+                'No author voice is pinned; keep the manuscript’s own voice. Tone nudge: Warm.\n\n'
+            )
+        )
+        existing = self.command(
+            'article', 'create', '--title', 'Imported', '--mode', 'existing', '--voice', 'preserve'
+        )
+        self.file.write_text('# Imported\n\nAn original sentence.')
+        self.command(
+            'article',
+            'save',
+            '--id',
+            existing['id'],
+            '--kind',
+            'original',
+            '--file',
+            str(self.file),
+        )
+        found = self.create(page=True, id=existing['id'], mode='review')
+        self.assertEqual(self.voice_of(found)['mode'], 'preserve')
+        self.assertTrue(
+            runner.job(self.root, found['id'])[2].startswith(
+                'No author voice is pinned; keep the manuscript’s own voice.\n\n'
+            )
+        )
+        picked = self.create(page=True, mode='review', manuscript=draft['id'], profile=mine['id'])
+        self.assertEqual(self.voice_of(picked)['profile_id'], mine['id'])
+
+    def test_the_settings_default_tone_is_no_nudge(self):
+        mine = self.voice()
+        usual = runner.settings(self.root)['defaults']['tone']
+        self.assertNotIn(
+            'tone', self.voice_of(self.create(page=True, profile=mine['id'], tone=usual))
+        )
+        self.assertEqual(
+            self.voice_of(self.create(page=True, profile='', tone=usual)),
+            {'mode': 'tone', 'tone': usual},
+            'without a voice the tone is the description',
+        )
+        self.default(mine)
+        self.assertNotIn('tone', self.voice_of(self.create(page=True, tone=usual)))
+        self.assertEqual(self.voice_of(self.create(page=True, tone='Warm'))['tone'], 'Warm')
 
     def test_options_read_a_team_default_voice_without_checking_it_out(self):
         from types import SimpleNamespace

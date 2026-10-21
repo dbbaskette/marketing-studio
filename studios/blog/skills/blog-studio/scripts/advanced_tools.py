@@ -59,17 +59,18 @@ def apply_voice(root, ident, selected, confirmed):
     import blog_runner
 
     folder, record = studio.item(root, 'articles', ident)
+    before = record.get('voice') or {}
+    same = before.get('mode') == 'profile' and (before['profile_id'], before['revision']) == (
+        selected['id'],
+        selected['revision'],
+    )
     written = any((folder / name).is_file() for name in ('OUTLINE.md', 'DRAFT.md', 'ORIGINAL.md'))
-    if written and not confirmed:
+    if written and not confirmed and not same:
         raise ValueError(
             'This blog has a saved outline or draft. Confirm the change of voice: its reviews '
             'will need a new look; nothing is rewritten.'
         )
-    before = record.get('voice') or {}
-    if before.get('mode') != 'profile' or (before['profile_id'], before['revision']) != (
-        selected['id'],
-        selected['revision'],
-    ):
+    if not same:
         studio.article_command(
             root,
             SimpleNamespace(
