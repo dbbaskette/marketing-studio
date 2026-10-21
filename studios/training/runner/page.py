@@ -166,7 +166,7 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
-          '/api/brand', '/api/brand/install', '/api/shared')
+          '/api/brand', '/api/brand/install', '/api/shared', '/api/note')
 PNG = 'image/png'
 DOCUMENTS = '/api/documents'
 ASSET = '/api/asset'
@@ -476,6 +476,11 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.act(sent))
         if path == '/api/answer':
             return desk.as_json(HTTPStatus.OK, self.answered(sent))
+        if path == '/api/note':
+            path = desk.text(sent, 'path')
+            self.run(path)
+            return desk.as_json(HTTPStatus.OK, self.engine.note(
+                path, desk.text(sent, 'text'), desk.text(sent, 'expected')))
         if path == DOCUMENTS:
             return desk.as_json(HTTPStatus.OK, self.supplied(sent))
         if path == '/api/copies':

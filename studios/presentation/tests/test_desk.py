@@ -363,6 +363,51 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn(current['label'] + ' · 3 minutes · $0.42 so far · stops at $5.00', text)
         self.assertIn('Stop loses the step in hand; Pause lets it finish.', text)
 
+    def test_a_note_for_the_next_step_is_sent_from_the_deck_screen_and_replaced(self):
+        path = self.started()
+        shown = self.run_of(path)
+        shown.update(state='working', gate=None, sentence='Drafting the outline.')
+        noted = {**shown, 'note': {'pending': {'text': 'Lead with the risks.', 'at': 'now'},
+                                   'used': [], 'expected': '1'}}
+        box = 'Note for the next step'
+        result = self.deck_screen(path, [
+            {'snapshot': 'working'}, {'click': 'Send the note'}, {'snapshot': 'empty'},
+            {'fill': box, 'value': 'Lead with', 'stay': True}, {'poll': True},
+            {'snapshot': 'typing'}, {'fill': box, 'value': '  Lead with the risks.  '},
+            {'click': 'Send the note'}, {'snapshot': 'noted'}],
+            **{'GET /api/run': [ok(shown), ok(shown), ok(noted)], 'POST /api/note': [ok(noted)]})
+        shots = result['snapshots']
+        self.assertIn('It goes with the next job that starts, and stops nothing.',
+                      shots['working']['text'])
+        self.assertEqual(shots['working']['fields'][box], '')
+        self.assertEqual((shots['empty']['invalid'], shots['empty']['posts']), ([box], 0))
+        self.assertIn('Write the note first.', shots['empty']['text'])
+        self.assertEqual(shots['typing']['fields'][box], 'Lead with',
+                         'a refresh leaves what is being typed')
+        self.assertEqual(self.posts(result), [('/api/note', {
+            'path': path, 'expected': '0', 'text': 'Lead with the risks.'})])
+        sent = shots['noted']
+        self.assertIn('Noted. It goes with the next job that starts.', sent['toasts'])
+        self.assertIn('Noted for the next step: Lead with the risks.', sent['text'])
+        self.assertIn('Sending another replaces it.', sent['text'])
+        self.assertIn('Replace the note', sent['buttons'])
+        self.assertEqual(sent['fields'][box], '')
+
+    def test_a_used_note_is_listed_with_the_saved_inputs_and_a_finished_deck_takes_none(self):
+        path = self.started()
+        self.to_end(Path(path))
+        shown = self.run_of(path)
+        self.assertEqual(shown['state'], 'finished')
+        shown['note'] = {'pending': None, 'expected': '2', 'used': [
+            {'text': 'Lead with the risks.', 'at': 'now', 'step': 'build-sections:section-1'}]}
+        result = self.deck_screen(path, [{'click': 'Saved inputs, outline and run details'},
+                                         {'snapshot': 'done'}], **{'GET /api/run': [ok(shown)]})
+        done = result['snapshots']['done']
+        self.assertNotIn('Note for the next step', done['fields'])
+        self.assertNotIn('Send the note', done['buttons'])
+        self.assertIn('Notes for the next step', done['text'])
+        self.assertIn('Lead with the risks. Went with: Build the slides.', done['text'])
+
     def test_a_retry_says_what_it_re_runs_and_what_the_last_try_took(self):
         path = self.started()
         shown = self.run_of(path)

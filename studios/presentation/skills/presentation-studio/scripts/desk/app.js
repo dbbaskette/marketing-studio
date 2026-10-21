@@ -241,6 +241,7 @@ const view = {
   drawn: '', named: '', pushed: 0, timer: 0, turn: 0, busy: false, checking: false,
   setup: null, form: null, draft: null, run: null, agents: null, looking: false,
   unlooked: '', sharing: false, steered: '', barred: '', answers: {}, notes: {},
+  nextNotes: {},
   // Each agent's models as the runner listed them, by agent, and the choice of a model on
   // the screen: what it is held in, and how it is drawn again once a list comes.
   models: {}, picking: null,
@@ -3286,6 +3287,82 @@ function deckIntro(run) {
   return node;
 }
 
+// --- one deck: a note for the next step ----------------------------------------------------
+
+// Whether a note can be left: the deck is this computer's and has a next step to come.
+function noting(run) {
+  return Boolean(run.note) && !theirs(run)
+    && ['working', 'waiting', 'paused', 'failed'].includes(run.state);
+}
+
+// A note for the next job that starts, sent without stopping anything. One already waiting
+// is shown, and another sent before a job takes it replaces it.
+function notePart(run) {
+  const path = view.path;
+  const waiting = run.note.pending;
+  const label = make('label', 'field-label', 'Note for the next step');
+  label.htmlFor = 'next-note';
+  const box = make('textarea', 'input');
+  box.id = 'next-note';
+  box.rows = 2;
+  box.maxLength = 2000;
+  box.value = view.nextNotes[path] || '';
+  box.dataset.key = 'next-note ' + path;
+  box.spellcheck = true;
+  const hint = make('p', 'quiet field-hint', waiting
+    ? 'Noted for the next step: ' + shortNote(waiting.text) + ' Sending another replaces it.'
+    : 'It goes with the next job that starts, and stops nothing. A reviewer takes no note: '
+      + 'it waits for the next writer.');
+  hint.id = 'next-note-hint';
+  box.setAttribute('aria-describedby', 'next-note-hint next-note-problem');
+  box.addEventListener('input', () => {
+    view.nextNotes[path] = box.value;
+    if (box.getAttribute('aria-invalid')) refuse('next-note', '');
+  });
+  const problem = alertLine('next-note-problem');
+  const go = capsule(waiting ? 'Replace the note' : 'Send the note', '',
+    () => sendNote(run, box, problem, go), 'send-note');
+  go.disabled = Boolean(view.busy);
+  return add(make('div', 'answer'), label, box, hint, problem, add(make('div', 'bar'), go));
+}
+
+// A note as the hint repeats it: the first line and a half, at most.
+function shortNote(text) {
+  const flat = String(text || '').replace(/\s+/g, ' ').trim();
+  return flat.length > 160 ? flat.slice(0, 159).trimEnd() + '…' : flat;
+}
+
+async function sendNote(run, box, problem, pressed) {
+  const text = box.value.trim();
+  if (!text) {
+    say(problem, 'Write the note first.');
+    box.setAttribute('aria-invalid', 'true');
+    box.focus();
+    return;
+  }
+  if (view.busy) return;
+  const turn = view.turn;
+  const path = view.path;
+  view.busy = true;
+  pressed.disabled = true;
+  try {
+    const found = await send('note', { path, expected: run.note.expected, text });
+    delete view.nextNotes[path];
+    view.busy = false;
+    toast(run.note.pending ? 'The note is replaced. It goes with the next job that starts.'
+      : 'Noted. It goes with the next job that starts.');
+    if (turn === view.turn && view.screen === 'deck' && view.path === path) {
+      view.run = found;
+      paintDeck(false);
+    }
+    refresh();
+  } catch (failure) {
+    say(problem, failure.message + ' Your note is still here, and nothing was sent.');
+    pressed.disabled = false;
+  }
+  view.busy = false;
+}
+
 // --- one deck: its stages ------------------------------------------------------------------
 
 // Each stage of the deck, as the steps it has say: done, the one it is at, still to come,
@@ -4272,7 +4349,17 @@ function savedDetails(run) {
     bullets(Object.entries(run.build_timing).map(([name, at]) => spoken(name.replaceAll('_', ' ')) + ': ' + at)));
   if (list(run.build_feedback).length) add(node, make('h3', 'row-title', 'Saved slide feedback'),
     bullets(run.build_feedback.map(item => 'Slide ' + item.number + ': ' + item.note)));
+  const used = list(run.note && run.note.used);
+  if (used.length) add(node, make('h3', 'row-title', 'Notes for the next step'),
+    bullets(used.map(item => item.text + ' Went with: ' + stepLabel(run, item.step) + '.')));
   return add(node, problem, holder);
+}
+
+// The step a note went with, as the timeline names it: a job of a step is named for its step.
+function stepLabel(run, name) {
+  const base = String(name || '').split(':')[0];
+  const row = list(run.timeline).find((step) => step.name === base);
+  return row ? row.label : base;
 }
 
 function buildPanel(gate, readonly) {
@@ -5049,6 +5136,7 @@ function paintDeck(fresh) {
     ['intro', [run.state, run.sentence, run.queue, view.steered, read, Boolean(run.problem),
       run.timeline, run.workers, run.spent, run.build_progress && run.build_progress.slides],
     () => deckIntro(run)],
+    noting(run) ? ['note', [run.note, run.state, read], () => notePart(run)] : null,
     ['timeline', [run.timeline, gate && gate.name], () => timelinePart(run)],
     read && (driver || !finished) ? ['theirs', [driver, lead, run.taken, run.notice,
       run.last_shared, run.kept, title], () => theirsPart(run, lead === 'take')] : null,
@@ -5072,7 +5160,8 @@ function paintDeck(fresh) {
     ['cost', [run.spent, run.agent, run.model, run.effort, view.setup && view.setup.limits],
       () => costCard(run)],
     ['steps', [run.timeline], () => stepsCard(run)],
-    ['saved-details', [run.path, run.model_jobs, run.build_feedback], () => savedDetails(run)],
+    ['saved-details', [run.path, run.model_jobs, run.build_feedback, run.note],
+      () => savedDetails(run)],
     // What this computer runs for a team can be handed over, for anyone to take.
     !read && driver && driver.here ? ['mine', [driver, title, run.kept],
       () => minePart(driver, run.kept)] : null,

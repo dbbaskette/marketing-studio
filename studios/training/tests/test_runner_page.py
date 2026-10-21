@@ -44,10 +44,11 @@ LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None
 GETS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run')
 POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
          '/api/documents', '/api/copies', '/api/share', '/api/companions', '/api/asset',
-         '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review')
+         '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
+         '/api/note')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
 RUN_KEYS = ['agent', 'clash', 'controls', 'copies', 'deck', 'deck_left', 'documents', 'driver', 'effort',
-            'finished', 'kept', 'last_shared', 'mine', 'model', 'model_mode', 'notice', 'outline', 'problem',
+            'finished', 'kept', 'last_shared', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
             'question', 'queue', 'redesign', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
             'workers']
 STEP_KEYS = ['attempts', 'dollars', 'error', 'id', 'kind', 'label', 'seconds', 'status']
@@ -189,6 +190,7 @@ class RuleTests(PageCase):
                        '/api/trainings': {**FORM, 'title': 'Health checks'},
                        '/api/run': {'path': self.path, 'action': 'stop'},
                        '/api/answer': {'path': self.path, 'id': 'x', 'answer': 'Yes.'},
+                       '/api/note': {'path': self.path, 'expected': '0', 'text': 'Keep it short.'},
                        '/api/documents': {'path': self.path, 'action': 'add',
                                           'name': 'handbook.txt', 'content': 'V29yZHMu'},
                        '/api/copies': {'path': self.path},
@@ -1728,6 +1730,23 @@ class RunTests(PageCase):
         self.assertEqual((sorted(after), after['state'], after['question']),
                          (RUN_KEYS, 'waiting', None))
         self.assertIn('Answer: The public one.', self.workers.jobs[-1][1].task)
+
+    def test_a_note_for_the_next_step_is_sent_on_the_page(self):
+        path = self.started()
+        self.assertEqual(self.get('run', path=path)['note'],
+                         {'pending': None, 'used': [], 'expected': '0'})
+        self.assertEqual(self.post('note', {'path': path, 'text': 'Keep it short.'}, 400)['error'],
+                         'Give expected as text.')
+        self.assertEqual(self.post('note', {'path': path, 'expected': '0', 'text': ' '}, 409)['error'],
+                         'Write the note first.')
+        noted = self.post('note', {'path': path, 'expected': '0', 'text': 'Keep it short.'})
+        self.assertEqual((sorted(noted), noted['note']['pending']['text'], noted['note']['expected']),
+                         (RUN_KEYS, 'Keep it short.', '1'))
+        self.assertIn('The note changed', self.post('note', {
+            'path': path, 'expected': '0', 'text': 'Lead with the risks.'}, 409)['error'])
+        self.assertEqual(self.post('note', {'path': path, 'expected': '1',
+                                            'text': 'Lead with the risks.'})['note']['pending']['text'],
+                         'Lead with the risks.')
 
     def test_sharing_says_whether_the_work_is_shared(self):
         said = self.post('share', {})

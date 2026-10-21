@@ -621,6 +621,107 @@ class QuestionTests(StudioCase):
         self.assertIsNone(self.view(root)['question'])
 
 
+class NoteTests(StudioCase):
+    """A note for the next step goes with the next job that starts, once, and stops nothing."""
+
+    def test_a_note_goes_with_the_next_job_only_and_is_kept_in_history(self):
+        root = self.start()
+        self.assertEqual(workspace.status(root)['gate'], 'research-plan')
+        before = len(self.workers.jobs)
+        self.assertEqual(self.view(root)['note'], {'pending': None, 'used': [], 'expected': '0'})
+        noted = self.engine.note(root, '  Lean on the operator handbook.  ', '0')
+        self.assertEqual((noted['note']['pending']['text'], noted['note']['expected']),
+                         ('Lean on the operator handbook.', '1'))
+        self.assertEqual(self.log()[-1], 'Rolling restarts: note for the next step: Lean on '
+                         'the operator handbook.')
+        with self.assertRaisesRegex(WorkspaceError, 'The note changed'):
+            self.engine.note(root, 'Keep each answer short.', '0')
+        noted = self.engine.note(root, 'Keep each answer short.', '1')
+        self.assertEqual(noted['note']['pending']['text'], 'Keep each answer short.')
+        self.assertIn('Rolling restarts: replace the note for the next step: Keep each answer '
+                      'short.', self.log())
+        self.assertEqual(len(self.workers.jobs), before, 'nothing started for a note')
+        self.decide(root, 'research-plan')
+        started = [job for seen, job, spec in self.workers.jobs[before:]]
+        self.assertGreater(len(started), 1)
+        carried = [job for job in started
+                   if '## Note from the author for this step' in job.task]
+        self.assertEqual(len(carried), len(started),
+                         'every research question worked on together carries it')
+        self.assertIn('> Keep each answer short.', carried[0].task)
+        self.assertNotIn('operator handbook', carried[0].task)
+        record = self.record(root)
+        self.assertIsNone(record['pending_note'])
+        self.assertEqual([(note['text'], note['step'].partition(':')[0])
+                          for note in record['notes_used']],
+                         [('Keep each answer short.', 'research')])
+        shown = self.view(root)['note']
+        self.assertEqual((shown['pending'], shown['used'][0]['text'], shown['expected']),
+                         (None, 'Keep each answer short.', '3'))
+        self.assertTrue(any(line.startswith('Rolling restarts: the note for the next step goes '
+                                            'with: Researching the question ')
+                            for line in self.log()))
+
+    def test_a_note_made_while_a_job_runs_waits_for_the_next_one(self):
+        def noting(tools, job):
+            [root] = self.engine.trainings()
+            self.engine.note(root, 'Name the two platforms.')
+            return self.workers.research_plan(tools, job)
+        self.workers.then('research-plan', noting)
+        root = self.start()
+        self.assertNotIn('Note from the author', self.workers.of('research-plan')[0].task,
+                         'nothing reaches a job already running')
+        self.assertEqual(self.view(root)['note']['pending']['text'], 'Name the two platforms.')
+        self.decide(root, 'research-plan')
+        carried = [job for seen, job, spec in self.workers.jobs
+                   if 'Name the two platforms.' in job.task]
+        self.assertEqual(len(carried), len(self.workers.of('question')))
+        self.assertEqual(len(self.record(root)['notes_used']), 1, 'history records it once')
+
+    def test_a_try_again_at_a_question_carries_the_note_and_a_reviewer_takes_none(self):
+        self.workers.then('question', fails())
+        root = self.start()
+        self.engine.note(root, 'Cite the handbook.\r\nNothing else.')
+        self.decide(root, 'research-plan')
+        questions = self.workers.of('question')
+        self.assertGreater(len(questions), len(QUESTIONS), 'one question was tried again')
+        for job in questions:
+            self.assertIn('> Cite the handbook.\n> Nothing else.', job.task)
+        # A reviewer's job leaves a waiting note for the next writer.
+        self.engine.note(root, 'For the blueprint.')
+        work = pipeline.Work('guidance', 'task', 'write', {'review': {}})
+        for ident in ('deck-review@201', 'research-review'):
+            step = pipeline.Step(ident, 'agent', 'Review it', 'Reviewing it', 'deck')
+            self.assertIs(self.engine._noted(root, step, work), work)
+        self.assertEqual(self.record(root)['pending_note']['text'], 'For the blueprint.')
+        self.assertTrue(all(note.get('done') for note in self.record(root)['notes_used']),
+                        'a later step\'s job closed the research notes')
+
+    def test_a_note_is_refused_when_empty_too_long_finished_or_stopped(self):
+        root = self.start()
+        with self.assertRaisesRegex(WorkspaceError, 'Write the note first'):
+            self.engine.note(root, '   ')
+        with self.assertRaisesRegex(WorkspaceError, 'at most 2000 characters'):
+            self.engine.note(root, 'x' * 2001)
+        self.engine.act(root, 'stop')
+        with self.assertRaisesRegex(WorkspaceError, 'stopped'):
+            self.engine.note(root, 'Too late.')
+        self.engine.act(root, 'resume')
+        self.to_end(root)
+        self.assertEqual(self.state(root), 'done')
+        with self.assertRaisesRegex(WorkspaceError, 'finished'):
+            self.engine.note(root, 'Too late.')
+        self.assertIsNone(self.record(root).get('pending_note'))
+
+    def test_a_stuck_training_takes_no_note(self):
+        root = self.start()
+        stuck = pipeline.Next('stuck', why='Its folder cannot be read.')
+        found = self.engine._survey(root, self.record(root))
+        with mock.patch.object(self.engine, '_survey', return_value=replace(found, next=stuck)):
+            with self.assertRaisesRegex(WorkspaceError, 'cannot go on'):
+                self.engine.note(root, 'Too late.')
+
+
 class ResearchTests(StudioCase):
     def test_a_question_that_fails_three_times_is_named_at_the_gate(self):
         self.workers.then('question:health-checks', fails(SLOW, 'timeout'),

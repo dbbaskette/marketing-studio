@@ -2348,9 +2348,10 @@ CODEX_MODELS = {'agent': 'codex', 'problem': None, 'levels': ['low', 'medium', '
      'default_level': 'low', 'levels': ['low', 'medium', 'high']}]}
 MODELS = {'GET /api/models?agent=claude': [ok(CLAUDE_MODELS)],
           'GET /api/models?agent=codex': [ok(CODEX_MODELS)]}
+NOTE_BOX = 'Note for the next step'   # on every run of this computer's that has a next step
 RUN_FIELDS = {'state', 'sentence', 'agent', 'model', 'effort', 'steps', 'workers', 'spent',
               'question', 'problem', 'documents', 'copies', 'deck_left', 'finished', 'outline',
-              'deck', 'redesign', 'controls'}
+              'deck', 'redesign', 'controls', 'note'}
 OUTLINE_FIELDS = {'level', 'waiting', 'slides', 'sha256', 'checked', 'worth', 'note',
                   'design'}
 OUTLINE_SLIDE_FIELDS = {'id', 'kind', 'title', 'subtitle', 'understand', 'points', 'caveat',
@@ -2388,7 +2389,8 @@ def a_run(state: str, sentence: str, **more) -> dict:
            'question': None, 'problem': None, 'documents': None, 'copies': [],
            'deck_left': None, 'finished': None, 'outline': None, 'deck': None,
            'redesign': [], 'controls': {'finish_level': None, 'finishing': None,
-                                        'skip_deck': False}, **more}
+                                        'skip_deck': False},
+           'note': {'pending': None, 'used': [], 'expected': '0'}, **more}
     assert set(run) == RUN_FIELDS, run
     return ok(run)
 
@@ -2607,6 +2609,60 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                                          {'snapshot': 'working'}])
         self.assertIn('Draft the research questions · 3 minutes · $0.40 so far · stops at '
                       '$20.00', result['snapshots']['working']['text'])
+
+    def test_a_note_for_the_next_step_is_sent_from_the_run_and_replaced(self):
+        self.started()
+        going = 'Drafting the research questions.'
+        working = a_run('working', going, steps=steps('done', 'working'))
+        long = 'Lean on the operator handbook. ' * 8
+        noted = a_run('working', going, steps=steps('done', 'working'), note={
+            'pending': {'text': long.strip(), 'at': 'now'}, 'used': [], 'expected': '1'})
+        answers = self.answers(**{'GET /api/trainings': [self.listed('working', going)],
+                                  'GET /api/training': [self.detail('working', going)],
+                                  'GET /api/run': [working, working, noted],
+                                  'POST /api/note': [noted]})
+        box = 'Note for the next step'
+        result = self.run_page(answers, [
+            {'click': 'Open Rolling restarts'}, {'snapshot': 'working'},
+            {'click': 'Send the note'}, {'snapshot': 'empty'},
+            {'fill': box, 'value': 'Lean on', 'stay': True}, {'poll': True},
+            {'snapshot': 'typing'}, {'fill': box, 'value': '  Lean on the operator handbook.  '},
+            {'click': 'Send the note'}, {'snapshot': 'noted'}])
+        shots = result['snapshots']
+        self.assertIn('It goes with the next job that starts, and stops nothing.',
+                      shots['working']['text'])
+        self.assertEqual(shots['working']['fields'][box], '')
+        self.assertEqual((shots['empty']['invalid'], shots['empty']['posts']), ([box], 0))
+        self.assertIn('Write the note first.', shots['empty']['text'])
+        self.assertEqual(shots['typing']['fields'][box], 'Lean on',
+                         'a refresh leaves what is being typed')
+        self.assertEqual(self.posts(result), [('/api/note', {
+            'path': str(self.root), 'expected': '0', 'text': 'Lean on the operator handbook.'})])
+        sent = shots['noted']
+        self.assertIn('Noted. It goes with the next job that starts.', sent['toasts'])
+        self.assertIn('Noted for the next step: Lean on the operator handbook.', sent['text'])
+        self.assertIn('… Sending another replaces it.', sent['text'])
+        self.assertNotIn(long.strip(), sent['text'], 'a long note is cut short in the hint')
+        self.assertIn('Replace the note', sent['buttons'])
+        self.assertEqual(sent['fields'][box], '')
+
+    def test_a_used_note_is_listed_with_the_steps_and_a_finished_run_takes_none(self):
+        self.started()
+        done = a_run('done', 'This training is done.', steps=steps('done', 'done'), note={
+            'pending': None, 'expected': '2',
+            'used': [{'text': 'Lean on the operator handbook.', 'at': 'now',
+                      'step': 'research:availability'}]})
+        answers = self.answers(**{'GET /api/trainings': [self.listed('done', 'Done.')],
+                                  'GET /api/training': [self.detail('done', 'Done.')],
+                                  'GET /api/run': [done]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'click': 'All production steps'},
+                                         {'snapshot': 'done'}])
+        shot = result['snapshots']['done']
+        self.assertNotIn('Note for the next step', shot['fields'])
+        self.assertNotIn('Send the note', shot['buttons'])
+        self.assertIn('Notes for the next step', shot['text'])
+        self.assertIn('Lean on the operator handbook. Went with: Do the research.', shot['text'])
 
     def test_a_phone_keeps_one_decision_in_the_toolbar(self):
         self.started()
@@ -4141,10 +4197,10 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertLess(run['text'].index('Needs you'), run['text'].index('All production steps'))
         self.assertIn('The worker on question 3 asks:', run['text'])
         self.assertEqual((shots['typing']['fields'], shots['typing']['focus']),
-                         ({box: 'The newer'}, 'answer-run'))
+                         ({box: 'The newer', NOTE_BOX: ''}, 'answer-run'))
         self.assertEqual(self.posts(result), [('/api/answer', {
             'path': str(self.root), 'id': 'q-7', 'answer': 'The newer one.'})])
-        self.assertEqual((shots['sent']['fields'], shots['sent']['filled']), ({}, []))
+        self.assertEqual((shots['sent']['fields'], shots['sent']['filled']), ({NOTE_BOX: ''}, []))
         self.assertIn(going, shots['sent']['text'])
 
     def test_every_list_shows_running_work_and_guesses_only_where_no_run_is(self):
@@ -4397,7 +4453,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
 
         empty = shots['empty']
         self.assertEqual((empty['heading'], empty['filled'], empty['fields']),
-                         ('Rolling restarts', ['That is all of them'], {pick: ''}))
+                         ('Rolling restarts', ['That is all of them'], {pick: '', NOTE_BOX: ''}))
         for shown in ('Waiting for you', waits, 'Add your documents',
                       'Nothing is researched until you have added them and chosen “That is '
                       'all of them”.', KEPT_HERE,
@@ -4456,7 +4512,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
 
         done = shots['done']
         self.assertIn('That is all of them. It carries on from here.', done['toasts'])
-        self.assertEqual((done['filled'], done['focus'], done['fields']), ([], 'title', {}))
+        self.assertEqual((done['filled'], done['focus'], done['fields']), ([], 'title', {NOTE_BOX: ''}))
         for shown in ('Working on its own', going, 'Your documents',
                       'These were given to the research. ' + KEPT_HERE, 'Notes.MD'):
             self.assertIn(shown, done['text'])
