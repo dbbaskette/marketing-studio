@@ -3131,6 +3131,26 @@ class Engine(Reviewing):
 
     # --- research ------------------------------------------------------------------------
 
+    def _review_refused(self, root: Path, refusal: WorkspaceError) -> None:
+        """The independent check still objected after its last round of correction: keep
+        its objections with the research review, where the page shows them, and stop at
+        the research step so that Try again says what it re-runs."""
+        objections = list(refusal.objections)
+        workspace.append_review(root, 'research', 'Independent research review: changes still needed', (
+            f'After {refusal.rounds} rounds of correction the independent check still objected. '
+            'Each objection names the fact, finding or brief block it concerns:\n'
+            + '\n'.join('- ' + note for note in objections)) if objections else (
+            f'After {refusal.rounds} rounds of correction the independent check still objected, '
+            'without saying to what.'))
+        with self.files:
+            record = self._load(root)
+            self._store(root, record)
+            self._commit(root, 'keep the objections of the independent research check')
+        self._problem(root, 'research', 'failed', str(refusal), (
+            'The draft report and the check’s objections are kept with this training: the '
+            'objections are listed in its research review (reviews/research.md). The research '
+            'plan you approved is kept.'))
+
     def _hand_over(self, root: Path, step: pipeline.Step) -> None:
         """Give harness-research the approved plan. Without harness-research the training
         stops here and says so."""
@@ -3172,7 +3192,12 @@ class Engine(Reviewing):
                     'planning_questions': found.research.questions,
                     'requested_changes': step.request,
                     'source_mode': {'supplied-only': 'selected', 'both': 'mixed'}.get(scope, 'public')}
-            research_contract.native(self, root, run, task, offered, 'training')
+            try:
+                research_contract.native(self, root, run, task, offered, 'training')
+            except WorkspaceError as refusal:
+                if getattr(refusal, 'objections', None) is None:
+                    raise
+                return self._review_refused(root, refusal)
             with self.files:
                 record = self._load(root)
                 record['research']['reviewed'] = True

@@ -799,6 +799,41 @@ class ResearchTests(StudioCase):
         self.assertEqual(self.engine.act(root, 'retry')['state'], 'waiting')
         self.assertEqual(workspace.status(root)['gate'], 'research')
 
+    def test_a_check_that_still_objects_stops_at_research_and_says_what_it_objected_to(self):
+        from runner import engine as engine_module
+        root = self.start()
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        self.engine._store(root, record)
+        refusal = WorkspaceError(
+            'The independent check of the research still needs changes after 3 rounds of '
+            'correction: 2 objections, such as fact-b (unsupported): The source does not say so. '
+            'Coverage needs revision: Alternatives are missing. The draft report and the check’s '
+            'notes are saved for correction.')
+        refusal.objections = ['fact-b (unsupported): The source does not say so.',
+                              'Coverage needs revision: Alternatives are missing.']
+        refusal.rounds = 3
+        with mock.patch.object(engine_module.research_contract, 'native', side_effect=refusal):
+            self.decide(root, 'research-plan')
+        view = self.view(root)
+        self.assertEqual(view['state'], 'failed')
+        self.assertEqual(view['problem'], {
+            'what': str(refusal), 'action': 'retry', 'label': 'Try again',
+            'kept': 'The draft report and the check’s objections are kept with this training: '
+                    'the objections are listed in its research review (reviews/research.md). '
+                    'The research plan you approved is kept.'})
+        self.assertEqual(self.record(root)['problem']['step'], 'research')
+        review = (root / 'reviews' / 'research.md').read_text()
+        self.assertIn('## Independent research review: changes still needed', review)
+        self.assertIn('> - fact-b (unsupported): The source does not say so.', review)
+        self.assertIn('> - Coverage needs revision: Alternatives are missing.', review)
+        self.assertEqual(self.workers.of('question'), [])
+        # Try again re-runs the research, both jobs, from the start.
+        with mock.patch.object(engine_module.research_contract, 'native',
+                               side_effect=refusal) as again:
+            self.assertEqual(self.engine.act(root, 'retry')['state'], 'failed')
+        self.assertEqual(again.call_count, 1)
+
     def test_an_agent_that_cannot_be_used_stops_the_research_at_once(self):
         self.engine = self.make(at_once=1)
         self.workers.then('question:instance-min', fails('Not signed in.', 'unavailable'))
