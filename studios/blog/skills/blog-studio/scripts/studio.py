@@ -253,6 +253,12 @@ def style_pin(root, style_id, revision=None):
     return styles.pin(root, style_id, revision)
 
 
+def style_check(root, style_id, revision=None):
+    import styles
+
+    return styles.check(root, style_id, revision)
+
+
 def style_command(root, args):
     import styles
 

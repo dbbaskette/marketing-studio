@@ -1621,6 +1621,58 @@ class DeleteTests(RunnerCase):
         )
 
 
+class StyleTests(RunnerCase):
+    """A run pins a style beside its voice, and the writing job reads that revision."""
+
+    def test_a_run_pins_its_style_and_the_job_carries_it(self):
+        self.assertIn(
+            'product-announcement', [row['id'] for row in runner.options(self.root)['styles']]
+        )
+        found = self.create(page=True, style='product-announcement')
+        _, record = studio.item(self.root, 'articles', found['id'])
+        self.assertEqual(record['style'], {'style_id': 'product-announcement', 'revision': 1})
+        self.assertEqual((found['style_name'], found['voice_name']), ('Product announcement', None))
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(payload['style']['name'], 'Product announcement')
+        self.assertIn('The news is in the first sentence.', payload['style']['guide'])
+        self.assertIn('the style wins', guidance)
+        self.assertIn('the style wins', blog_worker.POLICY)
+        guide = self.base / 'style.md'
+        guide.write_text('Changed later.')
+        self.command('style', 'save', '--id', 'product-announcement', '--guide-file', str(guide))
+        _, payload, _ = runner.job(self.root, found['id'])
+        self.assertNotIn(
+            'Changed later.', payload['style']['guide'], 'a later save does not move the pin'
+        )
+        self.command(
+            'style',
+            'retire',
+            '--id',
+            'product-announcement',
+            '--expected-revision',
+            '2',
+            '--confirmed',
+        )
+        with self.assertRaisesRegex(ValueError, 'retired'):
+            self.create(page=True, style='product-announcement')
+        with self.assertRaisesRegex(ValueError, 'Unknown styles'):
+            self.create(page=True, style='no-such-style')
+        plain = self.create(page=True)
+        self.assertNotIn('style', studio.item(self.root, 'articles', plain['id'])[1])
+        self.assertIsNone(runner.job(self.root, plain['id'])[1]['style'])
+        _, record, run = runner.load(self.root, plain['id'])
+        self.assertNotIn(
+            'style', runner.inputs(self.root, record, run), 'stage pins saved before styles hold'
+        )
+        self.assertIsNone(plain['style_name'])
+
+    def test_a_refused_run_leaves_no_copied_starter(self):
+        with self.assertRaises(ValueError):
+            self.create(page=True, style='how-to', sources=['no-such-source'])
+        self.assertFalse((self.root / 'styles' / 'how-to').exists())
+        self.assertEqual(runner.catalog(self.root)['items'], [])
+
+
 class FilesCase(RunnerCase):
     """Uploaded material and a from-files run, for the tests below."""
 

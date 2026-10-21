@@ -278,6 +278,11 @@ def inputs(root, record, run):
     }
     if run.get('brand'):
         payload['brand'] = run['brand']
+    if record.get('style'):
+        import styles
+
+        # Only when pinned: a run without a style keeps the stage pins it saved before styles.
+        payload['style'] = styles.pinned(root, record['style'])
     if len(json.dumps(payload)) > 300_000:
         raise ValueError(
             'Selected context is too large for one writing job. Use focused excerpts in chat.'
@@ -420,6 +425,27 @@ def basis(root, directory, record, run, stage, context=None, research=None):
     return studio.digest((pinned + json.dumps(original) + ']').encode())
 
 
+def voice_name(root, record):
+    """The pinned voice's current name, for listings; None for a described tone."""
+    voice = record.get('voice') or {}
+    if voice.get('mode') != 'profile':
+        return None
+    try:
+        return studio.item(root, 'profiles', voice['profile_id'])[1]['name']
+    except (ValueError, KeyError):
+        return None
+
+
+def style_name(root, record):
+    """The pinned style's current name, for listings; None when the run has no style."""
+    if not record.get('style'):
+        return None
+    try:
+        return studio.item(root, 'styles', record['style']['style_id'])[1]['name']
+    except (ValueError, KeyError):
+        return None
+
+
 def survey(root, ident, listing=False):
     """Stage states. A listing skips the version token and next document a decision needs."""
     directory, record, run = load(root, ident)
@@ -514,6 +540,8 @@ def survey(root, ident, listing=False):
         'expected': revision,
         'directory': str(directory),
         'brief': run['brief'],
+        'voice_name': voice_name(root, record),
+        'style_name': style_name(root, record),
         'existing': run['existing'],
         'editor_check': run.get('editor_check'),
         'mode': run.get('mode', 'review' if run['existing'] else 'write'),
@@ -574,6 +602,7 @@ def create(root, data, approval='conversation'):
         'goal',
         'tone',
         'profile',
+        'style',
         'sources',
         'research',
         'stop',
@@ -652,6 +681,11 @@ def create(root, data, approval='conversation'):
     profile = data.get('profile') or None
     if profile:
         studio.voice_pin(root, profile)
+    style = data.get('style') or None
+    if style:
+        # Refused here if retired or unknown. Checking writes nothing: a starter is copied
+        # into the workspace only once the whole request has passed, below.
+        studio.style_check(root, style)
     sources = data.get('sources', [])
     if not isinstance(sources, list) or len(sources) > 50 or len(set(sources)) != len(sources):
         raise ValueError('Select at most 50 different sources.')
@@ -712,6 +746,8 @@ def create(root, data, approval='conversation'):
         ]
     if profile:
         record['voice'] = {'mode': 'profile', **studio.voice_pin(root, profile)}
+    if style:
+        record['style'] = studio.style_check(root, style)
     record['research_policy'] = 'supplied-only' if research == 'none' else research
     research = research_scope(research, record['sources'])
     if from_files and research == 'supplied-only':
@@ -772,6 +808,8 @@ def create(root, data, approval='conversation'):
     if selected_brand:
         run['brand'] = selected_brand
     inputs(root, record, run)  # Refuse unusable context before creating a partial blog.
+    if style:
+        record['style'] = studio.style_pin(root, style, record['style']['revision'])
     if not data.get('id'):
         directory.mkdir()
         studio.write_json(studio.inside(root, '.active-article.json'), {'id': record['id']})
@@ -917,6 +955,7 @@ def job(root, ident):
         raise ValueError('This run is complete.')
     directory, record, run = load(root, ident)
     payload = inputs(root, record, run)
+    payload.setdefault('style', None)
     # The package works from the saved writing, and only evidence checks review against
     # sources. inputs() above still refuses a changed source pin for every step.
     check = run.get('editor_check')
@@ -984,6 +1023,15 @@ def job(root, ident):
     else:
         guidance = STAGES[stage][2] + '\n\n' + (references / GUIDES[stage]).read_text()
     guidance += '\n\n' + (references / 'style/house.md').read_text()
+    if payload.get('style') and stage in ('outline', 'draft', 'review', 'package'):
+        guidance += (
+            '\n\nSELECTED STYLE: '
+            + payload['style']['name']
+            + '. Its guide is in style.guide. The style says the shape of this kind of writing: '
+            'structure, moves, length, headings and register. The selected voice says how its '
+            'author sounds. Where they conflict on wording, the voice wins; where they conflict '
+            'on structure, the style wins. Neither invents facts, experience or sources.'
+        )
     if stage in ('draft', 'review'):
         requested = run.get('editor_check')
         guides = ['modules/blog-voice-check.md', 'style/software.md']
@@ -1478,11 +1526,13 @@ def options(root):
             agents[name] = False
 
     import brand_skill
+    import styles
 
     brand = brand_skill.status()
     brand['default'] = brand_skill.defaults(brand)
     return {
         'profiles': records('profiles'),
+        'styles': styles.catalog(root)['styles'],
         'sources': records('sources'),
         'agents': agents,
         'settings': settings(root),
@@ -1772,6 +1822,7 @@ def add_parser(groups):
         'goal',
         'tone',
         'profile',
+        'style',
         'id',
         'brand',
         'variant',

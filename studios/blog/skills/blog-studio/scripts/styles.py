@@ -143,10 +143,11 @@ def _create(root, ident, name, guide, status, samples):
     return record
 
 
-def pin(root, ident, revision=None):
-    """{style_id, revision} for new work; a retired style is refused unless a revision is named.
+def check(root, ident, revision=None):
+    """{style_id, revision} that pin would return, without writing anything.
 
-    Using a starter copies it into the workspace, so the pinned revision is always there.
+    A retired style is refused unless a revision is named. A starter not yet in the
+    workspace has only revision 1.
     """
     record, _ = _read(root, ident)
     if revision is None and record['status'] == 'retired':
@@ -154,16 +155,36 @@ def pin(root, ident, revision=None):
     version = revision or record['revision']
     if not 1 <= version <= record['revision']:
         raise ValueError('Unknown style revision.')
-    materialize(root, ident)
-    directory, _ = studio.item(root, 'styles', ident)
-    if not (studio.inside(directory, 'revisions', str(version)) / 'record.json').is_file():
+    directory = studio.inside(root, 'styles', record['id'])
+    if (directory / 'record.json').is_file() and not (
+        studio.inside(directory, 'revisions', str(version)) / 'record.json'
+    ).is_file():
         raise ValueError('Unknown style revision.')
-    return {'style_id': ident, 'revision': version}
+    return {'style_id': record['id'], 'revision': version}
+
+
+def pin(root, ident, revision=None):
+    """{style_id, revision} for new work, checked as check() does.
+
+    Using a starter copies it into the workspace, so the pinned revision is always there.
+    """
+    selection = check(root, ident, revision)
+    materialize(root, selection['style_id'])
+    return check(root, selection['style_id'], selection['revision'])
 
 
 def pinned(root, selection):
-    """The name and guide of a pinned revision, exactly as saved, for a writing job."""
-    directory, _ = studio.item(root, 'styles', selection['style_id'])
+    """The name and guide of a pinned revision, exactly as saved, for a writing job.
+
+    A starter not yet copied into the workspace reads as its packaged revision 1, so a new
+    run can check its whole context before pin copies the starter.
+    """
+    ident = studio.identifier(selection['style_id'])
+    if not (studio.inside(root, 'styles', ident) / 'record.json').is_file():
+        found = starters().get(ident)
+        if found is not None and selection['revision'] == 1:
+            return {'name': found[0]['name'], 'guide': found[1]}
+    directory, _ = studio.item(root, 'styles', ident)
     rev = studio.inside(directory, 'revisions', str(selection['revision']))
     return {
         'name': studio.read_json(rev / 'record.json')['name'],

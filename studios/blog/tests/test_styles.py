@@ -150,6 +150,26 @@ class StyleTests(Fixture):
         with self.assertRaisesRegex(ValueError, 'Unknown style revision'):
             studio.style_pin(self.root, created['id'], 9)
 
+    def test_checking_a_style_validates_like_a_pin_and_writes_nothing(self):
+        self.assertEqual(
+            studio.style_check(self.root, 'how-to'), {'style_id': 'how-to', 'revision': 1}
+        )
+        self.assertEqual(
+            styles.pinned(self.root, {'style_id': 'how-to', 'revision': 1}),
+            {'name': 'How-to and tutorial', 'guide': styles.starters()['how-to'][1]},
+        )
+        with self.assertRaisesRegex(ValueError, 'Unknown style revision'):
+            studio.style_check(self.root, 'how-to', 2)
+        with self.assertRaisesRegex(ValueError, 'Unknown styles'):
+            studio.style_check(self.root, 'no-such-style')
+        self.assertEqual(self.starter_folders(), [], 'checking copies no starter')
+        self.command('style', 'retire', '--id', 'how-to', '--expected-revision', '1', '--confirmed')
+        with self.assertRaisesRegex(ValueError, 'retired'):
+            studio.style_check(self.root, 'how-to')
+        self.assertEqual(
+            studio.style_check(self.root, 'how-to', 1), studio.style_pin(self.root, 'how-to', 1)
+        )
+
     def test_style_samples_need_the_style_sample_purpose(self):
         reference = self.source()
         with self.assertRaisesRegex(ValueError, 'style-sample'):

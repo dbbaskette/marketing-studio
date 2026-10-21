@@ -244,6 +244,7 @@ class Workspace:
                 'guidance_history',
                 'hub_context',
                 'hub_projection',
+                'style',  # a local pin until styles are shared Hub items
             )
         }
         title = record.get('title') or record.get('name') or local_id
