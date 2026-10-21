@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 import runner_support
-from runner_support import OUTLINE
+from runner_support import LONG_OUTLINE, OUTLINE
 from workspace import WorkspaceError
 
 from runner import decks, worker_tools
@@ -790,3 +790,55 @@ class ReviewReuseTests(unittest.TestCase):
         self.assertEqual(set(build.reusable_review(self.root, self.state)), {'slide-1', 'slide-5', 'slide-6'})
         self.state['rounds'][-1]['render_evidence']['slides'][5]['imageSha256'] = 'f' * 64
         self.assertNotIn('slide-6', build.reusable_review(self.root, self.state))
+
+
+class StartAgainTests(Deck):
+    """A deck started again from an outline that changed in places: the sections whose
+    slides did not change are kept as they were drawn."""
+
+    def setUp(self):
+        super().setUp()
+        # Two sections: slides 2 to 4 and 5 to 7.
+        BY_ID.update({slide['id']: slide for slide in LONG_OUTLINE['slides']})
+        (self.root / 'outline.json').write_text(json.dumps(LONG_OUTLINE), encoding='utf-8')
+
+    def test_a_second_start_keeps_the_sections_whose_slides_did_not_change(self):
+        self.built()
+        drawn = dict(build.read_state(self.root)['sections'])
+        self.assertEqual(sorted(drawn), ['section-1', 'section-2'])
+        outline = json.loads((self.root / 'outline.json').read_text(encoding='utf-8'))
+        outline['slides'][6]['title'] = 'A failed batch goes back, never on'
+        (self.root / 'outline.json').write_text(json.dumps(outline), encoding='utf-8')
+        BY_ID['rolling-back'] = outline['slides'][6]   # the composer draws the new title
+        build.start(self.root, self.run_, self.slides, self.contract)
+        self.assertEqual(build.to_draw(self.root), ['section-2'])
+        state = build.read_state(self.root)
+        self.assertEqual(state['sections']['section-1']['file'], drawn['section-1']['file'])
+        self.assertTrue(state['sections']['section-1']['kept'])
+        self.assertTrue((self.root / drawn['section-1']['file']).is_file())
+        self.assertFalse((self.root / drawn['section-2']['file']).is_file())
+        self.assertEqual(state['rounds'], [])
+        self.draw('section-2')
+        made = build.whole(self.root, self.run_, self.slides, 'local')
+        self.assertEqual(len(made['slides']), len(LONG_OUTLINE['slides']))
+
+    def test_nothing_is_kept_from_a_build_in_another_brand(self):
+        self.built()
+        self.assertTrue(build._earlier(self.root, self.contract)['drawn'])
+        contract = json.loads(self.contract.read_text(encoding='utf-8'))
+        contract['revision'] = 'another'
+        self.contract.write_text(json.dumps(contract), encoding='utf-8')
+        self.assertEqual(build._earlier(self.root, self.contract), {})
+
+    def test_slide_notes_at_the_gate_reach_the_section_s_composer(self):
+        self.built()
+        run = copy.deepcopy(self.run_)
+        run['gates']['gate:build'] = {'state': 'changes', 'note': 'Calmer.', 'slides': [2],
+                                      'slide_notes': {'2': 'Give the batch more room.',
+                                                      '6': 'Shorter claim.'}}
+        work = build.section_work(self.root, run, 'section-1', None, None)
+        self.assertIn('Slide 2: Give the batch more room.', work.task)
+        self.assertNotIn('Shorter claim.', work.task)
+        spec = work.prepared['artifacts']['section']
+        self.assertEqual(sorted(spec['unchanged_slides']),
+                         ['the-objection', 'when-capacity-holds'])

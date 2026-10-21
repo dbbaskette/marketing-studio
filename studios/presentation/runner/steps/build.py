@@ -682,7 +682,8 @@ def start(root, run: dict, slides, brand) -> dict:
     except (OSError, ValueError):
         raise WorkspaceError('There is no approved outline to build the deck from.') from None
     work, folder = root / BUILD, root / START
-    for old in (folder, root / TOLD, root / DRAWN, shots(root), *work.glob('whole-*')):
+    earlier = _earlier(root, brand)
+    for old in (folder, root / TOLD, shots(root), *work.glob('whole-*')):
         shutil.rmtree(old, ignore_errors=True)
     work.mkdir(parents=True, exist_ok=True)
     source = work / f'outline-{secrets.token_hex(3)}.json'
@@ -724,10 +725,55 @@ def start(root, run: dict, slides, brand) -> dict:
         raise WorkspaceError(f'The deck could not be split into sections. {refusal}') from None
     finally:
         source.unlink(missing_ok=True)
-    began = {'folder': START.as_posix(), 'brand': str(brand), 'sections': sections,
-             'wordless': placed, 'titled': titled, 'at': home.now()}
-    write_state(root, {**EMPTY, 'start': began})
+    began = {'folder': START.as_posix(), 'brand': str(brand), 'contract': _digest(brand),
+             'sections': sections, 'wordless': placed, 'titled': titled, 'at': home.now()}
+    kept = _kept(root, earlier, began, whole)
+    for old in (root / DRAWN).glob('*.json'):
+        if old.relative_to(root).as_posix() not in {entry['file'] for entry in kept.values()}:
+            old.unlink(missing_ok=True)
+    write_state(root, {**EMPTY, 'start': began, 'sections': kept,
+                       'previous': earlier.get('previous') if kept else None})
     return began
+
+
+def _earlier(root: Path, brand: Path) -> dict:
+    """What an earlier start of the same deck drew, before it is cleared: the outline it
+    built from, its sections as drawn, and each slide's picture digest from its last round.
+    Empty when there was none, or the brand's contract changed since."""
+    state = read_state(root)
+    began = state.get('start') or {}
+    if not began or began.get('contract') != _digest(brand):
+        return {}
+    whole = home.read_json(root / began['folder'] / 'given' / 'outline.json', None)
+    if not isinstance(whole, dict):
+        return {}
+    rounds = state.get('rounds') or []
+    return {'whole': whole, 'sections': began.get('sections') or [],
+            'drawn': dict(state.get('sections') or {}),
+            'previous': {str(slide['number']): slide.get('sha256')
+                         for slide in (rounds[-1]['slides'] if rounds else ())}}
+
+
+def _kept(root: Path, earlier: dict, began: dict, whole: dict) -> dict:
+    """The sections drawn before that need no drawing again: each whose slides are the same,
+    word for word, in a deck that is otherwise the same too. Each is kept as it was drawn,
+    marked `kept`."""
+    if not earlier or {key: value for key, value in earlier['whole'].items() if key != 'slides'} \
+            != {key: value for key, value in whole.items() if key != 'slides'}:
+        return {}
+    before = {slide['id']: slide for slide in slides_of(earlier['whole'])}
+    now = {slide['id']: slide for slide in slides_of(whole)}
+    was = {entry['id']: entry for entry in earlier['sections']}
+    kept = {}
+    for entry in began['sections']:
+        old, drawn = was.get(entry['id']), earlier['drawn'].get(entry['id'])
+        if not old or not drawn or old['slides'] != entry['slides'] \
+                or old.get('file') != entry.get('file') \
+                or not (root / drawn['file']).is_file():
+            continue
+        if all(before.get(ident) == now.get(ident) for ident in entry['slides']):
+            kept[entry['id']] = {**drawn, 'round': 0, 'kept': True}
+    return kept
 
 
 # --- the sections --------------------------------------------------------------------------
@@ -769,6 +815,17 @@ def _note(run: dict, request) -> str | None:
                                            else None)
 
 
+def _slide_notes(run: dict, state: dict, ids: list[str]) -> dict[int, str]:
+    """The lines the person wrote against this section's slides at the deck's gate, by
+    slide number, while the gate asks for changes."""
+    gate = (run.get('gates') or {}).get('gate:build') or {}
+    if gate.get('state') != 'changes' or not gate.get('slide_notes') or not state['rounds']:
+        return {}
+    mine = {slide['number'] for slide in state['rounds'][-1]['slides'] if slide['id'] in ids}
+    return {int(number): line for number, line in gate['slide_notes'].items()
+            if str(number).isdigit() and int(number) in mine and line}
+
+
 def section_work(root, run: dict, section: str, request: dict | None, error: str | None,
                  renderer='local') -> Work:
     """The job of drawing one section of the deck, or of drawing it again after a review
@@ -799,6 +856,12 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
     feedback = [item for item in run.get('build_feedback', []) if item.get('section') == section]
     if feedback:
         note = '\n'.join(filter(None, [note, *(f"Slide {item['number']}: {item['note']}" for item in feedback)]))
+    # The line the person wrote against each of this section's slides at the deck's gate.
+    noted = _slide_notes(run, state, ids)
+    lines_noted = [f'Slide {number}: {line}' for number, line in noted.items()
+                   if f'Slide {number}: {line}' not in (note or '')]
+    if lines_noted:
+        note = '\n'.join(filter(None, [note, *lines_noted]))
     lines = [f'Draw section {number} of "{title}": the slides in your input "brief".']
     if drawn:
         mine = [slide for slide in (last or {}).get('slides') or () if slide['id'] in ids]
@@ -835,6 +898,8 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
     if asked_numbers and last:
         focused.update(slide['id'] for slide in last['slides'] if slide['number'] in asked_numbers)
     focused.update(item['slide'] for item in feedback)
+    focused.update(slide['id'] for slide in (last or {}).get('slides') or ()
+                   if slide['number'] in noted)
     if drawn and focused:
         earlier = home.read_json(root / drawn['file'], {})
         fixed_spec['unchanged_slides'] = {slide['id']: slide for slide in earlier.get('slides', [])
@@ -994,8 +1059,10 @@ def draw_whole(root, run: dict, slides, renderer) -> dict:
     for old in work.glob('whole-*'):
         if old != folder:
             shutil.rmtree(old, ignore_errors=True)
+    # The round before, or, after a start that kept sections, the last round before it.
     before = {slide['number']: slide.get('sha256')
-              for slide in (state['rounds'][-1]['slides'] if state['rounds'] else ())}
+              for slide in (state['rounds'][-1]['slides'] if state['rounds'] else ())} \
+        or {int(number): digest for number, digest in (state.get('previous') or {}).items()}
     slides_kept = [{**slide, 'sha256': _digest(pictures / f"{slide['number']}.png")}
                    for slide in pictured]
     made = {'at': home.now(), 'folder': folder.relative_to(root).as_posix(),
