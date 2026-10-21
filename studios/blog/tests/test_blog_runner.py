@@ -1189,6 +1189,20 @@ class SharedPatternTests(RunnerCase):
                                                  'request': ''})
 
 
+class FinishTests(RunnerCase):
+    def test_the_final_stop_carries_the_approved_draft_beside_the_package(self):
+        found = self.create(page=True)
+        for _ in range(3):
+            found = self.approve(self.submit(found, page=True), page=True)
+        self.assertEqual(found['next'], 'package')
+        found = self.submit(found, content='# Handoff', page=True)
+        shown = runner.document(self.root, found['id'], 'package')
+        self.assertEqual([item['stage'] for item in shown['bundle']], ['draft'])
+        self.assertIn('Synthetic writing', shown['bundle'][0]['content'])
+        # Step by step reviews each stage alone; only the final stop opens the draft again.
+        self.assertEqual(runner.document(self.root, found['id'], 'draft')['bundle'], [])
+
+
 class DeleteTests(RunnerCase):
     """Delete stops the job, takes the blog out of the lists and keeps it for 30 days."""
 

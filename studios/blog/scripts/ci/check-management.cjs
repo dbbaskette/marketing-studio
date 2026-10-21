@@ -77,11 +77,12 @@ async function check(){
   await sharedSettings();
   await staleSharedForms();
   await sharedPattern();
+  await finishAndDelete();
   pageDefinesEveryElement();
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -1051,7 +1052,86 @@ async function sharedPattern(){
   assert.equal(actions.filter(e=>e.tagName==='button').length,1,'one action stays in the toolbar on a phone');
   assert.equal(actions[0].textContent,'Review Draft');assert.equal(actions[0].className,'button button-filled');
   const menu=actions.find(e=>e.tagName==='details');assert.equal(menu.className,'menu');
-  assert.deepEqual(descendants(menu).filter(e=>e.className==='menu-item').map(e=>e.textContent),['Edit manuscript','Pause']);
+  assert.deepEqual(descendants(menu).filter(e=>e.className==='menu-item').map(e=>e.textContent),['Edit manuscript','Pause','More tools']);
   f.run('delete window.matchMedia');
 }
 
+
+// A real finish: the final stop shows the draft open with Finish, a finished run has a Done
+// card, Delete asks for the typed title and says what is running stops, Blogs lists what was
+// recently deleted with Restore, and the ideas gate offers the headings as picks.
+async function finishAndDelete(){
+  const requests=[];
+  const complete={id:'synthetic',title:'Synthetic blog',status:'complete',complete:true,next:null,approval:'page',expected:'version-3',enabled:false,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'step_by_step',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},publication:null,stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'approved'},{stage:'package',label:'Export package',path:'derived/blog-package.md',status:'approved'}]};
+  const deleted=[{id:'synthetic',title:'Synthetic blog',deleted_at:new Date().toISOString(),until:new Date(Date.now()+30*86400000).toISOString()}];
+  const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});
+    if(url.startsWith('/api/run-file'))return {content:'# The draft',name:'DRAFT.md'};
+    if(url.startsWith('/api/article'))return {expected:'detail-1',title:'Synthetic blog'};
+    if(url==='/api/schedule')return {id:'synthetic',status:'saved'};
+    if(url==='/api/blog-delete')return {deleted:true,title:'Synthetic blog',notice:null};
+    if(url==='/api/blog-restore')return {id:'synthetic',restored:true};
+    if(url.startsWith('/api/run?'))return {...complete,publication:'https://example.com/post'};
+    if(url==='/api/runs')return {items:[],total:0,deleted};
+    if(url.startsWith('/api/tools'))return {id:'synthetic',title:'Synthetic blog',has_manuscript:true,working:false,google:null,history:[],next_offset:null,jobs:[]};
+    if(url.startsWith('/api/run-'))return complete;
+    return {items:[],total:0};});
+  f.loadRunner();f.set('found',complete);
+  const text=()=>descendants(f.get('studio-page')).map(e=>e.textContent),sheet=()=>descendants(f.get('sheet'));
+  // The final stop: the draft is the open document, the package is handoff notes, the decision is Finish.
+  const shown={id:'synthetic',title:'Synthetic blog',name:'blog-package.md',stage:'package',label:'Export package',expected:'version-2',status:'draft',content:'# Handoff',notes:'',checks:[],previous:null,diff:[],bundle:[{stage:'draft',label:'Draft',content:'# The draft text'}]};
+  const atPackage={...complete,complete:false,next:'package',status:'waiting-for-approval',expected:'version-2',stages:[complete.stages[0],complete.stages[1],{...complete.stages[2],status:'draft'}]};
+  f.set('shown',shown);f.set('atPackage',atPackage);
+  f.run("studio.screen='gate';studio.found=atPackage;sGate(atPackage,shown)");
+  const finish=f.get('actions').children.find(e=>e.textContent==='Finish');
+  assert.ok(finish,'the final stop says Finish: '+f.get('actions').children.map(e=>e.textContent).join('|'));
+  const papers=descendants(f.get('studio-page')).filter(e=>e.tagName==='article');
+  assert.equal(papers[0].attributes['aria-label'],'Draft','the draft is the open document at the final stop');
+  assert.ok(text().some(t=>t==='Handoff notes'),text().join('|'));
+  await finish.listeners.click();
+  assert.ok(sheet().some(e=>e.textContent==='Finish this blog?'),sheet().map(e=>e.textContent).join('|'));
+  f.run('sCloseSheet()');
+  // The Done card on a finished run.
+  f.run("studio.screen='run';studio.id=found.id;sRun(found)");
+  const done=descendants(f.get('studio-page')).find(e=>e.tagName==='section'&&e.children[0]&&e.children[0].textContent==='Done');
+  assert.ok(done,'a finished run has a Done card: '+text().join('|'));
+  const labels=descendants(done).filter(e=>e.tagName==='button').map(e=>e.textContent);
+  for(const label of ['Copy Markdown','Download','Mark as published','Delete this blog'])assert.ok(labels.includes(label),label+' in '+labels.join('|'));
+  assert.equal(descendants(done).find(e=>e.textContent==='Delete this blog').className,'button button-danger');
+  const url=descendants(done).find(e=>e.id==='published-url');url.value='https://example.com/post';url.listeners.input();
+  await descendants(done).find(e=>e.textContent==='Mark as published').listeners.click();
+  assert.deepEqual(requests.find(r=>r.url==='/api/schedule').data,{id:'synthetic',expected:'detail-1',stage:'published',confirm_stage:true,publication_url:'https://example.com/post'});
+  assert.ok(text().some(t=>/Published at/.test(t)),'the card then says where it was published: '+text().join('|'));
+  // Delete names the blog, says what is running stops, and waits for the typed title.
+  f.run("sDeleteSheet({...found,status:'working'})");
+  assert.ok(sheet().some(e=>e.textContent==='Delete Synthetic blog?'));
+  assert.ok(sheet().some(e=>/running will stop/.test(e.textContent)),sheet().map(e=>e.textContent).join('|'));
+  const confirm=sheet().find(e=>e.textContent==='Delete Synthetic blog');
+  assert.equal(confirm.className,'button button-danger');assert.equal(confirm.disabled,true,'nothing is deleted until the title is typed');
+  const typed=sheet().find(e=>e.id==='delete-title');typed.value='Synthetic';typed.listeners.input();assert.equal(confirm.disabled,true);
+  typed.value='Synthetic blog';typed.listeners.input();assert.equal(confirm.disabled,false);
+  await confirm.listeners.click();
+  assert.deepEqual(requests.find(r=>r.url==='/api/blog-delete').data,{id:'synthetic',expected:'version-3',title:'Synthetic blog'});
+  assert.equal(f.get('sheet').hidden,true);
+  // More tools offers Delete for a saved blog, and not without one.
+  await f.run("sMoreTools('synthetic')");assert.ok(sheet().some(e=>e.textContent==='Delete this blog'&&!e.disabled));
+  await f.run('sMoreTools()');assert.ok(sheet().some(e=>e.textContent==='Delete this blog'&&e.disabled));
+  f.run('sCloseSheet()');
+  // Blogs lists what was recently deleted, with Restore.
+  await f.run('sReadList()');f.run("studio.screen='blogs';sBlogs()");
+  assert.ok(text().some(t=>t==='Recently deleted (1)'),text().join('|'));
+  await descendants(f.get('studio-page')).find(e=>e.textContent==='Restore').listeners.click();
+  assert.deepEqual(requests.find(r=>r.url==='/api/blog-restore').data,{id:'synthetic'});
+  // The ideas gate: the headings become picks, with an optional note.
+  const ideasRun={...atPackage,mode:'ideas',next:'outline',expected:'version-i',stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'draft'}]};
+  const ideas={...shown,stage:'outline',label:'Outline',expected:'version-i',content:'# Ideas\n\n## The first angle\n\nWhy it matters.\n\n## The second angle\n\nAnother view.\n\n## A third angle\n\nMore.',bundle:[]};
+  f.set('ideasRun',ideasRun);f.set('ideas',ideas);
+  f.run("studio.screen='gate';studio.found=ideasRun;sGate(ideasRun,ideas)");
+  await f.get('actions').children.find(e=>e.textContent==='Develop an idea').listeners.click();
+  const picks=sheet().filter(e=>e.className==='pick-card');
+  assert.deepEqual(picks.map(e=>e.textContent),['The first angle','The second angle','A third angle']);
+  const go=sheet().find(e=>e.textContent==='Develop this choice');assert.equal(go.disabled,true);
+  await picks[1].listeners.click();assert.equal(go.disabled,false);
+  const note=sheet().find(e=>e.id==='develop-note');note.value='Keep it short.';note.listeners.input();
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.deepEqual(requests.find(r=>r.url==='/api/run-develop').data,{id:'synthetic',expected:'version-i',request:'The second angle\nKeep it short.'});
+}

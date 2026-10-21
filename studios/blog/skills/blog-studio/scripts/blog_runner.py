@@ -1315,6 +1315,8 @@ def document(root, ident, stage):
         'diff_truncated': len(differences) > 4000,
         'stage': stage,
         'review_level': found['review_level'],
+        # Grouped reviews read the approved stages together; the final stop always brings
+        # the approved draft back beside the handoff notes, whatever the review level.
         'bundle': [
             {
                 'stage': item['stage'],
@@ -1322,10 +1324,14 @@ def document(root, ident, stage):
                 **preview_file(studio.inside(directory, item['path'])),
             }
             for item in found['stages']
-            if found['review_level'] != 'step_by_step'
-            and stage == found['next']
+            if stage == found['next']
             and item['stage'] != stage
             and item['status'] == 'approved'
+            and (
+                found['review_level'] != 'step_by_step'
+                or item['stage'] == 'draft'
+                and stage == run['pipeline'][-1]
+            )
         ],
         'label': row['label'],
         'status': row['status'],

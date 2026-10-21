@@ -23,7 +23,7 @@ const operationCache = new Map();
 // getRandomValues is available on trusted-LAN HTTP as well as secure origins.
 function operationId(){return Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join('');}
 function operationFor(kind,data){const key=kind+JSON.stringify(data);if(!operationCache.has(key))operationCache.set(key,operationId());return operationCache.get(key);}
-const views = {runs:['Writing runs','Start a blog, review each stage, and pick up where you left off.','Your writing runs'],board:['Blogs in progress','Plan the next handoff. Open a Doc. Keep writing.','Writing pipeline'],inbox:['Needs attention','Find waiting decisions, review findings and stale companions.','Review inbox'],library:['Reference library','Find earlier work and curate the material your team uses.','Sources and historical posts'],memory:['Team memory','Keep useful knowledge and writing guidance easy to find.','Shared notes, context and rules']};
+const views = {runs:['Writing runs','Start a blog, review each stage, and pick up where you left off.','Your writing runs'],board:['All blogs','Every saved blog by stage and owner. Open one to read it, decide or keep writing.','All blogs'],inbox:['Review findings','Find waiting decisions, review findings and stale companions.','Review findings'],library:['Reference library','Find earlier work and curate the material your team uses.','Sources and historical posts'],memory:['Team memory','Keep useful knowledge and writing guidance easy to find.','Shared notes, context and rules']};
 function element(tag, text, cls) {const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function notice(message, error=false) {
   const dialog=document.querySelector('dialog[open]');
@@ -38,6 +38,8 @@ function analysisChoice(prefix) {
   return analysis.harness?{analyze:$(prefix+'-analyze').checked!==false}:{};
 }
 function applyCapabilities() {
+  // The Hub access panel has something to say only when a Hub is selected or access failed.
+  $('access-panel').hidden=!(access.hub||['read-only','unverified','access-expired','unavailable','identity-mismatch'].includes(access.status));
   $('access-status').textContent=access.message;
   $('upload-open').disabled=!access.actions.edit;
   $('new-blog').disabled=!access.actions.edit;
