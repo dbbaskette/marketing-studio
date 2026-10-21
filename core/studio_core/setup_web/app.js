@@ -11,8 +11,14 @@ if (tokenInLink) { sessionStorage.setItem(sessionKey, tokenInLink); history.repl
 const token = tokenInLink || sessionStorage.getItem(sessionKey) || '';
 // Studios opened from here link back to this tab by its name.
 if (!standalone) window.name = 'marketing-studio';
-function withHome(link) {
-  return link + (link.includes('#') ? '&' : '#') + 'home=' + encodeURIComponent(location.origin);
+function withHome(link, tab = false) {
+  return link + (link.includes('#') ? '&' : '#') + 'home=' + encodeURIComponent(location.origin)
+    + (tab ? '&back=tab' : '');
+}
+// A phone cannot bring another tab forward, so a studio opens in this tab there and its way
+// back returns to this tab, which still holds this page's key.
+function inThisTab(media) {
+  return media('(pointer: coarse)') || media('(max-width: 52rem)');
 }
 let snapshot, setup = false, step = 0, view = 'home', profileAgent;
 const labels = ['You and your assistant', 'Your workspace', 'Brand and delivery'];
@@ -251,6 +257,12 @@ function renderHome() {
       const label = studio.running ? `Return to ${studio.name}` : `Open ${studio.name}`;
       const button = element('button', label, 'button button-filled');
       button.addEventListener('click', async () => {
+        if (inThisTab((query) => window.matchMedia(query).matches)) {
+          button.disabled = true; button.textContent = 'Opening…'; $('#problem').hidden = true;
+          try { location.href = withHome((await api('open', {studio: studio.id})).link, true); }
+          catch (error) { inform(error.message, true); button.disabled = false; button.textContent = label; }
+          return;
+        }
         let blocked = false;
         // Reserve the named tab during the click so popup protection does not lose it.
         const tab = window.open('about:blank', `marketing-${studio.id}`);

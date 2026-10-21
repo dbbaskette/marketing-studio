@@ -54,7 +54,8 @@ class ApiTests(unittest.TestCase):
             self.assertNotIn(elsewhere, self.script)
         # The one thing kept in the tab is the way back to Marketing Studio.
         self.assertEqual(re.findall(r"sessionStorage\.(\w+)\('([\w-]+)'", self.script),
-                         [('getItem', 'marketing-studio-home'), ('setItem', 'marketing-studio-home')])
+                         [('getItem', 'marketing-studio-home'), ('setItem', 'marketing-studio-home'),
+                          ('getItem', 'marketing-studio-back'), ('setItem', 'marketing-studio-back')])
 
     def test_slide_feedback_names_the_slide_so_a_late_note_is_kept_for_the_deck_review(self):
         self.assertRegex(self.script, r"send\('build-feedback', \{path, ref: one\.ref, note, "

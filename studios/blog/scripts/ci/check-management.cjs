@@ -1133,6 +1133,8 @@ async function filesJourney(){
   assert.equal(asked()[0].data.purpose,'material');assert.match(asked()[0].data.operation,/^[0-9a-f]{32}$/);
   assert.ok(text().some(t=>/^Messaging Doc$/.test(t)),'the Doc is listed by its title: '+text().join('|'));
   assert.ok(text().some(t=>/Google Doc · 4,200 characters/.test(t)),'with how much text it has');
+  assert.equal(start().disabled,false,'a Doc with text can start the blog: the screen is not left busy');
+  assert.equal(docAdd().disabled,false,'and another Doc can be added');
   byId('files-goal').value='A team post';byId('files-goal').listeners.input();
   byId('files-web').checked=true;byId('files-web').listeners.change();
   assert.ok(text().some(t=>/stops for the angles/.test(t)));
