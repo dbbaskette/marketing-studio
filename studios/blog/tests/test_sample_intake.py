@@ -4,9 +4,11 @@ import isolation  # noqa: F401  (first: keeps every test off this computer's own
 import base64
 import csv
 import io
+from unittest.mock import patch
 import zipfile
 
 from test_editorial_tools import Fixture
+import blog_library
 import management
 import studio
 
@@ -87,8 +89,11 @@ class LinkedInTests(Fixture):
             self.upload([{'linkedin': base64.b64encode(b'not a zip').decode()}], operation='c' * 32)
 
     def test_an_export_is_not_material_for_one_blog_and_comes_alone(self):
-        with self.assertRaisesRegex(ValueError, 'writing samples'):
-            self.upload([{'linkedin': export()}], purpose='material', operation='d' * 32)
+        for purpose in ('material', 'style-sample', 'reference'):
+            with self.assertRaisesRegex(ValueError, 'writing samples'):
+                self.upload([{'linkedin': export()}], purpose=purpose, operation='d' * 32)
+        with self.assertRaisesRegex(ValueError, 'one LinkedIn export at a time'):
+            self.upload([{'linkedin': export()}, {'linkedin': export()}], operation='d' * 32)
         with self.assertRaisesRegex(ValueError, 'on its own'):
             self.upload([{'linkedin': export(), 'filename': 'export.zip'}], operation='e' * 32)
         self.assertEqual(list((self.root / 'sources').glob('*/record.json')), [])
@@ -102,4 +107,33 @@ class LinkedInTests(Fixture):
                 ('author-background', 'Synthetic Author'),
                 ('voice-sample', 'Synthetic Author'),
             ],
+        )
+
+    def test_an_unreadable_profile_gives_the_export_message(self):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w') as archive:
+            archive.writestr(
+                'Profile.csv', 'Headline,Summary\n\xff\xfe broken,text\n'.encode('latin-1')
+            )
+        with self.assertRaisesRegex(ValueError, 'not a LinkedIn export'):
+            self.upload(
+                [{'linkedin': base64.b64encode(buffer.getvalue()).decode()}], operation='1' * 32
+            )
+        self.assertEqual(list((self.root / 'sources').glob('*/record.json')), [])
+
+    def test_long_articles_are_left_out_and_many_are_capped_with_a_note(self):
+        long = '<p>' + 'word ' * 400 + '</p>'
+        articles = (('Short', '<p>Short one.</p>'), ('Long', long))
+        with patch.object(blog_library, 'MAX_TEXT', 1000):
+            result = self.upload([{'linkedin': export(articles=articles)}], operation='2' * 32)
+        self.assertEqual(
+            [row['filename'] for row in result['files']], ['LinkedIn · About', 'LinkedIn · Short']
+        )
+        self.assertIn('1 articles were left out: too long to share.', result['files'][0]['note'])
+        many = tuple(('Post %d' % n, '<p>Text %d.</p>' % n) for n in range(25))
+        result = self.upload([{'linkedin': export(articles=many)}], operation='3' * 32)
+        self.assertEqual(len(result['files']), management.MAX_UPLOAD_FILES)
+        self.assertIn(
+            'Only the first %d articles were read' % (management.MAX_UPLOAD_FILES - 1),
+            result['files'][0]['note'],
         )

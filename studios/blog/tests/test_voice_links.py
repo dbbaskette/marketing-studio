@@ -256,7 +256,8 @@ class ImportTests(Fixture):
             self.assertIn('voice-sample', record['purposes'])
             self.assertIn('reference', record['purposes'])
             self.assertEqual(record['author'], AUTHOR)
-            self.assertEqual(record['library']['author'], AUTHOR)
+            # The library entry keeps the published byline; a list of links gave none.
+            self.assertIsNone(record['library']['author'])
             self.assertTrue(record['library']['historical'])
         _, theirs = studio.item(self.root, 'sources', rows['theirs']['id'])
         self.assertNotIn('voice-sample', theirs['purposes'])
@@ -346,6 +347,63 @@ class ImportTests(Fixture):
                 reader=reader,
             )
 
+    def test_a_kept_mismatch_keeps_the_published_byline_and_names_the_previous_owner(self):
+        reader = Pages({SITE + 'theirs/': page('Theirs', 'Jordan Lee')})
+        text = self.links('theirs')
+        shown = voice_links.preview(self.root, {'text': text, 'author': 'Jordan Lee'})
+        first = voice_links.run(
+            self.root,
+            {
+                'operation': 'a' * 32,
+                'text': text,
+                'author': 'Jordan Lee',
+                'expected': shown['expected'],
+            },
+            reader=reader,
+            delay=0,
+        )
+        directory, record = studio.item(self.root, 'sources', first['samples'][0])
+        self.assertEqual(record['author'], 'Jordan Lee')
+        record['library']['author'] = 'Jordan Lee'  # as a feed import records a byline
+        studio.persist(directory, 'sources', record)
+        held, _ = self.run_links(text, reader, operation='b' * 32)
+        self.assertTrue(held['results'][0]['mismatch'])
+        self.assertFalse(held['results'][0]['sample'])
+        kept, _ = self.run_links(text, reader, operation='b' * 32, keep=[SITE + 'theirs/'])
+        self.assertTrue(kept['results'][0]['sample'])
+        self.assertEqual(kept['results'][0]['note'], "was Jordan Lee's sample; now Avery Quinn's")
+        _, record = studio.item(self.root, 'sources', kept['samples'][0])
+        self.assertEqual((record['author'], record['library']['author']), (AUTHOR, 'Jordan Lee'))
+        self.assertEqual(record['purposes'].count('voice-sample'), 1)
+
+    def test_a_style_import_keeps_a_voice_sample_and_a_repeat_changes_nothing(self):
+        reader = Pages({SITE + 'one/': page('One', AUTHOR)})
+        text = self.links('one')
+        voice, _ = self.run_links(text, reader)
+        ident = voice['samples'][0]
+        data = {'text': text, 'author': 'Field notes', 'purpose': 'style-sample'}
+
+        def style(operation):
+            shown = voice_links.preview(self.root, data)
+            return voice_links.run(
+                self.root,
+                {**data, 'operation': operation, 'expected': shown['expected']},
+                reader=reader,
+                delay=0,
+            )
+
+        style('b' * 32)
+        _, record = studio.item(self.root, 'sources', ident)
+        self.assertIn('voice-sample', record['purposes'])
+        self.assertIn('style-sample', record['purposes'])
+        self.assertEqual(record['author'], AUTHOR)
+        revision = record['revision']
+        again = style('c' * 32)
+        _, record = studio.item(self.root, 'sources', ident)
+        self.assertEqual(record['revision'], revision)
+        self.assertNotIn('note', again['results'][0])
+        self.assertEqual(len(reader.calls), 1)
+
     def test_posts_already_in_the_library_are_reused_not_fetched_or_copied(self):
         reader = Pages({SITE + n + '/': page(n, AUTHOR) for n in ('one', 'two', 'three')})
         self.run_links(self.links('one', 'two'), reader)
@@ -374,7 +432,7 @@ class ImportTests(Fixture):
         refreshed = library.import_batch(self.root, preview, reader=reader, delay=0)
         self.assertEqual(refreshed['counts']['unchanged'], 1)
         _, record = studio.item(self.root, 'sources', result['samples'][0])
-        self.assertEqual((record['author'], record['library']['author']), (AUTHOR, AUTHOR))
+        self.assertEqual((record['author'], record['library']['author']), (AUTHOR, None))
         self.assertIn('voice-sample', record['purposes'])
 
     def test_batches_limits_and_changed_previews(self):

@@ -425,27 +425,19 @@ def start(root, data, path, reader):
 
 
 def classify(directory, record, author, purpose='voice-sample'):
-    """Mark one saved post as a sample. A voice sample takes the author's name; a style
-    sample keeps whatever author the post has, since a style is not a person's.
-    False when nothing changes."""
+    """Mark one saved post as a sample. A voice sample takes the author's name on the
+    record; the library entry keeps the published byline. A style sample keeps whatever
+    author the post has, since a style is not a person's. False when nothing changes."""
     purposes = list(record.get('purposes') or [])
-    library = dict(record.get('library') or {})
     if purpose not in purposes:
         purposes.append(purpose)
     voice = purpose == 'voice-sample'
-    if purposes == record.get('purposes') and (
-        not voice
-        or record.get('author') == author
-        and (not library or library.get('author') == author)
-    ):
+    if purposes == record.get('purposes') and (not voice or record.get('author') == author):
         return False
     blog_library.save_revision(directory, record)
     record['purposes'] = purposes
     if voice:
         record['author'] = author
-        if library:
-            library['author'] = author
-            record['library'] = library
     record['revision'] += 1
     studio.persist(directory, 'sources', record)
     return True
@@ -473,8 +465,17 @@ def sample_status(root, ident, author, kept, changed, purpose='voice-sample'):
         if not kept:
             return found
         found['kept'] = True
+    owner = record.get('author')
+    moved = (
+        purpose == 'voice-sample'
+        and 'voice-sample' in (record.get('purposes') or [])
+        and owner
+        and not same_author(owner, author)
+    )
     if classify(directory, record, author, purpose):
         changed.append(record['id'])
+        if moved:
+            found['note'] = "was %s's sample; now %s's" % (owner, author)
     return {**found, 'sample': True}
 
 

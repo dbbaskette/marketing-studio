@@ -9,16 +9,22 @@ import base64
 import binascii
 import csv
 import zipfile
+import zlib
 
+import blog_library
 import linkedin_import
 
 MAX_ARCHIVE = 10 * 1024 * 1024
 NOT_AN_EXPORT = 'That file is not a LinkedIn export zip. Download "Get a copy of your data" again.'
 
 
-def checked_linkedin(root, entry):
+def checked_linkedin(root, entry, limit=19):
     """The About text and each article of a LinkedIn export, as checked uploads. The
-    About text is author background; the articles are authored voice samples."""
+    About text is author background; the articles are authored voice samples.
+
+    Everything is checked here, before anything is saved: an article too long to share
+    is left out, and at most `limit` articles are read, each with a note on the first row.
+    """
     if set(entry) != {'linkedin'} or not isinstance(entry['linkedin'], str):
         raise ValueError('Give the LinkedIn export on its own.')
     try:
@@ -31,12 +37,22 @@ def checked_linkedin(root, entry):
         )
     try:
         found = linkedin_import.parse(data)
-    except (zipfile.BadZipFile, csv.Error, RuntimeError):
+    except (
+        zipfile.BadZipFile,
+        csv.Error,
+        RuntimeError,
+        UnicodeDecodeError,
+        EOFError,
+        zlib.error,
+        NotImplementedError,
+    ):
         raise ValueError(NOT_AN_EXPORT) from None
-    rows = []
+    rows, notes = [], list(found['limitations'])
     author = found.get('name') or None  # the request's own author name wins over this
     about = '\n\n'.join(part for part in (found['headline'], found['summary']) if part)
-    if about:
+    if about and len(about.encode()) > blog_library.MAX_TEXT:
+        notes.append('The About text was left out: too long to share.')
+    elif about:
         rows.append(
             _row(
                 'linkedin-about.md',
@@ -47,7 +63,18 @@ def checked_linkedin(root, entry):
                 author,
             )
         )
-    for index, article in enumerate(found['articles'], 1):
+    articles = [a for a in found['articles'] if len(a['text'].encode()) <= blog_library.MAX_TEXT]
+    if len(articles) < len(found['articles']):
+        notes.append(
+            '%d articles were left out: too long to share.'
+            % (len(found['articles']) - len(articles))
+        )
+    if len(articles) > limit:
+        articles = articles[:limit]
+        notes.append(
+            'Only the first %d articles were read; upload the rest in another export.' % limit
+        )
+    for index, article in enumerate(articles, 1):
         rows.append(
             _row(
                 'linkedin-article-%d.md' % index,
@@ -58,8 +85,10 @@ def checked_linkedin(root, entry):
                 author,
             )
         )
-    if found['limitations']:
-        rows[0]['note'] = ' '.join(found['limitations'])
+    if not rows:
+        raise ValueError(' '.join(notes) or 'This LinkedIn export has nothing to read.')
+    if notes:
+        rows[0]['note'] = ' '.join(notes)
     return rows
 
 

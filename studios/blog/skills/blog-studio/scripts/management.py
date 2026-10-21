@@ -435,15 +435,20 @@ def upload_files(root, data, staging, ledger, fingerprint):
     if data.get('keep') and purpose == 'material':
         purpose = 'reference'
     author = studio.checked_author(data['author']) if data.get('author') else None
+    entries = [entry if isinstance(entry, dict) else {} for entry in files]
+    exports = sum('linkedin' in entry for entry in entries)
+    if exports > 1:
+        raise ValueError('Upload one LinkedIn export at a time.')
+    if exports and purpose not in ('voice-sample', 'author-background'):
+        # An export's rows are shared writing samples, never material or plain references.
+        raise ValueError(
+            'Upload a LinkedIn export as writing samples: voice samples or author background.'
+        )
     checked = []
-    for entry in (entry if isinstance(entry, dict) else {} for entry in files):
+    for entry in entries:
         if 'linkedin' in entry:
-            if purpose == 'material':
-                # Material stays with one blog; an export's rows are shared writing samples.
-                raise ValueError(
-                    'Upload a LinkedIn export as writing samples, not as material for one blog.'
-                )
-            checked.extend(sample_intake.checked_linkedin(root, entry))
+            # Checked whole before the ledger is written: nothing is half-saved on a refusal.
+            checked.extend(sample_intake.checked_linkedin(root, entry, limit=MAX_UPLOAD_FILES - 1))
         else:
             checked.append((checked_google if 'google' in entry else checked_upload)(root, entry))
     if len({entry['filename'] for entry in checked}) != len(checked):
