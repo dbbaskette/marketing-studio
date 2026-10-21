@@ -373,16 +373,8 @@ def ledger_path(root, operation):
 
 
 def collection_name(root, author, purpose='voice-sample'):
-    names = {str(c['name']).strip().casefold() for c in blog_library.collections(root).values()}
     base = ('Published posts by ' if purpose == 'voice-sample' else 'Examples: ') + author
-    if base.casefold() not in names:
-        return base
-    dated = base + ' · ' + studio.now()[:10]
-    for number in range(1, 100):
-        name = dated if number == 1 else dated + ' (' + str(number) + ')'
-        if name.casefold() not in names:
-            return name
-    raise ValueError('Too many collections share this author name. Rename one first.')
+    return blog_library.unique_name(root, base)
 
 
 def start(root, data, path, reader):

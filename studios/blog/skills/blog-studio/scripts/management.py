@@ -1591,6 +1591,10 @@ def _dispatch(root, route, data):
             return library_import(root, data)
         if route in ('voice-links-preview', 'voice-links-import'):
             return voice_links_route(root, route, data)
+        if route.startswith('library-add'):
+            import library_add
+
+            return library_add.route(root, route, data)
         if route == 'retry-sync':
             return retry_receipt(root, adapter, data)
         if route == 'upload':

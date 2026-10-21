@@ -80,6 +80,7 @@ async function check(){
   await finishAndDelete();
   await filesJourney();
   await voiceLinksJourney();
+  await libraryAddJourney();
   await wizardVoiceAndKind();
   await voicesAndStyles();
   await voiceCandidates();
@@ -89,7 +90,7 @@ async function check(){
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -1472,6 +1473,77 @@ async function voiceLinksJourney(){
   assert.equal(f.get('sheet').children[0].children[0].textContent,'Learn a style from examples');
   assert.equal(byId('learn-style-name').value,'Product announcements');
   assert.deepEqual(sheet().filter(e=>e.type==='checkbox'&&e.checked).map(e=>e.value),['s1','s2'],'the imported examples are ticked');
+}
+
+// Add to the library: one sheet for files, links and a Google Doc with role, author and kind; a
+// check first, then the add continues until every link is read; each post's own author groups
+// the posts by byline, with rename, merge and set author; marking as samples is on by default
+// and learning a group's voice still asks for permission.
+async function libraryAddJourney(){
+  const requests=[];let marked=false,renamed=false,adds=0;
+  const preview={status:'ready',role:'example',author:'*each',kind:'product-announcement',kind_name:'Product announcement',items:[{key:'post.html',kind:'file',title:'An earlier post',filename:'post.html',state:'ready',chars:1200,note:'',bylines:['Avery Quinn']},{key:'https://blog.example/team/a/',kind:'link',url:'https://blog.example/team/a/',site:'blog.example/team/',state:'new',chars:null,bylines:[],note:''},{key:'https://blog.example/team/b/',kind:'link',url:'https://blog.example/team/b/',site:'blog.example/team/',title:'B',state:'in-library',chars:null,bylines:['Sam Rivera'],note:''}],sites:[{site:'blog.example',scope:'https://blog.example/team/',shown:'blog.example/team/',links:2}],in_library:1,to_fetch:2,duplicates:0,comments:0,upgraded:0,unusable:0,skipped:[],expected:'check-1',next_step:'Check the items.'};
+  const item=(id,extra)=>({id,kind:'link',url:'https://blog.example/team/'+id+'/',site:'blog.example/team/',status:'imported',title:id.toUpperCase(),author:null,bylines:[],role:'example',sample:false,revision:1,text:true,...extra});
+  const result=()=>{const sam=renamed?'Samantha Rivera':'Sam Rivera',groups=[{author:'Darin Zook',ids:['a','f'],samples:marked?['a','f']:[],learnable:marked?['a','f']:[],count:2},{author:sam,ids:['b'],samples:marked?['b']:[],learnable:marked?['b']:[],count:1}];
+    return {operation:'x',state:'saved',role:'example',author:'*each',kind:'product-announcement',kind_name:'Product announcement',items:[{id:'f',kind:'file',filename:'post.html',status:'imported',title:'An earlier post',author:'Darin Zook',bylines:['Darin Zook'],role:'example',sample:marked,revision:1,text:true},item('a',{author:'Darin Zook',sample:marked}),item('b',{author:sam,status:'in-library',sample:marked}),item('co',{bylines:['Avery Quinn','Jordan Lee']})],counts:{imported:3,'in-library':1,failed:0,pending:0,samples:marked?3:0},remaining:0,groups,held:[{id:'co',title:'CO',url:'https://blog.example/team/co/',bylines:['Avery Quinn','Jordan Lee'],reason:'Several bylines: Avery Quinn, Jordan Lee'}],next_step:'Mark the posts as voice samples.',sharing:'local-only',sharing_message:'Saved in this workspace; no Team Hub selected.',receipts:[]};};
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
+    if(url.startsWith('/api/styles'))return {styles:[{id:'product-announcement',name:'Product announcement',kind:'seed',status:'confirmed',revision:1,summary:''},{id:'old',name:'Old',kind:'learned',status:'retired',revision:1,summary:''}],samples:[],candidates:[],pending:[]};
+    if(url.startsWith('/api/voices'))return {profiles:[],samples:[{id:'a',name:'A',author:'Darin Zook'},{id:'f',name:'An earlier post',author:'Darin Zook'}],candidates:[],pending:[]};
+    if(url==='/api/library-add-preview')return preview;
+    if(url==='/api/library-add'){adds++;return adds===1?{...result(),remaining:1,state:'importing',counts:{...result().counts,pending:1}}:result();}
+    if(url==='/api/library-add-author'){renamed=true;return result();}
+    if(url==='/api/library-add-samples'){marked=true;return result();}
+    return {items:[],total:0};});
+  f.loadRunner();
+  const sheet=()=>descendants(f.get('sheet')),find=label=>sheet().find(e=>e.textContent===label),byId=id=>sheet().find(e=>e.id===id),has=pattern=>sheet().some(e=>pattern.test(e.textContent));
+  await f.run('sLibraryAdd()');
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Add to the library');
+  const files=byId('library-add-files');assert.equal(files.multiple,true);assert.match(files.accept,/\.pdf/);
+  assert.ok(byId('library-add-links')&&byId('library-add-links-file'),'links can be pasted or chosen as a file');assert.ok(byId('library-add-google'),'and a Google Doc link added');
+  assert.ok(byId('library-add-author'),'one author by default: the name field shows');
+  assert.deepEqual(byId('library-add-who').children.map(o=>[o.value,o.textContent]),[['named','One author'],['*each','Each post’s own author'],['','No author']]);
+  assert.deepEqual(byId('library-add-kind').children.map(o=>o.textContent),['No particular kind of post','Product announcement (starter)'],'retired kinds are left out');
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.ok(has(/Choose files, paste links/),'nothing chosen is refused on the page');assert.equal(requests.some(r=>r.url==='/api/library-add-preview'),false);
+  files.files=[{name:'post.html',size:20,arrayBuffer:async()=>new TextEncoder().encode('<p>By Avery</p>').buffer}];await files.listeners.change();
+  assert.ok(has(/1 chosen: post\.html/));
+  byId('library-add-links').value='https://blog.example/team/a/\nhttps://blog.example/team/b/';byId('library-add-links').listeners.input();
+  const role=sheet().find(e=>e.attributes['aria-label']==='Use these as');await role.children.find(e=>e.textContent==='Examples of the kind of post').listeners.click();
+  byId('library-add-who').value='*each';await byId('library-add-who').listeners.change();
+  assert.equal(byId('library-add-author'),undefined,'each post’s own author needs no name');
+  byId('library-add-kind').value='product-announcement';byId('library-add-kind').listeners.change();
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const checked=requests.find(r=>r.url==='/api/library-add-preview').data;
+  assert.deepEqual(checked.files.map(e=>e.filename),['post.html']);assert.equal(checked.role,'example');assert.equal(checked.author,'*each');assert.equal(checked.kind,'product-announcement');assert.match(checked.links,/team\/b\//);
+  assert.ok(find('3 items'));assert.ok(has(/Examples of the kind of post · Each post’s own author · Product announcement/));
+  assert.ok(has(/1,200 characters · byline Avery Quinn/),'a file shows its size and byline');assert.ok(has(/New · fetched from blog\.example\/team\//));assert.ok(has(/Already in the library · byline Sam Rivera/));
+  assert.ok(has(/1 already in the library/));assert.ok(has(/2 new pages are fetched once from blog\.example\/team\//));
+  assert.equal(requests.some(r=>r.url==='/api/library-add'),false,'checking adds nothing');
+  await find('Add 3 items').listeners.click();
+  const sent=requests.filter(r=>r.url==='/api/library-add');assert.equal(sent.length,2,'adding continues until every link is read');
+  assert.equal(sent[0].data.expected,'check-1');assert.equal(sent[0].data.operation,sent[1].data.operation);assert.equal(sent[0].data.author,'*each');assert.equal(sent[0].data.kind,'product-announcement');
+  assert.ok(find('3 added · 1 already there · 0 failed'));
+  assert.ok(find('Darin Zook · 2 posts'));assert.ok(find('Sam Rivera · 1 post'),'posts are grouped by author');
+  assert.ok(has(/Several bylines: Avery Quinn, Jordan Lee/),'a co-authored post is held');
+  assert.equal(byId('library-add-mark').checked,true,'marking as samples is on by default');
+  assert.equal(find('Learn Darin Zook’s voice'),undefined,'nothing to learn from until the posts are samples');
+  const operation=sent[0].data.operation;
+  byId('library-add-rename-1').value='Samantha Rivera';byId('library-add-rename-1').listeners.input();await sheet().filter(e=>e.textContent==='Rename')[1].listeners.click();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/library-add-author').at(-1).data,{operation,ids:['b'],author:'Samantha Rivera'});
+  assert.ok(find('Samantha Rivera · 1 post'),'the group is renamed');
+  byId('library-add-merge-1').value='Darin Zook';byId('library-add-merge-1').listeners.change();await sheet().filter(e=>e.textContent==='Merge')[1].listeners.click();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/library-add-author').at(-1).data,{operation,ids:['b'],author:'Darin Zook'},'merging gives the group the other author');
+  byId('library-add-held-co').value='Casey Park';byId('library-add-held-co').listeners.input();await find('Set author').listeners.click();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/library-add-author').at(-1).data,{operation,ids:['co'],author:'Casey Park'});
+  await find('Mark as samples').listeners.click();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/library-add-samples').at(-1).data,{operation});
+  assert.ok(has(/Added · by Darin Zook · voice sample/));
+  await find('Learn Darin Zook’s voice').listeners.click();
+  assert.equal(byId('learn-voice-name').value,'Darin Zook');
+  assert.deepEqual(sheet().filter(e=>e.type==='checkbox'&&e.value&&e.checked).map(e=>e.value),['a','f'],'the group’s samples are ticked');
+  assert.ok(!byId('learn-voice-permission').checked,'learning still asks for permission');
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.equal(requests.some(r=>r.url==='/api/tool-action'),false,'no learning job without the confirmation');
+  assert.ok(has(/Confirm sample permissions/));
 }
 
 // Write as and Kind of post on the first step: what each choice sends, for a new blog and for

@@ -850,9 +850,13 @@ def import_batch(
     selected=None,
     analyze=True,
     origin_kind='import',
+    defaults=None,
 ):
     """Import one bounded batch. analyze=False saves the posts without sending text to the
-    analysis CLI; origin_kind says where a post new to the library came from."""
+    analysis CLI; origin_kind says where a post new to the library came from; `defaults`
+    gives a post new to the library its purposes, author (a name, or each post's own
+    byline with '*each') and kind of post."""
+    defaults = defaults or {}
     if not re.fullmatch(r'[a-f0-9]{32}', preview_id) or not 1 <= limit <= MAX_BATCH:
         raise ValueError('Choose a valid preview and batch size 1–25.')
     path = folder(root) / (preview_id + '.json')
@@ -1023,10 +1027,23 @@ def import_batch(
                 record = {
                     'id': local_id,
                     'name': title,
-                    'purposes': ['reference'],
+                    'purposes': list(defaults.get('purposes') or ['reference']),
                     'revision': 0,
                     'created_at': studio.now(),
                 }
+                if defaults.get('kind'):
+                    metadata['kind'] = defaults['kind']
+                if defaults.get('author') == '*each':
+                    # The published byline is the author, when the page states exactly one.
+                    import voice_links
+
+                    names = voice_links.bylines(content) if suffix in ('.html', '.htm') else []
+                    if names:
+                        metadata['bylines'] = names
+                    entry = {**entry, 'author': names[0] if len(names) == 1 else None}
+                    metadata['author'] = entry['author']
+                elif defaults.get('author'):
+                    entry = {**entry, 'author': defaults['author']}
             prior_metadata = record.get('library', {})
             metadata['curation'] = prior_metadata.get('curation', 'active')
             # The library's own fields stay as they were saved; a new post says where it came from.
@@ -1471,6 +1488,19 @@ def catalog(
         'source_count': len(rows),
         'index_bytes': database.stat().st_size,
     }
+
+
+def unique_name(root, base):
+    """A collection name no other collection has: the base, else dated and numbered."""
+    names = {str(c['name']).strip().casefold() for c in collections(root).values()}
+    if base.casefold() not in names:
+        return base
+    dated = base + ' · ' + studio.now()[:10]
+    for number in range(1, 100):
+        name = dated if number == 1 else dated + ' (' + str(number) + ')'
+        if name.casefold() not in names:
+            return name
+    raise ValueError('Too many collections share this name. Rename one first.')
 
 
 def save_revision(directory, record):

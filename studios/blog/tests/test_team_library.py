@@ -190,6 +190,320 @@ class KeptFileTests(Fixture):
             self.upload('c', keep=True, kind='no-such-style')
 
 
+SITE = 'https://blog.example/team/'
+OTHER = 'https://other.example/blog/'
+DOC = 'https://docs.google.com/document/d/1AbC_dEf-2gHiJkLmNoPqRsTuVwXyZ012345/edit'
+
+
+def encoded_file(name, body):
+    return {'filename': name, 'content': base64.b64encode(body).decode()}
+
+
+class AddTests(RunnerCase):
+    """Task 4: Add to library, in one sheet, with the author typed or each post's own."""
+
+    def captured(self, title='Messaging Doc', body='# Messaging\n\nThe platform name is open.'):
+        def capture(_client, file_id, _revision, snapshot):
+            snapshot.mkdir(parents=True)
+            (snapshot / 'document.md').write_text(body)
+            studio.write_json(snapshot / 'native.json', {'title': title})
+            return {'summary': {}}
+
+        return capture
+
+    def add(self, route, data, reader=None):
+        import google_intake
+
+        with (
+            patch.object(library, 'fetch', reader or Pages({})),
+            patch.object(google_intake.roundtrip, 'capture', self.captured()),
+            patch.object(google_intake.drive, 'Client', lambda account: object()),
+            patch.object(library.time, 'sleep', lambda seconds: None),
+        ):
+            return management.dispatch(self.root, route, data)
+
+    def test_files_a_doc_and_links_preview_then_land_with_role_author_and_kind(self):
+        reader = Pages(
+            {
+                SITE + 'one/': page('One', 'Jordan Lee'),
+                SITE + 'moved/': ValueError(library.OUT_OF_SCOPE),
+            }
+        )
+        request = {
+            'files': [
+                encoded_file('post.html', page('An earlier post', 'Avery Quinn')),
+                encoded_file('facts.md', b'The gateway retries twice.'),
+                {'google': DOC},
+            ],
+            'links': '# links\n' + SITE + 'one/\n' + SITE + 'moved/\n',
+            'role': 'example',
+            'author': 'Avery Quinn',
+            'kind': 'product-announcement',
+        }
+        shown = self.add('library-add-preview', request)
+        self.assertEqual(shown['status'], 'ready')
+        self.assertEqual(
+            [(item['kind'], item['state']) for item in shown['items']],
+            [
+                ('file', 'ready'),
+                ('file', 'ready'),
+                ('google-doc', 'ready'),
+                ('link', 'new'),
+                ('link', 'new'),
+            ],
+        )
+        self.assertEqual(shown['items'][0]['bylines'], ['Avery Quinn'])
+        self.assertGreater(shown['items'][0]['chars'], 10)
+        self.assertEqual(shown['items'][1]['chars'], len('The gateway retries twice.'))
+        self.assertEqual(shown['items'][2]['title'], 'Messaging Doc')
+        self.assertEqual(shown['items'][3]['site'], 'blog.example/team/')
+        self.assertEqual(
+            shown['sites'],
+            [{'site': 'blog.example', 'scope': SITE, 'shown': 'blog.example/team/', 'links': 2}],
+        )
+        self.assertEqual((shown['to_fetch'], shown['in_library'], shown['comments']), (2, 0, 1))
+        self.assertEqual(shown['kind_name'], 'Product announcement')
+        self.assertFalse(list((self.root / 'sources').iterdir()), 'a check saves nothing')
+        self.assertEqual(reader.calls, [])
+        # Adding saves the files and the Doc, then fetches the links once each.
+        data = {**request, 'operation': 'a' * 32, 'expected': shown['expected']}
+        result = self.add('library-add', data, reader)
+        self.assertEqual(result['state'], 'saved')
+        self.assertEqual(
+            result['counts'],
+            {'imported': 4, 'in-library': 0, 'failed': 1, 'pending': 0, 'samples': 0},
+        )
+        rows = {row.get('filename') or row.get('url'): row for row in result['items']}
+        self.assertEqual(rows[SITE + 'moved/']['status'], 'failed')
+        self.assertIn('moved outside blog.example/team/', rows[SITE + 'moved/']['reason'])
+        for key, origin in (
+            ('post.html', 'upload'),
+            ('facts.md', 'upload'),
+            ('Messaging Doc', 'google-doc'),
+            (SITE + 'one/', 'link'),
+        ):
+            directory, record = studio.item(self.root, 'sources', rows[key]['id'])
+            self.assertEqual(record['purposes'], ['reference', 'inspiration'], key)
+            self.assertEqual(record['author'], 'Avery Quinn', key)
+            self.assertEqual(record['library']['kind'], 'product-announcement', key)
+            self.assertEqual(record['library']['origin_kind'], origin, key)
+            self.assertTrue((directory / 'content.md').is_file())
+            self.assertEqual(rows[key]['role'], 'example')
+        self.assertEqual(rows[SITE + 'one/']['title'], 'One')
+        self.assertEqual([g['author'] for g in result['groups']], ['Avery Quinn'])
+        self.assertEqual(result['groups'][0]['count'], 4)
+        self.assertEqual(result['held'], [])
+        self.assertEqual(len(reader.calls), 2)
+        self.assertEqual(
+            library.catalog(self.root, role='example', kind='product-announcement')['total'], 4
+        )
+        self.assertIn(
+            'Links from blog.example/team/',
+            [c['name'] for c in library.collections(self.root).values()],
+        )
+        # The same request again saves nothing twice and fetches nothing again.
+        again = self.add('library-add', data, reader)
+        self.assertEqual(
+            [r.get('id') for r in again['items']], [r.get('id') for r in result['items']]
+        )
+        self.assertEqual(len(list((self.root / 'sources').iterdir())), 4)
+        self.assertEqual(len(reader.calls), 2)
+        # A post already in the library takes a new role in a new revision, not a copy.
+        second = {'links': SITE + 'one/\n', 'role': 'facts', 'author': '', 'kind': ''}
+        checked = self.add('library-add-preview', second)
+        self.assertEqual(checked['items'][0]['state'], 'in-library')
+        self.assertEqual(checked['items'][0]['bylines'], ['Avery Quinn'])
+        kept = self.add(
+            'library-add',
+            {**second, 'operation': 'b' * 32, 'expected': checked['expected']},
+            reader,
+        )
+        self.assertEqual(kept['items'][0]['status'], 'in-library')
+        _, record = studio.item(self.root, 'sources', rows[SITE + 'one/']['id'])
+        self.assertEqual(
+            (record['revision'], record['purposes']), (1, ['reference', 'inspiration'])
+        )
+        self.assertEqual(len(reader.calls), 2)
+        # Refusals, before anything is saved.
+        refused = lambda pattern, **changes: self.assertRaisesRegex(ValueError, pattern)  # noqa: E731
+        with refused('facts or an example'):
+            self.add('library-add-preview', {**request, 'role': ''})
+        with refused('changed since the check'):
+            self.add('library-add', {**request, 'operation': 'c' * 32, 'expected': 'stale'})
+        with refused('different add-to-library request'):
+            self.add(
+                'library-add', {**second, 'operation': 'a' * 32, 'expected': checked['expected']}
+            )
+        with refused('kind of post'):
+            self.add('library-add-preview', {**request, 'kind': 'no-such-style'})
+        with refused('docs.google.com/document'):
+            self.add(
+                'library-add-preview',
+                {'files': [{'google': 'https://example.com/doc'}], 'role': 'facts'},
+            )
+        with refused('could not be read'):
+            self.add(
+                'library-add-preview',
+                {'files': [encoded_file('bad.docx', b'not a zip')], 'role': 'facts'},
+            )
+        with patch.object(library, 'MAX_BINARY', 8), refused('at most 10 MiB'):
+            self.add(
+                'library-add-preview',
+                {'files': [encoded_file('big.md', b'x' * 9)], 'role': 'facts'},
+            )
+        with refused('Choose files, paste links'):
+            self.add('library-add-preview', {'role': 'facts', 'links': '  '})
+        with refused('No usable links'):
+            self.add('library-add-preview', {'role': 'facts', 'links': 'not a link'})
+        self.assertEqual(len(list((self.root / 'sources').iterdir())), 4)
+
+    def test_each_posts_own_author_imports_first_then_groups_by_byline(self):
+        coauthored = (
+            b'<html><head><title>Co</title><script type="application/ld+json">{"author":[{"name":"Avery Quinn"},'
+            b'{"name":"Jordan Lee"}]}</script></head><body><p>Two voices wrote this.</p></body></html>'
+        )
+        organisation = (
+            b'<html><head><title>Org</title><script type="application/ld+json">{"author":{"@type":"Organization",'
+            b'"name":"Example Publishing"}}</script></head><body><p>The company speaks.</p></body></html>'
+        )
+        reader = Pages(
+            {
+                SITE + 'a/': page('A', 'Darin Zook'),
+                SITE + 'b/': page('B', 'Zook, Darin', 'meta'),
+                SITE + 'c/': page('C', 'Sam Rivera', 'byline'),
+                SITE + 'org/': organisation,
+                SITE + 'co/': coauthored,
+                SITE + 'none/': page('None'),
+                OTHER + 'x/': page('X', 'Darin Zook'),
+            }
+        )
+        request = {
+            'links': ''.join(SITE + n + '/\n' for n in ('a', 'b', 'c', 'org', 'co', 'none'))
+            + OTHER
+            + 'x/\n',
+            'role': 'facts',
+            'author': '*each',
+            'kind': '',
+        }
+        shown = self.add('library-add-preview', request)
+        self.assertEqual(
+            [s['site'] for s in shown['sites']],
+            ['blog.example', 'other.example'],
+            'every site is imported, each in its own scope',
+        )
+        self.assertEqual(shown['to_fetch'], 7)
+        result = self.add(
+            'library-add', {**request, 'operation': 'd' * 32, 'expected': shown['expected']}, reader
+        )
+        self.assertEqual({call[1] for call in reader.calls if call[0].startswith(SITE)}, {SITE})
+        self.assertEqual({call[1] for call in reader.calls if call[0].startswith(OTHER)}, {OTHER})
+        self.assertEqual(result['counts']['imported'], 7)
+        rows = {row['url']: row for row in result['items']}
+        _, b = studio.item(self.root, 'sources', rows[SITE + 'b/']['id'])
+        self.assertEqual((b['author'], b['library']['author']), ('Zook, Darin', 'Zook, Darin'))
+        self.assertEqual(b['purposes'], ['reference'])
+        self.assertEqual(b['library']['origin_kind'], 'link')
+        _, co = studio.item(self.root, 'sources', rows[SITE + 'co/']['id'])
+        self.assertIsNone(co['author'])
+        self.assertEqual(co['library']['bylines'], ['Avery Quinn', 'Jordan Lee'])
+        # Grouped by author, variants folded; held posts are counted for nobody.
+        self.assertEqual(
+            [(g['author'], g['count']) for g in result['groups']],
+            [('Darin Zook', 3), ('Sam Rivera', 1)],
+        )
+        self.assertEqual(
+            sorted(h['url'] for h in result['held']),
+            sorted(SITE + n + '/' for n in ('org', 'co', 'none')),
+        )
+        reasons = {h['url']: h['reason'] for h in result['held']}
+        self.assertEqual(reasons[SITE + 'co/'], 'Several bylines: Avery Quinn, Jordan Lee')
+        self.assertEqual(reasons[SITE + 'org/'], 'No byline on the page.')
+        self.assertEqual(result['groups'][0]['samples'], [])
+        self.assertIn('Mark the posts as voice samples', result['next_step'])
+        # Rename a group; merge a group into another; set the author of a held post.
+        sam = result['groups'][1]['ids']
+        renamed = management.dispatch(
+            self.root,
+            'library-add-author',
+            {'operation': 'd' * 32, 'ids': sam, 'author': 'Samantha Rivera'},
+        )
+        self.assertEqual(
+            [(g['author'], g['count']) for g in renamed['groups']],
+            [('Darin Zook', 3), ('Samantha Rivera', 1)],
+        )
+        _, c = studio.item(self.root, 'sources', sam[0])
+        self.assertEqual(
+            (c['author'], c['library']['author'], c['revision']),
+            ('Samantha Rivera', 'Sam Rivera', 2),
+        )
+        merged = management.dispatch(
+            self.root,
+            'library-add-author',
+            {'operation': 'd' * 32, 'ids': sam, 'author': 'Darin Zook'},
+        )
+        self.assertEqual([(g['author'], g['count']) for g in merged['groups']], [('Darin Zook', 4)])
+        held = next(h['id'] for h in merged['held'] if h['url'] == SITE + 'none/')
+        named = management.dispatch(
+            self.root,
+            'library-add-author',
+            {'operation': 'd' * 32, 'ids': [held], 'author': 'Casey Park'},
+        )
+        self.assertEqual(
+            [(g['author'], g['count']) for g in named['groups']],
+            [('Darin Zook', 4), ('Casey Park', 1)],
+        )
+        self.assertEqual(len(named['held']), 2)
+        with self.assertRaisesRegex(ValueError, 'this add-to-library operation saved'):
+            management.dispatch(
+                self.root,
+                'library-add-author',
+                {'operation': 'd' * 32, 'ids': ['elsewhere'], 'author': 'X'},
+            )
+        # A run that pinned one of the posts stays open when it becomes a sample.
+        found = self.create(sources=[rows[SITE + 'a/']['id']])
+        before = runner.survey(self.root, found['id'])
+        marked = management.dispatch(self.root, 'library-add-samples', {'operation': 'd' * 32})
+        self.assertEqual([len(g['samples']) for g in marked['groups']], [4, 1])
+        self.assertEqual(marked['groups'][0]['learnable'], marked['groups'][0]['samples'])
+        import voice_links
+
+        for ident in marked['groups'][0]['ids']:
+            _, record = studio.item(self.root, 'sources', ident)
+            self.assertIn('voice-sample', record['purposes'])
+            # A folded variant keeps its own byline on the record; the group names the voice.
+            self.assertTrue(voice_links.same_author(record['author'], 'Darin Zook'))
+        _, a = studio.item(self.root, 'sources', rows[SITE + 'a/']['id'])
+        self.assertEqual(a['revision'], 2)
+        for ident in (h['id'] for h in marked['held']):
+            self.assertNotIn(
+                'voice-sample', studio.item(self.root, 'sources', ident)[1]['purposes']
+            )
+        after = runner.survey(self.root, found['id'])
+        self.assertEqual(
+            (after['stages'], after['expected']), (before['stages'], before['expected'])
+        )
+        self.assertEqual(
+            management.dispatch(self.root, 'library-add-samples', {'operation': 'd' * 32})[
+                'receipts'
+            ],
+            [],
+        )
+        self.assertIn('Learn a voice from a group', marked['next_step'])
+        # Learning still asks before any analysis.
+        with self.assertRaisesRegex(ValueError, 'Confirm'):
+            management.dispatch(
+                self.root,
+                'tool-action',
+                {
+                    'action': 'job-create',
+                    'kind': 'voice-learn',
+                    'operation': 'e' * 32,
+                    'name': 'Darin Zook',
+                    'samples': marked['groups'][0]['learnable'],
+                },
+            )
+
+
 class FinishTests(RunnerCase):
     """Task 2: Finish keeps the approved draft in the library, once per blog."""
 

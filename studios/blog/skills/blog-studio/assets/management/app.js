@@ -39,7 +39,7 @@ const operationCache = new Map();
 // getRandomValues is available on trusted-LAN HTTP as well as secure origins.
 function operationId(){return Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join('');}
 function operationFor(kind,data){const key=kind+JSON.stringify(data);if(!operationCache.has(key))operationCache.set(key,operationId());return operationCache.get(key);}
-const views = {runs:['Writing runs','Start a blog, review each stage, and pick up where you left off.','Your writing runs'],board:['All blogs','Every saved blog by stage and owner. Open one to read it, decide or keep writing.','All blogs'],inbox:['Review findings','Find waiting decisions, review findings and stale companions.','Review findings'],library:['Reference library','Find earlier work and curate the material your team uses.','Sources and historical posts'],memory:['Team memory','Keep useful knowledge and writing guidance easy to find.','Shared notes, context and rules']};
+const views = {runs:['Writing runs','Start a blog, review each stage, and pick up where you left off.','Your writing runs'],board:['All blogs','Every saved blog by stage and owner. Open one to read it, decide or keep writing.','All blogs'],inbox:['Review findings','Find waiting decisions, review findings and stale companions.','Review findings'],library:['Team library','Finished blogs, files, links and Google Docs your team writes from, by role, kind of post and author.','Library items'],memory:['Team memory','Keep useful knowledge and writing guidance easy to find.','Shared notes, context and rules']};
 function element(tag, text, cls) {const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function notice(message, error=false) {
   const dialog=document.querySelector('dialog[open]');
@@ -194,7 +194,7 @@ function render(state, result) {
   const {view,offset}=state, total=result.total;
   if(view==='runs'){renderRuns(result);return;}
   $('heading').textContent=views[view][0];$('subtitle').textContent=views[view][1];$('section-title').textContent=views[view][2];$('count').textContent=total+' '+(total===1?'item':'items');
-  $('import-open').hidden=view!=='library';$('stage-filter').hidden=view!=='board';$('library-status-filter').hidden=view!=='library';$('library-collection-filter').hidden=view!=='library';$('memory-open').hidden=view!=='memory';$('previous').disabled=offset===0;$('next').disabled=offset+limit>=total;$('page-label').textContent=total?`${offset+1}–${Math.min(offset+limit,total)} of ${total}`:'No items yet';
+  $('import-open').hidden=view!=='library';$('library-add-open').hidden=view!=='library';$('stage-filter').hidden=view!=='board';$('library-status-filter').hidden=view!=='library';$('library-collection-filter').hidden=view!=='library';$('memory-open').hidden=view!=='memory';$('previous').disabled=offset===0;$('next').disabled=offset+limit>=total;$('page-label').textContent=total?`${offset+1}–${Math.min(offset+limit,total)} of ${total}`:'No items yet';
   $('query').placeholder={board:'Blog title, author, owner…',inbox:'Blog, finding, status…',library:'Title, author, topic…',memory:'Title, kind, scope…'}[view];
   $('observation').textContent=result.observation||result.google_observation||'Saved content only. Historical product claims need current verification.';
   $('results').replaceChildren();
@@ -538,7 +538,7 @@ async function saveImport(retry=false){
     if(!selected.length)throw new Error('Check the posts you want to import first.');
     const payload={preview:importState.preview,expected:importState.expected,confirm:true,retry,selected,...choice};
     const result=await api('library-import',{...payload,operation:operationFor('library-import',payload)});
-    renderImport(result);await load();notice(result.sharing_message||'Posts saved to the Reference Library.');
+    renderImport(result);await load();notice(result.sharing_message||'Posts saved to the team library.');
   }catch(error){notice(error.message,true);}finally{importBusyState(false);}
 }
 
