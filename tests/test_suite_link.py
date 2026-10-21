@@ -149,7 +149,7 @@ class SuiteLinkTests(unittest.TestCase):
             + '.map(([hash, bare]) => linkKey(hash, bare))')
         self.assertEqual(found, ['abc', 'abc', 'abc', '', '', ''])
         self.assertIn("window.addEventListener('hashchange'", text)
-        self.assertIn("window.addEventListener('hashchange'", (STUDIOS[0] / 'app.js').read_text())
+        self.assertIn("window.addEventListener('hashchange'", (STUDIOS[0] / 'runner.js').read_text())
 
     def test_studio_pages_hold_a_hidden_link_back(self):
         for folder in STUDIOS:

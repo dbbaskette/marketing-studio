@@ -26,9 +26,6 @@ const token = location.hash.slice(1).split('&')[0] || sessionStorage.getItem('bl
 const suite = suiteHome(location.hash, location) || suitePort(document.body?.dataset?.suitePort, location)
   || sessionStorage.getItem('marketing-studio-home') || '';
 if(token)sessionStorage.setItem('blog-studio-session',token);
-// A new link opened in a tab that already shows this page changes only the fragment, which does
-// not reload it. Start again with the new key.
-window.addEventListener('hashchange', () => { const next = location.hash.slice(1).split('&')[0]; if (next && /^(token=)?[A-Za-z0-9_-]{32,128}$/.test(next) && next.replace(/^token=/, '') !== token.replace(/^token=/, '')) location.reload(); });
 if(suite)sessionStorage.setItem('marketing-studio-home',suite);
 const suiteTab = suiteBack(location.hash) || sessionStorage.getItem('marketing-studio-back') === 'tab';
 if(suiteTab)sessionStorage.setItem('marketing-studio-back','tab');
