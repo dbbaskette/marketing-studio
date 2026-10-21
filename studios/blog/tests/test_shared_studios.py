@@ -1028,3 +1028,63 @@ class TeamPageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'no local work was overwritten'):
             teams.refresh(self.root, push=True)
         self.assertEqual(draft.read_text(), 'Uncommitted synthetic writing.\n')
+
+
+class StrayClaimTests(TeamTests):
+    """A tool job is not a blog: its ID must never be claimed in the team repository."""
+
+    def sample(self, root):
+        import base64
+        import management
+
+        result = management.dispatch(
+            root,
+            'upload',
+            {
+                'operation': 'a' * 32,
+                'filename': 'sample.md',
+                'content': base64.b64encode(
+                    b'# Voice\n\nShort, plain sentences. No hedging.'
+                ).decode(),
+                'purpose': 'voice-sample',
+                'author': 'Avery Quinn',
+                'analyze': False,
+            },
+        )
+        return result['source']['id']
+
+    def test_learning_a_voice_claims_no_blog_named_after_the_job(self):
+        import management
+
+        source = self.sample(self.root)
+        job = management.dispatch(
+            self.root,
+            'tool-action',
+            {
+                'action': 'job-create',
+                'kind': 'voice-learn',
+                'operation': 'b' * 32,
+                'name': 'Avery Quinn',
+                'samples': [source],
+                'profile': None,
+                'confirmed': True,
+            },
+        )
+        self.assertTrue((self.root / '.blog-runs/tools' / (job['id'] + '.json')).is_file())
+        self.assertFalse((self.root / job['id']).exists(), 'a job ID is not a blog')
+        log = support.git(self.root.parent, 'log', '--format=%s')
+        self.assertNotIn('Take blog ' + job['id'], log)
+        self.assertEqual([row['id'] for row in blog_runner.catalog(self.root)['items']], [])
+
+    def test_a_stray_claim_left_by_an_earlier_version_is_removed(self):
+
+        stray = self.root / ('c' * 32)
+        stray.mkdir()
+        studio.write_json(stray / 'run.json', {'schema': 1, 'driver': None})
+        support.git(self.root.parent, 'add', '-A')
+        support.git(self.root.parent, 'commit', '-m', 'Take blog ' + 'c' * 32)
+        self.sample(self.root)
+        self.assertFalse(stray.exists())
+        log = support.git(self.root.parent, 'log', '--format=%s')
+        self.assertIn('stray claim', log)
+        self.assertEqual([row['id'] for row in blog_runner.catalog(self.root)['items']], [])

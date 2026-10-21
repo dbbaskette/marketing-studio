@@ -187,12 +187,35 @@ def refresh(root, push=False):
 
 
 def before(root, ident=None):
-    if space(root):
+    found = space(root)
+    if found:
+        _drop_stray_claims(root, found)
         report = refresh(root)
         if report.get('conflict'):
             raise ValueError(report['notice'])
         if ident:
             guard(root, ident)
+
+
+def _drop_stray_claims(root, found):
+    """Remove blog folders that hold only a claim: an earlier version wrote one for a tool
+    job's ID, which is not a blog, and committed it as "Take blog <id>"."""
+    stray = [
+        path.name
+        for path in sorted(root.iterdir())
+        if path.is_dir()
+        and not path.name.startswith('.')
+        and (path / 'run.json').is_file()
+        and not (path / 'session.json').is_file()
+        and len([entry for entry in path.iterdir() if not entry.name.startswith('.')]) == 1
+    ]
+    if not stray:
+        return
+    with support.locked(found.repo / '.git/blog-studio.lock'):
+        for name in stray:
+            with internal():
+                shutil.rmtree(root / name)
+        gitstate.commit(found, 'Remove a stray claim: ' + ', '.join(stray), stray)
 
 
 def _readme(root, ident):
@@ -226,8 +249,10 @@ def saved(root, ident=None, message='Keep Blog Studio decision'):
     if not found:
         return None
     with support.locked(found.repo / '.git/blog-studio.lock'):
+        if ident and not (root / studio.identifier(ident) / 'session.json').is_file():
+            # Only a blog can be claimed; a job or profile ID that reaches here is not one.
+            ident = None
         if ident:
-            studio.identifier(ident)
             if not (root / ident / 'run.json').is_file():
                 with internal():
                     studio.write_json(root / ident / 'run.json', {'schema': 1, 'driver': None})
