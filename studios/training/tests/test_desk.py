@@ -1495,8 +1495,17 @@ class PageFileTests(unittest.TestCase):
         for name in ('deck-panels.js', 'deck-panels.css'):
             self.assertNotRegex((panels / name).read_text(),
                                 r'(?i)\b(?:https?|wss?|ftp|data|blob):')
-        for risky in ('innerHTML', 'outerHTML', 'insertAdjacentHTML', 'eval(', 'cssText'):
+        for risky in ('innerHTML', 'outerHTML', 'insertAdjacentHTML', 'eval(', 'cssText',
+                      'srcdoc', 'allow-scripts', 'allow-same-origin', '<script'):
             self.assertNotIn(risky, (panels / 'deck-panels.js').read_text())
+        # The one frame there is: the deck's draft, sandboxed with nothing allowed, opened at
+        # the one framed address with a ticket the page asked for with its key.
+        frames = (panels / 'deck-panels.js').read_text()
+        self.assertEqual(frames.count("make('iframe'"), 1)
+        self.assertIn("frame.setAttribute('sandbox', '');", frames)
+        script = self.read('app.js')
+        self.assertNotIn('iframe', script)
+        self.assertIn("ask('deck-draft-ticket'", script)
         styles = self.read('style.css')
         self.assertNotIn('url(', styles)
         self.assertNotIn('@import', styles)
@@ -5287,6 +5296,23 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         pictures = self.asked(result, 'slide')
         self.assertTrue(any('section=look' in address and 'number=0' in address
                             for address in pictures), pictures)
+
+    def test_the_draft_gate_shows_the_wireframe_draft_framed(self):
+        self.started()
+        asking = 'Waiting for your decision on what the deck says.'
+        waiting = a_run('waiting', asking, steps=deck_steps('done', 'done', 'waiting'),
+                        outline=an_outline())
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', asking, needs=True)],
+            'GET /api/training': [self.detail('waiting', asking)],
+            'GET /api/run': [waiting] * 3,
+            'GET /api/deck-draft-ticket': [ok({'src': '/api/deck-draft?ticket=one-page'})]})
+        result = self.run_page(answers, [
+            {'click': 'Review what the deck says'}, {'snapshot': 'outline'}])
+        self.assertIn('A wireframe draft of the deck', result['snapshots']['outline']['text'])
+        self.assertEqual(self.asked(result, 'deck-draft-ticket'),
+                         [f'/api/deck-draft-ticket?{urlencode({"path": self.root})}'])
+        self.assertEqual(self.posts(result), [])
 
     def test_what_a_deck_says_is_read_and_decided_like_any_gate(self):
         self.started()

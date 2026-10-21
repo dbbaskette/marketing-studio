@@ -5386,6 +5386,14 @@ function outlinePart(run) {
 // every studio's page shows. The person picks the one every slide is drawn in, and may say
 // why: their words are kept with it. Looks that could not be rendered are never picked
 // blind: the person tries again, or carries on in the brand's default look.
+// The deck's wireframe draft, drawn by the slides tool from what the deck says and framed
+// from this page's own server: opened with a ticket, sandboxed, able to reach nothing.
+function draftPanel(level) {
+  return window.DeckPanels.storyboard({ title: 'Wireframe draft of the deck',
+    load: () => ask('deck-draft-ticket', level ? { path: view.path, level } : { path: view.path })
+      .then((made) => made.src) });
+}
+
 function lookPicker(look, picked, changed) {
   return window.DeckPanels.lookPicker({ name: look.artifact, looks: list(look.looks),
     defaultId: look.default, sheet: look.sheet, notes: list(look.notes), failed: look.failed,
@@ -5782,7 +5790,11 @@ function combinedReview(run) {
     if (item.text) add(part, window.TrainingStudioMarkdown.render(item.text));
     if (item.sample) add(part, pictureAt({path: view.path, ...item.sample},
       'Sample slide for ' + item.label, review.expected));
-    // The draft and the look are approved together: the person picks a look here.
+    // The draft and the look are approved together: the draft as the slides tool draws it,
+    // and the look the person picks.
+    if (/^outline:/.test(item.target) && !theirs) {
+      add(part, draftPanel(item.target.slice('outline:'.length) || null));
+    }
     if (item.looks && !theirs) {
       const key = 'look:' + item.looks.artifact;
       const held = view.notes[key] || (view.notes[key] = { choice: '', words: '' });
@@ -6137,6 +6149,8 @@ function paintOutline(fresh) {
   const doc = add(make('article', 'paper doc'), make('h2', 'doc-title',
     count(slides.length, 'slide', 'slides') + ', in order'), items);
   doc.setAttribute('aria-label', label);
+  // Where it is decided here, the draft is shown as the slides tool draws it.
+  if (outline.waiting && run.mine !== false) doc.prepend(draftPanel(outline.level));
   const aside = add(make('aside', 'aside'), outlineChecked(outline), outlineWorth(outline));
   aside.setAttribute('aria-label', 'The review');
   // What someone else runs is read here, and decided where it runs.

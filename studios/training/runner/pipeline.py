@@ -115,6 +115,7 @@ HISTORY = 'deck/history'            # what a deck was, kept when it is drawn aga
 WORK = 'work/deck'                  # what it is built with: never shared
 TOOL_OUTLINE = 'tool-outline.json'  # in a start: the outline as the slides tool started from it
 SHEET = 'sheet.png'                 # beside a deck's look samples: every look on one sheet
+DRAFTS = 'drafts'                   # in a deck's work folder: its wireframe draft pages
 OLDER_BRAND = ('This brand skill is too old to offer looks to choose from, so the deck is '
                "drawn in the brand's default direction, or in the slides tool's own where the "
                'brand gives none.')

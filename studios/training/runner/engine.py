@@ -2804,6 +2804,48 @@ class Engine(Reviewing):
             raise FileNotFoundError(NO_PICTURE)
         return worker_tools.picture(file)
 
+    def deck_draft(self, path, level: str | None) -> Path:
+        """The wireframe draft page of what one deck says now, as the slides tool draws it
+        from the outline and the deck's brand: drawn once for each version of the outline,
+        into the deck's own work folder, which is never shared. Returns the page."""
+        root = self.driven(path)
+        if root is None:
+            raise WorkspaceError('No run is driving this training.')
+        found = self._survey(root, self._load(root))
+        mine = (found.decks or {}).get(level)
+        outline = pipeline.place(root, level, pipeline.OUTLINE)
+        if mine is None or mine.outline is None or not outline.is_file():
+            raise WorkspaceError('What this deck says is not written yet.')
+        contract = pipeline.contract(root, mine)
+        if not contract.is_file():
+            raise WorkspaceError("The deck's brand is not exported here yet.")
+        folder = pipeline.place(root, level, pipeline.WORK) / pipeline.DRAFTS
+        page = folder / f'{workspace.sha256_file(outline)[:16]}.html'
+        if page.is_file():
+            return page
+        tool = self.slides()
+        with self.files:
+            folder.mkdir(parents=True, exist_ok=True)
+            source = folder / f'outline-{secrets.token_hex(3)}.json'
+            try:
+                home.write_json(source, deck.for_tool(mine.outline, tool.knows()))
+                tool.outline_draft(source, contract, page)
+            finally:
+                source.unlink(missing_ok=True)
+            for old in folder.glob('*.html'):
+                if old != page:
+                    old.unlink(missing_ok=True)
+        return page
+
+    def draft_page(self, root, page) -> bytes:
+        """A draft page the runner drew, read only when it is one: an HTML file in a deck's
+        drafts folder of this training."""
+        root, page = Path(root).resolve(), Path(page).resolve()
+        if page.suffix != '.html' or page.parent.name != pipeline.DRAFTS \
+                or root not in page.parents or not page.is_file():
+            raise FileNotFoundError(NO_PICTURE)
+        return page.read_bytes()
+
     def deck_gate(self, path, artifact: str) -> dict:
         """What gate 6 adds for a deck: its slides whose pictures are here, what the
         review still finds, the brand's audit and the coverage."""

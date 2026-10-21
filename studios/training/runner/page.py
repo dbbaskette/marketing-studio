@@ -108,6 +108,11 @@ What a caller needs to know
   the training's own folder or the folder of the worker drawing that section, is sent.
 - `POST /api/outline` records what the person decided about what a deck says, which is the
   runner's own gate, and answers the run.
+- `GET /api/deck-draft-ticket` with `path` and `level` draws a deck's wireframe draft into
+  its own work folder, once for each version of what it says, and answers {"src"}: the
+  address a sandboxed frame opens it at, `/api/deck-draft?ticket=…`, good for that one page
+  for two minutes. That address answers the page under its own policy (CSP sandbox,
+  default-src 'none'), so the draft can run nothing and reach nothing of the page.
 - `POST /api/look` with {"path", "level", "choice", "words"?} records the look the person
   chose for a deck from the brand's rendered samples, in their words, and answers the run.
   A run carries `look` while there are looks to show; `GET /api/slide` with the deck's
@@ -154,6 +159,7 @@ import binascii
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
+from urllib.parse import urlencode
 from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
@@ -166,7 +172,7 @@ from runner import engine as engines
 from runner import gitstate, pipeline, setup
 
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
-         '/api/slide', '/api/status', '/api/published', '/api/delete')
+         '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket')
 WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
@@ -195,6 +201,7 @@ class RunnerPage(desk.Page):
     """What the page may ask the runner, on top of what it may ask the desk."""
     reads = (*desk.READS, *READS)
     writes = (*desk.WRITES, *WRITES)
+    framed = ('/api/deck-draft',)   # a deck's wireframe draft, opened by its frame
 
     def __init__(self, port: int, engine: engines.Engine):
         super().__init__(port)
@@ -225,6 +232,14 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.gate(one('path'), one('artifact')))
         if path == '/api/slide':
             return HTTPStatus.OK, PNG, self.slide(one)
+        if path == '/api/deck-draft-ticket':
+            def given(name):
+                try:
+                    return one(name)
+                except desk.Refusal:
+                    return None
+            return desk.as_json(HTTPStatus.OK, self.deck_draft(
+                {'path': one('path'), 'level': given('level')}))
         if path == '/api/file' and one('artifact') == pipeline.INDEX:
             return desk.as_json(HTTPStatus.OK, self.index(one('path')))
         return super().read(path, one)
@@ -576,6 +591,29 @@ class RunnerPage(desk.Page):
             return self.engine.look(path, level or None, choice, words)
         except WorkspaceError as refusal:
             raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+
+    def deck_draft(self, sent: dict) -> dict:
+        """Draw a deck's wireframe draft, and give the page the address its frame opens it
+        at: with a ticket for that one page, since a frame cannot send the key. It is read
+        with the key, as a picture is: drawing it changes nothing of the training."""
+        path, level = sent['path'], sent.get('level')
+        desk.registered(path)
+        root = self.engine.driven(path)
+        if root is None:
+            raise desk.Refusal(HTTPStatus.NOT_FOUND, 'No run is driving this training.')
+        page = shaped(self.engine.deck_draft, path, level or None)
+        ticket = self.ticket('/api/deck-draft', (str(root), str(page)))
+        return {'src': '/api/deck-draft?' + urlencode({'ticket': ticket})}
+
+    def read_framed(self, path: str, scope) -> tuple:
+        """A deck's wireframe draft, for its frame: only a page the runner drew in that
+        deck's own work folder, sandboxed by its own policy."""
+        root, page = scope
+        try:
+            return desk.framed_html(self.engine.draft_page(root, page))
+        except OSError:
+            raise desk.Refusal(HTTPStatus.NOT_FOUND, 'That draft is not here any more. Show '
+                                                     'it again from the page.')
 
     def redesign(self, sent: dict) -> dict:
         """Draw a deck that was drawn without a design again from one, as the person asked,

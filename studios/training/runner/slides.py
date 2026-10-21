@@ -415,6 +415,14 @@ class Slides:
 
     # --- the composition ---
 
+    def outline_draft(self, outline: Path, brand: Path, output: Path) -> Path:
+        """Write the tool's page of an outline's wording and structure: a wireframe draft,
+        which is no design."""
+        with _new(output):
+            self._json('outline', 'draft', '--file', str(outline), '--brand', str(brand),
+                       '--output', str(output))
+        return Path(output)
+
     def compose_contract(self, brand: Path) -> str:
         """How a slide is drawn and the sizes this brand gives, as text."""
         return self._call('compose', 'contract', '--brand', str(brand)).strip()

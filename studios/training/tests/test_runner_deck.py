@@ -1616,6 +1616,49 @@ class BrandEntryTests(DeckCase):
         self.assertEqual(self.brand.guided, [])
 
 
+class DraftPageTests(DeckCase):
+    """The deck's wireframe draft, as the slides tool draws it, framed by the page: drawn into
+    the deck's own work folder, opened with a ticket, and sandboxed by its own policy."""
+
+    def test_the_draft_is_drawn_once_for_each_outline_and_framed_safely(self):
+        from email.message import Message
+        root = self.begin()
+        self.to_outline(root)
+        made = self.engine.deck_draft(root, None)
+        self.assertEqual(made.parent, root / pipeline.WORK / pipeline.DRAFTS)
+        self.assertIn('A rolling restart replaces instances', made.read_text())
+        self.assertEqual(self.engine.deck_draft(root, None), made)
+        self.assertEqual(len([call for call in self.slides.calls
+                              if call[0] == 'outline_draft']), 1, 'drawn once, then kept')
+        shown = page.RunnerPage(8765, self.engine)
+        headers = Message()
+        headers['Host'] = '127.0.0.1:8765'
+        headers['X-Training-Studio-Token'] = shown.token
+        status, kind, body = shown.answer(f'/api/deck-draft-ticket?path={root}', headers)
+        src = json.loads(body)['src']
+        self.assertTrue(src.startswith('/api/deck-draft?ticket='))
+        headers = Message()
+        headers['Host'] = '127.0.0.1:8765'     # a frame sends no key: only the ticket
+        status, kind, body, extra = shown.answer(src, headers)
+        self.assertEqual((status, kind), (200, 'text/html; charset=utf-8'))
+        self.assertEqual(body, made.read_bytes())
+        self.assertTrue(extra['Content-Security-Policy'].startswith('sandbox;'))
+        with self.assertRaises(desk.Refusal):
+            shown.answer('/api/deck-draft?ticket=made-up', headers)
+        # Only a page the runner drew, in a deck's drafts folder of this training.
+        outside = self.base / 'drafts' / 'other.html'
+        outside.parent.mkdir()
+        outside.write_text('<p>not ours</p>')
+        for wrong in (outside, root / 'deck-handoff.md', made.with_suffix('.json')):
+            with self.subTest(wrong=wrong), self.assertRaises(FileNotFoundError):
+                self.engine.draft_page(root, wrong)
+
+    def test_no_draft_before_what_the_deck_says_is_written(self):
+        root = self.begin(deck_target=None, brand=None)
+        with self.assertRaisesRegex(WorkspaceError, 'not written yet'):
+            self.engine.deck_draft(root, None)
+
+
 class LookTests(DeckCase):
     """The brand's look step, hosted by the runner: the brand draws a slide of what the deck
     says in each of its looks, the person picks one in their own words, and the deck is

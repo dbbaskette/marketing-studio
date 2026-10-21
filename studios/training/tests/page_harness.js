@@ -421,7 +421,13 @@ function see(words) {
 }
 
 // A picture is the page's own when it is shown from memory. Any other is from somewhere else.
+// The page's own: a picture it fetched with its key, and the one frame it may make, the
+// deck's draft, sandboxed with nothing allowed and opened at its framed address by ticket.
 function own(node) {
+  if (node.tagName === 'IFRAME') {
+    return node.getAttribute('sandbox') === '' && !node.srcdoc
+      && /^\/api\/deck-draft\?ticket=[\w-]+$/.test(String(node.src || ''));
+  }
   return node.tagName === 'IMG' && kept.has(node.src);
 }
 

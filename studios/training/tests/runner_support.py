@@ -561,6 +561,13 @@ class Slides:
                 'delivery': 'reading', 'wordBudget': self.budget, 'words': words,
                 'findings': found}
 
+    def outline_draft(self, outline, brand, output) -> Path:
+        self._asked('outline_draft', outline, brand, output)
+        slides = self._read(outline)['slides']
+        Path(output).write_text('<!doctype html><title>Draft</title><style>p{margin:0}</style>'
+                                + ''.join(f"<p>{slide.get('title')}</p>" for slide in slides))
+        return Path(output)
+
     def outline_start(self, outline, brand, folder) -> dict:
         from runner import slides
         self._asked('outline_start', outline, brand, folder)
