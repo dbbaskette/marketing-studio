@@ -29,14 +29,23 @@ def fingerprint(value):
     return studio.digest(json.dumps(value, sort_keys=True).encode())
 
 
-def samples(root, selected):
+def samples(root, selected, purpose='voice-sample'):
     if (
         not isinstance(selected, list)
         or not 1 <= len(selected) <= 10
         or len(set(selected)) != len(selected)
     ):
-        raise ValueError('Choose one to ten different authored voice samples.')
-    studio.validate_samples(root, selected)
+        raise ValueError(
+            'Choose one to ten different authored voice samples.'
+            if purpose == 'voice-sample'
+            else 'Choose one to ten different examples of this kind of writing.'
+        )
+    if purpose == 'voice-sample':
+        studio.validate_samples(root, selected)
+    else:
+        import styles
+
+        styles.validate_samples(root, selected)
     from manuscript_preview import text_only
 
     found = []
@@ -44,9 +53,26 @@ def samples(root, selected):
         folder, record = studio.item(root, 'sources', ident)
         body = text_only((folder / 'content.md').read_text())
         if len(body) > 80_000:
-            raise ValueError('Use shorter authored voice samples for learning.')
+            raise ValueError(
+                'Use shorter authored voice samples for learning.'
+                if purpose == 'voice-sample'
+                else 'Use shorter examples for learning.'
+            )
         found.append({'id': ident, 'revision': record['revision'], 'record': record, 'text': body})
     return found
+
+
+def background(root, ident):
+    """Author background from a readable source classified as author-background."""
+    folder, record = studio.item(root, 'sources', ident)
+    if 'author-background' not in record['purposes'] or record['status'] != 'ready':
+        raise ValueError(
+            'Author background must be a readable source classified as author-background.'
+        )
+    body = (folder / 'content.md').read_text()
+    if len(body) > 20_000:
+        raise ValueError('Use a shorter author background.')
+    return body
 
 
 def profile(root, ident):
@@ -84,6 +110,17 @@ def article_basis(root, ident):
 def voice_basis(root, data):
     selected = samples(root, data['samples'])
     current = profile(root, data['profile'])['expected'] if data.get('profile') else None
+    parts = [selected, current]
+    if data.get('background'):
+        parts.append(background(root, data['background']))  # unchanged basis without one
+    return fingerprint(parts), selected
+
+
+def style_basis(root, data):
+    import styles
+
+    selected = samples(root, data['samples'], 'style-sample')
+    current = styles.detail(root, data['style'])['expected'] if data.get('style') else None
     return fingerprint([selected, current]), selected
 
 
@@ -136,11 +173,39 @@ def request(root, data):
             raise ValueError('Confirm these are permitted authored voice samples before analysis.')
         name = text(data.get('name'), 'an author/profile name', 200)
         metadata = {'name': name, 'samples': data.get('samples'), 'profile': data.get('profile')}
+        if data.get('background'):
+            metadata['background'] = data['background']
         basis, selected = voice_basis(root, metadata)
         payload = {'author': name, 'authored_samples': selected}
         guidance = (
             (REFERENCES / 'blog-voice-profile.md').read_text()
             + '\nInfer a provisional voice guide from these authored samples only. Describe observable style and uncertainty. Separate voice from factual expertise, supplied branding and generic house style. Do not invent biography or anecdotes. Return the editable guide as Markdown, with a short synthetic audition paragraph clearly labeled invented sample text, not author experience. Do not confirm or apply the profile.'
+        )
+        if metadata.get('background'):
+            # Without a background the job is exactly what it was before backgrounds existed.
+            payload['author_background'] = background(root, metadata['background'])
+            guidance += (
+                '\nauthor_background is biography and expertise supplied by the author for '
+                'identity; it is not prose to imitate, and career facts are never inferred from '
+                'the samples.'
+            )
+    elif kind == 'style-learn':
+        if data.get('confirmed') is not True:
+            raise ValueError('Confirm you may analyze these examples before starting.')
+        name = text(data.get('name'), 'a style name', 200)
+        metadata = {'name': name, 'samples': data.get('samples'), 'style': data.get('style')}
+        basis, selected = style_basis(root, metadata)
+        payload = {'style_name': name, 'examples': selected}
+        guidance = (
+            'Describe the kind of writing these examples share, as an editable Markdown style '
+            'guide named ' + name + '. Cover the structure and order of parts, opening and closing '
+            'moves, typical length, heading habits, what every example includes, what varies, the '
+            'register a reader of this kind expects, and what does not belong. Ignore who wrote '
+            'them: no voice, biography, first person or author preferences. Where the examples '
+            'disagree, say so. With a single example, say the guide is thin and provisional. End '
+            'with two short lists, "A reader expects" and "Does not belong". Add one short '
+            'synthetic audition paragraph clearly labeled invented sample text. Do not confirm '
+            'or apply the style.'
         )
     elif kind == 'voice-audition':
         selected = profile(root, data.get('profile'))
@@ -247,6 +312,8 @@ def apply(root, data):
             raise ValueError('Pause the writing job before saving this tool result.')
     if kind == 'voice-learn':
         basis, _ = voice_basis(root, metadata)
+    elif kind == 'style-learn':
+        basis, _ = style_basis(root, metadata)
     elif kind == 'voice-audition':
         basis = profile(root, metadata['profile'])['expected']
     elif kind.startswith('interview-'):
@@ -274,6 +341,10 @@ def apply(root, data):
         with tempfile.TemporaryDirectory(prefix='blog-voice-guide-') as scratch:
             guide = Path(scratch) / 'VOICE.md'
             guide.write_text(content)
+            about = None
+            if metadata.get('background'):
+                about = Path(scratch) / 'BACKGROUND.md'
+                about.write_text(background(root, metadata['background']))
             result = studio.profile_command(
                 root,
                 SimpleNamespace(
@@ -281,7 +352,7 @@ def apply(root, data):
                     id=metadata.get('profile'),
                     name=metadata['name'],
                     guide_file=str(guide),
-                    background_file=None,
+                    background_file=str(about) if about else None,
                     rules_file=None,
                     status=status,
                     sample=metadata['samples'],
@@ -289,6 +360,36 @@ def apply(root, data):
             )
         receipt = {
             'profile': result['id'],
+            'revision': result['revision'],
+            'status': result['status'],
+        }
+    elif kind == 'style-learn':
+        import styles
+
+        content = text(content, 'the style guide', 40_000)
+        status = data.get('status', 'provisional')
+        if (
+            status not in ('provisional', 'confirmed')
+            or status == 'confirmed'
+            and data.get('confirmed') is not True
+        ):
+            raise ValueError('Explicitly confirm the reviewed style, or save it as provisional.')
+        with tempfile.TemporaryDirectory(prefix='blog-style-guide-') as scratch:
+            guide = Path(scratch) / 'STYLE.md'
+            guide.write_text(content)
+            result = styles.command(
+                root,
+                SimpleNamespace(
+                    action='save' if metadata.get('style') else 'create',
+                    id=metadata.get('style'),
+                    name=metadata['name'],
+                    guide_file=str(guide),
+                    status=status,
+                    sample=metadata['samples'],
+                ),
+            )
+        receipt = {
+            'style': result['id'],
             'revision': result['revision'],
             'status': result['status'],
         }
@@ -456,6 +557,8 @@ def job_view(root, ident):
     try:
         if kind == 'voice-learn':
             basis, _ = voice_basis(root, metadata)
+        elif kind == 'style-learn':
+            basis, _ = style_basis(root, metadata)
         elif kind == 'voice-audition':
             basis = profile(root, metadata['profile'])['expected']
         elif kind.startswith('interview-'):

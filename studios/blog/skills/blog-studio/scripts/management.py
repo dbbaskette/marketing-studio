@@ -1799,10 +1799,25 @@ def view(root, name, query):
             }
         )
         return result
-    if name in ('voices', 'voice', 'interview', 'tool-job', 'variants', 'variant'):
+    if name in (
+        'voices',
+        'voice',
+        'styles',
+        'style',
+        'interview',
+        'tool-job',
+        'variants',
+        'variant',
+    ):
         import article_tools
 
         with studio.locked(root):
+            if name in ('styles', 'style'):
+                import styles
+
+                return (
+                    styles.catalog(root) if name == 'styles' else styles.detail(root, arg('style'))
+                )
             if name == 'variant':
                 return article_tools.variant(root, arg('id'), arg('name'))
             if name == 'variants':

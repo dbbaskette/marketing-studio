@@ -296,6 +296,170 @@ class ContextJobTests(Fixture):
             studio.voice_pin(self.root, profile['id'])
         self.assertEqual(studio.voice_pin(self.root, profile['id'], 1), pin)
 
+    def classified(self, text, purpose):
+        source = self.source(text)
+        folder, record = studio.item(self.root, 'sources', source['id'])
+        record['purposes'] = [purpose]
+        studio.persist(folder, 'sources', record)
+        return source['id']
+
+    def test_style_learning_saves_a_provisional_style_apart_from_any_voice(self):
+        import styles
+
+        example = self.classified('What is new, for whom, and where to get it.', 'style-sample')
+        with self.assertRaisesRegex(ValueError, 'Confirm'):
+            self.create('style-learn', name='Launch note', samples=[example])
+        with self.assertRaisesRegex(ValueError, 'style-sample'):
+            self.create(
+                'style-learn', name='Launch note', samples=[self.source()['id']], confirmed=True
+            )
+        job = self.create('style-learn', name='Launch note', samples=[example], confirmed=True)
+        saved = self.jobs.read(self.root, job['id'])
+        self.assertEqual(saved['payload']['style_name'], 'Launch note')
+        self.assertIn('Ignore who wrote them', saved['guidance'])
+        self.assertNotIn('article', saved['metadata'])
+        self.assertEqual(
+            [row['id'] for row in self.jobs.listing(self.root)], [job['id']]
+        )  # listed without an article
+        self.assertFalse(self.tools.job_view(self.root, job['id'])['source_changed'])
+        self.jobs.once(self.engine)
+        receipt = self.tools.apply(self.root, {'job': job['id']})
+        found = styles.detail(self.root, receipt['style'])
+        self.assertEqual(
+            (found['status'], found['kind'], found['sample_ids'], found['guide']),
+            ('provisional', 'learned', [example], 'Prepared synthetic text.'),
+        )
+        self.assertEqual([row['id'] for row in self.tools.voices(self.root)['profiles']], [])
+        with self.assertRaisesRegex(ValueError, 'Confirm'):
+            styles.save(
+                self.root,
+                {
+                    'style': found['id'],
+                    'expected': found['expected'],
+                    'guide': 'Reviewed',
+                    'status': 'confirmed',
+                },
+            )
+        receipt = styles.save(
+            self.root,
+            {
+                'style': found['id'],
+                'expected': found['expected'],
+                'guide': 'Reviewed',
+                'status': 'confirmed',
+                'confirmed': True,
+            },
+        )
+        self.assertEqual((receipt['revision'], receipt['status']), (2, 'confirmed'))
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            styles.save(
+                self.root,
+                {
+                    'style': found['id'],
+                    'expected': found['expected'],
+                    'guide': 'Stale',
+                    'status': 'provisional',
+                },
+            )
+        current = styles.detail(self.root, found['id'])
+        self.assertEqual(
+            advanced_tools.dispatch(
+                self.root,
+                {
+                    'action': 'style-retire',
+                    'style': found['id'],
+                    'expected': current['expected'],
+                    'confirmed': True,
+                },
+            )['status'],
+            'retired',
+        )
+        with self.assertRaisesRegex(ValueError, 'retired'):
+            studio.style_pin(self.root, found['id'])
+
+    def test_style_learning_revises_an_existing_style_and_goes_stale_when_it_changes(self):
+        import styles
+
+        example = self.classified('A short release note.', 'style-sample')
+        first = self.create('style-learn', name='Release note', samples=[example], confirmed=True)
+        self.jobs.once(self.engine)
+        style = self.tools.apply(self.root, {'job': first['id']})['style']
+        again = self.create(
+            'style-learn',
+            operation='e' * 32,
+            name='Release note',
+            samples=[example],
+            style=style,
+            confirmed=True,
+        )
+        shown = styles.detail(self.root, style)
+        styles.save(
+            self.root,
+            {'style': style, 'expected': shown['expected'], 'guide': 'Edited meanwhile'},
+        )
+        self.assertTrue(self.tools.job_view(self.root, again['id'])['source_changed'])
+        self.jobs.once(self.engine)
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            self.tools.apply(self.root, {'job': again['id']})
+
+    def test_advanced_actions_and_views_cover_styles_without_sharing_them(self):
+        import management
+
+        saved = management.dispatch(
+            self.root,
+            'tool-action',
+            {'action': 'style-save', 'name': 'Field note', 'guide': 'Short.'},
+        )
+        self.assertEqual(set(saved) - {'team_sync'}, {'style', 'revision', 'status'})
+        listing = management.view(self.root, 'styles', {})
+        self.assertIn(saved['style'], [row['id'] for row in listing['styles']])
+        self.assertEqual(
+            management.view(self.root, 'style', {'style': [saved['style']]})['guide'], 'Short.'
+        )
+
+    def test_voice_learning_can_take_an_author_background(self):
+        sample = self.classified('Synthetic authored passage with a short rhythm.', 'voice-sample')
+        about = self.classified('Platform engineer who writes about rollouts.', 'author-background')
+        with self.assertRaisesRegex(ValueError, 'author-background'):
+            self.create(
+                'voice-learn',
+                name='Synthetic Author',
+                samples=[sample],
+                background=sample,
+                confirmed=True,
+            )
+        job = self.create(
+            'voice-learn',
+            name='Synthetic Author',
+            samples=[sample],
+            background=about,
+            confirmed=True,
+        )
+        saved = self.jobs.read(self.root, job['id'])
+        self.assertEqual(
+            saved['payload']['author_background'], 'Platform engineer who writes about rollouts.'
+        )
+        self.assertIn('author_background is biography', saved['guidance'])
+        self.jobs.once(self.engine)
+        receipt = self.tools.apply(self.root, {'job': job['id']})
+        folder, _ = studio.item(self.root, 'profiles', receipt['profile'])
+        self.assertEqual(
+            (folder / 'BACKGROUND.md').read_text(), 'Platform engineer who writes about rollouts.'
+        )
+
+    def test_a_queued_voice_job_from_before_backgrounds_still_applies(self):
+        sample = self.classified('Synthetic authored passage with a short rhythm.', 'voice-sample')
+        job = self.create('voice-learn', name='Synthetic Author', samples=[sample], confirmed=True)
+        saved = self.jobs.read(self.root, job['id'])
+        self.assertNotIn('background', saved['metadata'])  # exactly as saved before backgrounds
+        self.assertNotIn('author_background', saved['payload'])
+        saved['status'] = 'ready'
+        saved['result'] = {'content': 'Prepared synthetic text.'}
+        self.jobs.write(self.root, saved)
+        self.assertFalse(self.tools.job_view(self.root, job['id'])['source_changed'])
+        receipt = self.tools.apply(self.root, {'job': job['id']})
+        self.assertEqual(receipt['status'], 'provisional')
+
     def test_interview_persists_resume_revisions_and_outline_without_starting_draft(self):
         data = {
             'title': 'Synthetic interview',

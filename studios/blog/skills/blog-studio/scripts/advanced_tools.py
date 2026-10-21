@@ -59,6 +59,8 @@ def dispatch(root, data):
         'job-apply',
         'profile-save',
         'profile-retire',
+        'style-save',
+        'style-retire',
         'interview-answer',
         'interview-start',
         'voice-apply',
@@ -83,6 +85,14 @@ def dispatch(root, data):
             return article_tools.save_profile(root, data)
         if action == 'profile-retire':
             return article_tools.retire_profile(root, data)
+        if action == 'style-save':
+            import styles
+
+            return styles.save(root, data)
+        if action == 'style-retire':
+            import styles
+
+            return styles.retire(root, data)
         if action == 'interview-start':
             return article_tools.start_interview(root, data)
         if action == 'interview-answer':
