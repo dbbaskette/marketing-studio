@@ -1019,6 +1019,11 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
                 'steps the review level accepted automatically need no approval.'
             )
         _accept(directory, run, stage, 'page' if page else 'conversation')
+        if stage == run['pipeline'][-1]:
+            # Finish: the approved draft lands in the team library, once per blog.
+            kept = keep_finished(root, directory, record, run)
+            if kept is not None:
+                action += ' · ' + kept
     elif action == 'changes':
         if not stage:
             raise ValueError('This run is complete. Start a new revision in chat.')
@@ -1035,6 +1040,29 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
         raise ValueError('Unknown guided-blog decision.')
     save(root, directory, record, run, action + (' ' + stage if stage else ''))
     return survey(root, ident)
+
+
+def keep_finished(root, directory, record, run):
+    """Keep a finished blog's draft in the library; what happened, in a few words, or None
+    when the run ends without a draft (ideas, an outline). The approval never waits on it:
+    a draft the library cannot take is reported, not refused."""
+    draft = directory / 'DRAFT.md'
+    if run.get('mode') in ('ideas', 'outline') or not draft.is_file():
+        return None
+    text = draft.read_text()
+    if not text.strip():
+        return None
+    import blog_library
+
+    kind = (record.get('style') or {}).get('style_id')
+    try:
+        source = blog_library.keep_written(root, record, text, kind)
+    except ValueError as exc:
+        return 'not kept in the library: ' + str(exc)[:200]
+    from management import share, receipt
+
+    receipt(root, 'Finished blog', share(root, 'source', source), 'source')
+    return 'kept in the library as ' + source['id'] + ' revision ' + str(source['revision'])
 
 
 def tone_nudge(voice):

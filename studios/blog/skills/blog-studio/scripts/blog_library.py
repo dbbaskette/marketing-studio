@@ -80,6 +80,84 @@ def role_of(record):
     return 'example' if 'inspiration' in (record.get('purposes') or []) else 'facts'
 
 
+def written_here(root, article):
+    """(directory, record) of the library item a blog finished here was kept as, or (None, None)."""
+    for file in sorted(studio.inside(root, 'sources').glob('*/record.json')):
+        try:
+            record = studio.read_json(file)
+        except (ValueError, OSError):
+            continue
+        metadata = record.get('library') or {}
+        if metadata.get('article') == article and metadata.get('origin_kind') == 'written-here':
+            return file.parent, record
+    return None, None
+
+
+def keep_written(root, record, text, kind=None):
+    """Keep a finished blog's draft in the library as a reference and an example of its kind
+    of post, by its author. Idempotent: the blog's one item gets a new revision when the
+    draft, title, author or kind changed, and is left alone otherwise. Nothing is sent to
+    the analysis CLI; the person can analyze the item from the library."""
+    from types import SimpleNamespace
+
+    import source_curator
+
+    ident = record['id']
+    fields = library_fields(root, kind=kind, origin_kind='written-here', article=ident)
+    author = (record.get('author') or '').strip() or None
+    directory, saved = written_here(root, ident)
+    with source_curator.skipping(True):
+        if saved is None:
+            return studio.source_command(
+                root,
+                SimpleNamespace(
+                    action='add',
+                    name=record['title'],
+                    file=None,
+                    text_file=None,
+                    content=text,
+                    origin=ident,
+                    purpose=['reference', 'inspiration'],
+                    author=author,
+                    note='Finished here as a guided blog.',
+                    status='ready',
+                    library=fields,
+                ),
+            )
+        purposes = list(saved.get('purposes') or [])
+        purposes += [p for p in ('reference', 'inspiration') if p not in purposes]
+        metadata = {**(saved.get('library') or {}), **fields}
+        if not kind:
+            metadata.pop('kind', None)
+        unchanged = (
+            saved.get('content_sha256') == studio.digest(text.encode())
+            and saved.get('name') == record['title']
+            and saved.get('author') == author
+            and saved.get('purposes') == purposes
+            and saved.get('library') == metadata
+        )
+        if unchanged:
+            return saved
+        save_revision(directory, saved)
+        studio.atomic(directory / 'content.md', text.encode())
+        saved.update(
+            name=record['title'],
+            author=author,
+            purposes=purposes,
+            library=metadata,
+            content_sha256=studio.digest(text.encode()),
+            retrieved_at=studio.now(),
+            status='ready',
+            revision=saved['revision'] + 1,
+        )
+        if saved.get('analysis') and saved['analysis'].get('sha256') != saved['content_sha256']:
+            saved['analysis']['status'] = 'needs-analysis'
+        studio.persist(directory, 'sources', saved)
+        source_curator.enrich(root, saved, text)
+        studio.persist(directory, 'sources', saved)
+        return saved
+
+
 def canonical(url):
     parsed = urlsplit(url)
     if (
