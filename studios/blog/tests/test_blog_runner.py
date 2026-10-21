@@ -1789,6 +1789,16 @@ class StyleTests(RunnerCase):
         self.assertNotIn('SELECTED STYLE', guidance)
         self.assertNotIn('How-to', guidance.split('\n', 1)[0])
 
+    def test_a_saved_blog_keeps_its_style_when_none_is_sent(self):
+        ident = self.article()
+        directory, record = studio.item(self.root, 'articles', ident)
+        record['style'] = {'style_id': 'how-to', 'revision': 1}
+        studio.persist(directory, 'articles', record)
+        found = self.create(page=True, id=ident, style='', mode='review', stop='review')
+        _, record = studio.item(self.root, 'articles', found['id'])
+        self.assertEqual(record['style'], {'style_id': 'how-to', 'revision': 1})
+        self.assertEqual(found['style_name'], 'How-to and tutorial')
+
     def test_a_refused_run_leaves_no_copied_starter(self):
         with self.assertRaises(ValueError):
             self.create(page=True, style='how-to', sources=['no-such-source'])
@@ -2048,11 +2058,19 @@ class VoiceChoiceTests(RunnerCase):
         mine = self.voice()
         pinned = self.create(page=True, profile=mine['id'])
         self.assertEqual(
-            (pinned['voice_mode'], pinned['voice_profile'], pinned['voice_name']),
-            ('profile', mine['id'], 'Avery'),
+            (
+                pinned['voice_mode'],
+                pinned['voice_profile'],
+                pinned['voice_revision'],
+                pinned['voice_name'],
+            ),
+            ('profile', mine['id'], mine['revision'], 'Avery'),
         )
         toned = self.create(page=True, profile='', tone='Warm')
-        self.assertEqual((toned['voice_mode'], toned['voice_profile']), ('tone', None))
+        self.assertEqual(
+            (toned['voice_mode'], toned['voice_profile'], toned['voice_revision']),
+            ('tone', None, None),
+        )
         draft = self.source('# A synthetic draft\n\nThe gateway routes requests.')
         kept = self.create(page=True, mode='review', manuscript=draft['id'])
         self.assertEqual((kept['voice_mode'], kept['voice_profile']), ('preserve', None))

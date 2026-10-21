@@ -1377,7 +1377,7 @@ async function wizardVoiceAndKind(){
     if(url.startsWith('/api/styles'))return {styles,samples:[],candidates:[],pending:[]};
     if(url==='/api/tool-action'&&data.action==='job-apply')return {profile:'learned',revision:1,status:'provisional',receipts:[]};
     if(url==='/api/tool-action'&&data.action==='profile-save')return {profile:data.profile||'written',revision:2,status:'provisional',receipts:[]};
-    if(url.startsWith('/api/article?'))return {title:'Uploaded draft',record:{writing_preferences:{audience:'Editors'}},view:{}};
+    if(url.startsWith('/api/article?'))return {title:'Uploaded draft',record:{writing_preferences:{audience:'Editors'},...(url.includes('styled')?{style:{style_id:'product-announcement',revision:1}}:{})},view:{}};
     return {items:[],total:0};});
   f.loadRunner();
   const nodes=()=>descendants(f.get('studio-page')),byId=id=>nodes().find(e=>e.id===id),texts=select=>select.children.map(o=>o.textContent);
@@ -1430,6 +1430,13 @@ async function wizardVoiceAndKind(){
   sent=await start();assert.equal(sent.id,'existing');assert.equal(Object.hasOwn(sent,'profile'),false);
   await f.run("newBlog('existing')");fill();choose('new-profile','Guest Writer · provisional');
   sent=await start();assert.equal(sent.profile,'guest');
+  // A saved blog with a kind of post keeps it unless another is picked; an empty one keeps it.
+  await f.run("newBlog('styled')");fill();
+  assert.deepEqual(texts(byId('new-style')),['Keep this blog’s kind of post — Product announcement','Product announcement (starter)','Field notes · provisional'],'a saved blog ignores an empty kind of post');
+  assert.equal(chosen('new-style'),'Keep this blog’s kind of post — Product announcement');
+  sent=await start();assert.equal(sent.id,'styled');assert.equal(sent.style,'','keeping the blog’s kind of post sends none');
+  await f.run("newBlog('existing')");fill();
+  assert.equal(texts(byId('new-style'))[0],'No particular kind of post','a saved blog without one offers none');
   // Learn a new voice opens Voices and styles, and an applied voice comes back chosen.
   await f.run("newBlog('',null,'write')");fill();choose('new-profile','Learn a new voice…');
   await new Promise(resolve=>setImmediate(resolve));
@@ -1556,14 +1563,14 @@ async function voiceCandidates(){
 // The run says which voice and kind of post it writes with; Change asks once before a voice
 // change on a blog with an outline or a draft, and stays on the run.
 async function runVoiceChange(){
-  const requests=[];let content='';
-  const found={id:'synthetic',title:'Synthetic blog',status:'waiting-for-approval',next:'draft',approval:'page',expected:'run-1',enabled:false,directory:'/synthetic',seconds:600,engine:'codex',mode:'write',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},voice_name:'Synthetic Author',voice_mode:'profile',voice_profile:'voice',style_name:'Product announcement',notes:{},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'}]};
+  const requests=[];let content='',refuse='';
+  const found={id:'synthetic',title:'Synthetic blog',status:'waiting-for-approval',next:'draft',approval:'page',expected:'run-1',enabled:false,directory:'/synthetic',seconds:600,engine:'codex',mode:'write',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},voice_name:'Synthetic Author',voice_mode:'profile',voice_profile:'voice',voice_revision:1,style_name:'Product announcement',notes:{},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'}]};
   const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
     if(url.startsWith('/api/run?'))return found;
     if(url.startsWith('/api/manuscript?'))return {id:'synthetic',title:'Synthetic blog',content,expected:'m1',proposals:[],findings:[],checks:{},working:false};
     if(url.startsWith('/api/voices'))return {profiles:[{id:'voice',name:'Synthetic Author',revision:1,status:'confirmed'},{id:'guest',name:'Guest Writer',revision:2,status:'provisional'},{id:'gone',name:'Retired Writer',revision:1,status:'retired'}],samples:[],candidates:[],pending:[]};
     if(url.startsWith('/api/voice?'))return {id:'guest',name:'Guest Writer',revision:2,status:'provisional',guide:'A guide.',sample_ids:[],expected:'p1'};
-    if(url==='/api/tool-action')return {id:data.id,voice:{mode:'profile'},status:'voice-selected',receipts:[],run:found};
+    if(url==='/api/tool-action')return refuse?{__http:409,error:refuse}:{id:data.id,voice:{mode:'profile'},status:'voice-selected',receipts:[],run:found};
     return {items:[],total:0};});
   f.loadRunner();
   const page=()=>descendants(f.get('studio-page')),sheet=()=>descendants(f.get('sheet')),find=label=>sheet().find(e=>e.textContent===label);
@@ -1575,6 +1582,7 @@ async function runVoiceChange(){
   assert.deepEqual(select.children.map(o=>o.textContent),['Synthetic Author · confirmed','Guest Writer · provisional'],'retired voices are left out');
   assert.equal(select.value,'voice','the current voice is chosen');
   assert.equal(find('Use this voice').disabled,true,'choosing the current voice changes nothing');
+  assert.ok(sheet().some(e=>/no particular voice, ask in the conversation/.test(e.textContent||'')),'says where no particular voice is chosen');
   select.value='guest';select.listeners.change();assert.equal(find('Use this voice').disabled,false);
   await find('Use this voice').listeners.click();
   assert.equal(requests.some(r=>r.url==='/api/tool-action'),false,'a blog with an outline asks first');
@@ -1582,6 +1590,17 @@ async function runVoiceChange(){
   await find('Change to Guest Writer').listeners.click();
   assert.deepEqual(requests.find(r=>r.url==='/api/tool-action').data,{action:'voice-apply',id:'synthetic',profile:'guest',expected:'m1',confirmed:true});
   assert.equal(f.run('studio.screen'),'run','the run stays open');assert.equal(f.get('sheet').hidden,true);
+  // The same voice at a newer revision than the blog pinned is a change it can take.
+  f.set('older',{...found,voice_revision:0});f.run("studio.screen='run';sRun(older)");
+  await page().find(e=>e.textContent==='Change the voice').listeners.click();
+  assert.equal(sheet().find(e=>e.id==='change-voice').value,'voice');assert.equal(find('Use this voice').disabled,false,'a newer revision of the same voice');
+  // A refusal other than the confirmation shows on the sheet's problem line.
+  f.set('fresh',{...found,id:'fresh',stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'pending'}]});f.run('sRun(fresh)');
+  refuse='This blog changed. Reload before changing its voice.';
+  await page().find(e=>e.textContent==='Change the voice').listeners.click();
+  await find('Use this voice').listeners.click();
+  assert.ok(sheet().some(e=>e.className==='problem'&&e.textContent===refuse),'the refusal reaches the sheet: '+sheet().map(e=>e.textContent).join('|'));
+  assert.equal(f.get('sheet').hidden,false,'the sheet stays open');refuse='';
   // A manuscript's own voice is named as that, not as a described tone; a twin name is not the current voice.
   f.set('kept',{...found,voice_name:null,voice_mode:'preserve',voice_profile:null,style_name:null});f.run("studio.screen='run';sRun(kept)");
   assert.ok(page().some(e=>e.textContent==='Voice: the manuscript’s own voice · Kind of post: none'),page().map(e=>e.textContent).join('|'));

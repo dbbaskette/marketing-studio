@@ -566,6 +566,7 @@ def survey(root, ident, listing=False):
         'voice_name': voice_name(root, record),
         'voice_mode': (record.get('voice') or {}).get('mode'),
         'voice_profile': (record.get('voice') or {}).get('profile_id'),
+        'voice_revision': (record.get('voice') or {}).get('revision'),
         'style_name': style_name(root, record),
         'existing': run['existing'],
         'editor_check': run.get('editor_check'),
