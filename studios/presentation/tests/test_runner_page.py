@@ -43,7 +43,8 @@ POSTS = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decid
          '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
          '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
          '/api/versions', '/api/computer', '/api/brand', '/api/brand/install',
-         '/api/shared', '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen')
+         '/api/shared', '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
+         '/api/note')
 BOTH = ('/api/setup', '/api/decks', '/api/run', '/api/delete', '/api/computer', '/api/storyboard')
 LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None,
            'about': 'Previous generation workhorse model.', 'default_level': 'medium',
@@ -174,6 +175,7 @@ class RuleTests(PageCase):
             '/api/run': {'path': self.path, 'action': 'stop'},
             '/api/decide': {'path': self.path, 'gate': 'gate:outline', 'decision': 'approve'},
             '/api/answer': {'path': self.path, 'id': 'x', 'answer': 'Yes.'},
+            '/api/note': {'path': self.path, 'expected': '0', 'text': 'Keep it short.'},
             '/api/drive': {'path': self.path, 'action': 'take'},
             '/api/publish': {'path': self.path},
             '/api/deliver': {'path': self.path},
@@ -558,6 +560,23 @@ class RunTests(PageCase):
         self.assertEqual(self.post('answer', {'path': path, 'id': asked['id'],
                                               'answer': 'Again.'}, 409)['error'],
                          'That question is not waiting for an answer any more.')
+
+    def test_a_note_for_the_next_step_is_sent_on_the_page(self):
+        path = self.started()
+        shown = self.run_of(path)
+        self.assertEqual(shown['note'], {'pending': None, 'used': [], 'expected': '0'})
+        self.assertEqual(self.post('note', {'path': path, 'text': 'Keep it short.'}, 400)['error'],
+                         'Give expected as text.')
+        self.assertEqual(self.post('note', {'path': path, 'expected': '0', 'text': ' '}, 409)['error'],
+                         'Write the note first.')
+        noted = self.post('note', {'path': path, 'expected': '0', 'text': 'Keep it short.'})
+        self.assertEqual((noted['note']['pending']['text'], noted['note']['expected']),
+                         ('Keep it short.', '1'))
+        self.assertIn('The note changed', self.post('note', {
+            'path': path, 'expected': '0', 'text': 'Lead with the risks.'}, 409)['error'])
+        self.assertEqual(self.post('note', {'path': path, 'expected': '1',
+                                            'text': 'Lead with the risks.'})['note']['pending']['text'],
+                         'Lead with the risks.')
 
     def test_reading_never_starts_or_wakes_a_run(self):
         path = self.started()

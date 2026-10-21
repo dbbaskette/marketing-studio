@@ -257,6 +257,84 @@ class QuestionTests(StudioCase):
         self.assertIn('Answer: A platform engineer.', self.workers.of('outline')[-1].task)
 
 
+class NoteTests(StudioCase):
+    """A note for the next step goes with the next job that starts, once, and stops nothing."""
+
+    def test_a_note_goes_with_the_next_job_only_and_is_kept_in_history(self):
+        root = self.start()
+        self.assertEqual(self.waiting(root), 'gate:outline')
+        before = len(self.workers.jobs)
+        shown = self.view(root)['note']
+        self.assertEqual(shown, {'pending': None, 'used': [], 'expected': '0'})
+        noted = self.engine.note(root, '  Keep the restarts section to one slide.  ', '0')
+        self.assertEqual(noted['note']['pending']['text'], 'Keep the restarts section to one slide.')
+        self.assertEqual(noted['note']['expected'], '1')
+        self.assertEqual(self.log()[-1], 'Rolling restarts: note for the next step: Keep the '
+                         'restarts section to one slide.')
+        # A second note before the first is used replaces it; a stale page is refused.
+        with self.assertRaisesRegex(WorkspaceError, 'The note changed'):
+            self.engine.note(root, 'Lead with the risks.', '0')
+        noted = self.engine.note(root, 'Lead with the risks.', '1')
+        self.assertEqual(noted['note']['pending']['text'], 'Lead with the risks.')
+        self.assertEqual(self.record(root).get('notes_used', []), [])
+        self.assertIn('Rolling restarts: replace the note for the next step: Lead with the risks.',
+                      self.log())
+        self.assertEqual(len(self.workers.jobs), before, 'nothing started for a note')
+        self.decide(root, 'gate:outline')
+        self.decide(root, 'gate:look')
+        self.assertEqual(self.waiting(root), 'gate:build')
+        started = [job for seen, job, spec in self.workers.jobs[before:]]
+        carried = [job for job in started
+                   if '## Note from the author for this step' in job.task]
+        self.assertEqual(len(carried), 1, 'exactly the next job that started took it')
+        self.assertIn('Lead with the risks.', carried[0].task)
+        self.assertNotIn('Keep the restarts section', carried[0].task)
+        self.assertIs(started[0], carried[0], 'it is the first job that started')
+        record = self.record(root)
+        self.assertIsNone(record['pending_note'])
+        self.assertEqual([(note['text'], note['step'].partition(':')[0])
+                          for note in record['notes_used']],
+                         [('Lead with the risks.', 'build-sections')])
+        shown = self.view(root)['note']
+        self.assertEqual((shown['pending'], shown['used'][0]['text'], shown['expected']),
+                         (None, 'Lead with the risks.', '3'))
+        self.assertTrue(any(line.startswith('Rolling restarts: the note for the next step '
+                                            'goes with: Draw section') for line in self.log()))
+
+    def test_a_note_made_while_a_job_runs_waits_for_the_next_one(self):
+        def noting(tools, job):
+            [root] = self.engine.every()
+            self.engine.note(root, 'Say who runs the restarts.')
+            return self.workers.outline(tools, job)
+        self.workers.then('outline', noting)
+        root = self.start()
+        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertNotIn('Note from the author', self.workers.of('outline')[0].task,
+                         'nothing reaches a job already running')
+        self.assertEqual(self.view(root)['note']['pending']['text'], 'Say who runs the restarts.')
+        self.decide(root, 'gate:outline')
+        self.decide(root, 'gate:look')
+        carried = [job for seen, job, spec in self.workers.jobs
+                   if 'Say who runs the restarts.' in job.task]
+        self.assertEqual(len(carried), 1)
+
+    def test_a_note_is_refused_when_empty_too_long_finished_or_stopped(self):
+        root = self.start()
+        with self.assertRaisesRegex(WorkspaceError, 'Write the note first'):
+            self.engine.note(root, '   ')
+        with self.assertRaisesRegex(WorkspaceError, 'at most 2000 characters'):
+            self.engine.note(root, 'x' * 2001)
+        self.engine.act(root, 'stop')
+        with self.assertRaisesRegex(WorkspaceError, 'stopped'):
+            self.engine.note(root, 'Too late.')
+        self.engine.act(root, 'resume')
+        self.to_end(root)
+        self.assertEqual(self.state(root), 'finished')
+        with self.assertRaisesRegex(WorkspaceError, 'finished'):
+            self.engine.note(root, 'Too late.')
+        self.assertEqual(self.record(root).get('pending_note'), None)
+
+
 class SharedDataTests(StudioCase):
     def test_a_data_folder_others_share_stops_the_deck_before_any_worker_with_a_sentence(self):
         from runner import agents

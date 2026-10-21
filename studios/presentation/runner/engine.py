@@ -125,7 +125,7 @@ from runner import build_progress, team, worker_tools
 from runner import brand as brand_skill
 from runner import research as research_cli
 from runner import slides as slides_tool
-from runner.jobs import (FED, KEPT_SO_FAR, Gone as _Gone, Halted as _Halted, Jobs,
+from runner.jobs import (FED, KEPT_SO_FAR, NEXT_NOTE, Gone as _Gone, Halted as _Halted, Jobs,
                          Run as _Run, Slots as _Slots, attempts, first, gate_state,
                          last_error, spent, text_of, tries, sha256_of)
 from runner.research_steps import PLAN, PLAN_MD, REPORT, Researching
@@ -215,6 +215,10 @@ CHANGED_IN_GOOGLE = ('The deck in Google Slides changed since this deck was read
 AGAIN_HERE = ('carry on here: {steps} again, as what was made for them is kept on the '
               'computer that made it')
 NOT_WAITING = 'The {it} is not waiting for a decision now.'
+NOTE_CHANGED = ('The note changed since this page read it: another page sent one, or a job '
+                'took it. Read the latest before sending.')
+NO_NEXT_STEP = {'finished': 'This deck is finished: there is no next step to leave a note for.',
+                'stopped': 'This deck is stopped. Resume it, then leave a note for the next step.'}
 NO_NOTE = 'Say what should change.'
 NO_BRAND_CHOSEN = 'Choose the brand, and its variant, to make the deck in.'
 ON_ITS_WAY = 'This deck is on its way to Google Slides already. Wait for it.'
@@ -1927,6 +1931,40 @@ class Engine(Jobs, Researching):
         self.wake(root)
         return self.view(root)
 
+    def note(self, path, text, expected: str | None = None) -> dict:
+        """A person's note for the next step. It goes with the next job that starts for
+        this deck, and stops nothing; a second note before then replaces the first. `expected`
+        is the note's version the page read: a page that read an older one is refused."""
+        root = self._held(path)
+        if not isinstance(text, str) or not text.strip():
+            raise WorkspaceError('Write the note first.')
+        text = text.strip()
+        if len(text) > NEXT_NOTE:
+            raise WorkspaceError(f'Say it in at most {NEXT_NOTE} characters.')
+        with self.files:
+            record = self._load(root)
+            state = self._state(root, record, self._run(root))[0]
+            if state in NO_NEXT_STEP:
+                raise WorkspaceError(NO_NEXT_STEP[state])
+            version = int(record.get('note_version') or 0)
+            if expected is not None and expected != str(version):
+                raise WorkspaceError(NOTE_CHANGED)
+            replaced = bool(record.get('pending_note'))
+            record['pending_note'] = {'text': text, 'at': home.now()}
+            record['note_version'] = version + 1
+            self._store(root, record)
+            self._commit(root, ('replace the ' if replaced else '') + 'note for the next step: '
+                         + (text if len(text) <= 120 else text[:119].rstrip() + '…'))
+        return self.view(root)
+
+    @staticmethod
+    def _note_view(record: dict) -> dict:
+        """The note waiting for the next step, those that went with a step, and the version
+        a page sends back with the next one."""
+        return {'pending': record.get('pending_note') or None,
+                'used': list(record.get('notes_used') or []),
+                'expected': str(int(record.get('note_version') or 0))}
+
     # --- pictures and the deck itself --------------------------------------------------------
 
     @staticmethod
@@ -2376,6 +2414,7 @@ class Engine(Jobs, Researching):
             'review_level': review_policy.level(record),
             'workers': self._workers(run),
             'build_progress': progress,
+            'note': self._note_view(record),
             'question': ({'id': asked['id'], 'text': asked['text'], 'from': asked['from']}
                          if asked and mine else None),
             'problem': ({key: halted.get(key) for key in ('state', 'why', 'kept', 'action')}

@@ -42,6 +42,12 @@ from runner import agents, briefs, settings, stages, worker_tools
 
 ATTEMPTS = 3            # tries at one step: the first, and two more with the reason added
 QUESTIONS = 3           # questions the workers on one step may put to the person
+NEXT_NOTE = 2000        # characters in a person's note for the next step
+# How a person's note for the next step is put to the one worker whose job takes it.
+FROM_AUTHOR = ('## Note from the author for this step\n\n'
+               'The person this deck is for wrote this while it was being made. It is meant '
+               'for this step: follow it where it bears on your job, together with the '
+               'request above.\n\n{text}')
 LINES = 6               # the last things a worker did that the page is shown
 
 # The gate each step feeds, so that a step run again for a person's request reads their note.
@@ -349,9 +355,27 @@ class Jobs:
                 shutil.rmtree(old, ignore_errors=True)
         return base / f'{stem}{number}-{secrets.token_hex(3)}'
 
+    def _noted(self, root: Path, name: str, doing: str, work):
+        """The person's note for the next step, where one waits, goes with this job and no
+        other: it moves from the record's `pending_note` to its `notes_used` before the
+        worker starts, so two jobs starting together cannot both take it."""
+        with self.files:
+            record = self._load(root)
+            pending = record.get('pending_note')
+            if not pending:
+                return work
+            record['pending_note'] = None
+            record.setdefault('notes_used', []).append({**pending, 'step': name})
+            record['note_version'] = int(record.get('note_version') or 0) + 1
+            self._store(root, record)
+            self._commit(root, f'the note for the next step goes with: {doing}')
+        return replace(work, task=work.task + '\n\n' + FROM_AUTHOR.format(text=pending['text']))
+
     def _job(self, root: Path, run: Run, name: str, doing: str, work, deck: bool = True):
         """Run one worker on one job. Returns how the agent ended, what the worker tools
-        accepted from it, when it started and the job's folder."""
+        accepted from it, when it started and the job's folder. A note the person left for
+        the next step goes with it, once."""
+        work = self._noted(root, name, doing, work)
         record = self._load(root)
         number = len(tries(record, name).get('tries') or []) + 1
         folder = self._folder(root, name, number)
