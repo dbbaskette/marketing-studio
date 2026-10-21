@@ -402,6 +402,71 @@ class ContextJobTests(Fixture):
         with self.assertRaisesRegex(ValueError, 'changed'):
             self.tools.apply(self.root, {'job': again['id']})
 
+    def test_learning_into_a_retired_style_is_refused_and_does_not_bring_it_back(self):
+        import styles
+
+        example = self.classified('A short release note.', 'style-sample')
+        job = self.create('style-learn', name='Release note', samples=[example], confirmed=True)
+        self.jobs.once(self.engine)
+        style = self.tools.apply(self.root, {'job': job['id']})['style']
+        waiting = self.create(
+            'style-learn',
+            operation='f' * 32,
+            name='Release note',
+            samples=[example],
+            style=style,
+            confirmed=True,
+        )
+        self.jobs.once(self.engine)
+        shown = styles.detail(self.root, style)
+        styles.retire(self.root, {'style': style, 'expected': shown['expected'], 'confirmed': True})
+        with self.assertRaisesRegex(ValueError, 'retired'):
+            self.create(
+                'style-learn',
+                operation='1' * 32,
+                name='Release note',
+                samples=[example],
+                style=style,
+                confirmed=True,
+            )
+        with self.assertRaisesRegex(ValueError, 'retired'):
+            self.tools.apply(self.root, {'job': waiting['id']})
+        self.assertEqual(styles.detail(self.root, style)['status'], 'retired')
+
+    def test_learning_into_an_uncopied_starter_makes_revision_two_and_pinning_is_not_stale(self):
+
+        example = self.classified('A short how-to.', 'style-sample')
+        job = self.create(
+            'style-learn',
+            name='How-to',
+            samples=[example],
+            style='how-to',
+            confirmed=True,
+        )
+        self.assertFalse((self.root / 'styles' / 'how-to').exists())
+        studio.style_pin(self.root, 'how-to')  # copies the starter between request and apply
+        self.assertFalse(self.tools.job_view(self.root, job['id'])['source_changed'])
+        self.jobs.once(self.engine)
+        receipt = self.tools.apply(self.root, {'job': job['id']})
+        self.assertEqual((receipt['style'], receipt['revision']), ('how-to', 2))
+        revisions = sorted(
+            p.name for p in (self.root / 'styles' / 'how-to' / 'revisions').iterdir()
+        )
+        self.assertEqual(revisions, ['1', '2'])
+
+    def test_learning_into_an_uncopied_starter_applies_directly_as_revision_two(self):
+        example = self.classified('A short how-to.', 'style-sample')
+        job = self.create(
+            'style-learn', name='How-to', samples=[example], style='how-to', confirmed=True
+        )
+        self.jobs.once(self.engine)
+        receipt = self.tools.apply(self.root, {'job': job['id']})
+        self.assertEqual((receipt['style'], receipt['revision']), ('how-to', 2))
+        revisions = sorted(
+            p.name for p in (self.root / 'styles' / 'how-to' / 'revisions').iterdir()
+        )
+        self.assertEqual(revisions, ['1', '2'])
+
     def test_advanced_actions_and_views_cover_styles_without_sharing_them(self):
         import management
 

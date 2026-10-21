@@ -69,7 +69,7 @@ def background(root, ident):
         raise ValueError(
             'Author background must be a readable source classified as author-background.'
         )
-    body = (folder / 'content.md').read_text()
+    body = (folder / 'content.md').read_text(encoding='utf-8')
     if len(body) > 20_000:
         raise ValueError('Use a shorter author background.')
     return body
@@ -122,6 +122,14 @@ def style_basis(root, data):
     selected = samples(root, data['samples'], 'style-sample')
     current = styles.detail(root, data['style'])['expected'] if data.get('style') else None
     return fingerprint([selected, current]), selected
+
+
+def refuse_retired_style(root, metadata):
+    """Learning into a retired style would quietly bring it back."""
+    import styles
+
+    if metadata.get('style') and styles.detail(root, metadata['style'])['status'] == 'retired':
+        raise ValueError('This style is retired. Restore it in chat, or learn a new style.')
 
 
 def interview(root, ident):
@@ -194,6 +202,7 @@ def request(root, data):
             raise ValueError('Confirm you may analyze these examples before starting.')
         name = text(data.get('name'), 'a style name', 200)
         metadata = {'name': name, 'samples': data.get('samples'), 'style': data.get('style')}
+        refuse_retired_style(root, metadata)
         basis, selected = style_basis(root, metadata)
         payload = {'style_name': name, 'examples': selected}
         guidance = (
@@ -313,6 +322,7 @@ def apply(root, data):
     if kind == 'voice-learn':
         basis, _ = voice_basis(root, metadata)
     elif kind == 'style-learn':
+        refuse_retired_style(root, metadata)
         basis, _ = style_basis(root, metadata)
     elif kind == 'voice-audition':
         basis = profile(root, metadata['profile'])['expected']
@@ -322,7 +332,9 @@ def apply(root, data):
         basis = article_basis(root, metadata['article'])
     if basis != job['basis']:
         raise ValueError(
-            'The source, voice or answers changed. Keep this result for comparison and regenerate from the current version.'
+            'The examples or style changed. Keep this result for comparison and regenerate from the current version.'
+            if kind == 'style-learn'
+            else 'The source, voice or answers changed. Keep this result for comparison and regenerate from the current version.'
         )
     content = text(
         data.get('content', (job.get('result') or {}).get('content')),
@@ -344,7 +356,7 @@ def apply(root, data):
             about = None
             if metadata.get('background'):
                 about = Path(scratch) / 'BACKGROUND.md'
-                about.write_text(background(root, metadata['background']))
+                about.write_text(background(root, metadata['background']), encoding='utf-8')
             result = studio.profile_command(
                 root,
                 SimpleNamespace(
@@ -376,7 +388,7 @@ def apply(root, data):
             raise ValueError('Explicitly confirm the reviewed style, or save it as provisional.')
         with tempfile.TemporaryDirectory(prefix='blog-style-guide-') as scratch:
             guide = Path(scratch) / 'STYLE.md'
-            guide.write_text(content)
+            guide.write_text(content, encoding='utf-8')
             result = styles.command(
                 root,
                 SimpleNamespace(
