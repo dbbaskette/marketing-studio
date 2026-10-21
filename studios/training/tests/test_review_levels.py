@@ -1,6 +1,7 @@
 from unittest import mock
-from test_runner_deck import DeckCase
-from runner_support import StudioCase
+from pathlib import Path
+from test_runner_deck import CHOSEN, DeckCase
+from runner_support import FORM, StudioCase
 from runner import pipeline
 import workspace
 from workspace import WorkspaceError
@@ -11,9 +12,113 @@ class ReviewLevelsTests(DeckCase):
     def choose(self, mode, **changes):
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': mode}):
             root = self.begin(**changes)
+        if mode == 'balanced':  # the research plan is read first, before anything is spent
+            self.assertEqual(workspace.status(root)['gate'], 'research-plan', self.view(root))
+            self.decide(root, 'research-plan')
         shown = self.view(root)
         self.assertIsNone(shown['problem'], shown)
         return root, shown
+
+    def test_balanced_reads_the_research_plan_before_anything_is_researched(self):
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
+            made = self.engine.start(pipeline.check_form({**FORM, 'deck_target': 'pptx',
+                                                          'brand': CHOSEN}))
+        root = Path(made['path'])
+        self.assertEqual(made['gates'], 3)
+        shown = self.view(root)
+        self.assertEqual((shown['state'], shown['review']), ('waiting', None))
+        self.assertEqual(workspace.status(root)['gate'], 'research-plan')
+        self.assertEqual(set(self.kinds()), {'research-plan'}, 'nothing is researched before the plan is read')
+        plan = self.steps(root)['gate:research-plan']
+        self.assertEqual((plan['kind'], plan['status']), ('gate', 'waiting'))
+        self.assertNotIn('automatically', plan['label'])
+        shown = self.gate(root, 'research-plan')
+        self.assertEqual((shown['waiting'], shown['decisions'][0]), (True, 'approve'))
+        self.decide(root, 'research-plan')
+        shown = self.view(root)
+        self.assertIsNone(shown['problem'], shown)
+        self.assertEqual(shown['review']['phase'], 'direction')
+        self.assertEqual(workspace.load(root)['artifacts']['research-plan']['approved']['by'], 'page')
+        self.assertEqual(workspace.load(root)['artifacts']['research']['approved']['by'], 'review-policy')
+
+    def test_files_a_combined_review_covers_are_decided_there_only(self):
+        import desk
+        root, shown = self.choose('balanced')
+        self.assertEqual(shown['review']['phase'], 'direction')
+        gate = self.gate(root, 'research')
+        self.assertEqual(gate['combined'], {'phase': 'direction', 'label': 'Review the direction',
+                                            'name': 'direction review'})
+        requests = len(workspace.load(root)['requests'])
+        with self.assertRaisesRegex(desk.Refusal, 'direction review'):
+            self.decide(root, 'research', 'revise', 'Add a worked example.')
+        with self.assertRaisesRegex(desk.Refusal, 'direction review'):
+            self.decide(root, 'blueprint', 'rebuild')
+        self.assertEqual(len(workspace.load(root)['requests']), requests)
+        self.assertEqual(self.view(root)['review']['phase'], 'direction')
+        # Once the review is approved, nothing is pending and the gate says so.
+        shown = self.approve_review(root, shown)
+        self.assertEqual(shown['review']['phase'], 'final')
+        self.assertEqual(self.gate(root, 'research')['combined']['phase'], 'final')
+        shown = self.approve_review(root, shown)
+        self.assertEqual(shown['state'], 'done')
+        self.assertIsNone(self.gate(root, 'research')['combined'])
+
+    def test_the_deck_can_be_left_out_from_the_direction_review_before_it_is_drawn(self):
+        root, shown = self.choose('balanced')
+        self.assertEqual(shown['review']['phase'], 'direction')
+        self.assertEqual(shown['controls'], {'finish_level': None, 'finishing': None,
+                                             'skip_deck': True})
+        self.assertIn('outline:', [item['target'] for item in shown['review']['items']])
+        since = len(self.workers.jobs)
+        # Leaving the deck out is about the training, not one file: the review lets it through.
+        self.decide(root, 'deck', 'skip', 'We present from the guide.')
+        shown = self.view(root)
+        self.assertIsNone(shown['problem'], shown)
+        self.assertEqual(shown['review']['phase'], 'direction')
+        self.assertNotIn('outline:', [item['target'] for item in shown['review']['items']])
+        self.assertFalse(shown['controls']['skip_deck'])
+        self.assertFalse(shown['review']['commits']['deck'])
+        shown = self.approve_review(root, shown)
+        self.assertEqual(shown['review']['phase'], 'final')
+        shown = self.approve_review(root, shown)
+        self.assertEqual(shown['state'], 'done')
+        self.assertNotIn('section', self.kinds(since))
+        self.assertNotIn('deck', workspace.load(root)['settings']['stages'])
+
+    def test_the_plan_stop_reaches_a_balanced_run_started_earlier_unless_it_is_past_it(self):
+        # The saved policy is not versioned: the stop is what Balanced means. A training
+        # started before the stop existed and not yet at its plan gets it; one already past
+        # its plan is left where it is.
+        from runner_support import fails
+
+        def before(record, product, gate, last=None):
+            return not gate.startswith('review:') and gate not in ('documents', 'intake', 'deck')
+
+        with mock.patch.object(review_policy, 'automatic', before):
+            self.workers.then('research-plan', fails(), fails(), fails())  # every try
+            with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
+                early = self.begin(title='Started earlier')
+                past = self.begin(title='Already past its plan')
+            self.assertEqual(self.view(early)['state'], 'failed')
+            self.assertEqual(self.view(past)['review']['phase'], 'direction')
+        self.assertEqual(self.engine._load(early)['review_policy'], {'schema': 1, 'level': 'balanced'})
+        # The one not yet at its plan stops there once it gets there.
+        self.engine.act(early, 'retry')
+        shown = self.view(early)
+        self.assertEqual((shown['state'], shown['review']), ('waiting', None))
+        self.assertEqual(workspace.status(early)['gate'], 'research-plan')
+        # The one already past it is not asked again.
+        shown = self.view(past)
+        self.assertEqual(shown['review']['phase'], 'direction')
+        self.assertEqual(workspace.load(past)['artifacts']['research-plan']['approved']['by'],
+                         'review-policy')
+
+    def test_automatic_continues_past_the_research_plan(self):
+        root, shown = self.choose('automatic')
+        plan = self.steps(root)['gate:research-plan']
+        self.assertEqual((plan['kind'], plan['status']), ('code', 'done'))
+        self.assertIn('automatically', plan['label'])
+        self.assertEqual(workspace.load(root)['artifacts']['research-plan']['approved']['by'], 'review-policy')
 
     def approve_review(self, root, shown):
         return self.engine.review_decide(root, shown['review']['expected'], 'approve')
@@ -77,6 +182,51 @@ class ReviewLevelsTests(DeckCase):
         shown = self.approve_review(root, shown)
         self.assertIsNone(shown['problem'], shown)
         self.assertEqual(shown['review']['phase'], 'final')
+
+    def test_change_requests_are_sent_together_and_say_what_they_rewrite(self):
+        root, shown = self.choose('balanced', levels=['101', '201'])
+        items = {item['target']: item for item in shown['review']['items']}
+        self.assertEqual(items['research']['rewrites'], [
+            'the level 101 blueprint', 'the level 101 learner guide', 'the level 101 brief',
+            'the level 201 blueprint', 'the level 201 learner guide', 'the level 201 brief',
+            'Deck direction · Level 101', 'Deck direction · Level 201'])
+        self.assertEqual(items['blueprint@201']['rewrites'], [
+            'the level 201 learner guide', 'the level 201 brief', 'Deck direction · Level 201'])
+        self.assertEqual(items['outline:201']['rewrites'], [])
+        commits = shown['review']['commits']
+        self.assertEqual({key: commits[key] for key in ('levels', 'materials', 'deck')},
+                         {'levels': 2, 'materials': ['document', 'brief', 'scenario'], 'deck': True})
+        self.assertGreater(commits['dollars'], 0)
+        self.assertGreater(commits['minutes'], 0)
+        expected = shown['review']['expected']
+        # Every request is checked before any is recorded.
+        for asked, why in (
+            ([{'target': 'research', 'note': 'More sources.'}, {'target': 'deck', 'note': 'x'}],
+             'from this review'),
+            ([{'target': 'research', 'note': ''}], 'Say what should change'),
+            ([], 'Say what should change'),
+            ([{'target': 'research', 'note': 'One.'}, {'target': 'research', 'note': 'Two.'}],
+             'once for each'),
+        ):
+            with self.subTest(asked=asked), self.assertRaisesRegex(WorkspaceError, why):
+                self.engine.review_decide(root, expected, 'revise', requests=asked)
+        self.assertEqual(workspace.load(root)['requests'], [])
+        self.assertEqual(self.view(root)['review']['expected'], expected)
+        since = len(self.workers.jobs)
+        shown = self.engine.review_decide(root, expected, 'revise', requests=[
+            {'target': 'blueprint@101', 'note': 'Add a module on health checks.'},
+            {'target': 'outline:201', 'note': 'Open with the objection.'}])
+        self.assertIsNone(shown['problem'], shown)
+        self.assertEqual(shown['review']['phase'], 'direction')
+        self.assertNotEqual(shown['review']['expected'], expected)
+        # Both were taken: the level 101 blueprint was written again, and so was what the
+        # level 201 deck says. The research was not. The scripted blueprint comes back
+        # unchanged, so nothing built from it is written again: the core goes by content.
+        self.assertEqual(self.kinds(since), ['blueprint', 'outline'])
+        self.assertIn('request changes to 2 items', self.git('log', '-3', '--format=%s'))
+        shown = self.approve_review(root, shown)
+        self.assertEqual(shown['review']['phase'], 'final')
+        self.assertIsNone(shown['review']['commits'])
 
     def test_final_scenario_revision_does_not_repeat_the_unchanged_direction_review(self):
         root, shown = self.choose('balanced')

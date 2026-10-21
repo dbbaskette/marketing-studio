@@ -1010,6 +1010,93 @@ class HaltTests(StudioCase):
         self.assertIn('Rolling restarts: paused on the page', self.log())
         self.assertIn('Rolling restarts: resumed on the page', self.log())
 
+    def test_finishing_the_level_in_hand_pauses_before_the_next_level_starts(self):
+        asked = []
+
+        def finishes(tools, job):
+            asked.append(self.engine.act(self.space.training('rolling-restarts'), 'finish-level'))
+            return self.workers.document(tools, job)
+
+        self.workers.then('document', finishes)
+        with mock.patch('studio_core.review_policy.capture',
+                        return_value={'schema': 1, 'level': 'automatic'}):
+            root = self.start(levels=['101', '201'], materials=['document'])
+        self.assertEqual((asked[0]['state'], asked[0]['controls']['finishing'],
+                          asked[0]['controls']['finish_level']), ('working', '101', None))
+        view = self.view(root)
+        self.assertEqual((view['state'], view['sentence']),
+                         ('paused', 'Paused. Nothing new starts until you resume.'))
+        # The level 101 guide was finished; the level 201 guide was not started.
+        self.assertEqual(len(self.workers.of('document')), 1)
+        self.assertEqual(view['controls'], {'finish_level': None, 'finishing': None,
+                                            'skip_deck': False})
+        self.assertIn('Rolling restarts: level 101 finished; paused as asked on the page', self.log())
+        self.refused(root, 'finish-level', 'Only a training that is working can finish its '
+                     'level first. This one is paused.')
+        resumed = self.engine.act(root, 'resume')
+        self.assertEqual((resumed['state'], resumed['review']['phase']), ('waiting', 'final'))
+        self.assertEqual(len(self.workers.of('document')), 2)
+
+    def test_a_blueprint_is_for_the_whole_training_so_it_has_no_level_to_finish_first(self):
+        # Every level's blueprint is drafted before any level is built, so "finish this
+        # level" means nothing there yet, and nothing pauses after the first blueprint.
+        refused, seen = [], []
+
+        def tries(tools, job):
+            seen.append(self.engine.view(self.space.training('rolling-restarts'))['controls'])
+            with self.assertRaisesRegex(WorkspaceError, 'whole training') as caught:
+                self.engine.act(self.space.training('rolling-restarts'), 'finish-level')
+            refused.append(str(caught.exception))
+            return self.workers.blueprint(tools, job)
+
+        self.workers.then('blueprint', tries)
+        with mock.patch('studio_core.review_policy.capture',
+                        return_value={'schema': 1, 'level': 'automatic'}):
+            root = self.start(levels=['101', '201'], materials=['document'])
+        self.assertEqual(len(refused), 1)
+        self.assertEqual((seen[0]['finish_level'], seen[0]['finishing']), (None, None))
+        shown = self.view(root)
+        self.assertEqual((shown['state'], shown['review']['phase']), ('waiting', 'final'))
+        self.assertEqual(len(self.workers.of('document')), 2)
+
+    def test_finishing_the_only_level_arrives_at_the_wait_without_pausing(self):
+        asked = []
+
+        def finishes(tools, job):
+            asked.append(self.engine.act(self.space.training('rolling-restarts'), 'finish-level'))
+            return self.workers.document(tools, job)
+
+        self.workers.then('document', finishes)
+        with mock.patch('studio_core.review_policy.capture',
+                        return_value={'schema': 1, 'level': 'automatic'}):
+            root = self.start(levels=['101'], materials=['document'])
+        self.assertEqual(asked[0]['controls']['finishing'], '101')
+        # The final review is the wait: nothing pauses before it, and nothing is left to
+        # pause before the index afterwards.
+        shown = self.view(root)
+        self.assertEqual((shown['state'], shown['review']['phase']), ('waiting', 'final'))
+        self.assertEqual(shown['controls'], {'finish_level': None, 'finishing': None,
+                                             'skip_deck': False})
+        self.assertIsNone(self.engine._load(root).get('halt_after'))
+        self.assertIn('Rolling restarts: level 101 finished; waiting as asked on the page', self.log())
+        shown = self.engine.review_decide(root, shown['review']['expected'], 'approve')
+        self.assertEqual(shown['state'], 'done')
+
+    def test_a_step_for_the_whole_training_has_no_level_to_finish_first(self):
+        refused = []
+
+        def tries(tools, job):
+            with self.assertRaisesRegex(WorkspaceError, 'whole training') as caught:
+                self.engine.act(self.space.training('rolling-restarts'), 'finish-level')
+            refused.append(str(caught.exception))
+            return self.workers.research_plan(tools, job)
+
+        self.workers.then('research-plan', tries)
+        root = self.start(levels=['101'])
+        self.assertEqual(len(refused), 1)
+        self.assertEqual(self.state(root), 'waiting')
+        self.assertIsNone(self.engine._load(root).get('halt_after'))
+
     def test_a_stopped_training_stays_stopped_until_it_is_resumed(self):
         root = self.start()
         stopped = self.engine.act(root, 'stop')
@@ -1095,7 +1182,7 @@ class HaltTests(StudioCase):
         self.refused(root, 'resume', 'This training is not paused or stopped, so there is '
                      'nothing to resume.')
         self.refused(root, 'retry', 'Nothing here failed, so there is nothing to try again.')
-        self.refused(root, 'restart', 'A run can be asked to: pause, resume, stop, retry.')
+        self.refused(root, 'restart', 'A run can be asked to: pause, resume, stop, retry, finish-level.')
 
         self.workers.then('research-plan', fails(), fails(), fails())
         failed = self.start(title='Health checks')

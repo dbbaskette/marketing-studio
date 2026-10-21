@@ -93,6 +93,41 @@ def group(root, session, run, listed, done):
                   *build, boundaries['final'], *package]), frozenset(completed)
 
 
+def rewritten(root, session, decks, target):
+    """What is written again when `target` changes: every artifact downstream of it, and
+    the deck direction of each level whose deck is. A practice scenario is built from
+    nothing else, so a change to the research never rewrites one."""
+    names = workspace.artifact_names(root, session)
+    above = {name: set(workspace.artifact(root, session, name)['upstream']) for name in names}
+    for level in decks:
+        # What a deck says is written from what its deck is built from.
+        above['outline:' + (level or '')] = set(above.get(workspace.qualify('deck', level), ()))
+        above[workspace.qualify('deck', level)] = {'outline:' + (level or '')}
+    below, found = {target}, True
+    while found:
+        found = False
+        for name, inputs in above.items():
+            if name not in below and inputs & below:
+                below.add(name)
+                found = True
+    below.discard(target)
+    return below
+
+
+def commits(root, session, decks, phase):
+    """What approving a review commits to: for the direction, the materials of every level
+    and the deck, with what a deck of this size has cost before. The final review commits
+    to nothing more: it finishes the draft."""
+    if phase != 'direction':
+        return None
+    slides = sum(len(deck.slides_of(mine.outline)) for mine in decks.values())
+    before = deck.before(slides) if slides else {}
+    return {'levels': len(session['levels'] or [None]),
+            'materials': [stage for stage in pipeline.wanted(session) if stage != 'deck'],
+            'deck': bool(decks),
+            'dollars': before.get('dollars'), 'minutes': before.get('minutes')}
+
+
 def outline_text(shown):
     lines = []
     for number, slide in enumerate(shown['slides'], 1):
@@ -238,13 +273,44 @@ class Reviewing:
                 for item in items:
                     if item['target'] == mine.name:
                         item['deck_view'] = view
+        labels = {item['target']: item['label'] for item in items}
+        for item in items:
+            below = rewritten(root, found.session, found.decks, item['target'])
+            item['rewrites'] = [labels[name] for name in labels if name in below]
         return {'phase': phase, 'label': found.next.step.label, 'items': items,
+                'commits': commits(root, found.session, found.decks, phase),
                 'expected': signature(root, found.session, record, phase)}
 
-    def review_decide(self, path, expected, decision, target=None, note=None):
+    def _request(self, root, record, decisions, target, note):
+        """Record one change asked for from a combined review. Call it holding `files`."""
+        base = target.partition('@')[0].partition(':')[0]
+        if base not in ('scenario', 'yoodli'):
+            decisions.pop('direction', None)
+        if target.startswith('outline:'):
+            level = target.partition(':')[2] or None
+            self._decided(record, level)['asked'] = {
+                'kind': 'revise', 'note': note.strip(), 'at': home.now()}
+            self._fresh(record, workspace.qualify('deck-outline', level))
+            return
+        # The existing core records and invalidates all dependent materials.
+        outcome = workspace.decide(root, target, 'revise', note, by='page')
+        self._fresh(record, target)
+        if target == 'research' and record.get('research'):
+            record['research']['again'] = {
+                'at': outcome['request']['at'],
+                'left': pipeline.again(root, record, outcome['request'])}
+
+    def review_decide(self, path, expected, decision, target=None, note=None, requests=None):
+        """Approve a combined review, or ask for changes: to one `target` with a `note`,
+        or to several at once as `requests`, each {'target', 'note'}. Every request is
+        checked before any is recorded, so they are taken whole or not at all."""
         root = self._held(path)
         if decision not in ('approve', 'revise'):
             raise WorkspaceError('Approve the review or ask for changes.')
+        asked = requests if requests is not None else [{'target': target, 'note': note}]
+        if decision == 'revise' and (not isinstance(asked, list) or not asked
+                                     or not all(isinstance(ask, dict) for ask in asked)):
+            raise WorkspaceError('Say what should change, in at most 4000 characters.')
         with self.files:
             record = self._load(root)
             found = self._survey(root, record)
@@ -258,30 +324,22 @@ class Reviewing:
                 record.setdefault('review_decisions', {})[phase] = {
                     'signature': expected, 'by': 'page', 'at': home.now()}
             else:
-                if not isinstance(note, str) or not note.strip() or len(note) > 4000:
-                    raise WorkspaceError('Say what should change, in at most 4000 characters.')
-                if target not in [item['target'] for item in view['items']]:
-                    raise WorkspaceError('Choose a document or deck direction from this review.')
+                known = [item['target'] for item in view['items']]
+                for ask in asked:
+                    said = ask.get('note')
+                    if not isinstance(said, str) or not said.strip() or len(said) > 4000:
+                        raise WorkspaceError('Say what should change, in at most 4000 characters.')
+                    if ask.get('target') not in known:
+                        raise WorkspaceError('Choose a document or deck direction from this review.')
+                if len({ask['target'] for ask in asked}) != len(asked):
+                    raise WorkspaceError('Ask once for each document or deck direction.')
                 decisions = record.setdefault('review_decisions', {})
                 decisions.pop('final', None)
-                base = target.partition('@')[0].partition(':')[0]
-                if base not in ('scenario', 'yoodli'):
-                    decisions.pop('direction', None)
-                if target.startswith('outline:'):
-                    level = target.partition(':')[2] or None
-                    self._decided(record, level)['asked'] = {
-                        'kind': 'revise', 'note': note.strip(), 'at': home.now()}
-                    self._fresh(record, workspace.qualify('deck-outline', level))
-                else:
-                    # The existing core records and invalidates all dependent materials.
-                    outcome = workspace.decide(root, target, 'revise', note, by='page')
-                    self._fresh(record, target)
-                    if target == 'research' and record.get('research'):
-                        record['research']['again'] = {
-                            'at': outcome['request']['at'],
-                            'left': pipeline.again(root, record, outcome['request'])}
+                for ask in asked:
+                    self._request(root, record, decisions, ask['target'], ask['note'])
             self._store(root, record)
             self._commit(root, 'approve the combined review' if decision == 'approve'
-                         else 'request changes from the combined review')
+                         else f'request changes to {len(asked)} items from the combined review'
+                         if len(asked) > 1 else 'request changes from the combined review')
         self.carry_on(root)
         return self.view(root)

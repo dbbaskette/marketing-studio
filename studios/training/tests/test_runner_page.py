@@ -47,7 +47,7 @@ POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/a
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
          '/api/note')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
-RUN_KEYS = ['agent', 'clash', 'copies', 'deck', 'deck_left', 'documents', 'driver', 'effort',
+RUN_KEYS = ['agent', 'clash', 'controls', 'copies', 'deck', 'deck_left', 'documents', 'driver', 'effort',
             'finished', 'kept', 'last_shared', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
             'question', 'queue', 'redesign', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
             'workers']
@@ -1608,8 +1608,13 @@ class CombinedReviewTests(PageCase):
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
             path = self.started()
         run = self.get('run', path=path)
+        self.assertEqual((run['state'], run['review'], run['review_level']), ('waiting', None, 'balanced'))
+        shown = self.get('gate', path=path, artifact='research-plan')
+        self.assertEqual((shown['waiting'], shown['decisions'][0]), (True, 'approve'))
+        self.post('decide', {'path': path, 'artifact': 'research-plan', 'decision': 'approve',
+                             'seen': shown['sha256']})
+        run = self.get('run', path=path)
         self.assertEqual(run['review']['phase'], 'direction')
-        self.assertEqual(run['review_level'], 'balanced')
         self.post('review', {'path': path, 'expected': 'old-version', 'decision': 'approve'}, expect=409)
         run = self.post('review', {'path': path, 'expected': run['review']['expected'], 'decision': 'approve'})
         self.assertEqual(run['review']['phase'], 'final')
@@ -1691,7 +1696,7 @@ class RunTests(PageCase):
         path = self.started()
         for sent, expect, said in (
                 ({'path': path, 'action': 'restart'}, 400,
-                 'A run can be asked to: pause, resume, stop, retry.'),
+                 'A run can be asked to: pause, resume, stop, retry, finish-level.'),
                 ({'path': path}, 400, 'Give action as text.'),
                 ({'action': 'pause'}, 400, 'Give path as text.'),
                 ({'path': path, 'action': 'pause'}, 409, 'Only a training that is working '

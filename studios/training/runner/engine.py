@@ -218,7 +218,10 @@ MODELS_FOR = 3600       # seconds a list of an agent's models is reused
 MODELS_MISSED = 60      # seconds before a list that could not be made is asked for again
 LOOKED_FOR = 300        # seconds a look at what this computer has for a deck is reused
 BUSY_TRIES = 20         # times a finding is offered while another save holds the lock
-ACTIONS = ('pause', 'resume', 'stop', 'retry')
+ACTIONS = ('pause', 'resume', 'stop', 'retry', 'finish-level')
+# The stages that are for the whole training, before each level is built in turn: a level's
+# blueprint is drafted among them, so finishing "this level" means nothing there yet.
+WHOLE_TRAINING = ('intake', 'research-plan', 'research', 'blueprint')
 DRIVING = ('take', 'hand-over')
 FETCH_EVERY = 180       # seconds between fetches while the runner serves
 TICK = 15               # seconds between looks at whether to notify
@@ -285,6 +288,9 @@ NOT_HERE = ('The documents this training was researched from are on another comp
             'Research cannot be run again here until they are added again.')
 SETTLED = ('The research for this training was planned from the documents already added, so '
            'they cannot be changed now.')
+REVIEW_DECIDES = ('This is part of the {name} that is waiting for you, so it is decided there, '
+                  'with everything the review covers. Nothing was changed.')
+REVIEW_NAMES = {'direction': 'direction review', 'final': 'final review'}
 PREVIEWS = 'previews'   # in the per-user data folder: the render's turn, and each deck's file
 DECK_KEPT = ('What you approved the deck should say is kept, and so is everything made '
              'before it.')
@@ -942,10 +948,14 @@ class Engine(Reviewing):
             raise WorkspaceError(ready.problem)
         with self.files:
             record = new_record(agent, model, chosen, form['source_scope'], effort)
-            if form.get('review_level', review_policy.level(record)) != review_policy.level(record):
+            # An older page sends only the level it saw as `review_level`: that is checked too.
+            current = review_policy.level(record)
+            if form.get('review_seen', form.get('review_level', current)) != current:
                 raise WorkspaceError('The shared review preference changed while this form '
                                      'was open. Review the updated preference before '
                                      'starting. Nothing was started.')
+            if form.get('review_level'):  # this training's own choice, saved with its run
+                record['review_policy'] = {'schema': 1, 'level': form['review_level']}
             root = pipeline.create(space, form)
             try:
                 if review_policy.level(record) != 'step_by_step':
@@ -975,8 +985,9 @@ class Engine(Reviewing):
         needs = self.deck_needs()
         drawn = bool(form['deck_target'] and form['brand']) and not needs['missing'] \
             and not needs['update']
+        # Balanced stops three times: the research plan, the direction, the finished materials.
         return {'path': str(root), 'id': root.name, 'gates': (pipeline.gates(form, drawn) if review_policy.level(record) == 'step_by_step'
-                                                        else 2 if review_policy.level(record) == 'balanced' else 1)}
+                                                        else 3 if review_policy.level(record) == 'balanced' else 1)}
 
     def _claimed(self, root: Path, space: gitstate.Workspace) -> None:
         """Share the claim a new training was committed with, before any work is done
@@ -1151,7 +1162,16 @@ class Engine(Reviewing):
                         self._policy_accept(root, step.step)
                     continue
                 if self._resting(record) or step.kind not in (*WORK, 'deck'):
+                    if record.get('halt_after') is not None and not self._resting(record):
+                        self._wait_arrived(root)  # a review or a gate: the wait asked for
                     return
+                # Asked to finish one level and then wait: work for another level waits.
+                # What has no level of its own, such as the index, is not another level.
+                level = self._level(step.step)
+                if record.get('halt_after') is not None and step.kind in ('agent', 'code') \
+                        and level is not None and level != record['halt_after']:
+                    self._level_finished(root)
+                    continue
                 if self._away(found) and step.step.id != 'package':
                     return  # a conversation is driving it; only the index is still ours
                 if step.kind == 'deck':
@@ -1207,6 +1227,25 @@ class Engine(Reviewing):
             self._own(root, found, step.step)
         else:
             self._draft(root, run, found, step)
+
+    def _level_finished(self, root: Path) -> None:
+        """Pause, as the person asked once the level in hand was finished."""
+        with self.files:
+            record = self._load(root)
+            level = record.get('halt_after')
+            record['halt'], record['halt_after'] = 'paused', None
+            self._store(root, record)
+            self._commit(root, f'level {level} finished; paused as asked on the page')
+
+    def _wait_arrived(self, root: Path) -> None:
+        """The run waits for the person anyway, so there is no longer a level to finish
+        first: note that the wait they asked for has arrived."""
+        with self.files:
+            record = self._load(root)
+            level = record.get('halt_after')
+            record['halt_after'] = None
+            self._store(root, record)
+            self._commit(root, f'level {level} finished; waiting as asked on the page')
 
     def _trouble(self, root: Path, failure: Exception) -> None:
         """Stop a training on something the runner did not expect, and say what."""
@@ -2871,18 +2910,48 @@ class Engine(Reviewing):
             if step is None or name == step or name.startswith(f'{step}:'):
                 entry['failed'] = 0
 
+    def reviewing(self, path) -> dict | None:
+        """The combined review a run is waiting for, when there is one: its `phase`, its
+        `label` and its `name` in a sentence. While it waits, the files it covers are
+        decided there and nowhere else, so that two ledgers never restart a step."""
+        root = self.driven(path)
+        if root is None:
+            return None
+        record = self._load(root)
+        if self._resting(record):
+            return None
+        found = self._survey(root, record)
+        if found.next.kind != 'review':
+            return None
+        phase = found.next.step.id.partition(':')[2]
+        return {'phase': phase, 'label': found.next.step.label,
+                'name': REVIEW_NAMES.get(phase, 'combined review')}
+
+    def refuse_while_reviewing(self, path, decision: str) -> None:
+        """Refuse a decision about one file while a combined review covers it. Leaving a
+        stage out, or bringing one back, is about the training and is not refused."""
+        if decision in ('skip', 'restore'):
+            return
+        pending = self.reviewing(path)
+        if pending:
+            raise WorkspaceError(REVIEW_DECIDES.format(name=pending['name']))
+
     def decided(self, path, outcome: dict) -> bool:
         """Commit a decision the page has just recorded. False when no run is driving the
         training, so there is nothing to commit or wake.
 
         Call it holding `files`, straight after the core records the decision, so the
         decision and its commit are one thing; then let go and call `carry_on`. A change
-        the person asked for starts its step afresh.
+        the person asked for starts its step afresh. A decision about a file a combined
+        review covers is refused: `refuse_while_reviewing` says so before anything is
+        recorded, and this is the last word should anything else record one.
         """
         root = self.driven(path)
         if root is None:
             return False
         self.hold(root)
+        if outcome.get('artifact'):
+            self.refuse_while_reviewing(root, outcome.get('decision') or '')
         with self.files:
             record = self._load(root)
             target = outcome.get('artifact')
@@ -2938,12 +3007,22 @@ class Engine(Reviewing):
                 if state != 'working':
                     raise WorkspaceError('Only a training that is working can be paused. '
                                          f'This one is {STATES[state]}.')
-                record['halt'] = 'paused'
+                record['halt'], record['halt_after'] = 'paused', None
+            elif action == 'finish-level':
+                if state != 'working':
+                    raise WorkspaceError('Only a training that is working can finish its '
+                                         f'level first. This one is {STATES[state]}.')
+                ahead = self._survey(root, record).next.step
+                level = self._level(ahead)
+                if level is None or ahead.stage in WHOLE_TRAINING:
+                    raise WorkspaceError('What is in hand is for the whole training, not for '
+                                         'one level, so there is no level to finish first.')
+                record['halt_after'] = level
             elif action == 'stop':
                 if state not in ('working', 'waiting', 'paused'):
                     raise WorkspaceError(f'This training is {STATES[state]}, so there is '
                                          'nothing to stop.')
-                record['halt'] = 'stopped'
+                record['halt'], record['halt_after'] = 'stopped', None
                 run.stop.set()
             elif action == 'resume':
                 if state not in ('paused', 'stopped') and problem.get('action') != 'resume':
@@ -2964,7 +3043,8 @@ class Engine(Reviewing):
             self._store(root, record)
             self._commit(root, {'pause': 'paused on the page', 'stop': 'stopped on the page',
                                 'resume': 'resumed on the page',
-                                'retry': 'asked to try again on the page'}[action])
+                                'retry': 'asked to try again on the page',
+                                'finish-level': 'asked to finish the level, then wait'}[action])
         if action in ('resume', 'retry'):
             run.stop.clear()
             self.wake(root)
@@ -3613,10 +3693,29 @@ class Engine(Reviewing):
             'deck_left': ({'says': pipeline.deck_says(found), 'artifact': 'deck'}
                           if ending == 'deck' and not resting else None),
             'redesign': self._redesigns(found) if mine else [],
+            'controls': self._controls(record, found, state, mine),
             'finished': ({'ready': bool(report['ready']),
                           'limitations': list(report['limitations']),
                           'blocking': list(report['blocking']), 'index': report['file']}
                          if report and not resting else None)}
+
+    def _controls(self, record: dict, found: pipeline.Survey, state: str, mine: bool) -> dict:
+        """The soft controls a run offers: `finish_level` names the level in hand when it
+        can be finished before the run waits, `finishing` the level it was asked to finish,
+        and `skip_deck` says the deck is wanted and nothing of it is drawn yet, so it can be
+        left out from here."""
+        ahead = found.next.step
+        level = self._level(ahead) if ahead else None
+        building = level is not None and ahead.stage not in WHOLE_TRAINING
+        wanted = 'deck' in pipeline.wanted(found.session)
+        started = any(name.startswith('deck-start') for name in found.done) or any(
+            found.state.get(workspace.qualify('deck', each), 'not-started') != 'not-started'
+            for each in found.session['levels'] or [None])
+        return {'finish_level': (level if mine and building and state == 'working'
+                                 and record.get('halt_after') is None else None),
+                'finishing': record.get('halt_after') if mine and state == 'working' else None,
+                'skip_deck': bool(mine and wanted and not started and found.next.kind != 'deck'
+                                  and state in ('working', 'waiting', 'paused'))}
 
     def _redesigns(self, found: pipeline.Survey) -> list[dict]:
         """The decks of a training that were drawn without a design, each offered to be drawn
