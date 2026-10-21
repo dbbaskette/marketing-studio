@@ -48,7 +48,7 @@ def singleton(network_requested=False):
         try:
             fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            message = ('Marketing Studio is already running. Stop its terminal with Ctrl-C, then run marketing-studio serve --lan.'
+            message = ('Marketing Studio is already running. For phone access, restart it: marketing-studio restart --all --lan'
                        if network_requested else
                        'Marketing Studio is starting or already running. Try the open command again shortly.')
             raise WorkspaceError(message) from exc

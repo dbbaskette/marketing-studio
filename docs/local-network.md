@@ -7,8 +7,9 @@ computer; nothing needs installing on the phone.
 ## Connect
 
 1. Connect both devices to the same trusted network.
-2. Close an existing Marketing Studio terminal with Ctrl-C, then run
-   `marketing-studio serve --lan`.
+2. Run `marketing-studio start --all --lan` to start it in the background, or
+   `marketing-studio serve --lan` to keep it in this terminal. If Marketing Studio
+   is already running, use `marketing-studio restart --all --lan` instead.
 3. Follow the private phone link printed in that terminal. After shared setup,
    the authenticated home page also offers **Continue on your phone** and **Copy link**.
 4. Open a studio from that home page. Its network address is supplied automatically.

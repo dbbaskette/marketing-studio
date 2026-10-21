@@ -122,7 +122,8 @@ export PATH="$HOME/.local/bin:$PATH"
 
 Leave the terminal open while you work. Press **Ctrl-C** to stop Marketing Studio
 and the studio processes it opened. Studios opened with their own launchers keep
-running independently.
+running independently. To keep it running without a terminal, use
+`marketing-studio start` instead; see [Start and stop in the background](#start-and-stop-in-the-background).
 
 ### 3. Make it yours
 
@@ -154,21 +155,56 @@ marketing-studio open training
 | `marketing-studio open presentation` | Opens Presentation Studio; reuses it if already open through Marketing Studio |
 | `marketing-studio serve` | Runs the home server in this terminal without opening a browser, for example over SSH |
 | `marketing-studio serve --lan` | Enables private phone access on your trusted local network |
+| `marketing-studio start --all --lan` | Starts Marketing Studio in the background with every installed studio and phone access |
+| `marketing-studio stop --all` | Stops every studio, then Marketing Studio |
+| `marketing-studio restart --ts` | Restarts Training Studio; `--all` restarts Marketing Studio too |
 | `marketing-studio setup` | Opens shared settings, or first-run setup |
 | `marketing-studio status` | Shows each studio's version and folder, marks Git checkout copies, and says whether shared setup is complete |
 | `marketing-studio doctor` | Checks the tools on this computer, including that your assistant is installed, without contacting providers |
 | `marketing-studio --help` | Shows the command guide |
 | `marketing-studio --version` | Shows the installed suite version |
 
-For scripts, add `--json` to `status` or `doctor`.
+For scripts, add `--json` to `status`, `doctor`, `start`, `stop` or `restart`.
+
+## Start and stop in the background
+
+`marketing-studio start` runs Marketing Studio in the background, so no terminal
+has to stay open. Choose studios to start with it, or `--all` for every installed one:
+
+```sh
+marketing-studio start                 # Marketing Studio only
+marketing-studio start --bs --ts       # also Blog Studio and Training Studio
+marketing-studio start --all --lan     # everything, with phone access
+marketing-studio stop --ps             # Presentation Studio only
+marketing-studio stop --all            # every studio, then Marketing Studio
+marketing-studio restart --all         # same phone access and port; restarts the studios that were running
+```
+
+Choose studios with `--bs` (Blog Studio), `--ps` (Presentation Studio) and `--ts`
+(Training Studio); `-bs`, `--blog` and the like also work, as does putting the
+command last: `marketing-studio --all stop`. In a terminal, `start` prints the
+private link, and the phone link when phone access is on. Through a pipe or with
+`--json` it prints JSON without any key. Its output goes to `home.log` in the
+Marketing Studio data folder.
+
+A studio that is running an assistant job is not stopped or restarted: its work so
+far would be lost. The command names the job and how long it has run, stops
+nothing, and exits with status 1. Wait for the job, or add `--force` to stop it anyway.
+
+If Marketing Studio stopped abruptly and left a studio running, the next start
+stops it, unless it is still running an assistant job; `marketing-studio status`
+then shows it, and `marketing-studio stop --all` stops it. Only studios this
+Marketing Studio data folder recorded are ever stopped.
 
 ## Open it on your phone
 
 Connect your phone and computer to the same **trusted Wi-Fi**, then start:
 
 ```sh
-marketing-studio serve --lan
+marketing-studio start --all --lan
 ```
+
+Or keep it in this terminal with `marketing-studio serve --lan`.
 
 Open the **private phone link** printed in the terminal. Once setup is complete,
 Marketing Studio also shows it under **Continue on your phone**. Launch Blog Studio,
@@ -176,9 +212,10 @@ Presentation Studio, or Training Studio there; their links work on your phone to
 The layouts adapt to a narrow screen, with touch controls and readable forms.
 Your work, Git repositories, and signed-in assistant stay on the computer.
 
-Network access is off by default. If Marketing Studio is already open, stop its
-terminal with **Ctrl-C** first. Leave the new terminal open while you work;
-stopping it closes its network listeners and studios. A new session gets new links.
+Network access is off by default. If Marketing Studio is already running, turn it
+on with `marketing-studio restart --all --lan`, or stop its terminal with **Ctrl-C**
+first. Stopping Marketing Studio (`marketing-studio stop --all`, or Ctrl-C in its
+terminal) closes its network listeners and studios. A new session gets new links.
 Use only a trusted network: HTTP is unencrypted, and anyone with a private link can
 use that studio with your local account's permissions. Do not forward these ports
 to the internet.
