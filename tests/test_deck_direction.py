@@ -72,3 +72,78 @@ class DirectionTests(unittest.TestCase):
         self.assertIn('- `accentPurple`: Competitors', text)
         self.assertIn('`headingPrimary` marks the one node', text)
         self.assertIn("The deck's recurring device: A base.", text)
+
+
+RECORD = {'schema': 1, 'default': 'tanzu-contrast',
+          'direction': {'focal': 'headingPrimary', 'neutral': 'canvasSecondary',
+                        'meanings': {'accentAqua': 'Tanzu', 'accentPurple': 'The alternative'},
+                        'motif': 'A bar strip says whose side a card is on.'},
+          'layouts': {'cover': 'Title Slide', 'section': 'Section Header',
+                      'closing': 'Big Statement 2', 'thanks': 'Thank You'},
+          'closing': {'withWords': {'layout': 'Big Statement 2', 'title': True, 'subtitles': 1}},
+          'house': ['Fill cards.', '', 'Icons for each concrete concept.'],
+          'directions': []}
+
+
+class DefaultLookTests(unittest.TestCase):
+    def test_the_brands_deck_direction_record_gives_the_default_look(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'brand-contract.json'
+            path.write_text(json.dumps(contract()))
+            self.assertIsNone(looks.default_look(path), 'an older brand writes none')
+            (Path(folder) / looks.FILE).write_text(json.dumps(RECORD))
+            made = looks.default_look(path)
+            self.assertEqual(made['id'], 'tanzu-contrast')
+            self.assertEqual(made['direction'], RECORD['direction'])
+            self.assertEqual(made['house'], ['Fill cards.', 'Icons for each concrete concept.'])
+            self.assertEqual(made['layouts']['closing'], 'Big Statement 2')
+            self.assertEqual(made['closing']['withWords']['subtitles'], 1)
+            self.assertEqual(looks.of_file(path), RECORD['direction'])
+            # The same record inside the contract, as the brand also exports it.
+            self.assertEqual(looks.direction(contract(slides={'deck': RECORD})),
+                             RECORD['direction'])
+
+
+class GuidanceTests(unittest.TestCase):
+    def test_what_a_studio_keeps_and_forwards_of_the_brands_guidance_entry(self):
+        from studio_core import brand_guidance as guidance
+        with tempfile.TemporaryDirectory() as folder:
+            snap = Path(folder) / 'tasks' / 'abc'
+            (snap / 'references' / 'gallery').mkdir(parents=True)
+            (snap / 'SKILL.md').write_text('# Slides')
+            (snap / 'references' / 'draft.md').write_text('Choose the look from real slides.')
+            (snap / 'references' / 'gallery' / 'order.json').write_text('{"slides": []}')
+            (snap / 'references' / 'review.md').symlink_to(Path(folder) / 'tasks')
+            answer = {'task': 'abc', 'revision': 'r1', 'runtime': '/opt/slides',
+                      'guidance': str(snap / 'SKILL.md'), 'freshness': 'current-at-start',
+                      'secret': {'x': 1},
+                      'brand': {'worker': '# Tanzu slides: worker guidance\n',
+                                'checkpoints': ['Draft approval.', 'Look.', 7]}}
+            self.assertEqual(guidance.recorded(answer), {
+                'task': 'abc', 'revision': 'r1', 'runtime': '/opt/slides',
+                'freshness': 'current-at-start'})
+            texts = guidance.snapshot(answer)
+            self.assertEqual(texts['drafting guidance'], 'Choose the look from real slides.')
+            self.assertEqual(texts['slides guidance'], '# Slides')
+            self.assertIn(guidance.example('order'), texts)
+            self.assertNotIn('review guidance', texts, 'a link is never followed')
+            self.assertEqual(guidance.worker(answer), '# Tanzu slides: worker guidance\n')
+            self.assertEqual(guidance.checkpoints(answer), ['Draft approval.', 'Look.'])
+            self.assertIsNone(guidance.worker({'task': 'abc'}))
+            self.assertEqual(guidance.snapshot({}), {})
+
+    def test_the_brands_own_handoff_beside_its_contract(self):
+        from studio_core import brand_guidance as guidance
+        with tempfile.TemporaryDirectory() as folder:
+            recipes = Path(folder) / 'slide-design-recipes.md'
+            recipes.write_text('# Recipes')
+            path = Path(folder) / 'export' / 'brand-contract.json'
+            path.parent.mkdir()
+            path.write_text(json.dumps(contract(references={
+                'recipes': str(recipes), 'icons': 'Use tanzu-brand icons --query'})))
+            (path.parent / 'DESIGN.md').write_text('# Design')
+            self.assertEqual(guidance.brand_texts(path), {
+                'brand design': '# Design', 'brand slide recipes': '# Recipes',
+                'brand icons': 'Use tanzu-brand icons --query'})
+            path.write_text(json.dumps(contract(references={'recipes': 'relative.md'})))
+            self.assertEqual(guidance.brand_texts(path), {'brand design': '# Design'})

@@ -10,8 +10,9 @@ What a caller needs to know
 - A studio does not choose how a deck looks. The brand's slide guidance does, through its
   look step: the person picks one of a few rendered looks, and that look's direction and
   house style are what the deck is built with. Until a look is chosen, a brand may give a
-  default direction of its own: in `deck-direction.json` beside its exported contract, or
-  in the contract under `design.deckDirection`, `design.direction` or
+  default direction of its own: in `deck-direction.json` beside its exported contract
+  (with its house lines and lead layouts, which `default_look` reads), or in the contract
+  under `design.slides.deck`, `design.deckDirection`, `design.direction` or
   `design.slides.direction`. Reading it is tolerant: a meaning whose role the brand does
   not have, or whose colour is the focal's or the neutral's, is left out, and anything
   unreadable is passed over.
@@ -64,17 +65,44 @@ def checked(given, contract) -> dict | None:
     return made
 
 
+def _given(found):
+    """A direction as a brand writes it: on its own, or under `direction` in a deck
+    direction record."""
+    return found.get('direction') if isinstance(found, dict) \
+        and isinstance(found.get('direction'), dict) else found
+
+
 def direction(contract, beside=None) -> dict | None:
     """The direction the brand gives its decks, or None when it gives none."""
     design = contract.get('design') if isinstance(contract, dict) else None
     design = design if isinstance(design, dict) else {}
     slides = design.get('slides') if isinstance(design.get('slides'), dict) else {}
-    for given in (beside, design.get('deckDirection'), design.get('direction'),
-                  slides.get('direction')):
-        found = checked(given, contract)
+    for given in (beside, slides.get('deck'), design.get('deckDirection'),
+                  design.get('direction'), slides.get('direction')):
+        found = checked(_given(given), contract)
         if found:
             return found
     return None
+
+
+def default_look(contract_path) -> dict | None:
+    """The look a brand gives a deck before anyone chooses one, from the deck direction
+    record it writes beside its contract: {'id', 'direction', 'house', 'layouts',
+    'closing'}, or None when it writes none. Only `direction` is held to the brand."""
+    path = Path(contract_path)
+    found = _json(path.parent / FILE)
+    if not isinstance(found, dict):
+        return None
+    chosen = checked(_given(found), contract_of(path))
+    if chosen is None:
+        return None
+    house = [line for line in found.get('house') or () if isinstance(line, str) and line.strip()]
+    layouts = {kind: name for kind, name in (found.get('layouts') or {}).items()
+               if isinstance(name, str) and name.strip()} \
+        if isinstance(found.get('layouts'), dict) else {}
+    closing = found.get('closing') if isinstance(found.get('closing'), dict) else {}
+    return {'id': found.get('default') if isinstance(found.get('default'), str) else None,
+            'direction': chosen, 'house': house, 'layouts': layouts, 'closing': closing}
 
 
 def _json(path: Path):
