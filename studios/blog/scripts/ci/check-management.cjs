@@ -14,7 +14,7 @@ class Element {
   removeAttribute(key){delete this.attributes[key];}
   addEventListener(key,fn){this.listeners[key]=fn;}
   querySelector(selector){return this.querySelectorAll(selector)[0]||null;}
-  querySelectorAll(selector){return this.children.flatMap(c=>[...(selector==='.dialog-notice'&&c.className.includes('dialog-notice')?[c]:selector==='[type=submit]'&&c.type==='submit'?[c]:['button','input','textarea','select'].includes(selector)&&c.tagName===selector?[c]:[]),...c.querySelectorAll(selector)]);}
+  querySelectorAll(selector){return this.children.flatMap(c=>[...(selector.startsWith('.')&&c.className.split(' ').includes(selector.slice(1))?[c]:selector==='[type=submit]'&&c.type==='submit'?[c]:['button','input','textarea','select'].includes(selector)&&c.tagName===selector?[c]:[]),...c.querySelectorAll(selector)]);}
   showModal(){this.open=true;}
   close(){this.open=false;}
   focus(){this.focused=true;}
@@ -1006,7 +1006,7 @@ async function contextualTools(){
 // is doing now and for how long, a retry says what it costs, a note reaches the next job
 // without stopping, and a phone keeps one decision in the toolbar.
 async function sharedPattern(){
-  const requests=[];const found={id:'synthetic',title:'Synthetic blog',status:'working',next:'draft',approval:'page',expected:'version-1',enabled:true,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},started_at:new Date(Date.now()-3*60000).toISOString(),stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'}]};
+  const requests=[];const found={id:'synthetic',title:'Synthetic blog',status:'working',next:'draft',approval:'page',expected:'version-1',enabled:true,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},started_at:new Date(Date.now()-3*60000).toISOString(),note_stage:'review',notes:{},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'},{stage:'review',label:'Review',path:'REVIEW.md',status:'pending'}]};
   const f=fixture((url,options)=>{requests.push({url,options,data:options?.body?JSON.parse(options.body):null});return url.startsWith('/api/run?')?found:{...found,noted:'draft'};});f.loadRunner();
   const text=()=>descendants(f.get('studio-page')).map(e=>e.textContent);
   // The start form: one line says where this run stops, from the shared review level.
@@ -1018,6 +1018,8 @@ async function sharedPattern(){
   f.run("studio.options.settings.review_level='automatic';studio.draft.mode='ideas';sWizard()");
   assert.ok(text().some(t=>t==='Automatic draft: it stops for the ideas'),text().join('|'));
   f.run("studio.options.settings.review_level='step_by_step';studio.draft.mode='write';studio.draft.research='supplied-only';studio.draft.stop='package';sWizard()");
+  assert.ok(text().some(t=>t==='Step by step: it stops for the outline, the draft, the review and the export package'),'selected sources with none selected is no research: '+text().join('|'));
+  f.run("studio.draft.sources=['one'];sWizard()");
   assert.ok(text().some(t=>t==='Step by step: it stops for the research plan, the research findings, the outline, the draft, the review and the export package'),text().join('|'));
   // New blog without a task chosen shows the same start cards as Home.
   f.run("studio.draft={...defaults,mode:null,step:0};sWizard()");
@@ -1029,12 +1031,15 @@ async function sharedPattern(){
   f.set('found',found);f.run('studio.screen=\'run\';studio.id=found.id;sRun(found)');
   const now=descendants(f.get('studio-page')).find(e=>e.className==='now-line');
   assert.equal(now.textContent,'Drafting · 3 min of up to 10');
+  f.run('studio.signature=JSON.stringify(found);const realNow=Date.now;Date.now=()=>realNow()+4*60000');await f.run('sPoll()');
+  assert.equal(descendants(f.get('studio-page')).find(e=>e.className==='now-line').textContent,'Drafting · 7 min of up to 10','the now line ticks while nothing else changes');
   assert.ok(text().some(t=>/cost is not tracked for a CLI account/.test(t)),'About says once that cost is not tracked');
   // A note for the next step goes with the next job and stops nothing.
   const note=descendants(f.get('studio-page')).find(e=>e.id==='note-request');note.value='Mention the gateway.';note.listeners.input();
   await descendants(f.get('studio-page')).find(e=>e.textContent==='Add the note').listeners.click();
   assert.deepEqual(requests.find(r=>r.url==='/api/run-note').data,{id:'synthetic',expected:'version-1',request:'Mention the gateway.'});
-  assert.ok(text().some(t=>/goes with the next job/.test(t)));
+  assert.ok(text().some(t=>/goes with the next job that starts, review/.test(t)),'the box names the stage the runner would note for');
+  f.set('found',{...found,note_stage:null});f.run('sRun(found)');assert.equal(descendants(f.get('studio-page')).some(e=>e.id==='note-request'),false,'no later step, no box');
   // A time limit that ran out offers more time, and says what a plain retry costs.
   f.set('found',{...found,status:'failed',enabled:false,started_at:null,error:'This step reached its time limit. Retry or continue in chat.'});f.run('sRun(found)');
   const more=f.get('actions').children.find(e=>e.textContent==='Try again with more time');assert.equal(more.className,'button button-filled');

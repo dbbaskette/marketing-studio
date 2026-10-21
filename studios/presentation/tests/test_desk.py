@@ -377,6 +377,23 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('Try again re-runs ' + row['label'] + ' from the start; the last try took '
                       '2 minutes and $0.30.', shot['text'])
 
+    def test_a_build_retry_says_how_many_sections_are_kept(self):
+        path = self.started()
+        shown = self.run_of(path)
+        self.assertIsNone(shown['build_sections'], 'nothing built yet')
+        row = next(row for row in shown['timeline'] if row['stage'] == 'build')
+        row.update(state='current', failed=True, seconds=300, dollars=1.1)
+        for other in shown['timeline']:
+            if other is not row and other['state'] == 'current':
+                other['state'] = 'done'
+        shown.update(state='failed', gate=None, sentence='It has stopped.',
+                     build_sections={'total': 4, 'kept': 2},
+                     problem={'state': 'failed', 'why': 'The renderer stopped.',
+                              'kept': 'Two sections.', 'action': 'retry'})
+        result = self.deck_screen(path, [{'snapshot': 'failed'}], **{'GET /api/run': [ok(shown)]})
+        self.assertIn('Try again keeps 2 of 4 sections; the rest are drawn again; the last try '
+                      'took 5 minutes and $1.10.', result['snapshots']['failed']['text'])
+
     def test_one_approve_decides_and_the_review_bar_only_counts(self):
         path = self.started()
         result = self.deck_screen(path, [{'snapshot': 'gate'}])
@@ -398,7 +415,7 @@ class ScreenTests(ScriptedPage, PageCase):
     def test_the_timeline_captions_the_stage_it_is_at_for_a_phone(self):
         path = self.started()
         result = self.deck_screen(path, [{'snapshot': 'gate'}])
-        self.assertIn('Outline: Waiting for you', result['snapshots']['gate']['text'])
+        self.assertEqual(result['snapshots']['gate']['captions'], ['Outline: Waiting for you'])
 
     def test_outline_rows_keep_one_button_and_fold_the_rest(self):
         path = self.started()

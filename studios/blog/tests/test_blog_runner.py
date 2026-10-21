@@ -1126,8 +1126,9 @@ class SharedPatternTests(RunnerCase):
         engine.once(found['id'])
         self.assertEqual(seen[0]['status'], 'working')
         self.assertRegex(seen[0]['started_at'], r'^\d{4}-\d\d-\d\dT')
-        self.assertIsNone(engine.describe(found['id'])['started_at'],
-                          'a job that ended is not still timed')
+        self.assertIsNone(
+            engine.describe(found['id'])['started_at'], 'a job that ended is not still timed'
+        )
 
     def test_the_listing_puts_the_blog_that_changed_last_first(self):
         first = self.create(page=True)
@@ -1143,47 +1144,136 @@ class SharedPatternTests(RunnerCase):
         found = self.create(page=True, stop='draft')
         engine = runner.engine(self.root)
         self.addCleanup(engine.close)
-        engine.keep_local(found['id'], {'enabled': False, 'status': 'failed',
-                                        'error': 'This step reached its time limit.'})
+        engine.keep_local(
+            found['id'],
+            {'enabled': False, 'status': 'failed', 'error': 'This step reached its time limit.'},
+        )
         shown = engine.describe(found['id'])
-        again = runner.dispatch(self.root, 'retry',
-                                {'id': found['id'], 'expected': shown['expected'], 'seconds': 1200})
+        again = runner.dispatch(
+            self.root, 'retry', {'id': found['id'], 'expected': shown['expected'], 'seconds': 1200}
+        )
         self.assertEqual(again['seconds'], 1200)
         self.assertEqual(again['status'], 'queued')
         self.assertEqual(runner.load(self.root, found['id'])[2]['seconds'], 1200)
         shown = engine.describe(found['id'])
         with self.assertRaisesRegex(ValueError, 'between 30 and 3600'):
-            runner.dispatch(self.root, 'retry',
-                            {'id': found['id'], 'expected': shown['expected'], 'seconds': 9999})
+            runner.dispatch(
+                self.root,
+                'retry',
+                {'id': found['id'], 'expected': shown['expected'], 'seconds': 9999},
+            )
         with self.assertRaisesRegex(ValueError, 'Unknown run field'):
-            runner.dispatch(self.root, 'approve',
-                            {'id': found['id'], 'expected': shown['expected'], 'seconds': 1200})
+            runner.dispatch(
+                self.root,
+                'approve',
+                {'id': found['id'], 'expected': shown['expected'], 'seconds': 1200},
+            )
 
     def test_a_note_goes_with_the_next_job_without_stopping_it(self):
         calls = []
+
+        def worker(*args, **kwargs):
+            calls.append(args)
+            return {'content': '# Synthetic stage\nSynthetic writing.', 'notes': 'Checked.'}
+
         found = self.create(page=True, stop='draft')
         engine = runner.engine(self.root)
         self.addCleanup(engine.close)
-        engine.worker = self.worker(calls)
+        engine.worker = worker
         engine.control(found['id'], 'resume')
         engine.once(found['id'])
         found = self.approve(engine.describe(found['id']), page=True)
-        self.assertEqual(engine.describe(found['id'])['status'], 'queued')
-        noted = runner.dispatch(self.root, 'note', {'id': found['id'], 'expected': found['expected'],
-                                                     'request': 'Mention the fictional gateway.'})
+        shown = engine.describe(found['id'])
+        self.assertEqual((shown['status'], shown['note_stage']), ('queued', 'draft'))
+        noted = runner.dispatch(
+            self.root,
+            'note',
+            {
+                'id': found['id'],
+                'expected': found['expected'],
+                'request': 'Mention the fictional gateway.',
+            },
+        )
         self.assertEqual(noted['status'], 'queued', 'a note stops nothing')
         self.assertEqual(noted['noted'], 'draft')
-        self.assertEqual(next(row['request'] for row in noted['stages'] if row['stage'] == 'draft'),
-                         'Mention the fictional gateway.')
-        noted = runner.dispatch(self.root, 'note', {'id': found['id'], 'expected': noted['expected'],
-                                                     'request': 'Keep it short.'})
-        self.assertEqual(next(row['request'] for row in noted['stages'] if row['stage'] == 'draft'),
-                         'Mention the fictional gateway.\nKeep it short.')
+        self.assertEqual(noted['expected'], found['expected'], 'a note is not a new version')
+        self.assertEqual(noted['notes'], {'draft': 'Mention the fictional gateway.'})
+        noted = runner.dispatch(
+            self.root,
+            'note',
+            {'id': found['id'], 'expected': noted['expected'], 'request': 'Keep it short.'},
+        )
+        self.assertEqual(noted['notes']['draft'], 'Mention the fictional gateway.\nKeep it short.')
         engine.once(found['id'])
-        self.assertEqual(calls[-1]['payload']['changes'] if 'payload' in calls[-1] else
-                         runner.job(self.root, found['id'])[1]['changes'],
-                         'Mention the fictional gateway.\nKeep it short.')
+        # The worker takes (engine, payload, guidance): the note rides in the payload.
+        self.assertEqual(calls[-1][1]['changes'], 'Mention the fictional gateway.\nKeep it short.')
+        self.assertEqual(engine.describe(found['id'])['status'], 'waiting-for-approval')
         with self.assertRaisesRegex(ValueError, 'up to 8000'):
-            runner.dispatch(self.root, 'note', {'id': found['id'],
-                                                 'expected': engine.describe(found['id'])['expected'],
-                                                 'request': ''})
+            runner.dispatch(
+                self.root,
+                'note',
+                {
+                    'id': found['id'],
+                    'expected': engine.describe(found['id'])['expected'],
+                    'request': '',
+                },
+            )
+
+    def test_a_note_left_while_a_worker_runs_lands_and_the_submission_still_lands(self):
+        found = self.create(page=True, stop='draft')
+        engine = runner.engine(self.root)
+        self.addCleanup(engine.close)
+        seen = []
+
+        def worker(*args, **kwargs):
+            # Mid-job, from the page: the note goes to the stage after the one being written.
+            shown = engine.describe(found['id'])
+            seen.append(shown['note_stage'])
+            runner.dispatch(
+                self.root,
+                'note',
+                {
+                    'id': found['id'],
+                    'expected': shown['expected'],
+                    'request': 'Lead with the restart story.',
+                },
+            )
+            return {'content': '# Outline\nSynthetic argument.', 'notes': 'Checked.'}
+
+        engine.worker = worker
+        engine.control(found['id'], 'resume')
+        engine.once(found['id'])
+        shown = engine.describe(found['id'])
+        self.assertEqual(seen, ['draft'])
+        self.assertEqual(
+            (shown['status'], shown['error']),
+            ('waiting-for-approval', ''),
+            'the submission landed: a note changed no version',
+        )
+        self.assertEqual(shown['notes'], {'draft': 'Lead with the restart story.'})
+        self.assertEqual(runner.job(self.root, found['id'])[1]['changes'], '')
+        self.approve(shown, page=True)
+        self.assertEqual(
+            runner.job(self.root, found['id'])[1]['changes'], 'Lead with the restart story.'
+        )
+
+    def test_a_note_while_a_decision_waits_goes_to_the_stage_after_it(self):
+        found = self.create(page=True, stop='draft')
+        found = self.submit(found, page=True)
+        shown = runner.engine(self.root).describe(found['id'])
+        self.assertEqual((shown['awaits'], shown['note_stage']), ('decision', 'draft'))
+        noted = runner.dispatch(
+            self.root,
+            'note',
+            {'id': found['id'], 'expected': found['expected'], 'request': 'Shorter sentences.'},
+        )
+        self.assertEqual((noted['noted'], noted['expected']), ('draft', found['expected']))
+        # With nothing after the stage that waits, there is nowhere for a note to go.
+        last = self.submit(self.create(page=True, mode='outline'), page=True)
+        self.assertIsNone(runner.engine(self.root).describe(last['id'])['note_stage'])
+        with self.assertRaisesRegex(ValueError, 'no later step'):
+            runner.dispatch(
+                self.root,
+                'note',
+                {'id': last['id'], 'expected': last['expected'], 'request': 'Too late.'},
+            )

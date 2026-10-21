@@ -160,7 +160,7 @@ const PREVIEW_WORDS = { local: 'made with LibreOffice, on this computer',
 const SEVERITIES = { critical: ['late', 'Critical'], major: ['late', 'Major'],
   minor: ['none', 'Minor'] };
 const SERIOUS = ['critical', 'major'];
-// What a finding is about, where drawing again would not put it right.
+// What a finding is about: how the slide was drawn, or what it says.
 const ABOUT_TAGS = { drawing: 'About how it was drawn', content: 'About what it says' };
 const CLOSE = 'You can close this page; it says when it needs you again.';
 // What a team adds. Each of these is confirmed in the sheet before anything is sent.
@@ -2826,7 +2826,8 @@ function firstDraftChoice(draft) {
 // The gates that stop for the person under the shared review level, in the words of what
 // they decide: the level's own rule, as review_policy.automatic applies it to a deck.
 function stopsFor(draft) {
-  const level = (view.setup && view.setup.review_level) || 'step_by_step';
+  // A deck's own level, where one is chosen, else the one every studio shares.
+  const level = draft.review_level || (view.setup && view.setup.review_level) || 'step_by_step';
   const gates = [];
   if (draft.route !== 'scratch') {
     gates.push(['gate:classify', draft.route === 'document' ? 'the kind of document'
@@ -3145,6 +3146,15 @@ function nowLine(run) {
   return parts.length ? make('p', 'now-line', parts.join(' · ')) : null;
 }
 
+// While nothing else changes, the time in the now line still moves.
+function tickNow(run) {
+  const shown = main().querySelector('.now-line');
+  const fresh = nowLine(run);
+  if (shown && fresh && shown.textContent !== fresh.textContent) {
+    shown.textContent = fresh.textContent;
+  }
+}
+
 function deckIntro(run) {
   const node = add(make('div', 'intro'), nowLine(run), state(...deckStanding(run)),
     make('p', 'lede run-says', run.sentence));
@@ -3266,8 +3276,14 @@ function problemPart(run, lead) {
   if (found.action === 'retry' && failed) {
     const took = [given(failed.seconds) ? lasted(failed.seconds) : '',
       given(failed.dollars) ? money(failed.dollars) : ''].filter(Boolean);
-    again = make('p', 'quiet', 'Try again re-runs ' + failed.label + ' from the start'
-      + (took.length ? '; the last try took ' + took.join(' and ') : '') + '.');
+    const sections = run.build_sections;
+    // A slide build keeps the sections already drawn; any other step starts over.
+    const does = failed.stage === 'build' && sections && sections.total
+      ? 'Try again keeps ' + sections.kept + ' of ' + count(sections.total, 'section', 'sections')
+        + '; the rest are drawn again'
+      : 'Try again re-runs ' + failed.label + ' from the start';
+    again = make('p', 'quiet', does + (took.length ? '; the last try took ' + took.join(' and ')
+      : '') + '.');
   }
   return callout(found.state === 'failed' ? 'late' : '', make('h2', 'aside-title', title),
     add(make('p', ''), make('strong', '', 'What happened: '), found.why || ''),
@@ -4807,7 +4823,7 @@ function paintDeck(fresh) {
       run.last_shared, run.kept, title], () => theirsPart(run, lead === 'take')] : null,
     !read && run.notice ? ['notice', [run.notice, run.clash, run.kept],
       () => noticePart(run)] : null,
-    run.problem ? ['problem', [run.problem, lead, read],
+    run.problem ? ['problem', [run.problem, lead, read, run.build_sections],
       () => problemPart(run, lead === 'problem')] : null,
     run.question && read ? ['asked', [run.question, driver], () => askedPart(run)] : null,
     run.question && !read ? ['question', [run.question, title],
@@ -4847,6 +4863,7 @@ async function drawDeck(fresh) {
     view.run = run;
     // Someone is in the middle of deciding: the screen waits until they are done.
     if (!view.busy && !view.sheet && !same) paintDeck(first);
+    else if (same) tickNow(run);
     if (first) later();
   } catch (failure) {
     if (turn !== view.turn) return;

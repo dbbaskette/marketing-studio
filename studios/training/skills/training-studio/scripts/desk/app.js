@@ -729,6 +729,15 @@ function foldActions(actions) {
 
 // What it is doing now, in one line: the step, how long it has taken, what it has spent and
 // the limit it stops at. Each is left out where it is not known.
+// While nothing else changes, the time in the now line still moves.
+function tickNow(run) {
+  const shown = main().querySelector('.now-line');
+  const fresh = nowLine(run);
+  if (shown && fresh && shown.textContent !== fresh.textContent) {
+    shown.textContent = fresh.textContent;
+  }
+}
+
 function nowLine(run) {
   if (run.state !== 'working' || run.mine === false || queued(run)) return null;
   const parts = [];
@@ -4202,7 +4211,8 @@ function startStep(draft) {
   const first = make('p', '');
   const then = make('p', 'quiet stops-line');
   const comes = make('p', 'quiet');
-  const policy = (view.setup && view.setup.review_level) || 'step_by_step';
+  // The training's own level, where one is chosen, else the one every studio shares.
+  const policy = draft.review_level || (view.setup && view.setup.review_level) || 'step_by_step';
   draft.review_seen = view.setup && view.setup.review_level;
   const selected = MATERIALS.filter(([id]) => draft.materials.includes(id)).map(([, label]) => label);
   if (DECKS[draft.deck][0]) selected.push(DECKS[draft.deck][1] + ' deck');
@@ -5408,6 +5418,8 @@ async function drawRun(fresh) {
     }
     // Someone is in the middle of leaving the deck out. The run waits until they are done.
     if (!view.busy && !view.sheet) paintRun(first);
+    // The intro is kept when nothing in it changed; the time in its now line still moves.
+    tickNow(run);
     // A run just opened is read again at its own pace, not at the list's.
     if (first) later();
   } catch (failure) {
