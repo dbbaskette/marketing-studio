@@ -199,9 +199,9 @@
       "sha256": "6ead74e1bcaea3972e6a3be7967fa0ee72314814e092bc02cce78cfccd5e4b2e"
     },
     "references/guided-runs.md": {
-      "characters": 7144,
-      "estimated_tokens": 1786,
-      "sha256": "00a69dad9a8b905e594165ffe013d9517f997f5d0a5e2744572a679ac5f97d96"
+      "characters": 7500,
+      "estimated_tokens": 1875,
+      "sha256": "c8dffa0e012cd5f3060ebf23f8a125dcc1213b7e9f69637bf2ad0ec0e629f8d9"
     },
     "references/headline-lab.md": {
       "characters": 574,
@@ -779,7 +779,7 @@
       "sha256": "4c95901507d60239adadfec8ddd4001a409a52b5c5f7bf20b49bb10a79890142"
     }
   },
-  "library_tokens": 222401,
+  "library_tokens": 222490,
   "routes": {
     "outline_with_sources": {
       "files": [

@@ -20,9 +20,14 @@ changes for authors first, then what changes for maintainers.
   (profile and articles only), paste links or choose a links file of public posts and say
   whose they are, or use a source already in your references. Each becomes that author's
   sample, and the sheet offers to learn their voice, or a style, from them.
+- **In chat, a blog takes your default voice** when you do not name one, as on the page,
+  and a revision or review keeps its manuscript's own voice. Ask for no particular voice
+  to write without one; a tone you give beside a voice nudges it, and a kind of post
+  can be named too.
 - For maintainers: styles are stored beside voices in a `styles` folder (and `.shared/styles`
   in a team workspace), starters are copied in only when saved, retired or used, and
-  `library voice-links` takes `--purpose style-sample`.
+  `library voice-links` takes `--purpose style-sample`. `run create` applies the default
+  voice without `--profile`, `--profile ''` asks for none, and `--style <id>` pins a style.
 
 ## 4.3.0 — 2026-10-20
 
