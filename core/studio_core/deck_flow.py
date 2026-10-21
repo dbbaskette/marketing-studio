@@ -60,7 +60,8 @@ GATES = {'training': {'gate:deck-outline': 'draft', 'gate:deck-look': 'look',
 # gate, so that the person's answer there is the one bound to the slides tool's design record.
 HOSTS = {'training': {'balanced': {'direction': 'review:direction'}},
          'presentation': {'balanced': {'direction': 'gate:outline'}}}
-POOL = 'preview-pool'          # harness-slides' capability: Google previews reuse a few decks
+POOL = 'google-preview-pool'   # harness-slides' capability: Google previews reuse a few decks
+REPLACED = 'preview-replaced'   # its refusal of a preview file a newer preview has taken over
 
 BRAND_WORKER = 'brand worker guidance'
 BRAND_OWN = ('brand design', 'brand slide recipes', 'brand icons')

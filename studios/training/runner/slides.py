@@ -90,7 +90,9 @@ Added to the above
 - `drive_check` is True or False. It is False too when Drive would not turn a PowerPoint
   file into slides, since previews and the finished deck both need that.
 - A refusal by `preview` that had already written its file in Drive says so in `left`:
-  {'fileId', 'url'}. Pass that `fileId` to the next preview, or a second file is made.
+  {'fileId', 'url'}. A tool with a Google preview pool (`google-preview-pool`) reuses its
+  own few preview decks, and is never named a file; an older one is passed that `fileId`
+  for the next preview, and one it says a newer preview replaced is previewed again.
 - `ready()` returns {'tool', 'version', 'pictures', 'local', 'drive', 'missing'}: four
   yes-or-no answers, the version, and the sentences. `ready(slides, which=...)` asks a given
   Slides, and looks for programs some other way, which is how a test asks. With
@@ -457,13 +459,17 @@ class Slides:
         args = ['compose', 'preview', '--file', str(compiled), '--output', str(folder),
                 '--renderer', 'google' if renderer == 'drive' else 'local']
         # A tool with a preview pool reuses its own few preview decks: no file is named.
-        if file_id and renderer == 'drive' and not self.has('preview-pool'):
-            args += ['--file-id', file_id]
-        if slide:
-            args += ['--slide', slide]
-        args += _bound(design, section)
+        named = bool(file_id) and renderer == 'drive' and not self.has('google-preview-pool')
+        rest = [*(['--slide', slide] if slide else []), *_bound(design, section)]
         with PREVIEWING, _new(folder):
-            shown = self._json(*args)
+            try:
+                shown = self._json(*args, *(['--file-id', file_id] if named else []), *rest)
+            except Refused as refusal:
+                # The file named was taken over by a newer preview: preview again, unnamed.
+                if not named or not ('preview-replaced' in refusal.codes or any(
+                        'replaced by a newer one' in line for line in refusal.problems)):
+                    raise
+                shown = self._json(*args, *rest)
             if not shown.get('deck') or not isinstance(shown.get('slides'), list):
                 raise WorkspaceError('The slides tool rendered a preview and did not say '
                                      'where its slides are. Check that it is installed '
