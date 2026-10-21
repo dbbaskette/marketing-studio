@@ -106,7 +106,7 @@ What a caller needs to know
 """
 from __future__ import annotations
 
-from studio_core import review_policy
+from studio_core import deck_flow, review_policy
 
 import contextvars
 import json
@@ -229,6 +229,8 @@ NO_NEXT_STEP = {'finished': 'This deck is finished: there is no next step to lea
                 'stopped': 'This deck is stopped. Resume it, then leave a note for the next step.'}
 NO_NOTE = 'Say what should change.'
 NO_BRAND_CHOSEN = 'Choose the brand, and its variant, to make the deck in.'
+LOOKS_STALE = ('What the deck says changed since its looks were drawn, so they are drawn '
+               'again. Choose once they are.')
 ON_ITS_WAY = 'This deck is on its way to Google Slides already. Wait for it.'
 STILL_NOT_CONNECTED = ("Google still isn't connected on this computer. Sign in with gcloud, "
                        'then deliver it again.')
@@ -1084,9 +1086,14 @@ class Engine(Jobs, Researching):
                 raise WorkspaceError('This step needs your review.')
             evidence = getattr(self, f"_show_{step.name.partition(':')[2].replace('-', '_')}")(root, record)
             if step.name == 'gate:look':
-                # Automatic draft: the brand's default look, recorded with why. A Balanced
-                # direction review has had the person choose already.
-                looks.choose_default(root, self._skill())
+                # The look the person picked in the direction review, in their words; else,
+                # under Automatic draft, the brand's default, saying why.
+                if not self._look_policy(root, record):
+                    record['steps']['look-preview'] = {
+                        **(record['steps'].get('look-preview') or {}), 'done': False}
+                    self._store(root, record)
+                    self._commit(root, 'draw the looks again: what the deck says changed')
+                    return
                 looks.approve(root, record, 'Continued under the saved review level.',
                               by='review-policy')
                 record = self._load(root)
@@ -1389,12 +1396,11 @@ class Engine(Jobs, Researching):
         clock = time.monotonic()
         skill = self._skill()
         if skill.looks():
-            looks.draw_looks(root, self._load(root), skill, how)
+            looks.draw_looks(root, self._load(root), skill, how, self.slides().has)
         else:
             looks.draw_sample(root, self._load(root), self.slides(), how)
         with self.files:
             record = self._load(root)
-            record.pop('look_choice', None)   # a pick of earlier looks is not one of these
             looks.show_sample(root, record)
             self._done(root, step, clock, 'draw your cover in your brand', record)
 
@@ -1755,7 +1761,13 @@ class Engine(Jobs, Researching):
                 or target not in DIRECTION_TARGETS):
             raise WorkspaceError('Choose research or brand from the direction review.')
         extra = {key: value for key, value in extra.items() if key != 'direction_target'}
-        rebrand = (gate == 'gate:look' or target == 'gate:look') and decision == 'changes'
+        # Asking for changes to the look is choosing another brand, or, for looks that could
+        # not be rendered, drawing them again.
+        again = extra.get('look') == looks.AGAIN and decision == 'changes'
+        if again:
+            note = note or 'Draw the looks again.'
+        rebrand = (gate == 'gate:look' or target == 'gate:look') and decision == 'changes' \
+            and not again
         if rebrand and not (isinstance(extra.get('brand'), str) and extra['brand'].strip()):
             raise WorkspaceError(NO_BRAND_CHOSEN)
         brands = self.brands() if rebrand else None
@@ -1859,8 +1871,12 @@ class Engine(Jobs, Researching):
             if gate == 'gate:outline' and gated.get('saying') else None
         look_gate = dict(record['gates'].get('gate:look') or {}) if look else None
         if rebrand:
+            record.pop('look_picked', None)   # a pick of the old brand's looks is not one
             looks.rebrand(root, record, extra['brand'], extra.get('variant'), brands)
             note = note or ('Make it in ' + decks.brand_words(record['form']) + '.')
+        if extra.get('look') == looks.AGAIN:
+            looks.drop(root)
+            record.pop('look_picked', None)
         if gate == 'gate:outline' and extra.get('edited') is not None:
             self._edit_outline(root, record, extra['edited'])
         if marked:
@@ -2049,30 +2065,52 @@ class Engine(Jobs, Researching):
             if not record.get('research_contract'):
                 write_atomic(root / REPORT, self._report_text(root, record))
         elif gate == 'gate:look':
-            self._look_chosen(root, extra, note)
+            picked = self._look_picked(root, extra, note)
+            if picked and looks.choose(root, self._skill(), picked['choice'],
+                                       picked['words']) is None:
+                raise WorkspaceError(LOOKS_STALE)
             looks.approve(root, record, note)
             record = self._load(root)
         if gate == 'gate:outline' and review_policy.level(record) == 'balanced':
-            # The direction review shows the looks: the person's pick is part of approving it,
-            # and is kept in the run, so that whichever computer goes on draws the deck in it.
-            picked = self._look_chosen(root, extra, note)
+            # The direction review shows the looks: the person's pick is part of approving
+            # it. It is kept in the run, so that whichever computer goes on draws the deck in
+            # it, and is chosen with the brand when the look's own gate continues.
+            picked = self._look_picked(root, extra, note)
             if picked:
-                record['look_choice'] = {key: picked[key] for key in (
-                    'choice', 'name', 'words', 'direction', 'layouts', 'house')}
+                record['look_picked'] = picked
         return record
 
-    def _look_chosen(self, root: Path, extra: dict, note: str | None) -> dict | None:
-        """The look the person picked on the page, recorded with the brand in their words,
-        where the brand offered looks and none is chosen yet. A pick is needed to approve."""
+    def _look_picked(self, root: Path, extra: dict, note: str | None) -> dict | None:
+        """The look the person picked on the page, as {'choice', 'words'}, where the brand
+        was asked for looks and none is chosen yet: one it drew, or, where none could be
+        rendered, DEFAULT. A pick is needed to approve."""
         shown = looks.shown_looks(root)
         if shown is None or looks.chosen(root) is not None:
-            return looks.chosen(root)
-        choice = extra.get('look')
-        picked = next((look for look in shown['looks'] if look['id'] == choice), None)
+            return None
+        choice, said = extra.get('look'), (note or '').strip()
+        if choice == looks.DEFAULT and shown.get('failed'):
+            return {'choice': choice, 'words': said or deck_flow.PROCEED_WORDS.format(
+                name=looks.DEFAULT_NAME)}
+        picked = next((look for look in shown.get('looks') or () if look['id'] == choice), None)
         if picked is None:
             raise WorkspaceError(looks.NO_LOOK)
-        words = (note or '').strip() or f"Picked {picked['name']} on the page, with no comment."
-        return looks.choose(root, self._skill(), choice, words)
+        return {'choice': choice, 'words': said or looks.NO_COMMENT.format(name=picked['name'])}
+
+    def _look_policy(self, root: Path, record: dict) -> bool:
+        """A look gate the saved level does not stop at: the look picked in the direction
+        review, in the person's words; else the brand's default, saying why. False when the
+        outline changed since the looks were drawn, which are then drawn again."""
+        shown = looks.shown_looks(root)
+        if shown is None or looks.chosen(root) is not None:
+            return True
+        picked = record.get('look_picked') or {}
+        known = [look['id'] for look in shown.get('looks') or ()]
+        if picked.get('choice') in known or (picked.get('choice') == looks.DEFAULT
+                                              and shown.get('failed')):
+            made = looks.choose(root, self._skill(), picked['choice'], picked['words'])
+        else:
+            made = looks.choose_default(root, self._skill())
+        return made is not None
 
     def _edit_outline(self, root: Path, record: dict, edited) -> None:
         """The outline as the person edited it on the page, checked and saved."""
@@ -2249,9 +2287,10 @@ class Engine(Jobs, Researching):
             within, file = root.resolve(), root / build.SHEET
         elif kind == 'look':
             shown = looks.shown_looks(root) or {}
-            numbers = {str(look['picture']) for look in shown.get('looks') or ()}
+            numbers = {str(look['number']) for look in shown.get('looks') or ()}
+            # The sheet of every look is its picture 0, as the shared look picker names it.
             file = root / looks.SAMPLE if str(ref) == 'sample' else root / looks.SHEET \
-                if str(ref) == 'sheet' else root / looks.FOLDER / f'{ref}.png' \
+                if str(ref) in ('sheet', '0') else root / looks.FOLDER / f'{ref}.png' \
                 if str(ref) in numbers else None
         else:
             try:
@@ -2625,19 +2664,22 @@ class Engine(Jobs, Researching):
                 or build.DELIVERY}
 
     def _show_look(self, root: Path, record: dict) -> dict:
+        """What the look gate shows, and the direction review with it: the brand's looks as
+        the shared look picker takes them, or why none could be rendered, with how they
+        were rendered; or, for a brand too old to offer looks, its cover."""
         form = record.get('form') or {}
         shown = looks.shown_looks(root)
         picked = looks.chosen(root)
         offered = None
         if shown:
+            notes = [shown['says']] if shown.get('says') else []
+            if shown.get('failed'):
+                notes.insert(0, deck_flow.LOOK_FAILED.format(why=shown['failed']))
             offered = {
-                'looks': [{'id': look['id'], 'name': look['name'], 'useWhen': look['useWhen'],
-                           'default': look['id'] == shown.get('default'),
-                           'picture': {'kind': 'look', 'ref': look['picture']}}
-                          for look in shown['looks']],
-                'sheet': {'kind': 'look', 'ref': 'sheet'}
-                if (root / looks.SHEET).is_file() else None,
-                'route': looks.THROUGH_DRIVE if shown.get('route') == 'google' else None,
+                'looks': [{key: look.get(key) for key in ('id', 'name', 'useWhen', 'number')}
+                          for look in shown.get('looks') or ()],
+                'default': shown.get('default'), 'sheet': (root / looks.SHEET).is_file(),
+                'failed': bool(shown.get('failed')), 'notes': notes,
                 'chosen': {key: picked[key] for key in ('choice', 'name', 'words')}
                 if picked else None}
         return {'text': text_of(root / looks.LOOK_MD) or '', 'brand': form.get('brand'),

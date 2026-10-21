@@ -39,8 +39,19 @@ class DeckContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             training = contract('training', Path(folder) / 'training.json')
             presentation = contract('presentation', Path(folder) / 'presentation.json')
-        self.assertEqual(training['outline'], presentation['outline'])
+        shared = lambda names: [name for name in names if name in deck_flow.SHARED_INPUTS]
+        for side in (training, presentation):
+            side['outline'], side['composer'] = shared(side['outline']), shared(side['composer'])
         self.assertEqual(training['composer'], presentation['composer'])
+        # The one difference allowed, and only while deck_flow records it: a studio without a
+        # design session gives its outline writer no design guidance.
+        lacking = [studio for studio, has in deck_flow.DESIGN_SESSION.items() if not has]
+        unlike = [name for name in deck_flow.DESIGN_READING if lacking]
+        self.assertEqual([name for name in training['outline'] if name not in unlike],
+                         [name for name in presentation['outline'] if name not in unlike])
+        self.assertEqual(lacking, [studio for studio, side in (('training', training),
+                                   ('presentation', presentation))
+                                   if 'design guidance' not in side['outline']])
         self.assertEqual(training['pauses'], presentation['pauses'])
         self.assertEqual(training['pauses'], {level: list(stops) for level, stops
                                               in deck_flow.PAUSES.items()})

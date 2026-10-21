@@ -173,6 +173,7 @@ class StandIn:
     # brand whose guidance entry does not take the deck's brand.
     guides: bool | str = False
     offers_looks = False
+    unrenderable = ''   # what `look samples` says when it cannot render, as a test sets it
 
     def __init__(self, home: Path | None = None):
         self.calls: list[list[str]] = []
@@ -319,6 +320,8 @@ class StandIn:
         action = words[0]
         if action == 'samples':
             self._chosen(options)
+            if self.unrenderable:
+                raise _Said(self.unrenderable)
             outline = json.loads(Path(options['outline']).read_text(encoding='utf-8'))
             content = [one for one in outline.get('slides') or ()
                        if one.get('kind') == 'content']
@@ -375,13 +378,35 @@ class StandIn:
         if made.is_file():
             raise _Said('A look is already chosen for these samples; take new samples to '
                         'change it')
+        if bool(options.get('outline')) != bool(options.get('write')):
+            raise _Said('Use --outline and --write together')
+        written = None
+        if options.get('outline'):
+            data = Path(options['outline']).read_bytes()
+            if _digest(data) != manifest['outlineSha256']:
+                raise _Said('The outline has changed since the samples were made; take new '
+                            'samples first')
+            plan = json.loads(data)
+            written = {**plan, 'direction': picked['direction'],
+                       'house': list(dict.fromkeys([*(plan.get('house') or ()),
+                                                    *manifest['house']])),
+                       'layouts': {**(plan.get('layouts') or {}),
+                                   **{key: picked['layouts'][key]
+                                      for key in ('cover', 'section', 'closing')}},
+                       'approval': [*(plan.get('approval') or ()),
+                                    f"Look chosen: {picked['name']} ({picked['id']}). In their "
+                                    f"words: \"{options['words'].strip()}\""]}
+            target = Path(options['write'])
+            if target.exists():
+                raise _Said(f'{target} exists')
+            target.write_text(json.dumps(written, indent=2) + '\n', encoding='utf-8')
         record = {'schema': 1, 'choice': picked['id'], 'name': picked['name'],
                   'direction': picked['direction'], 'layouts': picked['layouts'],
                   'house': manifest['house'], 'words': options['words'].strip()}
         made.write_text(json.dumps(record, indent=2), encoding='utf-8')
         return 0, {'status': 'chosen', 'choice': picked['id'], 'name': picked['name'],
                    'direction': picked['direction'], 'layouts': picked['layouts'],
-                   'record': str(made)}
+                   'record': str(made), **({'outline': options['write']} if written else {})}
 
     def _chosen(self, options: dict) -> tuple[str, str]:
         """The brand and variant a call names: by its ID or its name, in any case."""

@@ -279,14 +279,24 @@ def _job(root, run, request, error, brand, slides, brief_kind, level, inputs, ru
     root = Path(root)
     form = run.get('form') or {}
     contract = (slides or slides_tool.Slides()).outline_contract(Path(brand))
-    inputs = {'Outline contract': contract, **inputs}
-    # The brand's worker guidance, unchanged, and the slides tool's drafting guidance as the
-    # brand pinned it for this deck, where the brand is the entry to slide building.
     from runner.steps import build
-    inputs.update(build.brand_for_workers(root, Path(brand)))
-    drafting = build.guided_reading(root).get('drafting guidance')
-    if drafting:
-        inputs['drafting guidance'] = drafting
+    from studio_core import deck_flow
+    # The deck's own guidance first, in the order every studio gives it (deck_flow): the
+    # outline contract, the slides tool's drafting guidance, pinned by the brand for this
+    # deck where it is the entry, else the installed tool's, then the brand's worker
+    # guidance unchanged. Then what this deck's words come from.
+    pinned = build.guided_reading(root)
+    if not pinned:
+        try:
+            pinned = (slides or slides_tool.Slides()).reading(Path(brand))
+        except (WorkspaceError, OSError):
+            pinned = {}
+    shared = {'outline contract': contract}
+    for name in deck_flow.OUTLINE_READING:
+        if (pinned.get(name) or '').strip():
+            shared[name] = pinned[name]
+    shared.update(build.brand_for_workers(root, Path(brand)))
+    inputs = {**shared, **inputs}
     current = Path(root) / OUTLINE
     if current.exists():
         inputs['The current outline'] = current.read_text(encoding='utf-8')

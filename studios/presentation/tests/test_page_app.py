@@ -97,7 +97,8 @@ class LinkTests(unittest.TestCase):
     def test_the_shell_loads_only_its_own_files(self):
         shell = read('index.html')
         self.assertEqual(sorted(re.findall(r'(?:src|href)="([^"]*)"', shell)),
-                         ['#main', 'app.js', 'deck.css', 'markdown.js', 'style.css'])
+                         ['#main', 'app.js', 'deck-panels.css', 'deck-panels.js', 'deck.css',
+                      'markdown.js', 'style.css'])
         for name in ('/deck.css', '/style.css', '/app.js', '/markdown.js'):
             self.assertIn(name, server.PAGE)
         styles = read('deck.css')

@@ -4076,7 +4076,10 @@ function outlinePanel(gate, readonly) {
   const node = card(gate.look ? 'Review the direction' : 'The outline');
   add(node, sayingLine(gate, readonly), classifyLine(gate, readonly));
   if (gate.research?.text) add(node, documentPart('Research findings', gate.research.text));
-  if (gate.look) add(node, lookPanel(gate.look, readonly || !gate.look.offered, chosenFor(gate)));
+  if (gate.look) {
+    add(node, lookPanel(gate.look, readonly || !gate.look.offered, chosenFor(gate),
+      gate.look.offered ? gate : null));
+  }
   if (gate.look && !readonly) {
     add(node, capsule('Choose another brand', '', openSheet('rebrand', 'direction-brand'), 'direction-brand'));
     if (gate.research?.text) {
@@ -4227,8 +4230,8 @@ function storyboardPanel(gate, readonly) {
 // The brand: the deck's cover drawn in the brand it is made in, so the person can see it is
 // the one they meant. No layout is chosen here: each slide is designed on its own as it is
 // built.
-function lookPanel(gate, readonly, held) {
-  if (gate.offered) return looksPanel(gate, readonly, held || chosenFor(gate));
+function lookPanel(gate, readonly, held, review) {
+  if (gate.offered) return looksPanel(gate, readonly, held || chosenFor(gate), review);
   const node = card('The brand');
   const made = gate.made_in || 'your brand';
   add(node, make('p', 'lede', 'Made in ' + made + '.'),
@@ -4241,10 +4244,13 @@ function lookPanel(gate, readonly, held) {
   return add(node, ...gateSaid(gate));
 }
 
-// The brand's looks: one slide of the outline drawn in each, on one sheet and one by one.
-// The person picks the look the whole deck is drawn in, and may say why in their words; the
-// brand records both. `held` is where the pick is kept until it is sent.
-function looksPanel(gate, readonly, held) {
+// The brand's looks: one slide of the outline drawn in each, in the panel every studio's
+// page shows (window.DeckPanels.lookPicker). The person picks the look the whole deck is
+// drawn in, and may say why in their words; the brand records both. Looks that could not
+// be rendered are never picked blind: the person tries again, or carries on in the brand's
+// default look. `held` keeps the pick until it is sent; `review` is the direction review
+// that hosts the pick under Balanced, or nothing at the look's own gate.
+function looksPanel(gate, readonly, held, review) {
   const offered = gate.offered;
   const made = gate.made_in || 'your brand';
   const node = card('Choose the look');
@@ -4252,47 +4258,28 @@ function looksPanel(gate, readonly, held) {
     make('p', '', 'The brand drew one slide of your outline in each of its looks. The look '
       + 'you choose sets the colours, what each colour means and how cards are drawn on every '
       + 'slide.'));
-  if (offered.route) add(node, make('p', 'quiet', offered.route));
-  if (offered.sheet) {
-    add(node, pictureAt(pictureOf(view.path, offered.sheet), 'Every look on one sheet',
-      gate.round));
-  }
   if (offered.chosen) {
     add(node, state('done', 'Chosen: ' + offered.chosen.name + '.'),
       offered.chosen.words ? make('p', 'quiet', '“' + offered.chosen.words + '”') : null);
     return add(node, ...gateSaid(gate));
   }
-  if (!held.look) held.look = (list(offered.looks).find((look) => look.default) || {}).id || '';
-  const choices = make('fieldset', 'looks');
-  add(choices, make('legend', '', readonly ? 'The looks' : 'Which look should the deck be drawn in?'));
-  for (const look of list(offered.looks)) {
-    const id = 'look-' + look.id;
-    const pick = make('input');
-    pick.type = 'radio';
-    pick.name = 'look';
-    pick.id = id;
-    pick.value = look.id;
-    pick.checked = held.look === look.id;
-    pick.disabled = Boolean(readonly);
-    pick.addEventListener('change', () => { held.look = look.id; });
-    const label = add(make('label'), make('strong', '', look.name),
-      look.default ? make('span', 'tag', 'The brand’s default') : null);
-    label.htmlFor = id;
-    add(choices, add(make('div', 'look-choice'), pick, label,
-      look.useWhen ? make('p', 'quiet', look.useWhen) : null,
-      pictureAt(pictureOf(view.path, look.picture), look.name + ', drawn on one slide',
-        gate.round)));
-  }
-  add(node, choices);
-  if (!readonly) {
-    const words = make('textarea');
-    words.id = 'look-words';
-    words.maxLength = 4000;
-    words.value = held.lookWords || '';
-    words.addEventListener('input', () => { held.lookWords = words.value; });
-    const said = add(make('label', 'quiet'), 'Why this look, in your words (optional)');
-    said.htmlFor = 'look-words';
-    add(node, said, words);
+  add(node, window.DeckPanels.lookPicker({
+    name: 'the deck', looks: list(offered.looks), defaultId: offered.default,
+    sheet: offered.sheet, notes: list(offered.notes), failed: offered.failed,
+    picked: { choice: held.look || '', words: held.lookWords || '' },
+    changed: (now) => { held.look = now.choice; held.lookWords = now.words; },
+    picture: (number, alt) => pictureAt(pictureOf(view.path,
+      { kind: 'look', ref: number === 0 ? 'sheet' : number }), alt, gate.round) }));
+  if (offered.failed && !readonly) {
+    const again = capsule('Try again', '', () => decide('changes', '', null, again,
+      review ? { look: 'again', direction_target: 'gate:look' } : { look: 'again' }),
+    'look-again');
+    const proceed = capsule('Carry on in the brand’s default look', '', () => {
+      held.look = 'default';
+      if (review) sendReview(review, proceed);
+      else decide('approve', '', null, proceed, { look: 'default' });
+    }, 'look-default');
+    add(node, add(make('div', 'bar'), again, proceed));
   }
   return add(node, ...gateSaid(gate));
 }

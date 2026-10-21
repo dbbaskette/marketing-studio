@@ -69,6 +69,11 @@ DESIGN_READING = ('design guidance',)
 COMPOSER_READING = ('design guidance', 'composition guidance', 'gallery')
 REVIEW_READING = ('review guidance',)
 
+# Which studios have the outline's writer propose each slide's design with it, approved in one
+# decision and bound to the slides tool's design record. Presentation Studio does not yet: its
+# outline writer is the one worker that reads less than Training Studio's (no design guidance).
+DESIGN_SESSION = {'training': True, 'presentation': False}
+
 # What a contract between the studios compares of a worker's inputs: the deck's own guidance
 # and the brand's, never the studio's own content.
 SHARED_INPUTS = frozenset({'outline contract', 'composition contract', *OUTLINE_READING,

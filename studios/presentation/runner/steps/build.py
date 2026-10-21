@@ -86,7 +86,7 @@ from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import home
-from studio_core import brand_guidance, deck_direction
+from studio_core import brand_guidance, deck_direction, deck_flow
 from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, build_progress, decks, slides as slides_tool
@@ -593,13 +593,14 @@ def guided_reading(root) -> dict:
 
 
 def brand_for_workers(root, brand: Path) -> dict:
-    """What every composer and the outline's writer are handed of the brand, unchanged:
-    its worker guidance, or, from a brand that gives none, its DESIGN.md."""
+    """What every composer and the outline's writer are handed of the brand, unchanged, by
+    the names deck_flow.for_workers gives: its worker guidance, or, from a brand that gives
+    none, its own handoff (DESIGN.md, its slide recipes and its icon catalog)."""
     worker = _read(Path(root) / WORKER)
-    if worker.strip():
-        return {'brand worker guidance': worker}
-    design = brand_guidance.brand_texts(brand).get('brand design')
-    return {'brand design': design} if design else {}
+    names = deck_flow.for_workers(bool(worker.strip()))
+    texts = {deck_flow.BRAND_WORKER: worker} if worker.strip() \
+        else brand_guidance.brand_texts(brand)
+    return {name: texts[name] for name in names if texts.get(name)}
 
 
 # --- where a build is kept -----------------------------------------------------------------
@@ -617,9 +618,8 @@ PNG = b'\x89PNG\r\n\x1a\n'
 PPTX = b'PK\x03\x04'
 EMPTY = {'start': None, 'sections': {}, 'rounds': [], 'repair': [], 'asked': None,
          'repaired': 0, 'audit': None, 'auditNote': None, 'deck': None}
-COMPOSING = ('design guidance', 'composition guidance', 'gallery')
-# What every composer is handed of the brand, unchanged: one or the other.
-BRANDED = ('brand worker guidance', 'brand design')
+# What each worker of a deck reads is the same in every studio: studio_core.deck_flow says.
+COMPOSING = deck_flow.COMPOSER_READING
 
 
 def _tools():
@@ -1103,7 +1103,8 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
               'composition contract': _read(told / 'compose-contract.txt')}
     relations = sorted({slide.get('relation') for slide in slides_of(whole)
                         if slide.get('id') in ids and isinstance(slide.get('relation'), str)})
-    for name in (*BRANDED, *COMPOSING,
+    branded = deck_flow.for_workers((told / reading_file(deck_flow.BRAND_WORKER)).is_file())
+    for name in (*branded, *COMPOSING,
                  *(slides_tool.example(relation) for relation in relations)):
         text = _read(told / reading_file(name))
         if text.strip():

@@ -455,7 +455,8 @@ class Slides:
                                  f'{RENDERERS[1]}, not {renderer}.')
         args = ['compose', 'preview', '--file', str(compiled), '--output', str(folder),
                 '--renderer', 'google' if renderer == 'drive' else 'local']
-        if file_id and renderer == 'drive':
+        # A tool with a preview pool reuses its own few preview decks: no file is named.
+        if file_id and renderer == 'drive' and not self.has('preview-pool'):
             args += ['--file-id', file_id]
         if slide:
             args += ['--slide', slide]

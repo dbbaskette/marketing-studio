@@ -138,14 +138,17 @@ class LooksTests(Case):
         self.contract = build.export_brand(self.root, self.run_, self.brand)
 
     def test_the_looks_are_drawn_locally_and_shown_on_one_sheet(self):
+        from studio_core import deck_flow
         shown = look.draw_looks(self.root, self.run_, self.brand, 'local')
         self.assertEqual([one['id'] for one in shown['looks']],
                          [entry['id'] for entry in brand_stand_in.DIRECTIONS])
-        self.assertEqual((shown['default'], shown['route']),
-                         (brand_stand_in.DEFAULT_LOOK, 'local'))
+        self.assertEqual((shown['default'], shown['route'], shown['says']),
+                         (brand_stand_in.DEFAULT_LOOK, 'local',
+                          deck_flow.route('local')['says']))
         self.assertEqual((self.root / look.SHEET).read_bytes()[:8], build.PNG)
         for one in shown['looks']:
-            self.assertEqual((self.root / look.FOLDER / f"{one['picture']}.png")
+            self.assertNotIn('image', one, 'a picture is served from work/look/ only')
+            self.assertEqual((self.root / look.FOLDER / f"{one['number']}.png")
                              .read_bytes()[:8], build.PNG)
         samples = [call for call in self.brand.run.calls if call[:2] == ['look', 'samples']]
         self.assertEqual(samples[-1][samples[-1].index('--preview') + 1], 'local')
@@ -156,9 +159,51 @@ class LooksTests(Case):
         self.assertIn('- Bold: Launches and keynotes.', said)
         self.assertNotIn(look.OLDER, said)
 
-    def test_previews_through_drive_say_so(self):
+    def test_previews_go_through_the_slides_tools_own_route(self):
+        from studio_core import deck_flow
         shown = look.draw_looks(self.root, self.run_, self.brand, 'drive')
-        self.assertEqual(shown['route'], 'google')
+        self.assertEqual((shown['route'], shown['says']),
+                         ('google', deck_flow.route('drive')['says']))
+        pooled = look.draw_looks(self.root, self.run_, self.brand, 'drive',
+                                 lambda name: name == deck_flow.POOL)
+        self.assertEqual(pooled['says'], deck_flow.route('drive', lambda name: True)['says'])
+
+    def test_looks_that_cannot_be_rendered_are_noted_and_never_picked_blind(self):
+        self.brand.run.unrenderable = 'LibreOffice (soffice) is not installed.'
+        shown = look.draw_looks(self.root, self.run_, self.brand, 'local')
+        self.assertIn('LibreOffice', shown['failed'])
+        self.assertEqual(look.shown_looks(self.root), shown)
+        self.assertNotIn('looks', shown)
+        with self.assertRaisesRegex(WorkspaceError, 'Choose one of the looks'):
+            look.choose(self.root, self.brand, 'example-clear', 'This one.')
+        look.show_sample(self.root, self.run_)
+        self.assertIn("The brand's looks could not be rendered here",
+                      (self.root / 'look.md').read_text())
+        # Carried on in the brand's default, in the words deck_flow gives.
+        from studio_core import deck_flow
+        made = look.choose(self.root, self.brand, look.DEFAULT,
+                           deck_flow.PROCEED_WORDS.format(name=look.DEFAULT_NAME))
+        self.assertEqual(made['choice'], brand_stand_in.DEFAULT_LOOK)
+        self.assertEqual(made['direction'], brand_stand_in.DIRECTIONS[0]['direction'])
+
+    def test_a_choice_is_made_with_the_approved_outline_and_a_stale_one_is_drawn_again(self):
+        look.draw_looks(self.root, self.run_, self.brand, 'local')
+        picked = look.choose(self.root, self.brand, 'example-bold', 'Bold.')
+        chose = [call for call in self.brand.run.calls if call[:2] == ['look', 'choose']][-1]
+        self.assertEqual(chose[chose.index('--outline') + 1], str(self.root / look.OUTLINE))
+        self.assertTrue(chose[chose.index('--write') + 1].startswith(
+            str(self.root / look.FOLDER)))
+        self.assertEqual(picked['house'], list(brand_stand_in.LOOK_HOUSE))
+        # The outline changed since the samples: the brand refuses, and they are dropped.
+        import shutil
+        shutil.rmtree(self.root / look.FOLDER)
+        look.draw_looks(self.root, self.run_, self.brand, 'local')
+        outline = json.loads((self.root / 'outline.json').read_text())
+        outline['title'] = 'Another title'
+        (self.root / 'outline.json').write_text(json.dumps(outline))
+        self.assertIsNone(look.choose(self.root, self.brand, 'example-bold', 'Bold.'))
+        self.assertIsNone(look.shown_looks(self.root))
+        self.assertFalse((self.root / look.FOLDER).exists())
 
     def test_the_persons_pick_in_their_words_becomes_the_decks_look(self):
         look.draw_looks(self.root, self.run_, self.brand, 'local')
@@ -190,6 +235,8 @@ class LooksTests(Case):
         self.assertEqual(picked['choice'], brand_stand_in.DEFAULT_LOOK)
         self.assertEqual(picked['words'],
                          "Automatic draft: the brand's default look, Clear, was used.")
+        from studio_core import deck_flow
+        self.assertEqual(picked['words'], deck_flow.DEFAULT_WORDS.format(name='Clear'))
         self.assertEqual(look.choose_default(self.root, self.brand), picked, 'chosen once')
 
     def test_a_brand_without_looks_still_gives_its_default_direction(self):

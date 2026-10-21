@@ -69,8 +69,9 @@ class PageFileTests(unittest.TestCase):
         self.assertNotRegex(page, r'\sstyle\s*=')
         self.assertNotRegex(page, r'\son[a-z]+\s*=')
         self.assertNotRegex(page, r'<svg\b')
+        # markdown.js, the shared deck panels and app.js: each a file, none inline.
         self.assertEqual(re.findall(r'<script\b[^>]*>(.*?)</script>', page, re.DOTALL),
-                         ['', ''])
+                         ['', '', ''])
 
     def test_the_shell_names_its_controls_and_its_regions(self):
         page = self.read('index.html')
@@ -1016,14 +1017,14 @@ class ScreenTests(ScriptedPage, PageCase):
         self.decided(path, 'gate:outline')
         self.assertEqual(self.run_of(path)['gate']['name'], 'gate:look')
         result = self.deck_screen(path, [
-            {'see': 'Every look'}, {'see': 'Clear, drawn'}, {'see': 'Bold, drawn'},
-            {'fill': 'Bold', 'value': 'example-bold'},
-            {'fill': 'Why this look, in your words (optional)', 'value': 'Bold for a launch.'},
+            {'see': 'Every look'}, {'see': 'Clear'}, {'see': 'Bold'},
+            {'click': 'Bold'},
+            {'fill': 'Your words, kept with your choice (optional)', 'value': 'Bold for a launch.'},
             {'snapshot': 'looks'}, {'click': 'Approve'}, {'snapshot': 'sent'}],
             **{'POST /api/decide': [ok(self.run_of(path))], 'GET /api/slide': [PICTURE] * 3})
         shot = result['snapshots']['looks']
-        for shown in ('Choose the look', 'Which look should the deck be drawn in?', 'Clear',
-                      'The brand’s default', 'Bold', 'Launches and keynotes.'):
+        for shown in ('Choose the look', 'Clear', 'the brand’s default', 'Bold',
+                      'Launches and keynotes.', 'Rendered on this computer with LibreOffice.'):
             self.assertIn(shown, shot['text'])
         self.assertNotIn('too old to offer looks', shot['text'])
         refs = {picture['of'].split('kind=look&')[1] for picture in shot['pictures']
@@ -1047,16 +1048,31 @@ class ScreenTests(ScriptedPage, PageCase):
         gate = self.run_of(path)['gate']
         self.assertEqual((gate['name'], gate['label']), ('gate:outline', 'Review the direction'))
         result = self.deck_screen(path, [
-            {'see': 'Every look'}, {'see': 'Clear, drawn'}, {'see': 'Bold, drawn'},
-            {'fill': 'Bold', 'value': 'example-bold'}, {'snapshot': 'review'},
-            {'click': 'Approve'}],
+            {'see': 'Every look'}, {'see': 'Clear'}, {'see': 'Bold'},
+            {'click': 'Bold'}, {'snapshot': 'review'}, {'click': 'Approve'}],
             **{'POST /api/decide': [ok(self.run_of(path))], 'GET /api/slide': [PICTURE] * 3})
-        self.assertIn('Which look should the deck be drawn in?',
-                      result['snapshots']['review']['text'])
+        self.assertIn('Choose the look', result['snapshots']['review']['text'])
         (address, body), = self.posts(result)
         self.assertEqual((body['gate'], body['decision'], body['extra']),
                          ('gate:outline', 'approve', {'look': 'example-bold'}))
         self.post('decide', body)
+        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:build')
+
+    def test_looks_that_cannot_be_rendered_offer_to_try_again_or_carry_on(self):
+        self.brand.run.offers_looks = True
+        self.brand.run.unrenderable = 'No renderer here.'
+        path = self.started()
+        self.decided(path, 'gate:outline')
+        result = self.deck_screen(path, [
+            {'snapshot': 'failed'}, {'click': 'Try again'},
+            {'click': 'Carry on in the brand’s default look'}],
+            **{'POST /api/decide': [ok(self.run_of(path)), ok(self.run_of(path))]})
+        text = result['snapshots']['failed']['text']
+        self.assertIn("The brand's looks could not be rendered here (No renderer here.)", text)
+        sent = [body for _, body in self.posts(result)]
+        self.assertEqual([(body['decision'], body['extra']) for body in sent],
+                         [('changes', {'look': 'again'}), ('approve', {'look': 'default'})])
+        self.post('decide', sent[1])
         self.assertEqual(self.run_of(path)['gate']['name'], 'gate:build')
 
     def test_an_older_brand_says_it_offers_no_looks(self):
