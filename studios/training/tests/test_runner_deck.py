@@ -306,6 +306,96 @@ class RuleTests(JobCase):
             'what-it-does: these approved words are missing or changed: "Instances are '
             'replaced one batch at a time."'])
 
+    def test_a_point_is_kept_whole_in_one_shape_with_its_label_beside_it(self):
+        point = {'label': 'Earn the comparison',
+                 'text': 'Explain capabilities; discover the operating model; answer the '
+                         'value objection.', 'nodes': []}
+
+        def box(*texts, ident='b'):
+            return {'type': 'box', 'id': ident, 'children': [
+                {'type': 'text', 'id': f'{ident}{number}', 'text': text}
+                for number, text in enumerate(texts)]}
+
+        # Whole in one shape, its label beside it in the same box: kept.
+        self.assertEqual(deck.whole_points(box(point['label'], point['text']), [point]), [])
+        # Label and text in one shape: kept.
+        self.assertEqual(deck.whole_points(
+            {'type': 'box', 'id': 'one', 'text': f"{point['label']}: {point['text']}"},
+            [point]), [])
+        # The sentence chopped into three nodes, as the Training Studio deck drew it.
+        chopped = box(point['label'], 'Explain capabilities;',
+                      'discover the operating model;', 'answer the value objection.')
+        [problem] = deck.whole_points(chopped, [point])
+        self.assertIn('this approved point is split across shapes', problem)
+        self.assertIn('Keep it whole in one shape', problem)
+        # The label in another box, away from its text.
+        apart = {'type': 'grid', 'id': 'g', 'children': [
+            {'type': 'box', 'id': 'left', 'children': [
+                {'type': 'stack', 'id': 'deep', 'children': [
+                    {'type': 'text', 'id': 't', 'text': point['text']}]}]},
+            {'type': 'box', 'id': 'right', 'children': [
+                {'type': 'text', 'id': 'l', 'text': point['label']}]}]}
+        self.assertIn('is far from its text', ' '.join(deck.whole_points(apart, [point])))
+        # A point that gives its diagram short labels: each drawn, the sentence in the notes.
+        parts = {**point, 'nodes': ['Explain capabilities', 'Discover the operating model',
+                                    'Answer the objection']}
+        diagram = {'type': 'stack', 'id': 's', 'children': [
+            {'type': 'text', 'id': 'h', 'text': point['label']},
+            *({'type': 'box', 'id': f'n{number}', 'text': node}
+              for number, node in enumerate(parts['nodes']))]}
+        self.assertEqual(deck.whole_points(diagram, [parts], notes='Say: ' + point['text']), [])
+        self.assertIn('missing or changed', ' '.join(deck.whole_points(diagram, [parts])))
+        diagram['children'].pop()
+        self.assertIn('the short label "Answer the objection" of a diagram part is missing',
+                      ' '.join(deck.whole_points(diagram, [parts], notes=point['text'])))
+
+    def test_a_section_that_splits_a_point_is_sent_back(self):
+        whole = deck.complete(OUTLINE, Slides.LAYOUTS, [])
+        spec = deck.fixed(whole, ['what-it-does', 'when-capacity-holds'], 1)
+        made = drawn(spec)
+        words = made['slides'][0]['canvas']['children']
+        first = next(node for node in words if node['text'].startswith('Instances are'))
+        first['text'] = 'Instances are replaced'
+        words.insert(words.index(first) + 1, {'type': 'text', 'id': 's1_split',
+                                              'text': 'one batch at a time.'})
+        self.assertEqual(deck.kept(made, spec), [
+            'what-it-does: this approved point is split across shapes: "Instances are '
+            'replaced one batch at a time.". Keep it whole in one shape, with its label in '
+            'that shape or right beside it.'])
+
+    def test_an_outline_may_give_a_point_short_labels_for_its_diagram(self):
+        made = json.loads(json.dumps(OUTLINE))     # a copy: the fixture is shared
+        made['slides'][1]['points'][0]['nodes'] = ['Batch one', 'Batch two']
+        self.assertEqual(deck.rules(made, BLUEPRINT), [])
+        self.assertEqual(deck.visible(made['slides'][1]),
+                         deck.visible(OUTLINE['slides'][1]) + 4, 'the labels are seen too')
+        stripped = deck.for_tool(made)
+        self.assertNotIn('nodes', stripped['slides'][1]['points'][0])
+        self.assertIn('nodes', made['slides'][1]['points'][0], 'the outline itself is kept')
+        self.assertEqual(deck.shown(made)[1]['points'][0]['nodes'], ['Batch one', 'Batch two'])
+        for nodes in ([], ['x'] * 7, ['far too many words for one label'], [3], 'Batch'):
+            bad = json.loads(json.dumps(OUTLINE))
+            bad['slides'][1]['points'][0]['nodes'] = nodes
+            self.assertIn('`nodes` gives a point with a text', ' '.join(deck.rules(bad, BLUEPRINT)),
+                          nodes)
+        # The composer is told them, and holds to them.
+        whole = deck.complete(made, Slides.LAYOUTS, [])
+        written = Slides._brief(whole, 1, whole['slides'][1:3], '/opt/brand/contract.json',
+                                Path('/opt/work'))
+        brief = deck.brief(written, whole)
+        self.assertIn('## Diagram parts', brief)
+        self.assertIn('- `what-it-does`, "Batch": "Batch one", "Batch two"', brief)
+        self.assertIn(deck.WHOLE, brief)
+        spec = deck.fixed(whole, ['what-it-does'], 1)
+        self.assertEqual(spec['slides'][0]['points'][0]['nodes'], ['Batch one', 'Batch two'])
+        self.assertEqual(deck.kept(drawn(spec), spec), [])
+        unlabelled = drawn(spec)
+        unlabelled['slides'][0]['canvas']['children'] = [
+            node for node in unlabelled['slides'][0]['canvas']['children']
+            if node.get('text') != 'Batch one']
+        self.assertIn('"Batch one" of a diagram part is missing',
+                      ' '.join(deck.kept(unlabelled, spec)))
+
     def test_only_a_major_finding_about_drawing_sends_a_section_back(self):
         slides = [{'id': slide['id'], 'number': number}
                   for number, slide in enumerate(OUTLINE['slides'], start=1)]
@@ -420,6 +510,18 @@ class OutlineToolTests(ToolCase):
                          ('outline', OUTLINE, '.json'))
         self.assertEqual([(outcome['check'], outcome['status']) for outcome in handed['checks']],
                          [('outline.tool', 'passed'), ('outline.rules', 'passed')])
+
+    def test_short_labels_for_a_diagram_are_kept_but_never_sent_to_the_tool(self):
+        made = json.loads(json.dumps(OUTLINE))
+        made['slides'][1]['points'][0]['nodes'] = ['Batch one', 'Batch two']
+        tools = self.writer()
+        # The stand-in, like the slides tool, refuses a point with anything but a label
+        # and a text: the check passes, so the tool never saw them.
+        self.assertEqual(self.ok(tools.check_outline(json.dumps(made))),
+                         'Nothing to put right. Hand it in with submit_outline.')
+        self.assertEqual(self.ok(tools.submit_outline(json.dumps(made))), 'Accepted: outline.')
+        handed = worker_tools.collect(self.job)['artifacts']['outline']
+        self.assertEqual(json.loads(handed['text']), made)
 
     def test_the_tools_budget_is_held_against_everything_a_slide_shows(self):
         self.slides.budget = 29
@@ -1074,6 +1176,18 @@ class FlowTests(DeckCase):
         brief = (start / 'given' / 'section-1.md').read_text()
         self.assertIn('## Colour', brief)
         self.assertIn('- `accentPurple`: Another product', brief)
+
+    def test_short_labels_for_a_diagram_reach_the_composer_and_not_the_tool(self):
+        made = json.loads(json.dumps(OUTLINE))
+        made['slides'][1]['points'][0]['nodes'] = ['Batch one', 'Batch two']
+        self.workers.outline_said = made
+        root = self.begin()
+        self.drawn(root)
+        self.assertEqual(workspace.status(root)['gate'], 'deck')
+        start = root / pipeline.WORK / self.built(root)['start']['folder']
+        given = json.loads((start / 'given' / 'outline.json').read_text())
+        self.assertEqual(given['slides'][1]['points'][0]['nodes'], ['Batch one', 'Batch two'])
+        self.assertIn('## Diagram parts', (start / 'given' / 'section-1.md').read_text())
 
     def test_the_brands_own_deck_direction_is_used_when_it_gives_one(self):
         from studio_core import deck_direction

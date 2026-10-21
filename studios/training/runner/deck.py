@@ -115,8 +115,21 @@ ABOUT_WORDS = {'drawing': 'how it is drawn', 'content': 'what it says',
                'concept': 'the visual concept it was approved with'}
 MARKED = 'Looked at at full size, slide by slide, by a reviewer that drew none of the deck.'
 NOTE = 12               # the shortest note the slides tool takes for a finding
+NODES = 6               # short labels one point may give the parts of a diagram
+NODE_WORDS = 4          # words one of them may hold
+TEXTS = ('text', 'value', 'label', 'title')     # where a drawing's node holds its words
+WHOLE = ('A point is one sentence: keep its text whole in one shape, with its label in that '
+         'shape or right beside it. Never split a sentence across boxes. Where a point gives '
+         'short `nodes` labels, draw them as the parts of its diagram and keep the sentence '
+         'whole once on the slide, unless the brief says it is in the notes.')
+
+
+def _with_whole(rules: tuple[str, ...]) -> tuple[str, ...]:
+    return rules[:-1] + (WHOLE, rules[-1])
+
+
 # The house rules when the brand says nothing of its corners. `house` gives a deck's own.
-HOUSE = deck_direction.house()
+HOUSE = _with_whole(deck_direction.house())
 DESIGNED_ICONS = ('Draw what the approved design says: its visual, its composition and the '
                   'assets it selected. An icon names a recognisable thing: the same icon for '
                   'the same concept across the deck, never twice on one slide. Where the '
@@ -127,7 +140,7 @@ DESIGNED_HOUSE = HOUSE[:-1] + (DESIGNED_ICONS,)
 
 def house(designed: bool = False, square: bool | None = None) -> tuple[str, ...]:
     """The house rules a deck is drawn by, with square corners only where its brand says."""
-    rules = deck_direction.house(square)
+    rules = _with_whole(deck_direction.house(square))
     return rules[:-1] + (DESIGNED_ICONS,) if designed else rules
 
 
@@ -235,7 +248,27 @@ def visible(slide: dict) -> int:
     """The words a slide will show: its title, its points, its caveat and its source."""
     return (count(slide.get('title')) + count(slide.get('caveat')) + count(slide.get('source'))
             + sum(count(point.get('label')) + count(point.get('text'))
+                  + sum(count(node) for node in _nodes_of(point))
                   for point in _points(slide)))
+
+
+def _nodes_of(point: dict) -> list[str]:
+    """A point's short labels for the parts of a diagram, when it gives them."""
+    nodes = point.get('nodes') if isinstance(point, dict) else None
+    return [node for node in nodes if isinstance(node, str)] if isinstance(nodes, list) else []
+
+
+def for_tool(outline):
+    """An outline as the slides tool takes it: without the short `nodes` labels a point may
+    give its diagram, which are the runner's own and which the tool does not know."""
+    if not isinstance(outline, dict) or not isinstance(outline.get('slides'), list):
+        return outline
+    return {**outline, 'slides': [
+        {**slide, 'points': [{key: value for key, value in point.items() if key != 'nodes'}
+                             if isinstance(point, dict) else point
+                             for point in slide['points']]}
+        if isinstance(slide, dict) and isinstance(slide.get('points'), list) else slide
+        for slide in outline['slides']]}
 
 
 def plain(text) -> str:
@@ -263,6 +296,7 @@ def _says(slide: dict) -> str:
     said = [slide.get(key) for key in ('title', 'subtitle', 'understand', 'focal', 'caveat',
                                        'notes')]
     said += [point.get(key) for point in _points(slide) for key in ('label', 'text')]
+    said += [node for point in _points(slide) for node in _nodes_of(point)]
     return ' . '.join(plain(text) for text in said if text)
 
 
@@ -304,6 +338,17 @@ def rules(outline, blueprint: str, budget: int | None = None) -> list[str]:
                                 'between them, and nothing drawn under it. Put anything the '
                                 'audience should read, such as what to practise next, on a '
                                 'content slide before it.')
+        for point in _points(slide):
+            if 'nodes' not in point:
+                continue
+            nodes = point['nodes']
+            if not isinstance(point.get('text'), str) or not point['text'].strip() \
+                    or not isinstance(nodes, list) or not 1 <= len(nodes) <= NODES \
+                    or not all(isinstance(node, str) and 1 <= count(node) <= NODE_WORDS
+                               for node in nodes):
+                problems.append(f'{ident}: `nodes` gives a point with a text 1 to {NODES} '
+                                f'short labels, {NODE_WORDS} words at most each, for the '
+                                'parts of its diagram. Its text stays one whole sentence.')
         if kind == 'content':
             sources = slide.get('sources')
             sources = sources if isinstance(sources, list) else []
@@ -343,7 +388,9 @@ def shown(outline, design=None) -> list[dict]:
              'title': str(slide.get('title') or ''), 'subtitle': text(slide, 'subtitle'),
              'understand': text(slide, 'understand'),
              'points': [{'label': str(point.get('label') or ''),
-                         'text': str(point.get('text') or '')} for point in _points(slide)],
+                         'text': str(point.get('text') or ''),
+                         **({'nodes': _nodes_of(point)} if _nodes_of(point) else {})}
+                        for point in _points(slide)],
              'caveat': text(slide, 'caveat'), 'source': text(slide, 'source'),
              'notes': text(slide, 'notes'),
              'serves': [str(source) for source in slide.get('sources') or ()
@@ -552,6 +599,9 @@ Each slide is `{{{shape}"brief": {{"relation", "focal": the ID of the node that 
     text = _part(text, 'House style', '\n'.join(
         f'- {line}' for line in (whole.get('house') or (DESIGNED_HOUSE if design else HOUSE))))
     text = _part(text, 'Colour', deck_direction.told(whole.get('direction') or DIRECTION))
+    parts = _parts_told(whole, named_in(written, whole))
+    if parts:
+        text = _part(text, 'Diagram parts', parts)
     if design:
         text = _part(text, 'The approved design', drawn_from(design, named_in(written, whole),
                                                              recorded, by_asset))
@@ -561,6 +611,25 @@ Each slide is `{{{shape}"brief": {{"relation", "focal": the ID of the node that 
 `preview_section` renders your whole section and returns a picture of every slide, with what the renderer found. You have {previews} previews. `check_section` is free: use it until the section compiles before you spend a preview.''')
     return _part(text, 'Return', '''
 Hand the section in with `submit_section`. It must be the version you last previewed. Say what you changed after looking at the pictures and what still bothers you, naming your weakest slide.''')
+
+
+def _parts_told(whole: dict, ids: list[str]) -> str:
+    """The short labels the points of a section's slides give their diagrams, for its
+    composer: each drawn whole, in a shape of its own, with the point's sentence kept whole
+    once on the slide or left in the notes."""
+    by_id = {slide.get('id'): slide for slide in slides_of(whole)}
+    lines = []
+    for ident in ids:
+        for point in _points(by_id.get(ident) or {}):
+            if _nodes_of(point):
+                lines.append(f"- `{ident}`, {json.dumps(point.get('label') or point.get('text'))}"
+                             ': ' + ', '.join(json.dumps(node) for node in _nodes_of(point)))
+    if not lines:
+        return ''
+    return '\n'.join(['These points give their diagrams shorter parts. Draw each short label '
+                      "whole, in a shape of its own. Keep the point's sentence whole once on "
+                      'the slide, or leave it only in the notes, where it already is. Never '
+                      'split the sentence itself across shapes.', '', *lines])
 
 
 def _json(value) -> str:
@@ -716,7 +785,8 @@ def fixed(whole: dict, ids: list[str], number: int, design=None) -> dict:
             'prefix': f's{number}_',
             'slides': [{'id': ident, 'title': by_id[ident].get('title'),
                         'sources': list(by_id[ident].get('sources') or ()),
-                        'points': [{'label': point.get('label'), 'text': point.get('text')}
+                        'points': [{'label': point.get('label'), 'text': point.get('text'),
+                                    'nodes': _nodes_of(point)}
                                    for point in _points(by_id[ident])],
                         'caveat': by_id[ident].get('caveat'),
                         'source': by_id[ident].get('source'),
@@ -727,8 +797,11 @@ def fixed(whole: dict, ids: list[str], number: int, design=None) -> dict:
     for slide in made['slides']:
         mine = approved.get(slide['id']) or {}
         copy = mine.get('copy') if isinstance(mine.get('copy'), dict) else {}
+        # The short labels are the outline's own: the approved copy does not carry them.
+        nodes = {(point['label'], point['text']): point['nodes'] for point in slide['points']}
         slide.update(title=mine.get('title'), points=[
-            {'label': point.get('label'), 'text': point.get('text')}
+            {'label': point.get('label'), 'text': point.get('text'),
+             'nodes': nodes.get((point.get('label'), point.get('text'))) or []}
             for point in copy.get('points') or () if isinstance(point, dict)],
             caveat=copy.get('caveat'), source=copy.get('source'),
             intent=json.dumps(mine.get('intent'), separators=(',', ':'), ensure_ascii=False),
@@ -806,6 +879,71 @@ def _caveat(slide: dict):
     return stated.get('text') if isinstance(stated, dict) else stated
 
 
+def _shapes(node, found: list[dict], within: tuple = ()) -> None:
+    """Each node of a drawing that shows words: its own words, as compared, and the nodes it
+    sits inside, by identity. A badge's character is not one of the slide's words."""
+    if isinstance(node, list):
+        for item in node:
+            _shapes(item, found, within)
+    elif isinstance(node, dict):
+        own = [value for key, value in node.items() if key in TEXTS
+               and isinstance(value, str) and node.get('type') != 'badge']
+        if own:
+            found.append({'said': f" {' '.join(plain(text) for text in own)} ",
+                          'within': within, 'self': id(node)})
+        for value in node.values():
+            if isinstance(value, (dict, list)):
+                _shapes(value, found, (*within, id(node)))
+
+
+def _beside(one: dict, other: dict) -> bool:
+    """Whether two shapes are one, or one sits in what holds the other: a label in the box
+    or row that holds its text, or the text in the one that holds its label."""
+    return one is other or bool(one['within']) and one['within'][-1] in (
+        *other['within'], other['self']) or bool(other['within']) and other['within'][-1] in (
+        *one['within'], one['self'])
+
+
+def whole_points(drawing, points: list[dict], notes=None) -> list[str]:
+    """What is wrong with how a slide's drawing carries its approved points, a sentence
+    each: a point's text is whole in one shape, and its label is whole in that shape or right
+    beside it. A point that gives its diagram short `nodes` labels has each of them drawn,
+    and its text whole once on the slide or in the notes."""
+    shapes: list[dict] = []
+    _shapes(drawing, shapes)
+    joined = ' ' + ' '.join(shape['said'].strip() for shape in shapes) + ' '
+    in_notes = f' {plain(notes)} ' if isinstance(notes, str) else ''
+    problems = []
+
+    def holding(text: str) -> list[dict]:
+        return [shape for shape in shapes if f' {plain(text)} ' in shape['said']]
+
+    for point in points:
+        label, text, nodes = point.get('label'), point.get('text'), point.get('nodes') or []
+        held_text = holding(text) if plain(text) else []
+        held_label = holding(label) if plain(label) else []
+        for words, held in ((text, held_text), (label, held_label)):
+            if not plain(words) or held:
+                continue
+            if words == text and nodes and f' {plain(text)} ' in in_notes:
+                continue    # the diagram draws its short labels; the sentence is in the notes
+            if f' {plain(words)} ' in joined:
+                problems.append(f'this approved point is split across shapes: '
+                                f'{json.dumps(words)}. Keep it whole in one shape, with its '
+                                'label in that shape or right beside it.')
+            else:
+                problems.append(f'these approved words are missing or changed: '
+                                f'{json.dumps(words)}')
+        if held_text and held_label and not any(_beside(one, other) for one in held_text
+                                                for other in held_label):
+            problems.append(f'the label {json.dumps(label)} is far from its text: put it in '
+                            'the same shape or right beside it.')
+        problems += [f'the short label {json.dumps(node)} of a diagram part is missing or '
+                     'changed. Draw each of a point\'s `nodes` whole, in a shape of its own.'
+                     for node in nodes if plain(node) and not holding(node)]
+    return problems
+
+
 def kept(section, spec: dict) -> list[str]:
     """What the runner refuses in a section: anything that was fixed before its composer
     started and is not as it was, and any approved word that is gone."""
@@ -836,11 +974,8 @@ def kept(section, spec: dict) -> list[str]:
         if wrong:
             problems.append(f"{ident}: every node and edge ID starts with {spec['prefix']}. "
                             'These do not: ' + ', '.join(wrong[:8]) + '.')
-        on_slide = ' ' + ' '.join(plain(text) for text in texts) + ' '
-        gone = [text for point in theirs['points'] for text in (point['label'], point['text'])
-                if plain(text) and f' {plain(text)} ' not in on_slide]
-        problems += [f'{ident}: these approved words are missing or changed: '
-                     f'{json.dumps(text)}' for text in gone]
+        problems += [f'{ident}: {problem}' for problem in whole_points(
+            [mine.get('canvas'), mine.get('connect')], theirs['points'], theirs.get('notes'))]
         for name, got in (('caveat', _caveat(mine)), ('source', mine.get('source')),
                           ('notes', mine.get('notes'))):
             if not _same(got, theirs[name]):

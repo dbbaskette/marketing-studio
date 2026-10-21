@@ -573,7 +573,10 @@ def check_outline(text: str, spec: dict, slides,
         design = given.get('design')
     budget = spec.get('budget')
     try:
-        report = slides.outline_check(_draft(scratch, 'outline', kept), spec['brand'])
+        # The tool checks the outline without the short labels a point gives its diagram.
+        told = kept if deck.for_tool(outline) == outline else json.dumps(
+            deck.for_tool(outline), indent=2, ensure_ascii=False) + '\n'
+        report = slides.outline_check(_draft(scratch, 'outline', told), spec['brand'])
     except WorkspaceError as refusal:
         found = said_no(refusal)
     else:

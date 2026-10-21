@@ -27,6 +27,7 @@ The outline is checked each time you hand it in, and with `check_outline` whenev
 - A closing slide is the brand's own last slide: a title and one subtitle line, ten words at most between them, and nothing under it. What to practise next goes on a content slide before it.
 - Nothing under the blueprint's open gaps is on a slide. A key point the blueprint marks `[unsupported]` is not taught.
 - `direction`, `layouts`, `house` and `approval` are left out. They are added after you.
+- A point may give `nodes`: one to six short labels, four words at most each, for the parts of the diagram that draws it. They are this studio's own and are not in the outline contract. They count against the word budget, and the point's `text` stays one whole sentence: it is drawn whole once, or kept word for word in the notes.
 
 ## What no program can check
 

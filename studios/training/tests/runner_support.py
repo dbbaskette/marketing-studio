@@ -289,6 +289,10 @@ def drawn(spec: dict, wording=None, placing=None) -> dict:
                   **({'textRole': 'label'} if key == 'label' else {})}
                  for number, point in enumerate(slide['points'], start=1)
                  for mark, key in (('h', 'label'), ('t', 'text'))]
+        # The short labels a point gives its diagram, each a box of its own.
+        texts += [{'type': 'box', 'id': f'{stem}_n{number}_{part}', 'text': wording(node)}
+                  for number, point in enumerate(slide['points'], start=1)
+                  for part, node in enumerate(point.get('nodes') or (), start=1)]
         made = {'id': slide['id'], 'title': slide['title'], 'sources': slide['sources'],
                 'brief': {'relation': 'order', 'focal': f'{stem}_t1', 'rhythm': 'anchor'},
                 'canvas': {'type': 'stack', 'direction': 'column', 'children': [

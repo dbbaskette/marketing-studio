@@ -1909,7 +1909,7 @@ class Engine(Reviewing):
             whole = deck.complete(mine.outline, (listed or {}).get('layouts'), words,
                                   designed=plan is not None,
                                   look=deck_direction.of_file(pipeline.contract(root, mine)))
-            home.write_json(source, whole)
+            home.write_json(source, deck.for_tool(whole))
             self.slides().outline_start(source, pipeline.contract(root, mine), folder)
             sections = []
             for part in home.read_json(folder / 'parts.json', {})['parts']:
