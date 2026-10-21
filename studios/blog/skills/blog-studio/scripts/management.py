@@ -1687,12 +1687,14 @@ def dispatch(root, route, data):
         )
     result = _dispatch(root, route, data)
     if space(root) and route != 'run-settings':
-        ident = (
-            result.get('id')
-            if route.startswith(('run-', 'editor-'))
-            or route in ('schedule', 'google-start', 'tool-action')
-            else None
-        )
+        if route == 'tool-action':
+            # A tool result may be a job or a profile, whose IDs are not blogs: the blog
+            # a tool worked on is the one the request named.
+            ident = data.get('id')
+        elif route.startswith(('run-', 'editor-')) or route in ('schedule', 'google-start'):
+            ident = result.get('id')
+        else:
+            ident = None
         result['team_sync'] = saved(root, ident)
     return result
 
