@@ -27,6 +27,11 @@ level, and `tests/test_review_policy.py` checks it against every gate ID each
 studio really lays out, so a renamed or new gate is decided rather than slipping
 through by its name.
 
+A deck's look is the brand's: its look step renders a slide in each of the
+brand's deck directions. Balanced stops for the person to pick one (Training
+Studio's `gate:deck-look`; Presentation Studio asks for the pick in its combined
+direction review); Automatic draft uses the brand's default look and records why.
+
 No gate is continued automatically while a reviewer's critical or major finding
 is still open or an audit has a blocker, whatever the level: the studio stops for
 the person with those findings shown. In Training Studio this keeps what a deck

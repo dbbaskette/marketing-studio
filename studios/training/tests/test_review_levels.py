@@ -134,6 +134,18 @@ class ReviewLevelsTests(DeckCase):
         self.engine.review_decide(root, shown['review']['expected'], 'approve')
         return self.past_decks(root)
 
+    def test_balanced_stops_for_the_person_to_pick_the_decks_look(self):
+        self.brand.offers_looks = True
+        root, shown = self.choose('balanced')
+        self.engine.review_decide(root, shown['review']['expected'], 'approve')
+        shown = self.view(root)
+        self.assertIsNone(shown['problem'], shown)
+        self.assertTrue(shown['look']['waiting'], 'a real stop, not continued by the policy')
+        self.assertEqual(shown['state'], 'waiting')
+        self.engine.look(root, None, 'example-calm', 'Calm suits a first course.')
+        self.assertEqual(workspace.status(root)['gate'], 'deck')
+        self.assertEqual(self.engine._load(root)['deck']['']['look']['chosen']['by'], 'page')
+
     def test_a_drawn_deck_always_comes_to_the_person(self):
         # Balanced and Automatic draft both stop at the deck itself, before the scenarios
         # and the final review: the policy never accepts a drawn deck for the person.

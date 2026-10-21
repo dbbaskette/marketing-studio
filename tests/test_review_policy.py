@@ -130,7 +130,7 @@ class EveryRealGateTests(unittest.TestCase):
     """The policy against every gate ID each studio really lays out, so a renamed or new
     gate is decided here rather than slipping past by its name."""
     # Where each level stops: a gate's ID without its level or scenario.
-    TRAINING = {'balanced': {'documents', 'intake', 'deck', 'gate:deck',
+    TRAINING = {'balanced': {'documents', 'intake', 'deck', 'gate:deck', 'gate:deck-look',
                              'gate:research-plan', 'review:direction', 'review:final'},
                 'automatic': {'documents', 'intake', 'deck', 'gate:deck',
                               'review:direction', 'review:final'}}
@@ -142,6 +142,7 @@ class EveryRealGateTests(unittest.TestCase):
         gates = training_gates()
         self.assertIn('gate:deck@101', gates)
         self.assertIn('gate:deck-outline@401', gates)
+        self.assertIn('gate:deck-look@101', gates)
         self.assertIn('gate:scenario:main@101', gates)
         for mode, stops in self.TRAINING.items():
             run = {'review_policy': {'schema': 1, 'level': mode}}

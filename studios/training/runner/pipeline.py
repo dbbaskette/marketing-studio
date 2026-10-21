@@ -114,6 +114,18 @@ SHOWS = 'deck/review.json'          # what its gate shows of the deck that was s
 HISTORY = 'deck/history'            # what a deck was, kept when it is drawn again from a design
 WORK = 'work/deck'                  # what it is built with: never shared
 TOOL_OUTLINE = 'tool-outline.json'  # in a start: the outline as the slides tool started from it
+SHEET = 'sheet.png'                 # beside a deck's look samples: every look on one sheet
+OLDER_BRAND = ('This brand skill is too old to offer looks to choose from, so the deck is '
+               "drawn in the brand's default direction, or in the slides tool's own where the "
+               'brand gives none.')
+THROUGH_DRIVE = ('The looks were rendered through Google Drive, the way this computer renders '
+                 'every preview: it has no local renderer.')
+NO_COMMENT = 'Picked {name} on the page, with no comment.'
+NO_ENTRY = ("This brand skill is not the entry to slide building yet, so the deck's workers "
+            "read the installed slides tool's own guidance.")
+BRAND_WORKER = 'brand worker guidance'   # what the brand asks be handed to every composer
+BRAND_DESIGN = 'brand design'           # the brand's DESIGN.md, for a brand that gives none
+AUTOMATIC_LOOK = "Automatic draft: the brand's default look, {name}, was used."
 BUILT = f'{WORK}/state.json'        # what this computer has built, and from what
 SHOTS = f'{WORK}/preview'           # the pictures of the last preview of the whole deck
 DRAWN = f'{WORK}/sections'          # the pictures of each section's last preview
@@ -188,6 +200,10 @@ TRAINING = (
     ('deck', 'deck-brand', 'code', 'Export the brand for {it}', 'Exporting the brand for {it}'),
     ('deck', 'deck-outline', 'agent', 'Write what {it} says', 'Writing what {it} says'),
     ('deck', 'gate:deck-outline', 'gate', *SEES),
+    ('deck', 'deck-look', 'code', "Draw {it} in each of the brand's looks",
+     "Drawing {it} in each of the brand's looks"),
+    ('deck', 'gate:deck-look', 'gate', 'Your choice of a look for {it}',
+     'Waiting for your choice of a look for {it}'),
     ('deck', 'deck-start', 'code', 'Split {it} into sections', 'Splitting {it} into sections'),
     ('deck', 'deck-sections', 'agent', 'Draw the sections of {it}',
      'Drawing the sections of {it}'),
@@ -946,8 +962,22 @@ def stands(root: Path, session: dict, state: dict, asked: dict, run: dict,
     if said and approved.get('sha256') == said \
             and (approved.get('design') or {}).get('sha256') == drawn_as:
         done.add('gate:deck-outline')
+    # The look: chosen by the person, or drawn here and waiting for them, for what the deck
+    # says now. A brand too old to offer looks has nothing to choose. A start made before
+    # looks were offered keeps the look it was drawn in.
+    chosen = looked(kept, said)
+    shown = built.get('look') or {}
+    drawn_here = bool(said) and shown.get('outline') == said \
+        and shown.get('brand') == brand.get('sha256') \
+        and (bool(shown.get('unavailable')) or (work / str(shown.get('folder'))).is_dir())
+    earlier = bool(said) and start.get('outline') == said and 'look' not in start
+    if chosen or drawn_here or earlier:
+        done.add('deck-look')
+    if chosen or earlier or drawn_here and shown.get('unavailable'):
+        done.add('gate:deck-look')
     # A start drawn from its approved design gives its sections that design to draw from.
     if start.get('outline') == said and start.get('brand') == brand.get('sha256') \
+            and (earlier or start.get('look') == (chosen or {}).get('id')) \
             and start.get('design') == approved.get('design') \
             and (start.get('design') or {}).get('sha256') == drawn_as \
             and (work / str(start.get('folder')) / 'parts.json').is_file() \
@@ -1076,6 +1106,8 @@ def _next(first: Step | None, session: dict, state: dict, asked: dict,
         return Next('review', first)
     if first.id.startswith('review-sample'):
         return Next('code', first)
+    if first.stage == 'deck' and bare(first.id) == 'gate:deck-look':
+        return Next('look', first)
     if first.stage == 'deck' and first.id != 'deck' and bare(first.id) != DECK_STEPS[-1]:
         mine = decks[workspace.split(first.artifact)[1]]
         if first.kind == 'gate':  # the runner's own gate: the core has none for it
@@ -1606,6 +1638,13 @@ def reading_file(name: str) -> str:
     return 'reading/' + re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-') + '.txt'
 
 
+def _brand_for_workers(root: Path, mine: Deck) -> tuple[str, ...]:
+    """What of the brand's own a deck's composers and its design's writer are handed: the
+    worker guidance its slides entry asks be forwarded unchanged, else its DESIGN.md."""
+    return (BRAND_WORKER,) if _told(root, mine, reading_file(BRAND_WORKER)).strip() \
+        else (BRAND_DESIGN, 'brand slide recipes', 'brand icons')
+
+
 def _read_also(root: Path, mine: Deck, inputs: dict, names) -> None:
     """Add the pieces of the slides tool's guidance a worker needs to its inputs, in the
     order given. One the installed tool does not have is left out."""
@@ -1625,11 +1664,53 @@ def look_of(root: Path, mine: Deck) -> dict:
     """What a deck is drawn in: the look the person chose for it, with its direction and
     house style, else the direction its brand gives, else nothing, and the deck has the
     fallback."""
-    chosen = (mine.kept.get('look') or {}).get('chosen')
-    if isinstance(chosen, dict) and chosen.get('direction'):
-        return {'direction': chosen['direction'], 'house': list(chosen.get('house') or ())}
+    chosen = looked(mine.kept, workspace.sha256_file(place(root, mine.level, OUTLINE)))
+    if chosen and chosen.get('direction'):
+        return {'direction': chosen['direction'], 'house': list(chosen.get('house') or ()),
+                'layouts': dict(chosen.get('layouts') or {})}
+    default = deck_direction.default_look(contract(root, mine))
+    if default:
+        return {key: default[key] for key in ('direction', 'house', 'layouts')}
     given = deck_direction.of_file(contract(root, mine))
     return {'direction': given} if given else {}
+
+
+def looked(kept: dict, said: str | None) -> dict | None:
+    """The look the person chose for a deck, for what it says now, or None."""
+    chosen = (kept.get('look') or {}).get('chosen') if isinstance(kept, dict) else None
+    return chosen if isinstance(chosen, dict) and said and chosen.get('outline') == said \
+        else None
+
+
+def look_view(root: Path, found: Survey, level: str | None) -> dict | None:
+    """What the page shows of a deck's looks: each look the brand drew, with its picture's
+    number and what it is for, the brand's default, whether there is a sheet of them all,
+    how they were rendered, and the one chosen. None while there are none to show."""
+    mine = (found.decks or {}).get(level)
+    if mine is None:
+        return None
+    shown = mine.built.get('look') or {}
+    said = workspace.sha256_file(place(root, level, OUTLINE))
+    chosen = looked(mine.kept, said)
+    if shown.get('outline') != said or not shown.get('looks'):
+        return None
+    waiting = found.next.kind == 'look' and workspace.split(found.next.step.artifact)[1] \
+        == level
+    notes = [THROUGH_DRIVE] if shown.get('route') == 'google' else []
+    return {'level': level, 'artifact': mine.name, 'waiting': waiting,
+            'default': shown.get('default'), 'sheet': bool(shown.get('sheet')),
+            'looks': [{key: look.get(key) for key in ('id', 'name', 'useWhen', 'number')}
+                      for look in shown['looks']],
+            'notes': notes,
+            'chosen': ({key: chosen.get(key) for key in ('id', 'name', 'words', 'by')}
+                       if chosen else None)}
+
+
+def look_picture(root: Path, level: str | None, number: int) -> Path:
+    """Where one look's picture is, by its number, or the sheet of them all for 0."""
+    shown = read_built(root, level).get('look') or {}
+    folder = place(root, level, WORK) / str(shown.get('folder'))
+    return folder / (SHEET if number == 0 else f'{number}.png')
 
 
 def naming_rules(root: Path, mine: Deck) -> str | None:
@@ -1651,7 +1732,8 @@ def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
     blueprint = _text(root, session, workspace.qualify('blueprint', level)) or ''
     inputs = {'handoff': _read(place(root, level, HANDOFF)) or '',
               'outline contract': _told(root, mine, 'outline-contract.txt')}
-    _read_also(root, mine, inputs, [*DRAFTING, *(DESIGNING if designed else ())])
+    _read_also(root, mine, inputs, [*DRAFTING, *(DESIGNING if designed else ()),
+                                    *(_brand_for_workers(root, mine) if designed else ())])
     inputs['blueprint'] = blueprint
     guide = (_text(root, session, workspace.qualify('document', level))
              if 'document' in wanted(session) else None)
@@ -1731,7 +1813,7 @@ def section_work(root: Path, found: Survey, step: Step, section: str, error: str
               'composition contract': _told(root, mine, 'compose-contract.txt')}
     relations = [slide.get('relation') for slide in deck.slides_of(whole)
                  if slide.get('id') in ids and isinstance(slide.get('relation'), str)]
-    _read_also(root, mine, inputs, [*COMPOSING, *(
+    _read_also(root, mine, inputs, [*_brand_for_workers(root, mine), *COMPOSING, *(
         slides_tool.example(relation) for relation in sorted(set(relations)))])
     again, look = section in mine.again, []
     task = (f'Draw section {number} of {workspace.label(step.artifact)}: the slides in your '

@@ -46,6 +46,7 @@ GRAVE = ('critical', 'major')
 # `gate:deck` is the drawn slide deck, which, as in Presentation Studio and Blog Studio,
 # always comes to the person.
 TRAINING_KEPT = ('documents', 'intake', 'deck', 'gate:deck')
+TRAINING_BALANCED = ('gate:research-plan', 'gate:deck-look')
 
 
 def held(findings=(), blockers=()):
@@ -83,8 +84,10 @@ def automatic(record, product, gate, last=None, holding=()):
     if product == 'training':
         base = gate.partition('@')[0]
         # Balanced reads the research plan: a short read, and the cheapest decision there is.
+        # It also has the person pick a deck's look from the brand's rendered samples, which
+        # Automatic draft leaves to the brand's default.
         return not base.startswith('review:') and base not in TRAINING_KEPT \
-            and not (chosen == 'balanced' and base == 'gate:research-plan')
+            and not (chosen == 'balanced' and base in TRAINING_BALANCED)
     raise ValueError('Unknown studio review policy.')
 
 

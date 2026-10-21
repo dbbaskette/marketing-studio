@@ -108,6 +108,11 @@ What a caller needs to know
   the training's own folder or the folder of the worker drawing that section, is sent.
 - `POST /api/outline` records what the person decided about what a deck says, which is the
   runner's own gate, and answers the run.
+- `POST /api/look` with {"path", "level", "choice", "words"?} records the look the person
+  chose for a deck from the brand's rendered samples, in their words, and answers the run.
+  A run carries `look` while there are looks to show; `GET /api/slide` with the deck's
+  `artifact`, `section` "look" and a look's `number` (0 for the sheet of them all) answers
+  its picture.
 - A run carries `redesign`: each of its decks drawn without a design, as {"level",
   "artifact", "label", "may", "why"}. `POST /api/redesign` with {"path", "level"} draws one
   again from a design, after the person said yes in the page's confirmation, and answers
@@ -166,7 +171,7 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
-          '/api/brand', '/api/brand/install', '/api/shared', '/api/note')
+          '/api/brand', '/api/brand/install', '/api/shared', '/api/note', '/api/look')
 PNG = 'image/png'
 DOCUMENTS = '/api/documents'
 ASSET = '/api/asset'
@@ -497,6 +502,8 @@ class RunnerPage(desk.Page):
                 desk.text(sent, 'note', False), self.requests(sent)))
         if path == '/api/outline':
             return desk.as_json(HTTPStatus.OK, self.outline(sent))
+        if path == '/api/look':
+            return desk.as_json(HTTPStatus.OK, self.look(sent))
         if path == '/api/redesign':
             return desk.as_json(HTTPStatus.OK, self.redesign(sent))
         return super().write(path, sent)
@@ -555,6 +562,17 @@ class RunnerPage(desk.Page):
         return self.engine.outline(path, level or None, decision, note,
                                    desk.text(sent, 'seen', False),
                                    desk.text(sent, 'design', False))
+
+    def look(self, sent: dict) -> dict:
+        """Record the look the person chose for a deck from the brand's samples, with their
+        words. It is theirs alone to choose, and chosen here."""
+        path, choice = desk.text(sent, 'path'), desk.text(sent, 'choice')
+        level, words = desk.text(sent, 'level', False), desk.text(sent, 'words', False)
+        self.run(path)
+        try:
+            return self.engine.look(path, level or None, choice, words)
+        except WorkspaceError as refusal:
+            raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
 
     def redesign(self, sent: dict) -> dict:
         """Draw a deck that was drawn without a design again from one, as the person asked,

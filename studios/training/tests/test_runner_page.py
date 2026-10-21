@@ -48,7 +48,7 @@ POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/a
          '/api/note')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
 RUN_KEYS = ['agent', 'clash', 'controls', 'copies', 'deck', 'deck_left', 'documents', 'driver', 'effort',
-            'finished', 'kept', 'last_shared', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
+            'finished', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
             'question', 'queue', 'redesign', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
             'workers']
 STEP_KEYS = ['attempts', 'dollars', 'error', 'id', 'kind', 'label', 'seconds', 'status']

@@ -2352,7 +2352,7 @@ MODELS = {'GET /api/models?agent=claude': [ok(CLAUDE_MODELS)],
 NOTE_BOX = 'Note for the next step'   # on every run of this computer's that has a next step
 RUN_FIELDS = {'state', 'sentence', 'agent', 'model', 'effort', 'steps', 'workers', 'spent',
               'question', 'problem', 'documents', 'copies', 'deck_left', 'finished', 'outline',
-              'deck', 'redesign', 'controls', 'note'}
+              'look', 'deck', 'redesign', 'controls', 'note'}
 OUTLINE_FIELDS = {'level', 'waiting', 'slides', 'sha256', 'checked', 'worth', 'note',
                   'design'}
 OUTLINE_SLIDE_FIELDS = {'id', 'kind', 'title', 'subtitle', 'understand', 'points', 'caveat',
@@ -2388,7 +2388,7 @@ def a_run(state: str, sentence: str, **more) -> dict:
     run = {'state': state, 'sentence': sentence, 'agent': 'claude', 'model': None,
            'effort': None, 'steps': [], 'workers': [], 'spent': {'dollars': None, 'tokens': None},
            'question': None, 'problem': None, 'documents': None, 'copies': [],
-           'deck_left': None, 'finished': None, 'outline': None, 'deck': None,
+           'deck_left': None, 'finished': None, 'outline': None, 'look': None, 'deck': None,
            'redesign': [], 'controls': {'finish_level': None, 'finishing': None,
                                         'skip_deck': False},
            'note': {'pending': None, 'used': [], 'expected': '0'}, **more}
@@ -5198,6 +5198,44 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'POST /api/setup/check': [ok(check)], 'POST /api/setup': [ok(SET_UP)]}), [
             {'click': 'Settings'}, {'click': 'Change the set-up'}, {'click': 'Save'}])
         self.assertEqual(self.posts(result)[-1], ('/api/setup', saved))
+
+    def test_the_person_picks_the_decks_look_from_the_brands_samples(self):
+        self.started()
+        asking = 'The brand drew the slide deck in each of its looks. Choose the one to draw it in.'
+        going = 'Splitting the slide deck into sections.'
+        look = {'level': None, 'artifact': 'deck', 'waiting': True,
+                'default': 'example-contrast', 'sheet': True, 'chosen': None,
+                'notes': ['The looks were rendered through Google Drive, the way this '
+                          'computer renders every preview: it has no local renderer.'],
+                'looks': [{'id': 'example-contrast', 'name': 'Against an alternative',
+                           'useWhen': 'Comparisons.', 'number': 1},
+                          {'id': 'example-calm', 'name': 'Calm',
+                           'useWhen': 'Explanations.', 'number': 2}]}
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', asking, needs=True),
+                                   self.listed('working', going)],
+            'GET /api/training': [self.detail('waiting', asking)],
+            'GET /api/run': [a_run('waiting', asking, look=look)],
+            'GET /api/slide': [a_picture()],
+            'POST /api/look': [a_run('working', going)]})
+        result = self.run_page(answers, [
+            {'click': 'Open Rolling restarts'}, {'see': 'Every look on one sheet'},
+            {'snapshot': 'look'},
+            {'fill': 'Your words, kept with your choice (optional)',
+             'value': 'Calm suits a first course.'},
+            {'click': 'Use Calm'}, {'snapshot': 'chosen'},
+        ])
+        shown = result['snapshots']['look']
+        for said in ('Choose the look of the slide deck.', 'Against an alternative',
+                     'the brand’s default', 'Explanations.', 'through Google Drive'):
+            self.assertIn(said, shown['text'])
+        self.assertIn('Use Calm', shown['buttons'])
+        self.assertEqual(self.posts(result), [('/api/look', {
+            'path': str(self.root), 'level': None, 'choice': 'example-calm',
+            'words': 'Calm suits a first course.'})])
+        pictures = self.asked(result, 'slide')
+        self.assertTrue(any('section=look' in address and 'number=0' in address
+                            for address in pictures), pictures)
 
     def test_what_a_deck_says_is_read_and_decided_like_any_gate(self):
         self.started()

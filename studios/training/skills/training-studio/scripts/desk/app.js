@@ -5382,6 +5382,62 @@ function outlinePart(run) {
       + 'quick to change now, and slow to change once the slides are drawn.'));
 }
 
+// The brand's looks for a deck, each drawn on the same slide of what it says. The person
+// picks the one every slide is drawn in, and may say why: their words are kept with it.
+function lookPart(run) {
+  const look = run.look;
+  const deck = look.level ? 'the level ' + look.level + ' slide deck' : 'the slide deck';
+  const node = callout('yours', make('p', '', 'Choose the look of ' + deck + '.'),
+    make('p', 'quiet', 'The brand drew one slide of what the deck says in each of its looks. '
+      + 'The look you choose sets the colours, what each one stands for and how cards are '
+      + 'drawn on every slide.'));
+  list(look.notes).forEach((note) => add(node, make('p', 'quiet', note)));
+  if (look.sheet) {
+    add(node, pictureAt({ artifact: look.artifact, section: 'look', number: 0 },
+      'Every look on one sheet'));
+  }
+  const id = 'look-words';
+  const held = view.notes;
+  const words = field(id, 'Your words, kept with your choice (optional)', held, 'look:' + look.artifact,
+    { long: true });
+  const problem = alertLine('look-problem');
+  const choices = make('ul', 'thumbs looks');
+  list(look.looks).forEach((one) => {
+    const named = one.name + (one.id === look.default ? ' · the brand’s default' : '');
+    const pressed = capsule('Use ' + one.name, '', () => chooseLook(look, one.id,
+      held['look:' + look.artifact] || '', problem, pressed), 'look-' + one.id);
+    add(choices, add(make('li', 'thumb look-choice'),
+      pictureAt({ artifact: look.artifact, section: 'look', number: one.number }, one.name),
+      make('p', 'step-name', named), one.useWhen ? make('p', 'quiet', one.useWhen) : null,
+      pressed));
+  });
+  return add(node, choices, words, problem);
+}
+
+async function chooseLook(look, choice, words, problem, pressed) {
+  if (view.busy) return;
+  const turn = view.turn;
+  view.busy = true;
+  pressed.disabled = true;
+  let run;
+  try {
+    run = await send('look', { path: view.path, level: look.level || null, choice,
+      words: words.trim() || null });
+  } catch (failure) {
+    say(problem, failure.message);
+    pressed.disabled = false;
+    view.busy = false;
+    return;
+  }
+  delete view.notes['look:' + look.artifact];
+  view.busy = false;
+  if (turn !== view.turn) return;
+  view.run = run;
+  toast('The look is chosen. ' + run.sentence);
+  show('run', { path: view.path }, true);
+  refresh();
+}
+
 // What a deck of this size has cost before, so that this one is no surprise.
 function costBefore(before) {
   const parts = [];
@@ -5781,6 +5837,7 @@ function paintRun(fresh) {
   const driver = run.driver || null;
   const supplying = adding(run) && !theirs;
   const outline = outlining(run) && !theirs;
+  const looking = Boolean(run.look && run.look.waiting) && !theirs;
   const free = theirs && !driver && !run.finished;
   // One filled button on the screen, for the first thing that is needed. While a sheet is
   // open it holds that button, so nothing under it is filled.
@@ -5788,7 +5845,7 @@ function paintRun(fresh) {
     : free ? 'take' : '')
     : run.question ? 'answer' : offered ? 'problem'
       : supplying ? 'documents' : run.review ? 'combined' : waiting ? 'review' : outline ? 'outline'
-        : run.finished ? 'finished' : ['paused', 'stopped'].includes(run.state) ? 'resume'
+        : looking ? 'look' : run.finished ? 'finished' : ['paused', 'stopped'].includes(run.state) ? 'resume'
           : run.state === 'failed' && !run.problem ? 'retry' : '';
   const limits = (view.setup && view.setup.limits) || {};
   const runs = !theirs ? 'Runs on this page' : driver ? 'Run by ' + nameOf(driver)
@@ -5824,6 +5881,8 @@ function paintRun(fresh) {
       () => gatePart(training, waiting, run.sentence)] : null,
     outline && !run.question && !run.review ? ['outline', [run.outline.level, run.sentence],
       () => outlinePart(run)] : null,
+    looking && !run.question && !run.review ? ['look', [run.look, run.sentence],
+      () => lookPart(run)] : null,
     run.deck_left ? ['deck-left', [run.deck_left, run.sentence, theirs],
       () => deckLeftPart(run)] : null,
     !theirs && run.controls && (run.controls.finish_level || run.controls.finishing
