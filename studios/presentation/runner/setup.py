@@ -107,6 +107,7 @@ import studios_config
 import workspace
 from workspace import WorkspaceError
 
+from studio_core import review_policy
 from runner import brand_source, decks, gitstate, settings
 
 WHEN = {'decision': 'each-decision', 'asked': 'when-asked'}
@@ -146,6 +147,8 @@ def describe(engine) -> dict:
             'person': {'name': chosen.name},
             'output': chosen.output,
             'limits': chosen.limits,
+            # The shared review level, so the start form can say where a deck stops.
+            'review_level': review_policy.level({'review_policy': review_policy.capture()}),
             'previews': {'how': chosen.previews, 'drive': needs['drive'],
                          'local': needs['local']},
             'brand': {**needs['brand'], 'skills': engine.brand_skills(),

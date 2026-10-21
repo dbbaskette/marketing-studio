@@ -143,9 +143,14 @@ def settings(root, data=None):
             'author': shared.get('person', {}).get('name') or DEFAULTS['author'],
         }
         saved = {'defaults': private}
+    try:
+        review_level = review_policy.snapshot(shared)['level']
+    except ValueError:
+        review_level = 'step_by_step'
     return {
         'configured': bool(saved) or shared_ready(shared),
         'defaults': base,
+        'review_level': review_level,
         'shared_before': {
             'engine': shared.get('assistant', {}).get('agent'),
             'author': shared.get('person', {}).get('name'),
@@ -764,7 +769,10 @@ def job(root, ident):
         payload['documents']['outline'] = (directory / 'OUTLINE.md').read_text()
     saved = run['stages'].get(stage, {})
     request = saved.get('request', '') or run.get('editor_request', '')
-    payload['changes'] = request
+    # A note for this step is kept beside the run, outside its versioned state, so leaving
+    # one never changes the version a worker is checked against.
+    note = (engine(root).local(ident).get('notes') or {}).get(stage, '')
+    payload['changes'] = '\n'.join(part for part in (request, note) if part)
     if len(json.dumps(payload)) > 600_000:
         raise ValueError('This job needs smaller source excerpts. Continue it in chat.')
     # A request against a version the author has already seen, or their own manuscript,
@@ -898,6 +906,22 @@ class Engine:
         self.wake.set()
         return self.describe(ident)
 
+    def note_stage(self, ident, found, local=None):
+        """The stage a note left now would go with: the next job that starts. While a
+        submitted stage waits for a decision, or a worker is on the next stage, that is the
+        stage after it; None when there is no later stage."""
+        if found['complete'] or not found['next']:
+            return None
+        local = self.local(ident) if local is None else local
+        names = [row['stage'] for row in found['stages']]
+        at = names.index(found['next'])
+        busy = found['awaits'] == 'decision' or (
+            local.get('status') == 'working' and self.current == ident
+        )
+        if not busy:
+            return found['next']
+        return names[at + 1] if at + 1 < len(names) else None
+
     def describe(self, ident, listing=False):
         found = survey(self.root, ident, listing)
         local = self.local(ident)
@@ -918,11 +942,17 @@ class Engine:
         from team_workspace import driver, space
 
         owner = driver(self.root, ident) if space(self.root) else None
+        decisions = found.get('decisions') or []
         return {
             **found,
             'team': bool(space(self.root) and space(self.root).address),
             'driver': owner,
             'status': status,
+            'notes': local.get('notes') or {},
+            'note_stage': self.note_stage(ident, found, local),
+            # The job's start is timed only while it is the one working here.
+            'started_at': local.get('started_at') if status == 'working' else None,
+            'touched': decisions[-1]['at'] if decisions else None,
             'error': local.get('error', ''),
             'enabled': local.get('enabled', False),
             'observation': 'Saved locally. Workers use your selected CLI sign-in. Public research links need review; no publishing is automatic.',
@@ -989,7 +1019,7 @@ class Engine:
                 save(self.root, directory, record, run, 'Selected model for ' + found['next'])
                 # Audit metadata changes the optimistic token, so use the freshly saved version.
                 found['expected'] = survey(self.root, ident)['expected']
-            local.update(status='working', error='')
+            local.update(status='working', error='', started_at=studio.now())
             self.keep_local(ident, local)
             self.current = ident
             self.stop.clear()
@@ -1210,6 +1240,7 @@ def catalog(root):
                             'editor_check',
                             'team',
                             'driver',
+                            'touched',
                         )
                     }
                 )
@@ -1222,6 +1253,7 @@ def catalog(root):
                     'error': 'Open this blog in chat to inspect its saved context.',
                 }
             )
+    rows.sort(key=lambda row: row.get('touched') or '', reverse=True)
     return {'items': rows, 'total': len(rows)}
 
 
@@ -1348,7 +1380,11 @@ def dispatch(root, action, data):
         studio.write_json(path, {'id': found['id'], 'fingerprint': fingerprint})
         return runner.control(found['id'], 'resume')
     ident = data.get('id')
-    if set(data) - {'id', 'expected', 'request', 'stage'}:
+    if (
+        set(data)
+        - {'id', 'expected', 'request', 'stage'}
+        - ({'seconds'} if action == 'retry' else set())
+    ):
         raise ValueError('Unknown run field.')
     # Every page control is bound to the version the person was shown.
     found = survey(root, ident)
@@ -1375,8 +1411,36 @@ def dispatch(root, action, data):
         if found['approval'] == 'conversation':
             decide(root, ident, data['expected'], 'handoff')
         return runner.control(ident, 'resume')
+    if action == 'retry' and 'seconds' in data:
+        # Try again with more time: the limit that just ran out is raised for every step.
+        seconds = data['seconds']
+        if type(seconds) is not int or not 30 <= seconds <= 3600:
+            raise ValueError('Choose a step time limit between 30 and 3600 seconds.')
+        if found['approval'] != 'page':
+            raise ValueError('Choose Run this from here to move this blog from chat to the page.')
+        directory, record, run = load(root, ident)
+        run['seconds'] = seconds
+        save(root, directory, record, run, f'Step time limit set to {seconds} seconds')
     if action in ('resume', 'retry', 'pause', 'stop'):
         return runner.control(ident, action)
+    if action == 'note':
+        # A note for the next job that starts. It is kept beside the run, in its local
+        # state, never in the versioned record: leaving one stops nothing and changes no
+        # version a running worker is checked against. job() folds it into that stage's
+        # request when the stage starts.
+        request = text(data.get('request', ''), 'note', 8000, required=True)
+        stage = runner.note_stage(ident, found)
+        if stage is None:
+            raise ValueError(
+                'There is no later step for a note to go with. Ask for changes to '
+                + (STAGES[found['next']][0].lower() if found['next'] else 'a stage')
+                + ' instead.'
+            )
+        state = runner.local(ident)
+        notes = state.setdefault('notes', {})
+        notes[stage] = (notes.get(stage, '') + '\n' + request).strip()
+        runner.keep_local(ident, state)
+        return {**runner.describe(ident), 'noted': stage}
     if action == 'adopt':
         if not found['next'] or not found['content']:
             raise ValueError('There is no saved stage to review.')

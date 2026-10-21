@@ -2611,6 +2611,7 @@ class Engine(Jobs, Researching):
             'review_level': review_policy.level(record),
             'workers': self._workers(run),
             'build_progress': progress,
+            'build_sections': self._sections_kept(root),
             'question': ({'id': asked['id'], 'text': asked['text'], 'from': asked['from']}
                          if asked and mine else None),
             'problem': ({key: halted.get(key) for key in ('state', 'why', 'kept', 'action')}
@@ -2624,6 +2625,16 @@ class Engine(Jobs, Researching):
                          == 'google'}
                         if said else None),
             'contactSheet': (root / build.SHEET).is_file()}
+
+    @staticmethod
+    def _sections_kept(root: Path) -> dict | None:
+        """How much of the slide build a retry keeps: {'kept', 'total'} sections, or None
+        before a build has started."""
+        start = build.read_state(root).get('start')
+        if not start:
+            return None
+        total = len(start.get('sections') or [])
+        return {'total': total, 'kept': total - len(build.to_draw(root))}
 
     @staticmethod
     def _delivered_slides(root: Path) -> list[dict]:
