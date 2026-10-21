@@ -1985,6 +1985,20 @@ class VoiceChoiceTests(RunnerCase):
         picked = self.create(page=True, mode='review', manuscript=draft['id'], profile=mine['id'])
         self.assertEqual(self.voice_of(picked)['profile_id'], mine['id'])
 
+    def test_a_run_says_how_its_voice_was_chosen(self):
+        mine = self.voice()
+        pinned = self.create(page=True, profile=mine['id'])
+        self.assertEqual(
+            (pinned['voice_mode'], pinned['voice_profile'], pinned['voice_name']),
+            ('profile', mine['id'], 'Avery'),
+        )
+        toned = self.create(page=True, profile='', tone='Warm')
+        self.assertEqual((toned['voice_mode'], toned['voice_profile']), ('tone', None))
+        draft = self.source('# A synthetic draft\n\nThe gateway routes requests.')
+        kept = self.create(page=True, mode='review', manuscript=draft['id'])
+        self.assertEqual((kept['voice_mode'], kept['voice_profile']), ('preserve', None))
+        self.assertEqual(runner.engine(self.root).describe(kept['id'])['voice_mode'], 'preserve')
+
     def test_the_settings_default_tone_is_no_nudge(self):
         mine = self.voice()
         usual = runner.settings(self.root)['defaults']['tone']

@@ -540,6 +540,8 @@ def survey(root, ident, listing=False):
         'directory': str(directory),
         'brief': run['brief'],
         'voice_name': voice_name(root, record),
+        'voice_mode': (record.get('voice') or {}).get('mode'),
+        'voice_profile': (record.get('voice') or {}).get('profile_id'),
         'style_name': style_name(root, record),
         'existing': run['existing'],
         'editor_check': run.get('editor_check'),
