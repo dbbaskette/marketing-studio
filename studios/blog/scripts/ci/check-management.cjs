@@ -78,11 +78,12 @@ async function check(){
   await staleSharedForms();
   await sharedPattern();
   await finishAndDelete();
+  await filesJourney();
   pageDefinesEveryElement();
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','write from my files: one screen, per-file text, angle picks and none of these','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -1059,6 +1060,83 @@ async function sharedPattern(){
 
 // A real finish: the final stop shows the draft open with Finish, a finished run has a Done
 // card, Delete asks for the typed title and says what is running stops, Blogs lists what was
+// Write from my files: one screen uploads every file at once and says what each has,
+// the run starts from the readable ones, and the angles gate offers picks or none of these.
+async function filesJourney(){
+  const requests=[];
+  const defaults={engine:'codex',seconds:600,research:'supplied-only',stop:'package',tone:'Clear',author:''};
+  const uploaded={files:[{filename:'notes.md',source:{id:'s1',name:'notes'},state:'ready',chars:1200,note:''},{filename:'scan.pdf',source:{id:'s2',name:'scan'},state:'pending',chars:0,note:'This computer has no PDF reader (pdftotext), so this PDF needs text.'}],receipts:[],state:'saved',next_step:'1 of 2 files have text.'};
+  const found={id:'files',title:'From my files',status:'queued',next:'angles',approval:'page',expected:'a1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',mode:'from-files',review_level:'balanced',decisions:[],brief:{goal:'A team post',audience:'To be chosen with the angle.'},stages:[{stage:'angles',label:'Angles',path:'derived/blog-angles.md',status:'pending'}],excerpted:[]};
+  const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});
+    if(url==='/api/run-options')return {settings:{defaults,review_level:'balanced'},sources:[],profiles:[],agents:{codex:true}};
+    if(url==='/api/upload')return uploaded;
+    if(url==='/api/run-create'||url.startsWith('/api/run?'))return found;
+    if(url.startsWith('/api/run-'))return found;
+    return {items:[],total:0};});
+  f.loadRunner();f.run('sHome()');
+  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),byId=id=>nodes().find(e=>e.id===id);
+  const card=nodes().find(e=>e.className==='pick-card'&&e.textContent==='Write from my files');
+  assert.ok(card,'Home offers Write from my files: '+text().join('|'));
+  await card.listeners.click();
+  assert.equal(f.get('title').textContent,'Write from my files');
+  const picker=byId('files-input');
+  assert.equal(picker.type,'file');assert.equal(picker.multiple,true);assert.match(picker.accept,/\.pdf/);
+  assert.ok(byId('files-goal'),'one optional line: what is this for');
+  assert.equal(byId('files-web').checked,false,'web research is off by default');
+  assert.equal(byId('files-keep').checked,false,'files are not kept in the references by default');
+  const start=()=>nodes().find(e=>e.type==='submit');
+  assert.equal(start().disabled,true,'nothing to start before a file has text');
+  assert.ok(text().some(t=>/stops for the angles/.test(t)),'the stops line names the angles: '+text().join('|'));
+  // Every chosen file goes up in one request, as material.
+  picker.files=[{name:'notes.md',size:12,arrayBuffer:async()=>new TextEncoder().encode('Notes words.').buffer},{name:'scan.pdf',size:4,arrayBuffer:async()=>new TextEncoder().encode('%PDF').buffer}];
+  await picker.listeners.change();
+  const upload=requests.filter(r=>r.url==='/api/upload');
+  assert.equal(upload.length,1);
+  assert.deepEqual(upload[0].data.files.map(e=>e.filename),['notes.md','scan.pdf']);
+  assert.equal(upload[0].data.purpose,'material');assert.equal(upload[0].data.keep,false);assert.equal(upload[0].data.analyze,false);
+  assert.match(upload[0].data.operation,/^[0-9a-f]{32}$/);
+  assert.ok(text().some(t=>/1,200 characters/.test(t)),'each file shows its extracted size: '+text().join('|'));
+  assert.ok(text().some(t=>/Needs text/.test(t)),'a file without text says so');
+  assert.ok(text().some(t=>/no PDF reader/.test(t)),'and why');
+  assert.equal(start().disabled,false);
+  // Keep applies to the files added after it is ticked.
+  byId('files-keep').checked=true;byId('files-keep').listeners.change();
+  byId('files-input').files=[{name:'more.md',size:4,arrayBuffer:async()=>new TextEncoder().encode('More').buffer}];
+  await byId('files-input').listeners.change();
+  assert.equal(requests.filter(r=>r.url==='/api/upload').at(-1).data.keep,true);
+  byId('files-goal').value='A team post';byId('files-goal').listeners.input();
+  byId('files-web').checked=true;byId('files-web').listeners.change();
+  assert.ok(text().some(t=>/stops for the angles/.test(t)));
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const creation=requests.find(r=>r.url==='/api/run-create').data;
+  assert.equal(creation.mode,'from-files');assert.equal(creation.research,'web-allowed');assert.equal(creation.goal,'A team post');
+  assert.deepEqual(creation.sources,['s1'],'only files with text are pinned, once');
+  assert.equal(creation.title,'');assert.equal(creation.stop,'package');
+  // The angles gate: picks, a note, or none of these.
+  const waiting={...found,status:'waiting-for-approval',expected:'a2',stages:[{...found.stages[0],status:'draft'}],excerpted:['notes']};
+  const shown={id:'files',title:'From my files',name:'blog-angles.md',stage:'angles',label:'Angles',expected:'a2',status:'draft',content:'# Angles\n\n## Retries are a budget\n\nPlatform engineers · Retries cost · Leans on notes.md\n\n## The gateway is a contract\n\nAPI authors · The contract · Leans on notes.md\n\n## Fewer hops\n\nTeam leads · Hops · Leans on notes.md',notes:'',checks:[],previous:null,diff:[],bundle:[]};
+  f.set('waiting',waiting);f.set('shown',shown);
+  f.run("studio.screen='gate';studio.found=waiting;sGate(waiting,shown)");
+  const actions=()=>f.get('actions').children.map(e=>e.textContent);
+  assert.ok(actions().includes('Choose an angle'),actions().join('|'));assert.ok(actions().includes('None of these'),actions().join('|'));
+  assert.ok(!actions().some(t=>/Save ideas|Use this|Finish/.test(t)),actions().join('|'));
+  assert.ok(text().some(t=>/notes was excerpted|excerpted/.test(t)),'the gate says which files were excerpted: '+text().join('|'));
+  const sheet=()=>descendants(f.get('sheet'));
+  await f.get('actions').children.find(e=>e.textContent==='Choose an angle').listeners.click();
+  const picks=sheet().filter(e=>e.className==='pick-card');
+  assert.deepEqual(picks.map(e=>e.textContent),['Retries are a budget','The gateway is a contract','Fewer hops']);
+  assert.ok(descendants(picks[1]).some(e=>e.textContent==='API authors · The contract · Leans on notes.md'));
+  const go=sheet().find(e=>e.type==='submit');assert.equal(go.disabled,true);
+  await picks[1].listeners.click();assert.equal(go.disabled,false);
+  const note=sheet().find(e=>e.id==='develop-note');note.value='Short.';note.listeners.input();
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.deepEqual(requests.find(r=>r.url==='/api/run-develop').data,{id:'files',expected:'a2',request:'The gateway is a contract\nShort.'});
+  f.run("studio.screen='gate';studio.found=waiting;sGate(waiting,shown)");
+  await f.get('actions').children.find(e=>e.textContent==='None of these').listeners.click();
+  const why=sheet().find(e=>e.id==='angles-note');why.value='Closer to on-call.';why.listeners.input();
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.deepEqual(requests.find(r=>r.url==='/api/run-changes').data,{id:'files',expected:'a2',request:'Closer to on-call.',stage:'angles'});
+}
 // recently deleted with Restore, and the ideas gate offers the headings as picks.
 async function finishAndDelete(){
   const requests=[];
