@@ -1562,7 +1562,11 @@ class WholeUpgradeTests(PageCase):
             keep = self.engine.upkeep = upkeep.Upkeep(
                 home_dir=home_dir, root=root, installer=running / 'installer' / 'install.py')
             keep.check()
-            self.assertTrue(keep.look())
+            # The installed copy pins its companions to their public repositories: only
+            # Training Studio's own, the local one, is asked, so nothing leaves this computer.
+            own = {upkeep.SELF: keep.repositories()[upkeep.SELF]}
+            with mock.patch.object(keep, 'repositories', return_value=own):
+                self.assertTrue(keep.look())
             versions = self.get('setup')['upkeep']['versions']
             own = versions['rows'][0]
             self.assertEqual((own['installed'], own['newest'], own['state']),
