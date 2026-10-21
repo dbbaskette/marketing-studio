@@ -628,14 +628,19 @@ class BuildFeedbackTests(PageCase):
 
 
 class FirstDraftTests(PageCase):
-    def test_only_explicit_first_draft_requests_change_review_mode(self):
-        for text, expected in [('A quick draft', False), ('Skip AI review on the first build', True)]:
-            from runner_support import FORM
-            checked = decks.check_form({**FORM, 'goal': text}, self.engine.brands())
-            self.assertEqual(decks.user_first({'form': checked}), expected)
+    def test_only_the_form_s_own_choice_shows_the_first_draft_before_its_review(self):
         from runner_support import FORM
-        checked = decks.check_form({**FORM, 'goal': 'Skip AI review on the first build', 'initial_review': 'standard'}, self.engine.brands())
+        # Nothing in the goal's words flips it: that was a silent decision.
+        for text in ('A quick draft', 'Skip AI review on the first build'):
+            checked = decks.check_form({**FORM, 'goal': text}, self.engine.brands())
+            self.assertFalse(decks.user_first({'form': checked}))
+            self.assertNotIn('initial_review', checked)
+        checked = decks.check_form({**FORM, 'goal': 'Skip AI review on the first build',
+                                    'initial_review': 'standard'}, self.engine.brands())
         self.assertFalse(decks.user_first({'form': checked}))
+        checked = decks.check_form({**FORM, 'initial_review': 'user-first'}, self.engine.brands())
+        self.assertTrue(decks.user_first({'form': checked}))
+        self.assertEqual(checked['initial_review_source'], 'form')
 
     def build_draft(self):
         path = self.started(initial_review='user-first', output='pptx')

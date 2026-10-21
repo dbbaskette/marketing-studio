@@ -23,7 +23,8 @@
 // the screen and which are still held; what was let go is listed beside the requests.
 // Nothing is laid out here, so nothing scrolls into view by itself: {see: the words a
 // picture's place begins with} says that it has. A plan with {unwatched: true} is a browser
-// that cannot say when anything comes into view.
+// that cannot say when anything comes into view. A plan with {narrow: true} is a phone:
+// the page's own width queries match.
 //
 // The document here has no HTML parser at all. A script that tried to set innerHTML would
 // throw, so anything that reaches the page as markup fails the test that runs this.
@@ -620,7 +621,8 @@ async function app(file) {
     },
     scrollTo() {},
     focus() {},
-    matchMedia: () => ({ matches: false }),
+    // A plan with {narrow: true} is a phone: the page's width queries match.
+    matchMedia: (query) => ({ matches: Boolean(plan.narrow) && /max-width/.test(query) }),
     setTimeout: (callback, delay) => {
       if (callback.name === 'refresh') report.paces.push(delay);
       return timers.push(callback);

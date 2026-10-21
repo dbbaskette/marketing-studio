@@ -79,8 +79,9 @@ class LinkTests(unittest.TestCase):
         # suiteHome, which takes only this host on another port. External links still come
         # only from the server or a downloaded deck.
         targets = re.findall(r'\.href = ([^;]+);', script)
-        self.assertEqual(sorted(targets), ["'/onboarding/#token=' + view.token", 'address', 'held',
-                                           "home + '/'"])
+        self.assertEqual(sorted(targets), ['address', 'held', "home + '/'", 'settingsAddress()',
+                                           'settingsAddress()'])
+        self.assertIn("return '/onboarding/#token=' + view.token;", script)
         self.assertIn('let home = suiteHome(window.location.hash, window.location);', script)
         out = script[script.index('function outLink('):]
         out = out[:out.index('\n}\n')]
@@ -157,6 +158,11 @@ class WordTests(unittest.TestCase):
         for name in ('app.js', 'index.html', 'deck.css'):
             with self.subTest(name):
                 self.assertNotRegex(read(name), test_no_brand_named.NAMED)
+
+    def test_a_finding_s_tag_is_one_the_build_step_gives(self):
+        from runner.steps import build
+        tags = re.search(r"const ABOUT_TAGS = \{([^}]*)\}", read('app.js')).group(1)
+        self.assertEqual(sorted(re.findall(r"(\w+):", tags)), sorted(build.ABOUT))
 
     def test_rehearsing_with_yoodli_is_coming_later(self):
         script = read('app.js')
