@@ -375,7 +375,11 @@ def status(root):
             'workspace': str(root),
             'active_repository': found.address,
             'active_branch': found.branch,
-            'configuration_notice': 'Shared team settings changed. Join the configured repository to use it here; this workspace and its writing are kept.'
+            'configuration_notice': (
+                'Shared team settings changed. Marketing Studio can connect this studio: open '
+                'Marketing Studio and choose Connect on the Blog Studio card, or join the '
+                'configured repository from here. This workspace and its writing are kept.'
+            )
             if (preferences['repository'], preferences['branch'])
             != (found.address or '', found.branch)
             else None,

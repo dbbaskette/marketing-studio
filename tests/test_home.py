@@ -62,6 +62,53 @@ class HomeTests(IsolatedHome):
                 self.write('/api/setup', {'done': True, 'prepare': True})
         self.assertFalse(state.read()['done'])
 
+    def test_cards_show_each_installed_studios_workspace_once_setup_is_done(self):
+        self.assertTrue(all(row['workspace'] is None for row in self.page.snapshot()['studios']))
+        self.write('/api/shared', {'changes': {'local': {'root': str(self.root / 'work')}}, 'seen': {}})
+        self.write('/api/setup', {'done': True})
+        with mock.patch('marketing_studio.workspaces.connection', side_effect=lambda identifier, values: {
+                'state': 'none', 'connect': False, 'summary': identifier + ' ' + values['local']['root']}) as asked:
+            rows = self.page.snapshot()['studios']
+        self.assertEqual([row['workspace']['summary'] for row in rows if row['installed']],
+                         [f"{row['id']} {self.root / 'work'}" for row in rows if row['installed']])
+        self.assertEqual(asked.call_count, sum(row['installed'] for row in rows))
+
+    def test_storage_change_after_setup_prepares_studios_and_reports(self):
+        self.write('/api/shared', {'changes': {'local': {'root': str(self.root / 'work')}}, 'seen': {}})
+        self.write('/api/setup', {'done': True})
+        report = {'blog': {'prepared': True, 'connect': {'from': {}, 'to': {}, 'carry': {'blogs': 1}}}}
+        with mock.patch.object(self.launcher, 'prepare', return_value=report) as prepare:
+            reply = self.write('/api/shared', {'changes': {'output': 'google'}, 'seen': shared.read()[0]})
+            prepare.assert_not_called()
+            self.assertNotIn('prepared', reply)
+            reply = self.write('/api/shared', {'changes': {'team': {'repository': str(self.root / 'team.git')}},
+                                               'seen': shared.read()[0]})
+        self.assertEqual(reply['prepared'], report)
+        self.assertEqual(prepare.call_args.args[1]['team']['repository'], str(self.root / 'team.git'))
+        self.assertTrue(prepare.call_args.args[0]['done'])
+        with mock.patch.object(self.launcher, 'prepare', side_effect=WorkspaceError('Git needs an identity')):
+            reply = self.write('/api/shared', {'changes': {'share': 'asked'}, 'seen': shared.read()[0]})
+        self.assertEqual(reply['prepare_problem'], 'Git needs an identity')
+        self.assertEqual(shared.read()[0]['share'], 'asked')
+
+    def test_storage_change_before_setup_prepares_nothing(self):
+        with mock.patch.object(self.launcher, 'prepare') as prepare:
+            self.write('/api/shared', {'changes': {'team': {'repository': str(self.root / 'team.git')}}, 'seen': {}})
+        prepare.assert_not_called()
+
+    def test_connect_needs_setup_and_relays_the_launcher(self):
+        with self.assertRaisesRegex(WorkspaceError, 'Finish shared setup'):
+            self.write('/api/connect', {'studio': 'blog'})
+        self.write('/api/shared', {'changes': {'team': {'repository': str(self.root / 'team.git')}}, 'seen': {}})
+        self.write('/api/setup', {'done': True})
+        done = {'connected': True, 'studio': 'blog', 'carried': {'blogs': 2}}
+        with mock.patch.object(self.launcher, 'connect', return_value=done) as connect:
+            reply = self.write('/api/connect', {'studio': 'blog'})
+        self.assertEqual(reply['connected'], done)
+        self.assertIn('studios', reply)
+        self.assertEqual(connect.call_args.args[0], 'blog')
+        self.assertEqual(connect.call_args.args[2]['team']['repository'], str(self.root / 'team.git'))
+
     def test_invalid_group_is_read_as_problem(self):
         shared.path().write_text('{"schema": 1, "assistant": 23}')
         self.assertTrue(shared.read()[1])

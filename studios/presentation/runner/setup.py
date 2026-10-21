@@ -268,9 +268,10 @@ def moved(space, values: dict) -> dict | None:
             or same_address(wanted, space.address):
         return None
     return {'repository': wanted, 'branch': team.get('branch'),
-            'says': f'The team repository your studios share is now {wanted}, and '
-                    f'Presentation Studio still works in its copy of {space.address} until '
-                    'you join the new one.'}
+            'says': f'The team repository your studios share is now {wanted}, and Presentation Studio '
+                    f'still works in its copy of {space.address}. Marketing Studio can connect '
+                    'this studio: open Marketing Studio and choose Connect on its card, or join '
+                    'the new repository from here.'}
 
 
 # What the person is told of a value the file held already, when this computer had another.

@@ -24,6 +24,7 @@ from .errors import WorkspaceError
 
 ROOT = Path(__file__).resolve().parent.parent
 TIMEOUT = 90
+CONNECT_TIMEOUT = 600  # joining, carrying work over and pushing it
 LOG_LINES = 12     # lines of a launch log shown with a failure
 LOG_TAIL = 64_000  # bytes read from its end to find them
 # A studio started from here is told the home page's port, so its page can link back to it.
@@ -470,39 +471,79 @@ class Launcher:
     def link(self, identifier, link):
         return self.network.share(identifier, link) if self.network else link
 
-    def prepare(self, preferences, shared):
-        """Persist first-run setup for installed studios, without starting their servers."""
+    def prepare(self, preferences, shared, only=None):
+        """Set up installed studios' missing workspaces as the shared settings say, without
+        starting their servers, and learn how each one's workspace relates to those settings.
+
+        Returns each studio's report by its identifier: {'prepared': True, 'workspace': …}
+        and 'connect' when the studio keeps a different workspace, which only the Connect
+        action moves."""
         with self.lock:
-            prepared = []
+            prepared = {}
             for identifier in catalog.STUDIOS:
+                if only is not None and identifier != only:
+                    continue
                 root = catalog.locate(identifier, preferences.get('paths', {}))
                 if root is None:
                     continue
-                env = {**self.environment(), 'MARKETING_STUDIO_HANDOFF': json.dumps(
-                    {'token': secrets.token_urlsafe(32), 'shared': shared})}
-                process = subprocess.Popen(
-                    [sys.executable, str(ROOT / 'marketing_studio/bridge.py'), identifier,
-                     str(root), '--prepare'], cwd=root, env=env, stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                    start_new_session=True)
-                try:
-                    output, _ = process.communicate(timeout=TIMEOUT)
-                except BaseException as failure:
-                    self.stop_process(process)
-                    process.communicate()
-                    if isinstance(failure, subprocess.TimeoutExpired):
-                        raise WorkspaceError('Workspace setup took too long. Check the repository connection and try again.') from failure
-                    raise
-                try:
-                    result = json.loads(output.splitlines()[-1])
-                except (ValueError, IndexError):
-                    result = {}
-                if process.returncode or not isinstance(result, dict) or result.get('prepared') is not True:
-                    message = result.get('error') if isinstance(result, dict) else None
-                    message = message or 'Workspace setup failed. Check Git and the studio installation.'
-                    raise WorkspaceError(catalog.STUDIOS[identifier][0] + ': ' + message)
-                prepared.append(identifier)
+                result = self.bridge(identifier, root, shared, '--prepare', TIMEOUT,
+                                     'Workspace setup took too long. Check the repository connection and try again.')
+                if result.get('prepared') is not True:
+                    raise WorkspaceError(catalog.STUDIOS[identifier][0] + ': ' + (
+                        result.get('error') or 'Workspace setup failed. Check Git and the studio installation.'))
+                prepared[identifier] = result
             return prepared
+
+    def connect(self, identifier, preferences, shared):
+        """Connect one studio to the storage the shared settings name, through the studio's
+        own join, carrying its work over. A studio running an assistant job is refused; an
+        idle running studio is stopped first, and the report says so."""
+        with self.lock:
+            if not isinstance(identifier, str) or identifier not in catalog.STUDIOS:
+                raise WorkspaceError('Choose one of the studios shown on the home page.')
+            root = catalog.locate(identifier, preferences.get('paths', {}))
+            name = catalog.STUDIOS[identifier][0]
+            if root is None:
+                raise WorkspaceError('This studio was not found. Install it or set its folder in Settings.')
+            stopped = False
+            pid = self.process(identifier)
+            if pid:
+                jobs = descendant_jobs(pid)
+                if jobs:
+                    raise WorkspaceError(f'{name} is working: ' + ', '.join(map(describe_job, jobs))
+                                         + '. Wait for it to finish, then connect.')
+                stopped = self.stop(identifier)
+            result = self.bridge(identifier, root, shared, '--connect', CONNECT_TIMEOUT,
+                                 'Connecting took too long. Check the repository connection and try again.')
+            if result.get('connected') is not True:
+                raise WorkspaceError(name + ': ' + (
+                    result.get('error') or 'Connecting failed. Check Git and the studio installation.'))
+            return {**result, 'studio': identifier, 'name': name, 'stopped': stopped}
+
+    def bridge(self, identifier, root, shared, flag, timeout, slow):
+        """Run the studio's bridge once for `flag` and read the report it prints last.
+        Returns {} when it printed none; the caller reads 'error' from a failed one."""
+        env = {**self.environment(), 'MARKETING_STUDIO_HANDOFF': json.dumps(
+            {'token': secrets.token_urlsafe(32), 'shared': shared})}
+        process = subprocess.Popen(
+            [sys.executable, str(ROOT / 'marketing_studio/bridge.py'), identifier, str(root), flag],
+            cwd=root, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, start_new_session=True)
+        try:
+            output, _ = process.communicate(timeout=timeout)
+        except BaseException as failure:
+            self.stop_process(process)
+            process.communicate()
+            if isinstance(failure, subprocess.TimeoutExpired):
+                raise WorkspaceError(slow) from failure
+            raise
+        try:
+            result = json.loads(output.splitlines()[-1])
+        except (ValueError, IndexError):
+            result = {}
+        if process.returncode or not isinstance(result, dict):
+            return {'error': result.get('error')} if isinstance(result, dict) else {}
+        return result
 
     @staticmethod
     def stop_process(process):
