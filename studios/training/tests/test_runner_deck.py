@@ -397,14 +397,15 @@ class RuleTests(JobCase):
         made['slides'][3]['source'] = 'Blueprint O1–O9; learner guide objectives'
         made['slides'][4]['caveat'] = 'See operating-model: in the guide.'
         said = ' '.join(deck.rules(made, BLUEPRINT))
-        for found in ('what-it-does: source shows "Findings"',
+        for found in ('what-it-does: source shows "Findings g1"',
                       'when-capacity-holds: a point\'s text shows "main"',
-                      'the-objection: source shows "Blueprint"',
+                      'the-objection: source shows "Blueprint O1"',
                       'check-yourself: caveat shows "operating-model:"'):
             self.assertIn(found, said)
         self.assertIn("put the IDs in the slide's `provenance`", said)
         plain_word = json.loads(json.dumps(OUTLINE))
         plain_word['slides'][1]['points'][0]['text'] = 'The main instances are replaced first.'
+        plain_word['slides'][1]['title'] = 'Research shows batches keep capacity'
         self.assertEqual(deck.rules(plain_word, BLUEPRINT), [], 'a plain word is not a slug')
         self.assertIn('"Tanzu for Postgres 4.5 documentation"', said)
         # A citation the audience can follow, a web address, and the IDs in provenance pass.
@@ -1371,10 +1372,11 @@ class FlowTests(DeckCase):
         self.engine = self.make(at_once=1)
         root = self.begin()
         self.drawn(root)
-        self.assertEqual([line.partition(': ')[2] for line in self.log()][-12:], [
+        self.assertEqual([line.partition(': ')[2] for line in self.log()][-13:], [
             'write the handoff for the slide deck', 'export the brand for the slide deck',
             'keep what the slide deck says', 'ask for a review of what the slide deck says',
             'What the slide deck says was approved on the page.',
+            'note that the brand offers no looks for the slide deck',
             'split the slide deck into 2 sections', 'keep section 1 of the slide deck',
             'keep section 2 of the slide deck', 'put the slide deck together: 6 slides',
             'keep the review of the slide deck', 'keep the slide deck',

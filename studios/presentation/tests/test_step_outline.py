@@ -118,7 +118,7 @@ class BriefTests(Case):
              'source': 'Blueprint O1–O9'}]}
         said = build.provenance_rules(shown)
         self.assertEqual(len(said), 3, said)
-        self.assertIn('model01: source shows "Findings"', said[0])
+        self.assertIn('model01: source shows "Findings g1"', said[0])
         self.assertIn("put the IDs in the slide's `provenance`, which goes only into the "
                       'speaker notes', said[0])
         self.assertIn("a point's text shows \"operating-model:\"", said[1])

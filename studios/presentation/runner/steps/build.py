@@ -120,7 +120,10 @@ KNOWS = {'compose-split-point': 'parts', 'compose-provenance': 'provenance'}
 # A team's own bookkeeping, which an audience cannot follow: finding, objective and
 # blueprint IDs, and a slug used as a prefix. It goes in `provenance`, never on a slide.
 _ID = r'(?:[gf]\d{1,3}|O\d{1,2})'
-INTERNAL = (re.compile(r'\b(?:Findings?|Blueprint|Objectives?|Research)\b'),
+# A bookkeeping word counts only before an ID ("Finding g4", "Blueprint M1"), so a
+# title such as "Research shows" is not refused.
+INTERNAL = (re.compile(r'\b(?:Findings?|Blueprint|Objectives?|Research)\b[\s:#]*'
+                       r'(?:[gfOM]\d{1,3}\b|\d)', re.I),
             re.compile(rf'\b{_ID}(?:\s*[,/–-]\s*{_ID})+\b'),
             re.compile(rf'^\s*{_ID}(?:[\s,;/–-]+{_ID})*\s*$'),
             re.compile(r'\bO\d\b'), re.compile(r'\bg\d+\b'),

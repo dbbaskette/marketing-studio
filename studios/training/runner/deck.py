@@ -125,7 +125,10 @@ KNOWS = {'compose-split-point': 'parts', 'compose-provenance': 'provenance'}
 # A team's own bookkeeping, which an audience cannot follow: finding, objective and
 # blueprint IDs, and a slug used as a prefix. It goes in `provenance`, never on a slide.
 _ID = r'(?:[gf]\d{1,3}|O\d{1,2})'
-INTERNAL = (re.compile(r'\b(?:Findings?|Blueprint|Objectives?|Research)\b'),
+# A bookkeeping word counts only before an ID ("Finding g4", "Blueprint M1"), so a
+# title such as "Research shows" is not refused.
+INTERNAL = (re.compile(r'\b(?:Findings?|Blueprint|Objectives?|Research)\b[\s:#]*'
+                       r'(?:[gfOM]\d{1,3}\b|\d)', re.I),
             re.compile(rf'\b{_ID}(?:\s*[,/–-]\s*{_ID})+\b'),
             re.compile(rf'^\s*{_ID}(?:[\s,;/–-]+{_ID})*\s*$'),
             re.compile(r'\bO\d\b'), re.compile(r'\bg\d+\b'),
@@ -423,6 +426,11 @@ def rules(outline, blueprint: str, budget: int | None = None) -> list[str]:
                                 'and no more. Leave out ' + ', '.join(extra) + '.')
             if '\n' in str(slide.get('subtitle') or '').strip():
                 problems.append(f'{ident}: the subtitle of a cover is one line.')
+        if kind in LEADS and any('\n' in str(slide.get(key) or '').strip()
+                                 for key in ('title', *(('subtitle',) if kind != 'cover'
+                                                        else ()))):
+            problems.append(f'{ident}: a {kind} slide\'s title and subtitle are one line '
+                            'each. Put a second line in the subtitle, or on a content slide.')
         if kind == 'closing':
             # A closing slide is the template's own, with room for a few words and no body.
             said = f"{slide.get('title') or ''} {slide.get('subtitle') or ''}".split()
@@ -610,10 +618,12 @@ def before(slides: int) -> dict:
 
 # --- starting the deck -------------------------------------------------------------------
 
-def layouts(listed, slides: list[dict]) -> dict:
-    """The template layout for each kind of lead slide an outline has: one that shows a
-    title, has room for the subtitle if there is one and no place for a picture, and is
-    named for that kind of slide where the template has such a one."""
+def layouts(listed, slides: list[dict], preferred: dict | None = None) -> dict:
+    """The template layout for each kind of lead slide an outline has: the one the deck's
+    look names for that kind (`preferred`, such as the brand's title-capable closing) when
+    the template has it and it holds what the slide carries; else one that shows a title,
+    has room for the subtitle if there is one and no place for a picture, and is named for
+    that kind of slide where the template has such a one."""
     chosen = {}
     listed = [layout for layout in listed or () if isinstance(layout, dict)
               and isinstance(layout.get('name'), str)]
@@ -622,6 +632,12 @@ def layouts(listed, slides: list[dict]) -> dict:
         if not mine:
             continue
         need = 1 if any(slide.get('subtitle') for slide in mine) else 0
+        wanted = next((layout for layout in listed if layout['name']
+                       == (preferred or {}).get(kind) and layout.get('title')
+                       and (layout.get('subtitles') or 0) >= need), None)
+        if wanted:
+            chosen[kind] = wanted['name']
+            continue
         fits = [layout for layout in listed
                 if layout.get('title') and (layout.get('subtitles') or 0) >= need]
         fits = [layout for layout in fits if not layout.get('pictures')] or fits
@@ -649,7 +665,7 @@ def complete(outline: dict, listed, words: list[str], designed: bool = False,
     outline = with_provenance(outline, knows)
     return {**outline, 'delivery': DELIVERY,
             'direction': dict(look.get('direction') or DIRECTION),
-            'layouts': layouts(listed, slides_of(outline)),
+            'layouts': layouts(listed, slides_of(outline), look.get('layouts')),
             'house': list(house(designed, look)), 'approval': list(words)}
 
 
