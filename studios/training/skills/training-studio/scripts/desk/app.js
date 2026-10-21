@@ -2043,6 +2043,49 @@ function reading(found) {
     }, 'pane'), holder);
 }
 
+// The fields of a Yoodli scenario: each heading with a fenced text block under it, named
+// by its heading and, under Personas, by the persona and the heading. Yoodli's Builder has
+// a box of the same name for each.
+function yoodliFields(text) {
+  const fields = [];
+  const heads = [];
+  let block = null;
+  for (const line of String(text || '').split('\n')) {
+    if (block) {
+      if (line.trim() === '```') {
+        const named = heads.length > 1 ? heads.slice(1).join(' · ') : heads[0] || '';
+        if (named) fields.push({ name: named, text: block.join('\n') });
+        block = null;
+      } else {
+        block.push(line);
+      }
+      continue;
+    }
+    const heading = /^(#{2,4}) (.+)$/.exec(line);
+    if (heading) {
+      heads.length = heading[1].length - 2;
+      heads[heading[1].length - 2] = heading[2].trim();
+    } else if (line.trim() === '```text') {
+      block = [];
+    }
+  }
+  return fields;
+}
+
+// A Yoodli scenario at its gate offers each field to copy, ready to paste into the Builder.
+function yoodliCopies(found) {
+  const shown = found.document || {};
+  if (!String(found.artifact || '').startsWith('yoodli:') || shown.kind !== 'markdown') return null;
+  const fields = yoodliFields(shown.text);
+  if (!fields.length) return null;
+  const bar = make('div', 'bar');
+  fields.forEach((field, index) => add(bar, copyButton('Copy ' + field.name,
+    'Copied ' + field.name + '.', field.text, 'copy-field-' + index)));
+  return callout('', make('h2', 'aside-title', 'Copy into Yoodli'),
+    make('p', 'quiet', 'Each field is copied on its own, ready to paste into the box of the '
+      + 'same name in Yoodli’s Builder.'), bar);
+}
+
 // What a Yoodli scenario was laid out from, to read beside it. It is read once for a gate.
 async function readBeside(found, turn) {
   const named = found.beside;
@@ -2333,6 +2376,7 @@ function paintGate(fresh) {
   place({ title: found.label, name: found.label + ' · ' + found.title, above, back: true,
     actions: gateActions(found) },
   [intro, theirs ? readNote(found.path) : null, inChat(found), standing(found),
+    yoodliCopies(found),
     add(make('div', found.beside ? 'gate gate-pair'
       : 'gate'), reading(found), found.beside ? besidePart(found) : null, aside)],
   fresh);

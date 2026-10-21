@@ -4700,6 +4700,37 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         return {name: f'{{}}?{urlencode({"path": self.root, "artifact": name})}'
                 for name in ('yoodli:main', 'scenario:main')}
 
+    def test_a_yoodli_scenario_offers_each_field_to_copy(self):
+        at = self.at_the_yoodli_gate()
+        waits = 'The Yoodli scenario is waiting for your review.'
+        beside = {'artifact': 'scenario:main', 'label': 'the practice scenario'}
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', waits)],
+            'GET /api/training': [self.detail('waiting', waits)],
+            'GET /api/run': [a_run('waiting', waits, steps=steps(*['done'] * 7))],
+            'GET ' + at['yoodli:main'].format('/api/gate'): [
+                self.gate_as_the_runner_gives_it('yoodli:main', beside=beside)],
+            'GET ' + at['scenario:main'].format('/api/gate'): [
+                self.gate_as_the_runner_gives_it('scenario:main', whose='you')],
+            'GET /api/file': [self.read('file', path=str(self.root), artifact='scenario:main')]})
+        result = self.run_page(answers, [
+            {'click': 'Review the Yoodli scenario'}, {'snapshot': 'yoodli'},
+            {'click': 'Copy Roleplay name'}, {'snapshot': 'copied'},
+            {'click': 'Rolling restarts'}, {'click': 'Open the practice scenario'},
+            {'snapshot': 'scenario'}])
+        shots = result['snapshots']
+        copies = [name for name in shots['yoodli']['buttons'] if name.startswith('Copy ')]
+        self.assertEqual(copies[:4], ['Copy Roleplay name', 'Copy Type', 'Copy Description',
+                                      'Copy Context'])
+        self.assertIn('Copy Persona 1 · Name', copies)
+        self.assertIn('Copy Objections', copies)
+        self.assertIn('Copy into Yoodli', shots['yoodli']['text'])
+        self.assertEqual(shots['yoodli']['filled'], ['Approve'])
+        self.assertIn('Copied Roleplay name.', shots['copied']['toasts'])
+        # The scenario it was laid out from is not laid out for Yoodli, so it has none.
+        self.assertEqual([name for name in shots['scenario']['buttons'] if name.startswith('Copy ')], [])
+        self.assertEqual(self.posts(result), [])
+
     def gate_as_the_runner_gives_it(self, artifact: str, **more) -> dict:
         found = self.read('gate', path=str(self.root), artifact=artifact)
         found['body'].update(more)
