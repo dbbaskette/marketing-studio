@@ -112,8 +112,9 @@ def written_here(root, article):
 def keep_written(root, record, text, kind=None):
     """Keep a finished blog's draft in the library as a reference and an example of its kind
     of post, by its author. Idempotent: the blog's one item gets a new revision when the
-    draft, title, author or kind changed, and is left alone otherwise. Nothing is sent to
-    the analysis CLI; the person can analyze the item from the library."""
+    draft or title changed, and is left alone otherwise. A later Finish changes only the
+    text and the title: a role, kind or author someone changed in the library stays. Nothing
+    is sent to the analysis CLI; the person can analyze the item from the library."""
     from types import SimpleNamespace
 
     import source_curator
@@ -140,17 +141,9 @@ def keep_written(root, record, text, kind=None):
                     library=fields,
                 ),
             )
-        purposes = list(saved.get('purposes') or [])
-        purposes += [p for p in ('reference', 'inspiration') if p not in purposes]
-        metadata = {**(saved.get('library') or {}), **fields}
-        if not kind:
-            metadata.pop('kind', None)
         unchanged = (
             saved.get('content_sha256') == studio.digest(text.encode())
             and saved.get('name') == record['title']
-            and saved.get('author') == author
-            and saved.get('purposes') == purposes
-            and saved.get('library') == metadata
         )
         if unchanged:
             return saved
@@ -158,9 +151,6 @@ def keep_written(root, record, text, kind=None):
         studio.atomic(directory / 'content.md', text.encode())
         saved.update(
             name=record['title'],
-            author=author,
-            purposes=purposes,
-            library=metadata,
             content_sha256=studio.digest(text.encode()),
             retrieved_at=studio.now(),
             status='ready',

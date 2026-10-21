@@ -639,6 +639,8 @@ def survey(root, ident, listing=False):
         else None,
         'decisions': run.get('decisions', [])[-30:],
         'publication': (record.get('editorial') or {}).get('publication_url') or None,
+        # Whether Finish kept the blog in the team library, for the Done card.
+        'library': run.get('library') if next_stage is None else None,
         # Files cut to the run's budget, by name, so the page and chat can say so.
         'excerpted': [
             source['name']
@@ -1074,6 +1076,7 @@ def _accept(directory, run, stage, by):
 def decide(root, ident, expected, action, request='', page=False, target=None):
     found = guard(root, ident, expected, page)
     directory, record, run = load(root, ident)
+    kept = None  # What Finish did with the library, said in the decision.
     stage = target if action == 'changes' and target else found['next']
     if (
         action == 'changes'
@@ -1106,8 +1109,6 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
         if stage == run['pipeline'][-1]:
             # Finish: the approved draft lands in the team library, once per blog.
             kept = keep_finished(root, directory, record, run)
-            if kept is not None:
-                action += ' · ' + kept
     elif action == 'changes':
         if not stage:
             raise ValueError('This run is complete. Start a new revision in chat.')
@@ -1122,31 +1123,51 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
             run['stages'].pop(name, None)
     else:
         raise ValueError('Unknown guided-blog decision.')
-    save(root, directory, record, run, action + (' ' + stage if stage else ''))
+    event = action + (' ' + stage if stage else '')
+    if action == 'approve' and kept is not None:
+        event += ' · ' + kept
+    save(root, directory, record, run, event)
     return survey(root, ident)
 
 
 def keep_finished(root, directory, record, run):
     """Keep a finished blog's draft in the library; what happened, in a few words, or None
-    when the run ends without a draft (ideas, an outline). The approval never waits on it:
-    a draft the library cannot take is reported, not refused."""
+    when the run ends without a draft (ideas, an outline). run['library'] says it for the
+    Done card: the item and its revision, or why the blog was not kept. The approval never
+    waits on it: whatever stops the library save is reported, never raised."""
     draft = directory / 'DRAFT.md'
     if run.get('mode') in ('ideas', 'outline') or not draft.is_file():
+        run.pop('library', None)
         return None
-    text = draft.read_text()
-    if not text.strip():
-        return None
-    import blog_library
-
-    kind = (record.get('style') or {}).get('style_id')
     try:
-        source = blog_library.keep_written(root, record, text, kind)
-    except ValueError as exc:
-        return 'not kept in the library: ' + str(exc)[:200]
-    from management import share, receipt
+        text = draft.read_text()
+        if not text.strip():
+            run.pop('library', None)
+            return None
+        import blog_library
+        import styles
 
-    receipt(root, 'Finished blog', share(root, 'source', source), 'source')
-    return 'kept in the library as ' + source['id'] + ' revision ' + str(source['revision'])
+        kind = (record.get('style') or {}).get('style_id')
+        if kind and styles.name_of(root, kind) is None:
+            kind = None  # Its style is gone; the blog is kept without a kind of post.
+        source = blog_library.keep_written(root, record, text, kind)
+        from management import share, receipt
+
+        receipt(root, 'Finished blog', share(root, 'source', source), 'source')
+    except Exception as exc:
+        if not isinstance(exc, (ValueError, OSError)):
+            from management import note_unexpected
+
+            note_unexpected(exc)
+        reason = (
+            str(exc)[:200]
+            if isinstance(exc, ValueError)
+            else 'it could not be saved here. The approval is kept; finish it again to retry.'
+        )
+        run['library'] = {'reason': reason}
+        return 'not kept in the team library: ' + reason
+    run['library'] = {'id': source['id'], 'revision': source['revision']}
+    return 'kept in the team library'
 
 
 def tone_nudge(voice):

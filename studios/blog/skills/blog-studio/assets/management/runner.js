@@ -825,7 +825,9 @@ function sDoneCard(found){
   const publish=sButton('Mark as published',async button=>{const url=held.url.trim();if(!/^https:\/\/\S+$/.test(url)){problem.textContent='Add the public https address where it was published.';return;}await busy(button,'Saving…',async()=>{try{const detail=await api('article?'+new URLSearchParams({id:found.id,location:'local'}));await api('schedule',{id:found.id,expected:detail.expected,stage:'published',confirm_stage:true,publication_url:url});sToast('Recorded as published. Nothing was posted anywhere.');const updated=await api('run?id='+encodeURIComponent(found.id));if(studio.screen==='run'&&studio.id===found.id)sRun(updated);}catch(error){problem.textContent=error.message;}});});
   publish.disabled=!sCanEdit(found);
   const remove=sButton('Delete this blog',()=>sDeleteSheet(found),'danger');remove.disabled=!sCanEdit(found);
-  return sCard('Done',sNode('p','',found.publication?'Published at '+found.publication:'The draft is approved. Take it where it goes, then say where it was published.'),found.publication?link(found.publication,'Open the published blog ↗'):null,
+  // Finish keeps the blog in the team library; the card says so, or why not.
+  const kept=found.library?.id?sNode('p','quiet','Kept in the team library, where the next blog can pick it as an example.'):found.library?.reason?sNode('p','quiet','Not kept in the team library: '+found.library.reason):null;
+  return sCard('Done',sNode('p','',found.publication?'Published at '+found.publication:'The draft is approved. Take it where it goes, then say where it was published.'),kept,found.publication?link(found.publication,'Open the published blog ↗'):null,
     sAdd(sNode('div','bar'),copy,download,sButton('Polish or edit the draft',()=>sRoute('editor',found.id))),
     found.publication?null:sAdd(sNode('div'),sField('published-url','Where was it published?',held,'url',{type:'url',max:2000,hint:'The public https address. Recording it posts nothing.'}),publish),
     problem,sAdd(sNode('div','bar'),remove));

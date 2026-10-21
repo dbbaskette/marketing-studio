@@ -1193,6 +1193,58 @@ class FinishTests(RunnerCase):
         with self.assertRaisesRegex(ValueError, 'selected source changed'):
             runner.survey(self.root, nxt['id'])
 
+    def test_a_second_finish_changes_only_the_text_and_title(self):
+        found = self.finish(self.create(style='product-announcement', author='Avery'))
+        self.assertEqual(found['library'], {'id': self.kept()[0]['id'], 'revision': 1})
+        directory, record = studio.item(self.root, 'sources', found['library']['id'])
+        # Someone changes the item in the library: its role, kind and author.
+        record.update(purposes=['reference', 'voice-sample'], author='Avery Quinn')
+        record['library']['kind'] = 'how-to'
+        studio.persist(directory, 'sources', record)
+        again = runner.decide(
+            self.root, found['id'], found['expected'], 'changes', 'Retitle.', target='draft'
+        )
+        again = self.submit(again, '# draft\nNew finished words.')
+        self.finish(self.approve(again))
+        _, record = studio.item(self.root, 'sources', found['library']['id'])
+        self.assertEqual(record['revision'], 2)
+        self.assertEqual((directory / 'content.md').read_text(), '# draft\nNew finished words.')
+        self.assertEqual(
+            (record['purposes'], record['author'], record['library']['kind']),
+            (['reference', 'voice-sample'], 'Avery Quinn', 'how-to'),
+            'what the library changed stays',
+        )
+
+    def test_finish_keeps_the_blog_without_a_kind_when_its_style_is_gone(self):
+        import styles
+
+        found = self.create(style='product-announcement')
+        with patch.object(styles, 'name_of', lambda root, ident: None):
+            found = self.finish(found)
+        self.assertTrue(found['complete'])
+        self.assertEqual(len(self.kept()), 1)
+        self.assertNotIn('kind', self.kept()[0]['library'])
+        self.assertTrue(found['decisions'][-1]['event'].endswith(' · kept in the team library'))
+
+    def test_finish_is_never_refused_when_the_library_cannot_take_the_blog(self):
+        import blog_library
+
+        noted = []
+        for failure in (OSError('disk full'), RuntimeError('unexpected')):
+            found = self.create(title='Synthetic ' + type(failure).__name__)
+            while found['next'] != found['stages'][-1]['stage']:
+                found = self.approve(self.submit(found))
+            found = self.submit(found)
+            with (
+                patch.object(blog_library, 'keep_written', side_effect=failure),
+                patch.object(management, 'note_unexpected', noted.append),
+            ):
+                done = self.approve(found)
+            self.assertTrue(done['complete'], 'the approval is saved')
+            self.assertEqual(set(done['library']), {'reason'})
+            self.assertIn('could not be saved', done['library']['reason'])
+        self.assertEqual([type(exc).__name__ for exc in noted], ['RuntimeError'])
+
     def test_a_stop_without_a_draft_keeps_nothing_and_a_draft_stop_keeps_the_draft(self):
         self.finish(self.create(mode='ideas'))
         self.assertEqual(self.kept(), [])
