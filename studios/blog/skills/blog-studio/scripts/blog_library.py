@@ -37,7 +37,9 @@ UNREACHABLE = 'This address could not be reached. Check the URL and your connect
 TOO_SLOW = 'This address took too long to respond; nothing was imported from it.'
 UNREADABLE_DOCX = 'This DOCX file could not be read. Open it in a word processor, save it again as .docx, then retry.'
 NO_PDF_READER = 'This computer has no PDF reader (pdftotext), so this PDF needs text. Install poppler, or upload the same content as text, Markdown, HTML or DOCX.'
-UNREADABLE_PDF = 'This PDF could not be read, so it needs text. Export its text and upload that instead.'
+UNREADABLE_PDF = (
+    'This PDF could not be read, so it needs text. Export its text and upload that instead.'
+)
 EMPTY_PDF = 'No text was found in this PDF, so it needs text. A scanned image needs OCR first.'
 
 
