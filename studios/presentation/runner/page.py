@@ -415,10 +415,10 @@ class RunnerPage(server.Page):
                                  'one JSON object.')
         # Another brand, a slide whose words go back to the outline, a corrected reading
         # of the document, or a line against a slide: each says what should change itself.
-        noted = (extra or {}).get('slide_notes')
+        noted, target = (extra or {}).get('slide_notes'), (extra or {}).get('direction_target')
         wordless = gate == 'gate:look' \
-            or (extra or {}).get('direction_target') in ('gate:look', 'gate:outline',
-                                                         'gate:classify') \
+            or (gate == 'gate:outline' and target in ('gate:look', 'gate:classify')) \
+            or (gate == 'gate:build' and target == 'gate:outline') \
             or (gate == 'gate:build' and isinstance(noted, dict)
                 and any(str(line or '').strip() for line in noted.values()))
         if decision == 'changes' and not wordless and not (note or '').strip() \

@@ -3057,11 +3057,20 @@ function slideLines() {
 }
 
 // What a request for changes to a built deck carries: the slides marked and their lines.
+// Where a line was kept from feedback, the lines go even when none is left, so a line
+// taken away here is taken away for real.
 function deckChanges() {
   const slides = markedSlides();
   const lines = slideLines();
-  if (!slides.length && !sized(lines)) return null;
-  return { slides, ...(sized(lines) ? { slide_notes: lines } : {}) };
+  const gate = view.run && view.run.gate;
+  const kept = Boolean(gate) && list(gate.slides).some((one) => typeof one.kept === 'string');
+  if (!slides.length && !sized(lines) && !kept) return null;
+  return { slides, ...(sized(lines) || kept ? { slide_notes: lines } : {}) };
+}
+
+// Whether a slide's words can go back to the outline: only a deck that has one.
+function canSay(run) {
+  return list(run && run.timeline).some((row) => row.name === 'gate:outline');
 }
 
 // What a whole deck drawn again costs, as its last build did, said before it is asked for.
@@ -3099,12 +3108,16 @@ function tellMarks(status, go) {
   if (go) go.hidden = !saying.length;
 }
 
-// The two marks on one built slide: drawn again as it is, or its words changed.
-function slideMarks(one, held, repaint) {
+// The two marks on one built slide: drawn again as it is, or its words changed. A slide
+// takes one or the other, so the mark set last puts the other away.
+function slideMarks(one, held, repaint, saying) {
   const marked = held.marked.includes(one.number);
   const parts = [chip('Ask for changes to this slide', marked, (on) => {
     held.marked = held.marked.filter((number) => number !== one.number);
-    if (on) held.marked.push(one.number);
+    if (on) {
+      held.marked.push(one.number);
+      held.saying = held.saying.filter((number) => number !== one.number);
+    }
     repaint();
   }, 'mark ' + one.number)];
   if (marked) {
@@ -3112,11 +3125,17 @@ function slideMarks(one, held, repaint) {
       held.slideNotes, String(one.number), { long: true, limit: LINE, hint: 'Optional: it goes '
         + 'to the worker that draws this slide again, with your note.' }));
   }
-  parts.push(chip('Change what it says', held.saying.includes(one.number), (on) => {
-    held.saying = held.saying.filter((number) => number !== one.number);
-    if (on) held.saying.push(one.number);
-    repaint();
-  }, 'say ' + one.number));
+  if (saying) {
+    parts.push(chip('Change what it says', held.saying.includes(one.number), (on) => {
+      held.saying = held.saying.filter((number) => number !== one.number);
+      if (on) {
+        held.saying.push(one.number);
+        held.marked = held.marked.filter((number) => number !== one.number);
+        delete held.slideNotes[String(one.number)];
+      }
+      repaint();
+    }, 'say ' + one.number));
+  }
   return parts;
 }
 
@@ -4214,13 +4233,13 @@ function buildPanel(gate, readonly) {
       parts.push(...slideMarks(one, held, () => {
         tellMarked();
         view.viewer.go(one.number);
-      }));
+      }, canSay(view.run)));
     }
     return parts;
   };
   if (slides.length) {
     add(node, pager(slides, about), marked, problem,
-      readonly ? null : add(make('div', 'bar'), go));
+      readonly || !canSay(view.run) ? null : add(make('div', 'bar'), go));
   } else add(node, make('p', 'quiet', 'There are no pictures of its slides on this computer.'));
   if (gate.contactSheet) {
     const sheet = make('details', 'card-part');
@@ -4334,10 +4353,10 @@ function deliverPart(run) {
       add(node, pager(slides, (one) => slideMarks(one, held, () => {
         tellMarked();
         view.viewer.go(one.number);
-      })), marked);
+      }, canSay(run))), marked);
     }
     add(node, problem, add(make('div', 'bar'), capsule('Ask for changes', '',
-      openSheet('changes', 'changes'), 'changes'), go));
+      openSheet('changes', 'changes'), 'changes'), canSay(run) ? go : null));
   }
   return node;
 }

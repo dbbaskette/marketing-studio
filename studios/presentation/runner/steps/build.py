@@ -726,7 +726,8 @@ def start(root, run: dict, slides, brand) -> dict:
     finally:
         source.unlink(missing_ok=True)
     began = {'folder': START.as_posix(), 'brand': str(brand), 'contract': _digest(brand),
-             'sections': sections, 'wordless': placed, 'titled': titled, 'at': home.now()}
+             'drawn': secrets.token_hex(3), 'sections': sections, 'wordless': placed,
+             'titled': titled, 'at': home.now()}
     kept = _kept(root, earlier, began, whole)
     for old in (root / DRAWN).glob('*.json'):
         if old.relative_to(root).as_posix() not in {entry['file'] for entry in kept.values()}:
@@ -754,10 +755,19 @@ def _earlier(root: Path, brand: Path) -> dict:
                          for slide in (rounds[-1]['slides'] if rounds else ())}}
 
 
+# What a section's composer reads of a slide: the same words here are the same drawing.
+DRAWN_FROM = ('kind', 'title', 'subtitle', 'detail', 'understand', 'focal', 'sources',
+              'points', 'caveat', 'source', 'notes', 'relation', 'rhythm', 'layout', 'image')
+
+
+def _read_by_composer(slide: dict | None) -> dict | None:
+    return None if slide is None else {key: slide.get(key) for key in DRAWN_FROM}
+
+
 def _kept(root: Path, earlier: dict, began: dict, whole: dict) -> dict:
-    """The sections drawn before that need no drawing again: each whose slides are the same,
-    word for word, in a deck that is otherwise the same too. Each is kept as it was drawn,
-    marked `kept`."""
+    """The sections drawn before that need no drawing again: each whose slides say the same,
+    in every field its composer reads, in a deck that is otherwise the same too. Each is
+    kept as it was drawn, copied under a name of this start's own, and marked `kept`."""
     # The words of approval are the person's, and say nothing of how a slide is drawn.
     unchanged = ('slides', 'approval')
     if not earlier or {key: value for key, value in earlier['whole'].items()
@@ -774,8 +784,13 @@ def _kept(root: Path, earlier: dict, began: dict, whole: dict) -> dict:
                 or old.get('file') != entry.get('file') \
                 or not (root / drawn['file']).is_file():
             continue
-        if all(before.get(ident) == now.get(ident) for ident in entry['slides']):
-            kept[entry['id']] = {**drawn, 'round': 0, 'kept': True}
+        if all(_read_by_composer(before.get(ident)) == _read_by_composer(now.get(ident))
+               for ident in entry['slides']):
+            # Its own file: a drawing of this start never writes over it, whatever its turn.
+            file = DRAWN / f"{entry['id']}-kept-{began['drawn']}.json"
+            (root / DRAWN).mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(root / drawn['file'], root / file)
+            kept[entry['id']] = {**drawn, 'file': file.as_posix(), 'round': 0, 'kept': True}
     return kept
 
 
@@ -973,7 +988,9 @@ def keep_section(root, run: dict, section: str, handed) -> Path:
         notes = (handed.get('review') or '').strip() or None
         handed = handed['artifacts']['section']['text']
     turn = len(state['rounds'])
-    file = DRAWN / f'{section}-{turn}.json'
+    # Named for this start too, so a section kept from an earlier start is never written over.
+    token = (state.get('start') or {}).get('drawn')
+    file = DRAWN / (f'{section}-{turn}-{token}.json' if token else f'{section}-{turn}.json')
     write_atomic(root / file, handed if handed.endswith('\n') else handed + '\n')
     state['sections'][section] = {'file': file.as_posix(), 'round': turn, 'notes': notes,
                                   'at': home.now()}

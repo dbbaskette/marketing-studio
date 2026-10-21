@@ -1389,8 +1389,13 @@ class Engine(Jobs, Researching):
         began = build.start(root, self._load(root), self.slides(), contract)  # work/ only
         count = len(began['sections'])
         with self.files:
+            record = self._load(root)
+            # Where every step's tries stood as this build began: what comes after is its.
+            record['last_build'] = {'tries': {
+                name: len(entry.get('tries') or []) for name, entry in record['steps'].items()
+                if isinstance(entry, dict)}}
             self._done(root, step, clock, f"split the deck into {count} section"
-                       f"{'' if count == 1 else 's'}")
+                       f"{'' if count == 1 else 's'}", record)
 
     def _whole(self, root: Path, how: str) -> None:
         """Put the drawn sections together and preview the deck, in work/, without `files`;
@@ -1779,10 +1784,14 @@ class Engine(Jobs, Researching):
                                          'researching it again.')
         noted = None
         if gate == 'gate:build' and decision == 'changes':
-            # A line against a slide names it as surely as its mark does, and feedback
-            # that came after its section was drawn is its line unless another was written.
-            noted = {**self._late_feedback(record), **(self._slide_notes(extra) or {})}
+            # A line against a slide names it as surely as its mark does. The page's lines
+            # are the person's last word: only where none were sent does feedback that came
+            # after its section was drawn stand as the slide's line.
+            noted = self._slide_notes(extra)
+            if noted is None:
+                noted = self._late_feedback(record)
             named = sorted({*(self._numbers(extra) or ()), *(int(one) for one in noted)})
+            self._check_numbers(root, named)
             if noted and not note:
                 note = '\n'.join(f'Slide {number}: {noted[str(number)]}'
                                  for number in sorted(int(one) for one in noted))
@@ -1822,6 +1831,11 @@ class Engine(Jobs, Researching):
         more = {'again': None, 'added': None, 'free': None} \
             if gate == 'gate:research' else {'saying': None} \
             if gate == 'gate:outline' else {}
+        # An outline that came back from the deck is redrafted in the brand the deck was
+        # built in: that is not checked again.
+        look = {name: dict(record['steps'].get(name) or {}) for name in ('brand', 'look-preview')} \
+            if gate == 'gate:outline' and gated.get('saying') else None
+        look_gate = dict(record['gates'].get('gate:look') or {}) if look else None
         if rebrand:
             looks.rebrand(root, record, extra['brand'], extra.get('variant'), brands)
             note = note or ('Make it in ' + decks.brand_words(record['form']) + '.')
@@ -1838,6 +1852,12 @@ class Engine(Jobs, Researching):
             record = stages.reopen(record, gate)
         except ValueError:
             raise WorkspaceError(f'This deck has no {it} to change.') from None
+        if look:
+            for name, entry in look.items():
+                if name in record['steps']:
+                    record['steps'][name] = entry
+            if look_gate:
+                record['gates']['gate:look'] = look_gate
         for step in self._reopened(record, gate):
             self._fresh(record, step)
         if gate == 'gate:build':
@@ -1858,6 +1878,11 @@ class Engine(Jobs, Researching):
             raise WorkspaceError('Your document is read as '
                                  + ('a spec' if kind == 'spec' else 'material') + ' already.')
         record = intake.correct(root, record, kind)
+        if kind == 'spec':
+            # A spec is not researched: what the research wrote would be read into the
+            # outline, so it goes.
+            for file in (PLAN, PLAN_MD, REPORT):
+                (root / file).unlink(missing_ok=True)
         record['gates']['gate:classify'].update(note=note, at=at, by=by)
         for step in self._reopened(record, 'gate:classify'):
             self._fresh(record, step)
@@ -1874,21 +1899,24 @@ class Engine(Jobs, Researching):
         if not named:
             raise WorkspaceError('Name the slides whose words should change, by their '
                                  'numbers.')
+        if 'gate:outline' not in {step.name for step in stages.steps(record)}:
+            raise WorkspaceError("This deck's words come from the deck you gave: change them "
+                                 'there, or ask for changes to the slide.')
         state = build.read_state(root)
         if not state.get('rounds'):
-            raise WorkspaceError('The deck has no drawn slides to change yet.')
+            raise WorkspaceError('There is no drawing of this deck on this computer to name '
+                                 'its slides from: it was built elsewhere. Ask for changes '
+                                 'with a note instead.')
         ids = {slide['number']: slide['id'] for slide in state['rounds'][-1]['slides']}
-        unknown = [number for number in named if number not in ids]
-        if unknown:
-            raise WorkspaceError(f'The deck has no slide {unknown[0]}.')
+        self._check_numbers(root, named)
         delivered = decks.delivered(root) is not None
         if not delivered and gate_state(record, 'gate:build') != 'waiting':
             raise WorkspaceError(NOT_WAITING.format(it=WORDS['gate:build']))
-        which = self._slides_said(named)
+        which = self._words_of(named)
         if delivered:
             # The delivered deck is taken down: the next revision is built from here.
             record = delivering.again(root, record, self.slides(),
-                                      note or f'Change what {which} say.', space)
+                                      note or f'Change {which}.', space)
         kept = {name: dict(record['steps'].get(name) or {})
                 for name in ('outline', 'extract', 'brand', 'look-preview')}
         look = dict(record['gates'].get('gate:look') or {})
@@ -1904,20 +1932,33 @@ class Engine(Jobs, Researching):
             'round': int(gated.get('round') or 1) + 1,
             'saying': {ids[number]: note or '' for number in named}}
         built = record['gates'].get('gate:build') or {}
-        record['gates']['gate:build'] = {**built, 'slides': None, 'slide_notes': None}
+        # The deck's own request for changes, if one was made, is not what this one says.
+        record['gates']['gate:build'] = {**built, 'slides': None, 'slide_notes': None,
+                                         'note': None}
         record['build_feedback'] = [item for item in record.get('build_feedback') or []
                                     if not item.get('late')]
         for step in self._reopened(record, 'gate:outline'):
             self._fresh(record, step)
         self._store(root, record)
-        return f'ask to change what {which} say', (self._listed(space) if delivered else ())
+        return f'ask to change {which}', (self._listed(space) if delivered else ())
 
     @staticmethod
-    def _slides_said(numbers: list[int]) -> str:
-        """'slide 3', or 'slides 3 and 5'."""
+    def _words_of(numbers: list[int]) -> str:
+        """'what slide 3 says', or 'what slides 3 and 5 say'."""
         if len(numbers) == 1:
-            return f'slide {numbers[0]}'
-        return 'slides ' + ', '.join(map(str, numbers[:-1])) + f' and {numbers[-1]}'
+            return f'what slide {numbers[0]} says'
+        return 'what slides ' + ', '.join(map(str, numbers[:-1])) + f' and {numbers[-1]} say'
+
+    @staticmethod
+    def _check_numbers(root: Path, numbers) -> None:
+        """Refuse a slide number the deck's last drawing does not have."""
+        rounds = build.read_state(root).get('rounds') or []
+        if not numbers or not rounds:
+            return
+        had = {slide['number'] for slide in rounds[-1]['slides']}
+        unknown = [number for number in numbers if number not in had]
+        if unknown:
+            raise WorkspaceError(f'The deck has no slide {unknown[0]}.')
 
     @staticmethod
     def _slide_notes(extra: dict) -> dict | None:
@@ -2595,15 +2636,26 @@ class Engine(Jobs, Researching):
 
     @staticmethod
     def _last_build(record: dict) -> dict:
-        """What the last build of the deck took, from its set-up to its render: dollars and
-        seconds. Said before a whole deck is drawn again."""
-        began = attempts(record, 'build-start')
-        since = began[-1]['started_at'] if began else ''
-        tried = [attempt for name in BUILT for attempt in attempts(record, name)
-                 if (attempt.get('started_at') or '') >= since]
+        """What drawing the whole deck took: each section's last drawing, whichever start
+        it was kept from, and the rest of the last build, from its set-up to its render.
+        Said before a whole deck is drawn again, with how many sections that is."""
+        stood = (record.get('last_build') or {}).get('tries') or {}
+        tried, sections = [], 0
+        for name, entry in (record.get('steps') or {}).items():
+            if not isinstance(entry, dict):
+                continue
+            if name.startswith('build-sections:'):
+                kept = [attempt for attempt in entry.get('tries') or []
+                        if attempt.get('outcome') == 'kept']
+                if kept:
+                    tried.append(kept[-1])
+                    sections += 1
+            elif name.partition(':')[0] in BUILT:
+                tried += list(entry.get('tries') or [])[stood.get(name, 0):]
         dollars = [attempt['dollars'] for attempt in tried if attempt.get('dollars') is not None]
         return {'dollars': round(sum(dollars), 4) if dollars else None,
-                'seconds': round(sum(attempt.get('seconds') or 0 for attempt in tried), 1)}
+                'seconds': round(sum(attempt.get('seconds') or 0 for attempt in tried), 1),
+                'sections': sections}
 
     @staticmethod
     def _rendered(root: Path, record: dict) -> bool:

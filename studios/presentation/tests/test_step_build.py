@@ -806,6 +806,7 @@ class StartAgainTests(Deck):
         self.built()
         drawn = dict(build.read_state(self.root)['sections'])
         self.assertEqual(sorted(drawn), ['section-1', 'section-2'])
+        first = (self.root / drawn['section-1']['file']).read_text(encoding='utf-8')
         outline = json.loads((self.root / 'outline.json').read_text(encoding='utf-8'))
         outline['slides'][6]['title'] = 'A failed batch goes back, never on'
         (self.root / 'outline.json').write_text(json.dumps(outline), encoding='utf-8')
@@ -813,14 +814,49 @@ class StartAgainTests(Deck):
         build.start(self.root, self.run_, self.slides, self.contract)
         self.assertEqual(build.to_draw(self.root), ['section-2'])
         state = build.read_state(self.root)
-        self.assertEqual(state['sections']['section-1']['file'], drawn['section-1']['file'])
-        self.assertTrue(state['sections']['section-1']['kept'])
-        self.assertTrue((self.root / drawn['section-1']['file']).is_file())
+        kept = state['sections']['section-1']
+        # Kept as it was drawn, under a name of this start's own.
+        self.assertNotEqual(kept['file'], drawn['section-1']['file'])
+        self.assertIn('-kept-', kept['file'])
+        self.assertTrue(kept['kept'])
+        self.assertEqual((self.root / kept['file']).read_text(encoding='utf-8'), first)
+        # What the earlier start drew is gone, kept copy aside.
+        self.assertFalse((self.root / drawn['section-1']['file']).is_file())
         self.assertFalse((self.root / drawn['section-2']['file']).is_file())
         self.assertEqual(state['rounds'], [])
         self.draw('section-2')
         made = build.whole(self.root, self.run_, self.slides, 'local')
         self.assertEqual(len(made['slides']), len(LONG_OUTLINE['slides']))
+
+    def test_a_kept_section_repaired_again_reaches_the_deck(self):
+        self.built()
+        state = build.read_state(self.root)
+        state['repair'] = ['section-1']        # the first build's review sends it back
+        build.write_state(self.root, state)
+        self.draw('section-1')
+        build.whole(self.root, self.run_, self.slides, 'local')
+        outline = json.loads((self.root / 'outline.json').read_text(encoding='utf-8'))
+        outline['slides'][6]['title'] = 'A failed batch goes back, never on'
+        (self.root / 'outline.json').write_text(json.dumps(outline), encoding='utf-8')
+        BY_ID['rolling-back'] = outline['slides'][6]
+        build.start(self.root, self.run_, self.slides, self.contract)
+        self.assertEqual(build.to_draw(self.root), ['section-2'])
+        kept = build.read_state(self.root)['sections']['section-1']['file']
+        self.assertTrue((self.root / kept).is_file())
+        self.draw('section-2')
+        build.whole(self.root, self.run_, self.slides, 'local')
+        state = build.read_state(self.root)
+        self.assertEqual(state['rounds'][-1]['made_from']['section-1'], kept)
+        state['repair'] = ['section-1']        # the second build's review sends it back too
+        build.write_state(self.root, state)
+        self.assertEqual(build.to_draw(self.root), ['section-1'])
+        self.draw('section-1')
+        state = build.read_state(self.root)
+        repaired = state['sections']['section-1']['file']
+        # Drawn again, it is a new file, so the deck has to be put together again.
+        self.assertNotEqual(repaired, kept)
+        self.assertNotEqual(state['rounds'][-1]['made_from']['section-1'], repaired)
+        self.assertTrue((self.root / kept).is_file())
 
     def test_nothing_is_kept_from_a_build_in_another_brand(self):
         self.built()

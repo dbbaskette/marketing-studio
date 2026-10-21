@@ -1115,6 +1115,37 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual((body['decision'], body['extra']['slides']),
                          ('changes', {gate['slides'][1]['id']: 'Claim only what the points say.'}))
 
+    def test_a_slide_is_marked_to_be_drawn_again_or_to_say_something_else_not_both(self):
+        path = self.started()
+        self.to_gate(Path(path), 'gate:build')
+        result = self.deck_screen(path, [
+            {'click': 'Ask for changes to this slide'},
+            {'fill': 'What should change on slide 1', 'value': 'Calmer.'},
+            {'click': 'Change what it says'}, {'snapshot': 'saying'},
+            {'click': 'Ask for changes to this slide'}, {'snapshot': 'marked'}])
+        saying = result['snapshots']['saying']
+        self.assertEqual(saying['chosen'], ['Change what it says'])
+        self.assertIn('Words to change: slide 1.', saying['text'])
+        self.assertNotIn('Marked for changes', saying['text'])
+        self.assertNotIn('What should change on slide 1', saying['fields'])
+        marked = result['snapshots']['marked']
+        self.assertEqual(marked['chosen'], ['Ask for changes to this slide'])
+        self.assertNotIn('Words to change', marked['text'])
+        self.assertEqual(marked['fields']['What should change on slide 1'], '')
+        self.assertEqual(self.posts(result), [])
+
+    def test_a_deck_without_an_outline_offers_no_change_to_what_a_slide_says(self):
+        path = self.started()
+        self.to_gate(Path(path), 'gate:build')
+        view = self.run_of(path)
+        # As an existing deck polished has it: no outline step in its timeline.
+        view['timeline'] = [row for row in view['timeline'] if row['name'] != 'gate:outline']
+        result = self.run_page(self.answers(**{'GET /api/run': [ok(view)]}),
+                               [{'click': 'Review Rolling restarts'}, {'snapshot': 'build'}])
+        shot = result['snapshots']['build']
+        self.assertIn('Ask for changes to this slide', shot['buttons'])
+        self.assertNotIn('Change what it says', shot['buttons'])
+
     def test_a_delivered_deck_marks_slides_and_says_what_a_whole_build_costs(self):
         self.workers.cost = 0.25
         path = self.started()
@@ -1213,6 +1244,15 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual((body['note'], body['extra']),
                          ('Calmer overall.', {'slides': [2, 3], 'slide_notes': {
                              '2': 'More room.', '3': 'Name the batch size, in words.'}}))
+        # The kept note taken away on the page is taken away for real: the lines are sent
+        # even when none is left, so the runner does not put it back.
+        withdrawn = self.deck_screen(path, [
+            {'click': 'Next slide'}, {'click': 'Next slide'},
+            {'fill': 'What should change on slide 3', 'value': ''},
+            {'click': 'Ask for changes'}, {'type': 'As it is.'}, {'click': 'Send for changes'}],
+            **{'POST /api/decide': [ok(self.run_of(path))]})
+        (_, sent), = self.posts(withdrawn)
+        self.assertEqual(sent['extra'], {'slides': [3], 'slide_notes': {}})
         self.post('decide', body)
         self.assertIn('Slide 3: Name the batch size, in words.',
                       self.workers.of('section')[-1].task)
