@@ -1215,6 +1215,7 @@ class Engine(Jobs, Researching):
                         {'brand': str(entry.get('brand')), 'name': str(entry.get('name')),
                          'variants': [str(variant) for variant in entry.get('variants') or ()]}
                         for entry in skill.brands() if isinstance(entry, dict)]}
+                found['brand']['old'] = brand_skill.too_old(getattr(skill, 'version', None))
             except (WorkspaceError, OSError) as refusal:
                 found['brand']['problem'] = str(refusal)
             try:
@@ -1266,7 +1267,7 @@ class Engine(Jobs, Researching):
         dated = self._with_installer(dated, seen)
         seen = {**seen, 'tool': self._with_installer(seen['tool'], seen)}
         # The brand skill is not a need of drawing: a deck without one stops at its brand.
-        missing = [said for said in (seen['tool'], dated) if said]
+        missing = [said for said in (seen['tool'], dated, brand.get('old')) if said]
         if not seen['tool']:
             if how is None:
                 renders = NOT_CHOSEN if seen['drive'] else NO_RENDERER
@@ -1281,9 +1282,10 @@ class Engine(Jobs, Researching):
                  'missing' if seen['tool'] else 'problem' if dated else 'ok',
                  [fact('Installed', can[not seen['tool']], seen['version'] or 'not found')],
                  seen['tool'] or dated or ''),
-            item('deck-brand', 'A brand skill', 'ok' if brand['found'] else 'missing',
+            item('deck-brand', 'A brand skill',
+                 'problem' if brand.get('old') else 'ok' if brand['found'] else 'missing',
                  [fact('Installed', can[brand['found']], brand['name'] or 'not found')],
-                 brand['problem'] or ''),
+                 brand['problem'] or brand.get('old') or ''),
             item('deck-previews', 'A way to render previews of slides',
                  'problem' if renders or seen['tool'] else 'ok',
                  [fact('LibreOffice on this computer', can[seen['local']]),
@@ -1376,6 +1378,12 @@ class Engine(Jobs, Researching):
                 step = first(self._load(root))
             self._problem(root, step.name if step else 'brand', 'stopped', NO_BRAND,
                           KEPT_SO_FAR)
+            raise _Halted()
+        old = brand_skill.too_old(getattr(skill, 'version', None))
+        if old and not (root / build.CONTRACT).is_file():
+            with self.files:
+                step = first(self._load(root))
+            self._problem(root, step.name if step else 'brand', 'stopped', old, KEPT_SO_FAR)
             raise _Halted()
         with self.files:
             record = self._load(root)

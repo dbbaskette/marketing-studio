@@ -227,6 +227,23 @@ class PinnedFloorTests(unittest.TestCase):
         self.assertIn('`>=0.16.0` for Harness Slides', readme)
         self.assertNotIn('0.14.1', readme)
 
+    def test_brand_skill_floor_is_not_installed(self):
+        path = ROOT / 'pins/companions.json'
+        pins = json.loads(path.read_text(encoding='utf-8'))
+        floor = pins['brand_skill']
+        self.assertEqual((floor['requirement'], floor['tested']), ('>=0.14.0', '0.14.0'))
+        self.assertTrue(floor['note'])
+        self.assertNotIn('brand_skill', pins['companions'])
+        self.assertEqual(sorted(companions.read_pins(path)), ['harness-research', 'harness-slides'])
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        copy = Path(temp.name) / 'companions.json'
+        copy.write_text(path.read_text(encoding='utf-8'), encoding='utf-8')
+        with mock.patch.object(companions, 'resolve_companion', lambda name, pin: pin):
+            result = updater().refresh(copy, check=True)
+        self.assertEqual(sorted(result['companions']), ['harness-research', 'harness-slides'])
+        self.assertEqual(json.loads(copy.read_text(encoding='utf-8'))['brand_skill'], floor)
+
 
 if __name__ == '__main__':
     unittest.main()

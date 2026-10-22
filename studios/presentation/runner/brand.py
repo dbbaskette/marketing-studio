@@ -53,6 +53,8 @@ Added to the above
   false is a picture, which the slides tool will not place.
 - `audit` gives a blocker in the shape of a warning, and `slide` as the slide's number.
   `status` is the skill's own word: PASS, WARN or BLOCKED.
+- `too_old(version)` is the Status sentence for a brand skill older than FLOOR, the
+  `brand_skill` requirement in the installed pins, or None.
 - `ready()` returns the readiness check's own JSON, whatever it found: `ok`, and its
   `checks` and `capabilities`, each with a name and how it stands.
 - A brand that is the entry to slide building (`guides()`) starts a deck's slide task with
@@ -80,6 +82,10 @@ TIMEOUT = 120
 DELIVERIES = ('reading', 'live')
 NAMED = re.compile(r'^[\w.-]{1,80}$')
 NUMBER = re.compile(r'^\d+\.\d+\.\d+$')   # a version, as a version line ends with it
+PINS = Path(__file__).resolve().parents[1] / 'installer' / 'companions.json'
+TESTED = '0.14.0'   # the oldest brand skill a deck takes, when the pins do not say
+TOO_OLD = ('Your brand skill is {version}. Decks need {floor} or newer, for its look samples '
+           'and talk-or-handout export. Update it in Settings.')
 NOISE = re.compile(r'^\((?:node:\d+\)|Use `node )')   # Node's own warnings, not the skill's
 NOT_WHOLE = ('The brand skill answered with something other than the JSON it should. '
              'Check that it is installed whole.')
@@ -93,6 +99,32 @@ class Refused(WorkspaceError):
     def __init__(self, problems: list[str]):
         super().__init__('The brand skill refused: ' + ' '.join(problems))
         self.problems = problems
+
+
+def floor() -> str:
+    """The oldest brand skill a deck takes: `brand_skill.requirement` in the pins this
+    studio was installed with, else TESTED. Installers never read it: the brand skill is the
+    person's own, and nothing installs it."""
+    try:
+        kept = json.loads(PINS.read_text(encoding='utf-8'))
+        found = re.fullmatch(r'>=(\d+\.\d+\.\d+)', kept['brand_skill']['requirement'])
+    except (OSError, ValueError, KeyError, TypeError):
+        found = None
+    return found.group(1) if found else TESTED
+
+
+FLOOR = floor()
+
+
+def too_old(version: str | None) -> str | None:
+    """The Status sentence for a brand skill older than FLOOR, else None. A skill that says
+    no version is not judged by one."""
+    from runner import brand_source   # its order of releases; it needs no brand skill
+    if not version or not NUMBER.match(str(version)):
+        return None
+    if brand_source.order(version) >= brand_source.order(FLOOR):
+        return None
+    return TOO_OLD.format(version=version, floor=FLOOR)
 
 
 def locations(home: Path | None = None) -> list[Path]:

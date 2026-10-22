@@ -3323,6 +3323,17 @@ class TroubleTests(DeckCase):
         after = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
         self.assertLessEqual(set(before), set(after), 'nothing it had is lost')
 
+    def test_a_brand_skill_older_than_the_floor_is_said_and_holds_a_new_deck(self):
+        said = brand_skill.too_old('0.13.2')
+        self.brand.version = '0.13.2'
+        self.assertIn(said, self.engine.deck_needs(fresh=True)['missing'])
+        root = self.begin()
+        self.to_end(root)
+        self.assertEqual(self.view(root)['deck_left']['says'], left(pipeline.DECK_LEFT, said))
+        self.brand.version = '0.14.0'
+        self.assertNotIn(said, self.engine.deck_needs(fresh=True)['missing'])
+        self.assertEqual(self.engine.deck_needs()['missing'], [])
+
     def test_a_computer_with_nothing_for_a_deck_says_what_is_missing(self):
         self.slides = self.brand = None
         root = self.begin(brand=None)
@@ -3464,7 +3475,7 @@ class PageTests(PageCase):
         self.assertEqual(found['previews'], {'how': 'drive', 'pool': False, 'drive': True, 'local': False,
                                              'left': []})
         self.assertEqual(found['brand'], {
-            'found': True, 'name': 'Example Co brand kit', 'problem': None,
+            'found': True, 'name': 'Example Co brand kit', 'problem': None, 'old': None,
             'brands': [{'brand': 'example-co', 'name': 'Example Co',
                         'variants': ['light', 'dark']}],
             'skills': [{'name': 'Example Co brand kit', 'path': '/opt/brand-kit',

@@ -1458,6 +1458,7 @@ class Engine(Reviewing):
                         {'brand': str(entry.get('brand')), 'name': str(entry.get('name')),
                          'variants': [str(variant) for variant in entry.get('variants') or ()]}
                         for entry in skill.brands() if isinstance(entry, dict)]}
+                found['brand']['old'] = brand_skill.too_old(getattr(skill, 'version', None))
                 found['contracts'] = bool(skill.contracts())
             except (WorkspaceError, OSError) as refusal:
                 found['brand']['problem'] = str(refusal)
@@ -1510,7 +1511,8 @@ class Engine(Reviewing):
                                       release=slides_tool.RELEASE) if lacks else None
         unwritten = NO_CONTRACTS.format(name=brand['name']) \
             if brand['found'] and seen['contracts'] is False else None
-        missing = [said for said in (seen['tool'], dated, brand['problem'], unwritten) if said]
+        missing = [said for said in (seen['tool'], dated, brand['problem'],
+                                     brand.get('old'), unwritten) if said]
         if not seen['tool']:
             if how is None:
                 renders = NOT_CHOSEN if seen['drive'] else NO_RENDERER
@@ -1532,10 +1534,10 @@ class Engine(Reviewing):
                      *needed], seen['tool'] or dated or update or ''),
              'versions': bool(lacks or dated)},
             item('deck-brand', 'A brand skill',
-                 'ok' if brand['found'] and not unwritten else
+                 'ok' if brand['found'] and not unwritten and not brand.get('old') else
                  'problem' if brand['found'] else 'missing',
                  [fact('Installed', can[brand['found']], brand['name'] or 'not found'),
-                  *written], brand['problem'] or unwritten or ''),
+                  *written], brand['problem'] or brand.get('old') or unwritten or ''),
             item('deck-previews', 'A way to render previews of slides',
                  'problem' if renders or seen['tool'] else 'ok',
                  [fact('LibreOffice on this computer', can[seen['local']]),

@@ -426,6 +426,24 @@ class CommandTests(unittest.TestCase):
             brand.run_command(['no-such-program-anywhere'])
 
 
+class FloorTests(unittest.TestCase):
+    """The oldest brand skill a deck takes, read from the pins it was installed with."""
+
+    def test_too_old(self):
+        self.assertEqual(brand.FLOOR, '0.14.0')
+        self.assertEqual(brand.too_old('0.13.2'), 'Your brand skill is 0.13.2. Decks need '
+                         '0.14.0 or newer, for its look samples and talk-or-handout export. '
+                         'Update it in Settings.')
+        self.assertIsNone(brand.too_old('0.14.0'))
+        self.assertIsNone(brand.too_old('1.2.0'))
+        self.assertIsNone(brand.too_old(None), 'a skill that says no version is not judged')
+        self.assertIsNotNone(brand.too_old('2026.6.0'), 'a year-numbered release came first')
+
+    def test_the_floor_without_the_pins_is_the_tested_release(self):
+        with mock.patch.object(brand, 'PINS', Path('/nowhere/companions.json')):
+            self.assertEqual(brand.floor(), '0.14.0')
+
+
 class CompanionsTests(unittest.TestCase):
     """The brand skill draws through harness-slides and asks harness-research: it is told
     the copies this runner uses, as harness-slides says a brand adapter is

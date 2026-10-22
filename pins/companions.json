@@ -21,5 +21,10 @@
       "note": "Its installer also downloads, from npm, the packages its slide engine needs.",
       "requirement": ">=0.16.0"
     }
+  },
+  "brand_skill": {
+    "requirement": ">=0.14.0",
+    "tested": "0.14.0",
+    "note": "The brand skill is the person's own; Marketing Studio never installs it. Decks need this version or newer."
   }
 }

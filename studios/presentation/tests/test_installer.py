@@ -943,6 +943,16 @@ class CompanionTests(InstallerCase):
         self.assertIn('does not say which companion skills to install', refusal['error'])
         self.assertFalse(self.root.exists())
 
+    def test_pins_with_a_brand_floor_install_as_before(self):
+        write_pins(self.pins_file, self.pins)
+        plain = install.read_pins(self.pins_file)
+        kept = json.loads(self.pins_file.read_text(encoding='utf-8'))
+        kept['brand_skill'] = {'requirement': '>=0.14.0', 'tested': '0.14.0',
+                               'note': 'The brand skill is the person\'s own.'}
+        self.pins_file.write_text(json.dumps(kept), encoding='utf-8')
+        self.assertEqual(install.read_pins(self.pins_file), plain)
+        self.assertEqual(sorted(plain), sorted(COMPANIONS))
+
     def test_the_pins_that_ship_name_a_whole_commit_and_nothing_of_a_companion_is_here(self):
         pins = install.read_pins(helpers.REPO / 'installer' / 'companions.json')
         self.assertEqual(sorted(pins), sorted(COMPANIONS))
