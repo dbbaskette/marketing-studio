@@ -21,6 +21,44 @@ def snapshot(values):
     return {'schema': 1, 'level': value['level']}
 
 
+STALE = 'Another studio changed where new work stops. Reload the page and try again.'
+
+
+def effective(values, problem=None):
+    """The level a form shows from what the studios config holds: Balanced when it names
+    none, Step by step when what it names cannot be used or the file cannot be read."""
+    if problem:
+        return 'step_by_step'
+    value = (values or {}).get('review')
+    if value is None:
+        return 'balanced'
+    try:
+        check(value)
+    except ValueError:
+        return 'step_by_step'
+    return value['level']
+
+
+def change(update, level, seen):
+    """Write `level` as the one new work starts at in every studio, under the file's lock,
+    through `update` (a studio's studios_config.update). Refused, with nothing written,
+    when the file no longer holds `seen`, the level the form read."""
+    check({'level': level})
+
+    def guard(current):
+        if effective(current) != seen:
+            raise ValueError(STALE)
+    return update({'review': {'level': level}}, guard=guard)
+
+
+def ahead(record, product, gates, last=None, first='outline'):
+    """The gates of `gates`, in order, that the run's level always stops at: those the
+    policy does not accept with nothing holding them. A gate a grave finding may still
+    keep is not among them."""
+    return [gate for gate in gates
+            if not automatic(record, product, gate, last=last, holding=(), first=first)]
+
+
 def capture():
     from studio_core import studios_config
     values, problem = studios_config.read()

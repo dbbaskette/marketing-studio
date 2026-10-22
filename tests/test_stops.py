@@ -46,6 +46,16 @@ class StopWordsTests(unittest.TestCase):
         # Each studio names the action as its page does.
         self.assertTrue(stops.spent('deck', 1, 1, go='Resume')[1].endswith('then resume.'))
 
+    def test_took_and_cost_say_dollars_only_when_every_job_reported(self):
+        self.assertEqual(stops.took([{'seconds': 300, 'dollars': 0.5},
+                                     {'seconds': 420, 'dollars': 0.9}]),
+                         {'jobs': 2, 'seconds': 720, 'dollars': 1.4})
+        self.assertIsNone(stops.took([{'seconds': 300, 'dollars': 0.5},
+                                      {'seconds': 420}])['dollars'])
+        self.assertEqual(stops.took([]), {'jobs': 0, 'seconds': 0, 'dollars': None})
+        self.assertEqual(stops.cost(720, 1.4), '12 minutes and about $1.40')
+        self.assertEqual(stops.cost(720, None), '12 minutes; the assistant reported no cost')
+
     def test_no_job_starts_with_less_than_the_floor_left(self):
         self.assertEqual((stops.floor(20), stops.floor(1), stops.floor(0)), (0.5, 0.25, 0.0))
 

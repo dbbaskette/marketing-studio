@@ -157,7 +157,17 @@ def save(config, changes, seen):
 
     def guard(current):
         check(changes, current)
-        for path, wanted in model_profiles.leaves(changes):
+        if 'review' in changes:
+            # The level a form read: a form that read no level showed Balanced.
+            before = seen.get('review')
+            before = review_policy.effective(
+                {} if not isinstance(before, dict) or before.get('level') is None
+                else {'review': before})
+            held = review_policy.effective(current)
+            if held != before and held != changes['review']['level']:
+                raise ValueError(review_policy.STALE)
+        for path, wanted in model_profiles.leaves(
+                {key: value for key, value in changes.items() if key != 'review'}):
             held, before = model_profiles.get(current, path), model_profiles.get(seen, path)
             if held != before and held != wanted:
                 raise ValueError('Another studio changed this setting. Reload the page and try again.')
