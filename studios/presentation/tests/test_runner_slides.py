@@ -188,6 +188,25 @@ class FindingTheRuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(WorkspaceError, 'did not say which version it is'):
             slides.Slides(run=lambda command, cwd=None: (0, 'Usage: ...\n', ''))
 
+    def test_preview_never_asks_for_events(self):
+        ran, base = [], self.home
+
+        def run(command, cwd=None):
+            ran.append(command)
+            if command[2:] == ['--version']:
+                return 0, f'Harness Slides {slides.MINIMUM}\n', ''
+            if command[2:] == ['version']:
+                return 0, json.dumps({'capabilities': ['progress-events', 'json-refusals']}), ''
+            output = Path(command[command.index('--output') + 1])
+            output.mkdir()
+            return 0, json.dumps({'deck': str(output / 'deck.pptx'), 'slides': []}), ''
+
+        tool = slides.Slides(runtime=Path('/opt/harness-slides'), run=run)
+        tool.preview(base / 'compiled', base / 'preview', 'local')
+        self.assertTrue(any('preview' in command for command in ran))
+        self.assertFalse(any('--events' in command for command in ran))
+        self.assertFalse(hasattr(tool, 'progress'), 'nothing waits for preview events')
+
     def test_older_tool_is_refused(self):
         os.environ[slides.VARIABLE] = str(installed(self.home / 'runtime'))
         with self.assertRaises(WorkspaceError) as refused:

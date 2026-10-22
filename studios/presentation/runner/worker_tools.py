@@ -746,14 +746,10 @@ def render(slides, compiled: Path, folder: Path, how: dict) -> dict:
                 home.write_json(kept, {**(how.get('named') or {}), 'id': ident, 'url': url,
                                        **({'pool': receipt} if receipt else {})})
 
-        from contextlib import nullcontext
         from runner import build_progress
         progress = build_progress.Preview(how['progress'], folder) if how.get('progress') else None
-        observing = slides.progress(progress.event) if progress and hasattr(slides, 'progress') else nullcontext()
         try:
-            with observing:
-                found = slides.preview(compiled, folder, how['renderer'],
-                                       file_id=known.get('id'))
+            found = slides.preview(compiled, folder, how['renderer'], file_id=known.get('id'))
             if progress:
                 progress.finish(found)
         except WorkspaceError as refusal:  # a preview that failed may have made its file

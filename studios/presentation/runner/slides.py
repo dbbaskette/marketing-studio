@@ -170,7 +170,6 @@ Added to the above
 from __future__ import annotations
 
 import contextlib
-import contextvars
 import json
 import os
 import re
@@ -182,7 +181,7 @@ from pathlib import Path
 import runner  # noqa: F401  puts the core on the import path
 from workspace import WorkspaceError
 
-from runner import companion, slide_events
+from runner import companion
 
 VARIABLE = 'HARNESS_SLIDES_RUNTIME'
 MINIMUM = '0.16.0'      # the oldest runtime taken: the one the installer pins
@@ -197,7 +196,6 @@ COUNTED = re.compile(r'^\d+ problems to fix:$')
 NOISE = re.compile(r'^\((?:node:\d+\)|Use `node )')   # Node's own warnings, not the tool's
 LEFT = re.compile(r'The preview deck is in Drive \((\S+)\); retry with --file-id (\S+?)\.$')
 PREVIEWING = threading.Lock()   # one preview at a time, whoever asks
-PROGRESS = contextvars.ContextVar('slide_progress', default=None)
 GUIDES = {'design guidance': 'design.md', 'composition guidance': 'compositions.md',
           'drafting guidance': 'draft.md', 'gallery': 'gallery.md'}   # under REFERENCES
 REFERENCES = Path('references')
@@ -393,15 +391,6 @@ class Slides:
         """The runtime's version, as it states it."""
         return self._call('--version').strip().rpartition(' ')[2]
 
-    @contextlib.contextmanager
-    def progress(self, each):
-        """Observe unreviewed preview events in this thread, when the runtime supports them."""
-        token = PROGRESS.set(each)
-        try:
-            yield
-        finally:
-            PROGRESS.reset(token)
-
     # --- the outline ---
 
     def outline_contract(self, brand: Path) -> str:
@@ -469,12 +458,7 @@ class Slides:
         # A tool with a preview pool reuses its own few preview decks: no file is named.
         named = bool(file_id) and renderer == 'drive' and not self.has('google-preview-pool')
         rest = [*(['--slide', slide] if slide else []), *_bound(design, section)]
-        each = PROGRESS.get()
-        events = each is not None and 'progress-events' in (self.capabilities() or ())
-        if events:
-            rest += ['--events']
-        observing = slide_events.watching(folder, each) if events else contextlib.nullcontext()
-        with PREVIEWING, _new(folder), observing:
+        with PREVIEWING, _new(folder):
             try:
                 shown = self._json(*args, *(['--file-id', file_id] if named else []), *rest)
             except Refused as refusal:
