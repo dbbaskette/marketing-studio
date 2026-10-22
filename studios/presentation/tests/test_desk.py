@@ -381,6 +381,23 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('Asking for changes runs the research again', result['snapshots']['sheet']['sheet'])
         self.assertIn('up to 3 rounds of writing and checking.', result['snapshots']['sheet']['sheet'])
 
+    def test_sending_a_marked_finding_shows_the_research_price_before_it_posts(self):
+        from synthesis_fixture import research_stop
+        path = self.started(research=True); self.decided(path, 'gate:research-plan')
+        research_stop(Path(path) / 'research')
+        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
+        self.engine._store(Path(path), record)
+        result = self.deck_screen(path, [
+            {'click': 'Ask about this finding: “Capacity condition”'},
+            {'snapshot': 'before-sending'}, {'click': 'Send 1 change'}])
+        text = result['snapshots']['before-sending']['text']
+        self.assertIn('Asking for changes runs the research again', text)
+        self.assertIn('up to 3 rounds of writing and checking.', text)
+        posted = [r['body'] for r in result['requests'] if r['address'] == '/api/decide']
+        self.assertEqual(len(posted), 1)
+        self.assertEqual(posted[0]['decision'], 'changes')
+        self.assertIn('instance-min--capacity', posted[0]['extra']['again'])
+
     def test_the_direction_review_prices_its_research_request(self):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):

@@ -4033,7 +4033,8 @@ function findingCard(gate, item, readonly, folded) {
     if (again) {
       body.push(field('again-' + item.id, gate.contract ? 'What is wrong with “' + title + '”?'
         : 'What was wrong with “' + title + '” (optional)',
-        held.again, item.id, { long: true, limit: LINE, typed: () => reviewChanged(gate) }));
+        held.again, item.id, { long: true, limit: LINE, hint: gate.research_price?.words || '',
+          typed: () => reviewChanged(gate) }));
     }
     // The runner refuses every finding left out: the outline is drafted from them.
     const last = !out && list(gate.items).filter((one) => !outs.includes(one.id)).length < 2;
