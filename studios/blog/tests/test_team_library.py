@@ -1380,3 +1380,89 @@ if __name__ == '__main__':
     import unittest
 
     unittest.main()
+
+
+class SourceKeepTests(RunnerCase):
+    def test_a_failed_record_write_keeps_the_original_folder_in_place(self):
+        ident = self.upload_file()
+        before, _ = studio.item(self.root, 'sources', ident)
+        with patch.object(studio, 'persist', side_effect=OSError('Synthetic disk failure')):
+            with self.assertRaises(OSError):
+                management.dispatch(self.root, 'source-keep', {'id': ident, 'keep': True})
+        self.assertTrue(before.is_dir())
+        self.assertFalse((self.root / 'sources' / ident).exists())
+
+    def upload_file(self, keep=False):
+        self.upload_number = getattr(self, 'upload_number', 0) + 1
+        return management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': f'{self.upload_number:032x}',
+                'files': [
+                    {
+                        'filename': 'notes.md',
+                        'content': base64.b64encode(b'Synthetic source text.').decode(),
+                        'purpose': 'inspiration',
+                    }
+                ],
+                'purpose': 'material',
+                'keep': keep,
+                'analyze': False,
+            },
+        )['files'][0]['source']['id']
+
+    def test_a_file_moves_both_ways_without_losing_its_text_or_original(self):
+        ident = self.upload_file()
+        before, record = studio.item(self.root, 'sources', ident)
+        text = (before / 'content.md').read_bytes()
+        original = (before / record['original_path']).read_bytes()
+        result = management.dispatch(self.root, 'source-keep', {'id': ident, 'keep': True})
+        directory, record = studio.item(self.root, 'sources', ident)
+        self.assertTrue(result['kept'])
+        self.assertEqual(directory, self.root / 'sources' / ident)
+        self.assertEqual(record['purposes'], ['reference', 'inspiration'])
+        self.assertEqual(library.catalog(self.root)['total'], 1)
+        result = management.dispatch(self.root, 'source-keep', {'id': ident, 'keep': False})
+        directory, record = studio.item(self.root, 'sources', ident)
+        self.assertFalse(result['kept'])
+        self.assertEqual(directory, studio.material(self.root, ident))
+        self.assertEqual(record['purposes'], ['material', 'inspiration'])
+        self.assertEqual((directory / 'content.md').read_bytes(), text)
+        self.assertEqual((directory / record['original_path']).read_bytes(), original)
+        self.assertEqual(library.catalog(self.root)['total'], 0)
+
+    def test_a_new_unshared_kept_upload_can_be_kept_only_for_this_blog(self):
+        ident = self.upload_file(keep=True)
+        result = management.dispatch(self.root, 'source-keep', {'id': ident, 'keep': False})
+        self.assertFalse(result['kept'])
+
+    def test_a_started_blog_keeps_its_sources_in_place(self):
+        for keep in (False, True):
+            ident = self.upload_file(keep=keep)
+            self.create(page=True, title='Pinned ' + str(keep), mode='from-files', sources=[ident])
+            with self.assertRaisesRegex(ValueError, 'A started blog read this file from'):
+                management.dispatch(self.root, 'source-keep', {'id': ident, 'keep': not keep})
+            directory, record = studio.item(self.root, 'sources', ident)
+            self.assertEqual(studio.is_material(self.root, directory, record), not keep)
+
+    def test_a_shared_reference_stays_in_the_library(self):
+        provider = FakeProvider(self.base / 'remotes')
+        registry = Registry(self.base / 'hubs', provider)
+        hub = registry.create('fixture/source-keep', 'Synthetic library')['hub']
+        workspace = Workspace(self.root, registry.hub(hub))
+        with patch('hub_workspace.active', return_value=workspace):
+            ident = self.upload_file(keep=True)
+            with self.assertRaisesRegex(ValueError, 'already shared with your team'):
+                management.dispatch(self.root, 'source-keep', {'id': ident, 'keep': False})
+
+    def test_an_older_or_nonlocal_reference_cannot_be_removed_from_this_form(self):
+        ident = self.upload_file(keep=True)
+        directory, record = studio.item(self.root, 'sources', ident)
+        record['revision'] = 2
+        studio.persist(directory, 'sources', record)
+        with self.assertRaisesRegex(ValueError, 'Only a new file added on this computer'):
+            management.dispatch(self.root, 'source-keep', {'id': ident, 'keep': False})
+        other = self.source()
+        with self.assertRaisesRegex(ValueError, 'Only a new file added on this computer'):
+            management.dispatch(self.root, 'source-keep', {'id': other['id'], 'keep': False})

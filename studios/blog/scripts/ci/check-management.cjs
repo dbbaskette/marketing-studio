@@ -74,6 +74,7 @@ async function check(){
   await phase4GoogleHandoff();
   await phase4ApplyReview();
   await phase4ReviewAside();
+  await phase4FileKeep();
   await revisionCompletion();
   await deliveryRecovery();
   await brandInputs();
@@ -105,7 +106,7 @@ async function check(){
   await finishEveryLevel();
   await failureRecovery();
   pageDefinesEveryElement();
-  const checks=['review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: Outline only, Revise or review a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
+  const checks=['keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: Outline only, Revise or review a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
     'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','one name for each thing','copy that says what the form and gates do','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','element ids'];
@@ -324,6 +325,18 @@ async function revisionCompletion(){
   assert.equal(nodes().some(e=>e.textContent==='No wording changes found'),false);
   await nodes().find(e=>e.textContent==='Use revised draft').listeners.click();
   assert.ok(nodes().some(e=>e.textContent==='Download polished document'));
+}
+
+async function phase4FileKeep(){
+  const calls=[],f=fixture((route,options)=>{const data=options?.body?JSON.parse(options.body):null;calls.push({route,data});return {id:data.id,kept:data.keep};});f.loadRunner();
+  f.run("studio.screen='new';studio.options={settings:{defaults:{}},sources:[],styles:[],profiles:[]};studio.draft={mode:'from-files',files:[{id:'one',filename:'one.md',state:'ready',chars:10,kept:false,role:'material'},{id:'two',filename:'two.md',state:'ready',chars:10,kept:true,role:'material'}],keep:false,role:'material'}");
+  f.run("sPage(sFilesCard(studio.draft,sNode('p'),()=>sPage(sFilesCard(studio.draft,sNode('p'),()=>{},()=>{})),()=>{}))");
+  const rows=()=>descendants(f.get('studio-page')).filter(n=>n.tagName==='li'&&n.className.includes('row'));
+  await descendants(rows()[0]).find(n=>n.textContent==='Keep in the team library').listeners.click();
+  assert.equal(f.run('studio.draft.files[0].kept'),true);assert.equal(f.run('studio.draft.files[1].kept'),true);assert.equal(f.run('studio.draft.keep'),false);
+  await descendants(rows()[1]).find(n=>n.textContent==='Keep it to this blog').listeners.click();
+  assert.equal(f.run('studio.draft.files[1].kept'),false);
+  assert.deepEqual(calls.map(r=>r.data),[{id:'one',keep:true},{id:'two',keep:false}]);
 }
 
 async function phase4ReviewAside(){

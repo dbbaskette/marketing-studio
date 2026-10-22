@@ -470,6 +470,31 @@ class TeamTests(unittest.TestCase):
         )
         self.assertEqual(saved['share'], 'decision')
 
+    def test_a_kept_file_in_the_shared_repository_cannot_move_back_from_the_form(self):
+        import base64
+        import management
+
+        saved = management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': '8' * 32,
+                'purpose': 'material',
+                'keep': True,
+                'analyze': False,
+                'files': [
+                    {
+                        'filename': 'reference.md',
+                        'content': base64.b64encode(b'Synthetic shared reference.').decode(),
+                    }
+                ],
+            },
+        )
+        ident = saved['files'][0]['source']['id']
+        with self.assertRaisesRegex(ValueError, 'already shared with your team'):
+            management.dispatch(self.root, 'source-keep', {'id': ident, 'keep': False})
+        self.assertTrue(studio.inside(self.root, 'sources', ident).is_dir())
+
     def test_material_is_never_committed_or_pushed(self):
         """In a team workspace the uploaded files stay on this computer, outside Git."""
         import base64
