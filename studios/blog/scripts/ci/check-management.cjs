@@ -2394,10 +2394,20 @@ async function phase3ResearchAccount(){
   const texts=()=>descendants(f.get('studio-page')).map(e=>e.textContent).join(' ');
   for(const words of ['Prioritized handoff','Independent check accepted.','Honest coverage.','Unknown range.','Pages 1 to 4 only.','3 sources: 2 of yours, 1 public.','Your questions','Minimum?','Capacity condition'])assert.ok(texts().includes(words),words+': '+texts());
   assert.equal(texts().includes('No assistant note was submitted'),false);
+  assert.ok(texts().includes('Read the research brief, its limits and the independent check.'));
+  assert.equal(texts().includes('to act on one, ask for changes to the draft'),false);
   f.run("sChanges(found,'research')");
   assert.ok(descendants(f.get('sheet')).some(e=>e.textContent===found.research_price.words));
   const select=descendants(f.get('sheet')).find(e=>e.id==='change-stage');select.value='outline';select.listeners.change();
   assert.equal(descendants(f.get('sheet')).some(e=>e.textContent===found.research_price.words),false);
+  f.run('sCloseSheet()');
+  for(const [stage,words]of [['research-plan','Read the questions this research will answer.'],['claims-map','Read the claims mapped to your supplied material.']]){
+    f.set('found',{...found,next:stage,stages:[{stage,label:stage,status:'draft'},{stage:'outline',label:'Outline',status:'pending'}]});
+    f.set('shown',{...shown,stage,label:stage,research:null});
+    f.run('sGate(found,shown)');
+    assert.ok(texts().includes(words),stage+' explains its own decision');
+    assert.equal(texts().includes('to act on one, ask for changes to the draft'),false);
+  }
 }
 
 async function phase3ClaimsMap(){const f=fixture();f.loadRunner();

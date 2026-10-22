@@ -4144,7 +4144,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'title': 'Rolling restarts', 'topic': 'How a rolling restart works.',
             'audience': 'Platform engineers new to it.', 'purpose': 'Technical upskilling',
             'levels': ['101', '301'], 'brief_kind': 'competitive', 'time_limit': '30 minutes',
-            'source_scope': 'public-web', 'deck_target': 'google',
+            'source_scope': 'public-web', 'research_questions': [''], 'deck_target': 'google',
             'brand': {'brand': 'example-co', 'variant': 'dark'},
             'copies': ['google'], 'yoodli': False, 'materials': ['document', 'brief', 'scenario'], 'agent': 'claude', 'model': None,
             'effort': None, 'review_level': 'step_by_step'})])

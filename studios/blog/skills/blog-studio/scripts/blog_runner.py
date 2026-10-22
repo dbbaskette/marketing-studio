@@ -1643,6 +1643,10 @@ def job(root, ident):
     if not stage:
         raise ValueError('This run is complete.')
     directory, record, run = load(root, ident)
+    # A readable gate fallback must not turn a damaged published bundle into a new job.
+    published = None
+    if run.get('research_contract') and run['stages'].get('research'):
+        published = research_contract.read_bundle(directory / 'research')
     payload = inputs(root, record, run)
     payload.setdefault('style', None)
     if run.get('research_skipped'):
@@ -1661,7 +1665,7 @@ def job(root, ident):
         and run['stages'].get('research')
     ):
         directory, _ = studio.item(root, 'articles', record['id'])
-        facts, manifest = research_contract.read_bundle(directory / 'research')
+        facts, manifest = published
         payload['research_bundle'] = {
             'digest': manifest['digest'],
             'brief': (directory / 'research/brief.md').read_text(),

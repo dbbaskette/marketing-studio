@@ -268,7 +268,10 @@ class SynthesisIntegrationTests(Fixture):
         result = synthesis_research.generate(
             directory, run, payload, worker, seconds=60, stop=threading.Event()
         )
-        self.assertIn('Independent evidence and prose review completed', result['notes'])
+        from studio_core import research_view
+
+        self.assertIn(research_view.CHECKED, result['notes'])
+        self.assertIn('Explicit synthetic scope and usable brief.', result['notes'])
         research_contract.read_bundle(directory / 'research')
         shutil.rmtree(old)
         with self.assertRaisesRegex(ValueError, 'Restore the saved Harness Research version'):

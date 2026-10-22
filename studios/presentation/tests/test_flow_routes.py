@@ -135,7 +135,7 @@ class DocumentRouteTests(RouteCase):
     def test_raw_material_the_studio_took_for_a_script_is_corrected(self):
         self.workers.classified = {'kind': 'spec', 'reason': 'Reads as a slide script.',
                                    'slides': 2}
-        path = self.started(route='document', research=True,
+        path = self.started(route='document', research=True, research_sources='both',
                             source={'kind': 'paste', 'text': 'Notes: capacity holds with two.'})
         self.assertEqual(self.run_of(path)['gate']['verdict'], 'spec')
         seen = self.walk(path, 'Rolling restarts',

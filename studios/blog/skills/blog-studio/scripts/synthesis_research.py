@@ -77,6 +77,12 @@ def refusal_groups(refusal, case):
     """The refusal's own grouping when the shared contract gives one, else the case's."""
     given = getattr(refusal, 'groups', None)
     if isinstance(given, list) and given:
+        # The shared formatter provides titles and counts, while this page needs the
+        # original kind and verdict. Recover those from the same saved check.
+        if any(isinstance(group, dict) and not group.get('kind') for group in given):
+            detailed = grouped(case)
+            if detailed:
+                return detailed
         groups = []
         for group in given:
             if not isinstance(group, dict) or type(group.get('count')) is not int:

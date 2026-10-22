@@ -498,7 +498,7 @@ class WorkerTests(StudioCase):
             self.assertIn('Topic: Rolling restarts on the platform', job.task)
             self.assertIn('Audience: Solutions engineers who deploy apps', job.task)
             self.assertIn('Purpose: Field enablement', job.task)
-        self.assertEqual(plan.guidance, pipeline.briefs.guidance('research-plan'))
+        self.assertEqual(plan.guidance, pipeline.briefs.guidance('research-plan-queue'))
         self.assertIn('Hand the questions back with submit_artifact under the name '
                       '"research-plan".', plan.task)
         self.assertIn('Sources that may be used: the public web.', plan.task)

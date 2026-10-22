@@ -1997,7 +1997,7 @@ class DirectionClassifyTests(StudioCase):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.start(route='document', research=True,
+            root = self.start(route='document', research=True, research_sources='both',
                               source={'kind': 'paste', 'text': 'Notes to build a talk from.'})
         shown = self.view(root)['gate']
         self.assertEqual(shown['name'], 'gate:outline')
