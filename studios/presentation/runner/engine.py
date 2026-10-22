@@ -1529,7 +1529,9 @@ class Engine(Jobs, Researching):
             record = self._load(root)
             made = delivering.record(root, record, made, space)
             record = self._load(root)
-            record['driver'] = None     # a delivered deck has no driver
+            if space.address is not None:
+                record['delivered_by'] = team.computer()
+            record['driver'] = None     # a delivered deck has no active driver
             where = made.get('url') or made.get('pptx') or ''
             self._done(root, step, clock, f"deliver revision {made['revision']}"
                        + (f': {where}' if where else ''), record, self._listed(space))
@@ -1795,7 +1797,9 @@ class Engine(Jobs, Researching):
                extra: dict | None = None, expected: str | None = None) -> dict:
         """A person's decision at a gate: the only way a gate moves. Returns the deck's
         view."""
-        root = self._held(path)
+        root = self.driven(path)
+        if root is None:
+            raise WorkspaceError('There is no deck there.')
         saved = self._load(root)
         if decision == 'approve' and saved.get('research_contract') and (saved.get('steps', {}).get('research-report') or {}).get('done'):
             from studio_core.research_contract import read_bundle
@@ -1831,7 +1835,10 @@ class Engine(Jobs, Researching):
         if rebrand and not (isinstance(extra.get('brand'), str) and extra['brand'].strip()):
             raise WorkspaceError(NO_BRAND_CHOSEN)
         brands = self.brands() if rebrand else None
-        space, it = self.space(), WORDS[gate]
+        space = self.space()
+        if gate == 'gate:build' and decision == 'changes' and self._delivered_here(saved):
+            self._take(root, space)
+        self.hold(root)
         by = gitstate.identity(space.repo)
         with self.files:
             record = self._load(root)
@@ -2645,11 +2652,18 @@ class Engine(Jobs, Researching):
             at = None
         return {'at': at, 'by': by, 'says': self._then(root, record)}
 
+    def _delivered_here(self, record: dict) -> bool:
+        return (self.workspace.address is not None and not record.get('driver')
+                and record.get('delivered_by') == team.computer()
+                and bool((record.get('steps', {}).get('deliver') or {}).get('done')))
+
     def _whose(self, root: Path, record: dict, state: str, sentence: str):
         """Whether a deck is this computer's, who drives it, and its state and sentence as
         someone who can only read it is told them."""
         space = self.workspace
         mine, who = team.ours(space, record), team.driver(space, record)
+        if state == 'finished' and self._delivered_here(record):
+            mine = True
         if mine:
             return mine, who, state, sentence, None
         if who is None:
@@ -2961,9 +2975,7 @@ class Engine(Jobs, Researching):
                          'download': self._rendered(root, record),
                          'slides': self._delivered_slides(root),
                          'last_build': self._last_build(record),
-                         'to_google': said.get('notice') == delivering.NOT_CONNECTED
-                         and ((record.get('form') or {}).get('output') or 'google')
-                         == 'google'}
+                         'to_google': said.get('output') == 'pptx'}
                         if said else None),
             'contactSheet': (root / build.SHEET).is_file()}
 
@@ -3282,8 +3294,7 @@ class Engine(Jobs, Researching):
                 'notice': ' '.join(said) or None}
 
     def deliver_again(self, path) -> dict:
-        """Send a deck that was made as a PowerPoint file, because Google was not
-        connected, to Google Slides as its form asked. Nothing about the deck changes: the
+        """Send a deck delivered as a PowerPoint file to Google Slides on request. Nothing about the deck changes: the
         deck that was delivered goes to Google as the next revision. Returns its view."""
         root = self.driven(path)
         if root is None:
@@ -3297,8 +3308,7 @@ class Engine(Jobs, Researching):
             said = decks.delivered(root)
             if said is None:
                 raise WorkspaceError('This deck has not been delivered yet.')
-            if said.get('notice') != delivering.NOT_CONNECTED \
-                    or ((record.get('form') or {}).get('output') or 'google') != 'google':
+            if said.get('output') != 'pptx':
                 raise WorkspaceError('This deck is already delivered as you asked, so there '
                                      'is nothing to send to Google Slides.')
             if str(root) in self._sending:
@@ -3307,7 +3317,7 @@ class Engine(Jobs, Researching):
         try:
             if not slides.drive_check():
                 raise WorkspaceError(STILL_NOT_CONNECTED)
-            made = delivering.upload(root, record, slides)
+            made = delivering.upload(root, record, slides, output='google')
             if made.get('output') != 'google' or not made.get('url'):
                 raise WorkspaceError(STILL_NOT_CONNECTED)
             with self.files:

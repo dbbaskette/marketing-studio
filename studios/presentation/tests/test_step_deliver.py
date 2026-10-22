@@ -75,6 +75,15 @@ class GoogleTests(Case):
 
 
 class PowerPointTests(Case):
+    def test_a_powerpoint_deck_by_choice_goes_to_google_later(self):
+        deliver.deliver(self.root, self.run_, self.slides)
+        run = decks.read_run(self.root)
+        made = deliver.upload(self.root, run, self.slides, output='google')
+        deliver.record(self.root, run, made)
+        self.assertTrue(made['url'])
+        self.assertEqual(made['revision'], 2)
+        self.assertEqual(decks.read_run(self.root)['form']['output'], 'pptx')
+
     output = 'pptx'
 
     def test_pptx_asks_nothing_of_google(self):

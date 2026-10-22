@@ -216,13 +216,26 @@ class DriverTests(Team):
         self.approve(self.blake, root, 'gate:outline')
         self.assertEqual(self.seen(self.blake, root)['gate']['name'], 'gate:look')
 
-    def test_a_delivered_deck_has_no_driver_and_is_taken_to_change_it(self):
+    def test_my_delivered_deck_is_changed_without_taking_it(self):
+        root = self.started()
+        with self.be(self.alex):
+            self.to_end(root)
+            self.assertEqual(self.record(root)['delivered_by'], team.computer())
+            self.assertTrue(self.alex.engine.view(root)['mine'])
+            self.alex.engine.decide(root, 'gate:build', 'changes', 'Shorter.')
+            self.assertEqual(self.record(root)['driver']['computer'], team.computer())
+        self.fetch(self.blake)
+        theirs = self.seen(self.blake, root)
+        self.assertFalse(theirs['mine'])
+        self.assertEqual(theirs['driver']['name'], 'Alex')
+
+    def test_a_teammates_delivered_deck_still_needs_taking(self):
         root = self.started()
         with self.be(self.alex):
             self.to_end(root)
         view = self.seen(self.alex, root)
         self.assertEqual((view['state'], view['driver'], view['mine']),
-                         ('finished', None, False))
+                         ('finished', None, True))
         self.fetch(self.blake)
         theirs = self.seen(self.blake, root)
         self.assertEqual((theirs['state'], theirs['driver']), ('finished', None))

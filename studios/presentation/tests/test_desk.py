@@ -1305,18 +1305,28 @@ class ScreenTests(ScriptedPage, PageCase):
         self.slides.run.drive = True
         sent = self.post('deliver', {'path': path})
         result = self.deck_screen(path, [
-            {'snapshot': 'fallback'}, {'click': 'Deliver to Google Slides'},
+            {'snapshot': 'fallback'}, {'click': 'Send to Google Slides'},
             {'snapshot': 'sent'}], **{'GET /api/run': [ok(before), ok(sent)],
                                       'POST /api/deliver': [ok(sent)]})
         fallback = result['snapshots']['fallback']
         self.assertIn("Google isn't connected, so this deck was made as a PowerPoint file.",
                       fallback['text'])
-        self.assertIn('Deliver to Google Slides', fallback['buttons'])
+        self.assertIn('Send to Google Slides', fallback['buttons'])
         self.assertEqual([body for address, body in self.posts(result)],
                          [{'path': path}])
         self.assertIn('The deck is in Google Slides now.', result['snapshots']['sent']['toasts'])
-        self.assertNotIn('Deliver to Google Slides', result['snapshots']['sent']['buttons'])
+        self.assertNotIn('Send to Google Slides', result['snapshots']['sent']['buttons'])
         self.assertIn('Revision 2.', result['snapshots']['sent']['text'])
+
+    def test_powerpoint_by_choice_offers_google_and_an_explicit_change_sheet(self):
+        path = self.started(output='pptx')
+        for gate in ('gate:outline', 'gate:look', 'gate:build'):
+            self.decided(path, gate)
+        shown = {**self.run_of(path), 'driver': None, 'mine': True}
+        result = self.deck_screen(path, [{'snapshot': 'done'}, {'click': 'Ask for changes'},
+            {'snapshot': 'changes'}], **{'GET /api/run': [ok(shown)]})
+        self.assertIn('Send to Google Slides', result['snapshots']['done']['buttons'])
+        self.assertIn('It runs from this computer again, and your team sees that.', result['snapshots']['changes']['text'])
 
     def test_an_existing_deck_shows_its_slides_at_classify(self):
         path = self.started(route='existing', level='polish',

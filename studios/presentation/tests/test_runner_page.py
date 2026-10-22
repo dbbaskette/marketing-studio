@@ -405,6 +405,16 @@ class RunTests(PageCase):
                 {'path': elsewhere, 'kind': 'build', 'number': '1'}))
             self.assertEqual((status, reply['error']), (404, page.NO_DECK))
 
+    def test_powerpoint_by_choice_can_be_sent_to_google(self):
+        path = self.started(output='pptx')
+        for gate in ('gate:outline', 'gate:look', 'gate:build'):
+            self.decided(path, gate)
+        self.assertTrue(self.run_of(path)['deliver']['to_google'])
+        shown = self.post('deliver', {'path': path})
+        self.assertEqual(shown['deliver']['revision'], 2)
+        self.assertTrue(shown['deliver']['url'])
+        self.assertEqual(self.engine._load(Path(path))['form']['output'], 'pptx')
+
     def test_a_deck_made_as_powerpoint_without_google_is_delivered_to_it_later(self):
         path = self.started()
         self.slides.run.drive = False

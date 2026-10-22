@@ -1272,7 +1272,9 @@ function noteSheet(kind) {
       : gate && gate.redo ? ' ' + gate.redo.says : '');
   const hint = make('p', 'quiet', spec.hint + (marked.length ? ' The parts of the deck '
     + 'that hold ' + slidesNamed(marked) + ', which you marked, are drawn again.' : '')
-    + whole + listed);
+    + whole + listed + (kind === 'changes' && view.run?.state === 'finished'
+      && view.run.mine && !view.run.driver
+      ? ' It runs from this computer again, and your team sees that.' : ''));
   hint.id = 'note-hint';
   const problem = problemLine();
   const submit = submitButton(spec.send, 'send');
@@ -4814,13 +4816,15 @@ function deliverPart(run) {
   }
   add(node, bar);
   if (found.notice) add(node, make('p', 'fix', found.notice));
-  if (found.to_google && !theirs(run)) {
-    const google = capsule(view.delivering ? 'Delivering…' : 'Deliver to Google Slides', '',
+  if (found.to_google && !theirs(run) && googleReady()) {
+    const google = capsule(view.delivering ? 'Delivering…' : 'Send to Google Slides', '',
       () => deliverToGoogle(run, google), 'deliver-google');
     add(node, make('p', 'quiet', 'Once you are signed in to Google with gcloud on this '
       + 'computer, the same deck goes to Google Slides as the next revision. Nothing in it '
       + 'is built again.'), add(make('div', 'bar'), google));
   }
+  if (found.to_google && !theirs(run) && !googleReady()) add(node, make('p', 'quiet',
+    'Sign in to Google on Status to send this deck to Google Slides later.'));
   const revisions = list(found.revisions);
   if (revisions.length > 1) {
     const items = make('ul', 'rows');
