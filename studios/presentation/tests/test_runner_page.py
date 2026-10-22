@@ -1073,7 +1073,7 @@ class WireTests(WireCase):
         self.assertEqual((status, json.loads(body)), (200, {'runner': True,
                                                             'version': VERSION}))
         self.assertEqual(headers['Content-Security-Policy'],
-                         "default-src 'self'; img-src 'self' blob:; style-src 'self' 'unsafe-inline'")
+                         "default-src 'self'; img-src 'self' blob:")
         self.assertEqual(self.ask('/api/capabilities', token=False)[0], 403)
         self.assertTrue(self.server.url.endswith(f'#token={self.server.token}'))
 
@@ -1099,7 +1099,7 @@ class WireTests(WireCase):
         self.assertEqual(headers['Content-Disposition'],
                          'attachment; filename="rolling-restarts.pptx"')
         self.assertEqual(headers['Content-Security-Policy'],
-                         "default-src 'self'; img-src 'self' blob:; style-src 'self' 'unsafe-inline'")
+                         "default-src 'self'; img-src 'self' blob:")
         self.assertTrue(deck.startswith(b'PK\x03\x04'))
 
     def test_something_that_cannot_be_done_is_answered_with_a_sentence_and_409(self):
