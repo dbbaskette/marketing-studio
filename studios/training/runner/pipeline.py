@@ -1388,8 +1388,9 @@ def findings_text(root: Path) -> str:
     """The research as a worker reads it: each question's ID, verdict, summary and quotes."""
     record = workspace.research_record(root) or {'items': [], 'results': {}}
     if record.get('schema') == 2:
-        return ('# Reviewed research handoff\n\nCite stable finding IDs and retain conditions, '
-                'counterevidence and gaps. Facts, interpretations and recommendations differ.\n\n'
+        return ('# Reviewed research handoff\n\n' + research_contract.HANDOFF
+                + ' Keep its conditions, counterevidence and gaps. Facts, interpretations and '
+                'recommendations differ.\n\n'
                 + (root / 'research/brief.md').read_text() + '\n\n'
                 + json.dumps({'digest': record['digest'], 'findings': record['findings'],
                               'facts': record['facts'], 'sources': record['sources']}))

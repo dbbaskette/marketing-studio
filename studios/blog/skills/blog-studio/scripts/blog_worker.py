@@ -13,6 +13,7 @@ import time
 
 import source_curator
 from studio_core.install_log import redact
+from studio_core.research_contract import HANDOFF
 
 _METER = threading.local()
 STATUS = 'Status → Check this computer'
@@ -242,6 +243,11 @@ quotes, sources, experience or stance. Cite supplied sources by their IDs and pu
 by supporting URLs. With no evidence, say what is unknown. Do not claim that a review,
 source or link was independently verified. The notes field describes limits and your own
 judgment. Follow the supplied response schema."""
+
+POLICY += (
+    '\nWhen `research_bundle` is supplied, it is the reviewed research for this post: its '
+    'brief, facts, findings and sources. ' + HANDOFF
+)
 
 POLICY += "\nWhen documents['claims-map'] is supplied, it lists the claims the author's own material makes and where. State those claims as the material does, and add no claim it does not make."
 

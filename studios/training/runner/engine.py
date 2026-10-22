@@ -3351,11 +3351,11 @@ class Engine(Reviewing):
             depth = (' at levels ' + ', '.join(found.session['levels'])) if found.session['levels'] else ''
             task = {'topic': intake.get('topic') or found.session['title'],
                     'audience': intake.get('audience') or 'Learners',
-                    'purpose': 'Inform training' + depth + ': '
-                               + (intake.get('purpose') or 'teach the topic')
-                               + '. Prioritize learner tasks, prerequisites, misconceptions, '
-                                 'grounded worked examples and limits. Research supplies evidence; '
-                                 'the teaching plan and materials are authored afterward.',
+                    'purpose': research_contract.purpose(
+                        'training' + depth, intake.get('purpose') or 'teach the topic',
+                        'Prioritize learner tasks, prerequisites, misconceptions, grounded '
+                        'worked examples and limits. Research supplies evidence; the teaching '
+                        'plan and materials are authored afterward.'),
                     'scope': pipeline._about(root, found.session),
                     'planning_questions': found.research.questions,
                     'requested_changes': step.request,

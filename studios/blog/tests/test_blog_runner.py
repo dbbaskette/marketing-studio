@@ -3312,6 +3312,12 @@ class ClaimsMapTests(RunnerCase):
         self.assertEqual(payload['documents']['claims-map'], self.line(source))
         self.assertIn('claims-map', blog_worker.POLICY)
 
+    def test_the_worker_is_told_what_the_research_bundle_is(self):
+        from studio_core import research_contract
+
+        self.assertIn('`research_bundle`', blog_worker.POLICY)
+        self.assertIn(research_contract.HANDOFF, blog_worker.POLICY)
+
     def test_direct_submissions_also_validate_exact_sources(self):
         found, source = self.mapped()
         with self.assertRaisesRegex(ValueError, 'not in your material'):

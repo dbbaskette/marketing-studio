@@ -610,6 +610,27 @@ class SynthesisBriefTests(DeckCase):
                 Engine()._research(self.root, None, None)
         self.assertEqual(captured[0]['source_mode'], 'selected')
 
+    def test_the_research_purpose_asks_for_a_comparison_when_the_goal_compares(self):
+        from runner.engine import Engine
+        from studio_core import research_contract
+        self.write('research/plan.json', json.dumps(PLAN))
+        for goal in ('Redis or Valkey for session caching', 'Explain rolling restarts'):
+            captured = []
+
+            def native(engine, root, run, task, sources, product):
+                captured.append(task)
+                raise RuntimeError('captured before workers')
+            record = {'research_contract': {'schema': 2}, 'form': {'goal': goal}}
+            with mock.patch.object(research_contract, 'native', side_effect=native), \
+                    mock.patch.object(Engine, '_load', return_value=record):
+                with self.assertRaisesRegex(RuntimeError, 'captured before workers'):
+                    Engine()._research(self.root, None, None)
+            self.assertEqual(captured[0]['purpose'], research_contract.purpose(
+                'a presentation', goal, 'Prioritize key messages, evidence worth explaining '
+                'visually, and counterarguments.'))
+            self.assertEqual(captured[0]['purpose'].endswith(research_contract.COMPARISON),
+                             goal.startswith('Redis'))
+
     def test_a_contract_plan_job_uses_the_one_investigation_brief(self):
         from runner.engine import Engine
         from runner import briefs

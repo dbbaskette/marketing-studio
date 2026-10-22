@@ -655,6 +655,66 @@ class ResearchContractTests(unittest.TestCase):
         self.assertEqual(output['status'], 'complete')
         contract.read_bundle(destination / 'research')
 
+class AuthorGuideTests(WorkflowCase):
+    """The author is handed its own stage references, and told what the tools did for it."""
+
+    def authored_once(self):
+        seen = []
+
+        def invoke(phase, guidance, payload, sources, fetch):
+            if phase == 'author':
+                seen.append((guidance, payload['return']))
+                return json.dumps(self.authored(payload)), self.captured()
+            return json.dumps(review(payload['review_template'])), []
+        self.run_with(invoke)
+        return seen[0]
+
+    def test_author_is_handed_its_stage_references_only(self):
+        guide, _ = self.authored_once()
+        self.assertIn('Synthetic guidance: investigate.md', guide)
+        self.assertIn('Synthetic guidance: synthesize.md', guide)
+        self.assertNotIn('studio-handoff.md', guide)
+
+    def test_author_return_line_names_the_tools_captures(self):
+        _, said = self.authored_once()
+        self.assertIn("The studio's tools have saved every capture for you: that is the capture "
+                      '`investigate.md` asks for. Cite each source by the file path the tools '
+                      'gave it, exactly. Write no files yourself.', said)
+        self.assertNotIn('research/sources/', said)
+
+
+class HandoffAndPurposeTests(unittest.TestCase):
+    """What every writer is told of the research, and the purpose every studio asks for."""
+
+    def test_the_handoff_sentence(self):
+        self.assertEqual(contract.HANDOFF, (
+            'The research is reviewed. Read its brief first: it says what matters for this '
+            'piece. Use the facts and findings to check what you write. Their IDs, digests and '
+            'verdicts are for checking and for provenance, notes and source lines: never put '
+            'one in the words a reader reads.'))
+
+    def test_compares(self):
+        for goal in ('Compare Redis and Valkey', 'Redis versus Valkey', 'Redis vs Valkey',
+                     'Redis vs. Valkey for caching', 'Choose between two caches',
+                     'Redis or Valkey for sessions', 'Which is better for sessions?',
+                     'A comparison of three queues', 'Alternatives to a message bus'):
+            self.assertTrue(contract.compares(goal), goal)
+        for goal in ('Explain how caching works', 'cache reads or writes', 'Teach Kubernetes',
+                     '', None, 'Survey the options'):
+            self.assertFalse(contract.compares(goal), goal)
+
+    def test_purpose(self):
+        self.assertTrue(contract.purpose('a presentation', 'Redis or Valkey',
+                                         'Prioritize X.').endswith(contract.COMPARISON))
+        self.assertEqual(contract.purpose('a presentation', 'Explain caching', 'Prioritize X.'),
+                         'Inform a presentation: Explain caching. Prioritize X.')
+        self.assertEqual(contract.purpose('a blog', '', 'Prioritize Y.'),
+                         'Inform a blog: explain the topic. Prioritize Y.')
+        self.assertEqual(contract.COMPARISON, 'The goal compares options: include a comparison '
+                         'with one criterion per row, and say where something is unknown rather '
+                         'than absent.')
+
+
 class PlanningQuestionTests(WorkflowCase):
     def test_the_author_is_told_to_name_findings_for_their_questions(self):
         for questions in (None, [], [dict(id='q-one', question='Why?')]):

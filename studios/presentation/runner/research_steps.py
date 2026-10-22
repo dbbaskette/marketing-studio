@@ -264,8 +264,10 @@ class Researching:
             offered = documents.sources(root)[1] if documents.listed(root) else []
             task = {'topic': record.get('title') or form.get('title') or plan['topic'],
                     'audience': form.get('audience') or 'Presentation audience',
-                    'purpose': 'Inform a presentation: ' + (form.get('goal') or 'explain this topic')
-                               + '. Prioritize key messages, evidence worth explaining visually, and counterarguments.',
+                    'purpose': research_contract.purpose(
+                        'a presentation', form.get('goal') or 'explain this topic',
+                        'Prioritize key messages, evidence worth explaining visually, and '
+                        'counterarguments.'),
                     'scope': 'Evidence, limitations and alternatives for the presentation goal: '
                              + (form.get('goal') or record.get('title') or 'explain the topic'),
                     'planning_questions': plan.get('items', []),
