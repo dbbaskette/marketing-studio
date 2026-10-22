@@ -1881,22 +1881,20 @@ class LookStepTests(StudioCase):
         started = json.loads((root / build.START / 'outline.json').read_text())
         self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[1]['direction'])
 
-    def test_a_pick_made_before_the_words_changed_is_chosen_again_once_redrawn(self):
+    def test_a_pick_made_before_the_words_changed_waits_for_the_redrawn_looks(self):
         root = self.begin('balanced')
         shown = self.view(root)['gate']
         edited = [dict(slide) for slide in shown['slides']]
         edited[1]['title'] = 'Batches restart one at a time'
         self.decide(root, 'gate:outline', 'approve', 'Bold please.',
                     {'look': 'example-bold', 'edited': edited})
-        # The brand refused the outline it had not drawn: the looks were drawn again from
-        # the words approved, and the person's pick taken then. (The scripted composers draw
-        # the fixture's own titles, so the build itself is not followed here.)
+        # Newly drawn samples need the person's decision before a build can start.
         record = decks.read_run(root)
-        self.assertEqual(record['gates']['gate:look']['state'], 'approved')
+        self.assertEqual(record['gates']['gate:look']['state'], 'waiting')
+        self.assertFalse((root / 'work/look/chosen.json').exists())
+        self.assertFalse((root / build.START).exists())
         samples = [call for call in self.brand.run.calls if call[:2] == ['look', 'samples']]
         self.assertEqual(len(samples), 2)
-        started = json.loads((root / build.START / 'outline.json').read_text())
-        self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[1]['direction'])
 
 
 class PreviewRepairEngineTests(StudioCase):
