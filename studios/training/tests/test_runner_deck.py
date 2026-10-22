@@ -1946,6 +1946,38 @@ class RepairTests(DeckCase):
         self.assertEqual(self.log()[-5].partition(': ')[2],
                          'keep section 1 of the slide deck, drawn again')
 
+    def test_reviewer_is_asked_the_rounds_questions(self):
+        three = ('Is the point plain at a glance?', 'Is the space balanced?',
+                 'Is there exactly one emphasis?')
+        self.workers.found = [[]]
+        root = self.begin()
+        with mock.patch.object(Slides, 'QUESTIONS', three):
+            self.drawn(root)
+        rounds = self.built(root)['rounds']
+        self.assertEqual(rounds[-1]['questions'], list(three))
+        work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
+                                    pipeline.gate_for('deck'), None)
+        asked = work.prepared['inputs']['the review']
+        self.assertIn('1. Is the point plain at a glance?\n2. Is the space balanced?\n'
+                      '3. Is there exactly one emphasis?\n', asked)
+        self.assertNotIn('\n4. ', asked.split('## How grave')[0])
+        self.assertEqual(work.prepared['review']['questions'], list(three))
+        slides = work.prepared['review']['slides']
+        found, why = deck.checked({'slide': slides[1]['id'], 'question': 4, 'severity': 'major',
+                                   'note': 'The boxes crowd the left half.'}, slides, three)
+        self.assertEqual((found, why), (None, f"{slides[1]['id']}: `question` is a number "
+                                              'from 1 to 3.'))
+
+    def test_a_round_saved_before_questions_were_kept_reads_the_legacy_ones(self):
+        from studio_core import critic
+        self.assertEqual(deck.round_questions({'deck': 'a' * 64}), critic.LEGACY)
+        slides = [{'id': 'what-it-does', 'number': 2, 'title': 'What it does'}]
+        found, why = deck.checked({'slide': 'what-it-does', 'question': 8, 'severity': 'minor',
+                                   'note': 'The icon explains nothing here.'}, slides)
+        self.assertIsNone(why)
+        self.assertIn(f'8. {critic.LEGACY[7]}', deck.asked({'O1': 'Explain it.'}, slides))
+        self.assertIn(critic.LEGACY[7], deck.told([found], slides))
+
     def test_a_later_review_is_told_what_was_found_before(self):
         self.workers.found = [[MAJOR], []]
         root = self.begin()

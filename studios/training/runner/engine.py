@@ -200,7 +200,7 @@ from pathlib import Path, PurePosixPath
 import runner  # noqa: F401  puts the core on the import path
 import computer
 import home
-from studio_core import brand_guidance, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_view, stops
+from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_view, stops
 import hub
 import workspace
 from workspace import WorkspaceError
@@ -2454,6 +2454,8 @@ class Engine(Reviewing):
             if (folder / seen).resolve() not in file.parents \
                     or file.read_bytes()[:4] != workspace.PPTX_SIGNATURE:
                 raise WorkspaceError('The renderer did not leave a deck that can be opened.')
+            # The reviewer is asked the slides tool's own questions, as this preview has them.
+            asked_now = None if judged else critic.questions(folder / seen)
             slides = worker_tools.pictures(shown, folder / seen, shots)
             home.write_json(shots / pipeline.ABOUT, {'deck': shown['deckSha256'], 'slides': [
                 {key: slide[key] for key in ('number', 'id', 'title')} for slide in slides]})
@@ -2462,6 +2464,8 @@ class Engine(Reviewing):
         except (WorkspaceError, OSError, KeyError, ValueError, TypeError) as refusal:
             shutil.rmtree(folder, ignore_errors=True)
             shutil.rmtree(shots, ignore_errors=True)
+            if str(refusal) == critic.MISSING:
+                return self._problem(root, it.id, 'failed', critic.MISSING, DECK_KEPT)
             if 'renderer-unavailable' in getattr(refusal, 'codes', ()):
                 return self._problem(root, it.id, 'stopped', NO_REVIEWER.format(
                     said=' '.join(refusal.problems)), DECK_KEPT)
@@ -2487,7 +2491,8 @@ class Engine(Reviewing):
                 **({'assets': {ident: fingerprint for made in drawn.values()
                                for ident, fingerprint in (made.get('assets') or {}).items()}}
                    if mine.start.get('assets') is not None else {}),
-                **({'judged': shown['judged']} if judged else {}),
+                **({'judged': shown['judged']} if judged else
+                   {'questions': list(asked_now)}),
                 'deck': shown['deckSha256'], 'slides': slides, 'screens': screens})
             # What the screens send back is drawn again before anyone reviews it, within the
             # rounds a deck has: the last round is always reviewed.

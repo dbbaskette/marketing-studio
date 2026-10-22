@@ -285,6 +285,15 @@ class Slides:
     no with. It takes no turn of its own at previewing, so `most` says how many previews
     were ever under way at once."""
     VERSION = '0.16.0'   # the floor, slides.MINIMUM
+    # What a whole preview's critic.json asks of every slide, as the slides tool writes it.
+    QUESTIONS = ('After three seconds, is the main point clear, and is it the claim in the title?',
+                 'Does the eye land first on the element that carries the point?',
+                 'Is there exactly one emphasis?', 'Does every element support the title?',
+                 'Is each label inside or right beside what it names?',
+                 'Is the space balanced, with nothing stranded or crowded?',
+                 'Is the slide consistent with its neighbours in style, and different from '
+                 'them in layout unless they are meant to be compared?',
+                 'Does every image and icon explain something?')
     runtime = Path('/opt/slides-tool/versions/0.13.1')
     READING = {'design guidance': 'Design from the claim in the title.\n',
                'composition guidance': 'A canvas holds stacks, boxes and text.\n',
@@ -543,6 +552,8 @@ class Slides:
                 'slides': [{'id': made['id'], 'number': index + 1,
                     'fingerprint': hashlib.sha256(json.dumps([shared, index, len(native['slides']), made], sort_keys=True).encode()).hexdigest(),
                     'imageSha256': hashlib.sha256(Path(shown[index]['image']).read_bytes()).hexdigest()} for index, made in enumerate(native['slides'])]}
+            (folder / 'critic.json').write_text(json.dumps(
+                {'schema': 2, 'questions': list(self.QUESTIONS)}), encoding='utf-8')
             mine = file_id or (self.files[-1] if renderer == 'drive' else None)
             return {'deck': str(folder / 'deck.pptx'), 'renderer': renderer, 'fileId': mine, 'renderEvidence': evidence,
                     'deckSha256': hashlib.sha256((folder / 'deck.pptx').read_bytes())

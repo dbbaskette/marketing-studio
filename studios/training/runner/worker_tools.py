@@ -1654,7 +1654,8 @@ class WorkerTools:
             raise Refusal('findings and weakest are each a list.')
         problems, kept = [], []
         for finding in given:
-            found, why = deck.checked(finding, review['slides'])
+            found, why = deck.checked(finding, review['slides'],
+                                      deck.round_questions(review))
             kept += [found] if found else []
             problems += [why] if why else []
         ids = [slide['id'] for slide in review['slides']]

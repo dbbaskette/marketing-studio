@@ -18,7 +18,7 @@ from workspace import WorkspaceError
 
 from runner import decks, worker_tools
 from runner.steps import build, existing
-from studio_core import deck_direction
+from studio_core import critic, deck_direction
 from runner import brand as brand_skill
 from stand_ins.slides import sketch
 
@@ -1016,6 +1016,66 @@ if __name__ == '__main__':
     unittest.main()
 
 
+class CriticQuestionsTests(Deck):
+    """The reviewer is asked the slides tool's own questions, as its preview wrote them."""
+    THREE = ('Is the point plain at a glance?', 'Is the space balanced?',
+             'Does every icon explain something?')
+
+    def built_with(self, questions):
+        from stand_ins import slides as slides_stand_in
+        with mock.patch.object(slides_stand_in, 'QUESTIONS', questions):
+            return self.built()
+
+    def test_reviewer_is_asked_the_rounds_questions(self):
+        made = self.built_with(self.THREE)
+        self.assertEqual(made['questions'], list(self.THREE))
+        work = build.review_work(self.root, self.run_)
+        asked = work.prepared['inputs']['the review']
+        self.assertIn('1. Is the point plain at a glance?\n2. Is the space balanced?\n'
+                      '3. Does every icon explain something?\n', asked)
+        self.assertNotIn('\n4. ', asked.split('## How grave')[0])
+        self.assertEqual(work.prepared['review']['questions'], list(self.THREE))
+        slides = work.prepared['review']['slides']
+        found, why = build.checked({'slide': slides[1]['id'], 'question': 4,
+                                    'severity': 'major', 'note': 'The boxes crowd the left.'},
+                                   slides, self.THREE)
+        self.assertIsNone(found)
+        self.assertEqual(why, f"{slides[1]['id']}: `question` is a number from 1 to 3.")
+        tools = self.job(work)
+        if work.prepared['review'].get('sheet'):
+            tools.look_at_deck()
+        for slide in slides:
+            tools.look_at_slide(slide['number'])
+        said = tools.submit_assessment(json.dumps([{
+            'slide': slides[1]['id'], 'question': 4, 'severity': 'major',
+            'note': 'The boxes crowd the left.'}]), '[]')
+        self.assertFalse(said[0])
+        self.assertIn('`question` is a number from 1 to 3', said[1])
+
+    def test_a_preview_without_the_tools_questions_is_refused_and_kept_nowhere(self):
+        build.start(self.root, self.run_, self.slides, self.contract)
+        for section in build.to_draw(self.root):
+            self.draw(section)
+        from stand_ins import slides as slides_stand_in
+        with mock.patch.object(slides_stand_in, 'QUESTIONS', ()), \
+                self.assertRaises(WorkspaceError) as refused:
+            build.whole(self.root, self.run_, self.slides, 'local')
+        self.assertIn(critic.MISSING, str(refused.exception))
+        self.assertEqual(build.read_state(self.root)['rounds'], [])
+        self.assertEqual(list((self.root / build.BUILD).glob('whole-*')), [])
+
+    def test_a_round_saved_before_questions_were_kept_reads_the_legacy_ones(self):
+        self.built()
+        state = build.read_state(self.root)
+        state['rounds'][-1].pop('questions')
+        build.write_state(self.root, state)
+        self.assertEqual(build.round_questions(state['rounds'][-1]), critic.LEGACY)
+        found = self.review(grave)
+        self.assertEqual(found[0]['verification'], critic.LEGACY[5])
+        self.assertIn(f'6. {critic.LEGACY[5]}', build.asked(
+            build.read_state(self.root)['rounds'][-1]['slides'], None, critic.LEGACY))
+
+
 class ReviewReuseTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -1024,7 +1084,7 @@ class ReviewReuseTests(unittest.TestCase):
         (self.root / 'sheet.png').write_bytes(b'synthetic contact sheet')
         slides = [{'id': 'slide-' + str(i), 'number': i, 'sha256': 'c' * 64} for i in range(1, 7)]
         evidence = [{'id': s['id'], 'number': s['number'], 'imageSha256': s['sha256'], 'fingerprint': str(s['number']) * 64} for s in slides]
-        coverage = {'questions': list(build.QUESTIONS), 'slides': [{'id': s['id'], 'image_sha256': s['sha256'], 'answers': [True] * 8} for s in slides]}
+        coverage = {'questions': list(critic.LEGACY), 'slides': [{'id': s['id'], 'image_sha256': s['sha256'], 'answers': [True] * 8} for s in slides]}
         self.state = {'rounds': [{'deck': 'a' * 64, 'render_evidence': {'schema': 1, 'shared': 'd' * 64, 'deckSha256': 'a' * 64, 'slides': evidence}, 'review': {'findings': [], 'coverage': coverage}},
             {'deck': 'b' * 64, 'render_evidence': {'schema': 1, 'shared': 'd' * 64, 'deckSha256': 'b' * 64, 'slides': copy.deepcopy(evidence)}, 'slides': slides, 'sheet': 'sheet.png'}]}
 
@@ -1049,6 +1109,12 @@ class ReviewReuseTests(unittest.TestCase):
         self.assertEqual(set(build.reusable_review(self.root, self.state)), {'slide-1', 'slide-5', 'slide-6'})
         self.state['rounds'][-1]['render_evidence']['slides'][5]['imageSha256'] = 'f' * 64
         self.assertNotIn('slide-6', build.reusable_review(self.root, self.state))
+
+    def test_reuse_needs_the_same_questions(self):
+        self.state['rounds'][-1]['render_evidence']['slides'][2]['fingerprint'] = 'e' * 64
+        self.assertTrue(build.reusable_review(self.root, self.state))
+        self.state['rounds'][-1]['questions'] = ['A?', 'B?']
+        self.assertEqual(build.reusable_review(self.root, self.state), {})
 
 
 class StartAgainTests(Deck):

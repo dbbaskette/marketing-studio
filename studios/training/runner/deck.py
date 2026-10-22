@@ -65,9 +65,10 @@ What a caller needs to know
 - A finding is about `drawing` or about `content`. Only a major or critical finding about
   drawing sends a section back to its composer. One about what a slide says is the
   person's to settle, at the outline.
-- QUESTIONS are the eight the slides tool asks of every slide, numbered as it numbers
-  them, in the runner's words. The tool's own are not handed to a caller, so a change to
-  them there has to be made here too.
+- A finding's `question` is a number into the questions its round was reviewed with: the
+  slides tool's own, as the round's whole preview wrote them in critic.json
+  (studio_core.critic), kept as the round's `questions`. `round_questions` reads them; a
+  round saved before they were kept reads the eight Harness Slides 0.16.0 asks.
 - A deck drawn from its approved design, on a slides tool that reviews a build against it,
   is reviewed by that tool's own assessment instead: `packets` are what it gives of each
   slide (`review --slide`), its criteria, the objects a judgement may cite and what its own
@@ -86,7 +87,7 @@ import re
 
 import runner  # noqa: F401  puts the core on the import path
 import checks
-from studio_core import deck_copy, deck_direction
+from studio_core import critic, deck_copy, deck_direction
 from workspace import WorkspaceError
 
 PREVIEWS = 4            # times one composer may render its section
@@ -145,17 +146,6 @@ def house(designed: bool = False, look: dict | None = None) -> tuple[str, ...]:
     return (*styled, *(DESIGNED_HOUSE if designed else HOUSE))
 
 
-QUESTIONS = (
-    'After three seconds, is the main point clear, and is it the claim in the title?',
-    'Does the eye land first on what carries the point?',
-    'Is there exactly one emphasis?',
-    'Does everything on the slide support the title?',
-    'Is each label inside or right beside what it names?',
-    'Is the space balanced, with nothing stranded or crowded?',
-    'Is the slide consistent with its neighbours in style, and different from them in '
-    'layout unless they are meant to be compared?',
-    'Does every picture and icon explain something?',
-)
 LOOKS_UNFINISHED = (
     'Does the slide look finished, or like a wireframe: outline boxes on white, no colour '
     "from the deck's direction where a product, an actor or a state is named, no icon where "
@@ -1118,17 +1108,24 @@ def as_approved(section, spec: dict):
 
 # --- what a review finds -----------------------------------------------------------------
 
-def checked(finding, slides: list[dict]) -> tuple[dict | None, str | None]:
+def round_questions(round_: dict | None) -> tuple[str, ...]:
+    """The questions a round was reviewed with: the slides tool's own, from its preview."""
+    return critic.of_round(round_)
+
+
+def checked(finding, slides: list[dict],
+            questions=critic.LEGACY) -> tuple[dict | None, str | None]:
     """One finding of a review as it is kept, or why it cannot be. `slides` are the
-    slides that were looked at, each with its `id` and `number`."""
+    slides that were looked at, each with its `id` and `number`; `questions` those the
+    review was asked."""
     if not isinstance(finding, dict):
         return None, 'A finding is an object with slide, question, severity and note.'
     numbers = {slide['id']: slide['number'] for slide in slides}
     ident, question = finding.get('slide'), finding.get('question')
     if ident not in numbers:
         return None, f'{ident!r} is not a slide of this deck. Name a slide by its ID.'
-    if type(question) is not int or not 1 <= question <= len(QUESTIONS):
-        return None, f'{ident}: `question` is a number from 1 to {len(QUESTIONS)}.'
+    if type(question) is not int or not 1 <= question <= len(questions):
+        return None, f'{ident}: `question` is a number from 1 to {len(questions)}.'
     if finding.get('severity') not in SEVERITIES:
         return None, f'{ident}: `severity` is one of: ' + ', '.join(SEVERITIES) + '.'
     note = finding.get('note')
@@ -1239,8 +1236,17 @@ def sent_back(screens: list[dict]) -> list[dict]:
     return made
 
 
-def told(findings, slides: list[dict]) -> str:
-    """What a review found on some slides, as their composer is told it."""
+def asked_text(finding: dict, questions) -> str:
+    """The question a finding answers "no" to, quoted, as a composer or a person reads it."""
+    number = finding.get('question')
+    if type(number) is int and 1 <= number <= len(questions):
+        return f'"{questions[number - 1]}"'
+    return "The brand's check:"
+
+
+def told(findings, slides: list[dict], questions=critic.LEGACY) -> str:
+    """What a review found on some slides, as their composer is told it. `questions` are
+    those the review was asked."""
     lines = ['# What the review found in your section', '',
              'Someone who drew none of these slides looked at each one as it was rendered '
              'and answered the same questions about it. Each "no" is below.', '']
@@ -1257,7 +1263,7 @@ def told(findings, slides: list[dict]) -> str:
                     if finding['about'] == JUDGED[2] else '')
             asked_as = (f"{CATEGORIES.get(finding.get('category'), 'Found')}, "
                         f"`{finding['criterion']}`:" if 'criterion' in finding else
-                        f"\"{QUESTIONS[finding['question'] - 1]}\"")
+                        asked_text(finding, questions))
             lines.append(f"- **{finding['severity']}**, {asked_as} {what}{finding['note']}"
                          + (f" Suggested: {finding['fix']}" if finding['fix'] else ''))
         lines.append('')
@@ -1281,12 +1287,13 @@ def _looked(screens) -> list[str]:
     return lines
 
 
-def asked(objectives: dict, slides: list[dict], earlier=None, screens=None) -> str:
-    """What a reviewer is asked: the questions, how grave a "no" is, the slides, the
-    objectives, what to look for beyond the questions with what the screens found, and on
-    a later round what was found before."""
+def asked(objectives: dict, slides: list[dict], earlier=None, screens=None,
+          questions=critic.LEGACY) -> str:
+    """What a reviewer is asked: the slides tool's questions, how grave a "no" is, the
+    slides, the objectives, what to look for beyond the questions with what the screens
+    found, and on a later round what was found before."""
     lines = ['# The review', '', '## The questions, asked of every slide', '']
-    lines += [f'{number}. {question}' for number, question in enumerate(QUESTIONS, start=1)]
+    lines += [f'{number}. {question}' for number, question in enumerate(questions, start=1)]
     lines += ['', '## How grave a "no" is', '',
               '- `critical`: the slide misleads, cannot be read, or its point cannot be '
               'found.',

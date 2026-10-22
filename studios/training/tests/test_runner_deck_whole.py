@@ -454,7 +454,7 @@ class TroubleTests(WholeCase):
         self.assertEqual((needs['missing'], needs['how'], needs['drive'], needs['local']),
                          ([], 'drive', True, True))
         self.assertEqual(needs['brand'], {
-            'found': True, 'name': self.brand.name, 'problem': None,
+            'found': True, 'name': self.brand.name, 'problem': None, 'old': None,
             'brands': [{'brand': 'example', 'name': 'Example Co',
                         'variants': ['light', 'dark']}]})
         self.assertEqual([(item['id'], item['state']) for item in needs['items']], [

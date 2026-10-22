@@ -1886,7 +1886,8 @@ def section_work(root: Path, found: Survey, step: Step, section: str, error: str
     if again:
         drawn = (mine.built.get('sections') or {}).get(section) or {}
         slides = [slide for slide in mine.last['slides'] if slide['id'] in ids]
-        inputs['what the review found'] = deck.told(mine.last['review']['findings'], slides)
+        inputs['what the review found'] = deck.told(mine.last['review']['findings'], slides,
+                                                    deck.round_questions(mine.last))
         inputs['your earlier section'] = _read(work / str(drawn.get('file'))) or ''
         look = [{**{key: slide[key] for key in ('number', 'id', 'title')},
                  'image': str(place(root, level, SHOTS) / f"{slide['number']}.png")}
@@ -1943,11 +1944,13 @@ def review_work(root: Path, found: Survey, step: Step, error: str | None) -> Wor
             'and the objectives. Hand in what you find with submit_assessment, then say '
             'which slides address each objective with submit_coverage.'
             + _again(None, None, error, [], 'the review'))
+    questions = deck.round_questions(last)
     prepared = {'inputs': {'the review': deck.asked(objectives, slides, earlier,
-                                                    last.get('screens'))},
+                                                    last.get('screens'), questions)},
                 'ask': False,
                 'review': {'preview': str(work / last['preview']), 'deck': last['deck'],
                            'slides': slides, 'objectives': list(objectives),
+                           'questions': list(questions),
                            'recorded': str(work / last['folder'] / 'assessment.json')}}
     return Work(briefs.guidance('deck-review'), task, 'write', prepared)
 

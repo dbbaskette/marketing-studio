@@ -27,6 +27,7 @@ from runner_support import OUTLINE, PAGE, PLAN, PUBLIC, Brand, JobCase, Slides, 
 from runner import brand as brand_skill
 from runner import slides as slides_tool
 from runner import worker_tools
+from studio_core import critic
 from runner.steps import build
 from workspace import WorkspaceError
 
@@ -1510,7 +1511,7 @@ class ReviewToolTests(ToolCase):
         self.assertEqual(len(sent['slides']), 6)
         self.assertTrue(all(len(slide['answers']) == 8 for slide in sent['slides']))
         kept = worker_tools.collect(self.job)['assessment']
-        self.assertEqual(kept['coverage']['questions'], list(build.QUESTIONS))
+        self.assertEqual(kept['coverage']['questions'], list(critic.LEGACY))
         self.assertEqual([(finding['number'], finding['about']) for finding in kept['findings']],
                          [(2, 'drawing'), (4, 'content')])
 

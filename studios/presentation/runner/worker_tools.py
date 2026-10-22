@@ -730,6 +730,12 @@ def one_at_a_time(lock: Path, wait: float = RENDER_WAIT):
         lock.unlink(missing_ok=True)
 
 
+def review_questions(review: dict) -> tuple[str, ...]:
+    """The questions a review job was asked: the slides tool's own, kept with its round."""
+    from studio_core import critic
+    return critic.of_round(review)
+
+
 def render(slides, compiled: Path, folder: Path, how: dict) -> dict:
     """Preview compiled slides, when it is this preview's turn. `how` is {'renderer',
     'lock', 'kept', 'named'}: 'kept' names the file that remembers a deck's one preview
@@ -1462,7 +1468,7 @@ class WorkerTools:
             raise Refusal('findings and weakest are each a list.')
         problems, kept = [], []
         for finding in given:
-            found, why = build.checked(finding, review['slides'])
+            found, why = build.checked(finding, review['slides'], review_questions(review))
             kept += [found] if found else []
             problems += [why] if why else []
         ids = [slide['id'] for slide in review['slides']]
@@ -1509,7 +1515,7 @@ class WorkerTools:
             reused = (review.get('reused') or {}).get(slide['id'])
             note = ('Reused verified native inspection from deck ' + reused['from_deck'] + '; checked current whole-deck consistency. ' if reused else 'Inspected native pixels and all review questions. ') + f"Slide {slide['number']}: {slide['title']}"
             coverage.append({'id': slide['id'], 'number': slide['number'],
-                'answers': [not any(f['slide'] == slide['id'] and f['question'] == n for f in kept) for n in range(1, len(build.QUESTIONS) + 1)],
+                'answers': [not any(f['slide'] == slide['id'] and f['question'] == n for f in kept) for n in range(1, len(review_questions(review)) + 1)],
                 'note': note, 'image_sha256': hashlib.sha256(picture(slide['image'])).hexdigest(),
                 **({'reused_from': reused['from_deck']} if reused else {})})
         assessment = {'slides': [{key: value[key] for key in ('id', 'answers', 'note')} for value in coverage], 'deckSha256': review['deck'], 'reviewer': 'independent',
@@ -1529,7 +1535,7 @@ class WorkerTools:
         except WorkspaceError as refusal:
             return [self._plainly(line) for line in said_no(refusal)]
         home.write_json(recorded, {'findings': kept, 'weakest': named,
-            'coverage': {'questions': list(build.QUESTIONS), 'slides': coverage}})
+            'coverage': {'questions': list(review_questions(review)), 'slides': coverage}})
         return []
 
     # --- sources ---

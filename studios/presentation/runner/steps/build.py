@@ -70,10 +70,11 @@ What a caller needs to know
   the outline's, and looks for each point's words among the text the slide draws. At brand
   only and polish (STRICT) it also refuses drawn text that says anything the slide was not
   approved with. What is drawn, and how, is
-  the composer's. A finding is about `drawing` or about `content`. QUESTIONS are the eight
-  the slides tool asks of every slide, numbered as it numbers them, in the runner's words.
-  The tool's own are not handed to a caller, so a change to them there has to be made here
-  too.
+  the composer's. A finding is about `drawing` or about `content`. Its `question` is a
+  number into the questions its round was reviewed with: the slides tool's own, as the
+  round's whole preview wrote them in critic.json (studio_core.critic), kept as the round's
+  `questions`. `round_questions` reads them; a round saved before they were kept reads the
+  eight Harness Slides 0.16.0 asks.
 """
 from __future__ import annotations
 
@@ -86,7 +87,7 @@ from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import home
-from studio_core import brand_guidance, deck_copy, deck_direction, deck_flow
+from studio_core import brand_guidance, critic, deck_copy, deck_direction, deck_flow
 from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, build_progress, decks, slides as slides_tool
@@ -100,17 +101,6 @@ SEVERITIES = ('critical', 'major', 'minor')
 ABOUT = ('drawing', 'content')
 STRICT = ('brand-only', 'polish')    # levels whose slides draw only the approved words
 NOTE = 12               # the shortest note the slides tool takes for a finding
-QUESTIONS = (
-    'After three seconds, is the main point clear, and is it the claim in the title?',
-    'Does the eye land first on what carries the point?',
-    'Is there exactly one emphasis?',
-    'Does everything on the slide support the title?',
-    'Is each label inside or right beside what it names?',
-    'Is the space balanced, with nothing stranded or crowded?',
-    'Is the slide consistent with its neighbours in style, and different from them in '
-    'layout unless they are meant to be compared?',
-    'Does every picture and icon explain something?',
-)
 WORD = re.compile(r"[^\W_]+(?:['’.-][^\W_]+)*")
 PARTS = 8               # short labels one point may give the parts of a diagram
 PART_WORDS = 6          # words one of them may hold, as the slides tool allows
@@ -399,17 +389,19 @@ def kept(section, spec: dict) -> list[str]:
 
 # --- what a review finds -----------------------------------------------------------------
 
-def checked(finding, slides: list[dict]) -> tuple[dict | None, str | None]:
+def checked(finding, slides: list[dict],
+            questions=critic.LEGACY) -> tuple[dict | None, str | None]:
     """One finding of a review as it is kept, or why it cannot be. `slides` are the
-    slides that were looked at, each with its `id` and `number`."""
+    slides that were looked at, each with its `id` and `number`; `questions` those the
+    review was asked."""
     if not isinstance(finding, dict):
         return None, 'A finding is an object with slide, question, severity and note.'
     numbers = {slide['id']: slide['number'] for slide in slides}
     ident, question = finding.get('slide'), finding.get('question')
     if ident not in numbers:
         return None, f'{ident!r} is not a slide of this deck. Name a slide by its ID.'
-    if type(question) is not int or not 1 <= question <= len(QUESTIONS):
-        return None, f'{ident}: `question` is a number from 1 to {len(QUESTIONS)}.'
+    if type(question) is not int or not 1 <= question <= len(questions):
+        return None, f'{ident}: `question` is a number from 1 to {len(questions)}.'
     if finding.get('severity') not in SEVERITIES:
         return None, f'{ident}: `severity` is one of: ' + ', '.join(SEVERITIES) + '.'
     note = finding.get('note')
@@ -1096,7 +1088,7 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
                  'and look_at_slide shows each of its slides as it was rendered. Put right '
                  'what is asked and leave alone what works.']
         if found:
-            inputs['what the review found'] = told_findings(found, mine)
+            inputs['what the review found'] = told_findings(found, mine, round_questions(last))
             lines.append('Your input "what the review found" lists what a reviewer found '
                          'wrong with how some of its slides are drawn.')
         if previewed:
@@ -1296,6 +1288,15 @@ def told_preview(found: list[dict], slides: list[dict]) -> str:
     return '\n'.join(lines) + '\n'
 
 
+class _Unasked(Exception):
+    """A whole preview that came without the slides tool's review questions."""
+
+
+def round_questions(round_: dict | None) -> tuple[str, ...]:
+    """The questions a round was reviewed with: the slides tool's own, from its preview."""
+    return critic.of_round(round_)
+
+
 def draw_whole(root, run: dict, slides, renderer) -> dict:
     """`whole`, writing nothing outside work/: the contact sheet waits in the round's
     folder, as its `sheet`, for `share_sheet`."""
@@ -1337,11 +1338,19 @@ def draw_whole(root, run: dict, slides, renderer) -> dict:
         if _digest(file) != digest:
             raise WorkspaceError('The deck the renderer left is not the one it pictured.')
         pictured = _tools().pictures(shown, folder / 'preview', pictures)
+        try:
+            asked_now = critic.questions(folder / 'preview')
+        except ValueError as missing:
+            raise _Unasked(str(missing)) from None
         sheet = shown.get('contactSheet')
         sheet = Path(str(sheet)).resolve() if sheet else None
         if sheet is not None and ((folder / 'preview').resolve() not in sheet.parents
                                   or sheet.read_bytes()[:8] != PNG):
             sheet = None
+    except _Unasked as missing:
+        shutil.rmtree(folder, ignore_errors=True)
+        shutil.rmtree(pictures, ignore_errors=True)
+        raise WorkspaceError(str(missing)) from None
     except (WorkspaceError, OSError, KeyError, ValueError, TypeError) as refusal:
         shutil.rmtree(folder, ignore_errors=True)
         shutil.rmtree(pictures, ignore_errors=True)
@@ -1363,7 +1372,7 @@ def draw_whole(root, run: dict, slides, renderer) -> dict:
             'preview': (folder / 'preview').relative_to(root).as_posix(),
             'compiled': (folder / 'compiled').relative_to(root).as_posix(),
             'file': file.relative_to(root.resolve()).as_posix(), 'deck': digest,
-            'review': None,
+            'review': None, 'questions': list(asked_now),
             'render_evidence': shown.get('renderEvidence'),
             'sheet': sheet.relative_to(root.resolve()).as_posix() if sheet else None,
             'made_from': {ident: entry['file'] for ident, entry in drawn.items()},
@@ -1422,8 +1431,9 @@ def remains(findings) -> str:
             + f" thing{'' if len(left) == 1 else 's'} wrong.")
 
 
-def told_findings(findings, slides: list[dict]) -> str:
-    """What a review found on some slides, as their composer is told it."""
+def told_findings(findings, slides: list[dict], questions=critic.LEGACY) -> str:
+    """What a review found on some slides, as their composer is told it. `questions` are
+    those the review was asked."""
     lines = ['# What the review found in your section', '',
              'Someone who drew none of these slides looked at each one as it was rendered '
              'and answered the same questions about it. Each "no" is below.', '']
@@ -1436,17 +1446,25 @@ def told_findings(findings, slides: list[dict]) -> str:
             what = ('This is about what the slide says, which is not yours to change: '
                     'leave the words as they are. ' if finding['about'] == ABOUT[1] else '')
             lines.append(f"- **{finding['severity']}**, "
-                         f"\"{QUESTIONS[finding['question'] - 1]}\" {what}{finding['note']}"
+                         f"{asked_text(finding, questions)} {what}{finding['note']}"
                          + (f" Suggested: {finding['fix']}" if finding.get('fix') else ''))
         lines.append('')
     return '\n'.join(lines)
 
 
-def asked(slides: list[dict], earlier=None) -> str:
-    """What a reviewer is asked: the questions, how grave a "no" is, the slides, and on a
-    later round what was found before."""
+def asked_text(finding: dict, questions) -> str:
+    """The question a finding answers "no" to, quoted, as a composer or a person reads it."""
+    number = finding.get('question')
+    if type(number) is int and 1 <= number <= len(questions):
+        return f'"{questions[number - 1]}"'
+    return "The brand's check:"
+
+
+def asked(slides: list[dict], earlier=None, questions=critic.LEGACY) -> str:
+    """What a reviewer is asked: the slides tool's questions, how grave a "no" is, the
+    slides, and on a later round what was found before."""
     lines = ['# The review', '', '## The questions, asked of every slide', '']
-    lines += [f'{number}. {question}' for number, question in enumerate(QUESTIONS, start=1)]
+    lines += [f'{number}. {question}' for number, question in enumerate(questions, start=1)]
     lines += ['', '## How grave a "no" is', '']
     lines += [f'- `{severity}`: {words}' for severity, words in SEVERITY_WORDS.items()]
     lines += ['', '## The slides', '']
@@ -1476,7 +1494,8 @@ def reusable_review(root, state):
     coverage = (previous.get('review') or {}).get('coverage') or {}
     if old.get('schema') != 1 or new.get('schema') != 1 or old.get('shared') != new.get('shared') \
             or not isinstance(old.get('shared'), str) or not re.fullmatch(r'[a-f0-9]{64}', old['shared']) or old.get('deckSha256') != previous['deck'] \
-            or new.get('deckSha256') != current['deck'] or coverage.get('questions') != list(QUESTIONS):
+            or new.get('deckSha256') != current['deck'] \
+            or coverage.get('questions') != list(round_questions(current)):
         return {}
     if not current.get('sheet') or not (Path(root) / current['sheet']).is_file():
         return {}
@@ -1496,7 +1515,8 @@ def reusable_review(root, state):
                 or receipt.get('image_sha256') != prior.get('imageSha256') \
                 or prior.get('imageSha256') != now.get('imageSha256') \
                 or prior.get('fingerprint') != now.get('fingerprint') \
-                or not now.get('fingerprint') or receipt.get('answers') != [True] * len(QUESTIONS):
+                or not now.get('fingerprint') \
+                or receipt.get('answers') != [True] * len(coverage['questions']):
             needs.add(ident)
         else:
             candidates[ident] = {**receipt, 'from_deck': previous['deck']}
@@ -1522,12 +1542,15 @@ def review_work(root, run: dict) -> Work:
             + '. Hand in every negative finding with submit_assessment. '
             + ('Other clear slides retain verified inspection evidence, not user approval. '
                'You may inspect or flag any of them if the whole-deck view suggests a regression. ' if reused else ''))
+    questions = round_questions(last)
     review = {'preview': str(root / last['preview']), 'deck': last['deck'], 'slides': slides,
+              'questions': list(questions),
               'recorded': str(root / last['folder'] / 'assessment.json'), 'inspect': inspect,
               'reused': reused, 'sheet': str(root / last['sheet']) if last.get('sheet') else None}
     return Work(guidance=briefs.guidance('review'), task=task, profile='write',
                 guard=('whole', (run.get('build_feedback_revisions') or {}).get('whole', 0)),
-                prepared={'inputs': {'the review': asked(slides, earlier)}, 'ask': False,
+                prepared={'inputs': {'the review': asked(slides, earlier, questions)},
+                          'ask': False,
                           'review': review})
 
 
@@ -1580,7 +1603,8 @@ def keep_review(root, run: dict, handed) -> list[dict]:
         identity['defect'] = ' '.join(str(finding.get('note') or '').lower().split())
         finding['id'] = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:16]
         finding['persistent'] = finding['id'] in previous
-        finding['verification'] = finding.get('fix') or QUESTIONS[finding['question'] - 1]
+        finding['verification'] = finding.get('fix') or asked_text(
+            finding, round_questions(last)).strip('"')
     last['review'] = {'findings': findings, 'weakest': list(assessed.get('weakest') or ()),
                       'at': home.now(), 'coverage': assessed.get('coverage')}
     back = repair_sections(findings)
