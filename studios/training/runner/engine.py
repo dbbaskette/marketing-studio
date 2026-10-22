@@ -401,6 +401,7 @@ def new_record(agent: str, model: str | None, chosen: settings.Settings,
     supplied = None if scope == pipeline.SCOPE else {'scope': scope, 'done': None, 'count': 0}
     return {'schema': SCHEMA, 'agent': agent, 'model': model, 'effort': effort,
             'model_profiles': profiles, 'review_policy': review_policy.capture(),
+            'review_layout': review_layout.LAYOUT,
             'started_at': home.now(),
             'limits': {'step_seconds': chosen.step_seconds,
                        'training_dollars': chosen.training_dollars},
@@ -535,6 +536,7 @@ class _Run:
         self.workers: dict[str, dict] = {}
 
 
+from runner import reviews as review_layout
 from runner.reviews import Reviewing
 
 

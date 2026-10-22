@@ -376,6 +376,8 @@ Each row is one test in `tests/test_workspace.py` or, where it names `check`, `t
 | 121 | Approved file, its Doc edited elsewhere | Bring the Doc’s changes in | File holds the Doc’s text, not approved; downstream out of date. Covered by `PullTests.test_row_121_a_doc_edited_elsewhere_is_brought_in`. |
 | 122 | File and Doc both changed | Bring in, then choose | Both kept until chosen; theirs saved as an edit or ours pushed with force; later changes refuse the old choice. Covered by `PullTests.test_row_122_both_changed_keeps_both`. |
 
+| 123 | Grouped run with no review layout, direction approved | Survey after upgrade | Direction stays approved and old grouping is retained; briefs are not queued twice. Covered by `test_row_123_a_run_past_its_direction_review_keeps_it`. |
+
 Shared setup readiness adds the independently verified transitions in
 [the suite setup matrix](../../../../../docs/shared-setup.md): no/partial settings
 → shared setup; successful finish → normal home; completed setup elsewhere →
