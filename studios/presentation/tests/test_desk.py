@@ -1415,6 +1415,23 @@ class ScreenTests(ScriptedPage, PageCase):
         self.post('decide', body)
         self.assertEqual(self.run_of(path)['gate']['name'], 'gate:build')
 
+    def test_direction_approval_needs_a_pick_until_the_outline_is_edited(self):
+        from unittest import mock
+        from studio_core import review_policy
+        self.brand.run.offers_looks = True
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
+            path = self.started()
+        result = self.deck_screen(path, [{'snapshot': 'unpicked'}, {'see': 'Every look'},
+            {'see': 'Clear'}, {'click': 'Clear'}, {'snapshot': 'picked'},
+            {'fill': 'Title of slide 2', 'value': 'An edited synthetic claim'}, {'snapshot': 'edited'}],
+            **{'GET /api/slide': [PICTURE] * 3})
+        shots = result['snapshots']
+        self.assertIn('Approve', shots['unpicked']['off'])
+        self.assertIn('1 look to pick', shots['unpicked']['text'])
+        self.assertNotIn('Approve', shots['picked']['off'])
+        self.assertNotIn('Approve', shots['edited']['off'])
+        self.assertIn('You edited the outline, so the looks will be drawn again from it.', shots['edited']['text'])
+
     def test_the_direction_review_hosts_the_look_pick(self):
         from unittest import mock
         from studio_core import review_policy

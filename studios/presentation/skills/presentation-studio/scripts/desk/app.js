@@ -6,6 +6,7 @@
 // picture, and the deck itself, are fetched as bytes and held in memory, never at an address.
 'use strict';
 
+const EDITED_LOOKS = 'You edited the outline, so the looks will be drawn again from it. You pick from the new ones before the deck is built.';
 const TOKEN_HEADER = 'X-Presentation-Studio-Token';
 const POLL_SHOWN = 5000;
 const POLL_HIDDEN = 20000;
@@ -4466,6 +4467,7 @@ function lookPanel(gate, readonly, held, review) {
 // that hosts the pick under Balanced, or nothing at the look's own gate.
 function looksPanel(gate, readonly, held, review) {
   const offered = gate.offered;
+  if (gate.again && !held.look) held.look = gate.again.choice || '';
   const made = gate.made_in || 'your brand';
   const node = card('Choose the look');
   add(node, make('p', 'lede', 'Made in ' + made + '.'),
@@ -4477,11 +4479,17 @@ function looksPanel(gate, readonly, held, review) {
       offered.chosen.words ? make('p', 'quiet', '“' + offered.chosen.words + '”') : null);
     return add(node, ...gateSaid(gate));
   }
+  if (review) {
+    const edited = make('p', 'quiet', EDITED_LOOKS);
+    edited.id = 'edited-looks';
+    edited.hidden = !held.edited;
+    add(node, edited);
+  }
   add(node, window.DeckPanels.lookPicker({
     name: 'the deck', looks: list(offered.looks), defaultId: offered.default,
     sheet: offered.sheet, notes: list(offered.notes), failed: offered.failed,
     picked: { choice: held.look || '', words: held.lookWords || '' },
-    changed: (now) => { held.look = now.choice; held.lookWords = now.words; },
+    changed: (now) => { held.look = now.choice; held.lookWords = now.words; if (review) reviewChanged(review); },
     picture: (number, alt) => pictureAt(pictureOf(view.path,
       { kind: 'look', ref: number === 0 ? 'sheet' : number }), alt, gate.round) }));
   if (offered.failed && !readonly) {
@@ -5099,7 +5107,7 @@ function reviewOf(gate) {
   }
   const slides = sized(marks.slides);
   const edited = held.edited ? { edited: held.work } : null;
-  const tally = count(slides, 'slide to change', 'slides to change')
+  let tally = count(slides, 'slide to change', 'slides to change')
     + (held.edited ? ' · edited here' : '');
   if (slides) {
     return { label: 'Send ' + count(slides, 'change', 'changes'), approve: false,
@@ -5108,7 +5116,10 @@ function reviewOf(gate) {
   // In the direction review the look picked here goes with the approval.
   const look = gate.look?.offered && !gate.look.offered.chosen && held.look
     ? { look: held.look } : null;
-  return { label: 'Approve', approve: true,
+  const blocked = gate.name === 'gate:outline' && gate.look?.offered && !gate.look.offered.chosen
+    && !held.look && !held.edited ? 'Pick a look to approve the direction.' : '';
+  if (blocked) tally += ' · 1 look to pick';
+  return { label: 'Approve', approve: true, blocked,
     extra: edited || look ? { ...(edited || {}), ...(look || {}) } : null, tally };
 }
 
@@ -5116,6 +5127,7 @@ function reviewOf(gate) {
 // given, or else at the head of the deck.
 function sendReview(gate, pressed, problem) {
   const made = reviewOf(gate);
+  if (made.blocked) { say(problem || byId('gate-problem'), made.blocked); return; }
   const words = made.approve && made.extra?.look ? (chosenFor(gate).lookWords || '').trim() : '';
   decide(made.approve ? 'approve' : 'changes', words, problem || null, pressed, made.extra);
 }
@@ -5161,11 +5173,13 @@ function paintReviewBar(gate, node) {
   if (tally.textContent !== made.tally) tally.textContent = made.tally;
   // What was refused before is not what the marks say now. The one button that sends the
   // marks is the toolbar's, which says what it will do with them.
-  say(problem, '');
+  say(problem, made.blocked || '');
 }
 
 // A mark changed: the tally, this button and the toolbar's say so at once.
 function reviewChanged(gate) {
+  const edited = byId('edited-looks');
+  if (edited) edited.hidden = !chosenFor(gate).edited;
   paintReviewBar(gate, byId('review-bar'));
   if (view.screen === 'deck' && view.run) paintDeck(false);
 }
@@ -5410,6 +5424,7 @@ function deckActions(run, lead) {
         decide('approve', (chosenFor(gate).lookWords || '').trim(), problem, approve);
       } else decide('approve', '', problem, approve);
     }, 'approve');
+    approve.disabled = REVIEWED.includes(run.gate.name) && Boolean(reviewOf(run.gate).blocked);
     const brand = run.gate.name === 'gate:look';
     // An existing deck's slides are read by code that takes no note: nothing to ask it.
     const read = run.gate.name === 'gate:classify' && run.gate.kind === 'deck';
@@ -5451,7 +5466,8 @@ function paintDeck(fresh) {
     mark: [title, route, run.state, lead, gate && [gate.name, gate.round, chosenFor(gate).wrong],
       read, driver,
       Boolean(run.question), run.problem,
-      gate && REVIEWED.includes(gate.name) && !read ? reviewOf(gate).label : ''] }, [
+      gate && REVIEWED.includes(gate.name) && !read
+        ? [reviewOf(gate).label, reviewOf(gate).blocked] : ''] }, [
     ['intro', [run.state, run.sentence, run.queue, view.steered, read, Boolean(run.problem),
       run.timeline, run.workers, run.spent, run.build_progress && run.build_progress.slides],
     () => deckIntro(run)],

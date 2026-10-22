@@ -5,6 +5,48 @@ from studio_core import review_policy
 
 
 class ReviewLevelsTests(StudioCase):
+    def test_balanced_pick_is_bound_to_the_looks_seen(self):
+        import json
+        from runner.steps import look, outline
+        self.brand.run.offers_looks = True
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
+            root = self.start()
+        edited = json.loads((root / outline.OUTLINE).read_text())['slides']
+        edited[1]['title'] = 'An edited synthetic claim'
+        self.workers.outline_said = {**self.workers.outline_said, 'slides': edited}
+        shown = self.decide(root, extra={'look': 'example-clear', 'edited': edited})
+        self.assertIsNone(shown['problem'], shown)
+        self.assertEqual(shown['gate']['name'], 'gate:look')
+        self.assertIsNone(look.chosen(root))
+        self.assertIn('after you picked Clear', ' '.join(shown['gate']['offered']['notes']))
+        self.assertEqual(shown['ahead']['next_gate'], 'gate:look')
+        self.decide(root, extra={'look': 'example-bold'})
+        self.assertEqual(self.view(root)['gate']['name'], 'gate:build')
+        self.assertEqual(look.chosen(root)['choice'], 'example-bold')
+
+    def test_balanced_pick_without_edit_is_applied(self):
+        from runner.steps import look
+        self.brand.run.offers_looks = True
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
+            root = self.start()
+        self.decide(root, extra={'look': 'example-clear'})
+        self.assertEqual(self.view(root)['gate']['name'], 'gate:build')
+        self.assertEqual(look.chosen(root)['choice'], 'example-clear')
+        self.assertTrue(self.engine._load(root)['look_picked']['shown'])
+
+    def test_editing_the_direction_without_a_pick_redraws_and_waits(self):
+        import json
+        from runner.steps import look, outline
+        self.brand.run.offers_looks = True
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
+            root = self.start()
+        edited = json.loads((root / outline.OUTLINE).read_text())['slides']
+        edited[1]['title'] = 'Another edited synthetic claim'
+        self.workers.outline_said = {**self.workers.outline_said, 'slides': edited}
+        self.decide(root, extra={'edited': edited})
+        self.assertEqual(self.view(root)['gate']['name'], 'gate:look')
+        self.assertIsNone(look.chosen(root))
+
     def test_leaving_findings_out_at_the_direction_review_redraws_only_the_outline(self):
         from runner import marks
         from workspace import WorkspaceError
