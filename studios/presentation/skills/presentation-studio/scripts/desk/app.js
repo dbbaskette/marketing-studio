@@ -2932,7 +2932,7 @@ function aboutStep(draft) {
   const research = draft.route !== 'existing' ? chip('Research the public web first', draft.research,
     (on) => {
       draft.research = on;
-      draw(false);
+      paintNew(false);
     }, 'research') : null;
   return [add(card('About it'),
     field('new-title', 'A short title', draft, 'title',
