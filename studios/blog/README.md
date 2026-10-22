@@ -69,7 +69,7 @@ Once the page is open, use its controls to drive the work:
    **Settings**. Under **Brand skill**, enter its repository and release or choose
    an installed skill, just as in Training Studio. See [brand setup](docs/runner.md#your-brand-skill).
 2. **Choose New blog.** Choose **Polish a document**, **Write from a brief**, **Use my
-   outline**, **Explore ideas**, **New blog from my files** or **Interview me**; give
+   outline**, **Outline only**, **Revise or review a draft**, **Explore ideas**, **New blog from my files** or **Interview me**; give
    the topic and audience, then **Write as** (whose
    voice) and **Kind of post** (the shape of the piece); then upload files or select
    saved references, and set the tone, author and an optional brand. To revise or review, supply the manuscript.

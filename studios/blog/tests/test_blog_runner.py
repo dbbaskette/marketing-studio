@@ -99,6 +99,23 @@ class RunnerCase(Fixture):
 
 
 class BlogRunnerTests(RunnerCase):
+    def test_a_developed_idea_is_reviewed_and_packaged(self):
+        found = self.submit(self.create(page=True, mode='ideas', stop='outline'), page=True)
+        found = self.approve(found, page=True)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {
+                    'id': found['id'],
+                    'expected': found['expected'],
+                    'request': 'Develop the first angle.',
+                },
+            )
+        _, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(run['pipeline'], ['outline', 'draft', 'review', 'package'])
+        self.assertEqual(record['stop_point'], 'package')
+
     def test_profiles_are_saved_and_background_worker_gets_the_saved_main(self):
         from studio_core import studios_config
 
@@ -179,7 +196,7 @@ class BlogRunnerTests(RunnerCase):
         found = self.approve(found, page=True)
         self.assertEqual(found['next'], 'draft')
 
-    def test_developing_an_idea_stops_at_an_editable_draft(self):
+    def test_developing_an_idea_finishes_review_and_package(self):
         ideas = '# Three angles\n\n1. Ownership\n2. Feedback\n3. Context'
         found = self.submit(self.create(page=True, mode='ideas', stop='outline'), ideas, page=True)
         with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
@@ -193,12 +210,12 @@ class BlogRunnerTests(RunnerCase):
                 },
             )
         directory, record, run = runner.load(self.root, found['id'])
-        self.assertEqual(run['pipeline'], ['outline', 'draft'])
-        self.assertEqual(record['stop_point'], 'draft')
+        self.assertEqual(run['pipeline'], ['outline', 'draft', 'review', 'package'])
+        self.assertEqual(record['stop_point'], 'package')
         self.assertIn('second idea', run['stages']['outline']['request'])
         self.assertEqual((directory / 'OUTLINE.md').read_text(), ideas)
         found = runner.survey(self.root, found['id'])
-        for stage in ('outline', 'draft'):
+        for stage in ('outline', 'draft', 'review', 'package'):
             self.assertEqual(found['next'], stage)
             found = self.submit(found, page=True)
             found = self.approve(found, page=True)

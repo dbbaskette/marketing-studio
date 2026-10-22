@@ -70,6 +70,7 @@ async function check(){
   await manualEditingJourneys();
   await writingReviewJourneys();
   await taskJourneys();
+  await phase4Starts();
   await revisionCompletion();
   await deliveryRecovery();
   await brandInputs();
@@ -101,7 +102,7 @@ async function check(){
   await finishEveryLevel();
   await failureRecovery();
   pageDefinesEveryElement();
-  const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
+  const checks=['starts on Home: Outline only, Revise or review a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
     'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','one name for each thing','copy that says what the form and gates do','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','element ids'];
@@ -320,6 +321,35 @@ async function revisionCompletion(){
   assert.equal(nodes().some(e=>e.textContent==='No wording changes found'),false);
   await nodes().find(e=>e.textContent==='Use revised draft').listeners.click();
   assert.ok(nodes().some(e=>e.textContent==='Download polished document'));
+}
+
+async function phase4Starts(){
+  const requests=[];
+  const made={id:'manuscript-run',title:'A draft',status:'queued',next:'review',approval:'page',expected:'v1',enabled:true,seconds:600,engine:'codex',decisions:[],brief:{goal:'Check it',audience:'Authors'},stages:[]};
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'supplied-only',stop:'package',tone:'',author:''}},sources:[],profiles:[],styles:[],agents:{codex:true}};if(url==='/api/upload')return {source:{id:'manuscript-source'},state:'ready'};if(url==='/api/run-create'||url.startsWith('/api/run?'))return made;return {items:[]};});
+  f.loadRunner();f.run('sHome()');
+  const nodes=()=>descendants(f.get('studio-page'));
+  for(const title of ['Outline only','Revise or review a draft'])assert.ok(nodes().some(n=>n.textContent===title));
+  await nodes().find(n=>n.textContent==='Revise or review a draft').listeners.click();
+  assert.ok(nodes().some(n=>n.attributes['aria-label']==='Upload a manuscript'),nodes().map(n=>n.textContent).join(' | '));
+  await nodes().find(n=>n.textContent==='Give feedback only').listeners.click();
+  assert.equal(f.run('studio.draft.mode'),'review');
+  await nodes().find(n=>n.textContent==='Improve it').listeners.click();
+  assert.equal(f.run('studio.draft.mode'),'revise');
+  await nodes().find(n=>n.textContent==='Give feedback only').listeners.click();
+  const file=nodes().find(n=>n.attributes['aria-label']==='Upload a manuscript');
+  file.files=[{name:'draft.md',size:10,arrayBuffer:async()=>new TextEncoder().encode('My draft.').buffer}];
+  await file.listeners.change();
+  for(const [id,value] of [['new-title','A draft'],['new-goal','Check it'],['new-audience','Authors']]){const field=nodes().find(n=>n.id===id);field.value=value;field.listeners.input();}
+  await nodes().find(n=>n.tagName==='form').listeners.submit({preventDefault(){}});
+  await nodes().find(n=>n.tagName==='form').listeners.submit({preventDefault(){}});
+  const payload=requests.find(r=>r.url==='/api/run-create').data;
+  assert.equal(payload.mode,'review');assert.equal(payload.manuscript,'manuscript-source');assert.equal(payload.stop,'review');
+  const uploaded=requests.find(r=>r.url==='/api/upload').data;assert.equal(uploaded.purpose,'manuscript');assert.equal(uploaded.analyze,false);
+  assert.equal(Buffer.from(uploaded.content,'base64').toString(),'My draft.');
+  f.set('done',{id:'done',stages:[{stage:'draft'}],complete:true});
+  f.run("sPage(sDoneCard(done))");
+  for(const title of ['Pre-publish check','Repurpose'])assert.equal(nodes().find(n=>n.textContent===title).disabled,false);
 }
 
 async function taskJourneys(){

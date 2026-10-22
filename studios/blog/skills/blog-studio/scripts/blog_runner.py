@@ -2637,14 +2637,14 @@ def dispatch(root, action, data):
             raise ValueError('Choose a saved idea or outline before developing it.')
         request = text(data.get('request', ''), 'selected angle', 8000, required=True)
         run['mode'] = 'write'
-        run['pipeline'] = ['outline', 'draft']
+        run['pipeline'] = ['outline', 'draft', 'review', 'package']
         run['stages'] = {
             'outline': {
                 'status': 'pending',
                 'request': 'Develop this selected angle or structure: ' + request,
             }
         }
-        record['stop_point'] = 'draft'
+        record['stop_point'] = 'package'
         save(root, directory, record, run, 'Selected angle for drafting')
         return runner.control(ident, 'resume')
     if action == 'start':
