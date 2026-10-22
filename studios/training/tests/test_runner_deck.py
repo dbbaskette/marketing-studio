@@ -8,6 +8,7 @@ stand-ins. Nothing starts an agent, the slides tool, a brand skill or Google, an
 touches the network.
 """
 import json
+import unittest
 import threading
 from dataclasses import replace
 from email.message import Message
@@ -545,6 +546,19 @@ class RuleTests(JobCase):
         for objective, assessment in checks.parse_blueprint(BLUEPRINT)['assessment'].items():
             self.assertIn(f'- {objective}: {assessment}', text)
         self.assertIn('practice and debrief', text)
+
+
+class CodeSpanWordTests(unittest.TestCase):
+    """A name set as a code span is kept and counted as the same words without backticks."""
+
+    def test_code_spans_are_kept_and_counted_as_words(self):
+        spanned = 'High availability (`highAvailability`) is off'
+        bare = 'High availability (highAvailability) is off'
+        self.assertEqual(deck.count(spanned), deck.count(bare))
+        self.assertEqual(deck.plain(spanned), deck.plain(bare))
+        point = {'label': 'Off by default', 'text': spanned, 'parts': []}
+        drawn = {'type': 'box', 'id': 'one', 'text': f"{point['label']}: {spanned}"}
+        self.assertEqual(deck.whole_points(drawn, [point]), [])
 
 
 class ToolCase(JobCase):

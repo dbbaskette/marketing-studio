@@ -40,6 +40,7 @@ These are yours to get right. The person who approves the outline reads for them
 - **The focal point is what the title singles out.** It is never one of several peers. A slide that lists equals, such as the objectives or the steps of a process, has a focal that is not one of them: the idea that joins them.
 - **Equals read as equals.** Give the points of a list the same weight: labels of one kind, and texts of a like length.
 - **Fewer words.** A slide whose words do not fit its drawing cannot be put right by whoever draws it. Where a slide is near its budget, make it two.
+- **Names as code.** Write a configuration field, command, API or file name as a code span in backticks, such as `highAvailability`, with plain English first the time it appears. A title names things in words and takes no code span.
 - **Every slide stands alone.** No slide depends on its notes for its meaning. The notes carry the talk track and the timing for a presenter, and any decision of yours that the person should know of.
 - **The required elements** in the handoff are all there: the objectives near the start, a check for understanding in each module, a recap, and the closing slide.
 

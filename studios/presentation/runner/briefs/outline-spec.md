@@ -39,6 +39,7 @@ An outline is one JSON object: `version` 1, a `title`, optionally `audience`, `d
 - **Fill in only what it leaves out.** The spec rarely gives the relation, the focal, the rhythm or the understand line. Choose them from what the slide says; leave the focal out where the slide lists or compares equals, and give a section of the spec as the slide's sources.
 - **Put the spec's words where they belong.** Its heading is the title, its bullets the points, a qualification the caveat, a citation the source line, and a speaker script the notes. A closing slide takes only a title and notes. Where the spec sets down what a slide shows, such as a chart or a picture, say so in the slide's understand line, because the designer reads it.
 - **Do not fix the spec.** If a slide is over the brand's word budget, or a title is longer than the contract allows, keep the spec's words, say which slide in your notes, and let `check_outline` tell you exactly what is over. Shorten only as far as the contract forces, and say what you cut.
+- **Names as code.** Write a configuration field, command, API or file name as a code span in backticks, such as `highAvailability`, with plain English first the time it appears. A title names things in words and takes no code span.
 - **Say only what the spec and the findings say.** Add nothing of your own.
 
 ## Hand back

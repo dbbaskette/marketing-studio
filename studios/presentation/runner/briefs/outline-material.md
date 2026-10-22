@@ -41,6 +41,7 @@ An outline is one JSON object: `version` 1, a `title`, optionally `audience`, `d
 - **Size the deck to the time.** A presenter needs about two minutes a slide, counting the cover and closing slide. Combine what belongs together.
 - **The title is the claim**, and the focal, when the slide has one, is what the title singles out, never one of several peers.
 - **Equals read as equals**, and **fewer words**: where a slide is near its word budget, make it two.
+- **Names as code.** Write a configuration field, command, API or file name as a code span in backticks, such as `highAvailability`, with plain English first the time it appears. A title names things in words and takes no code span.
 - **Keep the material's own qualifications.** A caveat in the material goes in the slide's caveat.
 - **Cite.** Name the section of the material a slide draws on under `sources`, and give a source line where a number or a quotation is used.
 

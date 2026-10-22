@@ -95,5 +95,27 @@ class ReviewBriefTests(unittest.TestCase):
                       'review".', ' '.join(briefs.guidance('review').split()))
 
 
+
+CODE = 'Write a configuration field, command, API or file name as a code span in backticks, such as `highAvailability`, with plain English first the time it appears. A title names things in words and takes no code span.'
+SECTION = "Your reading speaks of previews, critique, delivery and asking the person. Here: preview with `preview_section`; a separate reviewer answers the critic's questions after you, so write no critique; delivery and questions to the person are the studio's, and you cannot ask."
+
+
+class CodeSpanBriefTests(unittest.TestCase):
+    """Every brief that writes or draws slide words says how names and commands are set."""
+
+    def test_code_spans_are_in_every_outline_and_section_brief(self):
+        for kind, repair in (('outline-brief', False), ('outline-material', False),
+                             ('outline-spec', False), ('section', False), ('section', True)):
+            with self.subTest(kind=kind, repair=repair):
+                text = ' '.join(briefs.guidance(kind, repair=repair).split())
+                self.assertEqual(text.count(CODE), 1)
+
+    def test_the_section_brief_says_what_the_studio_does_for_its_worker(self):
+        for kind in briefs.KINDS:
+            self.assertNotIn('Ignore anything it says about preview files',
+                             briefs.guidance(kind))
+        self.assertIn(SECTION, ' '.join(briefs.guidance('section').split()))
+
+
 if __name__ == '__main__':
     unittest.main()

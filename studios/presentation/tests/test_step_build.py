@@ -1160,6 +1160,16 @@ class BrandAuditTests(Deck):
         self.assertEqual(build.read_state(self.root)['audit']['errors'], 1)
 
 
+class CodeSpanWordTests(unittest.TestCase):
+    """A name set as a code span is kept and counted as the same words without backticks."""
+
+    def test_code_spans_are_kept_and_counted_as_words(self):
+        spanned = 'High availability (`highAvailability`) is off'
+        bare = 'High availability (highAvailability) is off'
+        self.assertEqual(len(build.WORD.findall(spanned)), len(build.WORD.findall(bare)))
+        self.assertEqual(build.plain(spanned), build.plain(bare))
+
+
 class ReviewReuseTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
