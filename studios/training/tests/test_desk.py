@@ -3080,7 +3080,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                                         'with this training: Read every objection shows them.',
                                 'objections': 'reviews/research.md'})
         gate = ok({'artifact': 'research', 'waiting': False, 'review':
-                   '## Independent research review: changes still needed\n\n- Too broad.'})
+                   '## Independent research review: changes still needed\n\n> - Too broad.'})
         answers = self.answers(**{'GET /api/trainings': [self.listed('failed', stopped)],
                                   'GET /api/training': [self.detail('failed', stopped)],
                                   'GET /api/run': [failed], 'GET /api/gate': [gate]})
@@ -3089,6 +3089,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                                          {'click': 'Read every objection'}, {'snapshot': 'read'}])
         self.assertNotIn('reviews/research.md', result['snapshots']['stopped']['text'])
         self.assertIn('Too broad.', result['snapshots']['read']['text'])
+        for raw in ('## ', '> '):
+            self.assertNotIn('\n' + raw, result['snapshots']['read']['text'])
         asked = [request for request in result['requests'] if request['method'] == 'GET'
                  and request['address'].startswith('/api/gate')]
         self.assertTrue(asked and 'artifact=research' in asked[-1]['address'], asked)

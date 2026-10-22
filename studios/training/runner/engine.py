@@ -972,9 +972,11 @@ class Engine(Reviewing):
                     raise WorkspaceError(str(error)) from None
             else:
                 # An older page sends only the level it saw as `review_level`: that is
-                # checked too.
+                # checked too. A shared level that is already the one this training chose
+                # is no surprise, as after a start that wrote it and then failed.
                 current = review_policy.level(record)
-                if form.get('review_seen', form.get('review_level', current)) != current:
+                if form.get('review_seen', form.get('review_level', current)) != current \
+                        and form.get('review_level') != current:
                     raise WorkspaceError('The shared review preference changed while this '
                                          'form was open. Review the updated preference '
                                          'before starting. Nothing was started.')
@@ -3212,7 +3214,7 @@ class Engine(Reviewing):
             'The draft report and the check’s objections are kept with this training: Read '
             'every objection shows them'
             + (', under what the check called them' if groups else '')
-            + '. The research plan you approved is kept.'))
+            + '. The research plan you approved is kept.'), detail={'objected': True})
 
     def _research_job_failed(self, root: Path, refusal: WorkspaceError) -> None:
         """One job of the research did not finish. A job that ran out of time offers more
@@ -4236,7 +4238,7 @@ class Engine(Reviewing):
             'problem': ({**{key: problem.get(key) for key in ('what', 'kept', 'action', 'label')},
                          **({'seconds': problem['seconds']} if problem.get('seconds') else {}),
                          # The research check's objections, read where the stop is.
-                         **({'objections': objections} if problem.get('step') == 'research'
+                         **({'objections': objections} if problem.get('objected')
                             and (root / objections).is_file() else {}),
                          **self._research_tried(record, problem, root)}
                         if problem else None),

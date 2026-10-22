@@ -1314,6 +1314,29 @@ class SharedPatternTests(RunnerCase):
         self.assertEqual(self.blogs(), made, 'a refused start makes no blog')
         self.assertEqual(studios_config.read()[0]['review'], {'level': 'automatic'})
 
+    def test_an_unreadable_shared_file_still_starts_a_blog_at_its_level(self):
+        import studios_config
+        from studio_core import review_policy
+
+        studios_config.path().write_text('{', encoding='utf-8')
+        found = self.create(page=True, review_level='balanced', review_seen='step_by_step')
+        _, _, run = runner.load(self.root, found['id'])
+        self.assertEqual(review_policy.level(run), 'balanced')
+        found = self.create(page=True, title='No level chosen')
+        _, _, run = runner.load(self.root, found['id'])
+        self.assertEqual(review_policy.level(run), 'step_by_step', 'never more autonomy')
+        made = self.blogs()
+        with self.assertRaises(ValueError):
+            self.create(
+                page=True,
+                title='With the chip',
+                review_level='automatic',
+                review_seen='step_by_step',
+                review_default=True,
+            )
+        self.assertEqual(self.blogs(), made)
+        self.assertEqual(studios_config.path().read_text(), '{')
+
     def test_review_level_route_saves_and_refuses(self):
         import studios_config
         from studio_core import review_policy

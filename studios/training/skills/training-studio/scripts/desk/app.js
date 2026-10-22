@@ -4897,8 +4897,9 @@ function problemPart(run, lead) {
       try {
         const gate = await ask('gate', { path: view.path, artifact: 'research' });
         shown.replaceChildren(make('h3', 'row-title', 'The research check'),
-          ...String(gate.review || '').split('\n').filter((line) => line.trim())
-            .map((line) => make('p', '', line)));
+          ...String(gate.review || '').split('\n')
+            .map((line) => line.replace(/^(#+|>)\s*/, '').replace(/^>\s*/, '').trim())
+            .filter(Boolean).map((line) => make('p', '', line)));
       } catch (failure) {
         shown.replaceChildren(make('p', 'problem', failure.message));
       } finally {

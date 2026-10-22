@@ -1262,6 +1262,9 @@ async function sharedPattern(){
   assert.equal(descendants(f.get('studio-page')).find(e=>e.className==='now-line').textContent,'Drafting · 7 min of up to 10','the now line ticks while nothing else changes');
   assert.equal(text().some(t=>/cost is not tracked/.test(t)),false,'the run says what it spent instead');
   assert.equal(descendants(f.get('studio-page')).find(e=>e.className==='quiet ahead-line')?.textContent,'2 steps left · Next stop: the draft · So far 3 minutes; the assistant reported no cost','one line under the beads: steps left, the next stop and what it has spent');
+  // A team blog's jobs are kept on each computer that ran them: the line says so.
+  f.set('found',{...found,team:true});f.run('sRun(found)');
+  assert.equal(descendants(f.get('studio-page')).find(e=>e.className==='quiet ahead-line')?.textContent,'2 steps left · Next stop: the draft · So far on this computer 3 minutes; the assistant reported no cost');
   // A saved run from before jobs were kept says nothing of what it spent.
   f.set('found',{...found,ahead:{...found.ahead,jobs:0,seconds:0,dollars:null,spent:null}});f.run('sRun(found)');
   assert.equal(descendants(f.get('studio-page')).find(e=>e.className==='quiet ahead-line')?.textContent,'2 steps left · Next stop: the draft');

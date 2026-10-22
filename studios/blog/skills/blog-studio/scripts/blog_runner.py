@@ -1218,16 +1218,20 @@ def create(root, data, approval='conversation'):
     ]
     import studios_config
 
+    # A shared file that cannot be read gives the built-in defaults, and never more autonomy
+    # than Step by step; the chip's write is refused by the file itself.
     shared, problem = studios_config.read()
-    if problem:
-        raise ValueError(problem)
     assistant = shared.get('assistant') or {}
     same_agent = assistant.get('agent') == engine
     contract = research_contract.snapshot() if research != 'none' else None
     if contract:
         run['research_contract'] = contract
     run['review_policy'] = (
-        {'schema': 1, 'level': chosen_level} if chosen_level else review_policy.snapshot(shared)
+        {'schema': 1, 'level': chosen_level}
+        if chosen_level
+        else {'schema': 1, 'level': 'step_by_step'}
+        if problem
+        else review_policy.snapshot(shared)
     )
     if review_policy.level(run) != 'step_by_step':
         run['schema'] = 2

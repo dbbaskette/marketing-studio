@@ -42,11 +42,12 @@ def effective(values, problem=None):
 def change(update, level, seen):
     """Write `level` as the one new work starts at in every studio, under the file's lock,
     through `update` (a studio's studios_config.update). Refused, with nothing written,
-    when the file no longer holds `seen`, the level the form read."""
+    when the file no longer holds `seen`, the level the form read, unless it already holds
+    `level`: a start that wrote it and then failed is tried again from the same form."""
     check({'level': level})
 
     def guard(current):
-        if effective(current) != seen:
+        if effective(current) not in (seen, level):
             raise ValueError(STALE)
     return update({'review': {'level': level}}, guard=guard)
 

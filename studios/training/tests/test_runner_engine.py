@@ -53,6 +53,21 @@ class WhereThisTrainingStopsTests(StudioCase):
                          {'schema': 1, 'level': 'automatic'})
         self.assertEqual(self.shared.read()[0]['review'], {'level': 'balanced'})
 
+    def test_row_120_a_start_refused_after_the_chip_wrote_can_be_tried_again(self):
+        self.start(title='Taken title', review_level='step_by_step', review_seen='balanced')
+        self.shared.update({'review': {'level': 'balanced'}})
+        with self.assertRaises(WorkspaceError):
+            self.start(title='Taken title', review_level='automatic', review_seen='balanced',
+                       review_default=True)
+        self.assertEqual(self.shared.read()[0]['review'], {'level': 'automatic'})
+        # The same form, its title put right: with the chip, or without it.
+        root = self.start(title='Free title', review_level='automatic', review_seen='balanced',
+                          review_default=True)
+        self.assertEqual(self.engine._load(root)['review_policy']['level'], 'automatic')
+        root = self.start(title='Another free title', review_level='automatic',
+                          review_seen='balanced')
+        self.assertEqual(self.engine._load(root)['review_policy']['level'], 'automatic')
+
     def test_row_120_the_shared_default_is_written_only_with_the_chip(self):
         from studio_core import review_policy
         self.start(title='Second training', review_level='automatic', review_seen='balanced',
@@ -68,6 +83,21 @@ class WhereThisTrainingStopsTests(StudioCase):
         self.assertEqual(self.shared.read()[0]['review'], {'level': 'step_by_step'})
         with self.assertRaisesRegex(WorkspaceError, 'true or false'):
             pipeline.check_form({**FORM, 'review_default': 'yes'})
+
+
+class ObjectionsTests(StudioCase):
+    def test_read_every_objection_is_offered_only_where_the_check_objected(self):
+        root = self.start()
+        (root / 'reviews').mkdir(exist_ok=True)
+        (root / 'reviews' / 'research.md').write_text('## Your request\n\nAdd a source.\n')
+        record = self.engine._load(root)
+        record['problem'] = {'step': 'research', 'state': 'failed', 'what': 'It timed out.',
+                             'kept': 'Kept.', 'action': 'retry', 'label': 'Try again'}
+        self.engine._store(root, record)
+        self.assertNotIn('objections', self.view(root)['problem'])
+        record['problem']['objected'] = True
+        self.engine._store(root, record)
+        self.assertEqual(self.view(root)['problem']['objections'], 'reviews/research.md')
 
 
 class AheadTests(StudioCase):

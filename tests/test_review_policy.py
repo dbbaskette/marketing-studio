@@ -95,6 +95,14 @@ class ReviewPolicyTests(IsolatedHome):
         with self.assertRaisesRegex(ValueError, 'Choose Balanced'):
             review.change(shared.update, 'fast', 'step_by_step')
 
+    def test_change_takes_a_level_the_file_already_holds(self):
+        # A start that wrote the level and then failed is tried again from the same form:
+        # the file holds what it asks for, so there is nothing stale to refuse.
+        shared.path().write_text('{"schema": 1, "review": {"level": "automatic"}}')
+        before = shared.path().read_bytes()
+        review.change(shared.update, 'automatic', 'balanced')
+        self.assertEqual(shared.path().read_bytes(), before)
+
     def test_change_refuses_an_unreadable_file(self):
         from marketing_studio.errors import WorkspaceError
         shared.path().write_text('{')
