@@ -1554,6 +1554,45 @@ class FormPlanRowTests(StudioCase):
         self.assertEqual(self.workers.of('research-plan'), [])
 
 
+class DeliveryRowTests(TrainingCase):
+    """Row 126: a training's deck is asked once whether it is presented or read."""
+
+    def test_row_126_delivery(self):
+        session = workspace.init(self.root, 'Topic')
+        self.assertEqual(session['settings']['delivery'], 'live', 'a new deck is a talk')
+        # A training saved before the question was asked reads as it began: for reading.
+        path = workspace.session_path(self.root)
+        saved = json.loads(path.read_text())
+        del saved['settings']['delivery']
+        path.write_text(json.dumps(saved))
+        self.assertEqual(workspace.load(self.root)['settings']['delivery'], 'reading')
+        workspace.checkpoint(self.root, next_step='Go on')
+        self.assertEqual(workspace.load(self.root)['settings']['delivery'], 'reading')
+
+    def test_row_126_delivery_is_chosen_once(self):
+        other = self.root / 'other'
+        other.mkdir()
+        self.assertEqual(workspace.init(other, 'Topic', delivery='reading')['settings']
+                         ['delivery'], 'reading')
+        spoken = self.root / 'spoken'
+        spoken.mkdir()
+        with self.assertRaisesRegex(WorkspaceError, 'Choose live or reading for the deck.'):
+            workspace.init(spoken, 'Topic', delivery='spoken')
+        self.assertFalse(workspace.session_path(spoken).exists())
+        workspace.init(self.root, 'Topic')
+        workspace.checkpoint(self.root, delivery='reading')
+        self.assertEqual(workspace.load(self.root)['settings']['delivery'], 'reading')
+        workspace.checkpoint(self.root, delivery='live')
+        (self.root / 'deck').mkdir()
+        (self.root / 'deck' / 'outline.json').write_text('{"version": 1}')
+        with self.assertRaises(WorkspaceError) as refused:
+            workspace.checkpoint(self.root, delivery='reading')
+        self.assertEqual(str(refused.exception), 'The deck has been written for a talk. Start '
+                                                 'the deck again to change it.')
+        self.assertEqual(workspace.load(self.root)['settings']['delivery'], 'live')
+        workspace.checkpoint(self.root, delivery='live')   # the same delivery is no change
+
+
 class DownstreamTests(LevelCase):
     def test_downstream_lists_what_is_built_from_research(self):
         session = workspace.load(self.root)

@@ -10,7 +10,7 @@ One page, with these headings:
 
 - **Goal.** What the audience should be able to do after the deck, from the blueprint's objectives.
 - **Audience and duration.** From intake and the blueprint.
-- **Use.** The deck is both presented and distributed. Every slide must make sense to someone reading it alone, so no slide may depend on its speaker notes for meaning. The notes carry the talk track and timing for a presenter.
+- **Use.** From `settings.delivery`: `live`, presented in a session, or `reading`, read on its own; a training started before this was asked is `reading`. Either way no slide may depend on its speaker notes for meaning. For a talk the notes carry what the presenter says and the source behind each claim; for reading, the talk track and timing.
 - **Required elements.** The objectives near the start; a check for understanding in each module; a recap; a closing slide that points to the practice scenarios.
 - **Sources.** `blueprint.md`, `document.md` and `research-report.md`. When the document is skipped, `blueprint.md` and `research-report.md`.
 - **Research.** Complete. Work from the sources only and start no new research. Anything under the blueprint's open gaps stays out.

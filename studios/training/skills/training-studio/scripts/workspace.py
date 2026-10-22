@@ -56,6 +56,12 @@ SHAPE = {'schema': int, 'id': str, 'title': str, 'levels': list, 'sizing': dict,
          'exports': dict, 'decisions': list, 'events': list}
 SETTINGS = ('deck_target', 'brand', 'brief_kind', 'stages')
 COPIES = ('google', 'word')
+# How a training's deck is used: presented in a session, or read on its own. A new one is a
+# talk; one saved before this was asked keeps reading, as it began.
+DELIVERIES = ('live', 'reading')
+DELIVERY_OF_OLD = 'reading'
+WRITTEN_FOR = {'live': 'a talk', 'reading': 'reading on its own'}
+NO_DELIVERY = 'Choose live or reading for the deck.'
 APPROVAL = ('chat', 'page')
 DECISIONS = ('approve', 'accept', 'revise', 'rebuild', 'skip', 'restore')
 REQUESTS = ('revise', 'rebuild')
@@ -140,6 +146,10 @@ def load(root: Path) -> dict:
     # One started before approval could move to the page is approved in the conversation.
     if session['settings'].setdefault('approval', 'chat') not in APPROVAL:
         raise WorkspaceError('The session record has no usable "settings.approval"; '
+                             'refusing to change it.')
+    # One started before its deck's delivery was asked was written for reading.
+    if session['settings'].setdefault('delivery', DELIVERY_OF_OLD) not in DELIVERIES:
+        raise WorkspaceError('The session record has no usable "settings.delivery"; '
                              'refusing to change it.')
     requests = session.setdefault('requests', [])
     if not isinstance(requests, list) or not all(isinstance(item, dict) for item in requests):
@@ -250,9 +260,12 @@ def refuse_the_wrong_place(root: Path) -> None:
 
 def init(root: Path, title: str, levels=(), brief_kind: str = 'product',
          deck_target: str | None = None, brand: str | None = None,
-         yoodli: bool = False, copies=(), approval: str = 'chat') -> dict:
+         yoodli: bool = False, copies=(), approval: str = 'chat',
+         delivery: str = 'live') -> dict:
     if not title.strip():
         raise WorkspaceError('A training needs a title.')
+    if delivery not in DELIVERIES:
+        raise WorkspaceError(NO_DELIVERY)
     levels = check_levels(levels)
     copies = check_copies(copies)
     check_choice(approval, APPROVAL, 'Approval')
@@ -280,7 +293,7 @@ def init(root: Path, title: str, levels=(), brief_kind: str = 'product',
         'gate': None,
         'requests': [],
         'settings': {'deck_target': deck_target, 'brand': brand, 'brief_kind': brief_kind,
-                     'copies': copies, 'approval': approval,
+                     'copies': copies, 'approval': approval, 'delivery': delivery,
                      'stages': [stage for stage in SKIPPABLE
                                 if stage not in OPTIONAL or (stage == 'yoodli' and yoodli)]},
         'unavailable': {},
@@ -1250,13 +1263,20 @@ def skip(root: Path, stage: str, reason: str | None = None, unavailable: bool = 
     return outcome
 
 
+def deck_written(root: Path, session: dict) -> bool:
+    """Whether what a deck of this training says has been written, at any level."""
+    return any((root / prefix(level) / 'deck' / 'outline.json').is_file()
+               for level in session['levels'] or [None])
+
+
 @mutating
 def checkpoint(root: Path, stage: str | None = None, next_step: str | None = None,
                question: str | None = None, clear_question: bool = False,
                deck_target: str | None = None, brand: str | None = None,
                brief_kind: str | None = None, level: str | None = None,
                levels=None, copies=None, approval: str | None = None,
-               gate: str | None = None, by: str = 'chat', add_levels=None) -> dict:
+               gate: str | None = None, by: str = 'chat', add_levels=None,
+               delivery: str | None = None) -> dict:
     """Record where the run is and change settings.
 
     `levels` sets the levels and never drops one with work in it; `add_levels` adds to them.
@@ -1328,6 +1348,14 @@ def checkpoint(root: Path, stage: str | None = None, next_step: str | None = Non
         session['settings']['brief_kind'] = brief_kind
     if copies is not None:
         session['settings']['copies'] = check_copies(copies)
+    if delivery is not None:
+        if delivery not in DELIVERIES:
+            raise WorkspaceError(NO_DELIVERY)
+        written = session['settings']['delivery']
+        if delivery != written and deck_written(root, session):
+            raise WorkspaceError(f'The deck has been written for {WRITTEN_FOR[written]}. Start '
+                                 'the deck again to change it.')
+        session['settings']['delivery'] = delivery
     log(session, 'checkpoint', stage=session['stage'])
     store(root, session)
     return {'stage': session['stage'], 'level': session.get('level'),

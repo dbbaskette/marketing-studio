@@ -1,6 +1,6 @@
 # Write what a slide deck says
 
-You are writing the outline of a slide deck for one training: what each slide says. When your task asks for the design as well, you also propose how each slide is drawn. The slides are drawn later by someone else, from what the person approves. The deck is presented and also handed out, so every slide must make sense to someone reading it alone. You work alone, and you have only the tools named in this guidance.
+You are writing the outline of a slide deck for one training: what each slide says. When your task asks for the design as well, you also propose how each slide is drawn. The slides are drawn later by someone else, from what the person approves. Your task says whether the deck is presented in a session or read on its own. Either way, every slide must make sense to someone reading it without its notes. You work alone, and you have only the tools named in this guidance.
 
 ## What you are given
 
@@ -42,6 +42,7 @@ These are yours to get right. The person who approves the outline reads for them
 - **Fewer words.** A slide whose words do not fit its drawing cannot be put right by whoever draws it. Where a slide is near its budget, make it two.
 - **Names as code.** Write a configuration field, command, API or file name as a code span in backticks, such as `highAvailability`, with plain English first the time it appears. A title names things in words and takes no code span.
 - **Every slide stands alone.** No slide depends on its notes for its meaning. The notes carry the talk track and the timing for a presenter, and any decision of yours that the person should know of.
+- **Notes for a talk.** When the deck is presented in a session (`delivery` live), the notes of each content slide carry what the presenter says, and the source behind the claim. A deck read on its own (`delivery` reading) carries its claim on the slide.
 - **The required elements** in the handoff are all there: the objectives near the start, a check for understanding in each module, a recap, and the closing slide.
 
 ## Hand back

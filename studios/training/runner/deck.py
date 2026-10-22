@@ -92,7 +92,9 @@ from workspace import WorkspaceError
 
 PREVIEWS = 4            # times one composer may render its section
 REPAIRS = 2             # rounds of drawing again after a review
-DELIVERY = 'reading'    # a deck is read alone as well as presented
+DELIVERY = 'reading'    # a training saved before its deck's delivery was asked
+REFUSED_DELIVERY = {'live': 'This deck is presented in a session: set `delivery` to "live".',
+                    'reading': 'This deck is read on its own: set `delivery` to "reading".'}
 DIRECTION = deck_direction.FALLBACK   # only until the brand or a chosen look gives one
 RATE = {'dollars': 0.40, 'minutes': 1.25}   # a slide, as the first decks cost
 KINDS = ('cover', 'section', 'content', 'closing')
@@ -166,7 +168,12 @@ PLACED = ("A picture the design selected is recorded in the deck's asset manifes
           '`generated-art` is made with `request_asset`, from a brief you write.', '')
 USE = ('The deck is both presented and handed out. Every slide must make sense to someone '
        'reading it alone, so no slide may depend on its speaker notes for meaning. The notes '
-       'carry the talk track and timing for a presenter.')
+       'carry the talk track and timing for a presenter.')   # as a deck for reading has it
+USES = {'reading': USE,
+        'live': ('The deck is presented in a session. Every slide must still make sense '
+                 'without its speaker notes, so no slide may depend on them for meaning. The '
+                 'notes carry what the presenter says, the source behind each claim, and the '
+                 'timing.')}
 
 
 # --- the handoff -------------------------------------------------------------------------
@@ -184,7 +191,8 @@ def frame(blueprint: str) -> dict:
 
 
 def handoff(title: str, level: str | None, blueprint: str, said: dict, target: str | None,
-            brand: tuple[str, str] | None, guide: bool, scenarios=None) -> str:
+            brand: tuple[str, str] | None, guide: bool, scenarios=None,
+            delivery: str = DELIVERY) -> str:
     """deck-handoff.md: one page, written from the record, under the headings the skill's
     own deck stage gives it. `said` is what intake says, `guide` whether the training has
     a learner guide, and `scenarios` the titles of the practice scenarios its closing slide
@@ -207,7 +215,7 @@ def handoff(title: str, level: str | None, blueprint: str, said: dict, target: s
               f"Audience: {framed.get('audience') or said.get('audience') or 'not given'}",
               f"Duration: {framed.get('time') or said.get('time limit') or 'not given'}"]
     lines += [f'Level: {level}'] if level else []
-    lines += ['', '## Use', '', USE, '', '## Required elements', '',
+    lines += ['', '## Use', '', USES.get(delivery, USE), '', '## Required elements', '',
               '- The objectives near the start.',
               '- A check for understanding in each module' + (f': {modules}.' if modules
                                                               else '.'),
@@ -350,7 +358,8 @@ def slides_of(outline) -> list[dict]:
     return [slide for slide in found or () if isinstance(slide, dict)]
 
 
-def rules(outline, blueprint: str, budget: int | None = None, known=()) -> list[str]:
+def rules(outline, blueprint: str, budget: int | None = None, known=(),
+          delivery: str = DELIVERY) -> list[str]:
     """What the runner holds an outline to, beyond the slides tool's own check. Each
     problem is a sentence the worker can act on. `budget` is the most words one slide may
     show, when the tool has said. `known` are the IDs the training's research defines,
@@ -359,9 +368,8 @@ def rules(outline, blueprint: str, budget: int | None = None, known=()) -> list[
         return ['The outline is one JSON object with its slides under "slides".']
     problems = [f'Leave out `{key}`: it is added after you hand the outline in.'
                 for key in LATER if key in outline]
-    if outline.get('delivery') not in (None, DELIVERY):
-        problems.append(f'This deck is read alone as well as presented: set `delivery` to '
-                        f'"{DELIVERY}".')
+    if outline.get('delivery') not in (None, delivery):
+        problems.append(REFUSED_DELIVERY.get(delivery, REFUSED_DELIVERY[DELIVERY]))
     objectives = list(checks.parse_blueprint(blueprint)['objectives'])
     left_out, served = gaps(blueprint), set()
     for slide in slides_of(outline):
@@ -629,7 +637,7 @@ def layouts(listed, slides: list[dict], preferred: dict | None = None) -> dict:
 
 
 def complete(outline: dict, listed, words: list[str], designed: bool = False,
-             look: dict | None = None, knows=frozenset()) -> dict:
+             look: dict | None = None, knows=frozenset(), delivery: str = DELIVERY) -> dict:
     """An approved outline as the slides tool starts a deck from: with the direction, a
     layout for each kind of lead slide, the house rules, and the person's own words of
     approval. A deck `designed` is drawn from its approved design. `look` is what the
@@ -638,7 +646,7 @@ def complete(outline: dict, listed, words: list[str], designed: bool = False,
     `provenance` joins its notes unless the slides tool `knows` it."""
     look = look or {}
     outline = with_provenance(outline, knows)
-    return {**outline, 'delivery': DELIVERY,
+    return {**outline, 'delivery': delivery,
             'direction': dict(look.get('direction') or DIRECTION),
             'layouts': layouts(listed, slides_of(outline), look.get('layouts')),
             'house': list(house(designed, look)), 'approval': list(words)}

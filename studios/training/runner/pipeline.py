@@ -433,6 +433,17 @@ def _brand(sent: dict, brands, wanted: bool) -> str | None:
     return '/'.join(names)
 
 
+DELIVERED = {'live': 'It is presented in a session: set `delivery` to "live".',
+             'reading': 'It is read on its own: set `delivery` to "reading".'}
+
+
+def delivery_of(session: dict) -> str:
+    """How a training's deck is used: 'live', presented in a session, or 'reading', read
+    on its own. A training saved before this was asked keeps 'reading'."""
+    found = (session.get('settings') or {}).get('delivery')
+    return found if found in workspace.DELIVERIES else deck.DELIVERY
+
+
 def brand_of(session: dict) -> tuple[str, str | None] | None:
     """The brand and variant a training's deck is made with, or None when none was chosen
     from a brand skill's own. A brand that has no variants has None for its variant."""
@@ -469,6 +480,9 @@ def check_form(sent: dict, brands=None) -> dict:
     form['deck_target'] = sent.get('deck_target')
     workspace.check_choice(form['deck_target'], workspace.DECK_TARGETS, 'The deck target')
     form['brand'] = _brand(sent, brands, form['deck_target'] is not None)
+    form['delivery'] = sent.get('delivery') or 'live'
+    if form['delivery'] not in workspace.DELIVERIES:
+        raise WorkspaceError(workspace.NO_DELIVERY)
     form['source_scope'] = sent.get('source_scope') or SCOPE
     workspace.check_choice(form['source_scope'], SCOPES, 'The source scope')
     if not isinstance(sent.get('yoodli', False), bool):
@@ -560,6 +574,7 @@ def create(space: gitstate.Workspace, form: dict) -> Path:
     try:
         workspace.init(root, form['title'], form['levels'], form['brief_kind'],
                        form['deck_target'], form['brand'], form['yoodli'], form['copies'],
+                       delivery=form.get('delivery') or 'live',
                        approval='page')
         sync_guidance.adopt(root)
         if form['deck_target'] is None:
@@ -859,7 +874,7 @@ def handoff_text(root: Path, session: dict, level: str | None) -> str:
         session['title'], level,
         _text(root, session, workspace.qualify('blueprint', level)) or '', answers(root),
         session['settings']['deck_target'], brand_of(session), 'document' in wanted(session),
-        scenarios)
+        scenarios, delivery_of(session))
 
 
 def scenario_title(root: Path, session: dict, name: str) -> str:
@@ -1826,6 +1841,7 @@ def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
             + (', and how each slide is drawn: its design' if designed else '') + '.\n\n'
             f'{_about(root, session)}\n'
             + (f'This deck is for level {level}.\n' if level else '')
+            + DELIVERED[delivery_of(session)] + '\n'
             + f'\nYour inputs are {_inputs(inputs)}.\n'
             + ('Hand the outline in with its design, together, with submit_outline.'
                if designed else 'Hand the outline in with submit_outline.')
@@ -1839,6 +1855,7 @@ def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
     prepared = {'inputs': inputs,
                 'artifacts': {name: {'kind': 'outline', 'brand': str(contract(root, mine)),
                                      'blueprint': blueprint, 'design': designed,
+                                     'delivery': delivery_of(session),
                                      'known': research_ids(root),
                                      **({'icons': True} if designed and icons else {})}},
                 'ask': _can_ask(answered)}

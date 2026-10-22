@@ -380,6 +380,7 @@ Each row is one test in `tests/test_workspace.py` or, where it names `check`, `t
 
 | 124 | Grouped run preparing or building a level | Offer Finish this level | Hidden during shared preparation; offered during building, with the final combined review visible and waiting for all levels. Covered by `test_row_124_finish_level_waits_for_building` and `test_combined_reviews_have_beads`. |
 | 125 | Work continuing after a page decision | Reach the next person stop | Keep decision feedback during work, then retire it in the existing stop commit without adding audit noise or leaving files uncommitted. Covered by `test_row_125_reaching_the_next_stop_keeps_the_existing_audit_commit`. |
+| 126 | A new training with a deck; one saved before its deck's delivery was asked | Start it from the form or `init`, then `checkpoint --delivery` before and after the first outline | Asked once: a talk (`live`) by default, or read on its own (`reading`); an older training reads as `reading` and keeps it; the brand is exported and the looks drawn for that delivery, and the outline check holds to it; a change after the first outline is refused. Covered by `DeliveryRowTests.test_row_126_delivery` and `test_row_126_delivery_is_chosen_once`. |
 
 Shared setup readiness adds the independently verified transitions in
 [the suite setup matrix](../../../../../docs/shared-setup.md): no/partial settings

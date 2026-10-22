@@ -309,5 +309,12 @@ class CodeSpanBriefTests(unittest.TestCase):
             self.assertEqual(text.count(FOCAL), 1, options)
 
 
+
+class LiveNotesBriefTests(unittest.TestCase):
+    def test_the_outline_brief_says_what_live_notes_carry(self):
+        text = ' '.join(briefs.guidance('deck-outline').split())
+        self.assertIn('**Notes for a talk.** When the deck is presented in a session (`delivery` live), the notes of each content slide carry what the presenter says, and the source behind the claim. A deck read on its own (`delivery` reading) carries its claim on the slide.', text)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -111,7 +111,7 @@ class RuleTests(JobCase):
         self.assertEqual(found, [
             'Leave out `direction`: it is added after you hand the outline in.',
             'Leave out `house`: it is added after you hand the outline in.',
-            'This deck is read alone as well as presented: set `delivery` to "reading".'])
+            'This deck is read on its own: set `delivery` to "reading".'])
 
     def test_lead_slides_get_a_layout_that_shows_their_title(self):
         chosen = deck.layouts(Slides.LAYOUTS, OUTLINE['slides'])
@@ -559,6 +559,24 @@ class CodeSpanWordTests(unittest.TestCase):
         point = {'label': 'Off by default', 'text': spanned, 'parts': []}
         drawn = {'type': 'box', 'id': 'one', 'text': f"{point['label']}: {spanned}"}
         self.assertEqual(deck.whole_points(drawn, [point]), [])
+
+
+class DeliveryRuleTests(unittest.TestCase):
+    """An outline's delivery follows its training's."""
+
+    def test_outline_delivery_follows_the_training(self):
+        live = deck.rules({**OUTLINE, 'delivery': 'reading'}, BLUEPRINT, delivery='live')
+        self.assertIn('This deck is presented in a session: set `delivery` to "live".', live)
+        reading = deck.rules({**OUTLINE, 'delivery': 'live'}, BLUEPRINT, delivery='reading')
+        self.assertIn('This deck is read on its own: set `delivery` to "reading".', reading)
+        for problems in (live, reading, deck.rules(OUTLINE, BLUEPRINT)):
+            self.assertFalse(any('read alone as well as presented' in line
+                                 for line in problems))
+        self.assertFalse(any('delivery' in line for line in deck.rules(
+            {**OUTLINE, 'delivery': 'live'}, BLUEPRINT, delivery='live')))
+        self.assertEqual(deck.complete(OUTLINE, Slides.LAYOUTS, [], delivery='live')['delivery'],
+                         'live')
+        self.assertEqual(deck.complete(OUTLINE, Slides.LAYOUTS, [])['delivery'], 'reading')
 
 
 class ToolCase(JobCase):
@@ -3437,6 +3455,39 @@ class TroubleTests(DeckCase):
             'or newer. Update it, then try again.'))
         after = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
         self.assertLessEqual(set(before), set(after), 'nothing it had is lost')
+
+    def test_brand_is_exported_for_the_trainings_delivery(self):
+        self.workers.outline_said = {**OUTLINE, 'delivery': 'live'}
+        self.brand.offers_looks = True
+        asked = []
+        samples = self.brand.look_samples
+
+        def look_samples(*given, **named):
+            asked.append(named.get('delivery'))
+            return samples(*given, **named)
+        self.brand.look_samples = look_samples
+        root = self.begin(delivery='live')
+        self.assertEqual(workspace.load(root)['settings']['delivery'], 'live')
+        self.drawn(root)
+        mine = self.engine._survey(root, self.record(root)).decks[None]
+        contract = json.loads(pipeline.contract(root, mine).read_text())
+        self.assertEqual(contract['delivery'], 'live')
+        self.assertTrue(asked and set(asked) == {'live'}, asked)
+        spec = [spec for kind, _, spec in self.workers.jobs if kind == 'outline'][-1]
+        self.assertEqual(spec['artifacts']['outline']['delivery'], 'live')
+
+    def test_old_training_mid_deck_stays_reading(self):
+        root = self.begin()
+        self.to_outline(root)
+        path = workspace.session_path(root)
+        saved = json.loads(path.read_text())
+        saved['settings'].pop('delivery', None)
+        path.write_text(json.dumps(saved))
+        self.assertEqual(pipeline.delivery_of(workspace.load(root)), 'reading')
+        view = self.engine.outline(root, None, 'approve')
+        self.assertNotEqual(view['state'], 'failed', view.get('problem'))
+        self.assertEqual(deck.rules(OUTLINE, BLUEPRINT,
+                                    delivery=pipeline.delivery_of(workspace.load(root))), [])
 
     def test_a_brand_skill_older_than_the_floor_is_said_and_holds_a_new_deck(self):
         said = brand_skill.too_old('0.13.2')

@@ -2753,7 +2753,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
             {'fill': 'Who is it for?', 'value': 'New operators'},
             {'click': 'Continue'}, {'snapshot': 'shape'}])
-        self.assertEqual(result['snapshots']['shape']['pressed'], ['PowerPoint'])
+        self.assertEqual(result['snapshots']['shape']['pressed'],
+                         ['PowerPoint', 'Presented in a session'])
 
     def test_a_working_run_says_what_it_does_now_and_for_how_long(self):
         import datetime
@@ -3929,6 +3930,28 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             self.assertNotIn(told, shots[shot]['text'])
             self.assertNotIn('Your other studios', shots[shot]['text'])
 
+    def test_the_deck_step_asks_once_how_the_deck_is_used(self):
+        shared = {'brand': {'brand': 'example-co', 'variant': 'dark'}, 'output': 'pptx'}
+        answers = self.answers({**SET_UP, 'shared': shared, 'shared_problem': None})
+        result = self.run_page(answers, [
+            {'click': 'New training'},
+            {'fill': 'A short title', 'value': 'Rolling restarts'},
+            {'fill': 'What should it teach?', 'value': 'How a rolling restart works.'},
+            {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
+            {'click': 'Continue'}, {'snapshot': 'two'},
+            {'click': 'Read on its own'}, {'snapshot': 'reading'},
+            {'click': 'No deck'}, {'snapshot': 'none'}, {'click': 'PowerPoint'},
+            {'click': 'Continue'}, {'click': 'Start the training'}])
+        two = result['snapshots']['two']
+        self.assertIn('How is this deck used?', two['text'])
+        self.assertIn('Presented in a session', two['pressed'])
+        self.assertIn('A spoken session is presented live; choose Read on its own for '
+                      'self-study.', two['text'])
+        self.assertIn('Read on its own', result['snapshots']['reading']['pressed'])
+        self.assertNotIn('How is this deck used?', result['snapshots']['none']['text'])
+        started = [body for address, body in self.posts(result) if address == '/api/trainings']
+        self.assertEqual(started[0]['delivery'], 'reading')
+
     def test_a_new_training_takes_the_brand_and_google_slides_every_studio_shares(self):
         shared = {'brand': {'brand': 'example-co', 'variant': 'dark'}, 'output': 'google'}
         answers = self.answers({**SET_UP, 'shared': shared, 'shared_problem': None})
@@ -3939,7 +3962,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
             {'click': 'Continue'}, {'click': 'Deck brand'}, {'snapshot': 'two'}])
         two = result['snapshots']['two']
-        self.assertEqual(two['pressed'], ['Google Slides'])
+        self.assertEqual(two['pressed'], ['Google Slides', 'Presented in a session'])
         self.assertEqual((two['fields']['The deck’s brand'], two['fields']['The brand’s variant'],
                           two['chosen']), ('example-co', 'dark', ['101']))
         # A brand the brand skill here does not have is not offered: its first one is.
@@ -3952,7 +3975,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
             {'click': 'Continue'}, {'click': 'Deck brand'}, {'snapshot': 'two'}])
         two = result['snapshots']['two']
-        self.assertEqual(two['pressed'], ['PowerPoint'])
+        self.assertEqual(two['pressed'], ['PowerPoint', 'Presented in a session'])
         self.assertEqual((two['fields']['The deck’s brand'], two['fields']['The brand’s variant']),
                          ('example-co', 'dark'))
 
@@ -4250,7 +4273,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         kept = shots['kept']
         self.assertEqual((kept['chosen'], kept['pressed']),
                          (['Learner guide', 'Reference brief', 'Practice scenarios',
-                           '101', '301', 'Google Docs'], ['Google Slides', 'A comparison']))
+                           '101', '301', 'Google Docs'],
+                          ['Google Slides', 'Presented in a session', 'A comparison']))
         self.assertEqual(kept['fields'], {'How long it should take (optional)': '30 minutes',
                                           'The deck’s brand': 'example-co',
                                           'The brand’s variant': 'dark'})
@@ -4260,7 +4284,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'audience': 'Platform engineers new to it.', 'purpose': 'Technical upskilling',
             'levels': ['101', '301'], 'brief_kind': 'competitive', 'time_limit': '30 minutes',
             'source_scope': 'public-web', 'research_questions': [''], 'deck_target': 'google',
-            'brand': {'brand': 'example-co', 'variant': 'dark'},
+            'brand': {'brand': 'example-co', 'variant': 'dark'}, 'delivery': 'live',
             'copies': ['google'], 'yoodli': False, 'materials': ['document', 'brief', 'scenario'], 'agent': 'claude', 'model': None,
             'effort': None, 'review_level': 'step_by_step'})])
 
@@ -5502,7 +5526,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'Start the training'}])
         shots = result['snapshots']
         two = shots['two']
-        self.assertEqual(two['pressed'], ['PowerPoint'])
+        self.assertEqual(two['pressed'], ['PowerPoint', 'Presented in a session'])
         self.assertEqual(two['fields'], {'How long it should take (optional)': '',
                                          'The deck’s brand': 'example-co',
                                          'The brand’s variant': 'light'})

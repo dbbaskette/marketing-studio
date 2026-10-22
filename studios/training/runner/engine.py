@@ -1627,7 +1627,8 @@ class Engine(Reviewing):
         folder = agents.staging() / f'{root.name}--names-{secrets.token_hex(3)}'
         folder.parent.mkdir(parents=True, exist_ok=True)
         try:
-            made = self._skill().export(folder, *chosen, delivery=deck.DELIVERY)
+            made = self._skill().export(folder, *chosen,
+                                        delivery=pipeline.delivery_of(session))
             return Path(made['voice']).read_text(encoding='utf-8')
         except (WorkspaceError, OSError, KeyError, TypeError):
             return None
@@ -1687,7 +1688,7 @@ class Engine(Reviewing):
 
     def _export(self, root: Path, run: _Run, found: pipeline.Survey,
                 step: pipeline.Next) -> None:
-        """Export the brand for one deck, for reading delivery, into a folder of its own,
+        """Export the brand for one deck, for the training's delivery, into a folder of its own,
         and read what the slides tool tells a deck's workers for that brand."""
         it, clock, token = step.step, time.monotonic(), secrets.token_hex(3)
         level = self._level(it)
@@ -1696,7 +1697,8 @@ class Engine(Reviewing):
         work.mkdir(parents=True, exist_ok=True)
         try:
             chosen, tool = pipeline.brand_of(found.session), self.slides()
-            made = self._skill().export(folder, *chosen, delivery=deck.DELIVERY)
+            made = self._skill().export(folder, *chosen,
+                                        delivery=pipeline.delivery_of(found.session))
             contract = Path(made['contract']).resolve()
             told.mkdir()
             (told / 'outline-contract.txt').write_text(tool.outline_contract(contract),
@@ -1766,7 +1768,8 @@ class Engine(Reviewing):
             folder.mkdir(parents=True)
             with worker_tools.one_at_a_time(Path(how['lock'])):
                 made = skill.look_samples(outline, folder / 'samples', *pipeline.brand_of(session),
-                                          preview=rendered['preview'], delivery=deck.DELIVERY)
+                                          preview=rendered['preview'],
+                                          delivery=pipeline.delivery_of(session))
             manifest = home.read_json(folder / 'samples' / 'looks.json', {})
             looks = deck_flow.sampled(manifest, folder / 'samples')
             for look in looks:
@@ -1786,7 +1789,7 @@ class Engine(Reviewing):
             try:
                 folder.mkdir(parents=True)
                 skill.look_samples(outline, folder / 'samples', *pipeline.brand_of(session),
-                                   delivery=deck.DELIVERY)
+                                   delivery=pipeline.delivery_of(session))
                 manifest = home.read_json(folder / 'samples' / 'looks.json', {})
                 unseen = {'looks': [{key: value for key, value in look.items()
                                      if key != 'image'}
@@ -2268,7 +2271,8 @@ class Engine(Reviewing):
             known = self.slides().knows()
             whole = deck.complete(mine.outline, (listed or {}).get('layouts'), words,
                                   designed=plan is not None,
-                                  look=pipeline.look_of(root, mine), knows=known)
+                                  look=pipeline.look_of(root, mine), knows=known,
+                                  delivery=pipeline.delivery_of(found.session))
             home.write_json(source, deck.for_tool(whole, known))
             self.slides().outline_start(source, pipeline.contract(root, mine), folder)
             # Kept, so that every compile of this start can name the outline it was
