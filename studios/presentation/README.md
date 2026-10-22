@@ -161,3 +161,5 @@ while rendering continues. The pinned 0.16.0 runtime does not advertise it, so c
 sections show before the final review. Updating or installing a companion
 remains an explicit action. Comments during construction are tracked separately in
 [the live-preview issue](https://github.com/dbbaskette/marketing-studio/issues/15).
+
+The Balanced direction review requires a look from the samples shown. Editing the outline redraws those samples and asks you to choose again before the build. Delivered team decks stay their maker's to request changes; teammates still take them explicitly. A PowerPoint delivery can later be sent to Google Slides as a new revision from the page, without rebuilding.

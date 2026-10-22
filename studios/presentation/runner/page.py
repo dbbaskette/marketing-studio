@@ -11,6 +11,7 @@ What a caller needs to know
   change only as a POST with a JSON body from the page's own origin. `RunnerPage` adds
   addresses and never loosens a rule. Every answer is JSON, except a slide's picture
   (image/png) and the deck itself (the .pptx).
+- Scratch forms accept optional `notes` (at most 4000 characters). Direction look picks bind to the shown samples; edited outlines stop for newly drawn looks. A finished team deck can have `mine: true` and no active driver when this computer delivered it; asking for changes reclaims it in that request.
 - Reads (GET):
   - `/api/capabilities` {"runner": true, "version"}; `/api/setup`, what `setup.describe`
     says; `/api/agents` {"agents": [{"agent", "installed", "signed_in", "reachable",

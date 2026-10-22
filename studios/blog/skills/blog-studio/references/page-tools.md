@@ -77,3 +77,5 @@ research rerun estimate when research is selected, and updates it if another sta
 chosen. New supplied-only blogs instead show Claims in your material, an exact-source map
 with one correction; from-files supplied-only keeps its existing flow. Settings supplies
 Home's research default for new writing, while Explore ideas, Revise and Review use none.
+
+The Done card also opens pre-publish checks and repurposing directly. **Apply the review's findings** at review saves the prior draft and confirms the three jobs before restarting draft, review and handoff. The complete saved review accompanies the preservation rules. Review notes open beside the draft with actual checks; the fold choice is remembered per blog.

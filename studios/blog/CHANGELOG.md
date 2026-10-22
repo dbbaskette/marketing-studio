@@ -5,6 +5,9 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- Finish authoring on the page: outline/revise/review start cards, complete idea development, Done checks and repurposing, and a revision-checked private Google Doc handoff that reconciles uncertain uploads.
+- Apply review findings with the prior draft and history kept. Review notes open beside the text and show real voice, repetition, example and preservation checks. Uploaded files have individual team-library choices before sharing or use.
+
 - Research stops now show the authored brief, independent check, gaps, partial sources
   and findings mapped to planning questions. Research requests describe the full rerun,
   recorded cost and saved downstream work before sending. Home preserves research defaults.

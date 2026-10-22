@@ -168,3 +168,11 @@ evidence are folded below. Ask for changes says before sending that the full res
 runs again, what its last try recorded and which saved later stages it will make again.
 Home keeps the saved research default, except Explore ideas, Revise and Review, which
 start with none. Saved older runs continue through their original research pipeline.
+
+## Review and finish on the page
+
+Home exposes outline-only work and manuscript revision or feedback-only review. Developing an idea includes review and handoff. The review aside opens by default and remembers the person's choice per blog. Its checks come from the current draft: voice rules, repeated paragraphs and openings, example carryover and preservation findings, rather than a generic assurance.
+
+**Apply the review's findings** confirms a new draft, review and handoff pass, preserves the previous draft and revisions, and sends the complete saved review with the minimal-edit instructions. The review is `derived/blog-review.md`. Done offers pre-publish checks, repurposing and a private Google Doc handoff. See [page tools](page-tools.md) for the latter's revision and retry rules.
+
+Each upload has its own keep choice. An unshared first library revision can return to this blog's material; shared references and sources already pinned by an article cannot be moved from the start form.
