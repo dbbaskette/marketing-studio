@@ -772,7 +772,9 @@ function nowLine(run) {
     .filter((stamp) => !Number.isNaN(stamp));
   if (began.length) parts.push(lasted((Date.now() - Math.min(...began)) / 1000));
   const spent = run.spent || {};
-  if (given(spent.dollars)) parts.push(money(spent.dollars) + ' so far');
+  if (given(spent.dollars) && Number(spent.dollars) >= 0.005) {
+    parts.push(money(spent.dollars) + ' so far');
+  }
   // The run's own limit, raised by every Carry on; Settings' only where the run says none.
   const limits = (view.setup && view.setup.limits) || {};
   const stopsAt = given(spent.stops_at) ? spent.stops_at : limits.training_dollars;
@@ -1342,7 +1344,8 @@ function noteSheet(kind) {
     view.notes[key] = field.value;
   });
   // What a change writes again, and what that took the last time, said before it is sent.
-  const redo = kind === 'revise' && view.gate && view.gate.redo ? ' ' + view.gate.redo.says : '';
+  const price = outlined() ? view.run.outline.redo : view.gate && view.gate.redo;
+  const redo = kind === 'revise' && price ? ' ' + price.says : '';
   const hint = make('p', 'quiet', (runOf(view.path) ? spec.hint.replace('Your assistant makes',
     'Training Studio makes') : spec.hint) + redo);
   hint.id = 'note-hint';
@@ -5031,10 +5034,13 @@ function costCard(run) {
   const spent = run.spent || {};
   const limits = (view.setup && view.setup.limits) || {};
   const agent = AGENT_NAMES[run.agent] || run.agent || 'an agent';
-  add(node, make('p', 'cost', given(spent.dollars) ? money(spent.dollars) : 'Not reported'));
+  // A cost of nothing is not reported money: it is never said as $0.00.
+  const reported = given(spent.dollars) && Number(spent.dollars) > 0;
+  add(node, make('p', 'cost', !reported ? 'Not reported'
+    : Number(spent.dollars) < 0.005 ? 'Less than $0.01' : money(spent.dollars)));
   const says = [];
-  const silent = !given(spent.dollars) && given(spent.tokens);
-  if (given(spent.dollars)) says.push('So far.');
+  const silent = !reported && given(spent.tokens);
+  if (reported) says.push('So far.');
   else if (silent) says.push(agent + ' says how many tokens it uses, not what they cost.');
   else says.push('Nothing has been reported yet. An agent says what it used as each step ends.');
   if (given(spent.tokens)) says.push(Number(spent.tokens).toLocaleString() + ' tokens used.');
@@ -7098,7 +7104,10 @@ function statusWords(found) {
 }
 
 function spentSays(spent) {
-  if (given(spent.dollars)) return money(spent.dollars);
+  // A cost of nothing is never said as $0.00.
+  if (given(spent.dollars) && Number(spent.dollars) > 0) {
+    return Number(spent.dollars) < 0.005 ? 'less than $0.01' : money(spent.dollars);
+  }
   return given(spent.tokens) ? Number(spent.tokens).toLocaleString() + ' tokens'
     : 'Not reported yet';
 }

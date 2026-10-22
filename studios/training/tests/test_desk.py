@@ -3059,6 +3059,17 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                 for old in ('direction', 'has cost', 'learner guide'):
                     self.assertNotIn(old, confirm)
 
+    def test_a_now_line_never_says_nothing_was_spent(self):
+        self.started()
+        going = 'Drafting the research questions.'
+        working = a_run('working', going, steps=steps('done', 'working'),
+                        spent={'dollars': 0, 'tokens': None, 'stops_at': 20.0})
+        answers = self.answers(**{'GET /api/trainings': [self.listed('working', going)],
+                                  'GET /api/training': [self.detail('working', going)],
+                                  'GET /api/run': [working]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'}, {'snapshot': 'run'}])
+        self.assertNotIn('$0.00', result['snapshots']['run']['text'])
+
     def test_the_now_line_says_the_limit_the_run_stops_at(self):
         self.started()
         going = 'Drafting the research questions.'
@@ -4312,8 +4323,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         gate = {'path': str(self.root), 'artifact': 'research-plan'}
         shown = self.read('gate', **gate)
         self.assertIsNone(shown['body'].get('redo'), 'the research stops keep their own words')
-        said = ('Drawn again: the blueprint and every step after it, 4 steps; this computer '
-                'has no record of what they cost.')
+        said = ('Drawn again: the blueprint and what is written from it, 4 steps; this '
+                'computer has no record of what they cost.')
         priced = {**shown, 'body': {**shown['body'], 'redo': {'says': said}}}
         answers = self.answers(**{
             'GET /api/trainings': [self.listed('waiting', asking)],
@@ -5587,6 +5598,24 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('A wireframe draft of the deck', result['snapshots']['outline']['text'])
         self.assertEqual(self.asked(result, 'deck-draft-ticket'),
                          [f'/api/deck-draft-ticket?{urlencode({"path": self.root})}'])
+        self.assertEqual(self.posts(result), [])
+
+    def test_the_outline_change_sheet_uses_the_outline_price_from_the_run(self):
+        self.started()
+        asking = 'Waiting for your decision on what the deck says.'
+        said = ('Drawn again: what the deck says and what is written from it, 4 steps; '
+                'this computer has no record of what they cost.')
+        outline = {**an_outline(), 'redo': {'says': said}}
+        waiting = a_run('waiting', asking, steps=deck_steps('done', 'done', 'waiting'),
+                        outline=outline)
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', asking, needs=True)],
+            'GET /api/training': [self.detail('waiting', asking)],
+            'GET /api/run': [waiting] * 3})
+        result = self.run_page(answers, [
+            {'click': 'Review what the deck says'},
+            {'click': 'Ask for changes'}, {'snapshot': 'asking'}])
+        self.assertIn(said, result['snapshots']['asking']['sheet'])
         self.assertEqual(self.posts(result), [])
 
     def test_what_a_deck_says_is_read_and_decided_like_any_gate(self):

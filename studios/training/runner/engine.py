@@ -970,16 +970,8 @@ class Engine(Reviewing):
                                          form.get('review_seen'))
                 except ValueError as error:
                     raise WorkspaceError(str(error)) from None
-            else:
-                # An older page sends only the level it saw as `review_level`: that is
-                # checked too. A shared level that is already the one this training chose
-                # is no surprise, as after a start that wrote it and then failed.
-                current = review_policy.level(record)
-                if form.get('review_seen', form.get('review_level', current)) != current \
-                        and form.get('review_level') != current:
-                    raise WorkspaceError('The shared review preference changed while this '
-                                         'form was open. Review the updated preference '
-                                         'before starting. Nothing was started.')
+            # A per-training choice does not write shared settings and stays valid even
+            # when another studio changes the default while this form is open.
             if form.get('review_level'):  # this training's own choice, saved with its run
                 record['review_policy'] = {'schema': 1, 'level': form['review_level']}
             root = pipeline.create(space, form)
@@ -4218,6 +4210,9 @@ class Engine(Reviewing):
         objections = workspace.review_file('research')
         drawing = self._drawing(found)
         level = self._level(drawing) if drawing else None
+        outline = pipeline.outline_view(root, found, level) if drawing else None
+        if outline is not None:
+            outline['redo'] = self._redo_view(root, record, found, 'outline:' + (level or ''))
         return {
             'state': state, 'sentence': sentence, 'agent': record['agent'],
             'mine': mine, 'driver': who, 'queue': self._queue(run) if mine else None,
@@ -4244,7 +4239,7 @@ class Engine(Reviewing):
                         if problem else None),
             'documents': self._supplied(root, record, found),
             'copies': self._copies(found),
-            'outline': pipeline.outline_view(root, found, level) if drawing else None,
+            'outline': outline,
             'look': pipeline.look_view(root, found, level) if drawing else None,
             'deck': (pipeline.deck_view(root, found, level, self._live(run, drawing),
                                         self._given_up(record, drawing))
@@ -4280,15 +4275,21 @@ class Engine(Reviewing):
             from runner import reviews
             below = reviews.rewritten(root, found.session, found.decks, name)
         below = {name, *below}
-        again = [step for step in found.steps if step.kind == 'agent' and step.id in below]
+        # Dependency names are artifacts, not worker IDs. In particular, a deck has
+        # outline, section, review and repair workers, all writing the same deck artifact.
+        # Artifact names retain their level, so another level's deck is never included.
+        again = [step for step in found.steps if step.kind == 'agent'
+                 and (step.artifact in below or step.id in below)]
         if not again:
             return None
         took = self._redo_steps(record, [step.id for step in again])
         seconds, dollars = took if took else (None, None)
-        return {'steps': len(again), 'names': [workspace.label(step.id) for step in again],
+        names = [step.label[:1].lower() + step.label[1:] if step.stage == 'deck'
+                 else workspace.label(step.id) for step in again]
+        return {'steps': len(again), 'names': names,
                 'seconds': seconds, 'dollars': dollars,
-                'says': stops.redone(workspace.label(again[0].id), len(again), seconds,
-                                     dollars)}
+                'says': stops.redone(names[0], len(again), seconds, dollars,
+                                     after='what is written from it')}
 
     @staticmethod
     def _redo_steps(record: dict, names: list[str]) -> tuple | None:
@@ -4322,7 +4323,8 @@ class Engine(Reviewing):
         took = stops.took([attempt for _, attempt in tried])
         priced = [attempt for name, attempt in tried
                   if kinds.get(name, kinds.get(name.partition(':')[0], 'agent')) == 'agent']
-        dollars = stops.took(priced)['dollars'] if priced else (0.0 if tried else None)
+        # No assistant job yet: no cost has been reported, which is not the same as $0.00.
+        dollars = stops.took(priced)['dollars'] if priced else None
         return {'steps_left': len(left), 'next_gate': nxt and nxt.id,
                 'next_stop': nxt and nxt.label, 'jobs': took['jobs'],
                 'seconds': took['seconds'], 'dollars': dollars,

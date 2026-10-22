@@ -53,6 +53,13 @@ class WhereThisTrainingStopsTests(StudioCase):
                          {'schema': 1, 'level': 'automatic'})
         self.assertEqual(self.shared.read()[0]['review'], {'level': 'balanced'})
 
+    def test_row_119_a_per_training_choice_survives_a_new_shared_default(self):
+        self.shared.update({'review': {'level': 'step_by_step'}})
+        root = self.start(review_level='automatic', review_seen='balanced',
+                          review_default=False)
+        self.assertEqual(self.engine._load(root)['review_policy']['level'], 'automatic')
+        self.assertEqual(self.shared.read()[0]['review'], {'level': 'step_by_step'})
+
     def test_row_120_a_start_refused_after_the_chip_wrote_can_be_tried_again(self):
         self.start(title='Taken title', review_level='step_by_step', review_seen='balanced')
         self.shared.update({'review': {'level': 'balanced'}})
@@ -100,9 +107,32 @@ class ObjectionsTests(StudioCase):
         self.assertEqual(self.view(root)['problem']['objections'], 'reviews/research.md')
 
 
+class NoCostYetTests(StudioCase):
+    def test_a_training_that_ran_only_its_own_steps_reports_no_cost_yet(self):
+        root = self.start()
+        record = self.engine._load(root)
+        record['steps'] = {'intake': {'attempts': [{'seconds': 0.5, 'dollars': None}]}}
+        self.engine._store(root, record)
+        ahead = self.view(root)['ahead']
+        self.assertIsNone(ahead['dollars'])
+        self.assertNotIn('$', ahead['spent'])
+
+
 class AheadTests(StudioCase):
     """Each training's view says how many steps are left, where it next stops for the person
     under its own level, and what its agent's jobs have spent so far."""
+
+    def test_runner_only_steps_do_not_claim_a_reported_zero_cost(self):
+        root = self.start()
+        record = self.engine._load(root)
+        found = self.engine._survey(root, record)
+        kinds = {step.id: step.kind for step in found.steps}
+        record['steps'] = {name: entry for name, entry in record['steps'].items()
+                           if kinds.get(name) == 'code'}
+        self.assertTrue(record['steps'])
+        ahead = self.engine._still_to_come(record, found)
+        self.assertIsNone(ahead['dollars'])
+        self.assertIn('the assistant reported no cost', ahead['spent'])
 
     def test_the_view_says_steps_left_the_next_stop_and_spent(self):
         root = self.start()
@@ -146,9 +176,10 @@ class RedoTests(StudioCase):
         self.assertEqual(redo['names'][0], 'the blueprint')
         self.assertGreater(redo['steps'], 1, 'what is written from the blueprint comes again')
         # Nothing after the blueprint has run yet: there is no record of what it all costs.
-        self.assertTrue(redo['says'].startswith('Drawn again: the blueprint and every step '
-                                                f"after it, {redo['steps']} steps; this "
-                                                'computer has no record'), redo['says'])
+        # What is counted is what is written from the blueprint, and the words say so.
+        self.assertTrue(redo['says'].startswith('Drawn again: the blueprint and what is '
+                                                f"written from it, {redo['steps']} steps; "
+                                                'this computer has no record'), redo['says'])
         # The research stops keep their own words: Phase 3 prices them.
         self.assertIsNone(self.engine.redo(str(root), 'research'))
         self.assertIsNone(self.engine.redo(str(root), 'research-plan'))
@@ -169,8 +200,8 @@ class RedoTests(StudioCase):
         items = {item['target']: item for item in review['items']}
         said = items['blueprint']['redo']['says']
         # Everything written from the blueprint has run once here, its agent reporting no cost.
-        self.assertTrue(said.startswith('Drawn again: the blueprint and every step after it, '),
-                        said)
+        self.assertTrue(said.startswith('Drawn again: the blueprint and what is written from '
+                                        'it, '), said)
         self.assertTrue(said.endswith('; the assistant reported no cost.'), said)
         self.assertIsNone(items.get('research', {}).get('redo'))
 

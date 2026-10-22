@@ -1253,6 +1253,80 @@ class DeckCase(StudioCase):
                 if 'deck' in step['id']}
 
 
+class ChangePriceTests(DeckCase):
+    """Change prices follow material dependencies through the real deck pipeline."""
+
+    def test_deck_jobs_are_included_for_the_outline_and_its_upstream_materials(self):
+        root = self.begin()
+        self.drawn(root)
+        expected = {'blueprint': 7, 'document': 5, 'brief': 1, 'deck': 4, 'outline:': 4}
+        for target, count in expected.items():
+            with self.subTest(target=target):
+                redo = self.engine.redo(root, target)
+                self.assertIsNotNone(redo)
+                self.assertEqual(redo['steps'], count)
+                self.assertNotIn('every step after it', redo['says'])
+        # A brief follows the guide chronologically but is not an input to the deck.
+        self.assertEqual(self.engine.redo(root, 'brief')['names'], ['the brief'])
+
+    def test_all_deck_jobs_use_their_last_reported_attempt_including_section_workers(self):
+        root = self.begin()
+        self.drawn(root)
+        record = self.engine._load(root)
+        jobs = ('deck-outline', 'deck-sections:1', 'deck-sections:2',
+                'deck-review', 'deck-repair:1')
+        for job in jobs:
+            record['steps'][job] = {'attempts': [
+                {'seconds': 900, 'dollars': 9}, {'seconds': 12, 'dollars': 0.25}]}
+        self.engine._store(root, record)
+        redo = self.engine.redo(root, 'deck')
+        self.assertIsNotNone(redo)
+        self.assertEqual((redo['seconds'], redo['dollars']), (60, 1.25))
+        record['steps'].pop('deck-review')
+        self.engine._store(root, record)
+        self.assertIsNone(self.engine.redo(root, 'deck')['seconds'])
+        record['steps']['deck-review'] = {'attempts': [{'seconds': 5, 'dollars': None}]}
+        self.engine._store(root, record)
+        redo = self.engine.redo(root, 'deck')
+        self.assertEqual(redo['seconds'], 53)
+        self.assertIsNone(redo['dollars'])
+
+    def test_an_outline_carries_its_change_price_on_the_run_view(self):
+        root = self.begin()
+        run = self.to_outline(root)
+        redo = run['outline'].get('redo')
+        self.assertIsNotNone(redo)
+        self.assertEqual(redo['steps'], 4)
+        self.assertIsNone(redo['seconds'], 'the downstream deck has never run')
+        self.assertIn('no record', redo['says'])
+
+    def test_the_combined_first_drafts_review_prices_each_outlines_deck_jobs(self):
+        root = self.begin(review_level='balanced', levels=['101', '201'])
+        self.decide(root, 'research-plan')
+        review = self.view(root)['review']
+        self.assertEqual(review['phase'], 'direction')
+        items = {item['target']: item for item in review['items']}
+        for level in ('101', '201'):
+            with self.subTest(level=level):
+                redo = items['outline:' + level]['redo']
+                self.assertIsNotNone(redo)
+                self.assertEqual(redo['steps'], 4)
+                self.assertIsNone(redo['seconds'])
+                self.assertTrue(all(level in name for name in redo['names']), redo)
+
+    def test_one_levels_changes_do_not_price_the_other_levels_deck(self):
+        root = self.begin(levels=['101', '201'])
+        self.drawn(root, '101')
+        for level in ('101', '201'):
+            for target, count in ((f'blueprint@{level}', 7), (f'document@{level}', 5),
+                                  (f'deck@{level}', 4), (f'outline:{level}', 4)):
+                with self.subTest(target=target):
+                    redo = self.engine.redo(root, target)
+                    self.assertIsNotNone(redo)
+                    self.assertEqual(redo['steps'], count)
+                    self.assertTrue(all(level in name for name in redo['names']), redo)
+
+
 class FlowTests(DeckCase):
     def test_a_started_deck_has_the_fallback_when_its_brand_gives_no_direction(self):
         root = self.begin()
