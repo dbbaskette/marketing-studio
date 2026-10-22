@@ -49,10 +49,25 @@ class StopWordsTests(unittest.TestCase):
             'Status screen, says what it needs.'))
         limited = SimpleNamespace(reason='limit', budget=False, detail="You've hit your usage limit.")
         self.assertTrue(stops.account_limit(limited))
+        # Where the agent reports it, the account's refusal is known without its words.
+        self.assertTrue(stops.account_limit(SimpleNamespace(
+            reason='limit', budget=False, account=True, detail='It stopped without finishing.')))
         for other in (SimpleNamespace(reason='limit', budget=True, detail='usage limit'),
                       SimpleNamespace(reason='limit', budget=False, detail='Too many turns.'),
                       SimpleNamespace(reason='failed', budget=False, detail='usage limit')):
             self.assertFalse(stops.account_limit(other))
+
+    def test_an_account_at_its_limit_is_waited_out_not_checked(self):
+        # Check this computer cannot show a usage limit, so the stop does not send anyone there.
+        limited = SimpleNamespace(reason='limit', budget=False, account=True, detail='429')
+        self.assertEqual(stops.agent_stopped('Claude Code', limited, '429'), (
+            "Claude Code's account reached a usage or rate limit. Wait until it resets, then "
+            'Try again.'))
+        gone = SimpleNamespace(reason='unavailable', budget=False, detail='Not signed in.')
+        self.assertEqual(stops.agent_stopped('Codex', gone, 'Not signed in.'),
+                         stops.unusable('Codex', 'Not signed in.'))
+        self.assertIsNone(stops.agent_stopped('Codex', SimpleNamespace(
+            reason='timeout', budget=False, detail='slow'), 'slow'))
 
 
 if __name__ == '__main__':

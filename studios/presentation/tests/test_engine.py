@@ -250,8 +250,8 @@ class RetryTests(StudioCase):
         self.workers.then('outline', fails("You've hit your usage limit.", reason='limit'))
         root = self.start()
         self.assertEqual(self.state(root), 'failed')
-        self.assertIn("could not be used. You've hit your usage limit. Check this computer",
-                      self.view(root)['sentence'])
+        self.assertEqual(self.view(root)['sentence'], "scripted's account reached a usage or "
+                         'rate limit. Wait until it resets, then Try again.')
         self.assertEqual(len(self.workers.of('outline')), 1)
 
     def test_a_step_that_runs_out_of_time_offers_more_time_for_this_deck(self):

@@ -23,7 +23,8 @@ What a caller needs to know
   agent's own sandbox lets it write there: use `staging()`.
 - `run` never raises for something the agent did. It returns an Outcome whose `reason` is
   `timeout`, `limit`, `failed`, `unavailable` or `stopped`, with a sentence in `detail`. A
-  `limit` because the job spent all it was given has `budget` set. It raises WorkspaceError
+  `limit` because the job spent all it was given has `budget` set, and one the agent's
+  account refused (a usage or rate limit) has `account`. It raises WorkspaceError
   only for a job that is wrong before it starts.
 - `stop` is a threading.Event. Setting it ends the worker and everything it started within
   a moment, and the outcome's reason is `stopped`. The time limit ends everything too, and
@@ -132,6 +133,7 @@ class Outcome:
     seconds: float = 0.0
     events: Path | None = None  # where the raw event stream was saved
     budget: bool = False        # a `limit` because the job spent all it was given
+    account: bool = False       # a `limit` because the agent's account refused the job
 
 
 @dataclass(frozen=True)
@@ -262,6 +264,7 @@ class ClaudeEvents:
         self.text, self.cost, self.tokens = '', None, None
         self.ended, self.reason, self.detail = False, None, ''
         self.budget = False     # it ended because it spent all it was given
+        self.account = False    # its account refused it: Claude Code's status 429
 
     def feed(self, event: dict) -> list[str]:
         kind, lines = event.get('type'), []
@@ -318,6 +321,7 @@ class ClaudeEvents:
             return
         said = clip(self.text or CLAUDE_ENDINGS.get(subtype, subtype), 300)
         self.budget = subtype == 'error_max_budget_usd'
+        self.account = status == 429
         if subtype in ('error_max_budget_usd', 'error_max_turns') or status == 429:
             self.reason = 'limit'
         elif status in (401, 403):
@@ -499,7 +503,10 @@ class _Agent:
         reason, detail = self.verdict(job, reader, code, tail(folder / 'stderr.txt'))
         return Outcome(reason is None, reason, detail, self.last(job, reader), reader.cost,
                        reader.tokens, seconds, events,
-                       budget=reason == 'limit' and getattr(reader, 'budget', False))
+                       budget=reason == 'limit' and getattr(reader, 'budget', False),
+                       account=reason == 'limit' and not getattr(reader, 'budget', False)
+                       and (getattr(reader, 'account', False)
+                            or any(mark in detail.lower() for mark in LIMITED)))
 
     def last(self, job: Job, reader) -> str:
         return reader.text

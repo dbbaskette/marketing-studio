@@ -555,6 +555,15 @@ class RunTests(AgentCase):
                          'was reached')
         # The job spent all it was given: the studio stops for money, not for a failure.
         self.assertTrue(outcome.budget)
+        self.assertFalse(outcome.account)
+
+    def test_a_claude_run_its_account_refused_says_so_by_its_status(self):
+        stream = [CLAUDE_STREAM[0], {'type': 'result', 'subtype': 'error_during_execution',
+                                     'is_error': True, 'api_error_status': 429,
+                                     'result': 'API Error: 429'}]
+        program = self.program('cat > /dev/null\ncat "$FAKE_OUT/events"\nexit 1\n', stream)
+        outcome = Claude(program).run(self.make())
+        self.assertEqual((outcome.reason, outcome.account, outcome.budget), ('limit', True, False))
 
     def test_a_codex_run_that_cannot_reach_its_service_is_unavailable(self):
         stream = [{'type': 'thread.started', 'thread_id': 't'}, {'type': 'turn.started'},

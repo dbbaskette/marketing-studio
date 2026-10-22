@@ -448,6 +448,15 @@ class RetryTests(StudioCase):
                          'not installed on this computer. Check this computer, on the Status screen, says what it needs.')
         self.assertEqual(self.engine.act(root, 'retry')['state'], 'waiting')
 
+    def test_an_account_at_its_usage_limit_stops_at_once_and_says_to_wait(self):
+        self.workers.then('research-plan', fails("You've hit your usage limit.", 'limit'))
+        root = self.start()
+        view = self.view(root)
+        self.assertEqual((view['state'], len(self.workers.jobs)), ('failed', 1))
+        self.assertEqual(view['problem']['what'], "scripted's account reached a usage or rate "
+                         'limit. Wait until it resets, then Try again.')
+        self.assertEqual(view['problem']['action'], 'retry')
+
     def test_a_worker_that_runs_out_of_time_is_tried_again(self):
         self.workers.then('blueprint', fails(SLOW, 'timeout'))
         root = self.start()

@@ -10,6 +10,7 @@ What a caller needs to know
     stops.spent(thing, dollars, limit, left, label, go)   # (what, kept) of a stop for money
     stops.account_limit(outcome)          # an agent's account refused: usage or rate limit
     stops.unusable(title, detail)         # an agent that could not be used, and where to look
+    stops.agent_stopped(title, outcome, detail)   # either of those, or None
 
 - `thing` is what the studio makes, as a person calls it: 'training' or 'deck'.
 - A step limit is the run's own: the one Settings gave it when it started or was last
@@ -85,9 +86,28 @@ def spent(thing: str, dollars, limit, left=None, label: str | None = None,
 
 
 def account_limit(outcome) -> bool:
-    """True for a `limit` an agent's account set: a usage or rate limit, not the job's."""
+    """True for a `limit` an agent's account set: a usage or rate limit, not the job's.
+    Known from the agent's own report (`account`, as Claude Code's status 429), or else
+    from its words."""
     return (getattr(outcome, 'reason', None) == 'limit' and not getattr(outcome, 'budget', False)
-            and any(mark in str(getattr(outcome, 'detail', '')).lower() for mark in ACCOUNT))
+            and (bool(getattr(outcome, 'account', False))
+                 or any(mark in str(getattr(outcome, 'detail', '')).lower() for mark in ACCOUNT)))
+
+
+def account_stop(title: str) -> str:
+    """What a stop says of an agent whose account reached a usage or rate limit. Check
+    this computer cannot show such a limit, so it is not named."""
+    return f"{title}'s account reached a usage or rate limit. Wait until it resets, then Try again."
+
+
+def agent_stopped(title: str, outcome, detail: str) -> str | None:
+    """What a stop says when the agent itself is why a job did not finish: its account
+    reached a limit, or it could not be used. None when it is not."""
+    if account_limit(outcome):
+        return account_stop(title)
+    if getattr(outcome, 'reason', None) == 'unavailable':
+        return unusable(title, detail)
+    return None
 
 
 def unusable(title: str, detail: str) -> str:

@@ -3063,9 +3063,10 @@ class Engine(Reviewing):
                          else f'a try at this step did not work: {step.label}')
         if budget:
             self._spend_stop(root, step.label)
-        elif outcome.reason == 'unavailable' or stops.account_limit(outcome):
+        elif stops.agent_stopped('', outcome, detail) is not None:
             self._problem(root, 'research' if question else step.id, 'failed',
-                          stops.unusable(self._title(record['agent']), detail), KEPT)
+                          stops.agent_stopped(self._title(record['agent']), outcome, detail),
+                          KEPT)
         elif not question and entry['failed'] >= pipeline.ATTEMPTS:
             if outcome.reason == 'timeout':
                 return self._out_of_time(root, step.id, step.label, record, pipeline.ATTEMPTS)
@@ -3202,9 +3203,9 @@ class Engine(Reviewing):
         outcome, record = refusal.outcome, self._load(root)
         if outcome.reason == 'limit' and outcome.budget:
             return self._spend_stop(root, 'The research')
-        if outcome.reason == 'unavailable' or stops.account_limit(outcome):
-            return self._problem(root, 'research', 'failed', stops.unusable(
-                self._title(record['agent']), outcome.detail), KEPT)
+        if stops.agent_stopped('', outcome, outcome.detail) is not None:
+            return self._problem(root, 'research', 'failed', stops.agent_stopped(
+                self._title(record['agent']), outcome, outcome.detail), KEPT)
         if outcome.reason == 'timeout':
             return self._out_of_time(root, 'research', 'The research', record, 1)
         self._problem(root, 'research', 'failed', str(refusal), KEPT)

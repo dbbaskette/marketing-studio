@@ -278,9 +278,9 @@ class Researching:
                     # where to look for an agent that could not be used.
                     if outcome.reason == 'limit' and outcome.budget:
                         self._spend_stop(root, 'The research')
-                    elif outcome.reason == 'unavailable' or stops.account_limit(outcome):
-                        self._problem(root, 'research', 'failed', stops.unusable(
-                            self._title(record.get('agent')), outcome.detail), KEPT)
+                    elif stops.agent_stopped('', outcome, outcome.detail) is not None:
+                        self._problem(root, 'research', 'failed', stops.agent_stopped(
+                            self._title(record.get('agent')), outcome, outcome.detail), KEPT)
                     elif outcome.reason == 'timeout':
                         self._out_of_time(root, 'research', 'The research', record, 1)
                     else:

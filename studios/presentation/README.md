@@ -130,7 +130,8 @@ If the file cannot be read, Presentation Studio works on its built-in defaults, 
 | A step failed | The page says why in one sentence. Choose Try again, or Carry on if offered |
 | A step ran out of time | The page says how long a step may take. Choose **Give it more time and try again**, or raise the limit in Settings, under Limits |
 | A deck spent what it may | It stops before the next step, or when a step uses up what is left. Choose Resume to let it spend as much again, or raise the limit in Settings, under Limits |
-| The assistant could not be used | It is not installed, not signed in or out of reach, or its account has reached a usage limit. Use **Check this computer** on the Status screen |
+| The assistant could not be used | It is not installed, not signed in or out of reach. Use **Check this computer** on the Status screen |
+| The assistant's account reached a usage or rate limit | Wait until it resets, then choose Try again. Check this computer cannot show such a limit |
 | The research check could not read a document | That is a studio problem, not a research problem. Try again works once the document can be read |
 | Your team repository cannot be reached | Your work is kept and marked "not shared yet". It goes up with the next share |
 | A deck cannot be read | The page gives the reason when you add it. Try saving it as `.pptx` again |

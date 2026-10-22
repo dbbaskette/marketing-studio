@@ -508,9 +508,9 @@ class Jobs:
         step = name.partition(':')[0]
         if budget:
             self._spend_stop(root, label)
-        elif outcome.reason == 'unavailable' or stops.account_limit(outcome):
-            self._problem(root, step, 'failed',
-                          stops.unusable(self._title(record.get('agent')), detail), KEPT)
+        elif stops.agent_stopped('', outcome, detail) is not None:
+            self._problem(root, step, 'failed', stops.agent_stopped(
+                self._title(record.get('agent')), outcome, detail), KEPT)
         elif not question and entry['failed'] >= ATTEMPTS:
             if outcome.reason == 'timeout':
                 return self._out_of_time(root, step, label, record, ATTEMPTS)
