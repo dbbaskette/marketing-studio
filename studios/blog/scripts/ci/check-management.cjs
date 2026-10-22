@@ -1160,7 +1160,7 @@ async function honestBlogCopy(){
   const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});if(url==='/api/run-changes')return changed;return {};});f.loadRunner();
   const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),all=()=>text().join('\n');
   const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
-  f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[{id:'one',name:'One',status:'ready'},{id:'two',name:'Two',status:'ready'}],profiles:[],agents:{codex:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'package',minutes:'10',operation:'a'.repeat(32)};sWizard()");
+  f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[{id:'one',name:'One',status:'ready',purposes:['reference']},{id:'two',name:'Two',status:'ready',purposes:['reference']}],profiles:[],agents:{codex:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'package',minutes:'10',operation:'a'.repeat(32)};sWizard()");
   assert.ok(all().includes('No research.'),all());
   // Use the real listeners: refreshing the explanation must preserve these controls.
   const research=nodes().find(e=>e.id==='new-research');
@@ -1268,7 +1268,7 @@ async function sharedPattern(){
   assert.ok(text().some(t=>t==='Automatic draft: it stops for the ideas'),text().join('|'));
   f.run("studio.options.settings.review_level='step_by_step';studio.draft.mode='write';studio.draft.research='supplied-only';studio.draft.stop='package';sWizard()");
   assert.ok(text().some(t=>t==='Step by step: it stops for the outline, the draft, the review and the handoff'),'selected sources with none selected is no research: '+text().join('|'));
-  f.run("studio.draft.sources=['one'];sWizard()");
+  f.run("studio.options.sources=[{id:'one',name:'One',status:'ready',purposes:['reference']}];studio.draft.sources=['one'];sWizard()");
   assert.ok(text().some(t=>t==='Step by step: it stops for the claims in your material, the outline, the draft, the review and the handoff'),text().join('|'));
   // New blog without a task chosen shows the same start cards as Home.
   f.run("studio.draft={...defaults,mode:null,step:0};sWizard()");
@@ -2379,6 +2379,7 @@ async function phase3ResearchDefaults(){
     await f.run(`newBlog('',null,'${entry}')`);
     assert.equal(f.run('studio.draft.research'),want,'Home card takes the research default: '+entry);
   }
+  f.run("studio.options.sources=[{id:'s1',status:'ready',purposes:['reference']},{id:'s2',status:'ready',purposes:['reference']}]");
   for(const [research,sources,want]of [['none',[],'No research.'],['supplied-only',['s1','s2'],'Research reads only the 2 sources you ticked.'],['web-allowed',[],'Research reads the sources you ticked and the public web.'],['supplied-only',[],'No research: no source is ticked.']]){
     f.set('draft',{mode:'write',research,sources,stop:'package'});
     assert.equal(f.run('sResearchWords(draft)'),want,'Ready to start says what research will run');
@@ -2411,10 +2412,24 @@ async function phase3ResearchAccount(){
 }
 
 async function phase3ClaimsMap(){const f=fixture();f.loadRunner();
+  f.run("studio.options={sources:[{id:'s1',status:'ready',purposes:['reference']},{id:'voice',status:'ready',purposes:['voice-sample']},{id:'example',status:'ready',purposes:['inspiration']}]} ");
   f.set('draft',{mode:'write',research:'supplied-only',sources:['s1'],stop:'package'});
   assert.deepEqual(Array.from(f.run('sPipeline(draft)')),['claims-map','outline','draft','review','package']);
   assert.equal(f.run("sStopWords('balanced',sPipeline(draft),'write')"),'Balanced: it stops for the outline and the handoff');
   assert.ok(f.run("sStopWords('step_by_step',sPipeline(draft),'write')").includes('the claims in your material'));
   f.set('draft',{mode:'from-files',research:'supplied-only',sources:['s1'],start:'point',stop:'package'});
   assert.equal(f.run("sPipeline(draft).includes('claims-map')"),false);
+  for(const sources of [['voice'],['example']]){
+    f.set('draft',{mode:'write',research:'supplied-only',sources,stop:'package'});
+    assert.equal(f.run("sPipeline(draft).includes('claims-map')"),false,'voice/example is not factual material');
+  }
+  f.set('draft',{mode:'write',research:'supplied-only',sources:['s1','voice'],files:[{id:'example',state:'ready',role:'inspiration'}],stop:'package'});
+  assert.equal(f.run('sResearchWords(draft)'),'Research reads only the 1 source you ticked.');
+  f.set('draft',{mode:'write',research:'supplied-only',sources:[],files:[{id:'owned',filename:'notes.md',state:'ready',role:'material',chars:40}],stop:'package'});
+  f.run("document.getElementById('studio-page').replaceChildren(sNode('p','stops-line',sStops(draft)),sFilesCard(draft,sNode('p'),()=>{},()=>{}))");
+  const stops=f.get('studio-page').querySelector('.stops-line');
+  assert.ok(stops.textContent.includes('claims in your material'));
+  const role=descendants(f.get('studio-page')).find(node=>node.id==='files-role-owned');
+  role.value='inspiration';await role.listeners.change();
+  assert.equal(stops.textContent.includes('claims in your material'),false,'changing a file to an example refreshes the predicted stops');
 }

@@ -1227,7 +1227,10 @@ def create(root, data, approval='conversation'):
     if style:
         record['style'] = studio.style_check(root, style)
     record['research_policy'] = 'supplied-only' if research == 'none' else research
-    research = research_scope(research, record['sources'])
+    selected = record['sources']
+    if research == 'supplied-only' and not from_files:
+        selected = claims_map.material(inputs(root, record, {'brief': brief})['sources'])
+    research = research_scope(research, selected)
     if from_files and research == 'supplied-only':
         research = 'none'  # The files are read at every step; only the web adds research stages.
     pipeline = (
@@ -1382,7 +1385,9 @@ def submit(root, ident, stage, result, expected, page=False):
 
         result = record_review(root, directory, record, run, result)
     if stage == 'claims-map':
-        said = claims_map.problems(result['content'], inputs(root, record, run)['sources'])
+        said = claims_map.problems(
+            result['content'], claims_map.material(inputs(root, record, run)['sources'])
+        )
         if said:
             raise ValueError(
                 'The claims map quoted passages that are not in your material: ' + said[0]
@@ -1648,6 +1653,8 @@ def job(root, ident):
     if run.get('research_contract') and run['stages'].get('research'):
         published = research_contract.read_bundle(directory / 'research')
     payload = inputs(root, record, run)
+    if stage == 'claims-map':
+        payload['sources'] = claims_map.material(payload['sources'])
     payload.setdefault('style', None)
     if run.get('research_skipped'):
         payload['research_policy'] = 'none'  # The job payload is not hashed; pins hold.
@@ -2445,7 +2452,12 @@ def options(root):
                 continue  # Uploaded for one run; chosen on its own screen, not from the library.
             if kind != 'profiles' or record.get('status') != 'retired':
                 result.append(
-                    {'id': record['id'], 'name': record['name'], 'status': record['status']}
+                    {
+                        'id': record['id'],
+                        'name': record['name'],
+                        'status': record['status'],
+                        **({'purposes': record.get('purposes', [])} if kind == 'sources' else {}),
+                    }
                 )
         return result
 

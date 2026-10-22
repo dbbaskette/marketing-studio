@@ -3118,6 +3118,68 @@ class ResearchPlanningTests(RunnerCase):
 class ClaimsMapTests(RunnerCase):
     PASSAGE = 'The gateway calls the service.'
 
+    def role_source(self, role, status='ready'):
+        source = self.source(self.PASSAGE + ' ' + role)
+        folder, record = studio.item(self.root, 'sources', source['id'])
+        record.update(purposes=[role], status=status)
+        studio.write_json(folder / 'record.json', record)
+        return source['id']
+
+    def test_no_claims_map_runs_without_readable_factual_material(self):
+        for role, status in [
+            ('inspiration', 'ready'),
+            ('voice-sample', 'ready'),
+            ('reference', 'pending'),
+        ]:
+            with self.subTest(role=role, status=status):
+                ident = self.role_source(role, status)
+                found = self.create(title=role + status, research='supplied-only', sources=[ident])
+                self.assertNotIn('claims-map', [row['stage'] for row in found['stages']])
+
+    def test_only_factual_material_reaches_the_map_and_direct_validation(self):
+        fact = self.role_source('reference')
+        voice = self.role_source('voice-sample')
+        example = self.role_source('inspiration')
+        found = self.create(research='supplied-only', sources=[fact, voice, example])
+        directory, record, run = runner.load(self.root, found['id'])
+        all_sources = runner.inputs(self.root, record, run)['sources']
+        sample = next(source for source in all_sources if source['purposes'] == ['voice-sample'])
+        _, payload, _ = runner.job(self.root, found['id'])
+        self.assertEqual([source['purposes'] for source in payload['sources']], [['reference']])
+        options = {source['id']: source for source in runner.options(self.root)['sources']}
+        self.assertEqual(options[voice]['purposes'], ['voice-sample'])
+        with self.assertRaisesRegex(ValueError, 'not in your material'):
+            self.submit(found, self.line(sample))
+        self.submit(found, self.line(payload['sources'][0]))
+
+    def test_a_worker_cannot_make_a_voice_sample_into_claims(self):
+        fact, voice = self.role_source('reference'), self.role_source('voice-sample')
+        found = self.create(page=True, research='supplied-only', sources=[fact, voice])
+        directory, record, run = runner.load(self.root, found['id'])
+        sample = next(
+            source
+            for source in runner.inputs(self.root, record, run)['sources']
+            if source['purposes'] == ['voice-sample']
+        )
+        calls = []
+
+        def worker(engine, payload, guidance, **options):
+            calls.append(payload)
+            return {'content': self.line(sample), 'notes': ''}
+
+        engine = runner.Engine(self.root, worker=worker)
+        self.addCleanup(engine.close)
+        engine.keep_local(found['id'], {'enabled': True})
+        engine.once(found['id'])
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(engine.describe(found['id'])['status'], 'failed')
+        self.assertTrue(
+            all(
+                [source['purposes'] for source in payload['sources']] == [['reference']]
+                for payload in calls
+            )
+        )
+
     def mapped(self, page=False, **extra):
         source = self.source(self.PASSAGE)
         found = self.create(page=page, research='supplied-only', sources=[source['id']], **extra)

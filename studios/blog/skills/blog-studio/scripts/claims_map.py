@@ -13,6 +13,13 @@ def _flat(text):
     return ' '.join(str(text).split())
 
 
+def material(sources):
+    """Readable factual inputs; examples and voice-only samples supply no claims."""
+    from synthesis_research import offered
+
+    return [source for source in sources if offered(source) and _flat(source.get('text') or '')]
+
+
 def problems(content, sources):
     texts = {source['id']: _flat(source.get('text') or '') for source in sources}
     matches, said = list(LINE.finditer(content)), []

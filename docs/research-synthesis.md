@@ -151,3 +151,7 @@ the files at every stage and add no claims-map stage. Older saved pipelines rema
 A missing, changed or draft bundle never becomes an accepted account. The saved report
 remains readable; unresolved research still blocks downstream jobs. An unread original
 belongs to the blocked-research view: Harness Research cannot accept such a check.
+
+Blog Studio claims maps read only ready factual references and material. Examples of a kind
+of post and voice-only samples supply no claims; a new run without eligible material skips
+the map. Changing a file’s role updates the start form’s predicted stops.
