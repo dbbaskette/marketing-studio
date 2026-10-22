@@ -13,6 +13,40 @@ import time
 import source_curator
 
 _METER = threading.local()
+STATUS = 'Status → Check this computer'
+SAID_LINES = 20  # The end of what a CLI wrote to stderr, kept for the person on this computer.
+
+
+class WorkerFailure(ValueError):
+    """A job that ended without a document. `reason` is 'cli' for a CLI that failed or gave
+    no readable answer, or 'time-limit'; `said` holds the last lines the CLI wrote to stderr,
+    which stay on this computer and are never shared."""
+
+    def __init__(self, message, reason, said=()):
+        super().__init__(message)
+        self.reason, self.said = reason, list(said)
+
+
+def minutes(seconds):
+    """A step's time limit in words: '45 seconds', '1 minute', '1.5 minutes'."""
+    if seconds < 60:
+        whole = max(1, round(seconds))
+        return f'{whole} second' + ('' if whole == 1 else 's')
+    value = round(seconds / 60, 1)
+    return f'{value:g} minute' + ('' if value == 1 else 's')
+
+
+def tail(path, count=SAID_LINES):
+    """The last `count` non-empty lines of a file, each cut to 500 characters."""
+    try:
+        with open(path, 'rb') as file:
+            file.seek(0, os.SEEK_END)
+            file.seek(max(0, file.tell() - 65536))
+            text = file.read().decode('utf-8', 'replace')
+    except OSError:
+        return []
+    lines = [line.rstrip()[:500] for line in text.splitlines() if line.strip()]
+    return lines[-count:]
 
 
 @contextmanager
@@ -197,7 +231,16 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
         command[at:at] = source_curator.shared_options(engine, model_selection)
         env = {k: v for k, v in os.environ.items() if not k.startswith(('CLAUDE', 'ANTHROPIC'))}
         # Regular files avoid a full stdout pipe blocking the child while we watch stop/time.
-        with (folder / 'stdout').open('w+') as stdout, (folder / 'stdin').open('w+') as stdin:
+        errors = folder / 'stderr'
+
+        def failed(message, reason='cli', said=()):
+            return WorkerFailure(message, reason, [*said, *tail(errors)][-SAID_LINES:])
+
+        with (
+            (folder / 'stdout').open('w+') as stdout,
+            (folder / 'stdin').open('w+') as stdin,
+            errors.open('w') as stderr,
+        ):
             # The policy and job guidance already are the system prompt or instructions file.
             stdin.write(
                 'Do the job in your instructions with this data.\n\nDOCUMENT DATA:\n'
@@ -208,7 +251,7 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                 command,
                 stdin=stdin,
                 stdout=stdout,
-                stderr=subprocess.DEVNULL,
+                stderr=stderr,
                 cwd=scratch,
                 env=env,
                 start_new_session=True,
@@ -222,16 +265,23 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                     if stop is None:
                         time.sleep(0.1)
                     if time.monotonic() >= deadline:
-                        raise ValueError(
-                            'This step reached its time limit. Retry or continue in chat.'
+                        raise failed(
+                            'This step ran out of the time a step may take ('
+                            + minutes(seconds)
+                            + ').',
+                            'time-limit',
                         )
                     if stdout.tell() > 2_000_000 or (
                         output.exists() and output.stat().st_size > 1_000_000
                     ):
                         raise ValueError('The worker returned too much text. Saved work is kept.')
+                    if stderr.tell() > 20_000_000:
+                        raise failed('The selected CLI wrote too much to its error output.')
                 if process.returncode:
-                    raise ValueError(
-                        'The selected CLI failed. Check its sign-in and usage, then retry.'
+                    raise failed(
+                        'The selected CLI failed. Check its sign-in and usage under '
+                        + STATUS
+                        + ', then try again.'
                     )
                 stdout.seek(0)
                 raw = output.read_text() if engine == 'codex' else stdout.read(2_000_001)
@@ -241,7 +291,12 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                 if engine == 'claude':
                     spent = usage(result)
                     if result.get('is_error'):
-                        raise ValueError('The selected CLI could not finish this step.')
+                        said = str(result.get('result') or '').splitlines()
+                        raise failed(
+                            'The selected CLI could not finish this step. Check its sign-in and '
+                            'usage under ' + STATUS + ', then try again.',
+                            said=[line.rstrip()[:500] for line in said if line.strip()],
+                        )
                     result = result.get('structured_output') or json.loads(result['result'])
                 if review:
                     if not isinstance(result, dict) or set(result) != {
@@ -260,8 +315,9 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                     }
                 return validate(result)
             except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
-                raise ValueError(
-                    'The worker did not return a readable document. Retry this step.'
+                raise failed(
+                    'The worker did not return a readable document. Try again; if it happens '
+                    'again, check the assistant under ' + STATUS + '.'
                 ) from exc
             finally:
                 try:

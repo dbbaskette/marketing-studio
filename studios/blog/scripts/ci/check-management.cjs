@@ -93,11 +93,12 @@ async function check(){
   await researchRounds();
   await skipResearch();
   await finishEveryLevel();
+  await failureRecovery();
   pageDefinesEveryElement();
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -1158,7 +1159,8 @@ async function sharedPattern(){
   // A time limit that ran out offers more time, and says what a plain retry costs.
   f.set('found',{...found,status:'failed',enabled:false,started_at:null,error:'This step reached its time limit. Retry or continue in chat.'});f.run('sRun(found)');
   const more=f.get('actions').children.find(e=>e.textContent==='Try again with more time');assert.equal(more.className,'button button-filled');
-  assert.ok(text().some(t=>t==='Try again makes the draft again in a new job, with the same 10-minute limit; saved work is kept. More time doubles it to 20 minutes.'),text().join('|'));
+  assert.ok(text().some(t=>t==='Try again makes the draft again in a new job, with the same 10-minute limit; saved work is kept.'),text().join('|'));
+  assert.ok(text().some(t=>t==='The limit is in Settings → Step time limit and applies to blogs started after a change. Try again with more time doubles it to 20 minutes for this blog.'),'a time limit says where it lives: '+text().join('|'));
   await more.listeners.click();
   assert.deepEqual(requests.find(r=>r.url==='/api/run-retry').data,{id:'synthetic',expected:'version-1',seconds:1200});
   // Copy Markdown sits beside the download.
@@ -2142,4 +2144,49 @@ async function finishEveryLevel(){
   f.run("studio.screen='gate';studio.found=found;sGate(found,shown)");
   await f.get('actions').children.find(e=>e.textContent==='Finish').listeners.click();
   assert.equal(descendants(f.get('sheet')).some(e=>/team library/.test(e.textContent)),false);
+}
+
+// Failures that say what to do: a CLI failure points at Status and shows the last lines the
+// assistant printed; a step out of time says where its limit lives beside Try again with more
+// time; first-run setup opens Writing preferences and marks an assistant that is not installed.
+async function failureRecovery(){
+  const requests=[];
+  const failed={id:'synthetic',title:'Synthetic blog',status:'failed',enabled:false,next:'draft',approval:'page',expected:'version-1',directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},
+    error:'The selected CLI failed. Check its sign-in and usage under Status → Check this computer, then try again.',reason:'cli',said:['Synthetic: not signed in.','Synthetic: run the login command.'],research:null,
+    stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'}]};
+  const f=fixture((url,options)=>{requests.push(url);if(url==='/api/computer')return {checks:[{label:'Codex',status:'action',detail:'Sign-in needed',next_step:'Run codex login'}]};if(url==='/api/run-settings')return {defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''},workspace:'/synthetic',shared_before:{}};return {items:[],total:0};});f.loadRunner();
+  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent);
+  f.set('found',failed);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
+  assert.ok(text().includes(failed.error),'the error names Status → Check this computer');
+  const said=nodes().find(e=>e.tagName==='details'&&e.children[0]?.textContent==='What the assistant said');
+  assert.ok(said,'what the assistant said sits under its own disclosure: '+text().join('|'));
+  assert.ok(descendants(said).some(e=>e.textContent==='Synthetic: not signed in.\nSynthetic: run the login command.'));
+  assert.ok(descendants(said).some(e=>/kept on this computer only/.test(e.textContent)));
+  const status=nodes().find(e=>e.tagName==='button'&&e.textContent==='Open Status');assert.ok(status,'a CLI failure offers Status');
+  await status.listeners.click();
+  assert.equal(f.get('title').textContent,'Status');assert.ok(requests.includes('/api/computer'));
+  // Without lines there is nothing to disclose, and Status is still offered.
+  f.set('found',{...failed,said:null});f.run("studio.screen='run';sRun(found)");
+  assert.equal(nodes().some(e=>e.tagName==='details'&&e.children[0]?.textContent==='What the assistant said'),false);
+  assert.ok(nodes().some(e=>e.textContent==='Open Status'));
+  // Out of time: the error names the limit, the page says where it lives, beside more time.
+  f.set('found',{...failed,reason:'time-limit',said:null,error:'This step ran out of the time a step may take (10 minutes).'});f.run('sRun(found)');
+  assert.ok(text().includes('This step ran out of the time a step may take (10 minutes).'));
+  assert.ok(text().includes('The limit is in Settings → Step time limit and applies to blogs started after a change. Try again with more time doubles it to 20 minutes for this blog.'),text().join('|'));
+  assert.ok(f.get('actions').children.some(e=>e.textContent==='Try again with more time'));
+  assert.equal(nodes().some(e=>e.textContent==='Open Status'),false,'a time limit is not a sign-in problem');
+  // First-run setup: Writing preferences open, and an assistant that is not installed marked.
+  f.run("studio.options={agents:{codex:false,claude:true}};studio.settings={defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''},workspace:'/synthetic',shared_before:{}};studio.team={};studio.brand=null;sSettings(true)");
+  const preferences=()=>nodes().find(e=>e.tagName==='details'&&e.children[0]?.textContent==='Writing preferences');
+  assert.equal(preferences().open,true,'setup opens Writing preferences');
+  assert.ok(descendants(preferences()).some(e=>e.textContent==='Codex: Not installed — see Status.'),descendants(preferences()).map(e=>e.textContent).join('|'));
+  assert.equal(descendants(preferences()).some(e=>/Claude Code: Not installed/.test(e.textContent)),false);
+  f.run('sSettings(false)');assert.equal(!!preferences().open,false,'Settings keeps it folded');
+  // The setup route reads which assistants are installed.
+  f.run('studio.options=null');requests.length=0;await f.run("sRoute('setup')");
+  assert.ok(requests.includes('/api/run-options'),requests.join('|'));
+  // The start form says so before a step fails.
+  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[],profiles:[],agents:{codex:false,claude:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',minutes:'10',operation:'a'.repeat(32)};sWizard()");
+  assert.ok(text().includes('Codex: Not installed — see Status. Every step stops until it is.'),text().join('|'));
 }

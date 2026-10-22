@@ -160,6 +160,47 @@ def refusal_words(refusal):
     )
 
 
+FAILURES = ('cli', 'time-limit', 'research-check')
+
+
+def said_path(root, ident):
+    """Where this computer keeps what a blog's last failed CLI wrote to stderr."""
+    return studio.inside(
+        root, '.blog-runs', 'diagnostics', 'cli', studio.identifier(ident) + '.json'
+    )
+
+
+def keep_said(root, ident, stage, engine_name, said):
+    """Keep the last lines a failed CLI wrote, readable by this account only, beside the
+    run's other local state: never in the blog's folder, a Team Hub or a shared repository."""
+    path = said_path(root, ident)
+    for folder in (path.parent.parent, path.parent):
+        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+        folder.chmod(0o700)
+    studio.write_json(
+        path,
+        {
+            'schema': 1,
+            'at': studio.now(),
+            'stage': stage,
+            'engine': engine_name,
+            'said': [str(line)[:500] for line in said][-blog_worker.SAID_LINES :],
+        },
+    )
+    path.chmod(0o600)
+
+
+def read_said(root, ident):
+    try:
+        path = said_path(root, ident)
+        said = studio.read_json(path).get('said') if path.is_file() else None
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not isinstance(said, list):
+        return None
+    return [line for line in said if isinstance(line, str)][-blog_worker.SAID_LINES :] or None
+
+
 def research_cost(jobs):
     """What the last research attempt took: its jobs, rounds and seconds, with tokens and
     dollars only when the CLI reported them for every job. None before any job ended."""
@@ -1578,7 +1619,7 @@ class Engine:
         if action in ('resume', 'retry'):
             if found['complete']:
                 raise ValueError('This run is already complete.')
-            state.update(enabled=True, status='queued', error='')
+            state.update(enabled=True, status='queued', error='', reason=None)
         elif action in ('pause', 'stop'):
             state.update(enabled=False, status='paused' if action == 'pause' else 'stopped')
             if action == 'stop' and self.current == ident:
@@ -1667,6 +1708,10 @@ class Engine:
             'started_at': local.get('started_at') if status == 'working' else None,
             'touched': decisions[-1]['at'] if decisions else None,
             'error': local.get('error', ''),
+            # Why the last job stopped, when it is one the page can say more about.
+            'reason': local.get('reason') if status == 'failed' else None,
+            # The last lines the assistant's CLI wrote, kept on this computer only.
+            'said': read_said(self.root, ident) if status == 'failed' else None,
             'research': research,
             'enabled': local.get('enabled', False),
             'observation': 'Saved locally. Workers use your selected CLI sign-in. Public research links need review; no publishing is automatic.',
@@ -1733,7 +1778,8 @@ class Engine:
                 save(self.root, directory, record, run, 'Selected model for ' + found['next'])
                 # Audit metadata changes the optimistic token, so use the freshly saved version.
                 found['expected'] = survey(self.root, ident)['expected']
-            local.update(status='working', error='', started_at=studio.now())
+            local.update(status='working', error='', reason=None, started_at=studio.now())
+            said_path(self.root, ident).unlink(missing_ok=True)  # The last failure's lines.
             if found['next'] == 'research':
                 # A new attempt: its rounds and jobs replace the last one's.
                 local.setdefault('research', {}).update(jobs=[], round=None, phase=None)
@@ -1879,8 +1925,24 @@ class Engine:
                             diagnostic.chmod(0o600)
                         except OSError:
                             message += ' The private failure diagnostic could not be saved.'
+                    reason = getattr(exc, 'reason', None)
+                    if reason == 'time-limit':
+                        # The limit this blog has, whatever a research job had left of it.
+                        message = (
+                            ('Research' if pending else 'This step')
+                            + ' ran out of the time a step may take ('
+                            + blog_worker.minutes(found['seconds'])
+                            + ').'
+                        )
+                    said = getattr(exc, 'said', None)
+                    if said:
+                        try:
+                            keep_said(self.root, ident, found['next'], found['engine'], said)
+                        except OSError:
+                            message += ' What the assistant said could not be kept.'
                     if pending:
                         refused = isinstance(exc, research_contract.ReviewRefused)
+                        reason = 'research-check' if refused else reason
                         research = state.setdefault('research', {})
                         research.update(round=None, phase=None)
                         research['refusal'] = (
@@ -1891,7 +1953,12 @@ class Engine:
                         if refused:
                             message = refusal_words(research['refusal'])
                         message = fitted(message, research_kept_words(kept, refused))
-                    state.update(enabled=False, status='failed', error=message[:500])
+                    state.update(
+                        enabled=False,
+                        status='failed',
+                        error=message[:500],
+                        reason=reason if reason in FAILURES else None,
+                    )
                     self.keep_local(ident, state)
         finally:
             if pending:

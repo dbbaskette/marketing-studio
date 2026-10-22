@@ -22,6 +22,8 @@ def offered(source):
 
 
 KINDS = ('facts', 'findings', 'prose')
+# The run says how long a step may take; the research's limit covers all its rounds.
+OUT_OF_TIME = 'Research ran out of the time a step may take.'
 
 
 def grouped(case):
@@ -117,7 +119,7 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
             raise ValueError('Research stopped. Saved work is kept.')
         remaining = seconds - (time.monotonic() - started)
         if remaining <= 0:
-            raise ValueError('Research reached its time limit. The saved draft is kept.')
+            raise blog_worker.WorkerFailure(OUT_OF_TIME, 'time-limit')
         selection = model_profiles.route(
             run,
             'Blog Studio',
@@ -217,10 +219,10 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
             ):
                 raise ValueError('Research source discovery returned an invalid source list.')
             for url in dict.fromkeys(urls):
-                if stop.is_set() or time.monotonic() - started >= seconds:
-                    raise ValueError(
-                        'Research stopped or reached its time limit. Saved work is kept.'
-                    )
+                if stop.is_set():
+                    raise ValueError('Research stopped. Saved work is kept.')
+                if time.monotonic() - started >= seconds:
+                    raise blog_worker.WorkerFailure(OUT_OF_TIME, 'time-limit')
                 try:
                     parsed = urlsplit(blog_library.canonical(url))
                     content, origin, kind = blog_library.fetch(
@@ -310,7 +312,7 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
                     except (ValueError, KeyError, TypeError, AttributeError) as error:
                         if attempt:
                             raise ValueError(
-                                'Research could not produce valid evidence and report data after one correction attempt. Your manuscript and source access are unchanged. Retry research or continue editing locally.'
+                                'Research could not produce valid evidence and report data after one correction attempt. Your manuscript and source access are unchanged. Choose Try again, or Continue without research.'
                             ) from None
                         answer = call(
                             phase,

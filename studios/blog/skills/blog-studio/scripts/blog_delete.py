@@ -168,6 +168,7 @@ def _forget(root, ident):
         if _names(path, ident, ('id',)):
             path.unlink()
     studio.inside(root, '.blog-runs', 'diagnostics', ident + '.json').unlink(missing_ok=True)
+    blog_runner.said_path(root, ident).unlink(missing_ok=True)
     active = studio.inside(root, '.active-article.json')
     if _names(active, ident, ('id',)):
         active.unlink()

@@ -570,5 +570,189 @@ class ContinueWithoutResearchTests(ResearchCase):
             )
 
 
+class WorkerFailureTests(MeteredWorkerTests):
+    def test_a_failed_cli_names_status_and_keeps_its_last_twenty_lines(self):
+        self.executable(
+            "for n in range(25):\n print('synthetic stderr line', n, file=sys.stderr)\nsys.exit(1)\n"
+        )
+        for agent in ('codex', 'claude'):
+            with self.subTest(agent=agent), self.assertRaises(blog_worker.WorkerFailure) as caught:
+                self.generate(agent)
+            self.assertEqual(caught.exception.reason, 'cli')
+            self.assertIn('Status → Check this computer', str(caught.exception))
+            self.assertEqual(
+                caught.exception.said, ['synthetic stderr line ' + str(n) for n in range(5, 25)]
+            )
+
+    def test_a_cli_that_reports_an_error_says_it(self):
+        self.executable(
+            "print(json.dumps({'is_error': True, 'result': 'Synthetic usage limit reached.'}))\n"
+        )
+        with self.assertRaises(blog_worker.WorkerFailure) as caught:
+            self.generate('claude')
+        self.assertEqual(caught.exception.reason, 'cli')
+        self.assertIn('Status → Check this computer', str(caught.exception))
+        self.assertEqual(caught.exception.said, ['Synthetic usage limit reached.'])
+
+    def test_an_unreadable_answer_names_status_too(self):
+        self.executable(
+            "print('not the JSON the schema asks for')\nprint('stderr detail', file=sys.stderr)\n"
+        )
+        with self.assertRaises(blog_worker.WorkerFailure) as caught:
+            self.generate('claude')
+        self.assertIn('did not return a readable document', str(caught.exception))
+        self.assertIn('Status → Check this computer', str(caught.exception))
+        self.assertEqual(caught.exception.said, ['stderr detail'])
+
+    def test_a_step_out_of_time_says_how_long_a_step_may_take(self):
+        self.executable('import time\ntime.sleep(30)\n')
+        with (
+            patch.object(blog_worker.source_curator, 'executable', return_value=str(self.binary)),
+            self.assertRaises(blog_worker.WorkerFailure) as caught,
+        ):
+            blog_worker.generate('claude', {}, 'Synthetic', seconds=1)
+        self.assertEqual(caught.exception.reason, 'time-limit')
+        self.assertEqual(
+            str(caught.exception), 'This step ran out of the time a step may take (1 second).'
+        )
+        self.assertEqual(
+            [blog_worker.minutes(value) for value in (30, 60, 90, 600, 3600)],
+            ['30 seconds', '1 minute', '1.5 minutes', '10 minutes', '60 minutes'],
+        )
+
+
+class RunFailureTests(ResearchCase):
+    def failing(self, error):
+        def worker(*args, **kwargs):
+            raise error
+
+        return worker
+
+    def test_a_cli_failure_keeps_what_the_assistant_said_on_this_computer_only(self):
+        found = self.create(page=True, stop='draft')
+        engine = self.engine()
+        engine.worker = self.failing(
+            blog_worker.WorkerFailure(
+                'The selected CLI failed. Check its sign-in and usage under Status → Check this '
+                'computer, then try again.',
+                'cli',
+                ['Synthetic: not signed in.', 'Synthetic: run the login command.'],
+            )
+        )
+        engine.control(found['id'], 'resume')
+        engine._once(found['id'])
+        shown = engine.describe(found['id'])
+        self.assertEqual(shown['status'], 'failed')
+        self.assertEqual(shown['reason'], 'cli')
+        self.assertIn('Status → Check this computer', shown['error'])
+        self.assertEqual(
+            shown['said'], ['Synthetic: not signed in.', 'Synthetic: run the login command.']
+        )
+        kept = self.root / '.blog-runs' / 'diagnostics' / 'cli' / (found['id'] + '.json')
+        self.assertEqual(kept.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(kept.parent.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(json.loads(kept.read_text())['stage'], 'outline')
+        directory = Path(shown['directory'])
+        self.assertFalse(
+            [
+                path
+                for path in directory.rglob('*')
+                if path.is_file() and 'not signed in' in path.read_text(errors='ignore')
+            ],
+            'nothing the assistant said is kept with the blog',
+        )
+        from hub_workspace import Workspace
+
+        shared = Workspace.read_artifacts(None, directory, 'articles')
+        self.assertFalse(
+            [
+                name
+                for name in shared
+                if 'not signed in' in (directory / name).read_text(errors='ignore')
+            ]
+        )
+        # The next job's start lets the old lines go; what it says replaces them.
+        engine.worker = lambda *a, **k: {'content': '# Outline\nSynthetic.', 'notes': 'Synthetic.'}
+        runner.dispatch(self.root, 'retry', {'id': found['id'], 'expected': shown['expected']})
+        engine._once(found['id'])
+        shown = engine.describe(found['id'])
+        self.assertIsNone(shown['said'])
+        self.assertIsNone(shown['reason'])
+        self.assertFalse(kept.exists())
+
+    def test_deleting_the_blog_removes_what_the_assistant_said(self):
+        found = self.create(page=True, stop='draft')
+        engine = self.engine()
+        runner.ENGINES[str(self.root)] = engine
+        engine.worker = self.failing(
+            blog_worker.WorkerFailure('The selected CLI failed.', 'cli', ['x'])
+        )
+        engine.control(found['id'], 'resume')
+        engine._once(found['id'])
+        kept = self.root / '.blog-runs' / 'diagnostics' / 'cli' / (found['id'] + '.json')
+        self.assertTrue(kept.is_file())
+        import blog_delete
+
+        shown = engine.describe(found['id'])
+        blog_delete.delete(
+            self.root, {'id': found['id'], 'expected': shown['expected'], 'title': shown['title']}
+        )
+        self.assertFalse(kept.exists())
+
+    def test_a_step_out_of_time_says_the_limit_this_blog_has(self):
+        found = self.create(page=True, stop='draft')
+        engine = self.engine()
+        engine.worker = self.failing(
+            blog_worker.WorkerFailure(
+                'This step ran out of the time a step may take (3 seconds).', 'time-limit'
+            )
+        )
+        engine.control(found['id'], 'resume')
+        engine._once(found['id'])
+        shown = engine.describe(found['id'])
+        self.assertEqual(shown['reason'], 'time-limit')
+        self.assertEqual(
+            shown['error'], 'This step ran out of the time a step may take (10 minutes).'
+        )
+        self.assertIsNone(shown['said'], 'nothing kept when nothing was said')
+
+    def test_research_out_of_time_says_so_and_keeps_its_draft(self):
+        found = self.research_run()
+        engine = self.engine()
+
+        def timing_out(case_root, run, payload, worker, *, seconds, stop, progress=None):
+            refused_case(case_root / research_contract.CASE)
+            raise blog_worker.WorkerFailure(
+                'Research ran out of the time a step may take.', 'time-limit'
+            )
+
+        engine.control(found['id'], 'resume')
+        with patch('synthesis_research.generate', timing_out):
+            engine._once(found['id'])
+        shown = engine.describe(found['id'])
+        self.assertEqual(shown['reason'], 'time-limit')
+        self.assertTrue(
+            shown['error'].startswith('Research ran out of the time a step may take (10 minutes).'),
+            shown['error'],
+        )
+        self.assertIn('kept on this computer', shown['error'])
+
+    def test_research_itself_stops_at_the_steps_limit(self):
+        found = self.research_run()
+        directory, _, run = runner.load(self.root, found['id'])
+        _, payload, _ = runner.job(self.root, found['id'])
+        with (
+            patch.object(research_contract, 'Workflow', FakeWorkflow),
+            patch.object(research_contract, 'runtime_for', lambda saved, runtime=None: '/x'),
+            tempfile.TemporaryDirectory() as temp,
+            self.assertRaises(blog_worker.WorkerFailure) as caught,
+        ):
+            synthesis_research.generate(
+                Path(temp), run, payload, research_worker(), seconds=0, stop=threading.Event()
+            )
+        self.assertEqual(caught.exception.reason, 'time-limit')
+        self.assertIn('ran out of the time a step may take', str(caught.exception))
+
+
 if __name__ == '__main__':
     unittest.main()
