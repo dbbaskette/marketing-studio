@@ -111,8 +111,10 @@ def read():
 from studio_core.studios_config import patch_json as _patch
 
 
-def update(changes, missing_only=False, expected=None):
-    """Saving Settings is consent. Merge only changed members, or absent legacy values."""
+def update(changes, missing_only=False, expected=None, guard=None):
+    """Saving Settings is consent. Merge only changed members, or absent legacy values.
+    `guard`, when given, is called with what the file holds under the lock, before anything
+    is written, and refuses by raising."""
     if not isinstance(changes, dict) or set(changes) - KEYS.keys():
         raise ValueError('Only shared settings belong in studios config.')
     leaves = []
@@ -174,6 +176,8 @@ def update(changes, missing_only=False, expected=None):
                 'Shared settings could not be updated; keep the existing file and correct it first.'
             ) from exc
         original = raw
+        if guard is not None:
+            guard(existing)
         for section, value in (expected or {}).items():
             current = existing.get(section)
             if isinstance(value, dict):

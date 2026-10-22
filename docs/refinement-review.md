@@ -8,7 +8,7 @@ entry points, matching commands and intentional terminal-only operations.
 | Area | Result |
 | --- | --- |
 | Presentation Studio | Bring remembered conversation decks into the page; inspect saved inputs and model receipts; preview the editable outline as a sandboxed storyboard; provide feedback on revision-bound partial native previews |
-| Presentation Studio review | Optional unreviewed first native draft; explicit on-demand review or as-is acceptance; focused repairs preserve unaffected drawings; matching clear inspection evidence may carry forward with a fresh whole-deck consistency check |
+| Presentation Studio review | Optional first draft, not checked; the check on demand or **Use this first draft**; focused repairs preserve unaffected drawings; matching clear inspection evidence may carry forward with a fresh whole-deck consistency check |
 | Marketing Studio setup | Explicit installed-brand discovery and selection alongside repository/folder setup; shared settings retain displayed-value checks and the adjacent lock; independent studio setup carries through to the suite |
 | Blog Studio | Contextual voice learning/management, interview-to-outline, history compare/restore, Google reconciliation, saved channel copies, retrieval/citation review and copywriting tools |
 | Editorial operations | Report-only pre-publish checks, bounded topic-overlap advice, source status filters and retirement undo; compatible opt-in compact CLI outcomes and a checked command inventory |

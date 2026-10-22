@@ -111,14 +111,35 @@ deck; Automatic draft stops only at the deck and uses the brand's default look,
 saying why. No stop is passed while a review or the brand's audit still finds
 something grave.
 
-Presentation Studio's direction review includes research, the editable outline
+Presentation Studio's direction stop includes research, the editable outline
 with its wireframe draft, and the brand's rendered looks to pick from. Blog Studio includes research with the outline, and the
-writing, independent review and requested export package at the final stop.
+writing, independent review and requested handoff at the final stop.
 Training Studio reads the research plan before any research is run, then groups
-all selected levels into one direction review with each deck's wireframe draft and
-the brand's looks to pick from, stops at each drawn deck, then one review
-of the completed documents, decks and scenarios. Its start form can choose a
-level for that one training; the shared level is the default.
+all selected levels into one stop, **Review the first drafts**, with each deck's
+wireframe draft and the brand's looks to pick from, stops at each drawn deck, then
+one review of the completed documents, decks and scenarios.
+
+### Where this run stops
+
+Every studio's start form has a **Where this run stops** card (in Training Studio,
+**Where this training stops**; in Presentation Studio, **Where this deck stops**): the
+three levels as one control, the stops the chosen level makes for this run, and a chip,
+**Use this for new work in every studio**. The control sets this run's level only and
+starts at the shared level the form read. With the chip on, the level is written to the
+studios config, under its lock, when the run starts. Nothing on the form leaves it.
+
+Each studio's Settings has **Where new work stops**, saved at once the same way.
+Marketing Studio's onboarding page keeps its own control. A write from a form or a
+Settings page that read a level another studio has since changed is refused, with
+nothing written and nothing started: "Another studio changed where new work stops.
+Reload the page and try again." A file that cannot be read shows Step by step, and
+nothing is written to it.
+
+Once a run has started, one line under its stages says how many steps are left, where
+it next stops for you under its own level, and what it has spent so far, in dollars
+only when every job reported them ("the assistant reported no cost" otherwise). Every
+**Ask for changes** sheet says what is drawn again and what those steps took the last
+time they ran, or that this computer has no record of what they cost.
 
 Automatic continuation is recorded as policy acceptance, never as your personal
 approval. Source scope, validation, visual review, bounded repairs, questions,

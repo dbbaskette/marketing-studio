@@ -143,7 +143,7 @@ def check_form(sent: dict, brands: list | None) -> dict:
     mode = sent.get('initial_review')
     if mode is not None:
         if mode not in ('standard', 'user-first'):
-            raise WorkspaceError('Choose normal AI review or show the first draft before AI review.')
+            raise WorkspaceError('Choose a checked deck, or the first draft before the check.')
         if route == 'existing' and sent.get('level') == 'selected' and mode == 'user-first':
             raise WorkspaceError('First-draft mode applies to a full build, not a selected-slide patch.')
         checked.update(initial_review=mode, initial_review_source='form')
@@ -160,6 +160,29 @@ def check_form(sent: dict, brands: list | None) -> dict:
     if route in SOURCES:
         checked['source'] = _source(sent, route)
     return checked
+
+
+def review_choice(sent: dict) -> tuple:
+    """Where the form says this deck stops: (level, seen, default). `level` is None when the
+    form chose none, and the deck then takes the shared level. `seen` is the shared level the
+    form read, and `default` whether to make `level` the one new work starts at in every
+    studio. None of them is kept in the deck's form."""
+    from studio_core import review_policy
+    sent = sent if isinstance(sent, dict) else {}
+    level = sent.get('review_level')
+    if level in (None, ''):
+        level = None
+    else:
+        try:
+            review_policy.check({'level': level})
+        except ValueError as error:
+            raise WorkspaceError(str(error)) from None
+    default = sent.get('review_default', False)
+    if default not in (True, False):
+        raise WorkspaceError('Say whether to use this level for new work: true or false.')
+    if default and level is None:
+        raise WorkspaceError('Choose where this deck stops before using it for new work.')
+    return level, sent.get('review_seen'), default
 
 
 # --- ids -----------------------------------------------------------------------------------

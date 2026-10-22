@@ -45,9 +45,9 @@ GETS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/r
 POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
          '/api/documents', '/api/copies', '/api/share', '/api/companions', '/api/asset',
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
-         '/api/note')
+         '/api/note', '/api/review-level')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
-RUN_KEYS = ['agent', 'clash', 'controls', 'copies', 'deck', 'deck_left', 'documents', 'driver', 'effort',
+RUN_KEYS = ['agent', 'ahead', 'clash', 'controls', 'copies', 'deck', 'deck_left', 'documents', 'driver', 'effort',
             'finished', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
             'question', 'queue', 'redesign', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
             'workers']
@@ -191,6 +191,7 @@ class RuleTests(PageCase):
                        '/api/run': {'path': self.path, 'action': 'stop'},
                        '/api/answer': {'path': self.path, 'id': 'x', 'answer': 'Yes.'},
                        '/api/note': {'path': self.path, 'expected': '0', 'text': 'Keep it short.'},
+                       '/api/review-level': {'level': 'balanced', 'seen': 'step_by_step'},
                        '/api/documents': {'path': self.path, 'action': 'add',
                                           'name': 'handbook.txt', 'content': 'V29yZHMu'},
                        '/api/copies': {'path': self.path},
@@ -289,7 +290,7 @@ class SetUpTests(FirstTimeCase):
             'team_moved': None, 'shared_notice': None,
             'agent': {'default': 'claude', 'model': None, 'effort': None},
             'limits': {'step_seconds': 900, 'training_dollars': 20.0, 'parallel': 2},
-            'previews': {'how': None, 'drive': False, 'local': False, 'left': []},
+            'previews': {'how': None, 'pool': False, 'drive': False, 'local': False, 'left': []},
             'notify': {'on': False, 'can': True, 'problem': None},
             'updates': {'look': True}, 'upkeep': None,
             'brand': {'found': False, 'name': None, 'brands': [], 'skills': [],
@@ -317,7 +318,7 @@ class SetUpTests(FirstTimeCase):
             'shared_problem': None, 'team_moved': None, 'shared_notice': None,
             'agent': {'default': 'codex', 'model': 'a-model', 'effort': 'ultra'},
             'limits': {'step_seconds': 600, 'training_dollars': 7.5, 'parallel': 3},
-            'previews': {'how': None, 'drive': False, 'local': False, 'left': []},
+            'previews': {'how': None, 'pool': False, 'drive': False, 'local': False, 'left': []},
             'notify': {'on': False, 'can': True, 'problem': None},
             'updates': {'look': True}, 'upkeep': None,
             'brand': {'found': False, 'name': None, 'brands': [], 'skills': [],
@@ -1636,7 +1637,7 @@ class RunTests(PageCase):
         self.assertEqual((run['state'], run['agent'], run['model'], run['effort'],
                           run['workers'], run['question'], run['problem']),
                          ('waiting', 'claude', None, None, [], None, None))
-        self.assertEqual(run['spent'], {'dollars': 0.5, 'tokens': 1200})
+        self.assertEqual(run['spent'], {'dollars': 0.5, 'tokens': 1200, 'stops_at': 20.0})
         self.assertIsInstance(run['sentence'], str)
         for step in run['steps']:
             self.assertEqual(sorted(step), STEP_KEYS)

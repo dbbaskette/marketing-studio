@@ -168,21 +168,22 @@ const MATERIALS = [['document', 'Learner guide'], ['brief', 'Reference brief'],
 const REVIEW_LEVELS = [['balanced', 'Balanced'], ['automatic', 'Automatic draft'],
   ['step_by_step', 'Step by step']];
 const REVIEW_SAYS = {
-  balanced: 'Stops to read the research plan, then the direction for every level together, '
+  balanced: 'Stops to read the research plan, then the first drafts of every level together, '
     + 'then the finished materials together.',
   automatic: 'Stops only for the finished materials. It costs more before you first see '
     + 'anything, and the spending limit still holds.',
   step_by_step: 'Stops at every stage of every level.',
 };
-const SOURCES = [['public-web', 'The public web'], ['supplied-only', 'Your documents only'],
-  ['both', 'Both']];
+const SOURCES = [['public-web', 'The public web only'], ['supplied-only', 'Only what you supply'],
+  ['both', 'What you supply and the public web']];
 const SOURCE_SAYS = [
-  'The public web: it searches for pages anyone can read, and keeps every page it quotes '
+  'The public web only: it searches for pages anyone can read, and keeps every page it quotes '
     + 'with the training.',
-  'Your documents only: it reads the documents you give it and nothing else, and never '
+  'Only what you supply: it reads the documents you give it and nothing else, and never '
     + 'searches the web or opens a page. You add them right after starting, and they stay on '
     + 'this computer.',
-  'Both: it reads your documents and researches the public web as well. You add the '
+  'What you supply and the public web: it reads your documents and researches the public '
+    + 'web as well. You add the '
     + 'documents right after starting, and they stay on this computer.',
 ];
 // A training where the run has made everything it can, and the deck is all that is left.
@@ -215,6 +216,15 @@ const PREVIEW_SAYS = [
     + 'again at each render. Training Studio never deletes it. Settings lists the ones it '
     + 'made, each with its address, so that you can.',
 ];
+// With a slides tool that keeps a pool of preview presentations, no file is named for a deck.
+const POOL_SAYS = 'Google Drive: previews are drawn in a few shared presentations named '
+  + '“Preview: …” in your Drive, reused by every deck. Training Studio never deletes them.';
+function pooled() {
+  return Boolean(view.setup && view.setup.previews && view.setup.previews.pool);
+}
+function previewSays() {
+  return pooled() ? [PREVIEW_SAYS[0], POOL_SAYS] : PREVIEW_SAYS;
+}
 const PREVIEW_ABSENT = [
   'LibreOffice was not found on this computer, so Google Drive is the one way there is.',
   'Google access on this computer does not reach Drive, so LibreOffice is the one way there '
@@ -762,9 +772,13 @@ function nowLine(run) {
     .filter((stamp) => !Number.isNaN(stamp));
   if (began.length) parts.push(lasted((Date.now() - Math.min(...began)) / 1000));
   const spent = run.spent || {};
-  if (given(spent.dollars)) parts.push(money(spent.dollars) + ' so far');
+  if (given(spent.dollars) && Number(spent.dollars) >= 0.005) {
+    parts.push(money(spent.dollars) + ' so far');
+  }
+  // The run's own limit, raised by every Carry on; Settings' only where the run says none.
   const limits = (view.setup && view.setup.limits) || {};
-  if (given(limits.training_dollars)) parts.push('stops at ' + money(limits.training_dollars));
+  const stopsAt = given(spent.stops_at) ? spent.stops_at : limits.training_dollars;
+  if (given(stopsAt)) parts.push('stops at ' + money(stopsAt));
   return parts.length ? make('p', 'now-line', parts.join(' · ')) : null;
 }
 
@@ -1329,8 +1343,11 @@ function noteSheet(kind) {
   field.addEventListener('input', () => {
     view.notes[key] = field.value;
   });
-  const hint = make('p', 'quiet', runOf(view.path) ? spec.hint.replace('Your assistant makes',
-    'Training Studio makes') : spec.hint);
+  // What a change writes again, and what that took the last time, said before it is sent.
+  const price = outlined() ? view.run.outline.redo : view.gate && view.gate.redo;
+  const redo = kind === 'revise' && price ? ' ' + price.says : '';
+  const hint = make('p', 'quiet', (runOf(view.path) ? spec.hint.replace('Your assistant makes',
+    'Training Studio makes') : spec.hint) + redo);
   hint.id = 'note-hint';
   const problem = problemLine();
   const submit = submitButton(spec.send, 'send');
@@ -2006,6 +2023,8 @@ function drawSettings(fresh) {
     ['shared-settings', [Boolean(view.runner)], () => view.runner ? add(card('Shared settings'),
       make('p', '', 'Your assistant, work folder, brand and delivery choices apply across all studios.'),
       capsule('Change shared settings', 'quiet', () => { location.href = settingsAddress(); }, 'shared-settings')) : null],
+    ['review-level', [Boolean(view.runner), view.setup && view.setup.review_level,
+      view.reviewRefused], whereNewWorkStopsCard],
     ['workspace', around(), workspaceCard], ['left', around(), leftCard],
     ['alerts', [alerts()], alertsCard], ['notify', around(), notifyCard],
     ['look', [view.setup && view.setup.updates, view.lookRefused], lookCard],
@@ -3368,7 +3387,10 @@ function leftCard() {
   const left = list(found && found.left);
   if (!found || (!left.length && found.how !== 'drive')) return null;
   const node = card('Preview files in your Google Drive');
-  add(node, make('p', '', 'A deck whose previews are made through Google Drive keeps one '
+  add(node, make('p', '', pooled() ? 'Previews made through Google Drive are drawn in a few '
+    + 'shared presentations there, named “Preview: …”, and reused by every deck. Training '
+    + 'Studio never deletes them, so removing them is yours to do, in Drive.'
+    : 'A deck whose previews are made through Google Drive keeps one '
     + 'presentation there, named “Preview: …”. Training Studio never deletes one, so '
     + 'removing them is yours to do, in Drive, once a deck is finished.'));
   if (!left.length) return add(node, make('p', 'quiet', 'It has made none so far.'));
@@ -3939,7 +3961,7 @@ function previewsCard(form) {
       make('p', 'fix', 'It needs LibreOffice, or Google access that reaches Drive. Everything '
         + 'but the deck can be made meanwhile, and the Status screen says what a deck needs.'));
   }
-  const [control, meanings] = explained('Make them with', PREVIEW_NAMES, PREVIEW_SAYS,
+  const [control, meanings] = explained('Make them with', PREVIEW_NAMES, previewSays(),
     PREVIEWS.indexOf(form.previews), (index) => {
       form.previews = PREVIEWS[index];
     }, 'previews');
@@ -4186,12 +4208,13 @@ function settleDeck(draft) {
 }
 
 // The fewest times a training stops for a decision: at its questions, at its research, and at
-// the blueprint, the guide and the brief of each level. Each practice scenario asks once more,
-// and how many there are is not known until a blueprint names them. The runner says the same
-// number back once it has started.
+// the blueprint, the guide and the brief of each level. A deck stops three times a level: its
+// outline, its look and the deck. Each practice scenario asks once more, and how many there
+// are is not known until a blueprint names them. The runner says the same number back once it
+// has started.
 function gatesFor(draft) {
-  return 2 + (1 + ['document', 'brief'].filter((id) => draft.materials.includes(id)).length)
-    * Math.max(1, draft.levels.length);
+  return 2 + (1 + ['document', 'brief'].filter((id) => draft.materials.includes(id)).length
+    + (DECKS[draft.deck][0] ? 3 : 0)) * Math.max(1, draft.levels.length);
 }
 
 function times(number) {
@@ -4337,8 +4360,10 @@ function shapeStep(draft) {
 }
 
 // Where this one training stops for you. The shared level is its default; a level picked
-// here is saved with the training when it starts, and a settings change never moves it.
-function reviewLevelCard(draft) {
+// here is saved with the training when it starts, and a settings change never moves it. The
+// chip also makes it the level new work starts at in every studio, written when the training
+// starts. Nothing here leaves the form.
+function reviewLevelCard(draft, line) {
   const at = Math.max(0, REVIEW_LEVELS.findIndex(([id]) => id === draft.review_level));
   // The step is drawn again from the pick, so everything that reads the level follows it.
   const control = segmented('Review level', REVIEW_LEVELS.map(([, label]) => label), at,
@@ -4349,9 +4374,38 @@ function reviewLevelCard(draft) {
       focusKey('review-level ' + index);
     }, 'review-level');
   const shared = REVIEW_LEVELS.find(([id]) => id === draft.review_seen);
-  return add(card('Review level'), control, make('p', 'quiet', REVIEW_SAYS[draft.review_level]),
+  return add(card('Where this training stops'), control, line,
+    make('p', 'quiet', REVIEW_SAYS[draft.review_level]),
     make('p', 'quiet', (shared ? 'Shared default: ' + shared[1] + '. ' : '')
-      + 'This training keeps the level it starts with.'));
+      + 'This training keeps the level it starts with.'),
+    add(make('div', 'field'), chip('Use this for new work in every studio',
+      draft.review_default, (on) => { draft.review_default = on; }, 'review-default'),
+    make('p', 'quiet field-hint', 'Saved when the training starts.')));
+}
+
+// Settings: where new work stops in every studio, saved at once. A refusal, such as a level
+// another studio changed since this page read it, is said in the card.
+function whereNewWorkStopsCard() {
+  if (!view.runner) return null;
+  const problem = alertLine('review-level-problem');
+  if (view.reviewRefused) say(problem, view.reviewRefused);
+  const level = (view.setup && view.setup.review_level) || 'step_by_step';
+  return add(card('Where new work stops'),
+    make('p', '', 'Where new work stops for you, in every studio. A start form can choose '
+      + 'differently for one training.'),
+    choice('Review level', REVIEW_LEVELS.map(([, label]) => label),
+      Math.max(0, REVIEW_LEVELS.findIndex(([id]) => id === level)), async (index) => {
+        const chosen = REVIEW_LEVELS[index][0];
+        try {
+          view.setup = await send('review-level', { level: chosen, seen: level });
+          view.reviewRefused = '';
+          toast('New work in every studio now starts at ' + REVIEW_WORDS[chosen] + '.');
+        } catch (failure) {
+          view.reviewRefused = failure.message;
+        }
+        draw(false);
+      }, 'review-level'),
+    problem);
 }
 
 function startStep(draft) {
@@ -4378,31 +4432,30 @@ function startStep(draft) {
       : 'Research starts after you start the training.';
     // A drawn deck always comes to the person, whatever the level.
     const deck = Boolean(DECKS[draft.deck][0]);
-    const stops = policy === 'balanced' ? 'the research plan, the direction review'
+    const stops = policy === 'balanced' ? 'the research plan, the first drafts'
         + (deck ? ', each drawn deck' : '') + ' and the finished materials'
       : policy === 'automatic' ? (deck ? 'each drawn deck and ' : '') + 'the finished materials'
-        : 'at least ' + gatesFor(draft) + ' decisions for research and the selected teaching materials'
+        : 'at least ' + gatesFor(draft) + ' decisions for research'
+          + (deck ? ', the selected teaching materials and each deck'
+            : ' and the selected teaching materials')
           + (draft.materials.includes('scenario') ? ', plus each practice scenario' : '')
           + (draft.yoodli ? ' and each Yoodli layout' : '');
-    const change = make('a', '', 'Change');
-    change.href = settingsAddress();
-    then.replaceChildren(make('span', '', REVIEW_WORDS[policy] + ': it stops for ' + stops),
-      make('span', '', ' · '), change);
+    then.textContent = REVIEW_WORDS[policy] + ': it stops for ' + stops;
     const levels = draft.levels.length ? 'each level' : 'the training';
     comes.textContent = (policy === 'balanced'
-      ? 'The direction review comes after research and the blueprint, guide and brief for '
+      ? 'Review the first drafts comes after research and the blueprint, guide and brief for '
         + levels + ', so the first stop is some minutes in. '
       : policy === 'automatic' ? 'Intermediate drafts continue automatically. ' : '')
       + (DECKS[draft.deck][0] ? (policy === 'step_by_step'
-        ? 'A deck adds two reviews per level when this computer can build it.'
+        ? 'A deck adds three stops per level: its outline, its look and the deck.'
         : 'A deck has its own review.') : '');
   };
   tell();
   return [add(card('Ready to start'), make('p', 'lede', series(selected)),
     make('p', 'quiet', (draft.levels.length ? 'Levels: ' + draft.levels.join(', ') : 'One training without levels')
       + (draft.time ? ' · ' + draft.time : ' · Sized from the teaching plan')),
-    first, then, comes, make('p', 'quiet', 'You can close this page while it works. Saved materials stay available.')),
-  reviewLevelCard(draft),
+    first, comes, make('p', 'quiet', 'You can close this page while it works. Saved materials stay available.')),
+  reviewLevelCard(draft, then),
   add(card('Sources'), ...explained('Where the research looks',
     SOURCES.map((source) => source[1]), SOURCE_SAYS, draft.sources, (index) => {
       draft.sources = index;
@@ -4411,7 +4464,7 @@ function startStep(draft) {
   trainingOptions('Assistant and limits', 'training-assistant',
     ...agentFields(draft, 'new', 'For this training', told), drafted,
     make('p', 'quiet', limitsSays(limits) || 'No limits are set for this computer.'),
-    make('p', 'quiet', 'Limits are changed in Settings. The review preference is shared with Marketing Studio and is saved when this training starts.'))];
+    make('p', 'quiet', 'Limits are changed in Settings.'))];
 }
 
 function paintNew(fresh) {
@@ -4507,6 +4560,7 @@ async function startTraining(pressed) {
   };
   body.review_level = draft.review_level;
   if (draft.review_seen) body.review_seen = draft.review_seen;
+  if (draft.review_default) body.review_default = true;
   draft.starting = true;
   pressed.disabled = true;
   const form = main().querySelector('form');
@@ -4624,9 +4678,23 @@ function runStanding(run) {
     : runWords(run);
 }
 
+// One line under the beads: how many steps are left, where the training next stops for you
+// under its own level, and what it has spent so far, all as the runner says them.
+function aheadLine(run) {
+  const ahead = run.ahead;
+  if (!ahead || !ahead.steps_left) return null;
+  const parts = [count(ahead.steps_left, 'step left', 'steps left')];
+  if (ahead.next_stop) {
+    parts.push('Next stop: ' + lower(ahead.next_stop).replace(/^(your review of|review) /, ''));
+  }
+  if (ahead.spent) parts.push('So far ' + ahead.spent);
+  return make('p', 'quiet ahead-line', parts.join(' · '));
+}
+
 function runIntro(run, training, promised) {
   const node = add(make('div', 'intro'), nowLine(run), state(...runStanding(run)));
   if (list(training.stages).length) add(node, beads(training.stages, false));
+  add(node, aheadLine(run));
   add(node, make('p', 'lede run-says', run.sentence));
   const next = nextGate(run);
   // What someone else runs asks nothing of this person, and promises them nothing: who
@@ -4823,11 +4891,30 @@ function problemPart(run, lead) {
   const title = run.state === 'waiting' ? 'It is waiting for you'
     : theirs ? 'It has stopped' : 'It has stopped, and needs you';
   const does = theirs ? '' : actionSays(run, found);
+  // The research check's objections, every one under its group, read where the stop is.
+  let read = null;
+  const shown = found.objections ? make('div', 'card-part') : null;
+  if (found.objections) {
+    read = capsule('Read every objection', 'quiet', async () => {
+      read.disabled = true;
+      try {
+        const gate = await ask('gate', { path: view.path, artifact: 'research' });
+        shown.replaceChildren(make('h3', 'row-title', 'The research check'),
+          ...String(gate.review || '').split('\n')
+            .map((line) => line.replace(/^(#+|>)\s*/, '').replace(/^>\s*/, '').trim())
+            .filter(Boolean).map((line) => make('p', '', line)));
+      } catch (failure) {
+        shown.replaceChildren(make('p', 'problem', failure.message));
+      } finally {
+        read.disabled = false;
+      }
+    }, 'read-objections');
+  }
   return callout('late', make('h2', 'aside-title', title),
     add(make('p', ''), make('strong', '', 'What happened: '), found.what),
     keptPart(found.kept),
     does ? make('p', 'quiet', does) : null,
-    add(make('div', 'bar'), go));
+    add(make('div', 'bar'), go, read), shown);
 }
 
 function questionPart(run, title) {
@@ -4947,10 +5034,13 @@ function costCard(run) {
   const spent = run.spent || {};
   const limits = (view.setup && view.setup.limits) || {};
   const agent = AGENT_NAMES[run.agent] || run.agent || 'an agent';
-  add(node, make('p', 'cost', given(spent.dollars) ? money(spent.dollars) : 'Not reported'));
+  // A cost of nothing is not reported money: it is never said as $0.00.
+  const reported = given(spent.dollars) && Number(spent.dollars) > 0;
+  add(node, make('p', 'cost', !reported ? 'Not reported'
+    : Number(spent.dollars) < 0.005 ? 'Less than $0.01' : money(spent.dollars)));
   const says = [];
-  const silent = !given(spent.dollars) && given(spent.tokens);
-  if (given(spent.dollars)) says.push('So far.');
+  const silent = !reported && given(spent.tokens);
+  if (reported) says.push('So far.');
   else if (silent) says.push(agent + ' says how many tokens it uses, not what they cost.');
   else says.push('Nothing has been reported yet. An agent says what it used as each step ends.');
   if (given(spent.tokens)) says.push(Number(spent.tokens).toLocaleString() + ' tokens used.');
@@ -5631,7 +5721,7 @@ function deckCard(run) {
 }
 
 function combinedLabel(review) {
-  return 'Approve ' + (review.phase === 'direction' ? 'the direction' : 'the finished materials');
+  return 'Approve ' + (review.phase === 'direction' ? 'the first drafts' : 'the finished materials');
 }
 
 // What one item of a combined review is marked as on this page: 'changes', 'good' or ''.
@@ -5650,6 +5740,9 @@ function marked(review) {
       label: item.label, rewrites: list(item.rewrites) }));
 }
 
+// The stages written before the first drafts stop: approving it does not write them.
+const PREPARED = ['research-plan', 'research', 'blueprint', 'document', 'brief'];
+
 // What approving a combined review commits to, said before it is approved.
 function commitsSays(review) {
   const commits = review.commits;
@@ -5657,20 +5750,29 @@ function commitsSays(review) {
     return 'Approving finishes this draft. Everything is kept as it stands, and publishing '
       + 'is a separate action.';
   }
-  const names = { document: 'learner guide', brief: 'brief', scenario: 'practice scenarios',
-    yoodli: 'Yoodli scenarios' };
-  const made = list(commits.materials).map((stage) => names[stage] || stage);
+  const names = { scenario: 'practice scenarios', yoodli: 'Yoodli layouts' };
+  // What was written before this stop is not written by approving it, even where a saved
+  // review from before still lists it.
+  const made = list(commits.materials).filter((stage) => !PREPARED.includes(stage))
+    .map((stage) => names[stage] || stage);
   const levels = commits.levels > 1 ? 'each of the ' + commits.levels + ' levels' : 'the training';
-  let said = 'Approving the direction ' + (made.length ? 'writes the ' + series(made) + ' for '
-    + levels : 'carries on with ' + levels);
-  if (commits.deck) {
-    const parts = [];
-    if (given(commits.dollars)) parts.push('about ' + money(commits.dollars));
-    if (given(commits.minutes)) parts.push('about ' + lasted(Number(commits.minutes) * 60) + ' of agent time');
-    said += ', and the deck is then drawn' + (parts.length ? ': a deck of this size has cost '
-      + parts.join(' and ') + ' before' : '');
+  const parts = [];
+  if (given(commits.dollars)) parts.push('about ' + money(commits.dollars));
+  if (given(commits.minutes)) parts.push(lasted(Number(commits.minutes) * 60) + ' of agent time');
+  const estimate = parts.length ? parts.join(' and ') + ' for a deck of this size (a fixed '
+    + "estimate, not this computer's history)" : '';
+  let said;
+  if (made.length) {
+    said = 'Approving the first drafts writes the ' + series(made) + ' for ' + levels
+      + (commits.deck ? ', and the deck is then drawn' + (estimate ? ': estimated at '
+        + estimate : '') : '') + '.';
+  } else {
+    const what = commits.levels > 1 ? 'the levels' : 'the training';
+    said = commits.deck ? 'Nothing more is written for ' + what + ': approving carries on to '
+      + 'the deck.' + (estimate ? ' The deck is estimated at ' + estimate + '.' : '')
+      : 'Nothing more is written for ' + what + '.';
   }
-  return said + '. It spends from the same limit as the rest of the training.';
+  return said + ' It spends from the same limit as the rest of the training.';
 }
 
 // The sheet that confirms a combined approval: the same one a file's approval gets, saying
@@ -5681,7 +5783,7 @@ function combinedConfirm() {
   const problem = problemLine();
   const confirm = capsule(spec.send, 'filled', () => decideCombined(review, 'approve', null,
     null, confirm, problem), 'send');
-  const what = review.phase === 'direction' ? 'the direction' : 'the finished materials';
+  const what = review.phase === 'direction' ? 'the first drafts' : 'the finished materials';
   // Requests marked but not sent are said before the approval goes without them.
   const held = marked(review).length;
   return [sheetTitle(spec.title(what)), make('p', '', spec.says),
@@ -5828,7 +5930,7 @@ function combinedReview(run) {
   const small = narrow();
   const node = card(review.label);
   add(node, make('p', 'lede', review.phase === 'direction'
-    ? 'Review the research and teaching direction below. Approve the direction to build your selected materials.'
+    ? 'Review the first drafts below: the research and what is written so far for each level. Approve them to go on to what is still to write.'
     : 'Review the completed materials together. Approval finishes this draft; publishing is a separate action.'));
   if (!theirs) {
     add(node, make('p', 'quiet', 'Mark what needs changes as you read, and send every request '
@@ -5902,8 +6004,9 @@ function combinedReview(run) {
       const key = noteKeyOf(review, item);
       request.value = view.notes[key] || '';
       request.addEventListener('input', () => { view.notes[key] = request.value; });
-      const hint = make('p', 'quiet', list(item.rewrites).length ? 'If it changes, these are '
-        + 'written again from it: ' + series(item.rewrites) + '.' : 'Nothing else is built from it.');
+      const hint = make('p', 'quiet', (list(item.rewrites).length ? 'If it changes, these are '
+        + 'written again from it: ' + series(item.rewrites) + '.' : 'Nothing else is built from it.')
+        + (item.redo ? ' ' + item.redo.says : ''));
       const asking = add(make('div', 'review-request'), label, request, hint);
       asking.hidden = mark !== 'changes';
       const marks = make('div', 'review-marks chips');
@@ -7001,7 +7104,10 @@ function statusWords(found) {
 }
 
 function spentSays(spent) {
-  if (given(spent.dollars)) return money(spent.dollars);
+  // A cost of nothing is never said as $0.00.
+  if (given(spent.dollars) && Number(spent.dollars) > 0) {
+    return Number(spent.dollars) < 0.005 ? 'less than $0.01' : money(spent.dollars);
+  }
   return given(spent.tokens) ? Number(spent.tokens).toLocaleString() + ' tokens'
     : 'Not reported yet';
 }

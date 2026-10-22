@@ -85,8 +85,8 @@ class LinkTests(unittest.TestCase):
         # suiteHome, which takes only this host on another port. External links still come
         # only from the server or a downloaded deck.
         targets = re.findall(r'\.href = ([^;]+);', script)
-        self.assertEqual(sorted(targets), ['address', 'held', "home + '/'", 'settingsAddress()',
-                                           'settingsAddress()'])
+        # The start form has no such link: where a deck stops is chosen on it.
+        self.assertEqual(sorted(targets), ['address', 'held', "home + '/'", 'settingsAddress()'])
         self.assertIn("return '/onboarding/#token=' + view.token;", script)
         self.assertIn('let home = suiteHome(window.location.hash, window.location)\n'
                       '    || suitePort(document.body?.dataset?.suitePort, window.location);', script)
@@ -181,10 +181,10 @@ class WordTests(unittest.TestCase):
         tags = re.search(r"const ABOUT_TAGS = \{([^}]*)\}", read('app.js')).group(1)
         self.assertEqual(sorted(re.findall(r"(\w+):", tags)), sorted(build.ABOUT))
 
-    def test_rehearsing_with_yoodli_is_coming_later(self):
+    def test_no_rehearsal_placeholder_is_drawn(self):
         script = read('app.js')
-        self.assertIn('Rehearse with Yoodli', script)
-        self.assertIn('Coming later', script)
+        self.assertNotIn('Rehearse with Yoodli', script)
+        self.assertNotIn('Coming later', script)
 
 
 if __name__ == '__main__':

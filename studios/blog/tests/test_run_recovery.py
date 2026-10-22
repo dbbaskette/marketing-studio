@@ -465,6 +465,55 @@ class MeteredWorkerTests(unittest.TestCase):
         self.assertEqual(len(jobs), 2)
 
 
+class StageMeterTests(ResearchCase):
+    """Every stage job is metered through the real worker, with a scripted CLI in place of
+    the assistant: its seconds, and the tokens and dollars it reported, kept on this
+    computer's run state. Nothing real runs."""
+
+    def setUp(self):
+        super().setUp()
+        self.binary = self.base / 'fixture-agent'
+        self.binary.write_text(
+            '#!' + sys.executable + '\nimport sys,json,time\nfrom pathlib import Path\n'
+            'time.sleep(0.05)\n'
+            'args=sys.argv[1:]\n'
+            "value={'content':'# Outline\\nSynthetic.','notes':'Fixture CLI; no account.'}\n"
+            "if '--output-last-message' in args:\n"
+            " Path(args[args.index('--output-last-message')+1]).write_text(json.dumps(value))\n"
+            'else:\n'
+            " print(json.dumps({'structured_output':value,'total_cost_usd':0.42,"
+            "'usage':{'input_tokens':100,'output_tokens':50}}))\n"
+        )
+        self.binary.chmod(0o700)
+        for patcher in (
+            patch.object(blog_worker.source_curator, 'executable', return_value=str(self.binary)),
+            patch.object(blog_worker.source_curator, 'codex_options', return_value=[]),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_every_stage_job_is_metered(self):
+        for agent, dollars in (('claude', 0.42), ('codex', None)):
+            with self.subTest(agent=agent):
+                found = self.create(page=True, stop='draft', engine=agent, title='Metered ' + agent)
+                engine = runner.Engine(self.root, worker=blog_worker.generate)
+                self.addCleanup(engine.close)
+                engine.control(found['id'], 'resume')
+                engine._once(found['id'])
+                job = engine.local(found['id'])['jobs'][-1]
+                self.assertEqual((job['stage'], job['dollars']), ('outline', dollars))
+                self.assertGreater(job['seconds'], 0)
+                ahead = engine.describe(found['id'])['ahead']
+                self.assertEqual(ahead['jobs'], 1)
+                self.assertEqual(ahead['dollars'], dollars)
+                self.assertTrue(
+                    ahead['spent'].endswith(
+                        'and about $0.42' if dollars else '; the assistant reported no cost'
+                    ),
+                    ahead['spent'],
+                )
+
+
 class ContinueWithoutResearchTests(ResearchCase):
     def stopped_at_research(self):
         found = self.research_run()

@@ -298,7 +298,7 @@ SETTLED = ('The research for this training was planned from the documents alread
            'they cannot be changed now.')
 REVIEW_DECIDES = ('This is part of the {name} that is waiting for you, so it is decided there, '
                   'with everything the review covers. Nothing was changed.')
-REVIEW_NAMES = {'direction': 'direction review', 'final': 'final review'}
+REVIEW_NAMES = {'direction': 'first drafts review', 'final': 'final review'}
 PREVIEWS = 'previews'   # in the per-user data folder: the render's turn, and each deck's file
 DECK_KEPT = ('What you approved the deck should say is kept, and so is everything made '
              'before it.')
@@ -960,12 +960,18 @@ class Engine(Reviewing):
             raise WorkspaceError(ready.problem)
         with self.files:
             record = new_record(agent, model, chosen, form['source_scope'], effort)
-            # An older page sends only the level it saw as `review_level`: that is checked too.
-            current = review_policy.level(record)
-            if form.get('review_seen', form.get('review_level', current)) != current:
-                raise WorkspaceError('The shared review preference changed while this form '
-                                     'was open. Review the updated preference before '
-                                     'starting. Nothing was started.')
+            if form.get('review_default'):
+                # Use this for new work in every studio: written under the studios config's
+                # lock, or refused, with nothing made, when another studio changed the level
+                # the form read.
+                from runner import studios_config
+                try:
+                    review_policy.change(studios_config.update, form['review_level'],
+                                         form.get('review_seen'))
+                except ValueError as error:
+                    raise WorkspaceError(str(error)) from None
+            # A per-training choice does not write shared settings and stays valid even
+            # when another studio changes the default while this form is open.
             if form.get('review_level'):  # this training's own choice, saved with its run
                 record['review_policy'] = {'schema': 1, 'level': form['review_level']}
             root = pipeline.create(space, form)
@@ -1415,6 +1421,7 @@ class Engine(Reviewing):
                              drive=ready['drive'], pictures=ready['pictures'],
                              lacks=list(ready['missing']))
                 found['runtimes']['slides'] = str(tool.runtime)
+                found['pool'] = bool(tool.has('google-preview-pool'))
                 if ready['tool']:   # read from what it lists; asked only when it lists none
                     found['needs'] = list(tool.lacks())
             except (WorkspaceError, OSError) as refusal:
@@ -1497,6 +1504,7 @@ class Engine(Reviewing):
                  [fact('Installed', can[seen['pictures']])],
                  ' '.join([NO_PICTURES, *seen['lacks']]) if not seen['pictures'] else '')]
         return {'missing': missing, 'how': how, 'drive': seen['drive'], 'local': seen['local'],
+                'pool': bool(seen.get('pool')),
                 'brand': dict(brand), 'brands': list(brand['brands']), 'items': items,
                 'lacks': lacks, 'update': update}
 
@@ -3195,10 +3203,10 @@ class Engine(Reviewing):
             self._store(root, record)
             self._commit(root, 'keep the objections of the independent research check')
         self._problem(root, 'research', 'failed', str(refusal), (
-            'The draft report and the check’s objections are kept with this training: the '
-            'objections are listed in its research review (reviews/research.md)'
+            'The draft report and the check’s objections are kept with this training: Read '
+            'every objection shows them'
             + (', under what the check called them' if groups else '')
-            + '. The research plan you approved is kept.'))
+            + '. The research plan you approved is kept.'), detail={'objected': True})
 
     def _research_job_failed(self, root: Path, refusal: WorkspaceError) -> None:
         """One job of the research did not finish. A job that ran out of time offers more
@@ -4196,8 +4204,15 @@ class Engine(Reviewing):
             problem = {'what': found.next.why, 'action': None, 'label': None,
                        'kept': 'Everything in the training\'s folder is as it was.'}
         dollars, tokens = spent(record)
+        # The limit this run stops at: Settings' limit, raised by every Carry on.
+        limit = (record.get('limits') or {}).get('training_dollars')
+        stops_at = None if limit is None else round(limit + record.get('cleared', 0.0), 2)
+        objections = workspace.review_file('research')
         drawing = self._drawing(found)
         level = self._level(drawing) if drawing else None
+        outline = pipeline.outline_view(root, found, level) if drawing else None
+        if outline is not None:
+            outline['redo'] = self._redo_view(root, record, found, 'outline:' + (level or ''))
         return {
             'state': state, 'sentence': sentence, 'agent': record['agent'],
             'mine': mine, 'driver': who, 'queue': self._queue(run) if mine else None,
@@ -4210,17 +4225,21 @@ class Engine(Reviewing):
             'review': self._review_view(root, record, found),
             'steps': self._steps(record, found, state, root),
             'workers': self._workers(run),
-            'spent': {'dollars': dollars, 'tokens': tokens},
+            'spent': {'dollars': dollars, 'tokens': tokens, 'stops_at': stops_at},
+            'ahead': self._still_to_come(record, found),
             'note': self._note_view(record),
             'question': ({'id': asked['id'], 'text': asked['text'], 'from': asked['from']}
                          if asked else None),
             'problem': ({**{key: problem.get(key) for key in ('what', 'kept', 'action', 'label')},
                          **({'seconds': problem['seconds']} if problem.get('seconds') else {}),
+                         # The research check's objections, read where the stop is.
+                         **({'objections': objections} if problem.get('objected')
+                            and (root / objections).is_file() else {}),
                          **self._research_tried(record, problem, root)}
                         if problem else None),
             'documents': self._supplied(root, record, found),
             'copies': self._copies(found),
-            'outline': pipeline.outline_view(root, found, level) if drawing else None,
+            'outline': outline,
             'look': pipeline.look_view(root, found, level) if drawing else None,
             'deck': (pipeline.deck_view(root, found, level, self._live(run, drawing),
                                         self._given_up(record, drawing))
@@ -4233,6 +4252,83 @@ class Engine(Reviewing):
                           'limitations': list(report['limitations']),
                           'blocking': list(report['blocking']), 'index': report['file']}
                          if report and not resting else None)}
+
+    def redo(self, path, name: str) -> dict | None:
+        """What Ask for changes at `name`'s gate writes again: the file and everything
+        written from it, as steps, with what they took the last time each ran. None for the
+        research stops, which keep their own words, and for a training no run drives."""
+        root = self.driven(path)
+        if root is None:
+            return None
+        record = self._load(root)
+        return self._redo_view(root, record, self._survey(root, record,
+                                                          self._wanted(root, record)), name)
+
+    def _redo_view(self, root: Path, record: dict, found: pipeline.Survey, name: str,
+                   below=None) -> dict | None:
+        """`redo` for one file: what a change to it writes again, and what that took. None
+        for the research, which keeps its own words. `below` is what is written from it,
+        where the caller already knows."""
+        if workspace.split(name)[0] in ('research', 'research-plan'):
+            return None
+        if below is None:
+            from runner import reviews
+            below = reviews.rewritten(root, found.session, found.decks, name)
+        below = {name, *below}
+        # Dependency names are artifacts, not worker IDs. In particular, a deck has
+        # outline, section, review and repair workers, all writing the same deck artifact.
+        # Artifact names retain their level, so another level's deck is never included.
+        again = [step for step in found.steps if step.kind == 'agent'
+                 and (step.artifact in below or step.id in below)]
+        if not again:
+            return None
+        took = self._redo_steps(record, [step.id for step in again])
+        seconds, dollars = took if took else (None, None)
+        names = [step.label[:1].lower() + step.label[1:] if step.stage == 'deck'
+                 else workspace.label(step.id) for step in again]
+        return {'steps': len(again), 'names': names,
+                'seconds': seconds, 'dollars': dollars,
+                'says': stops.redone(names[0], len(again), seconds, dollars,
+                                     after='what is written from it')}
+
+    @staticmethod
+    def _redo_steps(record: dict, names: list[str]) -> tuple | None:
+        """(seconds, dollars) of the last try of each step named, with its jobs; dollars None
+        unless every one reported them. None when one of them has never run here."""
+        seconds, dollars = 0.0, []
+        for name in names:
+            own = [entry for step, entry in record['steps'].items()
+                   if (step == name or step.startswith(name + ':')) and entry.get('attempts')]
+            if not own:
+                return None
+            for entry in own:
+                last = entry['attempts'][-1]
+                seconds += float(last.get('seconds') or 0)
+                dollars.append(last.get('dollars'))
+        return seconds, (None if None in dollars else round(sum(dollars), 4))
+
+    @staticmethod
+    def _still_to_come(record: dict, found: pipeline.Survey) -> dict:
+        """What is left of a training, and what it has spent: the steps not done, the first
+        decision among them its own level always stops at (one a grave finding may still
+        hold is not counted), and the seconds of every try with the dollars of its agent's
+        jobs, said only when every one of them reported its cost."""
+        left = [step for step in found.steps if step.id not in found.done]
+        decisions = [step.id for step in left if step.kind not in ('agent', 'code')]
+        gates = review_policy.ahead(record, 'training', decisions)
+        nxt = next((step for step in left if gates and step.id == gates[0]), None)
+        kinds = {step.id: step.kind for step in found.steps}
+        tried = [(name, attempt) for name, entry in record['steps'].items()
+                 for attempt in entry.get('attempts', [])]
+        took = stops.took([attempt for _, attempt in tried])
+        priced = [attempt for name, attempt in tried
+                  if kinds.get(name, kinds.get(name.partition(':')[0], 'agent')) == 'agent']
+        # No assistant job yet: no cost has been reported, which is not the same as $0.00.
+        dollars = stops.took(priced)['dollars'] if priced else None
+        return {'steps_left': len(left), 'next_gate': nxt and nxt.id,
+                'next_stop': nxt and nxt.label, 'jobs': took['jobs'],
+                'seconds': took['seconds'], 'dollars': dollars,
+                'spent': stops.cost(took['seconds'], dollars) if tried else None}
 
     def _controls(self, record: dict, found: pipeline.Survey, state: str, mine: bool) -> dict:
         """The soft controls a run offers: `finish_level` names the level in hand when it

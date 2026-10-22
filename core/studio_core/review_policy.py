@@ -21,13 +21,51 @@ def snapshot(values):
     return {'schema': 1, 'level': value['level']}
 
 
+STALE = 'Another studio changed where new work stops. Reload the page and try again.'
+
+
+def effective(values, problem=None):
+    """The level a form shows from what the studios config holds: Balanced when it names
+    none, Step by step when what it names cannot be used or the file cannot be read."""
+    if problem:
+        return 'step_by_step'
+    if 'review' not in (values or {}):
+        return 'balanced'
+    value = values['review']
+    try:
+        check(value)
+    except ValueError:
+        return 'step_by_step'
+    return value['level']
+
+
+def change(update, level, seen):
+    """Write `level` as the one new work starts at in every studio, under the file's lock,
+    through `update` (a studio's studios_config.update). Refused, with nothing written,
+    when the file no longer holds `seen`, the level the form read, unless it already holds
+    `level`: a start that wrote it and then failed is tried again from the same form."""
+    check({'level': level})
+
+    def guard(current):
+        if effective(current) not in (seen, level):
+            raise ValueError(STALE)
+    return update({'review': {'level': level}}, guard=guard)
+
+
+def ahead(record, product, gates, last=None, first='outline'):
+    """The gates of `gates`, in order, that the run's level always stops at: those the
+    policy does not accept with nothing holding them. A gate a grave finding may still
+    keep is not among them."""
+    return [gate for gate in gates
+            if not automatic(record, product, gate, last=last, holding=(), first=first)]
+
+
 def capture():
     from studio_core import studios_config
     values, problem = studios_config.read()
-    if problem:
-        # Never increase autonomy when settings cannot be read.
-        return {'schema': 1, 'level': 'step_by_step'}
-    return snapshot(values)
+    # Unusable stored defaults must not break setup or increase autonomy. Saved run
+    # policies still use level()'s strict schema validation.
+    return {'schema': 1, 'level': effective(values, problem)}
 
 
 def level(record):

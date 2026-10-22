@@ -68,8 +68,9 @@ Once the page is open, use its controls to drive the work:
    tone, research choice, and step time limit. You can change these later in
    **Settings**. Under **Brand skill**, enter its repository and release or choose
    an installed skill, just as in Training Studio. See [brand setup](docs/runner.md#your-brand-skill).
-2. **Choose New blog.** Choose **Write a blog**, **Outline only**, **Revise a draft**,
-   or **Review a draft**; give the topic and audience, then **Write as** (whose
+2. **Choose New blog.** Choose **Polish a document**, **Write from a brief**, **Use my
+   outline**, **Explore ideas**, **New blog from my files** or **Interview me**; give
+   the topic and audience, then **Write as** (whose
    voice) and **Kind of post** (the shape of the piece); then upload files or select
    saved references, and set the tone, author and an optional brand. To revise or review, supply the manuscript.
    To start from your own documents, choose **New blog from my files** on Home: upload
@@ -90,7 +91,7 @@ Once the page is open, use its controls to drive the work:
    stays linked; importing does not start an assistant or change Google.
 3. **Press Start the blog.** Blog Studio starts the selected assistant and runs
    the next stage. The progress view shows its steps and the files made so far.
-   A new blog can go through research, outline, draft, review, and export package.
+   A new blog can go through research, outline, draft, review, and the handoff.
 4. **Review when it needs you.** With the default **Balanced** review level,
    Blog Studio stops for you at the outline, with its research beside it (at the
    draft, for a blog that starts from your outline), and

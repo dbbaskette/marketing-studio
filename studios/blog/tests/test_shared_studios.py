@@ -297,6 +297,21 @@ class ConfigTests(unittest.TestCase):
             )
         self.assertEqual(self.config.read_bytes(), before)
 
+    def test_update_guard_sees_the_file_under_the_lock(self):
+        studios_config.update({'person': {'name': 'Author'}, 'review': {'level': 'balanced'}})
+        seen = []
+        studios_config.update({'review': {'level': 'automatic'}}, guard=seen.append)
+        self.assertEqual(seen[0]['review'], {'level': 'balanced'})
+        self.assertEqual(seen[0]['person'], {'name': 'Author'})
+        before = self.config.read_bytes()
+
+        def refuse(current):
+            raise ValueError('Refused.')
+
+        with self.assertRaisesRegex(ValueError, 'Refused.'):
+            studios_config.update({'review': {'level': 'step_by_step'}}, guard=refuse)
+        self.assertEqual(self.config.read_bytes(), before)
+
     def test_local_save_preserves_an_unsupported_assistant_and_its_model(self):
         root = self.base / 'writing'
         studio.initialize(root)

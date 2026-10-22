@@ -354,7 +354,7 @@ class StatusTests(StudioCase):
         failing = self.start()
         waiting = self.start(title='Health checks')
         found = self.status()
-        self.assertEqual(sorted(found), ['agent', 'brand', 'configured', 'decks', 'limits',
+        self.assertEqual(sorted(found), ['agent', 'brand', 'configured', 'decks', 'google', 'limits',
                                          'notify', 'output', 'person', 'previews', 'problem',
                                      'review_level',
                                          'shared',

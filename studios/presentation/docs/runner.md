@@ -46,9 +46,11 @@ Nothing is changed until you save, and anything can be changed later in Settings
 
 | You start from | The runner stops for you at |
 | --- | --- |
-| An idea | The research plan and the research, if you turned research on; the outline; the brand; the deck |
-| A document | Whether it lays out the slides or is material to make them from; the research, for material with research on; the outline; the brand; the deck |
-| A deck | Its slides, as pictures; then what the level you chose needs: the new outline (full rework), the brand (redesign and full rework), and the deck |
+| An idea | The research plan and the research, if you turned research on; the outline; the look; the deck |
+| A document | Whether it lays out the slides or is material to make them from; the research, for material with research on; the outline; the look; the deck |
+| A deck | Its slides, as pictures; then what the level you chose needs: the new outline (full rework), the look (redesign and full rework), and the deck |
+
+These are Step by step's stops. The last step of the form chooses, in **Where this deck stops**, the level for this deck: Balanced reads the direction (the research, the outline and the look together) and then the deck; Automatic draft only the deck. **Use this for new work in every studio** also makes it the shared level when the deck starts; **Settings** has **Where new work stops**. Once it runs, a line under the deck's stages says how many steps are left, where it next stops and what it has cost so far, and every **Ask for changes** says what is drawn again and what that took the last time.
 
 At each stop the page shows what was made: the text, or the real slides in a slide viewer with the contact sheet, the brand's own check and the review's notes. A redesign shows each slide before and after. Beside it the page says what approving does, and **Approve** does it at once, with no second question. Or **Ask for changes** in your own words; the runner makes them and brings the new version back. At the deck, each slide has its own "Ask for changes".
 

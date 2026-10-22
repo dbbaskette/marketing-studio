@@ -28,7 +28,8 @@ import server
 from workspace import WorkspaceError
 
 PAGE_FILES = ('index.html', 'app.js', 'markdown.js', 'style.css')
-SECURITY_HEADERS = {'Content-Security-Policy': "default-src 'self'; img-src 'self' blob:; style-src 'self' 'unsafe-inline'",
+# The page uses external styles and scripts; its policy permits no inline execution.
+SECURITY_HEADERS = {'Content-Security-Policy': "default-src 'self'; img-src 'self' blob:",
                     'X-Content-Type-Options': 'nosniff',
                     'X-Frame-Options': 'DENY',
                     'Referrer-Policy': 'no-referrer',

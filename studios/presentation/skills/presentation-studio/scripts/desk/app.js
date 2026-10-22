@@ -63,11 +63,9 @@ const RUN_WORDS = {
 // Each step of a deck, and each stage, as the timeline says it.
 const STEP_WORDS = {
   done: ['done', 'Done'], current: ['current', 'Now'], upcoming: ['none', 'Still to come'],
-  later: ['out', 'Coming later'],
 };
 const STAGES = [['intake', 'Intake'], ['classify', 'Classify'], ['research', 'Research'],
-  ['outline', 'Outline'], ['look', 'Brand'], ['build', 'Build'], ['deliver', 'Deliver'],
-  ['rehearse', 'Rehearse with Yoodli']];
+  ['outline', 'Outline'], ['look', 'Look'], ['build', 'Build'], ['deliver', 'Deliver']];
 const STEERED = {
   pause: 'Paused. Nothing more is started until you resume it.',
   resume: 'Carrying on.',
@@ -160,6 +158,13 @@ const PREVIEW_SAYS = [
   'Google Drive: each deck keeps one presentation named “Preview: …” in your Drive, written '
     + 'again at each render. Presentation Studio never deletes it.',
 ];
+// With a slides tool that keeps a pool of preview presentations, no file is named for a deck.
+const POOL_SAYS = 'Google Drive: previews are drawn in a few shared presentations named '
+  + '“Preview: …” in your Drive, reused by every deck. Presentation Studio never deletes them.';
+function previewSays() {
+  const pooled = Boolean(view.setup && view.setup.previews && view.setup.previews.pool);
+  return pooled ? [PREVIEW_SAYS[0], POOL_SAYS] : PREVIEW_SAYS;
+}
 const PREVIEW_ABSENT = [
   'LibreOffice was not found on this computer, so Google Drive is the one way there is.',
   'Google access on this computer does not reach Drive, so LibreOffice is the one way there '
@@ -1257,8 +1262,12 @@ function noteSheet(kind) {
       + 'your note.' : ' What you marked in the list goes with your note.';
   // On a delivered deck with nothing marked, every part is drawn again: it says what that
   // took last time, before it is asked for.
-  const whole = !gate && view.run && view.run.deliver && !marked.length
-    ? ' ' + wholeDeckSays(view.run.deliver.last_build) : '';
+  // At the deck's own stop it is the same: the whole deck, as the last build took. At any
+  // other stop, what is drawn again from it and what that took the last time.
+  const whole = !marked.length && (!gate && view.run && view.run.deliver
+    ? ' ' + wholeDeckSays(view.run.deliver.last_build)
+    : gate && gate.name === 'gate:build' ? ' ' + wholeDeckSays(gate.last_build)
+      : gate && gate.redo ? ' ' + gate.redo.says : '');
   const hint = make('p', 'quiet', spec.hint + (marked.length ? ' The parts of the deck '
     + 'that hold ' + slidesNamed(marked) + ', which you marked, are drawn again.' : '')
     + whole + listed);
@@ -1697,6 +1706,8 @@ function drawSettings(fresh) {
     ['shared-settings', [], () => add(card('Shared settings'),
       make('p', '', 'Your assistant, work folder, brand and delivery choices apply across all studios.'),
       capsule('Change shared settings', 'quiet', () => { location.href = settingsAddress(); }, 'shared-settings'))],
+    ['review-level', [view.setup && view.setup.review_level, view.reviewRefused],
+      reviewLevelCard],
     ['workspace', around(), workspaceCard], ['studios', studiosMark(), studiosCard],
     ['defaults', [view.setup], defaultsCard],
     ['alerts', [alerts()], alertsCard], ['notify', around(), notifyCard],
@@ -2484,7 +2495,7 @@ function previewsCard(form) {
       make('p', 'fix', 'It needs LibreOffice, or Google access that reaches Drive. The Status '
         + 'screen says what a deck needs.'));
   }
-  const [control, meanings] = explained('Make them with', PREVIEW_NAMES, PREVIEW_SAYS,
+  const [control, meanings] = explained('Make them with', PREVIEW_NAMES, previewSays(),
     PREVIEWS.indexOf(form.previews), (index) => {
       form.previews = PREVIEWS[index];
     }, 'previews');
@@ -2839,11 +2850,17 @@ function firstDraftChoice(draft) {
   return Boolean(draft.firstDraft);
 }
 
-// The gates that stop for the person under the shared review level, in the words of what
+// The level a deck stops at: the one its form chose, else the shared level the form read.
+function levelOf(draft) {
+  return draft.review_level || (view.setup && view.setup.review_level) || 'step_by_step';
+}
+
+// The gates that stop for the person under the deck's review level, in the words of what
 // they decide: the level's own rule, as review_policy.automatic applies it to a deck.
+// Under Balanced the outline's stop is the direction: the research, the outline and the
+// look, read together.
 function stopsFor(draft) {
-  // A deck's own level, where one is chosen, else the one every studio shares.
-  const level = draft.review_level || (view.setup && view.setup.review_level) || 'step_by_step';
+  const level = levelOf(draft);
   const gates = [];
   if (draft.route !== 'scratch') {
     gates.push(['gate:classify', draft.route === 'document' ? 'the kind of document'
@@ -2853,8 +2870,14 @@ function stopsFor(draft) {
     gates.push(['gate:research-plan', 'the research plan'], ['gate:research', 'the research']);
   }
   const chosen = draft.route === 'existing' ? draft.level : null;
-  if (!chosen || chosen === 'rework') gates.push(['gate:outline', 'the outline']);
-  if (!chosen || ['redesign', 'rework'].includes(chosen)) gates.push(['gate:look', 'the brand']);
+  const looks = !chosen || ['redesign', 'rework'].includes(chosen);
+  if (!chosen || chosen === 'rework') {
+    const together = [draft.research && draft.route !== 'existing' ? 'the research' : null,
+      'the outline', looks ? 'the look' : null].filter(Boolean);
+    gates.push(['gate:outline', level === 'balanced'
+      ? 'the direction (' + series(together) + ' together)' : 'the outline']);
+  }
+  if (looks) gates.push(['gate:look', 'the look']);
   gates.push(['gate:build', 'the deck']);
   const stops = level === 'step_by_step' ? gates : level === 'balanced'
     ? gates.filter(([name]) => ['gate:outline', 'gate:build'].includes(name))
@@ -2862,15 +2885,51 @@ function stopsFor(draft) {
   return REVIEW_WORDS[level] + ': it stops for ' + series(stops.map(([, words]) => words));
 }
 
-function stopsLine(draft) {
-  const change = make('a', '', 'Change');
-  change.href = settingsAddress();
-  return add(make('p', 'quiet stops-line'), make('span', '', stopsFor(draft)),
-    make('span', '', ' · '), change);
+const LEVELS_SHOWN = Object.keys(REVIEW_WORDS);
+
+// Where this deck stops, chosen for this deck on its form. The chip also makes it the level
+// new work starts at in every studio, written when the deck starts. Nothing here leaves the
+// form.
+function whereItStops(draft) {
+  const line = make('p', 'quiet stops-line', stopsFor(draft));
+  return add(card('Where this deck stops'),
+    choice('Review level', LEVELS_SHOWN.map((one) => REVIEW_WORDS[one]),
+      LEVELS_SHOWN.indexOf(levelOf(draft)), (index) => {
+        draft.review_level = LEVELS_SHOWN[index];
+        line.textContent = stopsFor(draft);
+      }, 'review-level'),
+    line,
+    add(make('div', 'field'), chip('Use this for new work in every studio',
+      draft.review_default, (on) => { draft.review_default = on; }, 'review-default'),
+    make('p', 'quiet field-hint', 'Saved when the deck starts.')));
+}
+
+// Settings: where new work stops in every studio, saved at once. A refusal, such as a level
+// another studio changed since this page read it, is said in the card.
+function reviewLevelCard() {
+  const problem = alertLine('review-level-problem');
+  if (view.reviewRefused) say(problem, view.reviewRefused);
+  const level = (view.setup && view.setup.review_level) || 'step_by_step';
+  return add(card('Where new work stops'),
+    make('p', '', 'Where new work stops for you, in every studio. A start form can choose '
+      + 'differently for one deck.'),
+    choice('Review level', LEVELS_SHOWN.map((one) => REVIEW_WORDS[one]),
+      LEVELS_SHOWN.indexOf(level), async (index) => {
+        const chosen = LEVELS_SHOWN[index];
+        try {
+          view.setup = await send('review-level', { level: chosen, seen: level });
+          view.reviewRefused = '';
+          toast('New work in every studio now starts at ' + REVIEW_WORDS[chosen] + '.');
+        } catch (failure) {
+          view.reviewRefused = failure.message;
+        }
+        draw(false);
+      }, 'review-level'),
+    problem);
 }
 
 function aboutStep(draft) {
-  const research = draft.route !== 'existing' ? chip('Research it first', draft.research,
+  const research = draft.route !== 'existing' ? chip('Research the public web first', draft.research,
     (on) => {
       draft.research = on;
     }, 'research') : null;
@@ -2929,18 +2988,19 @@ function startStep(draft) {
       }, 'new-output'),
     ...agentFields(draft, 'new', 'For this deck', told),
     ...(draft.level === 'selected' ? [] : [add(make('div', 'field'),
-      chip('Show first draft before AI review', firstDraftChoice(draft), on => {
+      chip('See the first draft before the deck is checked', firstDraftChoice(draft), on => {
         draft.firstDraft = on; draft.firstDraftExplicit = true;
-      }, 'first-draft'), make('p', 'quiet field-hint', 'Still validates and renders your '
-        + 'slides. Lets you review the first build before AI critique and polishing.'))]),
+      }, 'first-draft'), make('p', 'quiet field-hint', 'It is still built and rendered. The '
+        + 'check and its repairs run when you ask.'))]),
     make('p', 'quiet', (limitsSays(limits) || 'No limits are set for this computer.')
       + ' A deck that reaches a limit stops and asks you. The limits are changed in '
-      + 'Settings.'));
-  return [add(card('How it looks'), brandFields(draft, 'new')), options,
+      + 'Settings.'),
+    OUTPUTS[draft.output][0] === 'google' && !googleReady() ? make('p', '', NOT_CONNECTED)
+      : null);
+  return [add(card('How it looks'), brandFields(draft, 'new')), options, whereItStops(draft),
   add(callout('', make('h2', 'aside-title', 'What happens when you start')),
     make('p', '', 'It starts at once and works on its own. From the first decision on, you '
       + 'see the slides themselves.'),
-    stopsLine(draft),
     drafted, make('p', 'quiet', 'This page tells you each time. In between, you can close '
       + 'it.'))];
 }
@@ -3044,7 +3104,9 @@ function formOf(draft) {
     variant: draft.variant || null, output: OUTPUTS[draft.output][0],
     delivery: DELIVERIES[deliveryOf(draft)][0],
     research: draft.route !== 'existing' && draft.research,
-    agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null };
+    agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null,
+    review_level: levelOf(draft), review_seen: (view.setup && view.setup.review_level) || null,
+    review_default: Boolean(draft.review_default) };
   if (draft.firstDraftExplicit) form.initial_review = draft.firstDraft ? 'user-first' : 'standard';
   const uploads = {};
   if (draft.route === 'existing') {
@@ -3164,10 +3226,13 @@ function wholeDeckSays(last) {
   const took = last || {};
   const minutes = took.seconds ? count(Math.max(1, Math.round(took.seconds / 60)), 'minute',
     'minutes') : '';
-  const dollars = typeof took.dollars === 'number' ? money(took.dollars) : '';
+  // A cost nobody reported is said so, never as $0.00.
+  const dollars = typeof took.dollars === 'number' && took.dollars >= 0.005
+    ? money(took.dollars) : '';
   const cost = [dollars, minutes].filter(Boolean).join(' and ');
   return 'No slides marked: the whole deck is drawn again' + (cost ? ' (about ' + cost
-    + ', as the last build took).' : '.');
+    + ', as the last build took' + (dollars ? '' : '; the assistant reported no cost')
+    + ').' : '.');
 }
 
 // Send the slides whose words should change back to the outline, marked.
@@ -3263,7 +3328,9 @@ function nowLine(run) {
     .filter((stamp) => !Number.isNaN(stamp));
   if (began.length) parts.push(lasted((Date.now() - Math.min(...began)) / 1000));
   const spent = run.spent || {};
-  if (given(spent.dollars)) parts.push(money(spent.dollars) + ' so far');
+  if (given(spent.dollars) && Number(spent.dollars) >= 0.005) {
+    parts.push(money(spent.dollars) + ' so far');
+  }
   const limits = (view.setup && view.setup.limits) || {};
   if (given(limits.deck_dollars)) parts.push('stops at ' + money(limits.deck_dollars));
   return parts.length ? make('p', 'now-line', parts.join(' · ')) : null;
@@ -3380,17 +3447,16 @@ async function sendNote(run, box, problem, pressed) {
 
 // --- one deck: its stages ------------------------------------------------------------------
 
-// Each stage of the deck, as the steps it has say: done, the one it is at, still to come,
-// or, for rehearsing with Yoodli, coming later.
+// Each stage of the deck, as the steps it has say: done, the one it is at, still to come.
+// A saved deck's rehearse gate is never come to, so it is not shown.
 function stagesOf(run) {
   const rows = list(run.timeline);
   const found = [];
   for (const [stage, name] of STAGES) {
     const own = rows.filter((row) => row.stage === stage);
-    if (!own.length && stage !== 'rehearse') continue;
+    if (!own.length) continue;
     let at = 'upcoming';
-    if (stage === 'rehearse') at = 'later';
-    else if (own.every((row) => row.state === 'done')) at = 'done';
+    if (own.every((row) => row.state === 'done')) at = 'done';
     else if (own.some((row) => row.state === 'current')) at = 'current';
     const failed = own.some((row) => row.failed);
     found.push({ stage, name, at, failed,
@@ -3403,6 +3469,17 @@ function stageBead(found) {
   if (found.failed) return ['late', 'Stopped here'];
   if (found.waiting) return ['review', 'Waiting for you'];
   return STEP_WORDS[found.at];
+}
+
+// One line under the beads: how many steps are left, where the deck next stops for you under
+// its own level, and what it has spent so far, all as the runner says them.
+function aheadLine(run) {
+  const ahead = run.ahead;
+  if (!ahead || !ahead.steps_left) return null;
+  const parts = [count(ahead.steps_left, 'step left', 'steps left')];
+  if (ahead.next_words) parts.push('Next stop: the ' + ahead.next_words);
+  if (ahead.spent) parts.push('So far ' + ahead.spent);
+  return make('p', 'quiet ahead-line', parts.join(' · '));
 }
 
 function timelinePart(run) {
@@ -3422,7 +3499,7 @@ function timelinePart(run) {
   const caption = told ? make('p', 'beads-caption', told.name + ': ' + stageBead(told)[1]) : null;
   if (caption) caption.setAttribute('aria-hidden', 'true');
   return add(make('section', 'card shine'), make('h2', 'card-title', 'Where it is'), row,
-    caption);
+    caption, aheadLine(run));
 }
 
 // What a step has taken so far.
@@ -3436,13 +3513,11 @@ function stepFacts(step) {
 }
 
 function stepItem(step) {
-  const later = step.state === 'later';
   const [shape, words] = step.failed ? ['late', 'Stopped here'] : STEP_WORDS[step.state]
     || STEP_WORDS.upcoming;
   const facts = make('p', 'quiet step-facts', stepFacts(step));
   facts.hidden = !facts.textContent;
-  const label = later ? 'Rehearse with Yoodli' : step.label;
-  const text = add(make('div', 'row-text'), make('p', 'step-name', label), facts);
+  const text = add(make('div', 'row-text'), make('p', 'step-name', step.label), facts);
   if (step.error) add(text, make('p', step.failed ? 'problem' : 'quiet', step.error));
   const item = make('li', 'row step' + (step.state === 'current' ? ' working' : ''));
   item.dataset.state = step.state;
@@ -3453,7 +3528,7 @@ function stepsCard(run) {
   const node = make('details', 'card shine steps');
   node.dataset.key = 'steps';
   const items = make('ol', 'rows');
-  for (const step of list(run.timeline)) items.append(stepItem(step));
+  for (const step of list(run.timeline)) if (step.name !== 'rehearse') items.append(stepItem(step));
   return add(node, make('summary', 'card-title', 'Every step'), items);
 }
 
@@ -3755,6 +3830,8 @@ function classifyPanel(gate, readonly) {
     add(node, add(make('div', 'field'), chip('That’s wrong', held.wrong, (on) => {
       held.wrong = on;
       tell();
+      // Approve, in the toolbar, says what it now does.
+      paintDeck(false);
     }, 'wrong'), make('p', 'quiet field-hint', 'Press it if this is really '
       + KINDS[other] + '. Your word is taken: it is not asked again.')), then);
   }
@@ -4409,15 +4486,14 @@ function auditPart(gate) {
 
 function buildProgressCard(progress) {
   const node = card('Slides taking shape');
-  add(node, state('late', view.run?.unreviewed ? 'Unreviewed first draft' : 'Unreviewed'), make('p', 'quiet', progress.incomplete
+  add(node, state('late', view.run?.unreviewed ? 'First draft, not checked' : 'Unreviewed'), make('p', 'quiet', progress.incomplete
     ? 'The render stopped before it finished. These previews are kept so you can inspect them.'
-    : view.run?.unreviewed ? 'AI review is skipped for this first draft. You can request it at the draft checkpoint.' : 'Previews appear as each slide is drawn. The deck still needs its review and your decision.'));
+    : view.run?.unreviewed ? 'The check is left out of this first draft. You can ask for it when the deck stops for you.' : 'Previews appear as each slide is drawn. The deck still needs its review and your decision.'));
   const slides = list(progress.slides).map((one) => ({ ...one, partial: true,
     where: pictureOf(view.path, { kind: 'progress', ref: one.ref }),
     mark: one.ref }));
   if (slides.length) add(node, pager(slides, (one) => [
     make('p', '', 'Rendered preview · Unreviewed'),
-    make('p', 'quiet', 'Render ' + String(one.revision).slice(0, 12)),
     one.part !== 'whole' && view.run?.mine ? progressFeedback(one) : null]));
   return node;
 }
@@ -4450,6 +4526,22 @@ function progressFeedback(one) {
   return form;
 }
 
+// What only someone putting a problem right needs: the model jobs and the preview timing,
+// in a disclosure of their own that starts closed.
+function troubleshootingDetails(run) {
+  const receipts = list(run.model_jobs);
+  const timing = run.build_timing && Object.keys(run.build_timing).length ? run.build_timing : null;
+  if (!receipts.length && !timing) return null;
+  const node = add(make('details', 'card'), make('summary', '', 'Details for troubleshooting'));
+  node.dataset.key = 'troubleshooting';
+  if (receipts.length) add(node, make('h3', 'row-title', 'Recent model jobs'), bullets(receipts.map(job =>
+    `${spoken(job.purpose)} · ${capital(job.profile)} · ${job.model || 'assistant default'}${job.effort ? ' · ' + job.effort : ''}`
+    + (job.reason ? ' · ' + job.reason : '') + '. Reported actual model: ' + (job.actual_model || 'not reported') + '.')));
+  if (timing) add(node, make('h3', 'row-title', 'Preview timing'),
+    bullets(Object.entries(timing).map(([name, at]) => spoken(name.replaceAll('_', ' ')) + ': ' + at)));
+  return node;
+}
+
 function savedDetails(run) {
   const node = add(make('details', 'card'), make('summary', '', 'Saved inputs, outline and run details'));
   const holder = make('div', 'card-part'), problem = problemLine();
@@ -4466,12 +4558,7 @@ function savedDetails(run) {
     }, 'read ' + name);
     add(node, go);
   }
-  const receipts = list(run.model_jobs);
-  if (receipts.length) add(node, make('h3', 'row-title', 'Recent model jobs'), bullets(receipts.map(job =>
-    `${spoken(job.purpose)} · ${capital(job.profile)} · ${job.model || 'assistant default'}${job.effort ? ' · ' + job.effort : ''}`
-    + (job.reason ? ' · ' + job.reason : '') + '. Reported actual model: ' + (job.actual_model || 'not reported') + '.')));
-  if (run.build_timing && Object.keys(run.build_timing).length) add(node, make('h3', 'row-title', 'Preview timing'),
-    bullets(Object.entries(run.build_timing).map(([name, at]) => spoken(name.replaceAll('_', ' ')) + ': ' + at)));
+
   if (list(run.build_feedback).length) add(node, make('h3', 'row-title', 'Saved slide feedback'),
     bullets(run.build_feedback.map(item => 'Slide ' + item.number + ': ' + item.note)));
   const used = list(run.note && run.note.used);
@@ -4488,14 +4575,14 @@ function stepLabel(run, name) {
 }
 
 function buildPanel(gate, readonly) {
-  const node = card(gate.unreviewed ? 'Unreviewed first draft' : 'The deck');
+  const node = card(gate.unreviewed ? 'First draft, not checked' : 'The deck');
   const held = chosenFor(gate);
   // A look chosen from samples nobody saw rendered: said first, in the shared words.
   if (gate.look_unreviewed) add(node, callout('', make('p', '', gate.look_unreviewed)));
   if (gate.unreviewed) {
-    add(node, state('late', 'Unreviewed first draft'), make('p', '',
-      'Validated and rendered. AI critique and visual polishing have not run. Exporting or resuming does not start them.'),
-      capsule('Run AI review', '', async event => {
+    add(node, state('late', 'First draft, not checked'), make('p', '',
+      'Built and rendered. The check and its repairs have not run. Using this first draft or resuming does not start them.'),
+      capsule('Check the deck', '', async event => {
         const pressed = event.currentTarget; if (held.reviewing) return;
         held.reviewing = true; pressed.disabled = true;
         try {
@@ -4529,7 +4616,7 @@ function buildPanel(gate, readonly) {
     .includes(finding.severity)).length, 0);
   add(node, make('p', '', count(slides.length, 'slide', 'slides') + '. ' + (findings
     ? count(findings, 'finding remains', 'findings remain') + ' from the review, each shown '
-      + 'with its slide.' : gate.unreviewed ? 'AI review has not run. Whether the deck is useful is yours to judge.' : 'The review has nothing left to raise. Whether the deck is good '
+      + 'with its slide.' : gate.unreviewed ? 'The check has not run. Whether the deck is useful is yours to judge.' : 'The review has nothing left to raise. Whether the deck is good '
       + 'is still yours to judge.')),
   serious ? state('late', count(serious, 'serious finding', 'serious findings')
     + ' still listed.') : null,
@@ -4621,17 +4708,29 @@ function gateLine(run) {
       + 'the computer that runs it.' : 'Nobody is running this deck, so it cannot be decided '
       + 'until someone takes it.') + ' Here you can read it.'));
   }
+  const deck = gate.name === 'gate:classify' && gate.kind === 'deck';
   return callout('yours', make('p', '', capital(gate.label) + '.'),
-    make('p', 'quiet', APPROVING[gate.name] || 'Approve it, or ask for changes and say what '
-      + 'should change.'));
+    make('p', 'quiet', deck ? 'Approve, and it carries on from these slides. To read '
+      + 'another deck, stop this one and start a new deck from it.'
+      : APPROVING[gate.name] || 'Approve it, or ask for changes and say what should change.'),
+    gate.name === 'gate:build' && run.output === 'google' && !googleReady()
+      ? make('p', '', NOT_CONNECTED) : null,
+    alertLine('gate-problem'));
+}
+
+// Google Slides asked for, and Google not connected here: approving makes PowerPoint.
+const NOT_CONNECTED = 'Google is not connected on this computer, so approving makes a '
+  + 'PowerPoint file. Sign in on Status and Deliver to Google Slides afterwards.';
+function googleReady() {
+  return !(view.setup && view.setup.google === false);
 }
 
 // --- one deck: delivered -------------------------------------------------------------------
 
 function deliverPart(run) {
   const found = run.deliver;
-  const node = card(run.unreviewed || found.review_status === 'unreviewed' ? 'Delivered — unreviewed first draft' : 'Delivered');
-  if (run.unreviewed || found.review_status === 'unreviewed') add(node, make('p', 'quiet', 'AI review has not run on this draft.'));
+  const node = card(run.unreviewed || found.review_status === 'unreviewed' ? 'Delivered: first draft, not checked' : 'Delivered');
+  if (run.unreviewed || found.review_status === 'unreviewed') add(node, make('p', 'quiet', 'The deck check has not run on this draft.'));
   add(node, state('done', 'Revision ' + (found.revision || 1) + '.'),
     found.at ? add(make('p', 'quiet'), 'Delivered ', when(found.at), '.') : null);
   const bar = make('div', 'bar');
@@ -4770,10 +4869,13 @@ function costCard(run) {
   const spent = run.spent || {};
   const limits = (view.setup && view.setup.limits) || {};
   const agent = AGENT_NAMES[run.agent] || run.agent || 'an agent';
-  add(node, make('p', 'cost', given(spent.dollars) ? money(spent.dollars) : 'Not reported'));
+  // A cost of nothing is not reported money: it is never said as $0.00.
+  const reported = given(spent.dollars) && Number(spent.dollars) > 0;
+  add(node, make('p', 'cost', !reported ? 'Not reported'
+    : Number(spent.dollars) < 0.005 ? 'Less than $0.01' : money(spent.dollars)));
   const says = [];
-  const silent = !given(spent.dollars) && given(spent.tokens);
-  if (given(spent.dollars)) says.push('So far.');
+  const silent = !reported && given(spent.tokens);
+  if (reported) says.push('So far.');
   else if (silent) says.push(agent + ' says how many tokens it uses, not what they cost.');
   else says.push('Nothing has been reported yet. An agent says what it used as each step ends.');
   if (given(spent.tokens)) says.push(Number(spent.tokens).toLocaleString() + ' tokens used.');
@@ -5151,6 +5253,11 @@ async function decide(decision, note, problem, pressed, extra) {
     pressed.disabled = false;
     if (problem) {
       say(problem, failure.message + ' Nothing was decided.');
+      // The gate's own line is read where the decision is, and takes focus.
+      if (problem.id === 'gate-problem') {
+        problem.tabIndex = -1;
+        problem.focus();
+      }
       return;
     }
     // A decision pressed in the toolbar has no sheet, whether it approves or sends what was
@@ -5226,21 +5333,32 @@ function deckActions(run, lead) {
     // Approve acts at once: what it does is said beside the gate before it is pressed. At
     // a stop reviewed item by item it says what it will do with the marks. Pressed, it
     // acts on the gate as it is then, as `decide` does.
+    // A document said to be the other kind is taken as that kind: Approve says so.
+    const wrong = run.gate.name === 'gate:classify' && run.gate.kind === 'document'
+      && chosenFor(run.gate).wrong;
+    const other = run.gate.verdict === 'spec' ? 'material' : 'spec';
     const approve = capsule(REVIEWED.includes(run.gate.name) ? reviewOf(run.gate).label
-      : run.gate.unreviewed ? 'Use/export draft as-is' : 'Approve', lead === 'approve' ? 'filled' : '', () => {
+      : run.gate.unreviewed ? 'Use this first draft' : wrong ? 'Take it as ' + KINDS[other]
+        : 'Approve', lead === 'approve' ? 'filled' : '', () => {
       const gate = view.run.gate;
-      if (gate && REVIEWED.includes(gate.name)) sendReview(gate, approve);
+      // A refusal is said beside the gate, in its own problem line, which takes focus.
+      const problem = byId('gate-problem');
+      if (gate && REVIEWED.includes(gate.name)) sendReview(gate, approve, problem);
       else if (gate && gate.name === 'gate:look' && gate.offered) {
-        decide('approve', (chosenFor(gate).lookWords || '').trim(), null, approve);
-      } else decide('approve', '', null, approve);
+        decide('approve', (chosenFor(gate).lookWords || '').trim(), problem, approve);
+      } else decide('approve', '', problem, approve);
     }, 'approve');
     const brand = run.gate.name === 'gate:look';
-    actions.push(approve, capsule(brand ? 'Choose another brand' : 'Ask for changes', '',
-      openSheet(brand ? 'rebrand' : 'changes', 'changes'), 'changes'));
+    // An existing deck's slides are read by code that takes no note: nothing to ask it.
+    const read = run.gate.name === 'gate:classify' && run.gate.kind === 'deck';
+    actions.push(approve, read ? null : capsule(brand ? 'Choose another brand'
+      : 'Ask for changes', '', openSheet(brand ? 'rebrand' : 'changes', 'changes'),
+    'changes'));
   }
   const offered = run.problem && run.problem.action;
   if (run.state === 'working') press('Pause', '', 'pause');
   if (['working', 'waiting', 'paused'].includes(run.state)) press('Stop', 'quiet', 'stop');
+  for (let at = actions.length - 1; at >= 0; at -= 1) if (!actions[at]) actions.splice(at, 1);
   if (['paused', 'stopped'].includes(run.state) && !offered) {
     press('Resume', lead === 'resume' ? 'filled' : '', 'resume');
   }
@@ -5268,14 +5386,15 @@ function paintDeck(fresh) {
   const published = view.issued && view.issued.path === view.path ? view.issued : null;
   const gate = run.gate;
   placeParts({ title, above, back: true, actions: foldActions(deckActions(run, lead)),
-    mark: [title, route, run.state, lead, gate && [gate.name, gate.round], read, driver,
+    mark: [title, route, run.state, lead, gate && [gate.name, gate.round, chosenFor(gate).wrong],
+      read, driver,
       Boolean(run.question), run.problem,
       gate && REVIEWED.includes(gate.name) && !read ? reviewOf(gate).label : ''] }, [
     ['intro', [run.state, run.sentence, run.queue, view.steered, read, Boolean(run.problem),
       run.timeline, run.workers, run.spent, run.build_progress && run.build_progress.slides],
     () => deckIntro(run)],
     noting(run) ? ['note', [run.note, run.state, read], () => notePart(run)] : null,
-    ['timeline', [run.timeline, gate && gate.name], () => timelinePart(run)],
+    ['timeline', [run.timeline, gate && gate.name, run.ahead], () => timelinePart(run)],
     read && (driver || !finished) ? ['theirs', [driver, lead, run.taken, run.notice,
       run.last_shared, run.kept, title], () => theirsPart(run, lead === 'take')] : null,
     !read && run.notice ? ['notice', [run.notice, run.clash, run.kept],
@@ -5285,7 +5404,8 @@ function paintDeck(fresh) {
     run.question && read ? ['asked', [run.question, driver], () => askedPart(run)] : null,
     run.question && !read ? ['question', [run.question, title],
       () => questionPart(run, title)] : null,
-    gate ? ['gate-line', [gate.name, gate.label, read, driver], () => gateLine(run)] : null,
+    gate ? ['gate-line', [gate.name, gate.label, read, driver, googleReady()],
+      () => gateLine(run)] : null,
     gate ? ['gate', [gate, read], () => gatePanel(run)] : null,
     run.deliver ? ['deliver', [run.deliver, run.contactSheet, read, view.downloading],
       () => deliverPart(run)] : null,
@@ -5298,8 +5418,8 @@ function paintDeck(fresh) {
     ['cost', [run.spent, run.agent, run.model, run.effort, view.setup && view.setup.limits],
       () => costCard(run)],
     ['steps', [run.timeline], () => stepsCard(run)],
-    ['saved-details', [run.path, run.model_jobs, run.build_feedback, run.note],
-      () => savedDetails(run)],
+    ['saved-details', [run.path, run.build_feedback, run.note], () => savedDetails(run)],
+    ['troubleshooting', [run.model_jobs, run.build_timing], () => troubleshootingDetails(run)],
     // What this computer runs for a team can be handed over, for anyone to take.
     !read && driver && driver.here ? ['mine', [driver, title, run.kept],
       () => minePart(driver, run.kept)] : null,
@@ -5712,7 +5832,10 @@ async function readStatus() {
 }
 
 function spentSays(spent) {
-  if (given(spent.dollars)) return money(spent.dollars);
+  // A cost of nothing is never said as $0.00.
+  if (given(spent.dollars) && Number(spent.dollars) > 0) {
+    return Number(spent.dollars) < 0.005 ? 'less than $0.01' : money(spent.dollars);
+  }
   return given(spent.tokens) ? Number(spent.tokens).toLocaleString() + ' tokens'
     : 'Not reported yet';
 }

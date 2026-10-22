@@ -51,19 +51,20 @@ class FlowCase(StudioCase):
 
 
 class ToTheEndTests(FlowCase):
-    def test_a_changed_review_preference_refuses_start_before_making_any_files(self):
-        before = sorted(self.space.repo.iterdir())
-        # A page from before the per-training choice sends only the level it saw.
-        for sent in ({'review_seen': 'step_by_step', 'review_level': 'step_by_step'},
-                     {'review_level': 'step_by_step'}):
-            form = pipeline.check_form({**FORM, **sent})
+    def test_a_changed_shared_default_keeps_the_forms_per_training_choice(self):
+        # Both the current form and an older page choose only this training's level.
+        for number, sent in enumerate((
+                {'review_seen': 'step_by_step', 'review_level': 'step_by_step'},
+                {'review_level': 'step_by_step'})):
+            form = pipeline.check_form({**FORM, 'title': f'Independent choice {number}',
+                                        **sent})
             with self.subTest(sent=sent), mock.patch(
                     'studio_core.review_policy.capture',
                     return_value={'schema': 1, 'level': 'automatic'}):
-                with self.assertRaisesRegex(WorkspaceError, 'review preference changed'):
-                    self.engine.start(form)
-        self.assertEqual(sorted(self.space.repo.iterdir()), before)
-        self.assertEqual(self.workers.jobs, [])
+                root = Path(self.engine.start(form)['path'])
+                self.assertEqual(self.engine._load(root)['review_policy']['level'],
+                                 'step_by_step')
+                self.assertEqual(self.view(root)['ahead']['next_gate'], 'gate:research-plan')
 
     def test_a_training_can_choose_its_own_review_level(self):
         # The shared level is Balanced; this training asks for Automatic draft, and runs

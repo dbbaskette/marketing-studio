@@ -59,9 +59,13 @@ production detail. Reading a document or expanding details approves nothing.
 | Unselected optional stage | Foundation approved | No worker or gate for that stage | Pipeline/engine regression |
 | Disclosure/read navigation | Any saved state | No approval or job started | Page wiring regression |
 | Shared review preview | Before start | Describes current policy; run snapshots it | UI policy cases |
-| Shared review changed after preview | Not started | Refused before creating files; reload preference with answers kept | Engine/page regression |
+| Shared review changed after preview, shared-default chip on | Not started | Refused before creating files; reload preference with answers kept | Engine/page regression |
+| Where this training stops chosen on the form | Not started | Run keeps the chosen level even if another studio changed the default after the form opened; shared level unchanged | `test_row_119_where_this_training_stops_is_chosen_on_the_form`, `test_row_119_a_per_training_choice_survives_a_new_shared_default` |
+| Use this for new work in every studio | Not started | Shared level written under the lock, or refused when stale ("Another studio changed where new work stops. Reload the page and try again."); nothing made. A start refused after the write is tried again from the same form | `test_row_120_the_shared_default_is_written_only_with_the_chip`, `test_row_120_a_start_refused_after_the_chip_wrote_can_be_tried_again` |
+| Ask for material or deck-outline changes | Waiting for a material, outline or combined review | Price only the affected artifacts' assistant steps, including each affected level's deck workers; use their last attempts or say the history is incomplete | `ChangePriceTests`, outline change-sheet journey |
 | New source/blueprint revision | Approved derived output | Existing stale/rebuild behavior | Reuse existing lineage suite |
 | Confirm a runner gate or slide-direction approval | Reading the reviewed version | Return to the same training, announce success; no second navigation dialog | Gate and outline page journeys |
+| Approve the first drafts | Waiting for the first drafts | Only scenarios, Yoodli and the deck are started; the sheet listed only those | `test_row_121_first_drafts_approval_starts_only_what_is_still_to_write` |
 | Grouped review | Waiting for direction or final review | One persistent toolbar approval with the displayed revision | Grouped approval/refusal regression |
 | Edit a grouped change request, then refresh or fail | Unsaved request text | Keep the text for that training, phase and material; show refusal beside the request | Grouped revision refresh regression |
 | Refresh a review while reading | Expanded and collapsed sections chosen by the reader | Preserve both disclosure states | Grouped disclosure regression and phone walkthrough |

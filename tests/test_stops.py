@@ -46,6 +46,42 @@ class StopWordsTests(unittest.TestCase):
         # Each studio names the action as its page does.
         self.assertTrue(stops.spent('deck', 1, 1, go='Resume')[1].endswith('then resume.'))
 
+    def test_took_and_cost_say_dollars_only_when_every_job_reported(self):
+        self.assertEqual(stops.took([{'seconds': 300, 'dollars': 0.5},
+                                     {'seconds': 420, 'dollars': 0.9}]),
+                         {'jobs': 2, 'seconds': 720, 'dollars': 1.4})
+        self.assertIsNone(stops.took([{'seconds': 300, 'dollars': 0.5},
+                                      {'seconds': 420}])['dollars'])
+        self.assertEqual(stops.took([]), {'jobs': 0, 'seconds': 0, 'dollars': None})
+        self.assertEqual(stops.cost(720, 1.4), '12 minutes and about $1.40')
+        self.assertEqual(stops.cost(720, None), '12 minutes; the assistant reported no cost')
+
+    def test_a_change_says_what_it_draws_again_and_what_that_took_last_time(self):
+        self.assertEqual(stops.redone('the outline', 6, 1320, 3.1), (
+            'Drawn again: the outline and every step after it, 6 steps. Last time they took '
+            '22 minutes and about $3.10.'))
+        self.assertEqual(stops.redone('the outline', 6, None, None), (
+            'Drawn again: the outline and every step after it, 6 steps; this computer has no '
+            'record of what they cost.'))
+        self.assertEqual(stops.redone('the handoff', 1, 120, None), (
+            'Drawn again: the handoff. Last time it took 2 minutes; the assistant reported no '
+            'cost.'))
+        self.assertEqual(stops.redone('the handoff', 1, None, None), (
+            'Drawn again: the handoff; this computer has no record of what it cost.'))
+
+    def test_no_reported_cost_is_never_said_as_nothing_spent(self):
+        # A cost nobody reported, or one that rounds to nothing, is never "$0.00".
+        self.assertEqual(stops.cost(60, 0), '1 minute; the assistant reported no cost')
+        self.assertEqual(stops.cost(60, 0.003), '1 minute and less than $0.01')
+        self.assertEqual(stops.redone('the outline', 3, 600, 0), (
+            'Drawn again: the outline and every step after it, 3 steps. Last time they took '
+            '10 minutes; the assistant reported no cost.'))
+        # What a change writes again may be what is written from a file, not every later step.
+        self.assertEqual(stops.redone('the blueprint', 4, None, None,
+                                      after='what is written from it'), (
+            'Drawn again: the blueprint and what is written from it, 4 steps; this computer '
+            'has no record of what they cost.'))
+
     def test_no_job_starts_with_less_than_the_floor_left(self):
         self.assertEqual((stops.floor(20), stops.floor(1), stops.floor(0)), (0.5, 0.25, 0.0))
 

@@ -35,6 +35,177 @@ class Crash(BaseException):
     """The runner's process ending in the middle of something."""
 
 
+class WhereThisTrainingStopsTests(StudioCase):
+    """Where a training stops is chosen on its form. The shared level, in a studios config of
+    the test's own, is written only with the chip, and refused when another studio changed it
+    since the form read it. Matrix rows 119 and 120."""
+
+    def setUp(self):
+        super().setUp()
+        self.review_capture.stop()    # the test's own studios config is read for real
+        from runner import studios_config
+        self.shared = studios_config
+        self.shared.update({'review': {'level': 'balanced'}})
+
+    def test_row_119_where_this_training_stops_is_chosen_on_the_form(self):
+        root = self.start(review_level='automatic', review_seen='balanced')
+        self.assertEqual(self.engine._load(root)['review_policy'],
+                         {'schema': 1, 'level': 'automatic'})
+        self.assertEqual(self.shared.read()[0]['review'], {'level': 'balanced'})
+
+    def test_row_119_a_per_training_choice_survives_a_new_shared_default(self):
+        self.shared.update({'review': {'level': 'step_by_step'}})
+        root = self.start(review_level='automatic', review_seen='balanced',
+                          review_default=False)
+        self.assertEqual(self.engine._load(root)['review_policy']['level'], 'automatic')
+        self.assertEqual(self.shared.read()[0]['review'], {'level': 'step_by_step'})
+
+    def test_row_120_a_start_refused_after_the_chip_wrote_can_be_tried_again(self):
+        self.start(title='Taken title', review_level='step_by_step', review_seen='balanced')
+        self.shared.update({'review': {'level': 'balanced'}})
+        with self.assertRaises(WorkspaceError):
+            self.start(title='Taken title', review_level='automatic', review_seen='balanced',
+                       review_default=True)
+        self.assertEqual(self.shared.read()[0]['review'], {'level': 'automatic'})
+        # The same form, its title put right: with the chip, or without it.
+        root = self.start(title='Free title', review_level='automatic', review_seen='balanced',
+                          review_default=True)
+        self.assertEqual(self.engine._load(root)['review_policy']['level'], 'automatic')
+        root = self.start(title='Another free title', review_level='automatic',
+                          review_seen='balanced')
+        self.assertEqual(self.engine._load(root)['review_policy']['level'], 'automatic')
+
+    def test_row_120_the_shared_default_is_written_only_with_the_chip(self):
+        from studio_core import review_policy
+        self.start(title='Second training', review_level='automatic', review_seen='balanced',
+                   review_default=True)
+        self.assertEqual(self.shared.read()[0]['review'], {'level': 'automatic'})
+        self.shared.update({'review': {'level': 'step_by_step'}})
+        before = sorted(self.space.repo.iterdir())
+        with self.assertRaises(WorkspaceError) as caught:
+            self.start(title='Stale training', review_level='balanced',
+                       review_seen='automatic', review_default=True)
+        self.assertEqual(str(caught.exception), review_policy.STALE)
+        self.assertEqual(sorted(self.space.repo.iterdir()), before, 'nothing is made')
+        self.assertEqual(self.shared.read()[0]['review'], {'level': 'step_by_step'})
+        with self.assertRaisesRegex(WorkspaceError, 'true or false'):
+            pipeline.check_form({**FORM, 'review_default': 'yes'})
+
+
+class ObjectionsTests(StudioCase):
+    def test_read_every_objection_is_offered_only_where_the_check_objected(self):
+        root = self.start()
+        (root / 'reviews').mkdir(exist_ok=True)
+        (root / 'reviews' / 'research.md').write_text('## Your request\n\nAdd a source.\n')
+        record = self.engine._load(root)
+        record['problem'] = {'step': 'research', 'state': 'failed', 'what': 'It timed out.',
+                             'kept': 'Kept.', 'action': 'retry', 'label': 'Try again'}
+        self.engine._store(root, record)
+        self.assertNotIn('objections', self.view(root)['problem'])
+        record['problem']['objected'] = True
+        self.engine._store(root, record)
+        self.assertEqual(self.view(root)['problem']['objections'], 'reviews/research.md')
+
+
+class NoCostYetTests(StudioCase):
+    def test_a_training_that_ran_only_its_own_steps_reports_no_cost_yet(self):
+        root = self.start()
+        record = self.engine._load(root)
+        record['steps'] = {'intake': {'attempts': [{'seconds': 0.5, 'dollars': None}]}}
+        self.engine._store(root, record)
+        ahead = self.view(root)['ahead']
+        self.assertIsNone(ahead['dollars'])
+        self.assertNotIn('$', ahead['spent'])
+
+
+class AheadTests(StudioCase):
+    """Each training's view says how many steps are left, where it next stops for the person
+    under its own level, and what its agent's jobs have spent so far."""
+
+    def test_runner_only_steps_do_not_claim_a_reported_zero_cost(self):
+        root = self.start()
+        record = self.engine._load(root)
+        found = self.engine._survey(root, record)
+        kinds = {step.id: step.kind for step in found.steps}
+        record['steps'] = {name: entry for name, entry in record['steps'].items()
+                           if kinds.get(name) == 'code'}
+        self.assertTrue(record['steps'])
+        ahead = self.engine._still_to_come(record, found)
+        self.assertIsNone(ahead['dollars'])
+        self.assertIn('the assistant reported no cost', ahead['spent'])
+
+    def test_the_view_says_steps_left_the_next_stop_and_spent(self):
+        root = self.start()
+        shown = self.view(root)
+        ahead = shown['ahead']
+        left = [step for step in shown['steps'] if step['status'] != 'done']
+        self.assertEqual(ahead['steps_left'], len(left))
+        self.assertEqual(ahead['next_gate'], 'gate:research-plan')
+        self.assertEqual(ahead['next_stop'], next(step['label'] for step in left
+                                                   if step['id'] == 'gate:research-plan'))
+        # The scripted agents report no cost: the line says so, never $0.00.
+        self.assertIsNone(ahead['dollars'])
+        self.assertTrue(ahead['spent'].endswith('; the assistant reported no cost'),
+                        ahead['spent'])
+        record = self.engine._load(root)
+        kinds = {step['id']: step['kind'] for step in shown['steps']}
+        priced = 0
+        for name, entry in record['steps'].items():
+            if kinds.get(name, kinds.get(name.partition(':')[0], 'agent')) == 'agent':
+                for attempt in entry.get('attempts', []):
+                    attempt['dollars'] = 0.25
+                    priced += 1
+        self.assertGreater(priced, 0)
+        self.engine._store(root, record)
+        self.assertEqual(self.view(root)['ahead']['dollars'], round(0.25 * priced, 2))
+        # Balanced reads the research plan too; Automatic draft goes on past it.
+        from unittest import mock
+        with mock.patch('studio_core.review_policy.capture',
+                        return_value={'schema': 1, 'level': 'automatic'}):
+            fast = self.start(title='Fast training')
+        self.assertNotEqual(self.view(fast)['ahead']['next_gate'], 'gate:research-plan')
+
+
+class RedoTests(StudioCase):
+    """Ask for changes says, before it is sent, what it writes again and what that took."""
+
+    def test_a_change_request_says_what_it_writes_again(self):
+        root = self.start()
+        self.to_gate(root, 'blueprint')
+        redo = self.engine.redo(str(root), 'blueprint')
+        self.assertEqual(redo['names'][0], 'the blueprint')
+        self.assertGreater(redo['steps'], 1, 'what is written from the blueprint comes again')
+        # Nothing after the blueprint has run yet: there is no record of what it all costs.
+        # What is counted is what is written from the blueprint, and the words say so.
+        self.assertTrue(redo['says'].startswith('Drawn again: the blueprint and what is '
+                                                f"written from it, {redo['steps']} steps; "
+                                                'this computer has no record'), redo['says'])
+        # The research stops keep their own words: Phase 3 prices them.
+        self.assertIsNone(self.engine.redo(str(root), 'research'))
+        self.assertIsNone(self.engine.redo(str(root), 'research-plan'))
+        # The blueprint alone, once run: what its last try took, priced as reported.
+        record = self.engine._load(root)
+        record['steps']['blueprint']['attempts'][-1].update(seconds=120, dollars=0.3)
+        self.engine._store(root, record)
+        alone = self.engine._redo_steps(record, ['blueprint'])
+        self.assertEqual(alone, (120.0, 0.3))
+
+    def test_each_item_of_a_combined_review_says_what_it_writes_again(self):
+        from unittest import mock
+        with mock.patch('studio_core.review_policy.capture',
+                        return_value={'schema': 1, 'level': 'automatic'}):
+            root = self.start()
+        review = self.view(root)['review']
+        self.assertEqual(review['phase'], 'final')
+        items = {item['target']: item for item in review['items']}
+        said = items['blueprint']['redo']['says']
+        # Everything written from the blueprint has run once here, its agent reporting no cost.
+        self.assertTrue(said.startswith('Drawn again: the blueprint and what is written from '
+                                        'it, '), said)
+        self.assertTrue(said.endswith('; the assistant reported no cost.'), said)
+        self.assertIsNone(items.get('research', {}).get('redo'))
+
+
 class FormToGateThreeTests(StudioCase):
     def test_the_form_becomes_a_training_made_through_the_core_in_page_mode(self):
         root = self.start()
@@ -185,7 +356,7 @@ class FormToGateThreeTests(StudioCase):
         self.assertEqual(json.loads(committed), record)
         view = self.view(root)
         self.assertEqual((view['spent'], view['model'], view['effort']),
-                         ({'dollars': 0.25, 'tokens': 1200}, 'a-model', 'high'))
+                         ({'dollars': 0.25, 'tokens': 1200, 'stops_at': 20.0}, 'a-model', 'high'))
         step = self.steps(root)['research-plan']
         self.assertEqual((step['attempts'], step['seconds'], step['dollars'], step['kind'],
                           step['label']), (1, 1.5, 0.25, 'agent', 'Draft the research plan'))
@@ -829,8 +1000,8 @@ class ResearchTests(StudioCase):
         self.assertEqual(view['problem'], {
             'what': str(refusal), 'action': 'retry', 'label': 'Try again',
             'kept': 'The draft report and the check’s objections are kept with this training: '
-                    'the objections are listed in its research review (reviews/research.md). '
-                    'The research plan you approved is kept.',
+                    'Read every objection shows them. The research plan you approved is kept.',
+            'objections': 'reviews/research.md',
             # What the page says Try again does: no research job ran here.
             'research': {'rounds': 0, 'jobs': 0, 'seconds': 0, 'dollars': None, 'most': 3,
                          'drafted': False}})
@@ -863,8 +1034,9 @@ class ResearchTests(StudioCase):
         refusal.rounds = 3
         with mock.patch.object(engine_module.research_contract, 'native', side_effect=refusal):
             self.decide(root, 'research-plan')
-        self.assertIn('listed in its research review (reviews/research.md), under what the '
-                      'check called them.', self.view(root)['problem']['kept'])
+        self.assertIn('Read every objection shows them, under what the check called them.',
+                      self.view(root)['problem']['kept'])
+        self.assertNotIn('reviews/research.md', self.view(root)['problem']['kept'])
         review = (root / 'reviews' / 'research.md').read_text()
         self.assertIn('> 2 facts the check calls narrow:\n> - f01: Too broad.\n'
                       '> - f02: Too broad too.\n>\n> coverage needs revision:\n'
@@ -1101,7 +1273,7 @@ class LimitTests(StudioCase):
                          {'supported': 1, 'pending': 3})
 
         self.assertEqual(self.engine.act(root, 'resume')['state'], 'stopped')
-        self.assertEqual(self.view(root)['spent'], {'dollars': 2.4, 'tokens': 4800})
+        self.assertEqual(self.view(root)['spent'], {'dollars': 2.4, 'tokens': 4800, 'stops_at': 2.2})
         after = self.engine.act(root, 'resume')
         self.assertEqual((after['state'], after['problem'], after['spent']['dollars']),
                          ('waiting', None, 3.0))

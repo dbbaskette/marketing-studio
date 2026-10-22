@@ -476,18 +476,27 @@ def check_form(sent: dict, brands=None) -> dict:
             if sent[name] not in review_policy.LEVELS:
                 raise WorkspaceError('Choose a supported review preference before starting.')
             form[name] = sent[name]
+    # `review_default` makes `review_level` the level new work starts at in every studio,
+    # written when the training starts.
+    if sent.get('review_default', False) not in (True, False):
+        raise WorkspaceError('Say whether to use this level for new work with true or false.')
+    if sent.get('review_default'):
+        if 'review_level' not in sent:
+            raise WorkspaceError('Choose where this training stops before using it for new '
+                                 'work.')
+        form['review_default'] = True
     return form
 
 
 def gates(form: dict, deck: bool = False) -> int:
     """The fewest times a training made from this form asks for a decision: the research
     plan and the research, and a blueprint, a guide and a brief for each level. `deck`
-    says a deck will be made here, which adds two for each level: what it says, and the
-    deck. Each practice scenario adds one, and nobody knows how many there are until a
-    blueprint names them."""
+    says a deck will be made here, which adds three for each level: its outline, its look
+    and the deck. Each practice scenario adds one, and nobody knows how many there are until
+    a blueprint names them."""
     materials = form.get('materials', MATERIALS)
     per_level = 1 + sum(stage in materials for stage in ('document', 'brief'))
-    return 2 + (per_level + (2 if deck else 0)) * max(1, len(form['levels']))
+    return 2 + (per_level + (3 if deck else 0)) * max(1, len(form['levels']))
 
 
 def intake_text(form: dict) -> str:

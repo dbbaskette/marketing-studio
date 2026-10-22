@@ -18,6 +18,12 @@ class ReviewPolicyTests(IsolatedHome):
         with mock.patch('studio_core.studios_config.read', return_value=({}, 'Unreadable')):
             self.assertEqual(review.capture()['level'], 'step_by_step')
 
+    def test_capture_uses_step_by_step_for_invalid_saved_defaults(self):
+        for invalid in (None, {}, {'level': 'unknown'}, ['automatic']):
+            with self.subTest(invalid=invalid), mock.patch(
+                    'studio_core.studios_config.read', return_value=({'review': invalid}, None)):
+                self.assertEqual(review.capture(), {'schema': 1, 'level': 'step_by_step'})
+
     def test_save_roundtrip_preserves_other_values_and_rejects_conflicts(self):
         shared.update({'private': {'keep': 7}, 'review': {'level': 'balanced'}})
         before = preferences.visible(shared.read()[0])
@@ -68,6 +74,66 @@ class ReviewPolicyTests(IsolatedHome):
         review.receipt(run, 'research', {'hash': 'exact'}, 'today')
         self.assertEqual(run['review_events'][0]['by'], 'review-policy')
         self.assertEqual(run['review_events'][0]['decision'], 'continued-automatically')
+
+    def test_effective_reads_balanced_when_absent_and_step_by_step_when_invalid(self):
+        self.assertEqual(review.effective({}), 'balanced')
+        self.assertEqual(review.effective({'review': {'level': 'automatic'}}), 'automatic')
+        self.assertEqual(review.effective({'review': {'level': 'fast'}}), 'step_by_step')
+        # A file that cannot be read never gives more autonomy than Step by step.
+        self.assertEqual(review.effective({}, 'Unreadable'), 'step_by_step')
+
+    def test_change_writes_the_level_under_the_lock_and_keeps_other_values(self):
+        shared.path().write_text('{"schema": 1, "share": "asked"}')
+        review.change(shared.update, 'automatic', 'balanced')
+        values = shared.read()[0]
+        self.assertEqual(values['share'], 'asked')
+        self.assertEqual(values['review'], {'level': 'automatic'})
+
+    def test_change_refuses_a_level_another_studio_changed(self):
+        shared.path().write_text('{"schema": 1, "review": {"level": "step_by_step"}}')
+        before = shared.path().read_bytes()
+        with self.assertRaises(ValueError) as caught:
+            review.change(shared.update, 'automatic', 'balanced')
+        self.assertEqual(str(caught.exception), review.STALE)
+        self.assertEqual(review.STALE, 'Another studio changed where new work stops. '
+                                       'Reload the page and try again.')
+        self.assertEqual(shared.path().read_bytes(), before)
+        with self.assertRaisesRegex(ValueError, 'Choose Balanced'):
+            review.change(shared.update, 'fast', 'step_by_step')
+
+    def test_change_takes_a_level_the_file_already_holds(self):
+        # A start that wrote the level and then failed is tried again from the same form:
+        # the file holds what it asks for, so there is nothing stale to refuse.
+        shared.path().write_text('{"schema": 1, "review": {"level": "automatic"}}')
+        before = shared.path().read_bytes()
+        review.change(shared.update, 'automatic', 'balanced')
+        self.assertEqual(shared.path().read_bytes(), before)
+
+    def test_change_refuses_an_unreadable_file(self):
+        from marketing_studio.errors import WorkspaceError
+        shared.path().write_text('{')
+        with self.assertRaises(WorkspaceError) as caught:
+            review.change(shared.update, 'automatic', 'balanced')
+        self.assertTrue(str(caught.exception).endswith(shared.REFUSED), str(caught.exception))
+        self.assertEqual(shared.path().read_text(), '{')
+
+    def test_ahead_agrees_with_automatic_for_every_product_and_level(self):
+        products = [
+            ('blog', ['outline', 'draft', 'review', 'package'], 'package'),
+            ('presentation', ['gate:classify', 'gate:research', 'gate:outline', 'gate:look',
+                              'gate:build'], None),
+            ('training', ['gate:research-plan', 'review:direction', 'gate:deck-outline@101',
+                          'gate:deck-look@101', 'gate:deck@101', 'review:final'], None)]
+        for level in review.LEVELS:
+            run = {'review_policy': {'schema': 1, 'level': level}}
+            for product, gates, last in products:
+                with self.subTest(level=level, product=product):
+                    self.assertEqual(review.ahead(run, product, gates, last=last),
+                                     [g for g in gates
+                                      if not review.automatic(run, product, g, last=last)])
+        run = {'review_policy': {'schema': 1, 'level': 'balanced'}}
+        self.assertEqual(review.ahead(run, 'blog', ['draft', 'review', 'package'],
+                                      last='package', first='draft'), ['draft', 'package'])
 
     def test_grave_findings_and_audit_blockers_keep_any_gate_for_the_person(self):
         held = review.held([{'severity': 'major', 'slide': 'close01', 'note': 'Too high.'},

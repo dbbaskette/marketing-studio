@@ -15,7 +15,7 @@ import uuid
 import studio
 import blog_worker
 import editorial
-from studio_core import model_profiles, review_policy, research_contract
+from studio_core import model_profiles, review_policy, research_contract, stops
 from studio_core.preferences import ready as shared_ready
 
 STATE = 'derived/blog-run.json'
@@ -60,7 +60,7 @@ STAGES = {
         'Distinguish your judgment from completed mechanical checks; unresolved facts stay unresolved.',
     ),
     'package': (
-        'Export package',
+        'Handoff',
         'derived/blog-package.md',
         'Prepare a publication handoff: selected title, alternative titles, excerpt, suggested '
         'description, links to check and unresolved review findings. Do not publish anything.',
@@ -312,8 +312,8 @@ def settings(root, data=None):
 
     path = studio.inside(root, '.blog-run-settings.json')
     migration_notice, migration_problem = studios_config.migrate(root)
-    shared, shared_problem = studios_config.read()
-    shared_problem = shared_problem or migration_problem
+    shared, read_problem = studios_config.read()
+    shared_problem = read_problem or migration_problem
     saved = studio.read_json(path) if path.is_file() else {}
     private = {
         key: value
@@ -407,10 +407,7 @@ def settings(root, data=None):
             'author': shared.get('person', {}).get('name') or DEFAULTS['author'],
         }
         saved = {'defaults': private}
-    try:
-        review_level = review_policy.snapshot(shared)['level']
-    except ValueError:
-        review_level = 'step_by_step'
+    review_level = review_policy.effective(shared, read_problem)
     personal = writing_defaults.personal(root)['values'].get('voice')
     return {
         'configured': bool(saved) or shared_ready(shared),
@@ -795,6 +792,22 @@ def survey(root, ident, listing=False):
                 'request': saved.get('request', ''),
             }
         )
+    # What is left: the stages not yet approved, and the first of them that stops for the
+    # person under this run's own level. The angles always do: the person picks one.
+    left = [row['stage'] for row in rows if row['status'] != 'approved']
+    stops_ahead = review_policy.ahead(
+        run,
+        'blog',
+        [stage for stage in left if stage != 'angles'],
+        last=run['pipeline'][-1],
+        first='outline' if 'outline' in run['pipeline'] else 'draft',
+    )
+    next_gate = 'angles' if 'angles' in left else (stops_ahead[0] if stops_ahead else None)
+    ahead = {
+        'steps_left': len(left),
+        'next_gate': next_gate,
+        'next_stop': STAGES[next_gate][0] if next_gate else None,
+    }
     # What moves the run on: the person's decision on a submitted document, or a submission.
     awaits = None
     if next_stage:
@@ -837,6 +850,7 @@ def survey(root, ident, listing=False):
         'seconds': run['seconds'],
         'stages': rows,
         'next': next_stage,
+        'ahead': ahead,
         'awaits': awaits,
         'complete': next_stage is None,
         'content': content,
@@ -910,6 +924,43 @@ def save(root, directory, record, run, event):
     receipt(root, 'Guided blog', result, 'article')
 
 
+def review_level(root, data):
+    """Settings' Where new work stops: write the level new work starts at in every studio,
+    refused when another studio changed the one the page read. Answers the settings."""
+    import studios_config
+
+    if not isinstance(data, dict) or set(data) != {'level', 'seen'}:
+        raise ValueError('Give the level and the level the page read.')
+    review_policy.change(studios_config.update, data['level'], data['seen'])
+    return settings(root)
+
+
+def redo(found, jobs):
+    """What Ask for changes at each writing stage draws again: that stage and every one
+    after it, with what they took the last time each ran on this computer. The research
+    stages keep their own words."""
+    stages = [row['stage'] for row in found['stages']]
+    last = {}
+    for job in jobs or ():
+        if isinstance(job, dict) and job.get('stage'):
+            last[job['stage']] = job
+    shown = {}
+    for at, stage in enumerate(stages):
+        if stage in RESEARCH_STAGES or stage == 'angles':
+            continue
+        again = stages[at:]
+        ran = [last.get(name) for name in again]
+        recorded = all(ran)
+        seconds = sum(float(job.get('seconds') or 0) for job in ran) if recorded else None
+        dollars = [job.get('dollars') for job in ran] if recorded else [None]
+        priced = None if None in dollars else round(sum(dollars), 4)
+        shown[stage] = {
+            'stages': again,
+            'says': stops.redone('the ' + STAGES[stage][0].lower(), len(again), seconds, priced),
+        }
+    return shown
+
+
 def research_scope(research, sources):
     """Supplied-only research has nothing to read without supplied sources."""
     return 'none' if research == 'supplied-only' and not sources else research
@@ -947,9 +998,21 @@ def create(root, data, approval='conversation'):
         'point',
         'revision',
         'library',
+        'review_level',
+        'review_seen',
+        'review_default',
     }
     if set(data) - allowed:
         raise ValueError('Unknown new-blog field.')
+    # Where this blog stops: the level its form chose, else the shared one. The form's chip
+    # also makes it the level new work starts at in every studio, written when it starts.
+    chosen_level = data.get('review_level')
+    if chosen_level is not None:
+        review_policy.check({'level': chosen_level})
+    if data.get('review_default', False) not in (True, False):
+        raise ValueError('Say whether to use this level for new work: true or false.')
+    if data.get('review_default') and chosen_level is None:
+        raise ValueError('Choose where this blog stops before using it for new work.')
     mode = data.get('mode', 'write')
     if mode not in MODES:
         raise ValueError(
@@ -998,9 +1061,9 @@ def create(root, data, approval='conversation'):
     elif mode == 'review':
         stop = 'review'
     elif mode == 'revise' and stop == 'outline':
-        raise ValueError('A revision starts at draft. Choose draft, review or export package.')
+        raise ValueError('A revision starts at draft. Choose draft, review or the handoff.')
     if stop not in ('outline', 'draft', 'review', 'package'):
-        raise ValueError('Choose outline, draft, review or export package.')
+        raise ValueError('Choose outline, draft, review or the handoff.')
     from_files = mode == 'from-files'
     angles_first = from_files and not point
     brief = {
@@ -1059,7 +1122,7 @@ def create(root, data, approval='conversation'):
         if mode in ('revise', 'review') and not existing:
             raise ValueError('This blog has no saved manuscript to revise or review.')
         if existing and stop in ('outline', 'draft') and mode != 'revise':
-            raise ValueError('An existing draft starts at review. Choose review or export package.')
+            raise ValueError('An existing draft starts at review. Choose review or the handoff.')
     else:
         # No profile key: the default voice applies. An empty one is "No particular voice":
         # the described tone. An ID pins that voice.
@@ -1155,15 +1218,21 @@ def create(root, data, approval='conversation'):
     ]
     import studios_config
 
+    # A shared file that cannot be read gives the built-in defaults, and never more autonomy
+    # than Step by step; the chip's write is refused by the file itself.
     shared, problem = studios_config.read()
-    if problem:
-        raise ValueError(problem)
     assistant = shared.get('assistant') or {}
     same_agent = assistant.get('agent') == engine
     contract = research_contract.snapshot() if research != 'none' else None
     if contract:
         run['research_contract'] = contract
-    run['review_policy'] = review_policy.snapshot(shared)
+    run['review_policy'] = (
+        {'schema': 1, 'level': chosen_level}
+        if chosen_level
+        else {'schema': 1, 'level': 'step_by_step'}
+        if problem
+        else review_policy.snapshot(shared)
+    )
     if review_policy.level(run) != 'step_by_step':
         run['schema'] = 2
     if contract:
@@ -1177,6 +1246,9 @@ def create(root, data, approval='conversation'):
     if selected_brand:
         run['brand'] = selected_brand
     inputs(root, record, run)  # Refuse unusable context before creating a partial blog.
+    if data.get('review_default'):
+        # Refused, with nothing made, when another studio changed the level the form read.
+        review_policy.change(studios_config.update, chosen_level, data.get('review_seen'))
     if style:
         record['style'] = studio.style_pin(root, style, record['style']['revision'])
     if not data.get('id'):
@@ -1755,9 +1827,39 @@ class Engine:
         except (ValueError, OSError):
             pass
 
+    def note_job(self, ident, stage, began, metered):
+        """Keep one stage job in this computer's run state: its seconds, and the tokens and
+        dollars its CLI reported, each None unless every CLI job in it reported one. A job
+        no CLI ran in is not kept. Best effort: a busy workspace skips a note, never the work."""
+        if not metered:
+            return
+        tokens = [job['tokens'] for job in metered]
+        dollars = [job['dollars'] for job in metered]
+        entry = {
+            'stage': stage,
+            'seconds': round(time.monotonic() - began, 1),
+            'tokens': sum(tokens) if None not in tokens else None,
+            'dollars': round(sum(dollars), 4) if None not in dollars else None,
+        }
+        try:
+            with studio.locked(self.root):
+                state = self.local(ident)
+                state['jobs'] = (state.get('jobs') or [])[-199:] + [entry]
+                self.keep_local(ident, state)
+        except (ValueError, OSError):
+            pass
+
     def describe(self, ident, listing=False):
         found = survey(self.root, ident, listing)
         local = self.local(ident)
+        # What this run has spent so far, as its stage jobs reported it on this computer.
+        took = stops.took(local.get('jobs'))
+        found['ahead'] = {
+            **found['ahead'],
+            **took,
+            'spent': stops.cost(took['seconds'], took['dollars']) if took['jobs'] else None,
+        }
+        found['redo'] = redo(found, local.get('jobs'))
         status = local.get('status', 'paused')
         if found['complete']:
             status = 'complete'
@@ -1902,6 +2004,9 @@ class Engine:
             )
         pending = None
         review_attempts = []
+        # Every CLI job this stage runs, metered: kept once it ends, whatever its outcome.
+        meter, began = blog_worker.metered(), time.monotonic()
+        metered = meter.__enter__()
         try:
             if found['next'] == 'research' and run.get('research_contract'):
                 import synthesis_research
@@ -2067,6 +2172,8 @@ class Engine:
                     )
                     self.keep_local(ident, state)
         finally:
+            meter.__exit__(None, None, None)
+            self.note_job(ident, found['next'], began, metered)
             if pending:
                 pending.cleanup()
             self.current = None

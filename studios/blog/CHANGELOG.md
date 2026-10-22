@@ -5,6 +5,19 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Where this run stops, and one name for each thing.** The last step of a new blog has
+  a **Where this run stops** card: the level for this blog, the stops it makes, and
+  **Use this for new work in every studio**; Settings has **Where new work stops**, saved
+  at once and refused when another studio changed it meanwhile. A run says how many
+  steps are left, where it next stops and what its jobs have cost (every stage job is now
+  metered, not only research), and **Ask for changes** says what is drawn again and what
+  that took last time. The last stage is the **Handoff**; **Publish revision** is
+  **Record in team repository**; the research choice reads **No research**, **Only what
+  you supply** or **What you supply and the public web** everywhere; the form says what
+  research will read, what the tone does beside a voice, and each gate says what its
+  decision does. The README lists Home's real start choices. For maintainers:
+  `studios_config.update` takes a `guard`, the run view has `ahead` and `redo`, and stage
+  jobs are kept in this computer's run state as `jobs`.
 - **Research that can finish, and failures that say what to do.** Research the
   independent check refused is no longer thrown away: the draft report and the check's
   notes are kept on this computer, in the blog's `.studio-research-draft` folder (never

@@ -75,8 +75,8 @@ NAME = 'patch'
 GATE = 'gate:classify'
 SIGNATURE = b'PK\x03\x04'
 LIMIT = 100 * 1024 * 1024
-NOT_READY = ('Sign in to Google on the Check this computer screen, or download the deck as '
-             '.pptx and upload it.')
+NOT_READY = ('Sign in to Google on Status, under Check this computer, or download the file '
+             'and upload it.')
 FIELDS = ('text', 'runs', 'alt', 'title')
 PAIRED = ('brand-only', 'polish', 'redesign', 'selected')
 OBJECT_KEYS = ('id', 'type', 'text', 'runs', 'alt', 'title', 'contentHash')

@@ -118,6 +118,7 @@ from studio_core import deck_flow, research_contract, review_policy, stops
 
 import contextvars
 import json
+import sys
 import os
 import re
 import secrets
@@ -181,7 +182,7 @@ RUN = {
     'deliver': '_deliver', 'rehearse': None}
 # What each gate decides on, as a commit and a sentence say it.
 WORDS = {'gate:classify': 'classification', 'gate:research-plan': 'research plan',
-         'gate:research': 'research', 'gate:outline': 'outline', 'gate:look': 'brand',
+         'gate:research': 'research', 'gate:outline': 'outline', 'gate:look': 'look',
          'gate:build': 'deck'}
 # The build's steps, whose work is kept under work/build/ on the computer that did it.
 BUILT = ('build-start', 'build-sections', 'build-whole', 'build-review', 'build-repair',
@@ -718,6 +719,7 @@ class Engine(Jobs, Researching):
         space, chosen = self.space(), settings.load()
         gitstate.identity(space.repo)
         checked = decks.check_form(form, self.brands())
+        level, seen, default = decks.review_choice(form)
         given = self._given(form, checked, uploads or {})
         named = isinstance(form, dict) and form.get('agent') not in (None, '')
         agent = settings.check_agent(form['agent']) if named else chosen.agent
@@ -733,9 +735,16 @@ class Engine(Jobs, Researching):
         if not ready.ready:
             raise WorkspaceError(ready.problem)
         source = checked.get('source') or {}
-        if checked['route'] == 'existing' and source.get('kind') == 'google' \
+        if checked['route'] in ('existing', 'document') and source.get('kind') == 'google' \
                 and not self._google_ready():
             raise WorkspaceError(existing.NOT_READY)
+        if default:
+            # Refused, with nothing made, when another studio changed the level the form read.
+            import studios_config
+            try:
+                review_policy.change(studios_config.update, level, seen)
+            except ValueError as error:
+                raise WorkspaceError(str(error)) from None
         with self.files:
             root = decks.create(space, checked)
             try:
@@ -745,7 +754,9 @@ class Engine(Jobs, Researching):
                     target.write_bytes(data)
                 record = self._load(root)
                 record.update(agent=agent, model=model, level_of_effort=effort,
-                              model_profiles=profiles, review_policy=review_policy.capture(),
+                              model_profiles=profiles,
+                              review_policy=({'schema': 1, 'level': level} if level
+                                             else review_policy.capture()),
                               driver=team.claim(space),
                               limits={'step_seconds': chosen.step_seconds,
                                       'dollars': chosen.deck_dollars})
@@ -1066,14 +1077,16 @@ class Engine(Jobs, Researching):
         """Stop a deck on something a step refused or the runner did not expect."""
         if isinstance(failure, (_Gone, _Halted)):
             return
-        said = (str(failure) if isinstance(failure, WorkspaceError)
-                else f'{type(failure).__name__}: {failure}')
+        said = str(failure).strip().rstrip('.') or 'it did not say why'
+        if not isinstance(failure, WorkspaceError):
+            # The kind of failure is for whoever reads the runner's log, not for the page.
+            print(f'{root.name}: {type(failure).__name__}: {failure}', file=sys.stderr)
         try:
             record = self._load(root)
             step = first(record)
             self._problem(root, step.name if step else None, 'failed',
-                          said if isinstance(failure, WorkspaceError)
-                          else f'The runner could not go on: {said}', KEPT_SO_FAR)
+                          str(failure) if isinstance(failure, WorkspaceError)
+                          else f'The runner could not go on: {said}.', KEPT_SO_FAR)
         except Exception:  # the record cannot be written either; the view still says why
             pass
 
@@ -1082,7 +1095,10 @@ class Engine(Jobs, Researching):
         """Note a step of the runner's own that worked, and commit. Call it holding
         `files`."""
         record = record if record is not None else self._load(root)
-        self._tried(record, step.name, home.now(), time.monotonic() - clock, 'kept')
+        entry = self._tried(record, step.name, home.now(), time.monotonic() - clock, 'kept')
+        if step.kind == 'agent':
+            # Composite build steps can finish or skip without starting an assistant.
+            entry['tries'][-1]['runner'] = True
         self._finish(record, step.name)
         self._store(root, record)
         self._commit(root, what, also)
@@ -1174,6 +1190,7 @@ class Engine(Jobs, Researching):
                              drive=ready['drive'], pictures=ready['pictures'],
                              lacks=list(ready['missing']))
                 found['runtimes']['slides'] = str(tool.runtime)
+                found['pool'] = bool(tool.has('google-preview-pool'))
             except (WorkspaceError, OSError) as refusal:
                 found['tool'] = str(refusal)
             try:
@@ -1248,6 +1265,7 @@ class Engine(Jobs, Researching):
                  [fact('Installed', can[bool(seen['research'])])],
                  seen['research_problem'] or '')]
         return {'missing': missing, 'how': how, 'drive': seen['drive'],
+                'pool': bool(seen.get('pool')),
                 'local': seen['local'], 'google': bool(seen['drive']),
                 'tool': not seen['tool'], 'version': seen['version'],
                 'brand': dict(brand), 'brands': list(brand['brands']),
@@ -1712,11 +1730,12 @@ class Engine(Jobs, Researching):
             record = self._load(root)
             last = (build.read_state(root).get('rounds') or [{}])[-1]
             if not expected or last.get('deck') != expected:
-                raise WorkspaceError('The draft changed. Reload it before requesting AI review.')
+                raise WorkspaceError('The draft changed. Reload it before asking for the check.')
             if record.get('review_requested'):
                 return self.view(path)
             if not decks.user_first(record) or gate_state(record, 'gate:build') != 'waiting':
-                raise WorkspaceError('AI review can be requested at the unreviewed draft checkpoint.')
+                raise WorkspaceError('The check can be asked for while the first draft waits '
+                                     'for you.')
             record['review_requested'] = {'at': home.now(), 'deck': expected}
             for name in ('build-review', 'build-repair', 'build-render'):
                 record['steps'].pop(name, None)
@@ -2644,6 +2663,12 @@ class Engine(Jobs, Researching):
                  'said': record['said'].get(FED_BY.get(nxt.name, ''))}
         view = getattr(self, f"_show_{nxt.name.partition(':')[2].replace('-', '_')}")
         shown.update(view(root, record))
+        # What Ask for changes draws again, and what that took, said before it is asked for.
+        # The research stops keep their own words; the deck's stop says the whole deck's.
+        if nxt.name == 'gate:build':
+            shown['last_build'] = self._last_build(record)
+        elif nxt.name not in ('gate:research-plan', 'gate:research'):
+            shown['redo'] = self._redo(record, nxt.name)
         if nxt.name == 'gate:outline' and review_policy.level(record) == 'balanced':
             shown['research'] = self._show_research(root, record)
             shown['look'] = self._show_look(root, record)
@@ -2844,6 +2869,7 @@ class Engine(Jobs, Researching):
             'kept': self._set_aside(root), 'clash': root.name in self._clash,
             'queue': self._queue(run) if mine else None,
             'spent': {'dollars': dollars, 'tokens': tokens},
+            'ahead': self._still_to_come(record),
             'agent': record.get('agent'), 'model': record.get('model'),
             'effort': record.get('level_of_effort'),
             'model_mode': (record.get('model_profiles') or {}).get('mode', 'single'),
@@ -2874,6 +2900,76 @@ class Engine(Jobs, Researching):
             'contactSheet': (root / build.SHEET).is_file()}
 
     @staticmethod
+    def _assistant_attempt(name: str, attempt: dict) -> bool:
+        """A real assistant job, excluding the runner's build-completion markers.
+
+        Bare section/repair steps have always been bookkeeping; their assistant jobs
+        have child names. A review can also be skipped, marked explicitly in new runs.
+        Unmarked older reviews remain jobs, so a missing price stays unknown.
+        """
+        step = stages.BY_NAME.get(name.partition(':')[0])
+        return (not attempt.get('runner') and name not in ('build-sections', 'build-repair')
+                and (step is None or step.kind == 'agent'))
+
+    def _redo(self, record: dict, gate: str) -> dict | None:
+        """The steps Ask for changes at `gate` runs again, and what they took the last time
+        each ran: the seconds of its last try, and the dollars of its agent's, said only when
+        every one of them reported its cost. None of it when one has never run here."""
+        names = self._reopened(record, gate)
+        again = [step for step in stages.steps(record) if step.name in names
+                 and step.kind != 'gate' and step.name != 'rehearse']
+        if not again:
+            return None
+        kept = record.get('steps') or {}
+        seconds, dollars, recorded = 0.0, [], True
+        for step in again:
+            own = [(name, entry) for name, entry in kept.items() if isinstance(entry, dict)
+                   and (name == step.name or name.startswith(step.name + ':'))
+                   and entry.get('tries')]
+            if not own:
+                recorded = False
+                break
+            for name, entry in own:
+                jobs = [attempt for attempt in entry['tries']
+                        if self._assistant_attempt(name, attempt)]
+                last = jobs[-1] if jobs else entry['tries'][-1]
+                seconds += float(last.get('seconds') or 0)
+                if jobs:
+                    dollars.append(last.get('dollars'))
+        priced = None if None in dollars or not dollars else round(sum(dollars), 4)
+        return {'steps': len(again), 'names': [step.label for step in again],
+                'seconds': seconds if recorded else None,
+                'dollars': priced if recorded else None,
+                'says': stops.redone(f'“{again[0].label}”', len(again),
+                                     seconds if recorded else None, priced)}
+
+    @staticmethod
+    def _still_to_come(record: dict) -> dict:
+        """What is left of a deck, and what it has spent: the steps not done, the first gate
+        among them its own level always stops at (one a grave finding may still hold is not
+        counted), and the seconds of every try with the dollars of its agent's jobs, said
+        only when every one of them reported its cost."""
+        rows = [row for row in stages.timeline(record) if row['state'] not in ('done', 'later')]
+        gates = review_policy.ahead(record, 'presentation',
+                                    [row['name'] for row in rows if row['name'].startswith('gate:')])
+        nxt = next((row for row in rows if gates and row['name'] == gates[0]), None)
+        tried = [(name, attempt) for name, entry in (record.get('steps') or {}).items()
+                 if isinstance(entry, dict) for attempt in entry.get('tries') or []]
+        took = stops.took([attempt for _, attempt in tried])
+        priced = [attempt for name, attempt in tried
+                  if Engine._assistant_attempt(name, attempt)]
+        # No assistant job yet: no cost has been reported, which is not the same as $0.00.
+        dollars = stops.took(priced)['dollars'] if priced else None
+        # What the stop decides, as a sentence says it: under Balanced, the outline's stop
+        # is the direction.
+        words = nxt and ('direction' if nxt['name'] == 'gate:outline'
+                         and review_policy.level(record) == 'balanced' else WORDS[nxt['name']])
+        return {'steps_left': len(rows), 'next_gate': nxt and nxt['name'],
+                'next_stop': nxt and nxt['label'], 'next_words': words, 'jobs': took['jobs'],
+                'seconds': took['seconds'], 'dollars': dollars,
+                'spent': stops.cost(took['seconds'], dollars) if tried else None}
+
+    @staticmethod
     def _sections_kept(root: Path) -> dict | None:
         """How much of the slide build a retry keeps: {'kept', 'total'} sections, or None
         before a build has started."""
@@ -2898,7 +2994,7 @@ class Engine(Jobs, Researching):
         it was kept from, and the rest of the last build, from its set-up to its render.
         Said before a whole deck is drawn again, with how many sections that is."""
         stood = (record.get('last_build') or {}).get('tries') or {}
-        tried, sections = [], 0
+        tried, agents, sections = [], [], 0
         for name, entry in (record.get('steps') or {}).items():
             if not isinstance(entry, dict):
                 continue
@@ -2907,11 +3003,18 @@ class Engine(Jobs, Researching):
                         if attempt.get('outcome') == 'kept']
                 if kept:
                     tried.append(kept[-1])
+                    agents += [kept[-1]] if Engine._assistant_attempt(name, kept[-1]) else []
                     sections += 1
             elif name.partition(':')[0] in BUILT:
-                tried += list(entry.get('tries') or [])[stood.get(name, 0):]
-        dollars = [attempt['dollars'] for attempt in tried if attempt.get('dollars') is not None]
-        return {'dollars': round(sum(dollars), 4) if dollars else None,
+                these = list(entry.get('tries') or [])[stood.get(name, 0):]
+                tried += these
+                agents += [attempt for attempt in these
+                           if Engine._assistant_attempt(name, attempt)]
+        # Dollars only when every one of its assistant's jobs reported them: a step of the
+        # runner's own reports none, and is not counted against the sum.
+        priced = [attempt.get('dollars') for attempt in agents]
+        dollars = None if not priced or None in priced else round(sum(priced), 4)
+        return {'dollars': dollars,
                 'seconds': round(sum(attempt.get('seconds') or 0 for attempt in tried), 1),
                 'sections': sections}
 

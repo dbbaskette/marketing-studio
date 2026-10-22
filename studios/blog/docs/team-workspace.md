@@ -30,7 +30,7 @@ paths named; commit them deliberately with Git before retrying. They are not
 silently overwritten or published. Each blog has a readable folder and README.
 Sources, voices and team memory live under `blogs/.shared/`.
 
-When all planned stages are approved, **Publish revision** records a numbered,
+When all planned stages are approved, **Record in team repository** records a numbered,
 immutable tag in the team repository. This does not publish a website.
 
 ## In a conversation or terminal

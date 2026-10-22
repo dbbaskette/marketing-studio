@@ -109,7 +109,7 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/deci
           '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
           '/api/versions', '/api/brand', '/api/brand/install', '/api/shared',
           '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
-          '/api/note')
+          '/api/note', '/api/review-level')
 PNG = 'image/png'
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
@@ -350,6 +350,10 @@ class RunnerPage(server.Page):
             return server.as_json(HTTPStatus.OK, self.engine.note(
                 self.deck(server.text(sent, 'path')), server.text(sent, 'text'),
                 server.text(sent, 'expected')))
+        if path == '/api/review-level':
+            level, seen = shaped(setup.review_choice, sent)
+            return server.as_json(HTTPStatus.OK, setup.save_review_level(self.engine, level,
+                                                                         seen))
         if path == '/api/share':
             return server.as_json(HTTPStatus.OK, self.engine.share())
         if path == '/api/fetch':

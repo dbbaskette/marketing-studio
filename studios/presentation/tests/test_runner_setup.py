@@ -85,7 +85,7 @@ class SetUpTests(FirstTimeCase):
         self.assertEqual((said['shared'], said['shared_problem']), ({}, None))
         self.assertEqual((said['notify'], said['updates'], said['upkeep']),
                          ({'on': False, 'can': True, 'problem': None}, {'look': True}, None))
-        self.assertEqual(said['previews'], {'how': None, 'drive': True, 'local': True})
+        self.assertEqual(said['previews'], {'how': None, 'pool': False, 'drive': True, 'local': True})
         self.assertIn('No workspace is set up on this computer yet',
                       self.post('decks', {'form': FORM}, 409)['error'])
         self.assertIn('No workspace is set up', self.post('share', {}, 409)['error'])
@@ -269,6 +269,36 @@ class CheckTests(FirstTimeCase):
 
 class SharedConfigTests(FirstTimeCase):
     """The studios config is the only place the values every studio shares are kept."""
+
+    def test_review_level_route_saves_and_refuses_a_stale_level(self):
+        from studio_core import review_policy
+        self.review_capture.stop()    # the test's own studios config is read for real
+        self.write_config('{"schema": 1, "share": "asked"}')
+        self.assertEqual(self.get('setup')['review_level'], 'balanced')
+        shown = self.post('review-level', {'level': 'automatic', 'seen': 'balanced'})
+        self.assertEqual(shown['review_level'], 'automatic')
+        self.assertEqual(json.loads(self.config.read_text()),
+                         {'schema': 1, 'share': 'asked', 'review': {'level': 'automatic'}})
+        before = self.config.read_text()
+        refused = self.post('review-level', {'level': 'step_by_step', 'seen': 'balanced'}, 409)
+        self.assertEqual(refused['error'], review_policy.STALE)
+        bad = self.post('review-level', {'level': 'fast', 'seen': 'automatic'}, 400)
+        self.assertEqual(bad['error'], 'Choose Balanced, Automatic draft, or Step by step.')
+        self.assertEqual(self.config.read_text(), before)
+        # An unreadable file shows Step by step, and refuses with its own sentence.
+        self.write_config('{')
+        self.assertEqual(self.get('setup')['review_level'], 'step_by_step')
+        refused = self.post('review-level', {'level': 'balanced', 'seen': 'step_by_step'}, 409)
+        self.assertIn('could not be read', refused['error'])
+        self.assertEqual(self.config.read_text(), '{')
+
+    def test_the_set_up_says_whether_previews_share_a_pool(self):
+        self.assertIs(self.get('setup')['previews']['pool'], False)
+        tool = self.engine.slides()
+        with mock.patch.object(type(tool), 'has', lambda me, name: name == 'google-preview-pool'):
+            self.engine.deck_needs(fresh=True)
+            self.assertIs(self.get('setup')['previews']['pool'], True)
+        self.engine.deck_needs(fresh=True)
 
     def test_with_no_file_the_defaults_are_the_built_in_ones(self):
         self.assertFalse(self.config.exists())

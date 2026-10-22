@@ -32,6 +32,208 @@ class DispatchTests(unittest.TestCase):
                 self.assertTrue(callable(getattr(engine.Engine, method)), name)
 
 
+class ReviewLevelFormTests(StudioCase):
+    """Where a deck stops is chosen on its own form. The shared level, in a studios config
+    of the test's own, is written only with the chip, and refused when another studio
+    changed it since the form read it."""
+
+    def setUp(self):
+        super().setUp()
+        self.review_capture.stop()    # the test's own studios config is read for real
+        import studios_config
+        self.shared = studios_config
+        self.shared.update({'review': {'level': 'balanced'}})
+
+    def made(self):
+        return sorted(entry['path'] for entry in self.engine.status()['decks'])
+
+    def test_a_deck_keeps_the_level_its_form_chose(self):
+        from studio_core import review_policy
+        root = self.start(review_level='step_by_step', review_seen='balanced')
+        self.assertEqual(review_policy.level(decks.read_run(root)), 'step_by_step')
+        self.assertEqual(self.view(root)['review_level'], 'step_by_step')
+        self.assertEqual(self.shared.read()[0]['review'], {'level': 'balanced'})
+        self.assertNotIn('review_level', decks.read_run(root)['form'])
+        with self.assertRaisesRegex(WorkspaceError, 'Choose Balanced, Automatic draft, or Step by step'):
+            self.start(title='Another deck', review_level='fast', review_seen='balanced')
+        # Without a choice on the form, a deck takes the shared level, as before.
+        self.assertEqual(review_policy.level(decks.read_run(self.start(title='Plain deck'))),
+                         'balanced')
+
+    def test_the_shared_default_is_written_only_with_the_chip_and_refused_when_stale(self):
+        from studio_core import review_policy
+        self.start(review_level='automatic', review_seen='balanced')
+        self.assertEqual(self.shared.read()[0]['review'], {'level': 'balanced'})
+        self.start(title='Second deck', review_level='automatic', review_seen='balanced',
+                   review_default=True)
+        self.assertEqual(self.shared.read()[0]['review'], {'level': 'automatic'})
+        self.shared.update({'review': {'level': 'step_by_step'}})
+        before = self.made()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.start(title='Stale deck', review_level='balanced', review_seen='automatic',
+                       review_default=True)
+        self.assertEqual(str(caught.exception), review_policy.STALE)
+        self.assertEqual(self.made(), before, 'nothing is made')
+        self.assertEqual(self.shared.read()[0]['review'], {'level': 'step_by_step'})
+
+
+class AheadTests(StudioCase):
+    """Each deck's view says how many steps are left, where it next stops for the person
+    under its own level, and what its agent's jobs have spent so far."""
+
+    def test_runner_only_steps_do_not_claim_a_reported_zero_cost(self):
+        root = self.start()
+        record = decks.read_run(root)
+        record['steps'] = {name: entry for name, entry in record['steps'].items()
+                           if (stages.BY_NAME.get(name) or
+                               stages.BY_NAME[name.partition(':')[0]]).kind == 'code'}
+        self.assertTrue(record['steps'])
+        ahead = self.engine._still_to_come(record)
+        self.assertIsNone(ahead['dollars'])
+        self.assertIn('the assistant reported no cost', ahead['spent'])
+
+    def test_the_view_says_steps_left_the_next_stop_and_spent(self):
+        from studio_core import review_policy
+        with mock.patch.object(review_policy, 'capture',
+                               return_value={'schema': 1, 'level': 'balanced'}):
+            root = self.start(research=True)
+        shown = self.view(root)
+        ahead = shown['ahead']
+        self.assertEqual(ahead['next_stop'], 'Review the direction')
+        self.assertEqual(ahead['next_gate'], 'gate:outline')
+        self.assertEqual(ahead['steps_left'], len([row for row in shown['timeline']
+                                                    if row['state'] not in ('done', 'later')]))
+        self.assertEqual(ahead['steps_left'], 10)
+        # The scripted agents report no cost: the line says so, never $0.00.
+        self.assertIsNone(ahead['dollars'])
+        self.assertTrue(ahead['spent'].endswith('; the assistant reported no cost'))
+        # Every agent job priced: the dollars are their sum. A step of the runner's own costs
+        # nothing and reports nothing; it is not counted against the sum.
+        run = decks.read_run(root)
+        for name, entry in run['steps'].items():
+            if (stages.BY_NAME.get(name) or stages.BY_NAME[name.partition(':')[0]]).kind == 'agent':
+                for attempt in entry['tries']:
+                    if not attempt.get('runner'):
+                        attempt['dollars'] = 0.5
+        decks.write_run(root, run)
+        # The plan, two question workers and the outline: the research completion marker
+        # did not start an assistant and has no cost to add.
+        self.assertEqual(len(self.workers.jobs), 4)
+        self.assertEqual(self.view(root)['ahead']['dollars'], 2.0)
+        self.assertTrue(self.view(root)['ahead']['spent'].endswith('and about $2.00'))
+        run['steps']['outline']['tries'][0]['dollars'] = None
+        decks.write_run(root, run)
+        self.assertIsNone(self.view(root)['ahead']['dollars'])
+        # Step by step stops at the next gate there is, the outline.
+        with mock.patch.object(review_policy, 'capture',
+                               return_value={'schema': 1, 'level': 'step_by_step'}):
+            plain = self.start(title='Plain deck')
+        self.assertEqual(self.view(plain)['ahead']['next_gate'], 'gate:outline')
+        self.assertEqual(self.view(plain)['ahead']['next_stop'], 'Approve the outline')
+
+
+class NoCostYetTests(StudioCase):
+    """Only the runner's own steps have run, or the build's jobs reported no cost: nothing
+    is said as $0.00."""
+
+    def test_a_deck_that_ran_only_its_own_steps_reports_no_cost_yet(self):
+        root = self.start()
+        run = decks.read_run(root)
+        run['steps'] = {'intake-source': {'failed': 0, 'done': True,
+                                          'tries': [{'seconds': 2, 'dollars': None}]}}
+        decks.write_run(root, run)
+        ahead = self.view(root)['ahead']
+        self.assertIsNone(ahead['dollars'])
+        self.assertNotIn('$', ahead['spent'])
+        self.assertTrue(ahead['spent'].endswith('; the assistant reported no cost'))
+
+    def test_build_completion_markers_are_not_unpriced_assistant_jobs(self):
+        record = {'steps': {
+            'build-sections': {'tries': [{'seconds': 0, 'dollars': None}]},
+            'build-repair': {'tries': [{'seconds': 0, 'dollars': None}]},
+            'build-sections:1': {'tries': [
+                {'outcome': 'kept', 'seconds': 30, 'dollars': 0.25}]},
+            'build-review': {'tries': [
+                {'outcome': 'kept', 'seconds': 20, 'dollars': 0.25},
+                {'outcome': 'kept', 'seconds': 0, 'dollars': None, 'runner': True}]}}}
+        self.assertEqual(self.engine._last_build(record)['dollars'], 0.5)
+        # An actual assistant review without dollars still makes the total unknown.
+        record['steps']['build-review']['tries'].append(
+            {'outcome': 'kept', 'seconds': 10, 'dollars': None})
+        self.assertIsNone(self.engine._last_build(record)['dollars'])
+
+    def test_the_last_build_reports_no_dollars_when_a_build_job_reported_none(self):
+        record = {'steps': {
+            'build-sections:1': {'tries': [{'outcome': 'kept', 'seconds': 300, 'dollars': 1.5}]},
+            'build-review': {'tries': [{'outcome': 'kept', 'seconds': 120, 'dollars': None}]},
+            'build-render': {'tries': [{'outcome': 'kept', 'seconds': 30, 'dollars': None}]}}}
+        self.assertIsNone(self.engine._last_build(record)['dollars'])
+        record['steps']['build-review']['tries'][0]['dollars'] = 0.5
+        self.assertEqual(self.engine._last_build(record)['dollars'], 2.0)
+
+
+class RedoTests(StudioCase):
+    """Ask for changes says, before it is sent, what it draws again and what that took."""
+
+    def test_redo_counts_the_steps_reopen_runs_again(self):
+        root = self.start()
+        self.assertEqual(self.waiting(root), 'gate:outline')
+        record = decks.read_run(root)
+        redo = self.view(root)['gate']['redo']
+        again = [step for step in stages.steps(stages.reopen(record, 'gate:outline'))
+                 if step.kind != 'gate' and step.name != 'rehearse'
+                 and step.name in self.engine._reopened(record, 'gate:outline')]
+        self.assertEqual(redo['names'][0], 'Draft the outline')
+        self.assertEqual(redo['steps'], len(again))
+        # The build has never run here: there is no record of what it all costs.
+        self.assertEqual(redo['says'], 'Drawn again: “Draft the outline” and every step after '
+                         f"it, {len(again)} steps; this computer has no record of what they cost.")
+        # Each step takes a minute; each actual assistant job reports ten cents.
+        # Section/repair parent entries only record completion: their child workers do
+        # the paid work, just as in a real build.
+        for step in again:
+            entry = record['steps'].setdefault(step.name, {'failed': 0, 'tries': []})
+            composite = step.name in ('build-sections', 'build-repair')
+            entry['tries'] = [{'seconds': 0 if composite else 60,
+                               'dollars': 0.1 if step.kind == 'agent' and not composite
+                               else None}]
+            if composite:
+                record['steps'][step.name + ':section-1'] = {
+                    'tries': [{'seconds': 60, 'dollars': 0.1}]}
+        decks.write_run(root, record)
+        priced = sum(step.kind == 'agent' for step in again)
+        self.assertEqual(self.view(root)['gate']['redo']['says'], (
+            f'Drawn again: “Draft the outline” and every step after it, {len(again)} steps. '
+            f'Last time they took {len(again)} minutes and about ${0.1 * priced:.2f}.'))
+        # The research stops keep their own wording: Phase 3 prices them.
+        with mock.patch('studio_core.review_policy.capture',
+                        return_value={'schema': 1, 'level': 'step_by_step'}):
+            searched = self.start(title='Searched deck', research=True)
+        self.assertEqual(self.waiting(searched), 'gate:research-plan')
+        self.assertIsNone(self.view(searched)['gate'].get('redo'))
+
+
+class HonestStopTests(StudioCase):
+    def test_a_google_doc_document_needs_google_before_the_deck_is_made(self):
+        from runner.steps import existing
+        before = self.engine.decks()
+        with mock.patch.object(type(self.engine), '_google_ready', lambda me: False):
+            with self.assertRaises(WorkspaceError) as caught:
+                self.start(route='document', source={
+                    'kind': 'google', 'link': 'https://docs.google.com/document/d/abc/edit'})
+        self.assertEqual(str(caught.exception), existing.NOT_READY)
+        self.assertEqual(existing.NOT_READY, 'Sign in to Google on Status, under Check this '
+                         'computer, or download the file and upload it.')
+        self.assertEqual(self.engine.decks(), before, 'nothing is made')
+
+    def test_an_unexpected_failure_says_its_message_without_its_class(self):
+        root = self.start()
+        self.engine._trouble(root, ValueError('boom'))
+        problem = self.view(root)['problem']
+        self.assertEqual(problem['why'], 'The runner could not go on: boom.')
+        self.assertNotIn('ValueError', json.dumps(self.view(root)))
+
+
 class ScratchTests(StudioCase):
     def test_a_scratch_deck_stops_at_each_gate_and_is_delivered(self):
         root = self.start()
@@ -80,7 +282,7 @@ class ScratchTests(StudioCase):
         decisions = [line for line in self.log()[before:]
                      if line.startswith('Rolling restarts: approve the ')]
         self.assertEqual(decisions, ['Rolling restarts: approve the outline',
-                                     'Rolling restarts: approve the brand',
+                                     'Rolling restarts: approve the look',
                                      'Rolling restarts: approve the deck'])
         name, data = self.engine.download(root)
         self.assertEqual(name, f'{root.name}.pptx')
@@ -1355,6 +1557,8 @@ class SayingTests(StudioCase):
         # Two sections and a review were drawn by workers, at a quarter dollar each.
         self.assertEqual(shown['last_build']['dollars'], 0.75)
         self.assertGreater(shown['last_build']['seconds'], 0)
+        self.assertEqual(self.view(root)['ahead']['dollars'], 0.25 * len(self.workers.jobs))
+        self.assertIsNotNone(self.engine._redo(self.record(root), 'gate:build')['dollars'])
 
 
     def test_asking_to_change_words_names_the_slides_and_clears_the_deck_s_note(self):

@@ -35,7 +35,7 @@ The page stops at each of these and waits for you. Which ones apply depends on h
 5. **Build.** The whole deck in a slide viewer, plus a contact sheet and notes from the brand check. Redesigns show before and after. Each slide has its own **Ask for changes**.
 6. **Deliver.** A Google Slides deck by default, or a PowerPoint file.
 
-**Rehearse with Yoodli** is shown on the page as coming later.
+Rehearsal is not part of a deck yet, so the page does not show it.
 
 Your brand comes from your brand skill: the brands and variants it lists are the ones offered when you start a deck, and the first it lists is the default until you choose another. Presentation Studio names no brand of its own.
 

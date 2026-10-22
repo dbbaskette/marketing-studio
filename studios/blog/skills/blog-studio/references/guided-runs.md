@@ -77,7 +77,7 @@ This creates no model process in chat: you do the writing here.
    `review_level` and `expected`. Inspect the selected article, sources and voice
    using existing workspace helpers; retain originals and exact pins.
 2. Load the relevant module from SKILL.md and write only that stage: research
-   questions, research findings, outline, draft, review or export package.
+   questions, research findings, outline, draft, review or the handoff.
    Research in chat follows the existing research/evidence workflow. Review
    must distinguish completed checks from assistant judgment and missing facts.
 3. Save a temporary Markdown file outside the skill and submit it:
@@ -124,7 +124,7 @@ the existing Hub. Automatic execution is local to the computer where the person
 started it. After another clone checks it out, press Resume explicitly. Avoid
 running the same blog simultaneously on multiple computers; the Hub retains
 competing revisions for reconciliation. Google transfers remain explicit via
-[Google Docs](google/workflow.md). Export packages never publish anything.
+[Google Docs](google/workflow.md). The handoff never publishes anything.
 
 ## When a page run stops
 
