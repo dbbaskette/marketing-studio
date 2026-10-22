@@ -62,10 +62,12 @@ The deck is delivered as Google Slides, or as a PowerPoint file to download. An 
 
 **Watching a run.** A deck's run shows every step, how long each took and what it cost.
 - **Pause**: the step in hand finishes and nothing new starts until you resume. **Stop**: the work in hand is ended; everything already kept stays.
-- **Try again**, when a step failed. A step is tried up to three times, each time with the reason the last one failed. **Undo** takes back the last thing done to the deck, while it is not shared yet.
+- **Try again**, when a step failed. A step is tried up to three times, each time with the reason the last one failed; then the deck stops, and Try again runs that step again from the start. A slide build keeps the sections already drawn. Research done as one report and an independent check continues from its saved draft and runs up to three more rounds, and the stop says what the last rounds took. **Undo** takes back the last thing done to the deck, while it is not shared yet.
+- **Give it more time and try again**, when a step ran out of the time a step may take. The stop says so, with the minutes, and that the limit is in Settings, under Limits. This lets each step of this deck take twice as long and runs the step again; the deck keeps that time when it carries on. Raising the limit in Settings is the other way on, for every deck.
+- **Check this computer**, when the assistant could not be used: it is not installed, not signed in or out of reach, or its account has reached a usage limit. The deck stops at once, without spending tries, and the stop says to use Check this computer on the Status screen.
 - **Answer a question**: an assistant that needs something only you know can ask, and the run waits.
 
-A deck that has spent what it may stops and asks before spending more. You can close the page while decks work: Home says what needs you, and with "Tell me when no page is open" in Settings, this computer's own notifications do too.
+A deck that has spent what it may stops and asks before spending more, and so does one with too little left to start a step: no job is started with less than $0.50 to spend, or a quarter of a limit under $2.00. A step stopped mid-way because it spent what was left is not counted as a failed try: the deck stops in the same way, and the step starts again when you carry on. **Resume** lets it spend as much again; raising the limit in Settings, under Limits, is the other way on, and the stop says both. You can close the page while decks work: Home says what needs you, and with "Tell me when no page is open" in Settings, this computer's own notifications do too.
 
 ## Keeping it current
 

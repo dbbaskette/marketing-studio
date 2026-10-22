@@ -15,7 +15,7 @@ The [installer](installation.md) brings the runner, offers the two companion ski
 
 A slide deck needs four more things. The Status screen shows each one, and what to do about one that is missing.
 
-- [harness-slides](https://github.com/dbbaskette/harness-slides-skill), version 0.14.1 or newer for a new deck. It draws and renders the slides. The installer offers it, and the Versions view updates it. A deck already begun with an older one, down to 0.13.1, carries on with it.
+- [harness-slides](https://github.com/dbbaskette/harness-slides-skill). It draws and renders the slides. The installer offers the version this Training Studio is pinned to, 0.16.0 now, and the Versions view updates it. A new deck needs 0.14.1 or newer, and a deck already begun with an older one, down to 0.13.1, carries on with it.
 - A brand skill: a skill that holds your organisation's brands, its slide template and its icons. A deck is always made in a brand. Without a brand skill no deck is offered. It is your organisation's own, so the installer does not bring it. Install it yourself, or name its repository in Settings and install it from the page: see [the brand skill](#the-brand-skill).
 - A way to turn slides into pictures, so that they can be looked at before they come to you: LibreOffice on this computer, or Google access that reaches Drive.
 - Poppler, the small programs (`pdftoppm` and `pdfinfo`) that turn a render into pictures.
@@ -237,7 +237,9 @@ A training's run shows every step, how long each took and what it cost, and what
 - **Finish this level, then wait.** The level in hand is finished, and nothing is started for another level until you resume. Offered while a step for one level is in hand.
 - **Skip the deck for now.** The deck is left out, with a reason kept with the training, before anything of it is drawn. You can bring it back later from the deck's own page.
 - **Stop.** The agents at work are ended, and so is anything a step is running, such as a slide preview. Nothing they started is left running. Everything already kept stays. Resume carries on from there.
-- **Try again**, when a step failed. A step is tried up to three times, with the reason for the last failure given to the next try. Then the training stops and says what went wrong and what was kept.
+- **Try again**, when a step failed. A step is tried up to three times, with the reason for the last failure given to the next try. Then the training stops and says what went wrong and what was kept, and Try again runs that step again from the start. Research done as one report and an independent check is the exception: Try again continues from the saved draft and runs up to three more rounds of writing and checking, and the stop says what the last rounds took in time and money.
+- **Give it more time and try again**, when a step ran out of the time a step may take. The stop says so, with the minutes, and that the limit is in Settings, under Limits. This lets each step of this training take twice as long and runs the step again; the training keeps that time when it carries on. Raising the limit in Settings is the other way on, for every training.
+- **Check this computer**, when the agent could not be used: it is not installed, not signed in or out of reach, or its account has reached a usage limit. The training stops at once, without spending tries, and the stop says to use Check this computer on the Status screen.
 - **Answer a question.** An agent that needs something only you know can ask. The run waits for your answer.
 
 ### Deleting a training
@@ -251,7 +253,7 @@ A training's run shows every step, how long each took and what it cost, and what
 
 A training you started in a conversation is never deleted by the runner, and is not offered.
 
-A training that has spent what it may stops and asks before it spends more. Claude Code says what each step cost. Codex reports tokens and not dollars, so the money limit cannot stop it: the page says so, and the limit on time still applies.
+A training that has spent what it may stops and asks before it spends more, and so does one with too little left to start a step: no job is started with less than $0.50 to spend, or a quarter of a limit under $2.00. A step stopped mid-way because it spent what was left is not counted as a failed try: the training stops in the same way, and the step starts again when you carry on. **Carry on** lets it spend as much again; raising the limit in Settings, under Limits, is the other way on, and the stop says both. Claude Code says what each step cost. Codex reports tokens and not dollars, so the money limit cannot stop it: the page says so, and the limit on time still applies.
 
 ## With a team
 
@@ -313,7 +315,7 @@ The original folder is left exactly as it was, with nothing deleted. From then o
 - A research question that fails three times does not stop the training. It is named as not researched when the research comes to you, and you decide whether that matters. This is how a training that researches question by question works; one researched as a single report and an independent check stops at the research instead, as below.
 - When the independent check still objects after three rounds of correction, the training stops at the research. The stop counts the objections by what they are about and what the check called them, such as "12 facts the check calls narrow", with the first of each, and says what the rounds took in time and money. Every objection is listed under its group in the research review, `reviews/research.md`.
 - The brand's own check warns on every slide with a caveat or a source line, because those lines are set smaller than the check allows. The warning is shown at the deck's gate. It is not something the runner can put right.
-- A deck is drawn in the default look. Choosing between looks, editing a deck by hand and bringing the edits back, and pictures made by a model are not in the runner.
+- Editing a deck by hand and bringing the edits back is not in the runner.
 - What a deck is built from stays on the computer that built it and is not shared: the drawings, the previews and the pictures. Your team gets the deck, what it says, and what its gate showed. On another computer the deck's gate shows no pictures.
 - Bringing edits back from a Google Doc, and reusing a teammate's scenarios or audiences in a new training, are not in the runner yet. The [team hub](team-hub.md) does the second from a conversation.
 - A training made in a conversation is not picked up by the runner until you bring it in, and a training the runner drives should not also be driven from a conversation while it runs.
