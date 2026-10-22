@@ -231,6 +231,20 @@ class GuidanceTests(Deck):
                          brand_stand_in.WORKER)
         self.assertIn('drafting guidance', written.prepared['inputs'])
 
+    def test_reviewer_reads_the_review_guidance(self):
+        self.entered()
+        self.built()
+        inputs = build.review_work(self.root, self.run_).prepared['inputs']
+        self.assertEqual(list(inputs), ['the review', 'review guidance',
+                                        'brand review checklist'])
+        self.assertEqual(inputs['review guidance'], 'Review every slide.\n')
+        self.assertIn('Use the Brand checklist.', inputs['brand review checklist'])
+
+    def test_without_them_the_reviewer_has_only_the_review(self):
+        self.built()
+        inputs = build.review_work(self.root, self.run_).prepared['inputs']
+        self.assertEqual(list(inputs), ['the review'])
+
     def test_a_brand_whose_entry_fails_is_noted_and_the_deck_carries_on(self):
         self.brand.run.guides = True
         original = self.brand.guidance

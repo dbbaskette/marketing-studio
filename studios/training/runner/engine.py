@@ -1996,7 +1996,10 @@ class Engine(Reviewing):
                 answer = skill.guidance(work, chosen[0], chosen[1], branded=kind == 'brand')
             except WorkspaceError as again:
                 return {'problem': str(again)}
-        for name, text in brand_guidance.snapshot(answer).items():
+        # The reviewer's reading is kept with the composers': the slides tool's review
+        # guidance in the snapshot, and the brand's own review checklist.
+        for name, text in {**brand_guidance.snapshot(answer),
+                           **brand_guidance.review_texts(answer)}.items():
             worker_tools._write(told / pipeline.reading_file(name), text)
         said = brand_guidance.worker(answer)
         if said:

@@ -197,7 +197,8 @@ NOISE = re.compile(r'^\((?:node:\d+\)|Use `node )')   # Node's own warnings, not
 LEFT = re.compile(r'The preview deck is in Drive \((\S+)\); retry with --file-id (\S+?)\.$')
 PREVIEWING = threading.Lock()   # one preview at a time, whoever asks
 GUIDES = {'design guidance': 'design.md', 'composition guidance': 'compositions.md',
-          'drafting guidance': 'draft.md', 'gallery': 'gallery.md'}   # under REFERENCES
+          'drafting guidance': 'draft.md', 'gallery': 'gallery.md',
+          'review guidance': 'review.md'}   # under REFERENCES
 REFERENCES = Path('references')
 GALLERY = REFERENCES / 'gallery'    # one drawn slide for each relation, as JSON
 READ_MOST = 60_000      # characters of one guidance file that are handed on

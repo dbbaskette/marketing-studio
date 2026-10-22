@@ -264,14 +264,17 @@ class BriefTests(JobCase):
             self.assertIn(told, text)
 
 
+
+class ReviewReadingBriefTests(unittest.TestCase):
+    def test_review_briefs_name_their_reading(self):
+        from runner import briefs
+        said = ("Read the review guidance and the brand's review checklist, when you are given "
+                'them, before you look.')
+        self.assertIn(said + ' Judge each slide by the questions in "the review".',
+                      ' '.join(briefs.guidance('deck-review').split()))
+        self.assertIn(said + ' Judge each slide by the criteria in "the review".',
+                      ' '.join(briefs.guidance('deck-review', design=True).split()))
+
+
 if __name__ == '__main__':
     unittest.main()
-
-
-class SynthesisBriefTests(unittest.TestCase):
-    def test_the_synthesis_plan_brief_speaks_of_one_investigation(self):
-        text = briefs.guidance('research-plan')
-        self.assertIn('Ask at most 8 questions.', text)
-        self.assertIn('One investigation answers them together', text)
-        self.assertNotIn('researched on its own', text)
-        self.assertNotIn('30', text)

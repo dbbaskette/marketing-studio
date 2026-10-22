@@ -143,10 +143,10 @@ class FindingTheRuntimeTests(unittest.TestCase):
         self.assertEqual(found, tool.reading(self.home / 'brand-contract.json'),
                          'it is the same for every brand')
         self.assertEqual(list(found), ['design guidance', 'composition guidance',
-                                       'drafting guidance', 'example order',
+                                       'drafting guidance', 'review guidance', 'example order',
                                        'example contrast'],
-                         'only what a writer or a composer needs, a link out of the folder is '
-                         'not followed, and what the tool does not have is left out')
+                         'only what a writer, a composer or a reviewer needs, a link out of the '
+                         'folder is not followed, and what the tool does not have is left out')
         self.assertEqual((found['design guidance'], found['example order']),
                          ('# Design\n', '{"brief": {"relation": "order"}}\n'))
         self.assertEqual(len(found['drafting guidance']), slides.READ_MOST)

@@ -95,6 +95,9 @@ from runner.steps import Work
 
 PREVIEWS = 4            # times one composer may render its section
 REPAIRS = 2             # rounds of drawing again after a review
+# What a deck's reviewer reads beside "the review": the slides tool's review guidance and the
+# brand's review checklist, each when the deck's reading has it.
+REVIEW_READING = ('review guidance', brand_guidance.REVIEW_CHECKLIST)
 DELIVERY = 'reading'    # a deck is read alone as well as presented
 DIRECTION = deck_direction.FALLBACK   # only until the brand gives one
 SEVERITIES = ('critical', 'major', 'minor')
@@ -508,7 +511,10 @@ def guide(root, run: dict, brand_skill) -> dict:
                 f"The brand's slide guidance could not be {'resumed' if same else 'started'}: "
                 f'{refusal} The installed slides tool\'s own guidance is used instead.')
         if answer is not None:
-            home.write_json(root / READING, brand_guidance.snapshot(answer))
+            # The reviewer's reading is kept with the composers': the slides tool's review
+            # guidance in the snapshot, and the brand's own review checklist.
+            home.write_json(root / READING, {**brand_guidance.snapshot(answer),
+                                             **brand_guidance.review_texts(answer)})
             worker = brand_guidance.worker(answer)
             if worker:
                 write_atomic(root / WORKER, worker)
@@ -1613,10 +1619,14 @@ def review_work(root, run: dict) -> Work:
               'questions': list(questions),
               'recorded': str(root / last['folder'] / 'assessment.json'), 'inspect': inspect,
               'reused': reused, 'sheet': str(root / last['sheet']) if last.get('sheet') else None}
+    inputs = {'the review': asked(slides, earlier, questions, last.get('audit_warnings'))}
+    for name in REVIEW_READING:   # as the deck's start kept them, when it did
+        text = _read(root / TOLD / reading_file(name))
+        if text.strip():
+            inputs[name] = text
     return Work(guidance=briefs.guidance('review'), task=task, profile='write',
                 guard=('whole', (run.get('build_feedback_revisions') or {}).get('whole', 0)),
-                prepared={'inputs': {'the review': asked(slides, earlier, questions,
-                                                          last.get('audit_warnings'))},
+                prepared={'inputs': inputs,
                           'ask': False,
                           'review': review})
 

@@ -59,7 +59,7 @@ What a caller needs to know
 from __future__ import annotations
 
 import json
-from studio_core import deck_direction, deck_flow, review_policy, research_contract
+from studio_core import brand_guidance, deck_direction, deck_flow, review_policy, research_contract
 import re
 import shutil
 from dataclasses import dataclass, field, replace
@@ -142,6 +142,9 @@ SECTION = re.compile(r'^section-[1-9]\d{0,2}$')
 DRAFTING = deck_flow.OUTLINE_READING
 DESIGNING = deck_flow.DESIGN_READING    # the outline's writer, when it proposes a design too
 COMPOSING = deck_flow.COMPOSER_READING
+# What a deck's reviewer reads beside "the review": the slides tool's review guidance and the
+# brand's review checklist, each when the deck's reading has it.
+REVIEW_READING = ('review guidance', brand_guidance.REVIEW_CHECKLIST)
 OUTLINE_CHECKED = (
     'The slides tool checked its shape and its own limits.',
     'Every content slide names the objectives it serves, and every objective is served by '
@@ -1953,6 +1956,7 @@ def review_work(root: Path, found: Survey, step: Step, error: str | None) -> Wor
                            'slides': slides, 'objectives': list(objectives),
                            'questions': list(questions),
                            'recorded': str(work / last['folder'] / 'assessment.json')}}
+    _read_also(root, mine, prepared['inputs'], REVIEW_READING)
     return Work(briefs.guidance('deck-review'), task, 'write', prepared)
 
 
@@ -1978,6 +1982,7 @@ def _judging_work(root: Path, step: Step, mine: Deck, slides: list[dict], object
                                       'revision': last['judged']['revision'],
                                       'binding': last['judged']['binding'],
                                       'packets': packets}}}
+    _read_also(root, mine, prepared['inputs'], REVIEW_READING)
     return Work(briefs.guidance('deck-review', design=True), task, 'write', prepared)
 
 

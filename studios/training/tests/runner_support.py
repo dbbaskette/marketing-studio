@@ -1116,11 +1116,15 @@ class Brand:
         (snap / 'SKILL.md').write_text('# Harness Slides\n')
         (snap / 'references' / 'compositions.md').write_text('Pinned composition guidance.\n')
         (snap / 'references' / 'draft.md').write_text('Pinned drafting guidance.\n')
+        (snap / 'references' / 'review.md').write_text('Pinned review guidance.\n')
+        checklist = snap.parent / 'brand' / 'slide-review.md'   # the brand's own, as a path
+        checklist.parent.mkdir(parents=True, exist_ok=True)
+        checklist.write_text('# Slide review\n\nUse the Brand checklist.\n')
         return {'task': task, 'revision': 'abc123', 'guidance': str(snap / 'SKILL.md'),
                 'runtime': '/opt/slides-tool/versions/0.13.1', 'freshness': 'current-at-start',
-                **({'brand': {'worker': self.WORKER, 'checkpoints': ['Draft approval.',
-                                                                     'Look.',
-                                                                     'Final acceptance.']}}
+                **({'brand': {'worker': self.WORKER, 'review': str(checklist),
+                              'checkpoints': ['Draft approval.', 'Look.',
+                                              'Final acceptance.']}}
                    if branded else {})}
 
     def looks(self) -> bool:

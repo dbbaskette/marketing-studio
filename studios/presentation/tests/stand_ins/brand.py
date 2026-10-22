@@ -310,7 +310,13 @@ class StandIn:
                   'runtime': str(self.home / 'slides-runtime'), 'runtimeVersion': '0.15.1'}
         if options.get('brand'):
             self._chosen(options)
+            review = self.home / 'references' / 'slide-review.md'
+            review.parent.mkdir(parents=True, exist_ok=True)
+            if not review.is_file():
+                review.write_text('# Slide review\n\nUse the Brand checklist.\n',
+                                  encoding='utf-8')
             answer['brand'] = {'entry': str(self.home / 'references/harness-slides.md'),
+                               'review': str(review),
                                'checkpoints': ['Draft approval.', 'Look.', 'Final acceptance.'],
                                'worker': WORKER}
         return 0, answer

@@ -1687,6 +1687,27 @@ class BrandEntryTests(DeckCase):
         self.engine._guide(work, ('example-co', 'dark'), told, kept)
         self.assertEqual(self.brand.guided[-1][:2], ('start', None), 'another brand starts anew')
 
+    def test_reviewer_reads_the_review_guidance(self):
+        self.brand.entry = 'brand'
+        self.workers.found = [[]]
+        root = self.begin()
+        self.drawn(root)
+        work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
+                                    pipeline.gate_for('deck'), None)
+        inputs = work.prepared['inputs']
+        self.assertEqual(list(inputs), ['the review', 'review guidance',
+                                        'brand review checklist'])
+        self.assertEqual(inputs['review guidance'], 'Pinned review guidance.\n')
+        self.assertIn('Use the Brand checklist.', inputs['brand review checklist'])
+
+    def test_without_them_the_reviewer_has_only_the_review(self):
+        self.workers.found = [[]]
+        root = self.begin()
+        self.drawn(root)
+        work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
+                                    pipeline.gate_for('deck'), None)
+        self.assertEqual(list(work.prepared['inputs']), ['the review'])
+
     def test_a_brand_without_the_entry_keeps_the_installed_tools_guidance(self):
         root = self.begin()
         self.drawn(root)

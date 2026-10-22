@@ -85,3 +85,15 @@ class SynthesisBriefTests(unittest.TestCase):
         self.assertIn('One investigation answers them together', text)
         self.assertNotIn('researched on its own', text)
         self.assertNotIn('30', text)
+
+
+class ReviewBriefTests(unittest.TestCase):
+    def test_review_brief_names_its_reading(self):
+        from runner import briefs
+        self.assertIn('Read the review guidance and the brand\'s review checklist, when you are '
+                      'given them, before you look. Judge each slide by the questions in "the '
+                      'review".', ' '.join(briefs.guidance('review').split()))
+
+
+if __name__ == '__main__':
+    unittest.main()
