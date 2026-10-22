@@ -201,6 +201,8 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
             'requested_changes': payload.get('changes'),
             'source_mode': ('mixed' if sources else 'public') if allowed else 'selected',
         }
+        from blog_runner import planning_questions
+        task['planning_questions'] = planning_questions(payload['documents'].get('research-plan') or '')
         gaps = []
         if allowed:
             discovery = call(

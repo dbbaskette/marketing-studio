@@ -68,7 +68,7 @@ STAGES = {
 }
 GUIDES = {
     'angles': 'modules/blog-argument-outline.md',
-    'research-plan': 'modules/blog-deep-research.md',
+    'research-plan': 'modules/blog-research-plan.md',
     'research': 'modules/blog-deep-research.md',
     'outline': 'modules/blog-argument-outline.md',
     'draft': 'modules/blog-write.md',

@@ -328,3 +328,19 @@ class SynthesisIntegrationTests(Fixture):
                 self.assertEqual(len(authors), 2)
                 self.assertIn('sections must be an array', authors[1]['validation_error'])
                 self.assertIn('previous_output', authors[1])
+
+
+class PlanningTaskTests(Fixture):
+    def test_the_author_is_given_the_plan_s_questions(self):
+        from synthesis_fixture import research_stop
+        directory = self.base / 'synthetic-research'; directory.mkdir()
+        research_stop(directory / 'research')
+        seen = []
+        def run(workflow, folder, task, invoke, sources):
+            seen.append(task)
+        with patch.object(research_contract, 'runtime_for', return_value=directory), \
+                patch.object(research_contract.Workflow, 'run', run), patch.object(research_contract, 'publish'):
+            synthesis_research.generate(directory, {'brief': {}, 'research_contract': {}},
+                {'title': 'Synthetic', 'sources': [], 'documents': {'research-plan': '- **instance-min**: Minimum?'}, 'research_policy': 'supplied-only'},
+                lambda *a, **k: self.fail('No provider job'), seconds=60, stop=threading.Event())
+        self.assertEqual(seen[0]['planning_questions'], [{'id': 'instance-min', 'question': 'Minimum?'}])

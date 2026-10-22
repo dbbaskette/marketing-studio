@@ -3040,3 +3040,24 @@ class ResearchAccountTests(RunnerCase):
         self.assertEqual(price['jobs'], 3)
         self.assertIn('49 minutes and $10.80', price['words'])
 
+
+
+class ResearchPlanningTests(RunnerCase):
+    def test_the_research_plan_job_uses_its_own_module(self):
+        found = self.create(research='web-allowed')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(runner.GUIDES['research-plan'], 'modules/blog-research-plan.md')
+        self.assertIn('You have no tools.', guidance)
+        self.assertIn('at most 8 questions', guidance)
+
+    def test_planning_questions_are_read_from_the_plan(self):
+        self.assertEqual(runner.planning_questions('- **why-now**: Why now?\n- **Bad id**: x\n- **cost**: What does it cost?\n- **cost**: Duplicate?'),
+                         [{'id': 'why-now', 'question': 'Why now?'}, {'id': 'cost', 'question': 'What does it cost?'}])
+        self.assertEqual(len(runner.planning_questions('\n'.join(f'- **q-{i}**: Why?' for i in range(9)))), 8)
+
+    def test_the_research_module_documents_the_synthesis_path_only(self):
+        path = Path(runner.__file__).parents[1] / 'references/modules'
+        main = (path / 'blog-deep-research.md').read_text()
+        self.assertNotIn('deep_research.py research', main)
+        self.assertIn('modules/blog-legacy-research.md', main)
+        self.assertIn('research record', (path / 'blog-legacy-research.md').read_text())
