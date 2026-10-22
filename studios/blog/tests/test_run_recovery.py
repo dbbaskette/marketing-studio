@@ -95,6 +95,14 @@ class ResearchCase(RunnerCase):
         source = self.source('A fictional gateway routes synthetic requests.')
         with patch.object(runner.research_contract, 'snapshot', return_value=dict(CONTRACT)):
             found = self.create(page=True, research='supplied-only', sources=[source['id']])
+        # A saved supplied-only synthesis run from before claims maps keeps its pipeline.
+        directory, record, run = runner.load(self.root, found['id'])
+        run['pipeline'] = ['research-plan', 'research'] + [
+            name for name in run['pipeline'] if name != 'claims-map'
+        ]
+        studio = __import__('studio')
+        studio.write_json(directory / runner.STATE, run)
+        found = runner.survey(self.root, found['id'])
         self.assertEqual(found['next'], 'research-plan')
         found = self.approve(self.submit(found, page=True), page=True)
         self.assertEqual(found['next'], 'research')

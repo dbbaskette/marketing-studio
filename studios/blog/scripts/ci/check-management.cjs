@@ -81,6 +81,7 @@ async function check(){
   await whereThisRunStops();
   await phase3ResearchDefaults();
   await phase3ResearchAccount();
+  await phase3ClaimsMap();
   await oneVocabulary();
   await honestBlogCopy();
   await finishAndDelete();
@@ -1257,7 +1258,7 @@ async function sharedPattern(){
    assert.equal(f.run('studio.busy'),false,'the screen is free again after the upload');
    assert.ok(text().some(t=>t==='Balanced: it stops for the outline and the draft'),'with no research chosen the stops are unchanged: '+text().join('|'));
    f.run("studio.options.settings.review_level='step_by_step';studio.draft.research='supplied-only';sWizard()");
-   assert.ok(text().some(t=>t==='Step by step: it stops for the research plan, the research findings, the outline and the draft'),'selected sources research counts the files: '+text().join('|'));
+   assert.ok(text().some(t=>t==='Step by step: it stops for the claims in your material, the outline and the draft'),'selected sources research counts the files: '+text().join('|'));
    f.run("studio.options.settings.review_level='balanced';studio.draft.research='none';sWizard()");
    await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
    const created=requests.find(r=>r.url==='/api/run-create');assert.ok(created,'Start writing creates the run');assert.deepEqual(created.data.sources,['m1','m2'],'the files are the run\'s sources');
@@ -1268,7 +1269,7 @@ async function sharedPattern(){
   f.run("studio.options.settings.review_level='step_by_step';studio.draft.mode='write';studio.draft.research='supplied-only';studio.draft.stop='package';sWizard()");
   assert.ok(text().some(t=>t==='Step by step: it stops for the outline, the draft, the review and the handoff'),'selected sources with none selected is no research: '+text().join('|'));
   f.run("studio.draft.sources=['one'];sWizard()");
-  assert.ok(text().some(t=>t==='Step by step: it stops for the research plan, the research findings, the outline, the draft, the review and the handoff'),text().join('|'));
+  assert.ok(text().some(t=>t==='Step by step: it stops for the claims in your material, the outline, the draft, the review and the handoff'),text().join('|'));
   // New blog without a task chosen shows the same start cards as Home.
   f.run("studio.draft={...defaults,mode:null,step:0};sWizard()");
   assert.equal(f.get('title').textContent,'New blog');assert.ok(descendants(f.get('studio-page')).some(e=>e.className==='pick-card'&&e.textContent==='Write from a brief'));
@@ -2397,4 +2398,13 @@ async function phase3ResearchAccount(){
   assert.ok(descendants(f.get('sheet')).some(e=>e.textContent===found.research_price.words));
   const select=descendants(f.get('sheet')).find(e=>e.id==='change-stage');select.value='outline';select.listeners.change();
   assert.equal(descendants(f.get('sheet')).some(e=>e.textContent===found.research_price.words),false);
+}
+
+async function phase3ClaimsMap(){const f=fixture();f.loadRunner();
+  f.set('draft',{mode:'write',research:'supplied-only',sources:['s1'],stop:'package'});
+  assert.deepEqual(Array.from(f.run('sPipeline(draft)')),['claims-map','outline','draft','review','package']);
+  assert.equal(f.run("sStopWords('balanced',sPipeline(draft),'write')"),'Balanced: it stops for the outline and the handoff');
+  assert.ok(f.run("sStopWords('step_by_step',sPipeline(draft),'write')").includes('the claims in your material'));
+  f.set('draft',{mode:'from-files',research:'supplied-only',sources:['s1'],start:'point',stop:'package'});
+  assert.equal(f.run("sPipeline(draft).includes('claims-map')"),false);
 }

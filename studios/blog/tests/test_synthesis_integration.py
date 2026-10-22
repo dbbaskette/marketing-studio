@@ -17,6 +17,19 @@ from synthesis_fixture import TEXT, dossier, review
 RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
 
 
+def saved_selected_research(root, data, approval):
+    """A pre-claims-map run whose saved supplied-only synthesis still continues."""
+    shown = blog_runner.create(root, data, approval)
+    directory, record, run = blog_runner.load(root, shown['id'])
+    run['pipeline'] = ['research-plan', 'research'] + [
+        name for name in run['pipeline'] if name != 'claims-map'
+    ]
+    run['research_contract'] = research_contract.snapshot()
+    run['schema'] = 3
+    __import__('studio').write_json(directory / blog_runner.STATE, run)
+    return blog_runner.survey(root, shown['id'])
+
+
 @unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME for helper integration.')
 class SynthesisIntegrationTests(Fixture):
     def setUp(self):
@@ -27,7 +40,7 @@ class SynthesisIntegrationTests(Fixture):
 
     def test_browser_research_handoff_and_downstream_bundle_use(self):
         source = self.source(TEXT)
-        shown = blog_runner.create(
+        shown = saved_selected_research(
             self.root,
             {
                 'title': 'Synthetic explanation',
@@ -105,7 +118,7 @@ class SynthesisIntegrationTests(Fixture):
 
     def test_actual_browser_worker_path_commits_only_after_the_session_guard(self):
         source = self.source(TEXT)
-        shown = blog_runner.create(
+        shown = saved_selected_research(
             self.root,
             {
                 'title': 'Synthetic explanation',
@@ -143,7 +156,7 @@ class SynthesisIntegrationTests(Fixture):
 
     def test_a_refused_page_research_is_kept_and_try_again_continues_from_it(self):
         source = self.source(TEXT)
-        shown = blog_runner.create(
+        shown = saved_selected_research(
             self.root,
             {
                 'title': 'Synthetic explanation',
@@ -218,7 +231,7 @@ class SynthesisIntegrationTests(Fixture):
         (shared / 'current').symlink_to('versions/' + old.name)
         os.environ['HARNESS_RESEARCH_RUNTIME'] = str(shared / 'current')
         source = self.source(TEXT)
-        shown = blog_runner.create(
+        shown = saved_selected_research(
             self.root,
             {
                 'title': 'Synthetic explanation',
@@ -333,14 +346,33 @@ class SynthesisIntegrationTests(Fixture):
 class PlanningTaskTests(Fixture):
     def test_the_author_is_given_the_plan_s_questions(self):
         from synthesis_fixture import research_stop
-        directory = self.base / 'synthetic-research'; directory.mkdir()
+
+        directory = self.base / 'synthetic-research'
+        directory.mkdir()
         research_stop(directory / 'research')
         seen = []
+
         def run(workflow, folder, task, invoke, sources):
             seen.append(task)
-        with patch.object(research_contract, 'runtime_for', return_value=directory), \
-                patch.object(research_contract.Workflow, 'run', run), patch.object(research_contract, 'publish'):
-            synthesis_research.generate(directory, {'brief': {}, 'research_contract': {}},
-                {'title': 'Synthetic', 'sources': [], 'documents': {'research-plan': '- **instance-min**: Minimum?'}, 'research_policy': 'supplied-only'},
-                lambda *a, **k: self.fail('No provider job'), seconds=60, stop=threading.Event())
-        self.assertEqual(seen[0]['planning_questions'], [{'id': 'instance-min', 'question': 'Minimum?'}])
+
+        with (
+            patch.object(research_contract, 'runtime_for', return_value=directory),
+            patch.object(research_contract.Workflow, 'run', run),
+            patch.object(research_contract, 'publish'),
+        ):
+            synthesis_research.generate(
+                directory,
+                {'brief': {}, 'research_contract': {}},
+                {
+                    'title': 'Synthetic',
+                    'sources': [],
+                    'documents': {'research-plan': '- **instance-min**: Minimum?'},
+                    'research_policy': 'supplied-only',
+                },
+                lambda *a, **k: self.fail('No provider job'),
+                seconds=60,
+                stop=threading.Event(),
+            )
+        self.assertEqual(
+            seen[0]['planning_questions'], [{'id': 'instance-min', 'question': 'Minimum?'}]
+        )

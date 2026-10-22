@@ -15,6 +15,7 @@ import uuid
 import studio
 import blog_worker
 import editorial
+import claims_map
 from studio_core import model_profiles, review_policy, research_contract, research_view, stops
 from studio_core.preferences import ready as shared_ready
 
@@ -42,6 +43,11 @@ STAGES = {
         'Research the approved questions. Cite evidence, contradictions and unanswered questions. '
         'With supplied sources only, use only those sources. Explicitly label missing evidence.',
     ),
+    'claims-map': (
+        'Claims in your material',
+        'derived/blog-claims-map.md',
+        'List each claim the supplied material makes, with the source that makes it and its exact passage. Judge none of them and do not research.',
+    ),
     'outline': (
         'Outline',
         'OUTLINE.md',
@@ -68,6 +74,7 @@ STAGES = {
 }
 GUIDES = {
     'angles': 'modules/blog-argument-outline.md',
+    'claims-map': 'modules/blog-claims-map.md',
     'research-plan': 'modules/blog-research-plan.md',
     'research': 'modules/blog-deep-research.md',
     'outline': 'modules/blog-argument-outline.md',
@@ -769,10 +776,16 @@ def research_price(root, directory, run):
     attempts = {}
     for job in jobs:
         if job.get('phase') in ('author', 'review'):
-            name = f"research:{job['phase']}-{job.get('round') or 1}"
-            attempts.setdefault(name, []).append({**job, 'dollars': job.get('dollars') if priced else None})
-    after = run['pipeline'][run['pipeline'].index('research') + 1:]
-    redone = ['the ' + STAGES[name][0].lower() for name in after if run['stages'].get(name, {}).get('hash')]
+            name = f'research:{job["phase"]}-{job.get("round") or 1}'
+            attempts.setdefault(name, []).append(
+                {**job, 'dollars': job.get('dollars') if priced else None}
+            )
+    after = run['pipeline'][run['pipeline'].index('research') + 1 :]
+    redone = [
+        'the ' + STAGES[name][0].lower()
+        for name in after
+        if run['stages'].get(name, {}).get('hash')
+    ]
     return research_view.price(attempts, redone, drafted=True, recorded=research_cost(jobs))
 
 
@@ -799,8 +812,12 @@ def survey(root, ident, listing=False):
     for name in run['pipeline']:
         saved = run['stages'].get(name, {})
         current = studio.artifact_fingerprint(directory, STAGES[name][1])
-        changed = bool(saved) and (saved.get('hash') != current or saved.get('basis') != pin(name)
-                                   or name == 'research' and bundle_problem)
+        changed = bool(saved) and (
+            saved.get('hash') != current
+            or saved.get('basis') != pin(name)
+            or name == 'research'
+            and bundle_problem
+        )
         status = (
             'pending'
             if saved.get('status') == 'pending'
@@ -1213,7 +1230,13 @@ def create(root, data, approval='conversation'):
     research = research_scope(research, record['sources'])
     if from_files and research == 'supplied-only':
         research = 'none'  # The files are read at every step; only the web adds research stages.
-    pipeline = [] if research == 'none' else ['research-plan', 'research']
+    pipeline = (
+        []
+        if research == 'none'
+        else ['claims-map']
+        if research == 'supplied-only'
+        else ['research-plan', 'research']
+    )
     pipeline += (
         (['draft', 'review', 'package'] if mode == 'revise' else ['review', 'package'])
         if existing
@@ -1358,6 +1381,12 @@ def submit(root, ident, stage, result, expected, page=False):
         from manuscript_editor import record_review
 
         result = record_review(root, directory, record, run, result)
+    if stage == 'claims-map':
+        said = claims_map.problems(result['content'], inputs(root, record, run)['sources'])
+        if said:
+            raise ValueError(
+                'The claims map quoted passages that are not in your material: ' + said[0]
+            )
     pin = basis(root, directory, record, run, stage)
     filename = STAGES[stage][1]
     if stage == 'draft' and (directory / 'DRAFT.md').is_file():
@@ -1471,7 +1500,7 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
     return survey(root, ident)
 
 
-RESEARCH_STAGES = ('research-plan', 'research')
+RESEARCH_STAGES = ('research-plan', 'research', 'claims-map')
 
 
 def skip_research(root, directory, record, run, at):
@@ -1914,7 +1943,7 @@ class Engine:
         owner = driver(self.root, ident) if space(self.root) else None
         decisions = found.get('decisions') or []
         research = None
-        if found['next'] in ('research-plan', 'research'):
+        if found['next'] in RESEARCH_STAGES:
             saved = local.get('research') or {}
             here = Path(found['directory'])
             kept = research_draft(here, found.get('research_tie'))
@@ -2076,6 +2105,35 @@ class Engine:
                     stop=self.stop,
                     model_selection=found.get('model_selection'),
                 )
+            if found['next'] == 'claims-map':
+                said = claims_map.problems(result['content'], payload['sources'])
+                if said:
+                    remaining = found['seconds'] - (time.monotonic() - started)
+                    if self.stop.is_set() or self.closed.is_set() or remaining <= 0:
+                        raise ValueError(
+                            'The claims map quoted passages that are not in your material: '
+                            + said[0]
+                        )
+                    result = self.worker(
+                        found['engine'],
+                        {
+                            **payload,
+                            'previous_output': result.get('content', ''),
+                            'validation_error': said[0],
+                        },
+                        guidance
+                        + '\nCorrect the previous output once. Quote each passage exactly from its named source; do not judge the claims.',
+                        seconds=max(1, int(remaining)),
+                        web=False,
+                        stop=self.stop,
+                        model_selection=found.get('model_selection'),
+                    )
+                    said = claims_map.problems(result['content'], payload['sources'])
+                    if said:
+                        raise ValueError(
+                            'The claims map quoted passages that are not in your material: '
+                            + said[0]
+                        )
             if found['next'] == 'review' and run.get('editor_check'):
                 from manuscript_editor import validate_review
 
@@ -2460,8 +2518,15 @@ def document(root, ident, stage):
     plan_path = directory / STAGES['research-plan'][1]
     questions = planning_questions(plan_path.read_text()) if plan_path.is_file() else []
     return {
-        **({'research': research_view.account(directory / 'research', questions) if run.get('research_contract') else None}
-           if stage == 'research' else {}),
+        **(
+            {
+                'research': research_view.account(directory / 'research', questions)
+                if run.get('research_contract')
+                else None
+            }
+            if stage == 'research'
+            else {}
+        ),
         'name': path.name,
         'content': content,
         **fields(content),

@@ -258,6 +258,11 @@
       "estimated_tokens": 415,
       "sha256": "a7fc75be17a70d3c06dea94dceada2e3858cdf8dac13efc3038eb39e267ea430"
     },
+    "references/modules/blog-claims-map.md": {
+      "characters": 764,
+      "estimated_tokens": 191,
+      "sha256": "bc13d988b29b274ca80c6f51a0714d28904c430a0085161df01d50588d72006c"
+    },
     "references/modules/blog-deep-research.md": {
       "characters": 1621,
       "estimated_tokens": 406,
@@ -789,7 +794,7 @@
       "sha256": "4c95901507d60239adadfec8ddd4001a409a52b5c5f7bf20b49bb10a79890142"
     }
   },
-  "library_tokens": 223899,
+  "library_tokens": 224090,
   "routes": {
     "outline_with_sources": {
       "files": [
