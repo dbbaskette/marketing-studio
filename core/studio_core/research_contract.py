@@ -642,6 +642,58 @@ def refused(value, spec):
     return []
 
 
+# The names research jobs were recorded under before they were named for their round.
+LEGACY_JOBS = ('research-author', 'research-review')
+
+
+def job_name(phase, number):
+    """What one research job is recorded as: `research:author-2`, `research:review-2`."""
+    return f'research:{phase}-{number}'
+
+
+def job_round(name):
+    """(phase, round) of a research job's name, or None for another step's. A job recorded
+    before rounds were named has round None."""
+    if name in LEGACY_JOBS:
+        return name.partition('-')[2], None
+    head, _, rest = str(name).partition(':')
+    phase, _, number = rest.rpartition('-')
+    if head == 'research' and phase in ('author', 'review') and number.isdigit():
+        return phase, int(number)
+    return None
+
+
+def doing_words(phase, number):
+    """What a research job is doing, as the page says it while the job runs."""
+    of = f'round {number} of {ROUNDS}'
+    if phase == 'author':
+        return (f'Investigating sources and writing the report ({of})' if number == 1
+                else f'Correcting the research after its independent check ({of})')
+    return (f'Independently checking the research ({of})' if number == 1
+            else f'Independently checking the corrected research ({of})')
+
+
+def last_rounds(attempts_by_name):
+    """What the last try at the research took: {'rounds', 'jobs', 'seconds', 'dollars'}
+    from the recorded tries of its jobs, given as {name: [attempt, ...]}. The last try
+    begins with its last first round; jobs recorded before rounds were named all count.
+    None when no research job is recorded."""
+    tried = [(job_round(name), attempt) for name, attempts in attempts_by_name.items()
+             if job_round(name) for attempt in attempts]
+    if not tried:
+        return None
+    starts = [attempt.get('started_at') or '' for (phase, number), attempt in tried
+              if phase == 'author' and number == 1]
+    since = max(starts) if starts else ''
+    these = [(found, attempt) for found, attempt in tried
+             if (attempt.get('started_at') or '') >= since]
+    dollars = [attempt['dollars'] for _, attempt in these if attempt.get('dollars') is not None]
+    return {'rounds': max([number or 0 for (_, number), _ in these] or [0]),
+            'jobs': len(these),
+            'seconds': round(sum(attempt.get('seconds') or 0 for _, attempt in these), 1),
+            'dollars': round(sum(dollars), 4) if dollars else None}
+
+
 def native(engine, root, run, task, sources, product):
     """Bridge the common workflow to each studio's existing confined worker transport."""
     from runner import worker_tools, documents, companion
@@ -664,20 +716,24 @@ def native(engine, root, run, task, sources, product):
         raise WorkspaceError('This research run needs its saved Harness Research version. Restore it before continuing.')
     folders = []
     # What every job of this try took, so the stop can say what the rounds cost.
-    spent = {'jobs': 0, 'seconds': 0.0, 'dollars': None, 'tokens': None}
+    spent = {'jobs': 0, 'seconds': 0.0, 'dollars': None, 'tokens': None, 'rounds': 0}
 
     def invoke(phase, guidance, payload, offered, fetch):
         if run.stop.is_set() or not engine._may_go(root):
             raise companion.Stopped()
-        name = 'research-' + phase
+        if phase == 'author':
+            spent['rounds'] += 1
+        number = spent['rounds']
+        # Named under the research step, with its round, so that the step's tries, time and
+        # money count every job, and the page can say which round is in hand.
+        name = job_name(phase, number)
         result = {'kind': 'research-json'}
         if phase == 'author':
             # The job saves the dossier with the same helper the parent will, so the author
             # learns of a refusal while it can still correct it.
             result.update(runtime=str(tool.runtime), node=shutil.which('node'),
                           worker=payload['worker'], task={key: task[key] for key in TASK_FIELDS})
-        doing = ('Investigating sources and writing the report' if phase == 'author'
-                 else 'Independently checking the research and brief')
+        doing = doing_words(phase, number)
         told = ('' if phase == 'author' else
                 ' list_inputs names the original of each supplied source that has one: read it '
                 'with read_source(source_id, original=true), as well as its capture, before you '

@@ -2502,6 +2502,13 @@ class Engine(Jobs, Researching):
                 else f'{ahead} decks are ahead of it.')
         if nxt.kind == 'gate':
             return 'working', f'Getting the {WORDS[nxt.name]} ready for your decision.'
+        if nxt.name == 'research' and record.get('research_contract'):
+            # Which job of which round is in hand, as its worker card says.
+            with self._lock:
+                live = [worker['label'] for name, worker in run.workers.items()
+                        if research_contract.job_round(name)]
+            if live:
+                return 'working', f'{live[-1]}.'
         error = last_error(record, nxt.name)
         if error:
             return 'working', f'{nxt.doing} again. The last try did not work: {error}'
@@ -2568,6 +2575,18 @@ class Engine(Jobs, Researching):
             live = list(run.workers.items())
         return [{'id': ident, 'label': worker['label'], 'started_at': worker['started_at'],
                  'lines': list(worker['lines'])} for ident, worker in live]
+
+    @staticmethod
+    def _research_tried(record: dict, halted: dict) -> dict:
+        """For a stop at research done as one report and one independent check, its
+        'research': what its last try took, and how many rounds Try again may run."""
+        if halted.get('step') != 'research' or not record.get('research_contract'):
+            return {}
+        tried = research_contract.last_rounds({name: entry.get('tries') or []
+                                               for name, entry in (record.get('steps') or {}).items()
+                                               if isinstance(entry, dict)})
+        return {'research': {**(tried or {'rounds': 0, 'jobs': 0, 'seconds': 0, 'dollars': None}),
+                             'most': research_contract.ROUNDS}}
 
     def _timeline(self, record: dict, state: str, root: Path | None = None) -> list[dict]:
         """stages.timeline, with each step's tries, time, cost and last error."""
@@ -2813,7 +2832,8 @@ class Engine(Jobs, Researching):
             'note': self._note_view(record),
             'question': ({'id': asked['id'], 'text': asked['text'], 'from': asked['from']}
                          if asked and mine else None),
-            'problem': ({key: halted.get(key) for key in ('state', 'why', 'kept', 'action')}
+            'problem': ({**{key: halted.get(key) for key in ('state', 'why', 'kept', 'action')},
+                         **self._research_tried(record, halted)}
                         if halted else None),
             'deliver': ({**said, 'revisions': list(record.get('revisions') or []),
                          'download': self._rendered(root, record),

@@ -35,7 +35,7 @@ from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import home
-from studio_core import model_profiles
+from studio_core import model_profiles, research_contract
 from workspace import WorkspaceError
 
 from runner import agents, briefs, settings, stages, worker_tools
@@ -76,10 +76,12 @@ def tries(record: dict | None, step: str) -> dict:
 
 
 def attempts(record: dict, step: str | None = None) -> list[dict]:
-    """Every try the record holds, or the tries at one step and the jobs under it."""
+    """Every try the record holds, or the tries at one step and the jobs under it. The
+    research step's jobs include those recorded before they were named for it."""
     return [attempt for name, entry in (record.get('steps') or {}).items()
             if isinstance(entry, dict)
-            and (step is None or name == step or name.startswith(f'{step}:'))
+            and (step is None or name == step or name.startswith(f'{step}:')
+                 or (step == 'research' and name in research_contract.LEGACY_JOBS))
             for attempt in entry.get('tries') or []]
 
 
@@ -370,10 +372,12 @@ class Jobs:
         next writer. History records a note once, under the job that first took it; a job
         of a later step closes the notes of the steps before it."""
         base = name.partition(':')[0]
+        # The independent research check judges what was written: it takes no note.
+        checking = (research_contract.job_round(name) or ('',))[0] == 'review'
         with self.files:
             record = self._load(root)
             used, pending = list(record.get('notes_used') or []), record.get('pending_note')
-            taken = bool(pending) and 'review' not in work.prepared
+            taken = bool(pending) and 'review' not in work.prepared and not checking
             closed = [note for note in used
                       if not note.get('done') and note['step'].partition(':')[0] != base]
             for note in closed:
@@ -389,7 +393,7 @@ class Jobs:
                     self._commit(root, f'the note for the next step goes with: {doing}')
         carried = [note['text'] for note in used
                    if not note.get('done') and note['step'].partition(':')[0] == base]
-        if not carried:
+        if not carried or checking:
             return work
         return replace(work, task=work.task + '\n\n' + FROM_AUTHOR.format(
             text='\n\n'.join(quoted(text) for text in carried)))

@@ -402,9 +402,11 @@ def new_record(agent: str, model: str | None, chosen: settings.Settings,
 
 
 def attempts(record: dict, step: str | None = None) -> list[dict]:
-    """Every try the record holds, or the tries at one step and the jobs under it."""
+    """Every try the record holds, or the tries at one step and the jobs under it. The
+    research step's jobs include those recorded before they were named for it."""
     return [attempt for name, entry in record['steps'].items()
             if step is None or name == step or name.startswith(f'{step}:')
+            or (step == 'research' and name in research_contract.LEGACY_JOBS)
             for attempt in entry.get('attempts', [])]
 
 
@@ -2966,7 +2968,8 @@ class Engine(Reviewing):
         steps before it."""
         base = step.id.partition(':')[0]
         reviewer = pipeline.bare(step.id).partition(':')[0] in REVIEWERS \
-            or 'review' in work.prepared
+            or 'review' in work.prepared \
+            or (research_contract.job_round(step.id) or ('',))[0] == 'review'
         with self.files:
             record = self._load(root)
             used, pending = list(record.get('notes_used') or []), record.get('pending_note')
@@ -2986,7 +2989,7 @@ class Engine(Reviewing):
                     self._commit(root, f'the note for the next step goes with: {step.doing}')
         carried = [note['text'] for note in used
                    if not note.get('done') and note['step'].partition(':')[0] == base]
-        if not carried:
+        if not carried or reviewer:
             return work
         return replace(work, task=work.task + '\n\n' + FROM_AUTHOR.format(
             text='\n\n'.join(quoted(text) for text in carried)))
@@ -3784,29 +3787,46 @@ class Engine(Reviewing):
             return f'{step.step.doing} again. The last try did not work: {error}'
         return f'{step.step.doing}.'
 
+    @staticmethod
+    def _research_tried(record: dict, problem: dict) -> dict:
+        """For a stop at research done as one report and one independent check, its
+        'research': what its last try took, and how many rounds Try again may run."""
+        if problem.get('step') != 'research' or not record.get('research_contract'):
+            return {}
+        tried = research_contract.last_rounds({name: entry.get('attempts', [])
+                                               for name, entry in record['steps'].items()})
+        return {'research': {**(tried or {'rounds': 0, 'jobs': 0, 'seconds': 0, 'dollars': None}),
+                             'most': research_contract.ROUNDS}}
+
     def _synthesis_doing(self, record: dict, run: _Run | None) -> str:
         """Where research done as one authored report and one independent check stands:
-        which of the two jobs is in hand, and the round, when the check sent the report
-        back for correction. The rounds are counted from the start of this research: the
+        which of the two jobs is in hand, and its round of the three. Between jobs, the
+        next one is worked out from the last job kept since this research began: the
         hand-over of the plan, or the last change the person asked for."""
         with self._lock:
-            live = set(run.workers) if run else set()
-        handed = [attempt['started_at'] for attempt in attempts(record, 'research-start')
-                  if attempt.get('outcome') == 'kept']
-        asked = ((record.get('research') or {}).get('again') or {}).get('at') or ''
-        since = max([*handed, asked, ''])
-        checked = len([attempt for attempt in attempts(record, 'research-review')
-                       if attempt.get('outcome') == 'kept'
-                       and (attempt.get('started_at') or '') >= since])
-        rounds = checked + 1
-        if 'research-review' in live:
-            return ('Independently checking the research (job 2 of 2).' if rounds == 1 else
-                    'Independently checking the corrected research '
-                    f'(round {rounds}, job 2 of 2).')
-        if rounds > 1:
-            return ('Correcting the research after its independent check '
-                    f'(round {rounds}, job 1 of 2).')
-        return 'Investigating sources and writing the report (job 1 of 2).'
+            live = [name for name in (run.workers if run else ())
+                    if research_contract.job_round(name)]
+        if live:
+            phase, number = research_contract.job_round(live[-1])
+        else:
+            phase, number = 'author', 1
+            handed = [attempt['started_at'] for attempt in attempts(record, 'research-start')
+                      if attempt.get('outcome') == 'kept']
+            asked = ((record.get('research') or {}).get('again') or {}).get('at') or ''
+            since = max([*handed, asked, ''])
+            kept = sorted((attempt.get('started_at') or '', research_contract.job_round(name))
+                          for name, entry in record['steps'].items()
+                          if research_contract.job_round(name)
+                          for attempt in entry.get('attempts', [])
+                          if attempt.get('outcome') == 'kept'
+                          and (attempt.get('started_at') or '') >= since)
+            last_phase, last = kept[-1][1] if kept else ('review', None)
+            if last and last_phase == 'author':
+                phase, number = 'review', last
+            elif last and last < research_contract.ROUNDS:
+                number = last + 1
+        words = research_contract.doing_words(phase, number or 1)
+        return f"{words[:-1]}, job {1 if phase == 'author' else 2} of 2)."
 
     def _state(self, record: dict, found: pipeline.Survey, run: _Run,
                report: dict | None = None) -> tuple[str, str]:
@@ -3939,13 +3959,10 @@ class Engine(Reviewing):
         if state == 'failed' and failed not in [step.id for step in found.steps]:
             failed = current
         listed = []
-        # Research done as one authored report and one independent check records its two
-        # jobs under their own names: the research row carries both.
-        synthesis = bool(record.get('research_contract'))
+        # Research done as one authored report and one independent check records each
+        # job under the research step, with its round: the research row carries them all.
         for step in found.steps:
             tried = attempts(record, step.id)
-            if step.id == 'research' and synthesis:
-                tried = attempts(record, 'research-author') + attempts(record, 'research-review')
             dollars = [attempt['dollars'] for attempt in tried
                        if attempt.get('dollars') is not None]
             if step.id == failed:
@@ -4131,7 +4148,8 @@ class Engine(Reviewing):
             'note': self._note_view(record),
             'question': ({'id': asked['id'], 'text': asked['text'], 'from': asked['from']}
                          if asked else None),
-            'problem': ({key: problem.get(key) for key in ('what', 'kept', 'action', 'label')}
+            'problem': ({**{key: problem.get(key) for key in ('what', 'kept', 'action', 'label')},
+                         **self._research_tried(record, problem)}
                         if problem else None),
             'documents': self._supplied(root, record, found),
             'copies': self._copies(found),

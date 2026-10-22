@@ -13,7 +13,7 @@ from stand_ins import brand as brand_stand_in
 from runner_support import LONG_OUTLINE, OUTLINE, StudioCase, asks, fails, unsettled
 from workspace import WorkspaceError
 
-from runner import decks, marks, stages, worker_tools
+from runner import decks, jobs, marks, stages, worker_tools
 from runner.steps import build
 
 
@@ -707,6 +707,70 @@ class SynthesisStopTests(StudioCase):
             # A source with no original of its own needs nothing read.
             self.assertIsNone(research_contract.dry_read(self.engine, root, [
                 {'file': 'sources/supplied/other.txt'}]))
+
+
+class ResearchRoundTests(StudioCase):
+    """A deck's research done as one authored report and one independent check: its jobs
+    count under the research step, and the page says which round is in hand."""
+
+    def synthesis(self):
+        root = self.start(research=True)
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        tried = lambda at, seconds, dollars, outcome='kept': {
+            'started_at': at, 'ended_at': at, 'seconds': seconds, 'dollars': dollars,
+            'tokens': 1000, 'outcome': outcome, 'error': None}
+        record['steps'].update({
+            'research-author': {'failed': 0, 'tries': [tried('2030-01-01T00:00:00Z', 50, 0.1)]},
+            'research:author-1': {'failed': 0, 'tries': [tried('2030-01-02T00:00:00Z', 300, 0.8)]},
+            'research:review-1': {'failed': 0, 'tries': [tried('2030-01-02T00:10:00Z', 120, 0.4)]},
+            'research:author-2': {'failed': 1, 'tries': [
+                tried('2030-01-02T00:20:00Z', 60, 0.2, 'failed')]}})
+        self.engine._store(root, record)
+        return root
+
+    def test_every_research_job_counts_under_the_research_step(self):
+        root = self.synthesis()
+        row = next(row for row in self.view(root)['timeline'] if row['name'] == 'research')
+        self.assertEqual((row['attempts'], row['seconds'], row['dollars']), (4, 530.0, 1.5))
+
+    def test_the_stop_says_what_the_last_try_of_the_research_took(self):
+        root = self.synthesis()
+        self.engine._problem(root, 'research', 'failed', 'It stopped.', 'Kept.')
+        self.assertEqual(self.view(root)['problem']['research'], {
+            'rounds': 2, 'jobs': 3, 'seconds': 480.0, 'dollars': 1.4, 'most': 3})
+        self.engine._problem(root, 'outline', 'failed', 'It stopped.', 'Kept.')
+        self.assertNotIn('research', self.view(root)['problem'])
+
+    def test_the_round_in_hand_is_said_while_it_runs(self):
+        root = self.synthesis()
+        record = self.engine._load(root)
+        record['gates']['gate:research-plan']['state'] = 'approved'
+        self.engine._store(root, record)
+        self.assertEqual(jobs.first(self.engine._load(root)).name, 'research')
+        run = self.engine._run(root)
+        run.workers['research:review-2'] = {
+            'label': 'Independently checking the corrected research (round 2 of 3)',
+            'started_at': 'now', 'lines': []}
+        try:
+            shown = self.view(root)
+        finally:
+            run.workers.clear()
+        self.assertEqual((shown['state'], shown['sentence']), (
+            'working', 'Independently checking the corrected research (round 2 of 3).'))
+        self.assertEqual(shown['workers'][0]['label'],
+                         'Independently checking the corrected research (round 2 of 3)')
+
+    def test_the_independent_check_takes_no_note(self):
+        from runner.steps import Work
+        root = self.synthesis()
+        self.engine.note(root, 'Lead with the risks.')
+        work = Work('guidance', 'task', 'write', {'artifacts': {}}, 'research-result')
+        self.assertIs(self.engine._noted(root, 'research:review-1', 'Checking', work), work)
+        self.assertEqual(self.record(root)['pending_note']['text'], 'Lead with the risks.')
+        taken = self.engine._noted(root, 'research:author-2', 'Correcting', work)
+        self.assertIn('> Lead with the risks.', taken.task)
+        self.assertIs(self.engine._noted(root, 'research:review-2', 'Checking', work), work)
 
 
 class PlanMarkTests(StudioCase):

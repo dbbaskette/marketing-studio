@@ -84,7 +84,7 @@ class SynthesisIntegrationTests(StudioCase):
             root = self.start(research=True)
         self.assertIsNone(self.view(root)['problem'], self.view(root))
         self.assertFalse((root / 'research/output.json').exists())
-        entry = self.engine._load(root)['steps']['research-author']
+        entry = self.engine._load(root)['steps']['research:author-1']
         self.assertIn('stopped', str(entry))
 
     def test_finding_marks_use_synthesis_ids_and_never_rewrite_the_checked_report(self):

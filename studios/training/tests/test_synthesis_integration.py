@@ -106,7 +106,7 @@ class SynthesisIntegrationTests(StudioCase):
             root = self.start()
         self.assertIsNone(self.view(root)['problem'], self.view(root))
         self.assertFalse((root / 'research/output.json').exists())
-        entry = self.engine._load(root)['steps']['research-author']
+        entry = self.engine._load(root)['steps']['research:author-1']
         self.assertIn('stopped', str(entry))
 
     def test_unfinished_research_continues_with_the_retained_helper_after_an_update(self):

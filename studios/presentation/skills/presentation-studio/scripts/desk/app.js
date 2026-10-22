@@ -3471,22 +3471,49 @@ function problemPart(run, lead) {
   const failed = list(run.timeline).find((row) => row.failed)
     || list(run.timeline).find((row) => row.state === 'current');
   let again = null;
-  if (found.action === 'retry' && failed) {
+  if (found.action === 'retry' && found.research) {
+    again = make('p', 'quiet', researchAgain(found.research));
+  } else if (found.action === 'retry' && failed) {
     const took = [given(failed.seconds) ? lasted(failed.seconds) : '',
       given(failed.dollars) ? money(failed.dollars) : ''].filter(Boolean);
     const sections = run.build_sections;
-    // A slide build keeps the sections already drawn; any other step starts over.
+    // A slide build keeps the sections already drawn; research keeps the answered
+    // questions; any other step starts over.
     const does = failed.stage === 'build' && sections && sections.total
       ? 'Try again keeps ' + sections.kept + ' of ' + count(sections.total, 'section', 'sections')
         + '; the rest are drawn again'
-      : 'Try again re-runs ' + failed.label + ' from the start';
-    again = make('p', 'quiet', does + (took.length ? '; the last try took ' + took.join(' and ')
-      : '') + '.');
+      : failed.name === 'research'
+        ? 'Try again researches the questions still unanswered and keeps the answered ones'
+        : 'Try again re-runs ' + failed.label + ' from the start';
+    again = make('p', 'quiet', does + (took.length ? '; the tries so far took '
+      + took.join(' and ') : '') + '.');
   }
   return callout(found.state === 'failed' ? 'late' : '', make('h2', 'aside-title', title),
     add(make('p', ''), make('strong', '', 'What happened: '), found.why || ''),
-    found.kept ? add(make('p', ''), make('strong', '', 'What was kept: '), found.kept) : null,
+    found.kept ? keptPart(found.kept) : null,
     again, go ? add(make('div', 'bar'), go) : null);
+}
+
+// What Try again does at research done as one report and one independent check: it carries
+// on from the saved draft for up to as many more rounds, and the last rounds' time and money
+// say what that may take.
+function researchAgain(research) {
+  const took = [research.seconds ? lasted(research.seconds) : '',
+    given(research.dollars) ? money(research.dollars) : ''].filter(Boolean);
+  const rounds = research.rounds === 1 ? 'the last round' : research.rounds
+    ? 'the last ' + count(research.rounds, 'round', 'rounds') : 'the last try';
+  return 'Try again continues from the saved draft and runs up to '
+    + count(research.most || 3, 'more round', 'more rounds') + ' of writing and checking'
+    + (took.length ? '; ' + rounds + ' took ' + took.join(' and ') : '') + '.';
+}
+
+// What a stop kept: a sentence and, where it names things one a line, those as a list.
+function keptPart(text) {
+  const lines = String(text || '').split('\n').map((line) => line.trim()).filter(Boolean);
+  const items = lines.filter((line) => line.startsWith('- ')).map((line) => line.slice(2));
+  const said = lines.filter((line) => !line.startsWith('- ')).join(' ');
+  return add(make('div', 'kept'), add(make('p', ''), make('strong', '', 'What was kept: '), said),
+    items.length ? bullets(items, 'plain kept-list') : null);
 }
 
 // A question from a worker, with a box to answer in. What is typed is kept as it is typed.

@@ -690,7 +690,7 @@ class NoteTests(StudioCase):
         # A reviewer's job leaves a waiting note for the next writer.
         self.engine.note(root, 'For the blueprint.')
         work = pipeline.Work('guidance', 'task', 'write', {'review': {}})
-        for ident in ('deck-review@201', 'research-review'):
+        for ident in ('deck-review@201', 'research-review', 'research:review-2'):
             step = pipeline.Step(ident, 'agent', 'Review it', 'Reviewing it', 'deck')
             self.assertIs(self.engine._noted(root, step, work), work)
         self.assertEqual(self.record(root)['pending_note']['text'], 'For the blueprint.')
@@ -821,7 +821,9 @@ class ResearchTests(StudioCase):
             'what': str(refusal), 'action': 'retry', 'label': 'Try again',
             'kept': 'The draft report and the check’s objections are kept with this training: '
                     'the objections are listed in its research review (reviews/research.md). '
-                    'The research plan you approved is kept.'})
+                    'The research plan you approved is kept.',
+            # What the page says Try again does: no research job ran here.
+            'research': {'rounds': 0, 'jobs': 0, 'seconds': 0, 'dollars': None, 'most': 3}})
         self.assertEqual(self.record(root)['problem']['step'], 'research')
         review = (root / 'reviews' / 'research.md').read_text()
         self.assertIn('## Independent research review: changes still needed', review)
@@ -971,28 +973,55 @@ class SynthesisWordsTests(StudioCase):
         def says() -> str:
             return self.engine._doing(record, found, run)
 
-        first = 'Investigating sources and writing the report (job 1 of 2).'
+        first = 'Investigating sources and writing the report (round 1 of 3, job 1 of 2).'
+        checking = 'Independently checking the research (round 1 of 3, job 2 of 2).'
+        correcting = ('Correcting the research after its independent check (round 2 of 3, '
+                      'job 1 of 2).')
         self.assertEqual(says(), first)
-        live('research-author')
+        live('research:author-1')
         self.assertEqual(says(), first)
-        live('research-review')
-        self.assertEqual(says(), 'Independently checking the research (job 2 of 2).')
+        live('research:review-1')
+        self.assertEqual(says(), checking)
         # The check asked for corrections: the author's job runs again, then the check.
-        record['steps']['research-review'] = {'failed': 0, 'attempts': [
-            {'started_at': self.STAMPS[1], 'ended_at': self.STAMPS[2], 'outcome': 'kept'}]}
-        live('research-author')
-        self.assertEqual(says(), 'Correcting the research after its independent check '
-                                 '(round 2, job 1 of 2).')
-        live('research-review')
+        live('research:author-2')
+        self.assertEqual(says(), correcting)
+        live('research:review-2')
         self.assertEqual(says(), 'Independently checking the corrected research '
-                                 '(round 2, job 2 of 2).')
+                                 '(round 2 of 3, job 2 of 2).')
+        # Between jobs, the next one is worked out from the last one kept.
+        live()
+        record['steps']['research:author-1'] = {'failed': 0, 'attempts': [
+            {'started_at': self.STAMPS[1], 'ended_at': self.STAMPS[1], 'outcome': 'kept'}]}
+        self.assertEqual(says(), checking)
+        record['steps']['research:review-1'] = {'failed': 0, 'attempts': [
+            {'started_at': self.STAMPS[2], 'ended_at': self.STAMPS[2], 'outcome': 'kept'}]}
+        self.assertEqual(says(), correcting)
+        # A job recorded under its old name is the research's too.
+        live('research-review')
+        self.assertEqual(says(), checking)
         # A change the person asked for starts the rounds again: the check before it is
         # not one of this research's rounds.
         record['research']['again'] = {'at': '2030-01-02T00:00:00Z', 'left': ['synthesis']}
-        live('research-author')
-        self.assertEqual(says(), first)
         live()
         self.assertEqual(says(), first)
+
+    def test_a_stop_at_the_research_says_what_its_last_try_took(self):
+        root = self.start()
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        kept = {'outcome': 'kept', 'error': None, 'tokens': 1000}
+        record['steps'].update({
+            'research:author-1': {'failed': 0, 'attempts': [
+                {**kept, 'started_at': self.STAMPS[0], 'seconds': 300.0, 'dollars': 0.8},
+                {**kept, 'started_at': self.STAMPS[2], 'seconds': 200.0, 'dollars': 0.5}]},
+            'research:review-1': {'failed': 0, 'attempts': [
+                {**kept, 'started_at': self.STAMPS[1], 'seconds': 100.0, 'dollars': 0.3}]}})
+        self.engine._store(root, record)
+        self.engine._problem(root, 'research', 'failed', 'It stopped.', 'Kept.')
+        self.assertEqual(self.view(root)['problem']['research'], {
+            'rounds': 1, 'jobs': 1, 'seconds': 200.0, 'dollars': 0.5, 'most': 3})
+        self.engine._problem(root, 'blueprint', 'failed', 'It stopped.', 'Kept.')
+        self.assertNotIn('research', self.view(root)['problem'])
 
     def test_the_research_row_carries_both_jobs_time_and_money(self):
         from types import SimpleNamespace

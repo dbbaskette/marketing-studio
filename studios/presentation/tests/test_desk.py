@@ -438,8 +438,27 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.deck_screen(path, [{'snapshot': 'failed'}], **{'GET /api/run': [ok(shown)]})
         shot = result['snapshots']['failed']
         self.assertEqual(shot['filled'], ['Try again'])
-        self.assertIn('Try again re-runs ' + row['label'] + ' from the start; the last try took '
-                      '2 minutes and $0.30.', shot['text'])
+        self.assertIn('Try again re-runs ' + row['label'] + ' from the start; the tries so far '
+                      'took 2 minutes and $0.30.', shot['text'])
+
+    def test_a_research_retry_carries_on_from_the_draft_and_lists_what_was_kept(self):
+        path = self.started()
+        shown = self.run_of(path)
+        row = next(row for row in shown['timeline'] if row['state'] != 'done')
+        row.update(state='current', failed=True, seconds=2880, dollars=9.8)
+        shown.update(state='failed', gate=None, sentence='It has stopped.', problem={
+            'state': 'failed', 'why': 'The check still objected.', 'action': 'retry',
+            'kept': 'The draft report is kept.\n- 12 facts the check calls narrow (f01: Too '
+                    'broad.)\n- coverage needs revision (Alternatives are missing.)',
+            'research': {'rounds': 3, 'jobs': 6, 'seconds': 2880, 'dollars': 9.8, 'most': 3}})
+        result = self.deck_screen(path, [{'snapshot': 'failed'}], **{'GET /api/run': [ok(shown)]})
+        text = result['snapshots']['failed']['text']
+        self.assertIn('Try again continues from the saved draft and runs up to 3 more rounds of '
+                      'writing and checking; the last 3 rounds took 48 minutes and $9.80.', text)
+        self.assertIn('What was kept: The draft report is kept.', text)
+        self.assertIn('12 facts the check calls narrow (f01: Too broad.)', text)
+        self.assertNotIn('- 12 facts', text, 'each group is an item of a list')
+        self.assertNotIn('from the start', text)
 
     def test_a_build_retry_says_how_many_sections_are_kept(self):
         path = self.started()
@@ -455,8 +474,8 @@ class ScreenTests(ScriptedPage, PageCase):
                      problem={'state': 'failed', 'why': 'The renderer stopped.',
                               'kept': 'Two sections.', 'action': 'retry'})
         result = self.deck_screen(path, [{'snapshot': 'failed'}], **{'GET /api/run': [ok(shown)]})
-        self.assertIn('Try again keeps 2 of 4 sections; the rest are drawn again; the last try '
-                      'took 5 minutes and $1.10.', result['snapshots']['failed']['text'])
+        self.assertIn('Try again keeps 2 of 4 sections; the rest are drawn again; the tries so '
+                      'far took 5 minutes and $1.10.', result['snapshots']['failed']['text'])
 
     def test_one_approve_decides_and_the_review_bar_only_counts(self):
         path = self.started()

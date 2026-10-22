@@ -353,6 +353,43 @@ class RoundCostTests(WorkflowCase):
 
 
 
+class JobNameTests(unittest.TestCase):
+    """Research jobs are recorded under the research step, with their round."""
+
+    def test_a_job_is_named_for_its_step_phase_and_round(self):
+        self.assertEqual(contract.job_name('author', 2), 'research:author-2')
+        self.assertEqual(contract.job_round('research:review-3'), ('review', 3))
+        self.assertEqual(contract.job_round('research-author'), ('author', None))
+        for other in ('research:instance-min', 'research', 'outline', 'research:author-x'):
+            self.assertIsNone(contract.job_round(other))
+
+    def test_each_job_says_its_round_while_it_runs(self):
+        self.assertEqual(contract.doing_words('author', 1),
+                         'Investigating sources and writing the report (round 1 of 3)')
+        self.assertEqual(contract.doing_words('review', 1),
+                         'Independently checking the research (round 1 of 3)')
+        self.assertEqual(contract.doing_words('author', 2),
+                         'Correcting the research after its independent check (round 2 of 3)')
+        self.assertEqual(contract.doing_words('review', 3),
+                         'Independently checking the corrected research (round 3 of 3)')
+
+    def test_the_last_try_is_what_ran_since_its_last_first_round(self):
+        def tried(at, seconds, dollars=None):
+            return {'started_at': at, 'seconds': seconds, 'dollars': dollars}
+        record = {'research:author-1': [tried('1', 100, 1.0), tried('5', 200, 2.0)],
+                  'research:review-1': [tried('2', 50, 0.5), tried('6', 60, 0.25)],
+                  'research:author-2': [tried('3', 100, 1.0), tried('7', 300)],
+                  'research:review-2': [tried('4', 50, 0.5)],
+                  'research:instance-min': [tried('9', 999, 9.0)], 'outline': [tried('9', 9)]}
+        self.assertEqual(contract.last_rounds(record),
+                         {'rounds': 2, 'jobs': 3, 'seconds': 560, 'dollars': 2.25})
+        self.assertEqual(contract.last_rounds({'research-author': [tried('1', 10, 0.1)],
+                                               'research-review': [tried('2', 20)]}),
+                         {'rounds': 0, 'jobs': 2, 'seconds': 30, 'dollars': 0.1})
+        self.assertIsNone(contract.last_rounds({'outline': [tried('1', 5)]}))
+
+
+
 def fake_runtime(folder, version, text):
     """Just enough of an installed helper for its capability to be described."""
     (folder / 'scripts/lib').mkdir(parents=True)
