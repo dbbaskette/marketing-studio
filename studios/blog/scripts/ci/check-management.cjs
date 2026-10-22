@@ -79,6 +79,7 @@ async function check(){
   await staleSharedForms();
   await sharedPattern();
   await whereThisRunStops();
+  await phase3ResearchDefaults();
   await oneVocabulary();
   await honestBlogCopy();
   await finishAndDelete();
@@ -363,7 +364,7 @@ async function taskJourneys(){
   assert.ok(nodes().some(e=>e.textContent==='Ready to start'));
   await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   const creation=requests.find(r=>r.url==='/api/run-create').data;
-  assert.equal(creation.mode,'from-outline');assert.equal(creation.outline_text,'# First\n## Second');assert.equal(creation.research,'none');
+  assert.equal(creation.mode,'from-outline');assert.equal(creation.outline_text,'# First\n## Second');assert.equal(creation.research,'web-allowed');
   assert.equal(creation.stop,'draft');
 }
 
@@ -1158,32 +1159,32 @@ async function honestBlogCopy(){
   const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),all=()=>text().join('\n');
   const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
   f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[{id:'one',name:'One',status:'ready'},{id:'two',name:'Two',status:'ready'}],profiles:[],agents:{codex:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'package',minutes:'10',operation:'a'.repeat(32)};sWizard()");
-  assert.ok(all().includes('No new research.'),all());
+  assert.ok(all().includes('No research.'),all());
   // Use the real listeners: refreshing the explanation must preserve these controls.
   const research=nodes().find(e=>e.id==='new-research');
   const sources=nodes().find(e=>e.className==='source-choices').querySelectorAll('input');
   const chooseResearch=value=>{research.focus();research.value=value;research.listeners.change();assert.equal(nodes().find(e=>e.id==='new-research'),research);assert.equal(research.focused,true);};
   const chooseSource=(index,checked)=>{sources[index].focus();sources[index].checked=checked;sources[index].listeners.change();assert.equal(nodes().find(e=>e.className==='source-choices').querySelectorAll('input')[index],sources[index]);assert.equal(sources[index].focused,true);};
   chooseResearch('supplied-only');
-  assert.ok(all().includes('No research runs: no source is selected.'),all());
-  assert.equal(all().includes('No new research.'),false);
+  assert.ok(all().includes('No research: no source is ticked.'),all());
+  assert.equal(all().includes('No research.'),false);
   chooseSource(0,true);
-  assert.ok(all().includes('Research reads only the 1 source you selected.'),all());
+  assert.ok(all().includes('Research reads only the 1 source you ticked.'),all());
   chooseSource(1,true);
-  assert.ok(all().includes('Research reads only the 2 sources you selected.'),all());
+  assert.ok(all().includes('Research reads only the 2 sources you ticked.'),all());
   chooseResearch('web-allowed');
-  assert.ok(all().includes('Research reads your selected sources and the public web.'),all());
-  assert.equal(all().includes('Research reads only the 2 sources you selected.'),false);
+  assert.ok(all().includes('Research reads the sources you ticked and the public web.'),all());
+  assert.equal(all().includes('Research reads only the 2 sources you ticked.'),false);
   assert.deepEqual(Array.from(f.run('studio.draft.sources')),['one','two']);
   assert.ok(sources.every(source=>source.checked),'changing research preserves the sources');
   chooseResearch('supplied-only');
   chooseSource(0,false);
-  assert.ok(all().includes('Research reads only the 1 source you selected.'),all());
+  assert.ok(all().includes('Research reads only the 1 source you ticked.'),all());
   chooseSource(1,false);
-  assert.ok(all().includes('No research runs: no source is selected.'),all());
+  assert.ok(all().includes('No research: no source is ticked.'),all());
   chooseResearch('none');
-  assert.ok(all().includes('No new research.'),all());
-  assert.equal(all().includes('No research runs: no source is selected.'),false);
+  assert.ok(all().includes('No research.'),all());
+  assert.equal(all().includes('No research: no source is ticked.'),false);
   assert.equal(all().includes('Research uses only the sources you allow'),false);
   assert.ok(all().includes('With a voice chosen, the usual tone is left out; a tone you type here is added as a nudge.'));
   assert.equal(all().includes('Tone is a nudge on top of the voice.'),false);
@@ -2366,4 +2367,18 @@ async function failureRecovery(){
   const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
   f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[],profiles:[],agents:{codex:false,claude:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',minutes:'10',operation:'a'.repeat(32)};sWizard()");
   assert.ok(text().includes('Codex: Not installed — see Status. Every step stops until it is.'),text().join('|'));
+}
+
+async function phase3ResearchDefaults(){
+  const defaults={engine:'codex',seconds:600,research:'web-allowed',stop:'package',tone:'Clear',author:''};
+  const f=fixture(url=>url==='/api/run-options'?{settings:{defaults,review_level:'balanced'},sources:[],profiles:[],agents:{codex:true}}:{items:[],total:0});
+  f.loadRunner();
+  for(const [entry,want]of [['write','web-allowed'],['outline','web-allowed'],['ideas','none'],['revise','none'],['review','none'],['from-files','supplied-only']]){
+    await f.run(`newBlog('',null,'${entry}')`);
+    assert.equal(f.run('studio.draft.research'),want,'Home card takes the research default: '+entry);
+  }
+  for(const [research,sources,want]of [['none',[],'No research.'],['supplied-only',['s1','s2'],'Research reads only the 2 sources you ticked.'],['web-allowed',[],'Research reads the sources you ticked and the public web.'],['supplied-only',[],'No research: no source is ticked.']]){
+    f.set('draft',{mode:'write',research,sources,stop:'package'});
+    assert.equal(f.run('sResearchWords(draft)'),want,'Ready to start says what research will run');
+  }
 }
