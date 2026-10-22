@@ -373,19 +373,35 @@ def checked_google(root, entry):
     found = google_intake.material(root, entry['google'])
     if len(found['text'].encode()) > blog_library.MAX_TEXT:
         raise ValueError('This Google Doc has more text than one file may hold.')
+    tabs = found.get('tabs')
+    note, shown = '', found['title']
+    if tabs and tabs['only'] is not None:
+        # One tab was read, as the address asked. The Doc link reads every tab.
+        shown = found['title'] + ' · ' + tabs['read'][0]
+        note = (
+            f'Only the tab “{tabs["read"][0]}” was read, as its address asks; the Doc has '
+            f'{tabs["count"]} tabs. Paste the Doc link instead to read every tab.'
+        )
+    elif tabs:
+        note = (
+            f'All {tabs["count"]} tabs were read: '
+            + ', '.join('“' + name + '”' for name in tabs['read'][:8])
+            + ('…' if len(tabs['read']) > 8 else '')
+            + '. Link one tab to read only that tab.'
+        )
     try:
-        filename = clean_filename(found['title'] + '.md')
+        filename = clean_filename(shown + '.md')
     except ValueError:
         filename = 'Google Doc.md'
     return {
         'filename': filename,
-        'shown': found['title'],
+        'shown': shown,
         'suffix': '.md',
         'content': found['markdown'].encode(),
         'text': found['text'],
         'status': 'ready',
-        'note': '',
-        'title': found['title'],
+        'note': note,
+        'title': shown,
         'origin': found['link'],
         'link': found['link'],
     }

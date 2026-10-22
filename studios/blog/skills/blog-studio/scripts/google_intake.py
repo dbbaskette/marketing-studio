@@ -2,12 +2,14 @@
 
 import re
 import uuid
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import google_drive as drive
 import google_roundtrip as roundtrip
 import google_workflow as workflow
 from editorial import mapping
+from google_drive import GoogleError
+from google_suggestions import accepted_markdown
 import studio
 from manuscript_preview import text_only
 
@@ -50,25 +52,111 @@ def linked(root, file_id):
     return None
 
 
+def tab_of(value):
+    """The tab a Google Doc link names (`?tab=t.…`), or None for the Doc as a whole."""
+    if not isinstance(value, str):
+        return None
+    found = (parse_qs(urlsplit(value.strip()).query).get('tab') or [''])[0]
+    return found if re.fullmatch(r'[A-Za-z0-9_.-]{1,200}', found) else None
+
+
+def tab_text(tab):
+    """Every run of text in a tab's body, so an empty tab is known before any rendering."""
+    found = []
+
+    def walk(value):
+        if isinstance(value, dict):
+            run = value.get('textRun')
+            if isinstance(run, dict) and isinstance(run.get('content'), str):
+                found.append(run['content'])
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    walk(tab.get('documentTab', {}).get('body', {}))
+    return ''.join(found)
+
+
 def material(root, value):
-    """Read a Google Doc as one of a blog's files: its title, link and text. The capture is
-    read with this computer's Google sign-in and nothing of it stays in staging."""
+    """Read a Google Doc as one of a blog's files: its title, link and text, read with this
+    computer's Google sign-in and kept nowhere else. Every tab is read, each under its own
+    title, unless the link names one tab; then only that tab is read."""
     file_id = document_id(value)
-    folder = studio.inside(drive.staging_root(root, create=True), 'material-' + uuid.uuid4().hex)
-    folder.mkdir(mode=0o700)
+    wanted = tab_of(value)
+    client = drive.Client(drive.account_for(root))
+    _, accepted = roundtrip.read_views(client, file_id)
+    listed = roundtrip.tabs(accepted)
+    titles = [
+        ' '.join(str(tab.get('tabProperties', {}).get('title') or '').split())[:200]
+        or 'Untitled tab'
+        for tab in listed
+    ]
+    if wanted is not None:
+        chosen = [
+            position
+            for position, tab in enumerate(listed)
+            if tab.get('tabProperties', {}).get('tabId') == wanted
+        ]
+        if not chosen:
+            raise ValueError(
+                'This Doc has no tab at the address you pasted. Open the tab in Google Docs '
+                'and copy its address again, or paste the Doc link to read every tab.'
+            )
+    else:
+        chosen = list(range(len(listed)))
+
+    def one_tab(position):
+        tab = {key: item for key, item in listed[position].items() if key != 'childTabs'}
+        if not tab_text(tab).strip():
+            return ''  # An empty tab is nothing to read, not a layout the reader cannot take.
+        single = {key: item for key, item in accepted.items() if key != 'tabs'}
+        single['tabs'] = [tab]
+        body = accepted_markdown(single)
+        return body.decode('utf-8', 'replace') if isinstance(body, bytes) else body
+
     try:
-        snapshot = folder / 'snapshot'
-        roundtrip.capture(drive.Client(drive.account_for(root)), file_id, None, snapshot)
-        body = (snapshot / 'document.md').read_text()
-        native = studio.read_json(snapshot / 'native.json')
-    finally:
-        drive.discard(root, folder)
+        parts = [one_tab(position) for position in chosen]
+    except GoogleError as exc:
+        if len(chosen) != len(listed):
+            raise ValueError(
+                f'The tab “{titles[chosen[0]]}” has a layout this reader cannot take ({exc}). '
+                'Download that tab as a Word or Markdown file and add the file instead.'
+            ) from None
+        # Google's own export covers the whole Doc, every tab, layout and all.
+        body = client.export(file_id, 'md')
+        parts = [body.decode('utf-8', 'replace') if isinstance(body, bytes) else body]
+    if len(chosen) > 1 and len(parts) == len(chosen):
+        # Each tab under its own title, so the reader knows where one ends and the next
+        # begins; a tab without text adds nothing.
+        parts = [
+            '# ' + titles[position] + '\n\n' + part.strip() + '\n'
+            for position, part in zip(chosen, parts, strict=True)
+            if part.strip()
+        ]
+    body = '\n'.join(parts)
     text = text_only(body)
     if not text.strip():
-        raise ValueError('This Google Doc has no text to read.')
-    title = ' '.join(str(native.get('title') or '').split())[:200] or 'Google Doc'
+        raise ValueError(
+            'This Google Doc has no text to read.'
+            if len(listed) == 1
+            else 'The tab you linked has no text to read.'
+            if len(chosen) == 1
+            else 'None of the tabs in this Google Doc has text to read.'
+        )
+    title = ' '.join(str(accepted.get('title') or '').split())[:200] or 'Google Doc'
     link = 'https://docs.google.com/document/d/' + file_id + '/edit'
-    return {'title': title, 'link': link, 'markdown': body, 'text': text}
+    found = {'title': title, 'link': link, 'markdown': body, 'text': text}
+    if len(listed) > 1:
+        found['tabs'] = {
+            'read': [titles[position] for position in chosen],
+            'count': len(listed),
+            'only': wanted if len(chosen) == 1 else None,
+        }
+        if wanted is not None:
+            found['link'] = link + '?tab=' + wanted
+    return found
 
 
 def fingerprint(snapshot):
