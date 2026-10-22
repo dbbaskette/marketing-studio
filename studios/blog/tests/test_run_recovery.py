@@ -908,5 +908,151 @@ class KeptSaidTests(ResearchCase):
         self.assertFalse((self.root / '.blog-runs' / 'diagnostics' / 'cli').exists())
 
 
+class DraftTieTests(ResearchCase):
+    """The kept draft belongs to the research stage it came from: its inputs and its saved
+    version. Research saved any other way, or changed inputs, let it go."""
+
+    def refused(self):
+        found = self.research_run()
+        engine = self.engine()
+
+        def refusing(case_root, run, payload, worker, *, seconds, stop, progress=None):
+            refused_case(case_root / research_contract.CASE)
+            raise research_contract.ReviewRefused([], 3)
+
+        engine.control(found['id'], 'resume')
+        with patch('synthesis_research.generate', refusing):
+            engine._once(found['id'])
+        directory = Path(found['directory'])
+        self.assertTrue((directory / DRAFT).is_dir())
+        return engine, found['id'], directory
+
+    def resumed_from(self, engine, ident):
+        """The synthesis state the next research attempt starts from, or None."""
+        seen = []
+
+        def recording(case_root, run, payload, worker, *, seconds, stop, progress=None):
+            state = case_root / research_contract.CASE / '.harness-research/synthesis.json'
+            seen.append(json.loads(state.read_text()) if state.is_file() else None)
+            names = {path.name for path in (case_root / research_contract.CASE).glob('*')}
+            seen.append(names)
+            raise ValueError('Synthetic stop after reading the case.')
+
+        shown = engine.describe(ident)
+        runner.dispatch(self.root, 'retry', {'id': ident, 'expected': shown['expected']})
+        with patch('synthesis_research.generate', recording):
+            engine._once(ident)
+        return seen
+
+    def test_research_accepted_another_way_wins_over_a_stale_draft(self):
+        engine, ident, directory = self.refused()
+        # Accepted elsewhere (chat, another computer): a newer case and bundle, submitted here.
+        case = directory / research_contract.CASE
+        (case / '.harness-research').mkdir(parents=True, exist_ok=True)
+        accepted = {'owner': research_contract.OWNER, 'dossier': {'topic': 'ACCEPTED'}}
+        (case / '.harness-research/synthesis.json').write_text(json.dumps(accepted))
+        result = reviewed_bundle(case)
+        research_contract.publish(case, directory / 'research')
+        shown = runner.survey(self.root, ident)
+        shown = runner.submit(self.root, ident, 'research', result, shown['expected'], page=True)
+        self.assertFalse((directory / DRAFT).exists(), 'a saved research lets the draft go')
+        shown = runner.decide(self.root, ident, shown['expected'], 'approve', page=True)
+        shown = runner.decide(
+            self.root, ident, shown['expected'], 'changes', 'Tighten it.', True, 'research'
+        )
+        self.assertEqual(engine.describe(ident)['research']['from'], 'accepted')
+        state, _ = self.resumed_from(engine, ident)
+        self.assertEqual(state['dossier']['topic'], 'ACCEPTED')
+
+    def test_a_draft_whose_research_was_saved_elsewhere_is_let_go_here(self):
+        engine, ident, directory = self.refused()
+        # Another computer saved and shared the research, then asked for changes to it: its
+        # case and bundle arrive with a new research version, and this computer's draft
+        # (never shared) is still on disk.
+        case = directory / research_contract.CASE
+        (case / '.harness-research').mkdir(parents=True, exist_ok=True)
+        elsewhere = {'owner': research_contract.OWNER, 'dossier': {'topic': 'ELSEWHERE'}}
+        (case / '.harness-research/synthesis.json').write_text(json.dumps(elsewhere))
+        result = reviewed_bundle(case)
+        research_contract.publish(case, directory / 'research')
+        _, record, run = runner.load(self.root, ident)
+        run['stages']['research'] = {
+            'status': 'pending',
+            'hash': runner.studio.digest(result['content'].encode()),
+            'request': 'Again.',
+        }
+        runner.save(self.root, directory, record, run, 'Synthetic research saved elsewhere')
+        shown = engine.describe(ident)
+        self.assertFalse(shown['research']['kept'], 'the page does not promise the draft')
+        self.assertEqual(shown['research']['from'], 'accepted')
+        self.assertTrue(runner.survey(self.root, ident)['research_contract'])
+        state, _ = self.resumed_from(engine, ident)
+        self.assertEqual(state['dossier']['topic'], 'ELSEWHERE', 'the stale draft is not used')
+        # What that attempt kept is its own case, tied to the research version it ran for.
+        kept = json.loads((directory / DRAFT / '.harness-research/synthesis.json').read_text())
+        self.assertEqual(kept['dossier']['topic'], 'ELSEWHERE')
+        self.assertTrue(engine.describe(ident)['research']['kept'])
+
+    def test_a_changed_brief_or_sources_lets_the_draft_go(self):
+        for change in ('brief', 'sources'):
+            with self.subTest(change=change):
+                engine, ident, directory = self.refused()
+                _, record, run = runner.load(self.root, ident)
+                if change == 'brief':
+                    run['brief']['goal'] = 'Explain a different fictional gateway'
+                else:
+                    extra = self.source('A second synthetic source about the gateway.')
+                    _, source = runner.studio.item(self.root, 'sources', extra['id'])
+                    record['sources'].append(
+                        {
+                            'source_id': extra['id'],
+                            'revision': source['revision'],
+                            'purposes': ['reference'],
+                        }
+                    )
+                runner.save(self.root, directory, record, run, 'Synthetic change: ' + change)
+                # New inputs bring the approved research plan back for review first.
+                shown = engine.describe(ident)
+                self.assertEqual(shown['next'], 'research-plan')
+                self.assertFalse(shown['research']['kept'])
+                shown = runner.dispatch(
+                    self.root, 'adopt', {'id': ident, 'expected': shown['expected']}
+                )
+                shown = self.approve(shown, page=True)
+                self.assertEqual(shown['next'], 'research')
+                self.assertTrue((directory / DRAFT).exists(), 'still on disk until research runs')
+                state, _ = self.resumed_from(engine, ident)
+                self.assertIsNone(state)
+                self.assertFalse((directory / DRAFT).exists())
+
+    def test_the_draft_is_private_and_its_tie_stays_out_of_the_case(self):
+        engine, ident, directory = self.refused()
+        kept = directory / DRAFT
+        self.assertEqual(kept.stat().st_mode & 0o777, 0o700)
+        for path in kept.rglob('*'):
+            self.assertEqual(path.stat().st_mode & 0o777, 0o700 if path.is_dir() else 0o600, path)
+        self.assertTrue((kept / 'kept.json').is_file())
+        self.assertEqual(engine.describe(ident)['research']['from'], 'kept')
+        state, names = self.resumed_from(engine, ident)
+        self.assertEqual(state, STATE)
+        self.assertFalse({'kept.json', '.gitignore'} & names, names)
+
+    def test_leftovers_are_swept_and_a_failed_keep_lets_an_older_draft_go(self):
+        engine, ident, directory = self.refused()
+        leftover = directory / (DRAFT + '-' + 'f' * 32)
+        leftover.mkdir()
+        (leftover / 'review.json').write_text('{}')
+        with patch.object(
+            runner.research_contract, 'copy_case', side_effect=OSError('synthetic disk full')
+        ):
+            kept = runner.keep_research(
+                directory, directory / DRAFT, runner.survey(self.root, ident)['research_tie']
+            )
+        self.assertEqual(kept, 'synthetic disk full')
+        self.assertFalse(leftover.exists(), 'a leftover from an interrupted keep is swept')
+        self.assertFalse((directory / DRAFT).exists(), 'no older draft makes the message untrue')
+        self.assertFalse(list(directory.glob(DRAFT + '-*')))
+
+
 if __name__ == '__main__':
     unittest.main()

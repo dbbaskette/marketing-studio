@@ -2,6 +2,7 @@
 
 import json
 import difflib
+import os
 from pathlib import Path
 import re
 import shutil
@@ -91,29 +92,84 @@ MATERIAL_ELSEWHERE = (
 # Research that stopped before its check accepted it (refused, out of time, a failed job) is
 # kept beside the blog for Try again: the draft dossier, the check's last review and the
 # captures they cite. It stays on this computer: the Team Hub skips dot folders, and the
-# folder's own ignore file keeps it out of a shared studios repository.
+# folder's own ignore file keeps it out of a shared studios repository. Its kept.json ties it
+# to the research stage it came from: that stage's input pin and saved version. Research saved
+# any other way (chat, a teammate, a handover) or changed inputs let it go.
 RESEARCH_DRAFT = Path('.studio-research-draft')
+DRAFT_TIE = 'kept.json'
+DRAFT_ONLY = ('.gitignore', DRAFT_TIE)  # Never handed on into a research case.
 
 
-def keep_research(directory, case):
-    """Keep `case` as the blog's research draft, replacing an earlier one. True when kept,
-    False when the case saved nothing to continue from, or the reason it could not be."""
+def private(folder):
+    """Readable by this account only: folders 0700, files 0600."""
+    folder.chmod(0o700)
+    for parent, folders, files in os.walk(folder, followlinks=False):
+        for name in folders:
+            (Path(parent) / name).chmod(0o700)
+        for name in files:
+            (Path(parent) / name).chmod(0o600)
+
+
+def keep_research(directory, case, tie):
+    """Keep `case` as the blog's research draft, tied to `tie` (the research stage's pin and
+    saved version) and replacing an earlier one. True when kept, False when the case saved
+    nothing to continue from, or the reason it could not be kept; then no older draft is
+    left either, so a message saying so stays true."""
+    for leftover in directory.glob(RESEARCH_DRAFT.name + '-*'):
+        # What an interrupted keep left behind.
+        if (
+            re.fullmatch(r'[0-9a-f]{32}', leftover.name[len(RESEARCH_DRAFT.name) + 1 :])
+            and leftover.is_dir()
+            and not leftover.is_symlink()
+        ):
+            shutil.rmtree(leftover, ignore_errors=True)
     if not (case / '.harness-research' / 'synthesis.json').is_file():
         return False
     kept = directory / RESEARCH_DRAFT
     pending = directory / (RESEARCH_DRAFT.name + '-' + uuid.uuid4().hex)
     try:
-        pending.mkdir()
+        pending.mkdir(mode=0o700)
         (pending / '.gitignore').write_text('*\n')  # Ignored before anything else lands.
         research_contract.copy_case(case, pending)
+        for name in DRAFT_ONLY[1:]:
+            (pending / name).unlink(missing_ok=True)
+        tie = tie or {}
+        (pending / DRAFT_TIE).write_text(
+            json.dumps(
+                {
+                    'schema': 1,
+                    'basis': tie.get('basis'),
+                    'hash': tie.get('hash'),
+                    'at': studio.now(),
+                }
+            )
+        )
+        private(pending)
         if kept.exists():
             shutil.rmtree(kept)
         pending.rename(kept)
         return True
     except (OSError, ValueError) as error:
+        shutil.rmtree(kept, ignore_errors=True)
         return str(error)[:160] or 'it could not be copied'
     finally:
         shutil.rmtree(pending, ignore_errors=True)
+
+
+def research_draft(directory, tie):
+    """Whether the blog's kept research draft still belongs to its research stage."""
+    draft = directory / RESEARCH_DRAFT
+    if not tie or not (draft / '.harness-research' / 'synthesis.json').is_file():
+        return False
+    try:
+        saved = json.loads((draft / DRAFT_TIE).read_text())
+    except (OSError, ValueError):
+        return False
+    return (
+        isinstance(saved, dict)
+        and saved.get('basis') == tie['basis']
+        and saved.get('hash') == tie['hash']
+    )
 
 
 def fitted(said, then='', limit=500):
@@ -803,6 +859,16 @@ def survey(root, ident, listing=False):
             for source in payload['sources'] + payload.get('examples', [])
             if source.get('excerpted')
         ],
+        # Reviewed research through the shared contract, rather than a plain writing job.
+        'research_contract': bool(run.get('research_contract')),
+        # What a kept research draft must still match: the research stage's input pin and
+        # saved version. Only while the run waits on its research.
+        'research_tie': {
+            'basis': pin('research'),
+            'hash': run['stages'].get('research', {}).get('hash'),
+        }
+        if not listing and next_stage in RESEARCH_STAGES and 'research' in run['pipeline']
+        else None,
     }
 
 
@@ -1213,6 +1279,9 @@ def submit(root, ident, stage, result, expected, page=False):
     ):
         _accept(directory, run, stage, 'review-policy')
         review_policy.receipt(run, stage, run['stages'][stage], studio.now())
+    if stage == 'research':
+        # Saved research, from the page, chat or a handover, replaces any kept draft.
+        shutil.rmtree(directory / RESEARCH_DRAFT, ignore_errors=True)
     save(root, directory, record, run, 'Submitted ' + stage)
     return survey(root, ident)
 
@@ -1690,11 +1759,19 @@ class Engine:
         research = None
         if found['next'] in ('research-plan', 'research'):
             saved = local.get('research') or {}
-            kept = Path(found['directory']) / RESEARCH_DRAFT / '.harness-research/synthesis.json'
+            here = Path(found['directory'])
+            kept = research_draft(here, found.get('research_tie'))
+            accepted = (
+                here / research_contract.CASE / '.harness-research/synthesis.json'
+            ).is_file()
             working = status == 'working'
             research = {
+                # Through the shared contract: rounds of writing and an independent check.
+                'contract': found.get('research_contract', False),
                 # A draft a stopped research kept here, which Try again continues from.
-                'kept': kept.is_file(),
+                'kept': kept,
+                # Where the next attempt starts: the kept draft, the accepted research, or anew.
+                'from': 'kept' if kept else 'accepted' if accepted else None,
                 'refusal': saved.get('refusal'),
                 'rounds': research_contract.ROUNDS,
                 # The round under way (0 while public sources are found), while it works.
@@ -1703,7 +1780,7 @@ class Engine:
                 'last': research_cost(saved.get('jobs')),
             }
         return {
-            **found,
+            **{key: value for key, value in found.items() if key != 'research_tie'},
             'team': bool(space(self.root) and space(self.root).address),
             'driver': owner,
             'status': status,
@@ -1794,6 +1871,10 @@ class Engine:
             # Includes session metadata as well as run/documents: a parallel edit wins.
             directory, _, run = load(self.root, ident)
             session = (directory / 'session.json').read_bytes()
+            tie = found.get('research_tie')
+            if found['next'] == 'research' and not research_draft(directory, tie):
+                # A draft from other inputs or another research version is not continued.
+                shutil.rmtree(directory / RESEARCH_DRAFT, ignore_errors=True)
             review_source = (
                 (directory / 'DRAFT.md').read_text()
                 if found['next'] == 'review' and run.get('editor_check')
@@ -1813,7 +1894,8 @@ class Engine:
                     origin = directory / research_contract.CASE
                 if origin.is_dir():
                     research_contract.copy_case(origin, target / research_contract.CASE)
-                    (target / research_contract.CASE / '.gitignore').unlink(missing_ok=True)
+                    for name in DRAFT_ONLY:
+                        (target / research_contract.CASE / name).unlink(missing_ok=True)
                 result = synthesis_research.generate(
                     target,
                     run,
@@ -1870,7 +1952,7 @@ class Engine:
             with studio.locked(self.root):
                 if self.stop.is_set() or self.closed.is_set():
                     if pending and not self.closed.is_set():
-                        keep_research(directory, target / research_contract.CASE)
+                        keep_research(directory, target / research_contract.CASE, tie)
                     return
                 if (directory / 'session.json').read_bytes() != session:
                     raise ValueError(
@@ -1891,8 +1973,7 @@ class Engine:
                 state = self.local(ident)
                 state.update(status='waiting-for-approval', error='')
                 if pending:
-                    # The accepted research replaces any draft an earlier stop kept.
-                    shutil.rmtree(directory / RESEARCH_DRAFT, ignore_errors=True)
+                    # submit() let any kept draft go: the accepted research replaces it.
                     state.setdefault('research', {}).update(refusal=None, round=None, phase=None)
                 if run.get('editor_check'):
                     state['enabled'] = False
@@ -1902,7 +1983,7 @@ class Engine:
                 state = self.local(ident)
                 # Research that did not finish is kept for Try again, even when stopped.
                 kept = (
-                    keep_research(directory, target / research_contract.CASE)
+                    keep_research(directory, target / research_contract.CASE, tie)
                     if pending and not self.closed.is_set()
                     else False
                 )
