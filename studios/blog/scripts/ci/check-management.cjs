@@ -1159,12 +1159,31 @@ async function honestBlogCopy(){
   const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
   f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[{id:'one',name:'One',status:'ready'},{id:'two',name:'Two',status:'ready'}],profiles:[],agents:{codex:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'package',minutes:'10',operation:'a'.repeat(32)};sWizard()");
   assert.ok(all().includes('No new research.'),all());
-  f.run("studio.draft.research='supplied-only';sWizard()");
+  // Use the real listeners: refreshing the explanation must preserve these controls.
+  const research=nodes().find(e=>e.id==='new-research');
+  const sources=nodes().find(e=>e.className==='source-choices').querySelectorAll('input');
+  const chooseResearch=value=>{research.focus();research.value=value;research.listeners.change();assert.equal(nodes().find(e=>e.id==='new-research'),research);assert.equal(research.focused,true);};
+  const chooseSource=(index,checked)=>{sources[index].focus();sources[index].checked=checked;sources[index].listeners.change();assert.equal(nodes().find(e=>e.className==='source-choices').querySelectorAll('input')[index],sources[index]);assert.equal(sources[index].focused,true);};
+  chooseResearch('supplied-only');
   assert.ok(all().includes('No research runs: no source is selected.'),all());
-  f.run("studio.draft.sources=['one','two'];sWizard()");
+  assert.equal(all().includes('No new research.'),false);
+  chooseSource(0,true);
+  assert.ok(all().includes('Research reads only the 1 source you selected.'),all());
+  chooseSource(1,true);
   assert.ok(all().includes('Research reads only the 2 sources you selected.'),all());
-  f.run("studio.draft.research='web-allowed';sWizard()");
+  chooseResearch('web-allowed');
   assert.ok(all().includes('Research reads your selected sources and the public web.'),all());
+  assert.equal(all().includes('Research reads only the 2 sources you selected.'),false);
+  assert.deepEqual(Array.from(f.run('studio.draft.sources')),['one','two']);
+  assert.ok(sources.every(source=>source.checked),'changing research preserves the sources');
+  chooseResearch('supplied-only');
+  chooseSource(0,false);
+  assert.ok(all().includes('Research reads only the 1 source you selected.'),all());
+  chooseSource(1,false);
+  assert.ok(all().includes('No research runs: no source is selected.'),all());
+  chooseResearch('none');
+  assert.ok(all().includes('No new research.'),all());
+  assert.equal(all().includes('No research runs: no source is selected.'),false);
   assert.equal(all().includes('Research uses only the sources you allow'),false);
   assert.ok(all().includes('With a voice chosen, the usual tone is left out; a tone you type here is added as a nudge.'));
   assert.equal(all().includes('Tone is a nudge on top of the voice.'),false);
@@ -1262,6 +1281,8 @@ async function sharedPattern(){
   assert.equal(descendants(f.get('studio-page')).find(e=>e.className==='now-line').textContent,'Drafting · 7 min of up to 10','the now line ticks while nothing else changes');
   assert.equal(text().some(t=>/cost is not tracked/.test(t)),false,'the run says what it spent instead');
   assert.equal(descendants(f.get('studio-page')).find(e=>e.className==='quiet ahead-line')?.textContent,'2 steps left · Next stop: the draft · So far 3 minutes; the assistant reported no cost','one line under the beads: steps left, the next stop and what it has spent');
+  // A cost reported as nothing is never "$0.00": the research line says no cost was reported.
+  assert.equal(f.run("sTook({jobs:2,rounds:1,seconds:90,tokens:null,dollars:0,reported:true})").includes('$0.00'),false);
   // A team blog's jobs are kept on each computer that ran them: the line says so.
   f.set('found',{...found,team:true});f.run('sRun(found)');
   assert.equal(descendants(f.get('studio-page')).find(e=>e.className==='quiet ahead-line')?.textContent,'2 steps left · Next stop: the draft · So far on this computer 3 minutes; the assistant reported no cost');
