@@ -80,6 +80,7 @@ async function check(){
   await sharedPattern();
   await whereThisRunStops();
   await oneVocabulary();
+  await honestBlogCopy();
   await finishAndDelete();
   await filesJourney();
   await voiceLinksJourney();
@@ -100,7 +101,7 @@ async function check(){
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','one name for each thing','copy that says what the form and gates do','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -1149,6 +1150,50 @@ async function oneVocabulary(){
   for(const old of ['Examples of the kind of post','examples of a kind of writing','Selected sources only','Sources plus public research','Also research the web to fill gaps'])assert.equal(text().some(t=>t.includes(old)),false,old);
 }
 
+// The form and the gates say only what they do: what research reads, what the tone does with
+// a voice, what each gate's decision does, and where a change comes back.
+async function honestBlogCopy(){
+  const requests=[];let changed=null;
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});if(url==='/api/run-changes')return changed;return {};});f.loadRunner();
+  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),all=()=>text().join('\n');
+  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[{id:'one',name:'One',status:'ready'},{id:'two',name:'Two',status:'ready'}],profiles:[],agents:{codex:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'package',minutes:'10',operation:'a'.repeat(32)};sWizard()");
+  assert.ok(all().includes('No new research.'),all());
+  f.run("studio.draft.research='supplied-only';sWizard()");
+  assert.ok(all().includes('No research runs: no source is selected.'),all());
+  f.run("studio.draft.sources=['one','two'];sWizard()");
+  assert.ok(all().includes('Research reads only the 2 sources you selected.'),all());
+  f.run("studio.draft.research='web-allowed';sWizard()");
+  assert.ok(all().includes('Research reads your selected sources and the public web.'),all());
+  assert.equal(all().includes('Research uses only the sources you allow'),false);
+  assert.ok(all().includes('With a voice chosen, the usual tone is left out; a tone you type here is added as a nudge.'));
+  assert.equal(all().includes('Tone is a nudge on top of the voice.'),false);
+  // Each gate's lede says what its decision does.
+  const stages=[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'draft'},{stage:'review',label:'Review',path:'derived/blog-review.md',status:'pending'},{stage:'package',label:'Handoff',path:'derived/blog-package.md',status:'pending'}];
+  const found={id:'synthetic',title:'Synthetic blog',status:'waiting-for-approval',next:'draft',approval:'page',expected:'v1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'step_by_step',decisions:[],brief:{goal:'Explain',audience:'Authors'},notes:{},stages};
+  const shown={id:'synthetic',title:'Synthetic blog',name:'DRAFT.md',stage:'draft',label:'Draft',expected:'v1',status:'draft',content:'# Draft',notes:'',checks:[],previous:null,diff:[]};
+  f.set('found',found);f.set('shown',shown);f.run("studio.screen='gate';studio.found=found;sGate(found,shown)");
+  assert.ok(all().includes('Read the draft. Use it to go on, or ask for changes.'),all());
+  f.set('shown',{...shown,stage:'review',name:'blog-review.md',label:'Review'});f.set('found',{...found,next:'review',stages:stages.map(row=>row.stage==='draft'?{...row,status:'approved'}:row.stage==='review'?{...row,status:'draft'}:row)});f.run("sGate(found,shown)");
+  assert.ok(all().includes('Read the review. Its findings go to the handoff; to act on one, ask for changes to the draft.'),all());
+  for(const old of ['polish the wording','return to the manuscript'])assert.equal(all().includes(old),false,old);
+  // Ask for changes says what it does, and the toast where the change comes back.
+  f.set('found',found);f.run("sChanges(found,'draft')");
+  const sheet=()=>descendants(f.get('sheet')).map(e=>e.textContent);
+  assert.ok(sheet().some(t=>t.includes('Ask for changes writes this stage again with your words.')),sheet().join('|'));
+  changed={...found,status:'queued',enabled:true,stages:stages.map(row=>row.stage==='draft'?{...row,status:'pending'}:row),ahead:{steps_left:3,next_gate:'draft',next_stop:'Draft'}};
+  descendants(f.get('sheet')).find(e=>e.id==='change-request').value='Shorter.';descendants(f.get('sheet')).find(e=>e.id==='change-request').listeners.input();
+  await descendants(f.get('sheet')).find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.ok(descendants(f.get('toasts')).some(e=>e.textContent==='Your changes are noted. The next draft comes back for your review.'),descendants(f.get('toasts')).map(e=>e.textContent).join('|'));
+  // Under Balanced the review is not a stop: it is written again and the run goes on.
+  const balanced={...found,next:'review',review_level:'balanced',stages:stages.map(row=>row.stage==='draft'?{...row,status:'approved'}:row.stage==='review'?{...row,status:'draft'}:row)};
+  f.set('found',balanced);f.run("sChanges(found,'review')");
+  changed={...balanced,status:'queued',enabled:true,ahead:{steps_left:2,next_gate:'package',next_stop:'Handoff'}};
+  descendants(f.get('sheet')).find(e=>e.id==='change-request').value='Name the risk.';descendants(f.get('sheet')).find(e=>e.id==='change-request').listeners.input();
+  await descendants(f.get('sheet')).find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.ok(descendants(f.get('toasts')).some(e=>e.textContent==='Your changes are noted. The review is written again and the run goes on to the handoff, where you see it.'),descendants(f.get('toasts')).map(e=>e.textContent).join('|'));
+}
+
 // The pattern every studio shares: the start form says where it stops, the run says what it
 // is doing now and for how long, a retry says what it costs, a note reaches the next job
 // without stopping, and a phone keeps one decision in the toolbar.
@@ -1875,7 +1920,7 @@ async function wizardVoiceAndKind(){
   // Step two keeps tone, author and brand, with the tone as a nudge.
   await submit();
   assert.ok(nodes().some(e=>e.textContent==='Tone, author and brand'));
-  assert.equal(byId('new-tone-hint').textContent,'Tone is a nudge on top of the voice.');
+  assert.equal(byId('new-tone-hint').textContent,'With a voice chosen, the usual tone is left out; a tone you type here is added as a nudge.');
   assert.equal(nodes().some(e=>e.id==='new-profile'),false,'the voice is chosen once, on the first step');
   await submit();
   let sent=requests.filter(r=>r.url==='/api/run-create').at(-1).data;
