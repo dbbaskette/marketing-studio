@@ -332,6 +332,24 @@ class ScreenTests(ScriptedPage, PageCase):
             self.assertEqual(posted[0]['form']['research_sources'], 'both' if both else 'documents')
             self.assertEqual(posted[0]['form']['research_questions'], ['Why?', 'What next?'])
 
+    def test_the_research_stop_leads_with_the_brief_and_the_check(self):
+        from synthesis_fixture import research_stop
+        from studio_core import research_view
+        path = self.started(research=True)
+        self.decided(path, 'gate:research-plan')
+        research_stop(Path(path) / 'research')
+        record = self.engine._load(Path(path))
+        record['research_contract'] = {'schema': 2}
+        self.engine._store(Path(path), record)
+        result = self.deck_screen(path, [{'snapshot': 'research'}, {'click': 'Leave out “Capacity condition”'}, {'snapshot': 'left'}])
+        text = result['snapshots']['research']['text']
+        positions = [text.index(words) for words in ('Prioritized handoff', research_view.CHECKED, 'An honest account.', 'What the research could not settle', 'Unknown range.', '3 sources: 2 of yours, 1 public.', 'Your questions', 'Capacity condition', 'Also found')]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn('2 findings', text)
+        self.assertIn('1 left out', result['snapshots']['left']['text'])
+        self.assertNotIn('answered by the sources', text)
+        self.assertNotIn('0 to look at', text)
+
     def test_the_start_step_says_where_it_stops_and_folds_the_options(self):
         from studio_core import review_policy
         self.assertIn(self.get('setup')['review_level'], review_policy.LEVELS)

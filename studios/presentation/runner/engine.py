@@ -114,7 +114,7 @@ What a caller needs to know
 """
 from __future__ import annotations
 
-from studio_core import deck_flow, research_contract, review_policy, stops
+from studio_core import deck_flow, research_contract, research_view, review_policy, stops
 
 import contextvars
 import json
@@ -2720,7 +2720,10 @@ class Engine(Jobs, Researching):
                               if isinstance(item, dict) and isinstance(item.get('id'), str)]}
 
     def _show_research(self, root: Path, record: dict) -> dict:
-        return {'text': text_of(root / REPORT) or '', 'items': self._findings_shown(root, record)}
+        contract = bool(record.get('research_contract'))
+        return {'text': text_of(root / REPORT) or '', 'items': self._findings_shown(root, record),
+                'contract': contract, 'research': research_view.account(root / 'research',
+                    [{'id': i, 'question': q} for i, q in self._questions(root).items()]) if contract else None}
 
     def storyboard(self, path, edited, expected: str) -> dict:
         """Preview the current or unsaved outline without saving or approving it."""

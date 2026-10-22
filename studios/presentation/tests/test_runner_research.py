@@ -619,3 +619,25 @@ class SynthesisBriefTests(DeckCase):
             work = engine._plan_work(self.root, record, None, None)
             self.assertEqual(work.guidance, briefs.guidance(brief))
             self.assertEqual(work.prepared['artifacts']['research-plan'].get('most'), 8 if synthesis else None)
+
+
+class ResearchAccountTests(DeckCase):
+    def test_a_contract_research_gate_carries_the_account(self):
+        from runner.engine import Engine
+        from synthesis_fixture import research_stop
+        self.write('research/plan.json', json.dumps(PLAN))
+        _, manifest = research_stop(self.root / 'research')
+        shown = Engine()._show_research(self.root, {'research_contract': {'schema': 2}})
+        self.assertEqual(shown['research']['brief'], '# Prioritized handoff\n')
+        self.assertEqual(shown['research']['questions'][0]['findings'], ['instance-min--capacity'])
+        self.assertEqual(shown['items'][0]['question'], 'How many instances keep capacity?')
+        self.assertNotIn(manifest['digest'], json.dumps(shown))
+
+    def test_an_unreadable_bundle_leaves_the_report_alone(self):
+        from runner.engine import Engine
+        from synthesis_fixture import research_stop
+        research_stop(self.root / 'research')
+        (self.root / 'research/brief.md').write_text('Changed')
+        shown = Engine()._show_research(self.root, {'research_contract': {'schema': 2}})
+        self.assertIsNone(shown['research'])
+        self.assertEqual(shown['text'], '# Report\n')

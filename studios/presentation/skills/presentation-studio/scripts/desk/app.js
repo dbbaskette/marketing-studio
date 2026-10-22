@@ -3927,6 +3927,25 @@ function planRow(gate, item, readonly) {
 function researchPanel(gate, readonly) {
   const node = card('What the research found');
   const items = list(gate.items);
+  if (gate.research) {
+    const found = gate.research;
+    add(node, documentPart('The research brief', found.brief),
+      make('h3', 'row-title', 'What the independent check said'),
+      make('p', '', found.check.said), found.check.note ? make('p', '', found.check.note) : null,
+      ...list(found.check.unread).map((one) => make('p', '', (one.title || one.source) + ': ' + one.access_error)),
+      make('h3', 'row-title', 'What the research could not settle'),
+      list(found.gaps).length ? bullets(found.gaps) : make('p', 'quiet', 'No gaps were named.'),
+      ...list(found.sources.partial).map((one) => make('p', '', one.title + ': ' + one.note)),
+      make('p', 'quiet', found.read),
+      reviewCounts([[items.length, items.length === 1 ? 'finding' : 'findings'], [leftOut(gate).length, 'left out']]));
+    const findings = make('div', '');
+    findings.id = 'findings';
+    add(node, findings);
+    paintFindings(gate, findings, readonly);
+    if (!readonly) add(node, reviewBar(gate));
+    return add(node, fullText('Read the full report', 'The research report', found.report, 'report-text'),
+      fullText('The evidence and the check’s notes', 'The evidence', found.evidence, 'evidence-text'), ...gateSaid(gate));
+  }
   // Without findings to show, as when the plan cannot be read, the report is all there is.
   if (!items.length) {
     return add(node, documentPart('The research report', gate.text), ...gateSaid(gate));
@@ -3948,6 +3967,23 @@ function researchPanel(gate, readonly) {
 // out. What was open stays open.
 function paintFindings(gate, holder, readonly) {
   if (!holder) return;
+  if (gate.research) {
+    const found = gate.research;
+    const cards = (ids) => ids.map((id) => list(gate.items).find((one) => one.id === id)).filter(Boolean)
+      .map((item) => findingCard(gate, item, readonly, false));
+    const parts = [];
+    if (list(found.questions).length) parts.push(make('h3', 'row-title', 'Your questions'));
+    for (const question of list(found.questions)) {
+      parts.push(make('h4', 'row-title', question.question));
+      parts.push(list(question.findings).length
+        ? add(make('ul', 'plain review-list'), ...cards(question.findings))
+        : make('p', 'quiet', 'The research did not answer this.'));
+    }
+    if (list(found.unplanned).length) parts.push(make('h3', 'row-title', 'Also found'),
+      add(make('ul', 'plain review-list'), ...cards(found.unplanned)));
+    holder.replaceChildren(...parts);
+    return;
+  }
   const opened = Array.from(holder.querySelectorAll('details')).filter((node) => node.open)
     .map((node) => node.dataset.key);
   const items = list(gate.items);
@@ -3988,7 +4024,7 @@ function findingCard(gate, item, readonly, folded) {
   const again = !readonly && !out && owns(held.again, item.id);
   const [shape, words] = FINDING_WORDS[item.status] || FINDING_WORDS.pending;
   const said = out ? 'Left out' : again ? 'To research again' : words;
-  const body = [make('p', 'quiet', item.question),
+  const body = [item.question ? make('p', 'quiet', item.question) : null,
     item.headline ? make('p', 'review-headline', item.headline) : null,
     item.unknown ? make('p', 'quiet', 'Not known: ' + item.unknown) : null,
     sourcesPart(item)];

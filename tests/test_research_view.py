@@ -5,25 +5,11 @@ from pathlib import Path
 import tempfile
 import unittest
 
-import marketing_studio
-from studio_core import research_contract as contract
+import marketing_studio  # noqa: F401
 from studio_core import research_view as view
 
 
-def bundle(folder, findings=(), review=None, sources=(), sections=(), brief=()):
-    folder.mkdir(parents=True, exist_ok=True)
-    facts = dict(owner=contract.OWNER, schema=2, digest='synthetic-digest', status='complete',
-                 review=review or dict(accepted=True, digest='synthetic-digest', originals=[],
-                                      assessment=dict(coverage='accurate', usefulness='adequate', note=' An honest\n account. ')),
-                 findings=list(findings), sources=list(sources), sections=list(sections), brief=list(brief))
-    for name, text in [('brief.md', '# Prioritized handoff\n'), ('report.md', '# Report\n'),
-                       ('evidence.md', '# Evidence\n'), ('facts.json', json.dumps(facts))]:
-        (folder / name).write_text(text)
-    manifest = {key: facts[key] for key in ('owner', 'schema', 'digest', 'status')}
-    manifest['artifacts'] = [dict(file=name, sha256=hashlib.sha256((folder / name).read_bytes()).hexdigest())
-                             for name in sorted(contract.ARTIFACTS)]
-    (folder / 'output.json').write_text(json.dumps(manifest))
-    return facts, manifest
+from synthesis_fixture import published_bundle as bundle
 
 
 class AccountTests(unittest.TestCase):

@@ -35,7 +35,7 @@ from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, documents, marks, stages, worker_tools
 from runner import research as research_cli
-from studio_core import research_contract, stops
+from studio_core import research_contract, research_view, stops
 from runner.jobs import KEPT, Halted, Run, given_up, last_error, sha256_of, text_of, tries
 from runner.steps import Work
 
@@ -180,7 +180,11 @@ class Researching:
                 facts, _ = research_contract.read_bundle(root / 'research')
             except (OSError, ValueError):
                 return []
-            return [{'id': f['id'], 'title': f['title'], 'question': '', 'status': 'supported',
+            questions = self._questions(root)
+            return [{'id': f['id'], 'title': f['title'],
+                     'question_id': research_view.answered_by(f['id'], questions),
+                     'question': questions.get(research_view.answered_by(f['id'], questions), ''),
+                     'status': 'supported',
                      'headline': f['summary']['text'], 'summary': f['summary']['text'],
                      'limits': '\n'.join(b['text'] for b in f['conditions'] + f['gaps']),
                      'unknown': '\n'.join(b['text'] for b in f['gaps']),

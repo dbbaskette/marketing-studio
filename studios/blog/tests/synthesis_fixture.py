@@ -104,3 +104,35 @@ def review(template, accepted=True):
         'note': 'Explicit synthetic scope and usable brief.',
     }
     return result
+
+
+import hashlib
+import json
+from studio_core import research_contract as contract
+
+
+def published_bundle(folder, findings=(), review=None, sources=(), sections=(), brief=(), evidence=()):
+    folder.mkdir(parents=True, exist_ok=True)
+    facts = dict(owner=contract.OWNER, schema=2, digest='synthetic-digest', status='complete',
+                 review=review or dict(accepted=True, digest='synthetic-digest', originals=[],
+                                      assessment=dict(coverage='accurate', usefulness='adequate', note=' An honest\n account. ')),
+                 facts=list(evidence), findings=list(findings), sources=list(sources), sections=list(sections), brief=list(brief))
+    for name, text in [('brief.md', '# Prioritized handoff\n'), ('report.md', '# Report\n'),
+                       ('evidence.md', '# Evidence\n'), ('facts.json', json.dumps(facts))]:
+        (folder / name).write_text(text)
+    manifest = {key: facts[key] for key in ('owner', 'schema', 'digest', 'status')}
+    manifest['artifacts'] = [dict(file=name, sha256=hashlib.sha256((folder / name).read_bytes()).hexdigest())
+                             for name in sorted(contract.ARTIFACTS)]
+    (folder / 'output.json').write_text(json.dumps(manifest))
+    return facts, manifest
+
+
+
+def research_stop(folder):
+    """A complete accepted bundle for the research-stop journeys."""
+    value = dossier('synthetic-author')
+    value['findings'][0].update(id='instance-min--capacity', title='Capacity condition', gaps=[dict(text='Unknown range.')])
+    value['findings'][1].update(id='other', title='Another condition')
+    sources = [*value['sources'], dict(id='mine-a', permission='selected'), dict(id='mine-b', permission='selected')]
+    sources[0].update(context='partial', context_note='Pages 1 to 4 only.')
+    return published_bundle(folder, findings=value['findings'], sources=sources, evidence=value['facts'])
