@@ -40,7 +40,7 @@ Slide previews and your brand skill source are shared too: give a Git repository
 address or choose an installed folder. A repository does not require a folder path.
 Research and slide tools install at the exact, checksum-verified versions locked in
 `pins/companions.json`. An installed copy that meets the minimum requirement
-(`>=1.0.0` for Harness Research and `>=0.14.1` for Harness Slides) is kept, so a
+(`>=1.0.0` for Harness Research and `>=0.16.0` for Harness Slides) is kept, so a
 source install with current tools needs no network. Newer releases are adopted only
 when the locks are refreshed and the research contract tests pass again.
 Downloadable bundles include the same exact versions and install offline; opening a

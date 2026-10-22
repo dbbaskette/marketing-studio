@@ -460,7 +460,7 @@ class Slides:
     file does, and a real PNG for each slide. `refuse` maps a call to the lines it says
     no with. It takes no turn of its own at previewing, so `most` says how many previews
     were ever under way at once."""
-    VERSION = '0.13.1'
+    VERSION = '0.16.0'   # the floor, slides.MINIMUM
     runtime = Path('/opt/slides-tool/versions/0.13.1')
     READING = {'design guidance': 'Design from the claim in the title.\n',
                'composition guidance': 'A canvas holds stacks, boxes and text.\n',

@@ -175,7 +175,7 @@ class FindingTheRuntimeTests(unittest.TestCase):
 
     def test_a_tool_that_is_too_old_is_refused_when_it_is_found(self):
         os.environ[slides.VARIABLE] = str(installed(self.home / 'runtime'))
-        for version in (slides.MINIMUM, '0.14.0-beta.2', '1.0.0'):
+        for version in (slides.MINIMUM, '0.16.1-beta.2', '1.0.0'):
             self.assertEqual(slides.Slides(run=says(version)).version(), version)
         for version in ('0.12.9', '0.9.0'):
             with self.assertRaisesRegex(WorkspaceError, f'harness-slides {version} is '
@@ -184,6 +184,35 @@ class FindingTheRuntimeTests(unittest.TestCase):
                 slides.Slides(run=says(version))
         with self.assertRaisesRegex(WorkspaceError, 'did not say which version it is'):
             slides.Slides(run=lambda command, cwd=None: (0, 'Usage: ...\n', ''))
+
+    def test_older_tool_is_refused(self):
+        os.environ[slides.VARIABLE] = str(installed(self.home / 'runtime'))
+        with self.assertRaises(WorkspaceError) as refused:
+            slides.Slides(run=says('0.15.1'))
+        self.assertEqual(str(refused.exception), 'harness-slides 0.15.1 is installed, and a '
+                         'deck needs 0.16.0 or newer. Update it, then try again.')
+        self.assertEqual(refused.exception.version, '0.15.1')
+
+    def test_release_is_the_pinned_version(self):
+        pins = json.loads((Path(__file__).resolve().parents[1] / 'installer'
+                           / 'companions.json').read_text(encoding='utf-8'))
+        self.assertEqual(slides.RELEASE, pins['companions']['harness-slides']['version'])
+        self.assertEqual((slides.RELEASE, slides.MINIMUM), ('0.16.0', '0.16.0'))
+
+    def test_every_capability_has_a_plain_name(self):
+        listed = ('assets', 'assets-approved-candidates',
+            'canonical-digests', 'compose-code-spans', 'compose-icon-assets', 'compose-projects',
+            'compose-provenance', 'compose-review', 'compose-section', 'compose-split-point',
+            'compose-verified-critique', 'compose-visual-vocabulary', 'design-batch',
+            'design-icon-ids', 'design-present-findings', 'design-schema-2', 'google-preview-pool',
+            'json-refusals', 'native-charts', 'neutral-native-composition', 'owned-google-previews',
+            'preview-repair-clusters', 'relative-records', 'render-bundles', 'review-google-renderer',
+            'review-input-refusals', 'review-packets', 'review-sources-from-slide')
+        self.assertEqual(len(listed), 28)
+        for name in listed:
+            self.assertIn(name, slides.NAMES)
+            self.assertNotIn('-', slides.NAMES[name], name)
+            self.assertTrue(slides.NAMES[name].strip(), name)
 
 
 class CommandTests(unittest.TestCase):
@@ -2261,8 +2290,8 @@ class CurrentTests(unittest.TestCase):
         self.assertEqual(self.slides.capabilities(), frozenset(slides_stand_in.CURRENT))
         self.assertEqual(self.slides.lacks(), [])
         self.assertTrue(self.slides.has('review-packets'))
-        self.assertEqual(sorted(slides.NAMES), sorted(slides_stand_in.CURRENT),
-                         'every name 0.14.1 lists can be said to a person')
+        self.assertLessEqual(set(slides_stand_in.CURRENT), set(slides.NAMES),
+                             'every name the stand-in lists can be said to a person')
         self.assertTrue(set(slides.NEEDED) <= set(slides_stand_in.CAPABILITIES),
                         'a new deck needs nothing 0.14.0 did not list')
         pins = json.loads((Path(__file__).resolve().parents[1] / 'installer'

@@ -735,6 +735,51 @@ class HaltTests(StudioCase):
         self.assertEqual(self.log()[-1], 'Rolling restarts: keep the outline')
 
 
+class OlderSlidesToolTests(StudioCase):
+    """A slides tool older than the floor, kept by a brand skill's own installer."""
+
+    def brand_bringing(self, version: str) -> None:
+        folder = self.base / 'acme-brand'
+        (folder / 'scripts' / 'lib').mkdir(parents=True, exist_ok=True)
+        (folder / 'scripts' / 'lib' / 'harness-install-sources.json').write_text(
+            json.dumps({'slides': {'version': version}}), encoding='utf-8')
+        self.brand.runtime, self.brand.name = folder, 'Acme Brand'
+
+    def too_old(self):
+        from runner import slides as slides_tool
+        return mock.patch.object(self.engine, 'slides',
+                                 mock.Mock(side_effect=slides_tool.TooOld('0.15.1')))
+
+    def test_status_names_the_brand_installer_that_kept_an_old_tool(self):
+        self.brand_bringing('0.15.1')
+        with self.too_old():
+            missing = self.engine.deck_needs(fresh=True)['missing']
+        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
+                      "Acme Brand's own installer brings 0.15.1. Update it, then try again.",
+                      missing)
+        self.assertEqual(self.engine.brought_by('0.15.1'), 'Acme Brand')
+        self.brand_bringing('0.16.0')
+        with self.too_old():
+            missing = self.engine.deck_needs(fresh=True)['missing']
+        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
+                      'Update it, then try again.', missing)
+        self.assertIsNone(self.engine.brought_by('0.15.1'))
+
+    def test_a_deck_begun_on_an_older_tool_stops_at_its_next_step_and_keeps_its_files(self):
+        root = self.start()
+        self.to_gate(root, 'gate:outline')
+        before = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
+        with self.too_old():
+            self.engine.deck_needs(fresh=True)
+            self.decide(root, 'gate:outline')
+            view = self.view(root)
+        self.assertIn(view['state'], ('stopped', 'failed'))
+        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
+                      'Update it, then try again.', json.dumps(view))
+        after = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
+        self.assertLessEqual(set(before), set(after), 'nothing it had is lost')
+
+
 class BrandTests(StudioCase):
     def test_a_brand_that_changed_stops_the_deck_before_the_next_step_that_uses_it(self):
         root = self.start()

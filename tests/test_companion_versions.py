@@ -216,5 +216,17 @@ class CompanionVersionsTests(unittest.TestCase):
         self.assertIn('not what this installer expects', result['detail'])
         self.assertEqual(self.root_state, {})
 
+
+class PinnedFloorTests(unittest.TestCase):
+    def test_slides_floor_is_the_pinned_release(self):
+        pins = json.loads((ROOT / 'pins/companions.json').read_text(encoding='utf-8'))
+        slides = pins['companions']['harness-slides']
+        self.assertEqual(slides['requirement'], '>=0.16.0')
+        self.assertEqual(slides['version'], '0.16.0')
+        readme = (ROOT / 'README.md').read_text(encoding='utf-8')
+        self.assertIn('`>=0.16.0` for Harness Slides', readme)
+        self.assertNotIn('0.14.1', readme)
+
+
 if __name__ == '__main__':
     unittest.main()

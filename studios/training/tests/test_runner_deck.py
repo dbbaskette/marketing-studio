@@ -3277,6 +3277,52 @@ class TroubleTests(DeckCase):
                          'again')
         self.assertEqual(len(list((root / 'work' / 'deck').glob('brand-*'))), 1)
 
+    def acme_brand(self, brings: str) -> None:
+        """The brand stand-in, named as a made-up skill whose own installer brings a
+        given Harness Slides."""
+        folder = self.base / 'acme-brand'
+        (folder / 'scripts' / 'lib').mkdir(parents=True, exist_ok=True)
+        (folder / 'scripts' / 'lib' / 'harness-install-sources.json').write_text(
+            json.dumps({'slides': {'version': brings}}), encoding='utf-8')
+        self.brand.runtime, self.brand.name = folder, 'Acme Brand'
+
+    def test_status_names_the_brand_installer_that_kept_an_old_tool(self):
+        self.acme_brand('0.15.1')
+        with mock.patch.object(Slides, 'VERSION', '0.15.1'):
+            missing = self.engine.deck_needs(fresh=True)['missing']
+        self.assertIn('The slides tool on this computer is version 0.15.1, and a deck needs '
+                      "0.16.0 or newer. Acme Brand's own installer brings 0.15.1. Update it.",
+                      missing)
+        self.acme_brand('0.16.0')
+        with mock.patch.object(Slides, 'VERSION', '0.15.1'):
+            missing = self.engine.deck_needs(fresh=True)['missing']
+        self.assertIn('The slides tool on this computer is version 0.15.1, and a deck needs '
+                      '0.16.0 or newer. Update it.', missing)
+        self.acme_brand('0.15.1')
+        refusal = slides_tool.TooOld('0.15.1')
+        with mock.patch.object(self.engine, 'slides',
+                               mock.Mock(side_effect=refusal)):
+            missing = self.engine.deck_needs(fresh=True)['missing']
+        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
+                      "Acme Brand's own installer brings 0.15.1. Update it, then try again.",
+                      missing)
+
+    def test_a_deck_begun_on_an_older_tool_stops_at_its_next_step_and_keeps_its_files(self):
+        root = self.begin()
+        self.to_outline(root)
+        before = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
+        with mock.patch.object(self.engine, 'slides',
+                               mock.Mock(side_effect=slides_tool.TooOld('0.15.1'))):
+            self.engine.look_again()
+            self.to_end(root)
+            view = self.view(root)
+        self.assertEqual(view['state'], 'done')
+        self.assertEqual(view['deck_left']['says'], left(
+            pipeline.DECK_LEFT, 'harness-slides 0.15.1 is installed, and a deck needs 0.16.0 '
+            'or newer. Update it, then try again.'))
+        after = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
+        self.assertLessEqual(set(before), set(after), 'nothing it had is lost')
+
     def test_a_computer_with_nothing_for_a_deck_says_what_is_missing(self):
         self.slides = self.brand = None
         root = self.begin(brand=None)

@@ -15,7 +15,7 @@ The [installer](installation.md) brings the runner, offers the two companion ski
 
 A slide deck needs four more things. The Status screen shows each one, and what to do about one that is missing.
 
-- [harness-slides](https://github.com/dbbaskette/harness-slides-skill). It draws and renders the slides. The installer offers the version this Training Studio is pinned to, 0.16.0 now, and the Versions view updates it. A new deck needs 0.14.1 or newer, and a deck already begun with an older one, down to 0.13.1, carries on with it.
+- [harness-slides](https://github.com/dbbaskette/harness-slides-skill). It draws and renders the slides. The installer offers the version this Training Studio is pinned to, 0.16.0 now, and the Versions view updates it. A deck needs 0.16.0 or newer; a deck begun on an older one stops at its next deck step until the tool is updated.
 - A brand skill: a skill that holds your organisation's brands, its slide template and its icons. A deck is always made in a brand. Without a brand skill no deck is offered. It is your organisation's own, so the installer does not bring it. Install it yourself, or name its repository in Settings and install it from the page: see [the brand skill](#the-brand-skill).
 - A way to turn slides into pictures, so that they can be looked at before they come to you: LibreOffice on this computer, or Google access that reaches Drive.
 - Poppler, the small programs (`pdftoppm` and `pdfinfo`) that turn a render into pictures.

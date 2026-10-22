@@ -207,6 +207,7 @@ from workspace import WorkspaceError
 
 from runner import agents, companion, deck, gitstate, pipeline, settings, team, worker_tools
 from runner import brand as brand_skill
+from runner import brand_source
 from runner import copies as copies_made
 from runner.copies import BOTH, KEPT_OURS, PULLED
 from runner import documents as documents_kept
@@ -1446,9 +1447,12 @@ class Engine(Reviewing):
                     found['needs'] = list(tool.lacks())
             except (WorkspaceError, OSError) as refusal:
                 found['tool'] = str(refusal)
+                found['version'] = getattr(refusal, 'version', None)
             try:
                 skill = self._skill()
                 found['runtimes']['brand'] = str(skill.runtime)
+                found['brings'] = brand_source.bootstraps(Path(skill.runtime)).get(
+                    'harness-slides')
                 found['brand'] = {
                     'found': True, 'name': str(skill.name), 'problem': None, 'brands': [
                         {'brand': str(entry.get('brand')), 'name': str(entry.get('name')),
@@ -1465,6 +1469,25 @@ class Engine(Reviewing):
             self._looked = (time.monotonic(), found)
             return found
 
+    def brought_by(self, version: str | None) -> str | None:
+        """The brand skill's name when its own installer brings this very version of the
+        slides tool, else None: an installer that pins an older one keeps it here."""
+        seen = self._look()
+        if not version or not seen['brand']['found'] or seen.get('brings') != version:
+            return None
+        return seen['brand']['name']
+
+    def _with_installer(self, said: str | None, seen: dict) -> str | None:
+        """A sentence about a slides tool too old for a deck, saying where it came from
+        when the brand skill's own installer brings it."""
+        version = seen.get('version')
+        if not said or not version or not older(version, slides_tool.MINIMUM):
+            return said
+        name = self.brought_by(version)
+        before, cut, after = said.rpartition('Update it')
+        return f"{before}{name}'s own installer brings {version}. {cut}{after}" \
+            if name and cut else said
+
     def deck_needs(self, fresh: bool = False) -> dict:
         """What a deck needs on this computer: `missing`, a sentence for each thing it
         lacks, each with what to do about it; `how`, the way previews are rendered here;
@@ -1479,6 +1502,8 @@ class Engine(Reviewing):
         dated = None if seen['tool'] or not older(seen['version'], slides_tool.MINIMUM) else (
             f"The slides tool on this computer is version {seen['version']}, and a deck "
             f'needs {slides_tool.MINIMUM} or newer. Update it.')
+        dated = self._with_installer(dated, seen)
+        seen = {**seen, 'tool': self._with_installer(seen['tool'], seen)}
         lacks = [] if seen['tool'] or dated else [slides_tool.NAMES.get(name, name)
                                                    for name in seen['needs']]
         update = UPDATE_SLIDES.format(version=seen['version'], lacks='; '.join(lacks),

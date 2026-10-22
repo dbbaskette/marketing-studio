@@ -19,7 +19,7 @@
       "stub": "bootstrap/SKILL.md",
       "installer": "scripts/install.mjs",
       "note": "Its installer also downloads, from npm, the packages its slide engine needs.",
-      "requirement": ">=0.14.1"
+      "requirement": ">=0.16.0"
     }
   }
 }

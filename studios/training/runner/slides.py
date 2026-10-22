@@ -78,11 +78,11 @@ What a caller needs to know
 
 Added to the above
 ------------------
-- `Slides()` asks the tool for its version and refuses one older than MINIMUM, the oldest
-  a deck already begun keeps working with. What a new deck needs is said by capability and
-  never by version: `lacks()` names each of NEEDED the tool lacks, in order, and NAMES says
-  each as a person reads it. RELEASE is the release a person is told to update to, the one
-  the installer pins.
+- `Slides()` asks the tool for its version and refuses one older than MINIMUM with
+  TooOld, a WorkspaceError that keeps the `version` it found. What a new deck needs is said
+  by capability and never by version: `lacks()` names each of NEEDED the tool lacks, in
+  order, and NAMES says each as a person reads it. RELEASE is the release a person is told
+  to update to, the one `pins/companions.json` pins.
 - Paths in what a call returns are text, as the tool printed them. Where the tool leaves
   something out, `preview` gives None: `contactSheet` for one slide, `fileId` and `url` for
   a local render. What else the tool said is still there, `critic` among them.
@@ -183,7 +183,7 @@ from workspace import WorkspaceError
 from runner import companion
 
 VARIABLE = 'HARNESS_SLIDES_RUNTIME'
-MINIMUM = '0.13.1'      # the oldest runtime taken: a deck begun on it carries on there
+MINIMUM = '0.16.0'      # the oldest runtime taken: the one the installer pins
 RELEASE = '0.16.0'      # what a person is told to update to, as the installer pins it
 # What a new deck needs of the slides tool, by the names its `version` lists.
 NEEDED = ('design-schema-2', 'design-batch', 'json-refusals', 'compose-section', 'assets',
@@ -192,16 +192,27 @@ NEEDED = ('design-schema-2', 'design-batch', 'json-refusals', 'compose-section',
 NAMES = {'assets': 'an asset manifest for the pictures and icons a deck uses',
          'assets-approved-candidates': 'checking every asset an approved design names',
          'canonical-digests': 'designs compared whatever order their keys are in',
+         'compose-code-spans': 'names and commands set as code',
          'compose-icon-assets': 'icons placed by the asset they are recorded as',
+         'compose-projects': 'a deck kept as a project',
+         'compose-provenance': "where each slide's words came from",
          'compose-review': 'a whole deck reviewed against its approved design',
          'compose-section': 'a section checked against the approved design',
+         'compose-split-point': 'a sentence split across shapes found in a preview',
+         'compose-verified-critique': 'a review checked against the deck it reviewed',
+         'compose-visual-vocabulary': 'the drawing words a composition may use',
          'design-batch': 'one question for a whole design',
          'design-icon-ids': 'an exact icon named in a design',
          'design-present-findings': 'a reviewed deck put to you with its findings',
          'design-schema-2': 'a design proposed with its words and its assets',
+         'google-preview-pool': 'a few reusable preview decks in Google Drive',
          'json-refusals': 'refusals a program can read',
          'native-charts': 'charts drawn as charts',
+         'neutral-native-composition': 'slides drawn as editable shapes',
+         'owned-google-previews': 'preview decks kept as your own',
+         'preview-repair-clusters': 'preview problems grouped for repair',
          'relative-records': 'records that move with the deck',
+         'render-bundles': 'a render kept with what it was made from',
          'review-google-renderer': 'a review rendered through Google Drive',
          'review-input-refusals': 'a review asked wrongly refused plainly',
          'review-packets': "every slide's review given in one call",
@@ -224,6 +235,15 @@ GALLERY = REFERENCES / 'gallery'    # one drawn slide for each relation, as JSON
 READ_MOST = 60_000      # characters of one guidance file that are handed on
 RELATIONS = ('order', 'dependency', 'hierarchy', 'membership', 'contrast', 'parallel',
              'overlap', 'quantity', 'none')   # what a slide can show, as the tool names them
+
+
+class TooOld(WorkspaceError):
+    """The slides tool here is older than MINIMUM. `version` is the version it said."""
+
+    def __init__(self, version: str):
+        super().__init__(f'harness-slides {version} is installed, and a deck needs '
+                         f'{MINIMUM} or newer. Update it, then try again.')
+        self.version = version
 
 
 class Refused(WorkspaceError):
@@ -367,8 +387,7 @@ class Slides:
             raise WorkspaceError('harness-slides did not say which version it is. Check '
                                  'that it is installed whole.')
         if _numbers(found) < _numbers(MINIMUM):
-            raise WorkspaceError(f'harness-slides {found} is installed, and a deck needs '
-                                 f'{MINIMUM} or newer. Update it, then try again.')
+            raise TooOld(found)
 
     def _call(self, *args: str) -> str:
         code, out, err = self.run([self.node, str(self.runtime / SCRIPT), *args])

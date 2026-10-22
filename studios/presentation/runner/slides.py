@@ -79,7 +79,8 @@ What a caller needs to know
 
 Added to the above
 ------------------
-- `Slides()` asks the tool for its version and refuses one older than MINIMUM.
+- `Slides()` asks the tool for its version and refuses one older than MINIMUM with
+  TooOld, a WorkspaceError that keeps the `version` it found.
 - Paths in what a call returns are text, as the tool printed them. Where the tool leaves
   something out, `preview` gives None: `contactSheet` for one slide, `fileId` and `url` for
   a local render. What else the tool said is still there, `critic` among them.
@@ -184,7 +185,7 @@ from workspace import WorkspaceError
 from runner import companion, slide_events
 
 VARIABLE = 'HARNESS_SLIDES_RUNTIME'
-MINIMUM = '0.13.1'
+MINIMUM = '0.16.0'      # the oldest runtime taken: the one the installer pins
 RENDERERS = ('drive', 'local')
 DRAWERS = ('local', 'google')   # how `review --file` draws a deck's pictures
 SCRIPT = Path('scripts') / 'harness-slides.mjs'
@@ -204,6 +205,15 @@ GALLERY = REFERENCES / 'gallery'    # one drawn slide for each relation, as JSON
 READ_MOST = 60_000      # characters of one guidance file that are handed on
 RELATIONS = ('order', 'dependency', 'hierarchy', 'membership', 'contrast', 'parallel',
              'overlap', 'quantity', 'none')   # what a slide can show, as the tool names them
+
+
+class TooOld(WorkspaceError):
+    """The slides tool here is older than MINIMUM. `version` is the version it said."""
+
+    def __init__(self, version: str):
+        super().__init__(f'harness-slides {version} is installed, and a deck needs '
+                         f'{MINIMUM} or newer. Update it, then try again.')
+        self.version = version
 
 
 class Refused(WorkspaceError):
@@ -357,8 +367,7 @@ class Slides:
             raise WorkspaceError('harness-slides did not say which version it is. Check '
                                  'that it is installed whole.')
         if _numbers(found) < _numbers(MINIMUM):
-            raise WorkspaceError(f'harness-slides {found} is installed, and a deck needs '
-                                 f'{MINIMUM} or newer. Update it, then try again.')
+            raise TooOld(found)
 
     def _call(self, *args: str) -> str:
         code, out, err = self.run([self.node, str(self.runtime / SCRIPT), *args])

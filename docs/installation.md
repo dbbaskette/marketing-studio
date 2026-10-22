@@ -114,7 +114,7 @@ locks are in `pins/companions.json`.
 
 Each companion lock names an exact `version`, `commit` and source `sha256`, and a
 minimum requirement: `requirement: ">=1.0.0"` for Harness Research and
-`requirement: ">=0.14.1"` for Harness Slides. Source installs, companion updates and
+`requirement: ">=0.16.0"` for Harness Slides. Source installs, companion updates and
 release bundles all use the exact lock. A missing companion, or one older than its
 requirement, is fetched at the locked commit and must match the locked checksum file
 for file; nothing is recomputed. The requirement only decides which already-installed
