@@ -17,9 +17,12 @@ What a caller needs to know
   never shares: the file as it was sent and, beside it, its text. The list of what was added
   is kept there too, in `index.json`. Nothing is written anywhere else.
 - An entry is {'name', 'bytes', 'readable', 'problem', 'id', 'title', 'file', 'original',
-  'sha256'}. `id` is a slug of the name, unique among the deck's documents. `file` is the
-  text's path from the deck's folder and `original` the sent file's. `problem` is a
-  sentence for a person when `readable` is false, else None.
+  'distinct', 'sha256'}. `id` is a slug of the name, unique among the deck's documents.
+  `file` is the text's path from the deck's folder and `original` the sent file's.
+  `distinct` is True when the file as sent is another document than its text (a PDF, a
+  Word file, a web page) and False for text and Markdown, which are their text: only a
+  distinct original is offered to a research check to read. `problem` is a sentence
+  for a person when `readable` is false, else None.
 - Text, Markdown, HTML and Word (.docx) are always read. A PDF is read with `pdftotext`
   when this computer has it, as fetched PDFs are; `accepts()` leaves `.pdf` out otherwise.
 - `add` refuses with WorkspaceError and a sentence: a type that is not taken, a document
@@ -74,6 +77,7 @@ NAME = 120                  # characters in a document's name
 UNPACKED = 40_000_000       # bytes of a Word file's XML that are unpacked
 TEXT = 8_000_000            # characters of text kept from one document
 IDENT = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
+SAME = ('.txt', '.md')     # endings whose file is the same document as its text
 SEPARATORS = '/\\:'
 # Characters that change the order a name is shown in, so it reads as another name.
 REORDERING = '\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069'
@@ -273,7 +277,32 @@ def _entry(root: Path, kept: dict) -> dict:
             'readable': readable, 'problem': None if readable else problem or UNREADABLE,
             'id': kept['id'], 'title': title, 'file': file if readable else None,
             'original': original,
+            'distinct': _distinct(root, kept, file, original),
             'sha256': kept.get('sha256') if isinstance(kept.get('sha256'), str) else None}
+
+
+def _differs(ending: str, data: bytes, text: str | None) -> bool:
+    """Whether a document as it was sent is another document than its text. A PDF, a Word
+    file or a web page is; a text or Markdown file is the same document, unless its text
+    reads otherwise than the file does."""
+    if ending not in SAME or text is None:
+        return True
+    try:
+        return worker_tools.tidy(_decoded(data).encode('utf-8', 'replace').decode('utf-8')) != text
+    except _Unreadable:
+        return True
+
+
+def _distinct(root: Path, kept: dict, file: str, original: str) -> bool:
+    """`_differs` for a document in the list: as it was noted when it was added, or, for a
+    list from before that was noted, worked out from its files."""
+    if isinstance(kept.get('distinct'), bool):
+        return kept['distinct']
+    try:
+        return _differs(_ending(kept['name']), (root / original).read_bytes(),
+                        (root / file).read_bytes().decode('utf-8'))
+    except (OSError, UnicodeDecodeError):
+        return True
 
 
 def _title(name: str) -> str:
@@ -519,6 +548,7 @@ def add(root: Path, name: str, data: bytes, title: str | None = None) -> dict:
                 _write(file, text.encode('utf-8'))
             kept.append({'name': plain, 'bytes': len(data), 'readable': text is not None,
                          'problem': problem, 'id': ident,
+                         'distinct': _differs(ending, data, text),
                          'sha256': hashlib.sha256(data).hexdigest(),
                          **({'title': title} if title else {})})
             _store(root, kept)

@@ -126,3 +126,55 @@ class SynthesisIntegrationTests(StudioCase):
         self.workers.then('research-result', self.author, self.checker)
         self.decide(root, 'research', 'revise', 'Explain the limits again.')
         self.assertIn('Restore it before continuing', str(self.view(root)['problem']))
+
+
+@unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME for the real helper integration.')
+class SuppliedOriginalTests(StudioCase):
+    """A document the person supplied is checked against what they sent when that is a
+    document of its own, and against its text when its text is all it is."""
+
+    def setUp(self):
+        super().setUp()
+        self.research = research.Research(Path(RUNTIME))
+        self.read = []
+        self.workers.then('research-result', self.author, self.checker)
+
+    def author(self, tools, job):
+        payload = json.loads(tools.read_input('research-task')[1])
+        source = tools._index()[0]
+        value = dossier(payload['worker'], source['file'], source['url'], 'selected')
+        accepted = tools.submit_artifact('research-result', json.dumps(value))
+        self.assertTrue(accepted[0], accepted)
+
+    def checker(self, tools, job):
+        payload = json.loads(tools.read_input('research-task')[1])
+        result = review(payload['review_template'])
+        for entry, attested in zip(tools._index(), result['originals']):
+            if 'original_sha256' in attested:
+                ok, said = tools.read_source(entry['id'], original=True)
+                self.read.append(said)
+                attested['read_original'] = ok
+                if not ok:
+                    attested['access_error'] = said
+        accepted = tools.submit_artifact('research-result', json.dumps(result))
+        self.assertTrue(accepted[0], accepted)
+
+    def researched(self):
+        root = self.start(source_scope='supplied-only')
+        self.send(root, 'handbook.md', TEXT)
+        self.engine.supply(root, 'done')
+        self.to_gate(root, 'research')
+        self.assertIsNone(self.view(root)['problem'], self.view(root))
+        return research_contract.read_bundle(root / 'research')[0]
+
+    def test_a_markdown_document_is_checked_against_its_text_alone(self):
+        facts = self.researched()
+        self.assertEqual(self.read, [])
+        self.assertNotIn('original_file', facts['sources'][0])
+
+    def test_a_document_of_its_own_is_checked_against_the_file_that_was_sent(self):
+        self.documents.distinct = True
+        facts = self.researched()
+        self.assertEqual(len(self.read), 1)
+        self.assertIn('original: sources/supplied/handbook.md', self.read[0])
+        self.assertEqual(facts['sources'][0]['original_file'], 'sources/supplied/handbook.md')

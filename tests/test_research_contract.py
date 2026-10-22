@@ -88,6 +88,134 @@ class ReviewRefusedTests(unittest.TestCase):
         self.assertNotIn('x' * 161, str(long))
 
 
+class FakeHelper:
+    """Harness Research's synthesis commands as Workflow.run reads them: each dossier saved,
+    a review template for it, and a review judged as the helper judges one, where an
+    original not read refuses it."""
+
+    def __init__(self):
+        self.saved, self.actions, self.accepted = [], [], False
+
+    def __call__(self, *args):
+        action, case = args[1], Path(args[3])
+        self.actions.append(action)
+        if action == 'save':
+            dossier = json.loads((case / 'dossier.json').read_text())
+            self.saved.append(dossier)
+            for name in ('report.md', 'brief.md', 'evidence.md'):
+                contract.write(case, 'research/' + name, 'Synthetic ' + name)
+            prose = [f"{section['id']}:{number}" for section in dossier['sections']
+                     for number, _ in enumerate(section['blocks'])]
+            prose += [f"brief:{section['id']}:{number}" for section in dossier['brief']
+                      for number, _ in enumerate(section['blocks'])]
+            pending = {'verdict': 'pending', 'note': ''}
+            return {'status': 'draft', 'review_template': {
+                'schema': 2, 'digest': f'digest-{len(self.saved)}',
+                'originals': [{'source': source['id'], 'sha256': 'capture-hash',
+                               **({'original_sha256': 'original-hash'}
+                                  if source.get('original_file') else {}),
+                               'read_original': False} for source in dossier['sources']],
+                'facts': [{'id': fact['id'], **pending} for fact in dossier['facts']],
+                'findings': [{'id': finding['id'], **pending} for finding in dossier['findings']],
+                'prose': [{'id': ident, **pending} for ident in prose],
+                'assessment': {'coverage': 'pending', 'usefulness': 'pending', 'note': ''}}}
+        if action == 'review':
+            given = json.loads((case / 'review.json').read_text())
+            self.accepted = (all(item.get('read_original') for item in given['originals'])
+                             and all(item['verdict'] == 'supported'
+                                     for group in ('facts', 'findings', 'prose')
+                                     for item in given[group])
+                             and given['assessment'].get('coverage') == 'accurate'
+                             and given['assessment'].get('usefulness') == 'adequate')
+            return {'status': 'complete' if self.accepted else 'needs-revision'}
+        return {'status': 'complete' if self.accepted else 'needs-revision'}
+
+
+def helper_runtime(folder):
+    """The references a workflow hands its workers, and nothing else of the helper."""
+    (folder / 'references').mkdir(parents=True)
+    for name in ('investigate.md', 'synthesize.md', 'studio-handoff.md', 'review-synthesis.md'):
+        (folder / 'references' / name).write_text('Synthetic guidance: ' + name)
+    return folder
+
+
+class WorkflowCase(unittest.TestCase):
+    """One workflow against FakeHelper, with a supplied document as its one source."""
+
+    FILE = 'sources/supplied/notes-pdf.txt'
+    ORIGINAL = 'sources/supplied/notes-pdf.original.pdf'
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        self.runtime = helper_runtime(self.root / 'helper')
+        self.capture = self.root / 'kept/notes.txt'
+        self.capture.parent.mkdir()
+        self.capture.write_text(TEXT)
+        self.original = self.root / 'kept/notes.original.pdf'
+        self.original.write_bytes(b'%PDF-1.7 synthetic')
+        self.helper, self.calls = FakeHelper(), []
+        self.task = dict(topic='Fictional example', audience='New learners', purpose='Teach it',
+                         scope='Synthetic only', source_mode='selected')
+
+    def captured(self, original=True):
+        return [dict(file=self.FILE, path=self.capture, origin='supplied notes.pdf',
+                     offered=True, **(dict(original=self.ORIGINAL, original_path=self.original)
+                                      if original else {}))]
+
+    def authored(self, payload, named=None):
+        value = dossier(payload['worker'], self.FILE, 'supplied notes.pdf', 'selected')
+        if named:
+            value['sources'][0]['original_file'] = named
+        return value
+
+    def run_with(self, invoke):
+        def counted(phase, guidance, payload, sources, fetch):
+            self.calls.append((phase, sources))
+            return invoke(phase, guidance, payload, sources, fetch)
+        with mock.patch.object(contract, 'read_bundle', return_value=({'facts': 'read'}, {})):
+            return contract.Workflow(self.runtime, self.helper).run(self.root, self.task, counted)
+
+
+class OriginalClaimTests(WorkflowCase):
+    """An original is claimed for a source only when the studio offered one."""
+
+    def test_an_original_the_studio_did_not_offer_is_not_claimed(self):
+        # A previous draft named the Markdown export of a Google Doc as an original; the
+        # studio no longer offers one, because the export is its capture.
+        def invoke(phase, guidance, payload, sources, fetch):
+            if phase == 'author':
+                value = self.authored(payload, 'sources/supplied/notes-md.original.md')
+                return json.dumps(value), self.captured(original=False)
+            return json.dumps(review(payload['review_template'])), []
+        self.run_with(invoke)
+        self.assertNotIn('original_file', self.helper.saved[0]['sources'][0])
+        self.assertNotIn('original', self.calls[1][1][0])
+        self.assertNotIn('original_sha256', json.loads(
+            (self.root / contract.CASE / 'review.json').read_text())['originals'][0])
+
+    def test_an_offered_original_is_claimed_saved_and_offered_to_the_check(self):
+        def invoke(phase, guidance, payload, sources, fetch):
+            if phase == 'author':
+                return json.dumps(self.authored(payload)), self.captured()
+            return json.dumps(review(payload['review_template'])), []
+        self.run_with(invoke)
+        self.assertEqual(self.helper.saved[0]['sources'][0]['original_file'], self.ORIGINAL)
+        case = self.root / contract.CASE
+        self.assertEqual((case / self.ORIGINAL).read_bytes(), b'%PDF-1.7 synthetic')
+        offered = self.calls[1][1][0]
+        self.assertEqual((offered['original'], offered['original_path']),
+                         (self.ORIGINAL, case / self.ORIGINAL))
+
+    def test_naming_another_original_than_the_one_offered_is_refused(self):
+        def invoke(phase, guidance, payload, sources, fetch):
+            return json.dumps(self.authored(payload, 'sources/elsewhere.pdf')), self.captured()
+        with self.assertRaisesRegex(ValueError, 'did not capture'):
+            self.run_with(invoke)
+
+
+
 def fake_runtime(folder, version, text):
     """Just enough of an installed helper for its capability to be described."""
     (folder / 'scripts/lib').mkdir(parents=True)

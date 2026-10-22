@@ -1214,6 +1214,9 @@ class Documents:
 
     def __init__(self, pdf: bool = False):
         self.pdf, self.kept = pdf, {}
+        # Only text and Markdown are read here, and each is its text; a test that needs an
+        # original of its own says so.
+        self.distinct = False
 
     def accepts(self) -> tuple[str, ...]:
         return tuple(kind for kind in self.TYPES if kind != '.pdf' or self.pdf)
@@ -1250,7 +1253,7 @@ class Documents:
         entry = {'name': name, 'bytes': len(data), 'readable': problem is None,
                  'problem': problem, 'id': ident, 'title': Path(name).stem,
                  'file': f'{self.FOLDER}/{ident}.text', 'original': f'{self.FOLDER}/{name}',
-                 'sha256': hashlib.sha256(data).hexdigest()}
+                 'distinct': self.distinct, 'sha256': hashlib.sha256(data).hexdigest()}
         self.kept.setdefault(str(root), []).append(entry)
         return dict(entry)
 

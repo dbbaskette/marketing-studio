@@ -321,14 +321,19 @@ class Workflow:
                         raise ValueError('Research changed a source permission.')
                     if source.get('origin') != captured.get('origin', captured.get('url')):
                         raise ValueError('Research changed a captured source origin.')
-                    if source.get('original_file') not in (None, captured.get('original')):
+                    if captured.get('original') and source.get('original_file') not in (
+                            None, captured['original']):
                         raise ValueError('Research named an original that the studio did not capture.')
                     for key, path_key in (('file', 'path'), ('original', 'original_path')):
                         name, path = captured.get(key), captured.get(path_key)
                         if name and path:
                             write(case, name, Path(path).read_bytes())
+                    # The studio says which sources have an original of their own: one it
+                    # did not offer, as a previous draft's may name, is not claimed.
                     if captured.get('original') and permission == 'selected':
                         source['original_file'] = captured['original']
+                    else:
+                        source.pop('original_file', None)
                 write(case, 'dossier.json', json.dumps(dossier))
                 status = self.command(case, 'save', 'dossier.json', worker)
                 # Offer only the exact captures saved in this dossier to the checker.
@@ -473,6 +478,8 @@ def refused(value, spec):
             permission = entry.get('permission') or ('selected' if entry.get('offered', True) else 'public')
             if entry.get('original') and permission == 'selected':
                 source['original_file'] = entry['original']
+            else:
+                source.pop('original_file', None)
         write(case, 'dossier.json', json.dumps(dossier))
         try:
             done = subprocess.run(
@@ -492,8 +499,11 @@ def refused(value, spec):
 def native(engine, root, run, task, sources, product):
     """Bridge the common workflow to each studio's existing confined worker transport."""
     from runner import worker_tools, documents, companion
-    originals = {item['file']: item['original'] for item in documents.listed(root)
-                 if item.get('file') and item.get('original')}
+    # Only an original that is another document than its capture (a PDF, a Word file, a web
+    # page) is offered: a Markdown or text document is its capture.
+    kept = getattr(engine, 'documents', None) or documents   # the engine's own, where it has one
+    originals = {item['file']: item['original'] for item in kept.listed(root)
+                 if item.get('file') and item.get('original') and item.get('distinct', True)}
     sources = [{**source, **({'original': originals[source['file']],
                              'original_path': inside(root, originals[source['file']])}
                             if source.get('file') in originals else {})} for source in sources]

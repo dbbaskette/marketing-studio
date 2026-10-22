@@ -128,3 +128,61 @@ class SynthesisIntegrationTests(StudioCase):
         self.workers.then('research-result', self.author, self.checker)
         self.decide(root, decision='changes', note='Explain this boundary.')
         self.assertIn('Restore it before continuing', str(self.view(root)['problem']))
+
+
+@unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME for the real helper integration.')
+class SuppliedOriginalTests(StudioCase):
+    """A document the person supplied is checked against what they sent: a web page against
+    its own file, a Markdown document against its text, which is all it is."""
+
+    PAGE = ('<html><body><p>' + TEXT + '</p></body></html>').encode()
+
+    def setUp(self):
+        super().setUp()
+        self.research = research.Research(Path(RUNTIME))
+        self.read = []
+        self.workers.then('research-result', self.author, self.checker)
+
+    def author(self, tools, job):
+        payload = json.loads(tools.read_input('research-task')[1])
+        source = tools._index()[0]
+        value = dossier(payload['worker'], source['file'], source['url'], 'selected')
+        value['source_mode'] = 'mixed'
+        accepted = tools.submit_artifact('research-result', json.dumps(value))
+        self.assertTrue(accepted[0], accepted)
+
+    def checker(self, tools, job):
+        payload = json.loads(tools.read_input('research-task')[1])
+        result = review(payload['review_template'])
+        for entry, attested in zip(tools._index(), result['originals']):
+            self.assertTrue(tools.read_source(entry['id'])[0])
+            if 'original_sha256' in attested:
+                ok, said = tools.read_source(entry['id'], original=True)
+                self.read.append(said)
+                attested['read_original'] = ok
+                if not ok:
+                    attested['access_error'] = said
+        accepted = tools.submit_artifact('research-result', json.dumps(result))
+        self.assertTrue(accepted[0], accepted)
+
+    def deck(self, name, data):
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'automatic'}):
+            return self.start(route='document', source={'kind': 'upload', 'name': name},
+                              uploads={name: data}, research=True)
+
+    def test_a_supplied_web_page_is_checked_against_the_file_that_was_sent(self):
+        root = self.deck('notes.html', self.PAGE)
+        self.assertIsNone(self.view(root)['problem'], self.view(root))
+        self.assertEqual(len(self.read), 1)
+        self.assertIn('original: sources/supplied/notes-html.original.html', self.read[0])
+        self.assertIn('<p>Complete synthetic source context.', self.read[0])
+        facts, _ = research_contract.read_bundle(root / 'research')
+        self.assertEqual(facts['sources'][0]['original_file'],
+                         'sources/supplied/notes-html.original.html')
+
+    def test_a_supplied_markdown_document_is_its_own_capture(self):
+        root = self.deck('notes.md', TEXT.encode())
+        self.assertIsNone(self.view(root)['problem'], self.view(root))
+        self.assertEqual(self.read, [])
+        facts, _ = research_contract.read_bundle(root / 'research')
+        self.assertNotIn('original_file', facts['sources'][0])
