@@ -73,6 +73,7 @@ const STEERED = {
   resume: 'Carrying on.',
   stop: 'Stopped. Everything made so far is kept.',
   retry: 'Trying again.',
+  'more-time': 'Trying again, with twice the time for each step.',
   undo: 'The last step was undone. It carries on from there.',
 };
 const AGENTS = ['claude', 'codex'];
@@ -3461,7 +3462,8 @@ function stepsCard(run) {
 // What went wrong, what was kept, and the one thing to do about it.
 function problemPart(run, lead) {
   const found = run.problem;
-  const label = found.action === 'retry' ? 'Try again' : 'Resume';
+  const label = { retry: 'Try again', 'more-time': 'Give it more time and try again' }[found.action]
+    || 'Resume';
   const go = found.action && !theirs(run)
     ? capsule(label, lead ? 'filled' : '', () => steer(found.action, go), 'problem-action')
     : null;
@@ -3471,22 +3473,79 @@ function problemPart(run, lead) {
   const failed = list(run.timeline).find((row) => row.failed)
     || list(run.timeline).find((row) => row.state === 'current');
   let again = null;
-  if (found.action === 'retry' && failed) {
+  if (found.action === 'more-time') {
+    again = found.seconds ? make('p', 'quiet', moreTime(found, 'deck')) : null;
+  } else if (found.action === 'retry' && found.research) {
+    again = make('p', 'quiet', researchAgain(found.research));
+  } else if (found.action === 'retry' && failed) {
     const took = [given(failed.seconds) ? lasted(failed.seconds) : '',
       given(failed.dollars) ? money(failed.dollars) : ''].filter(Boolean);
     const sections = run.build_sections;
-    // A slide build keeps the sections already drawn; any other step starts over.
+    // A slide build keeps the sections already drawn; research keeps the answered
+    // questions; any other step starts over.
     const does = failed.stage === 'build' && sections && sections.total
       ? 'Try again keeps ' + sections.kept + ' of ' + count(sections.total, 'section', 'sections')
         + '; the rest are drawn again'
-      : 'Try again re-runs ' + failed.label + ' from the start';
-    again = make('p', 'quiet', does + (took.length ? '; the last try took ' + took.join(' and ')
-      : '') + '.');
+      : failed.name === 'research'
+        ? 'Try again researches the questions still unanswered and keeps the answered ones'
+        : 'Try again re-runs ' + failed.label + ' from the start';
+    again = make('p', 'quiet', does + (took.length ? '; the tries so far took '
+      + took.join(' and ') : '') + '.');
+  }
+  // The research check's objections, every one under its group, read where the stop is.
+  let read = null;
+  const shown = found.objections ? make('div', 'card-part') : null;
+  if (found.objections) {
+    read = capsule('Read every objection', 'quiet', async () => {
+      read.disabled = true;
+      try {
+        const file = await ask('file', { path: run.path, name: found.objections });
+        shown.replaceChildren(documentPart('The research check', file.text));
+      } catch (failure) {
+        shown.replaceChildren(make('p', 'problem', failure.message));
+      } finally {
+        read.disabled = false;
+      }
+    }, 'read-objections');
   }
   return callout(found.state === 'failed' ? 'late' : '', make('h2', 'aside-title', title),
     add(make('p', ''), make('strong', '', 'What happened: '), found.why || ''),
-    found.kept ? add(make('p', ''), make('strong', '', 'What was kept: '), found.kept) : null,
-    again, go ? add(make('div', 'bar'), go) : null);
+    found.kept ? keptPart(found.kept) : null,
+    again, go || read ? add(make('div', 'bar'), go, read) : null, shown);
+}
+
+// What Try again does at research done as one report and one independent check: it carries
+// on from the saved draft for up to as many more rounds, and the last rounds' time and money
+// say what that may take.
+function researchAgain(research) {
+  const took = [research.seconds ? lasted(research.seconds) : '',
+    given(research.dollars) ? money(research.dollars) : ''].filter(Boolean);
+  const rounds = research.rounds === 1 ? 'the last round' : research.rounds
+    ? 'the last ' + count(research.rounds, 'round', 'rounds') : 'the last try';
+  const most = research.most || 3;
+  return (research.drafted
+    ? 'Try again continues from the saved draft and runs up to '
+      + count(most, 'more round', 'more rounds')
+    : 'Try again runs the research again, up to ' + count(most, 'round', 'rounds'))
+    + ' of writing and checking'
+    + (took.length ? '; ' + rounds + ' took ' + took.join(' and ') : '') + '.';
+}
+
+// What "Give it more time and try again" does, after a step ran out of the time it may take.
+function moreTime(found, thing) {
+  if (!found.seconds) return '';
+  return 'Give it more time and try again lets each step of this ' + thing + ' take up to '
+    + lasted(2 * found.seconds) + ', and runs this step again from the start. Raising the '
+    + 'limit in Settings, under Limits, is the other way on, for every ' + thing + '.';
+}
+
+// What a stop kept: a sentence and, where it names things one a line, those as a list.
+function keptPart(text) {
+  const lines = String(text || '').split('\n').map((line) => line.trim()).filter(Boolean);
+  const items = lines.filter((line) => line.startsWith('- ')).map((line) => line.slice(2));
+  const said = lines.filter((line) => !line.startsWith('- ')).join(' ');
+  return add(make('div', 'kept'), add(make('p', ''), make('strong', '', 'What was kept: '), said),
+    items.length ? bullets(items, 'plain kept-list') : null);
 }
 
 // A question from a worker, with a box to answer in. What is typed is kept as it is typed.

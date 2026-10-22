@@ -3976,6 +3976,62 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.asked(result, 'run'),
                          [f'/api/run?{urlencode({"path": self.root})}'] * 2)
 
+    def test_a_step_that_ran_out_of_time_offers_more_time(self):
+        self.started()
+        said = ('Draft the research plan ran out of the time a step may take: its last try was '
+                'stopped after 15 minutes, and it did not work in 3 tries. That limit, 15 '
+                'minutes a step, is in Settings, under Limits.')
+        failed = a_run('failed', said, steps=[
+            a_step('research-plan', 'Draft the research plan', 'agent', 'failed', attempts=3,
+                   seconds=2700, dollars=0.9),
+            *steps()[1:]], problem={
+                'what': said, 'kept': 'Everything kept before this step is still here.',
+                'action': 'more-time', 'label': 'Give it more time and try again',
+                'seconds': 900})
+        answers = self.answers(**{'GET /api/trainings': [self.listed('failed', said, needs=True)],
+                                  'GET /api/training': [self.detail('failed', said)],
+                                  'GET /api/run': [failed], 'POST /api/run': [failed]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'snapshot': 'failed'},
+                                         {'click': 'Give it more time and try again'}])
+        down = result['snapshots']['failed']
+        self.assertEqual(down['filled'], ['Give it more time and try again'])
+        self.assertIn('Give it more time and try again lets each step of this training take up '
+                      'to 30 minutes, and runs this step again from the start. Raising the limit '
+                      'in Settings, under Limits, is the other way on, for every training.',
+                      down['text'])
+        self.assertEqual(self.posts(result), [('/api/run', {'path': str(self.root),
+                                                            'action': 'more-time'})])
+
+    def test_a_stop_at_the_research_says_try_again_carries_on_from_the_draft(self):
+        self.started()
+        broke = 'The independent check of the research still needs changes after 3 rounds.'
+        failed = a_run('failed', broke, steps=[
+            *steps('done', 'done', 'done')[:3],
+            a_step('research', 'Do the research', 'agent', 'failed', attempts=6, seconds=2880,
+                   dollars=9.8),
+            *steps()[4:]], problem={
+                'what': broke, 'action': 'retry', 'label': 'Try again',
+                'kept': 'The draft report is kept. The groups the check objected to:\n'
+                        '- 12 facts the check calls narrow (f01: Too broad.)\n'
+                        '- coverage needs revision (Alternatives are missing.)',
+                'research': {'rounds': 3, 'jobs': 6, 'seconds': 2880, 'dollars': 9.8,
+                             'most': 3, 'drafted': True}})
+        answers = self.answers(**{'GET /api/trainings': [self.listed('failed', broke, needs=True)],
+                                  'GET /api/training': [self.detail('failed', broke)],
+                                  'GET /api/run': [failed]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'snapshot': 'failed'}])
+        down = result['snapshots']['failed']
+        for shown in ('What was kept: The draft report is kept. The groups the check objected to:',
+                      '12 facts the check calls narrow (f01: Too broad.)',
+                      'coverage needs revision (Alternatives are missing.)',
+                      'Try again continues from the saved draft and runs up to 3 more rounds of '
+                      'writing and checking; the last 3 rounds took 48 minutes and $9.80.'):
+            self.assertIn(shown, down['text'])
+        self.assertNotIn('from the start', down['text'])
+        self.assertNotIn('- 12 facts', down['text'], 'each group is an item of a list')
+
     def test_a_run_is_watched_from_working_to_a_gate_to_a_failure_to_done(self):
         self.started()
         going = 'Drafting the research questions.'
@@ -4084,8 +4140,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       'not be reached.',
                       'What was kept: Your answers and the approved research questions.',
                       # What trying again does, and roughly what it costs, before it is pressed.
-                      'Try again re-runs the research from the start (both jobs); the tries '
-                      'so far took 13 minutes and $1.28.',
+                      'Try again researches the questions still unanswered and keeps the '
+                      'answered ones. The tries so far took 13 minutes and $1.28.',
                       'Failed', '3 tries · 13 minutes · $1.28',
                       'The agent could not be reached.'):
             self.assertIn(shown, down['text'])

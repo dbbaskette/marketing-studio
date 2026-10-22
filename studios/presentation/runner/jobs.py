@@ -14,10 +14,14 @@ What a caller needs to know
 - One try at an agent step (`Jobs._agent`) is an empty job folder under `agents.staging()`,
   a brief, a worker and results taken only from what the worker tools accepted. It is tried
   up to ATTEMPTS times, with the reason for the last failure added to its task; then the
-  deck stops and says what went wrong. An agent that cannot be used stops it at once. A
-  worker's question stops the run until the person answers; the answers go into the task
-  of the next try, and after QUESTIONS answers the worker may ask no more.
-- A deck that has spent what it may stops and asks before the next worker starts.
+  deck stops and says what went wrong, and a step whose last try ran out of time offers
+  more time (`stops.MORE_TIME`). An agent that cannot be used, or whose account refused the
+  job, stops it at once and points at the Status screen. A worker's question stops the run
+  until the person answers; the answers go into the task of the next try, and after
+  QUESTIONS answers the worker may ask no more.
+- A deck that has spent what it may stops and asks before the next worker starts, and so
+  does one with less than `stops.floor` left. A job that spent all the deck had left is not
+  a failed try: the deck stops in the same way, to carry on.
 - `Jobs` is a part of the engine and is not used alone: it reads and writes through the
   engine's `files`, `_load`, `_store`, `_commit`, `adapter` and `_look`.
 """
@@ -35,7 +39,7 @@ from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import home
-from studio_core import model_profiles
+from studio_core import model_profiles, research_contract, stops
 from workspace import WorkspaceError
 
 from runner import agents, briefs, settings, stages, worker_tools
@@ -76,10 +80,12 @@ def tries(record: dict | None, step: str) -> dict:
 
 
 def attempts(record: dict, step: str | None = None) -> list[dict]:
-    """Every try the record holds, or the tries at one step and the jobs under it."""
+    """Every try the record holds, or the tries at one step and the jobs under it. The
+    research step's jobs include those recorded before they were named for it."""
     return [attempt for name, entry in (record.get('steps') or {}).items()
             if isinstance(entry, dict)
-            and (step is None or name == step or name.startswith(f'{step}:'))
+            and (step is None or name == step or name.startswith(f'{step}:')
+                 or (step == 'research' and name in research_contract.LEGACY_JOBS))
             for attempt in entry.get('tries') or []]
 
 
@@ -206,14 +212,16 @@ class Jobs:
     """The engine's part that runs workers: one job, its tries, its questions and limits."""
 
     def _problem(self, root: Path, step: str | None, state: str, what: str, kept: str,
-                 action: str | None = 'retry', limit: bool = False) -> None:
+                 action: str | None = 'retry', limit: bool = False,
+                 detail: dict | None = None) -> None:
         """Stop a deck in a state that says what went wrong and offers one action. `limit`
-        says it stopped because it spent what it may."""
+        says it stopped because it spent what it may; `detail` is kept with the halt for
+        what its action needs to know."""
         with self.files:
             record = self._load(root)
             record['halted'] = {'state': state, 'step': step, 'why': what, 'kept': kept,
                                 'action': action, 'at': home.now(),
-                                **({'limit': True} if limit else {})}
+                                **({'limit': True} if limit else {}), **(detail or {})}
             self._store(root, record)
             self._commit(root, f'stop. {what[:160].rstrip()}')
 
@@ -332,7 +340,7 @@ class Jobs:
 
     def _may_go(self, root: Path) -> bool:
         """Whether a worker may start now. Stops the deck, and asks, once it has spent what
-        it may."""
+        it may, or has too little left to start a job."""
         with self.files:
             record = self._load(root)
             if self._closing or self._resting(record):
@@ -342,16 +350,33 @@ class Jobs:
                 self._problem(root, None, 'stopped', shared, 'Everything made so far is kept.',
                               'resume')
                 return False
-            if self._left(record) > 0:
+            left = self._left(record)
+            if left > 0 and left >= stops.floor(self._limit(record)):
                 return True
-            dollars = spent(record)[0] or 0.0
-            limit = (record.get('limits') or {}).get('dollars') \
-                or settings.load().deck_dollars
-            self._problem(root, None, 'stopped', (
-                f'This deck has spent ${dollars:,.2f}. It stops and asks each time it has spent '
-                f'another ${limit:,.2f}.'), 'Everything made so far is kept.', 'resume',
-                limit=True)
+            self._spend_stop(root)
             return False
+
+    def _limit(self, record: dict) -> float:
+        """What a deck may spend before it asks."""
+        return (record.get('limits') or {}).get('dollars') or settings.load().deck_dollars
+
+    def _spend_stop(self, root: Path, label: str | None = None) -> None:
+        """Stop because the deck spent what it may before it asks, or has too little left
+        to start a job; `label` names a step stopped mid-way for it."""
+        record = self._load(root)
+        what, kept = stops.spent('deck', spent(record)[0], self._limit(record),
+                                 self._left(record), label, go='Resume')
+        self._problem(root, None, 'stopped', what, kept, 'resume', limit=True)
+
+    def _out_of_time(self, root: Path, step: str, label: str, record: dict,
+                     tries: int) -> None:
+        """Stop at a step whose last try ran out of the time a step may take, saying so
+        and offering more time."""
+        seconds = int((record.get('limits') or {}).get('step_seconds')
+                      or settings.load().step_seconds)
+        own = bool(record.get('more_time')) and seconds == record['more_time']
+        self._problem(root, step, 'failed', stops.timed_out(label, seconds, tries, 'deck', own),
+                      KEPT, stops.MORE_TIME, detail={'seconds': seconds})
 
     def _folder(self, root: Path, name: str, number: int) -> Path:
         base, stem = agents.staging(), f'{root.name}--{folder_name(name)}-'
@@ -368,10 +393,12 @@ class Jobs:
         next writer. History records a note once, under the job that first took it; a job
         of a later step closes the notes of the steps before it."""
         base = name.partition(':')[0]
+        # The independent research check judges what was written: it takes no note.
+        checking = (research_contract.job_round(name) or ('',))[0] == 'review'
         with self.files:
             record = self._load(root)
             used, pending = list(record.get('notes_used') or []), record.get('pending_note')
-            taken = bool(pending) and 'review' not in work.prepared
+            taken = bool(pending) and 'review' not in work.prepared and not checking
             closed = [note for note in used
                       if not note.get('done') and note['step'].partition(':')[0] != base]
             for note in closed:
@@ -387,7 +414,7 @@ class Jobs:
                     self._commit(root, f'the note for the next step goes with: {doing}')
         carried = [note['text'] for note in used
                    if not note.get('done') and note['step'].partition(':')[0] == base]
-        if not carried:
+        if not carried or checking:
             return work
         return replace(work, task=work.task + '\n\n' + FROM_AUTHOR.format(
             text='\n\n'.join(quoted(text) for text in carried)))
@@ -466,21 +493,28 @@ class Jobs:
     def _failed(self, root: Path, name: str, label: str, outcome: agents.Outcome,
                 started_at: str, detail: str, question: bool = False, guard=None) -> None:
         """Note a try that did not work. After the last one a step may have, or when the
-        agent cannot be used at all, the deck stops and says so."""
+        agent cannot be used at all, the deck stops and says so: a step whose last try ran
+        out of time offers more time. A job that spent all the deck had left is not a failed
+        try: the deck stops as it does for money, to carry on."""
+        budget = outcome.reason == 'limit' and outcome.budget
         with self.files:
             record = self._load(root)
             if self._superseded(root, record, guard, name, started_at, outcome):
                 return
-            entry = self._tried(record, name, started_at, outcome.seconds, 'failed', detail,
-                                **self._cost(outcome))
+            entry = self._tried(record, name, started_at, outcome.seconds,
+                                'limit' if budget else 'failed', detail, **self._cost(outcome))
             self._store(root, record)
-            self._commit(root, f'a try at this step did not work: {label}')
+            self._commit(root, f'a step spent what the deck may: {label}' if budget
+                         else f'a try at this step did not work: {label}')
         step = name.partition(':')[0]
-        if outcome.reason == 'unavailable':
-            self._problem(root, step, 'failed',
-                          f"{self._title(record.get('agent'))} could not be used. {detail}",
-                          KEPT)
+        if budget:
+            self._spend_stop(root, label)
+        elif stops.agent_stopped('', outcome, detail) is not None:
+            self._problem(root, step, 'failed', stops.agent_stopped(
+                self._title(record.get('agent')), outcome, detail), KEPT)
         elif not question and entry['failed'] >= ATTEMPTS:
+            if outcome.reason == 'timeout':
+                return self._out_of_time(root, step, label, record, ATTEMPTS)
             self._problem(root, step, 'failed', (
                 f'This step did not work in {ATTEMPTS} tries: {label}. The last one: '
                 f'{detail}'), KEPT)

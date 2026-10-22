@@ -132,6 +132,7 @@ const STEERED = {
   stop: 'Stopped. The step in hand was ended and its work so far is lost; everything '
     + 'finished before it is kept.',
   retry: 'Trying again.',
+  'more-time': 'Trying again, with twice the time for each step.',
   'finish-level': 'It finishes this level, then waits. Resume it when you are ready for the next.',
 };
 const AGENTS = ['claude', 'codex'];
@@ -4675,7 +4676,10 @@ function actionSays(run, found) {
   if (found.action === 'resume') {
     return 'Carry on starts that step again; everything finished before it is kept.';
   }
+  if (found.action === 'more-time') return moreTime(found, 'training');
   if (found.action !== 'retry') return '';
+  // Research done as one report and one independent check carries on from its saved draft.
+  if (found.research) return researchAgain(found.research);
   const step = failedStep(run, found);
   const research = /^research(:|$)/.test(String(found.step || (step && step.id) || ''));
   const taken = [];
@@ -4683,12 +4687,45 @@ function actionSays(run, found) {
   if (step && given(step.dollars)) taken.push(money(step.dollars));
   const before = taken.length ? 'the tries so far took ' + taken.join(' and ') + '.' : '';
   if (research) {
-    // Only what was recorded is said; with nothing recorded yet, what kind of cost it is.
-    return 'Try again re-runs the research from the start (both jobs); '
-      + (before || 'it takes the tokens of a full research job.');
+    return 'Try again researches the questions still unanswered and keeps the answered ones.'
+      + (before ? ' ' + capital(before) : '');
   }
   return 'Try again re-runs this step from the start' + (step ? ': ' + lower(step.label)
     : '') + '.' + (before ? ' ' + capital(before) : '');
+}
+
+// What Try again does at research done as one report and one independent check: it carries
+// on from the saved draft for up to as many more rounds, and the last rounds' time and money
+// say what that may take.
+function researchAgain(research) {
+  const took = [research.seconds ? lasted(research.seconds) : '',
+    given(research.dollars) ? money(research.dollars) : ''].filter(Boolean);
+  const rounds = research.rounds === 1 ? 'the last round' : research.rounds
+    ? 'the last ' + count(research.rounds, 'round', 'rounds') : 'the last try';
+  const most = research.most || 3;
+  return (research.drafted
+    ? 'Try again continues from the saved draft and runs up to '
+      + count(most, 'more round', 'more rounds')
+    : 'Try again runs the research again, up to ' + count(most, 'round', 'rounds'))
+    + ' of writing and checking'
+    + (took.length ? '; ' + rounds + ' took ' + took.join(' and ') : '') + '.';
+}
+
+// What "Give it more time and try again" does, after a step ran out of the time it may take.
+function moreTime(found, thing) {
+  if (!found.seconds) return '';
+  return 'Give it more time and try again lets each step of this ' + thing + ' take up to '
+    + lasted(2 * found.seconds) + ', and runs this step again from the start. Raising the '
+    + 'limit in Settings, under Limits, is the other way on, for every ' + thing + '.';
+}
+
+// What a stop kept: a sentence and, where it names things one a line, those as a list.
+function keptPart(text) {
+  const lines = String(text || '').split('\n').map((line) => line.trim()).filter(Boolean);
+  const items = lines.filter((line) => line.startsWith('- ')).map((line) => line.slice(2));
+  const said = lines.filter((line) => !line.startsWith('- ')).join(' ');
+  return add(make('div', 'kept'), add(make('p', ''), make('strong', '', 'What was kept: '), said),
+    items.length ? bullets(items, 'plain kept-list') : null);
 }
 
 // --- one run: a note for the next step -----------------------------------------------------
@@ -4788,7 +4825,7 @@ function problemPart(run, lead) {
   const does = theirs ? '' : actionSays(run, found);
   return callout('late', make('h2', 'aside-title', title),
     add(make('p', ''), make('strong', '', 'What happened: '), found.what),
-    add(make('p', ''), make('strong', '', 'What was kept: '), found.kept),
+    keptPart(found.kept),
     does ? make('p', 'quiet', does) : null,
     add(make('div', 'bar'), go));
 }

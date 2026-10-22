@@ -23,6 +23,8 @@ The blueprint is the hub. The document and brief are written from it, and the de
 
 ## Where facts come from
 
+The research is written by one agent and checked by another, which reads every source the report quotes and, for a document you supplied as a PDF, a Word file or a web page, the file itself. When the check could not read what it must vouch for and the studio cannot serve it either, the research stops at once and says so, rather than spending rounds of correction on it.
+
 Every claim in the blueprint and the brief names the research finding it rests on. A finding is supported, contradicted, insufficient or unavailable; the last two are called unresolved. Only a supported finding can back a claim. A contradicted one can back the correction of a misconception, or the answer to an objection. Where the research could not establish something, the training says so under open gaps and the brief lists it under Unknowns. Nothing is filled in from the assistant's memory.
 
 ## Approval, and what "stale" means

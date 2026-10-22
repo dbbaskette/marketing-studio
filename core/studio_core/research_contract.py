@@ -277,17 +277,24 @@ class Workflow:
             raise ValueError((result.stderr.strip().splitlines() or ['Harness Research failed.'])[-1])
         return json.loads(result.stdout)
 
-    def run(self, root, task, invoke, sources=()):
+    def run(self, root, task, invoke, sources=(), readable=None):
         """One authored dossier followed by a separate checker. Refusals keep the draft.
 
         invoke(phase, guidance, payload, sources, fetch) returns JSON text plus only
         sources captured by the studio's confined tools. Worker IDs originate here,
         so the author cannot choose its reviewer identity.
+
+        readable(cause) says whether the studio can serve the originals a check could not
+        read: None when it can, so the next round is the check's to read them in, else the
+        studio's own answer, and the research stops at once. Without it, the check's word
+        stands and the research stops.
         """
         case = inside(root, str(CASE))
         case.mkdir(parents=True, exist_ok=True)
+        rounds = 0
         for phase in ('author', 'review') * ROUNDS:
             if phase == 'author':
+                rounds += 1
                 worker = 'author-' + secrets.token_hex(12)
                 guide = '\n\n'.join((self.runtime / 'references' / name).read_text()
                                       for name in ('investigate.md', 'synthesize.md', 'studio-handoff.md'))
@@ -321,14 +328,19 @@ class Workflow:
                         raise ValueError('Research changed a source permission.')
                     if source.get('origin') != captured.get('origin', captured.get('url')):
                         raise ValueError('Research changed a captured source origin.')
-                    if source.get('original_file') not in (None, captured.get('original')):
+                    if captured.get('original') and source.get('original_file') not in (
+                            None, captured['original']):
                         raise ValueError('Research named an original that the studio did not capture.')
                     for key, path_key in (('file', 'path'), ('original', 'original_path')):
                         name, path = captured.get(key), captured.get(path_key)
                         if name and path:
                             write(case, name, Path(path).read_bytes())
+                    # The studio says which sources have an original of their own: one it
+                    # did not offer, as a previous draft's may name, is not claimed.
                     if captured.get('original') and permission == 'selected':
                         source['original_file'] = captured['original']
+                    else:
+                        source.pop('original_file', None)
                 write(case, 'dossier.json', json.dumps(dossier))
                 status = self.command(case, 'save', 'dossier.json', worker)
                 # Offer only the exact captures saved in this dossier to the checker.
@@ -353,9 +365,20 @@ class Workflow:
                 status = self.command(case, 'review', 'review.json', worker)
                 if status.get('status') == 'complete':
                     break
+                # A check that could not read an original it must attest to refuses whatever
+                # the author corrects. When the studio cannot serve that original either, stop
+                # now and do not count this round as a correction; when it can, the check
+                # failed, not the studio, and the next round is its to read it in.
+                try:
+                    cause = unreadable_originals(json.loads(result), dossier)
+                except (TypeError, ValueError):
+                    cause = []
+                said = (readable(cause) if readable else '') if cause else None
+                if cause and said is not None:
+                    raise CheckCouldNotFinish(objections(case), rounds - 1, cause, said or None)
         verified = self.command(case, 'verify')
         if verified.get('status') != 'complete' or verified.get('artifact_integrity') == 'failed':
-            raise ReviewRefused(objections(case), ROUNDS)
+            raise ReviewRefused(objections(case), ROUNDS, grouped(case))
         facts, manifest = read_bundle(case / 'research')
         return facts, manifest
 
@@ -365,20 +388,108 @@ ROUNDS = 3
 
 class ReviewRefused(ValueError):
     """The independent check still objected after every round of correction. The message
-    says what it objected to; `objections` holds every objection for the studio's review."""
+    says what it objected to; `objections` holds every objection for the studio's review,
+    and `groups`, when given, the same objections counted by cause (see `grouped`)."""
 
-    def __init__(self, objections, rounds):
+    def __init__(self, objections, rounds, groups=None):
         self.objections = list(objections)
         self.rounds = rounds
+        self.groups = list(groups or ())
         count = len(self.objections)
         said = ('The independent check of the research still needs changes after '
                 f'{rounds} rounds of correction')
-        if count:
+        if self.groups:
+            total = sum(group['count'] for group in self.groups)
+            said += (f': {total} objection' + ('' if total == 1 else 's')
+                     + f' in {len(self.groups)} group' + ('' if len(self.groups) == 1 else 's')
+                     + ': ' + ', '.join(f"{group['title']} ({group['note']})"
+                                        for group in self.groups) + '.')
+        elif count:
             said += f': {count} objection' + ('' if count == 1 else 's') + ', such as '
             said += ' '.join(shortened(note) for note in self.objections[:2])
         else:
             said += ', and did not say what: read the saved check.'
         super().__init__(said + ' The draft report and the check’s notes are saved for correction.')
+
+
+class CheckCouldNotFinish(ReviewRefused):
+    """The independent check could not read the original of a source the studio offered,
+    that is all it objected to, and the studio cannot serve that original either. No
+    correction can change that: it is the studio's problem, not the research's. `cause`
+    holds each such source as {'source', 'title', 'file', 'original', 'access_error'};
+    `said` is the studio's own answer, when it was asked; `rounds` counts only the rounds of
+    correction before it, so this one is not counted."""
+
+    def __init__(self, objections, rounds, cause, said=None):
+        self.objections = list(objections)
+        self.rounds = rounds
+        self.cause = list(cause)
+        self.said = said
+        first = self.cause[0] if self.cause else {}
+        named = f'the original of "{first.get("title") or first.get("source") or "a source"}"'
+        why = said or first.get('access_error')
+        if why:
+            named += f' ({shortened(why).rstrip(".")}.)'
+        more = len(self.cause) - 1
+        if more:
+            named += f' and of {more} more source' + ('' if more == 1 else 's')
+        ValueError.__init__(self, (
+            f'The research check could not read {named}. That is a studio problem, not a '
+            'research problem: nothing was found wrong with the report, but the check could '
+            'not finish. Nothing to correct until the original is readable.'))
+
+
+def unreadable_originals(review, dossier):
+    """The sources with an original of their own that a review says it could not read,
+    when they are all it objected to; else []. That is: every verdict it did not support
+    rests only on such sources, and its assessment asks for no revision. A verdict rests on
+    the sources its fact cites, its finding's facts cite, or its passage's facts and
+    findings cite. A source with no original (its capture is the document) is never the
+    cause: the check has only to read its capture. Each is {'source', 'title', 'file',
+    'original', 'access_error'}."""
+    if not isinstance(review, dict) or not isinstance(dossier, dict):
+        return []
+    named = {source.get('id'): source for source in dossier.get('sources') or ()
+             if isinstance(source, dict)}
+    unread = {item.get('source'): item.get('access_error') or 'it gave no reason'
+              for item in review.get('originals') or ()
+              if isinstance(item, dict) and item.get('read_original') is False
+              and (named.get(item.get('source')) or {}).get('original_file')}
+    if not unread:
+        return []
+    assessment = review.get('assessment') or {}
+    if isinstance(assessment, dict) and 'needs-revision' in (assessment.get('coverage'),
+                                                            assessment.get('usefulness')):
+        return []
+    cited = {fact.get('id'): {citation.get('source') for citation in fact.get('citations') or ()
+                              if isinstance(citation, dict)}
+             for fact in dossier.get('facts') or () if isinstance(fact, dict)}
+    found = {finding.get('id'): set().union(*(cited.get(ident, set()) for ident in
+                                            (finding.get('support') or []) + (finding.get('counter') or [])))
+             for finding in dossier.get('findings') or () if isinstance(finding, dict)}
+    rests = {**cited, **found}
+    passages = {}
+    for prefix, sections in (('', dossier.get('sections')), ('brief:', dossier.get('brief'))):
+        for section in sections or ():
+            for number, block in enumerate(section.get('blocks') or ()):
+                passages[f"{prefix}{section.get('id')}:{number}"] = block.get('refs') or []
+    for number, comparison in enumerate(dossier.get('comparisons') or ()):
+        for row_number, row in enumerate(comparison.get('rows') or ()):
+            for cell_number, cell in enumerate(row.get('cells') or ()):
+                passages[f'comparison:{number}:{row_number}:{cell_number}'] = cell.get('refs') or []
+    for group in ('facts', 'findings', 'prose'):
+        for item in review.get(group) or ():
+            if not isinstance(item, dict) or item.get('verdict') in (None, 'supported', 'pending'):
+                continue
+            ident = item.get('id')
+            sources = (set().union(*(rests.get(ref, set()) for ref in passages.get(ident, ())))
+                       if group == 'prose' else rests.get(ident, set()))
+            if not sources or not sources <= unread.keys():
+                return []
+    return [{'source': ident, 'title': (named.get(ident) or {}).get('title') or ident,
+             'file': (named.get(ident) or {}).get('file'),
+             'original': (named.get(ident) or {}).get('original_file'), 'access_error': said}
+            for ident, said in unread.items()]
 
 
 def shortened(note, limit=160):
@@ -410,6 +521,65 @@ def objections(case):
             found.append(' and '.join(asked).capitalize() + ' need' + ('s' if len(asked) == 1 else '')
                          + ' revision: ' + (note or 'no note'))
     return found[:40]
+
+
+NOUNS = {'facts': ('fact', 'facts'), 'findings': ('finding', 'findings'),
+         'prose': ('passage of the report or brief', 'passages of the report or brief')}
+
+
+def grouped(case):
+    """What the last saved review objected to, by cause: one group for each kind of item
+    (facts, findings, passages) and verdict, then one for an assessment that asks for
+    revision. Each group is {'title', 'count', 'note', 'items'}: 'title' such as "12 facts
+    the check calls narrow", 'note' the first item's, and 'items' every one, as `objections`
+    words them."""
+    path = Path(case) / 'review.json'
+    try:
+        review = json.loads(path.read_text()) if path.is_file() else {}
+    except ValueError:
+        return []
+    if not isinstance(review, dict):
+        return []
+    groups = []
+    for kind in ('facts', 'findings', 'prose'):
+        found = {}
+        for item in review.get(kind) or ():
+            if isinstance(item, dict) and item.get('verdict') not in (None, 'supported', 'pending'):
+                note = ' '.join(str(item.get('note') or '').split()) or 'no note'
+                found.setdefault(str(item['verdict']), []).append(f"{item.get('id')}: {note}")
+        for verdict in sorted(found, key=lambda name: (name != 'unsupported', name)):
+            items = found[verdict]
+            noun = NOUNS[kind][len(items) != 1]
+            said = 'unsupported' if verdict == 'unsupported' else f'the check calls {verdict}'
+            groups.append({'title': f'{len(items)} {noun} {said}', 'count': len(items),
+                           'note': shortened(items[0], 100), 'items': items})
+    assessment = review.get('assessment') or {}
+    if isinstance(assessment, dict):
+        asked = [name for name in ('coverage', 'usefulness') if assessment.get(name) == 'needs-revision']
+        if asked:
+            note = ' '.join(str(assessment.get('note') or '').split()) or 'no note'
+            groups.append({'title': ' and '.join(asked) + (' needs' if len(asked) == 1 else ' need')
+                           + ' revision', 'count': 1, 'note': shortened(note, 100), 'items': [note]})
+    return groups
+
+
+def took(seconds, dollars):
+    """What some work took, in words: "48 minutes and $9.80". Empty when nothing was
+    recorded."""
+    said = []
+    seconds = round(seconds or 0)
+    if seconds >= 90 * 60:
+        hours, minutes = divmod(round(seconds / 60), 60)
+        said.append(f"{hours} hour{'' if hours == 1 else 's'}"
+                    + (f" {minutes} minute{'' if minutes == 1 else 's'}" if minutes else ''))
+    elif seconds >= 60:
+        minutes = round(seconds / 60)
+        said.append(f"{minutes} minute{'' if minutes == 1 else 's'}")
+    elif seconds >= 1:
+        said.append(f"{seconds} second{'' if seconds == 1 else 's'}")
+    if dollars is not None:
+        said.append(f'${dollars:,.2f}')
+    return ' and '.join(said)
 
 
 def check_json(text, spec):
@@ -473,6 +643,8 @@ def refused(value, spec):
             permission = entry.get('permission') or ('selected' if entry.get('offered', True) else 'public')
             if entry.get('original') and permission == 'selected':
                 source['original_file'] = entry['original']
+            else:
+                source.pop('original_file', None)
         write(case, 'dossier.json', json.dumps(dossier))
         try:
             done = subprocess.run(
@@ -489,11 +661,66 @@ def refused(value, spec):
     return []
 
 
+# The names research jobs were recorded under before they were named for their round.
+LEGACY_JOBS = ('research-author', 'research-review')
+
+
+def job_name(phase, number):
+    """What one research job is recorded as: `research:author-2`, `research:review-2`."""
+    return f'research:{phase}-{number}'
+
+
+def job_round(name):
+    """(phase, round) of a research job's name, or None for another step's. A job recorded
+    before rounds were named has round None."""
+    if name in LEGACY_JOBS:
+        return name.partition('-')[2], None
+    head, _, rest = str(name).partition(':')
+    phase, _, number = rest.rpartition('-')
+    if head == 'research' and phase in ('author', 'review') and number.isdigit():
+        return phase, int(number)
+    return None
+
+
+def doing_words(phase, number):
+    """What a research job is doing, as the page says it while the job runs."""
+    of = f'round {number} of {ROUNDS}'
+    if phase == 'author':
+        return (f'Investigating sources and writing the report ({of})' if number == 1
+                else f'Correcting the research after its independent check ({of})')
+    return (f'Independently checking the research ({of})' if number == 1
+            else f'Independently checking the corrected research ({of})')
+
+
+def last_rounds(attempts_by_name):
+    """What the last try at the research took: {'rounds', 'jobs', 'seconds', 'dollars'}
+    from the recorded tries of its jobs, given as {name: [attempt, ...]}. The last try
+    begins with its last first round; jobs recorded before rounds were named all count.
+    None when no research job is recorded."""
+    tried = [(job_round(name), attempt) for name, attempts in attempts_by_name.items()
+             if job_round(name) for attempt in attempts]
+    if not tried:
+        return None
+    starts = [attempt.get('started_at') or '' for (phase, number), attempt in tried
+              if phase == 'author' and number == 1]
+    since = max(starts) if starts else ''
+    these = [(found, attempt) for found, attempt in tried
+             if (attempt.get('started_at') or '') >= since]
+    dollars = [attempt['dollars'] for _, attempt in these if attempt.get('dollars') is not None]
+    return {'rounds': max([number or 0 for (_, number), _ in these] or [0]),
+            'jobs': len(these),
+            'seconds': round(sum(attempt.get('seconds') or 0 for _, attempt in these), 1),
+            'dollars': round(sum(dollars), 4) if dollars else None}
+
+
 def native(engine, root, run, task, sources, product):
     """Bridge the common workflow to each studio's existing confined worker transport."""
     from runner import worker_tools, documents, companion
-    originals = {item['file']: item['original'] for item in documents.listed(root)
-                 if item.get('file') and item.get('original')}
+    # Only an original that is another document than its capture (a PDF, a Word file, a web
+    # page) is offered: a Markdown or text document is its capture.
+    kept = getattr(engine, 'documents', None) or documents   # the engine's own, where it has one
+    originals = {item['file']: item['original'] for item in kept.listed(root)
+                 if item.get('file') and item.get('original') and item.get('distinct', True)}
     sources = [{**source, **({'original': originals[source['file']],
                              'original_path': inside(root, originals[source['file']])}
                             if source.get('file') in originals else {})} for source in sources]
@@ -507,22 +734,35 @@ def native(engine, root, run, task, sources, product):
     if tool is None:
         raise WorkspaceError('This research run needs its saved Harness Research version. Restore it before continuing.')
     folders = []
+    # What every job of this try took, so the stop can say what the rounds cost.
+    spent = {'jobs': 0, 'seconds': 0.0, 'dollars': None, 'tokens': None, 'rounds': 0}
 
     def invoke(phase, guidance, payload, offered, fetch):
         if run.stop.is_set() or not engine._may_go(root):
             raise companion.Stopped()
-        name = 'research-' + phase
+        if phase == 'author':
+            spent['rounds'] += 1
+        number = spent['rounds']
+        # Named under the research step, with its round, so that the step's tries, time and
+        # money count every job, and the page can say which round is in hand.
+        name = job_name(phase, number)
         result = {'kind': 'research-json'}
         if phase == 'author':
             # The job saves the dossier with the same helper the parent will, so the author
             # learns of a refusal while it can still correct it.
             result.update(runtime=str(tool.runtime), node=shutil.which('node'),
                           worker=payload['worker'], task={key: task[key] for key in TASK_FIELDS})
-        doing = ('Investigating sources and writing the report' if phase == 'author'
-                 else 'Independently checking the research and brief')
+        doing = doing_words(phase, number)
+        told = ('' if phase == 'author' else
+                ' list_inputs names the original of each supplied source that has one: read it '
+                'with read_source(source_id, original=true), as well as its capture, before you '
+                'attest read_original. A source with no original: read its capture and set '
+                'read_original true. If a tool cannot serve an original, set read_original to '
+                'false and give the tool\'s answer as its access_error.')
         work = Work(guidance + '\n\nUse only the studio tools; the parent runs helper commands. '
                     'Read list_inputs and sources; return the requested JSON using submit_artifact '
-                    'under the name research-result. Keep public queries generic and nonconfidential.',
+                    'under the name research-result. Keep public queries generic and nonconfidential.'
+                    + told,
                     json.dumps(payload), 'research' if fetch else 'write',
                     {'inputs': {'research-task': json.dumps(payload)}, 'sources': offered,
                      'fetch': fetch, 'ask': False,
@@ -536,30 +776,87 @@ def native(engine, root, run, task, sources, product):
         if outcome.reason == 'stopped':
             engine._stopped(root, name if product == 'presentation' else step, outcome, started)
             raise companion.Stopped()
+        cost = engine._cost(outcome)
+        spent['jobs'] += 1
+        spent['seconds'] += outcome.seconds or 0
+        for key in ('dollars', 'tokens'):
+            if cost.get(key) is not None:
+                spent[key] = (spent[key] or 0) + cost[key]
+        accepted = handed['artifacts'].get('research-result')
+        # A job that spent all it was given is not a failed try: the studio stops for money.
+        ended = ('kept' if accepted and outcome.reason != 'stopped' else
+                 'limit' if outcome.reason == 'limit' and getattr(outcome, 'budget', False)
+                 else 'failed')
         with engine.files:
             record = engine._load(root)
-            accepted = handed['artifacts'].get('research-result')
-            engine._tried(record, name, started, outcome.seconds,
-                          'kept' if accepted and outcome.reason != 'stopped' else 'failed',
-                          **engine._cost(outcome))
+            engine._tried(record, name, started, outcome.seconds, ended,
+                          None if ended == 'kept' else outcome.detail or None, **cost)
             engine._store(root, record)
             engine._commit(root, 'record independent research job: ' + phase)
         if not accepted or outcome.reason == 'stopped':
-            raise WorkspaceError('Research did not finish its ' + phase + ' job. Saved work is kept.')
+            # What it handed back and the checks refused says more than how the agent ended.
+            refused = [problem for found in handed['problems'].values() for problem in found]
+            said = (('What it handed back did not pass the checks: ' + ' '.join(refused[:3])
+                     + (' And more.' if len(refused) > 3 else '')) if refused else
+                    ' '.join(str(outcome.detail or '').split())
+                    or 'It ended without handing anything back.')
+            failure = WorkspaceError(f'Research did not finish its {phase} job in round '
+                                     f'{number} of {ROUNDS}' + (f': {said}' if said else '.')
+                                     + ' Saved work is kept.')
+            failure.outcome = outcome   # how the job ended, for the studio's stop
+            raise failure
         return accepted['text'], handed['sources']
 
     try:
-        return Workflow(tool.runtime, tool._json).run(root, task, invoke, sources)
+        return Workflow(tool.runtime, tool._json).run(
+            root, task, invoke, sources, readable=lambda cause: dry_read(engine, root, cause))
     except ReviewRefused as refusal:
-        # The studio stops at its research step and keeps the objections with the review.
-        failure = WorkspaceError(str(refusal))
+        # The studio stops at its research step and keeps the objections with the review,
+        # saying what this try's rounds took.
+        cost = took(spent['seconds'], spent['dollars'])
+        jobs = spent['jobs']
+        failure = WorkspaceError(str(refusal) + (
+            f" This try's {jobs} research job{'' if jobs == 1 else 's'} took {cost}."
+            if cost else ''))
         failure.objections, failure.rounds = refusal.objections, refusal.rounds
+        failure.cause = getattr(refusal, 'cause', None)
+        failure.groups = getattr(refusal, 'groups', None) or []
+        failure.spent = dict(spent)
         raise failure from refusal
     except ValueError as error:
         raise WorkspaceError(str(error)) from error
     finally:
         for folder in folders:
             shutil.rmtree(folder, ignore_errors=True)
+
+
+def dry_read(engine, root, cause):
+    """Whether the studio can now serve each original a check could not read: None once
+    it can, else the tools' own answer. Each original is read as a check reads it, from a
+    job folder of its own, and nothing else is done. A source the studio no longer offers an
+    original for needs nothing read."""
+    from runner import worker_tools, documents
+    kept = getattr(engine, 'documents', None) or documents
+    listed = {item['file']: item for item in kept.listed(root) if item.get('file')}
+    for item in cause or ():
+        entry = listed.get((item or {}).get('file'))
+        if not entry or not entry.get('original') or not entry.get('distinct', True):
+            continue
+        with tempfile.TemporaryDirectory(prefix='research-dry-read-') as temp:
+            folder = Path(temp) / 'job'
+            try:
+                worker_tools.prepare(folder, sources=[{
+                    'title': entry.get('title') or item.get('title') or entry['file'],
+                    'origin': 'a dry read', 'file': entry['file'],
+                    'text': (Path(root) / entry['file']).read_text(encoding='utf-8'),
+                    'original': entry['original'],
+                    'original_path': Path(root) / entry['original']}], fetch=False, ask=False)
+                ok, said = worker_tools.WorkerTools(folder).read_source('s1', original=True)
+            except (OSError, ValueError) as failure:
+                ok, said = False, str(failure)
+        if not ok:
+            return said
+    return None
 
 
 def main(argv=None):

@@ -161,7 +161,7 @@ class KindTests(Supplied):
             'problem': None, 'id': 'restart-notes-txt', 'title': 'Restart notes',
             'file': 'sources/supplied/restart-notes-txt.txt',
             'original': 'sources/supplied/restart-notes-txt.original.txt',
-            'sha256': hashlib.sha256(NOTES.encode()).hexdigest()})
+            'distinct': False, 'sha256': hashlib.sha256(NOTES.encode()).hexdigest()})
         self.assertEqual((self.root / entry['original']).read_bytes(), NOTES.encode())
         self.assertEqual(self.text(entry), NOTES)
         self.assertEqual(self.kept(), ['sources/supplied/index.json', entry['original'],
@@ -404,6 +404,50 @@ class UnreadableTests(Supplied):
 
 
 # --- the list, and removal -----------------------------------------------------------------
+
+class DistinctTests(Supplied):
+    """Whether the file as it was sent is another document than its text: a research check
+    is asked to read an original only when it is."""
+
+    def test_text_and_markdown_are_the_same_document_as_their_text(self):
+        for name in ('notes.txt', 'guide.md'):
+            with self.subTest(name):
+                self.assertIs(self.add(name, 'Restart one batch at a time.\n')['distinct'], False)
+
+    def test_a_pdf_a_word_file_and_a_web_page_are_documents_of_their_own(self):
+        self.pdf(lambda path: 'Words in a PDF.')
+        for name, data in (('runbook.docx', RUNBOOK), ('guide.pdf', b'%PDF-1.7'),
+                           ('page.html', PAGE)):
+            with self.subTest(name):
+                self.assertIs(self.add(name, data)['distinct'], True)
+
+    def test_a_list_from_before_says_the_same_once_it_is_read_again(self):
+        same, changed = self.add('same.md', 'Words.\n'), self.add('changed.txt', 'Words.\n')
+        index = self.root / 'sources/supplied/index.json'
+        listing = json.loads(index.read_text())
+        for entry in listing['documents']:
+            entry.pop('distinct')
+        index.write_text(json.dumps(listing))
+        (self.root / changed['original']).write_text('Other words, sent later.\n')
+        self.assertEqual([entry['distinct'] for entry in documents.listed(self.root)],
+                         [False, True])
+        self.assertEqual(same['original'], documents.listed(self.root)[0]['original'])
+        # Worked out once, it is noted in the list, so no later look reads the files again.
+        self.assertEqual([entry.get('distinct') for entry in
+                          json.loads(index.read_text())['documents']], [False, True])
+        with mock.patch.object(documents, '_differs', side_effect=AssertionError('read again')):
+            self.assertEqual([entry['distinct'] for entry in documents.listed(self.root)],
+                             [False, True])
+
+    def test_a_document_of_its_own_from_before_is_known_without_reading_it(self):
+        self.add('page.html', PAGE)
+        index = self.root / 'sources/supplied/index.json'
+        listing = json.loads(index.read_text())
+        listing['documents'][0].pop('distinct')
+        index.write_text(json.dumps(listing))
+        with mock.patch.object(documents, '_differs', side_effect=AssertionError('read')):
+            self.assertIs(documents.listed(self.root)[0]['distinct'], True)
+
 
 class ListTests(Supplied):
     def test_a_deck_with_no_documents_lists_none_and_writes_nothing(self):

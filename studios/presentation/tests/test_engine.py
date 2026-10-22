@@ -13,7 +13,7 @@ from stand_ins import brand as brand_stand_in
 from runner_support import LONG_OUTLINE, OUTLINE, StudioCase, asks, fails, unsettled
 from workspace import WorkspaceError
 
-from runner import decks, marks, stages
+from runner import decks, jobs, marks, stages, worker_tools
 from runner.steps import build
 
 
@@ -242,8 +242,41 @@ class RetryTests(StudioCase):
         self.workers.then('outline', fails('Not signed in.', reason='unavailable'))
         root = self.start()
         self.assertEqual(self.state(root), 'failed')
-        self.assertIn('could not be used. Not signed in.', self.view(root)['sentence'])
+        self.assertIn('could not be used. Not signed in. Check this computer, on the Status '
+                      'screen, says what it needs.', self.view(root)['sentence'])
         self.assertEqual(len(self.workers.of('outline')), 1)
+
+    def test_an_account_at_its_usage_limit_stops_at_once_and_says_where_to_look(self):
+        self.workers.then('outline', fails("You've hit your usage limit.", reason='limit'))
+        root = self.start()
+        self.assertEqual(self.state(root), 'failed')
+        self.assertEqual(self.view(root)['sentence'], "scripted's account reached a usage or "
+                         'rate limit. Wait until it resets, then Try again.')
+        self.assertEqual(len(self.workers.of('outline')), 1)
+
+    def test_a_step_that_runs_out_of_time_offers_more_time_for_this_deck(self):
+        from dataclasses import replace
+        self.workers.then('outline', *[fails('It did not finish in 900 seconds, so it was stopped.', reason='timeout')] * 3)
+        root = self.start()
+        view = self.view(root)
+        self.assertEqual(view['problem'], {
+            'state': 'failed', 'action': 'more-time', 'seconds': 900,
+            'why': 'Draft the outline ran out of the time a step may take: its last try was '
+                   'stopped after 15 minutes, and it did not work in 3 tries. That limit, 15 '
+                   'minutes a step, is in Settings, under Limits.',
+            'kept': 'Everything kept before this step is still here. Nothing from the tries '
+                    'that failed was kept.'})
+        self.engine.act(root, 'more-time')
+        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertEqual(self.workers.of('outline')[-1].limits.seconds, 1800)
+        self.assertEqual((self.record(root)['limits']['step_seconds'],
+                          self.record(root)['more_time']), (1800, 1800))
+        # Settings keeps its own limit, for other decks, and a larger one there still counts.
+        self.assertEqual(self.settings.load().step_seconds, 900)
+        self.settings.save(replace(self.settings.load(), step_seconds=3600))
+        self.engine.act(root, 'stop')
+        self.engine.act(root, 'resume')
+        self.assertEqual(self.record(root)['limits']['step_seconds'], 3600)
 
 
 class QuestionTests(StudioCase):
@@ -440,6 +473,57 @@ class HaltTests(StudioCase):
         self.engine.act(root, 'resume')
         self.assertEqual(self.waiting(root), 'gate:build')
 
+    def test_a_step_that_spends_what_is_left_stops_for_money_not_as_a_failed_try(self):
+        from dataclasses import replace
+        from runner.agents import Outcome
+        self.settings.save(replace(self.settings.load(), deck_dollars=1.0))
+        self.workers.then('outline', lambda tools, job: Outcome(
+            False, 'limit', 'It stopped without finishing: its spending limit was reached',
+            cost=1.0, budget=True))
+        root = self.start()
+        view = self.view(root)
+        self.assertEqual((view['state'], len(self.workers.of('outline'))), ('stopped', 1))
+        self.assertEqual(view['problem']['why'], (
+            'Draft the outline was stopped when this deck reached what it may spend: it has '
+            'spent $1.00. It stops and asks each time it has spent another $1.00.'))
+        self.assertIn('Resume lets it spend up to another $1.00. To let it spend more before '
+                      'it asks, raise the limit in Settings, under Limits, then resume.',
+                      view['problem']['kept'])
+        self.assertEqual(view['problem']['action'], 'resume')
+        entry = self.record(root)['steps']['outline']
+        self.assertEqual((entry['failed'], entry['tries'][0]['outcome']), (0, 'limit'))
+        self.engine.act(root, 'resume')
+        self.assertEqual(self.waiting(root), 'gate:outline')
+
+    def test_no_job_starts_with_too_little_left_to_spend(self):
+        from dataclasses import replace
+        self.settings.save(replace(self.settings.load(), deck_dollars=20.0))
+        self.workers.cost = 19.7
+        root = self.start()
+        self.decide(root, 'gate:outline')
+        self.decide(root, 'gate:look')
+        view = self.view(root)
+        self.assertEqual(self.workers.of('section'), [])
+        self.assertEqual(view['sentence'], (
+            'This deck has spent $19.70, and the $0.30 it may still spend is too little to '
+            'start another step. It stops and asks each time it has spent another $20.00.'))
+
+    def test_a_research_job_that_runs_out_of_time_offers_more_time(self):
+        from runner import research_steps
+        from runner.agents import Outcome
+        root = self.start(research=True)
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        self.engine._store(root, record)
+        late = WorkspaceError('Research did not finish its author job in round 1 of 3.')
+        late.outcome = Outcome(False, 'timeout', 'It did not finish in 900 seconds, so it was stopped.')
+        with mock.patch.object(research_steps.research_contract, 'native', side_effect=late):
+            self.decide(root, 'gate:research-plan')
+        problem = self.view(root)['problem']
+        self.assertEqual((problem['action'], problem['seconds']), ('more-time', 900))
+        self.assertTrue(problem['why'].startswith(
+            'The research ran out of the time a step may take: it was stopped after 15 minutes.'))
+
     def test_undo_takes_back_the_last_step(self):
         root = self.start()
         self.assertEqual(self.log()[-1], 'Rolling restarts: keep the outline')
@@ -631,6 +715,163 @@ class ResearchTests(StudioCase):
         report = (root / 'research' / 'report.md').read_text()
         self.assertEqual(report.count('What the page says about instance-min.'), 1)
         self.assertIn('What the page says about instance-min. More besides.', report)
+
+
+class SynthesisStopTests(StudioCase):
+    """How a deck's research, done as one authored report and one independent check,
+    stops: and what Try again does then."""
+
+    CAUSE = [{'source': 'source-a', 'title': 'Handbook',
+              'file': 'sources/supplied/handbook-html.txt',
+              'original': 'sources/supplied/handbook-html.original.html',
+              'access_error': 'There is no tool to read it.'}]
+
+    def synthesis(self):
+        root = self.start(research=True)
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        self.engine._store(root, record)
+        return root
+
+    def test_a_check_that_could_not_read_an_original_stops_and_says_whose_problem_it_is(self):
+        from runner import research_steps
+        from studio_core import research_contract
+        root = self.synthesis()
+        said = str(research_contract.CheckCouldNotFinish(['fact-a (narrow): Not read.'], 0,
+                                                        self.CAUSE))
+        refusal = WorkspaceError(said)
+        refusal.objections, refusal.rounds, refusal.cause = ['fact-a (narrow): Not read.'], 0, self.CAUSE
+        with mock.patch.object(research_steps.research_contract, 'native', side_effect=refusal):
+            self.decide(root, 'gate:research-plan')
+        view = self.view(root)
+        self.assertEqual((view['state'], view['problem']['why']), ('failed', said))
+        self.assertIn('could not read the original of "Handbook"', view['sentence'])
+        self.assertIn('Try again works once the original can be read:\n- Handbook: There is '
+                      'no tool to read it.', view['problem']['kept'])
+        self.assertEqual(self.record(root)['halted']['unreadable'], self.CAUSE)
+        # Try again is refused, in the same words, while the original still cannot be read.
+        # The dry read is done before the deck's files are held.
+        def unread(*given):
+            self.assertFalse(self.engine.files._is_owned())
+            return 'No.'
+        with mock.patch.object(research_contract, 'dry_read', side_effect=unread) as read, \
+                mock.patch.object(research_contract, 'native') as again:
+            with self.assertRaises(WorkspaceError) as caught:
+                self.engine.act(root, 'retry')
+        self.assertEqual(str(caught.exception), said)
+        self.assertEqual((read.call_args[0][2], again.call_count), (self.CAUSE, 0))
+        # Once it can be read, Try again runs the research again.
+        with mock.patch.object(research_contract, 'dry_read', return_value=None), \
+                mock.patch.object(research_contract, 'native', side_effect=refusal) as again:
+            self.engine.act(root, 'retry')
+        self.assertEqual(again.call_count, 1)
+
+    def test_objections_are_kept_under_their_groups(self):
+        from runner import research_steps
+        root = self.synthesis()
+        refusal = WorkspaceError('The independent check of the research still needs changes.')
+        refusal.objections, refusal.rounds = ['f01 (narrow): Too broad.'], 3
+        refusal.groups = [{'title': '1 fact the check calls narrow', 'count': 1,
+                           'note': 'f01: Too broad.', 'items': ['f01: Too broad.']}]
+        with mock.patch.object(research_steps.research_contract, 'native', side_effect=refusal):
+            self.decide(root, 'gate:research-plan')
+        kept = self.view(root)['problem']['kept']
+        self.assertIn('every objection is listed under its group in research/review.md', kept)
+        self.assertTrue(kept.endswith('\n- 1 fact the check calls narrow (f01: Too broad.)'))
+        self.assertEqual((root / 'research/review.md').read_text(), (
+            '# Independent research check\n\nAfter 3 rounds of correction the independent '
+            'check still objected. Each objection names the fact, finding or passage it '
+            'concerns.\n\n## 1 fact the check calls narrow\n\n- f01: Too broad.\n'))
+        # The stop's pointer opens: the page may read the file, and the stop names it.
+        from runner import page
+        self.assertIn('research/review.md', page.FILES)
+        self.assertEqual(self.view(root)['problem']['objections'], 'research/review.md')
+        # Research that later passes leaves no objections behind.
+        with mock.patch.object(research_steps.research_contract, 'native', return_value=None):
+            self.engine.act(root, 'retry')
+        self.assertFalse((root / 'research/review.md').exists())
+        self.assertNotIn('research/review.md', self.git('ls-files'))
+
+    def test_a_dry_read_reads_each_original_as_the_check_would(self):
+        from studio_core import research_contract
+        root = self.start(route='document', source={'kind': 'upload', 'name': 'handbook.html'},
+                          uploads={'handbook.html': b'<p>Restart one batch at a time.</p>'})
+        self.assertIsNone(research_contract.dry_read(self.engine, root, self.CAUSE))
+        with mock.patch.object(worker_tools.WorkerTools, '_original',
+                               side_effect=worker_tools.Refusal('No tool serves it.')):
+            self.assertEqual(research_contract.dry_read(self.engine, root, self.CAUSE),
+                             'No tool serves it.')
+            # A source with no original of its own needs nothing read.
+            self.assertIsNone(research_contract.dry_read(self.engine, root, [
+                {'file': 'sources/supplied/other.txt'}]))
+
+
+class ResearchRoundTests(StudioCase):
+    """A deck's research done as one authored report and one independent check: its jobs
+    count under the research step, and the page says which round is in hand."""
+
+    def synthesis(self):
+        root = self.start(research=True)
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        tried = lambda at, seconds, dollars, outcome='kept': {
+            'started_at': at, 'ended_at': at, 'seconds': seconds, 'dollars': dollars,
+            'tokens': 1000, 'outcome': outcome, 'error': None}
+        record['steps'].update({
+            'research-author': {'failed': 0, 'tries': [tried('2030-01-01T00:00:00Z', 50, 0.1)]},
+            'research:author-1': {'failed': 0, 'tries': [tried('2030-01-02T00:00:00Z', 300, 0.8)]},
+            'research:review-1': {'failed': 0, 'tries': [tried('2030-01-02T00:10:00Z', 120, 0.4)]},
+            'research:author-2': {'failed': 1, 'tries': [
+                tried('2030-01-02T00:20:00Z', 60, 0.2, 'failed')]}})
+        self.engine._store(root, record)
+        return root
+
+    def test_every_research_job_counts_under_the_research_step(self):
+        root = self.synthesis()
+        row = next(row for row in self.view(root)['timeline'] if row['name'] == 'research')
+        self.assertEqual((row['attempts'], row['seconds'], row['dollars']), (4, 530.0, 1.5))
+
+    def test_the_stop_says_what_the_last_try_of_the_research_took(self):
+        root = self.synthesis()
+        self.engine._problem(root, 'research', 'failed', 'It stopped.', 'Kept.')
+        self.assertEqual(self.view(root)['problem']['research'], {
+            'rounds': 2, 'jobs': 3, 'seconds': 480.0, 'dollars': 1.4, 'most': 3,
+            'drafted': False})
+        (root / '.studio-research/.harness-research').mkdir(parents=True)
+        (root / '.studio-research/.harness-research/synthesis.json').write_text('{}')
+        self.assertIs(self.view(root)['problem']['research']['drafted'], True)
+        self.engine._problem(root, 'outline', 'failed', 'It stopped.', 'Kept.')
+        self.assertNotIn('research', self.view(root)['problem'])
+
+    def test_the_round_in_hand_is_said_while_it_runs(self):
+        root = self.synthesis()
+        record = self.engine._load(root)
+        record['gates']['gate:research-plan']['state'] = 'approved'
+        self.engine._store(root, record)
+        self.assertEqual(jobs.first(self.engine._load(root)).name, 'research')
+        run = self.engine._run(root)
+        run.workers['research:review-2'] = {
+            'label': 'Independently checking the corrected research (round 2 of 3)',
+            'started_at': 'now', 'lines': []}
+        try:
+            shown = self.view(root)
+        finally:
+            run.workers.clear()
+        self.assertEqual((shown['state'], shown['sentence']), (
+            'working', 'Independently checking the corrected research (round 2 of 3).'))
+        self.assertEqual(shown['workers'][0]['label'],
+                         'Independently checking the corrected research (round 2 of 3)')
+
+    def test_the_independent_check_takes_no_note(self):
+        from runner.steps import Work
+        root = self.synthesis()
+        self.engine.note(root, 'Lead with the risks.')
+        work = Work('guidance', 'task', 'write', {'artifacts': {}}, 'research-result')
+        self.assertIs(self.engine._noted(root, 'research:review-1', 'Checking', work), work)
+        self.assertEqual(self.record(root)['pending_note']['text'], 'Lead with the risks.')
+        taken = self.engine._noted(root, 'research:author-2', 'Correcting', work)
+        self.assertIn('> Lead with the risks.', taken.task)
+        self.assertIs(self.engine._noted(root, 'research:review-2', 'Checking', work), work)
 
 
 class PlanMarkTests(StudioCase):

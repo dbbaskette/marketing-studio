@@ -438,8 +438,70 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.deck_screen(path, [{'snapshot': 'failed'}], **{'GET /api/run': [ok(shown)]})
         shot = result['snapshots']['failed']
         self.assertEqual(shot['filled'], ['Try again'])
-        self.assertIn('Try again re-runs ' + row['label'] + ' from the start; the last try took '
-                      '2 minutes and $0.30.', shot['text'])
+        self.assertIn('Try again re-runs ' + row['label'] + ' from the start; the tries so far '
+                      'took 2 minutes and $0.30.', shot['text'])
+
+    def test_a_step_that_ran_out_of_time_offers_more_time(self):
+        path = self.started()
+        shown = self.run_of(path)
+        row = next(row for row in shown['timeline'] if row['state'] != 'done')
+        row.update(state='current', failed=True, seconds=2700, dollars=0.9)
+        said = ('Draft the outline ran out of the time a step may take: its last try was '
+                'stopped after 15 minutes, and it did not work in 3 tries. That limit, 15 '
+                'minutes a step, is in Settings, under Limits.')
+        shown.update(state='failed', gate=None, sentence=said, problem={
+            'state': 'failed', 'why': said, 'kept': 'Everything made so far.',
+            'action': 'more-time', 'seconds': 900})
+        result = self.deck_screen(path, [{'snapshot': 'failed'},
+                                         {'click': 'Give it more time and try again'}],
+                                  **{'GET /api/run': [ok(shown)], 'POST /api/run': [ok(shown)]})
+        shot = result['snapshots']['failed']
+        self.assertEqual(shot['filled'], ['Give it more time and try again'])
+        self.assertIn('Give it more time and try again lets each step of this deck take up to '
+                      '30 minutes, and runs this step again from the start. Raising the limit in '
+                      'Settings, under Limits, is the other way on, for every deck.', shot['text'])
+        self.assertEqual(self.posts(result), [('/api/run', {'path': path, 'action': 'more-time'})])
+
+    def test_a_research_stop_opens_every_objection(self):
+        path = self.started()
+        shown = self.run_of(path)
+        row = next(row for row in shown['timeline'] if row['state'] != 'done')
+        row.update(state='current', failed=True)
+        shown.update(state='failed', gate=None, sentence='It has stopped.', problem={
+            'state': 'failed', 'why': 'The check still objected.', 'action': 'retry',
+            'kept': 'The draft report is kept.', 'objections': 'research/review.md',
+            'research': {'rounds': 3, 'jobs': 6, 'seconds': 60, 'dollars': None, 'most': 3,
+                         'drafted': True}})
+        read = ok({'name': 'research/review.md', 'size': 40, 'truncated': False,
+                   'text': '# Independent research check\n\n- f01: Too broad.\n'})
+        result = self.deck_screen(path, [{'click': 'Read every objection'}, {'snapshot': 'read'}],
+                                  **{'GET /api/run': [ok(shown)], 'GET /api/file': [read]})
+        self.assertIn('f01: Too broad.', result['snapshots']['read']['text'])
+
+    def test_a_research_retry_carries_on_from_the_draft_and_lists_what_was_kept(self):
+        path = self.started()
+        shown = self.run_of(path)
+        row = next(row for row in shown['timeline'] if row['state'] != 'done')
+        row.update(state='current', failed=True, seconds=2880, dollars=9.8)
+        shown.update(state='failed', gate=None, sentence='It has stopped.', problem={
+            'state': 'failed', 'why': 'The check still objected.', 'action': 'retry',
+            'kept': 'The draft report is kept.\n- 12 facts the check calls narrow (f01: Too '
+                    'broad.)\n- coverage needs revision (Alternatives are missing.)',
+            'research': {'rounds': 3, 'jobs': 6, 'seconds': 2880, 'dollars': 9.8, 'most': 3,
+                         'drafted': True}})
+        result = self.deck_screen(path, [{'snapshot': 'failed'}], **{'GET /api/run': [ok(shown)]})
+        text = result['snapshots']['failed']['text']
+        self.assertIn('Try again continues from the saved draft and runs up to 3 more rounds of '
+                      'writing and checking; the last 3 rounds took 48 minutes and $9.80.', text)
+        self.assertIn('What was kept: The draft report is kept.', text)
+        self.assertIn('12 facts the check calls narrow (f01: Too broad.)', text)
+        self.assertNotIn('- 12 facts', text, 'each group is an item of a list')
+        self.assertNotIn('from the start', text)
+        # With no draft saved, there is nothing to carry on from.
+        shown['problem']['research'].update(drafted=False, rounds=1, seconds=50, dollars=None)
+        result = self.deck_screen(path, [{'snapshot': 'failed'}], **{'GET /api/run': [ok(shown)]})
+        self.assertIn('Try again runs the research again, up to 3 rounds of writing and checking; '
+                      'the last round took 50 seconds.', result['snapshots']['failed']['text'])
 
     def test_a_build_retry_says_how_many_sections_are_kept(self):
         path = self.started()
@@ -455,8 +517,8 @@ class ScreenTests(ScriptedPage, PageCase):
                      problem={'state': 'failed', 'why': 'The renderer stopped.',
                               'kept': 'Two sections.', 'action': 'retry'})
         result = self.deck_screen(path, [{'snapshot': 'failed'}], **{'GET /api/run': [ok(shown)]})
-        self.assertIn('Try again keeps 2 of 4 sections; the rest are drawn again; the last try '
-                      'took 5 minutes and $1.10.', result['snapshots']['failed']['text'])
+        self.assertIn('Try again keeps 2 of 4 sections; the rest are drawn again; the tries so '
+                      'far took 5 minutes and $1.10.', result['snapshots']['failed']['text'])
 
     def test_one_approve_decides_and_the_review_bar_only_counts(self):
         path = self.started()
