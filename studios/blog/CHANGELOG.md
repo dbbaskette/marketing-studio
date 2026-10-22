@@ -5,6 +5,28 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Research that can finish, and failures that say what to do.** Research the
+  independent check refused is no longer thrown away: the draft report and the check's
+  notes are kept on this computer, in the blog's `.studio-research-draft` folder (never
+  shared), and the run lists **What the research check objected to**, grouped by kind and
+  verdict with the first note of each. **Try again** continues from that draft for up to
+  three more rounds and says what the last attempt took; research says "Round 2 of 3"
+  while it works. A new blog stopped at research offers **Continue without research**
+  instead of pointing at an Edit manuscript button it does not have. **Finish** asks
+  first at every review level and says the draft is kept in the team library, then
+  "Finished. Kept in the team library." A CLI failure points at **Status → Check this
+  computer** and shows **What the assistant said**; a step out of time says how long a
+  step may take and that the limit is in Settings. First-run setup opens **Writing
+  preferences** and marks an assistant that is not installed.
+- For maintainers: the run's local state carries `reason` (`cli`, `time-limit`,
+  `research-check`), `said` (the last 20 stderr lines, kept in
+  `.blog-runs/diagnostics/cli/<id>.json`, mode 0600) and `research` (`kept`, `refusal`,
+  `round`, `phase`, `last`). The page route `run-skip-research` drops the research stages
+  and records `research_skipped`; later jobs get `research_policy: none` and no
+  `research_bundle`. `synthesis_research.generate` takes `progress`, and
+  `blog_worker.metered()` collects the tokens and dollars a CLI reports. The refusal
+  takes the shared contract's `groups` and `cause` when it has them.
+
 - **A Google Doc with several tabs is read whole.** Adding a Doc link to a blog's files
   reads every tab, each under its own title, and the file row says which tabs were read.
   A link to one tab (the address Google Docs shows for that tab) reads that tab alone. Such

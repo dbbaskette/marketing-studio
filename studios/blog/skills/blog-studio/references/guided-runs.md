@@ -126,6 +126,20 @@ running the same blog simultaneously on multiple computers; the Hub retains
 competing revisions for reconciliation. Google transfers remain explicit via
 [Google Docs](google/workflow.md). Export packages never publish anything.
 
+## When a page run stops
+
+`run status` says why: `reason` is `cli` (check the assistant under **Status → Check
+this computer**), `time-limit` (the blog's step limit, raised by **Try again with more
+time**; Settings changes it for new blogs) or `research-check`. `said` holds the last
+lines the CLI printed, kept on this computer only; do not copy them anywhere shared.
+Research that stops before its check accepts it is kept in the blog's
+`.studio-research-draft`, never shared; `research.refusal` groups the check's objections
+by kind and verdict, and `research.last` says what the attempt took (tokens and dollars
+only where the CLI reported them). **Try again** continues from that draft for up to
+three more rounds. **Continue without research** on the page drops the research stages;
+later stages then get `research_policy: none` and no `research_bundle`. **Finish**
+always asks first and keeps the draft in the team library.
+
 ## Manuscript editing on the page
 
 **Edit manuscript** supports local Markdown edits, scoped checks, selected findings,

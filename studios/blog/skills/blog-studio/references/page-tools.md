@@ -56,6 +56,12 @@ picks items with their library role, changeable for that blog only; a learned ki
 of post pre-ticks its samples. **Settings → Default voice** names a confirmed voice
 for every new blog, and **Interview me** takes **Write as** too.
 
+**A run that stops** says what to do beside the error: **Open Status** and **What the
+assistant said** for a CLI failure, where the step time limit lives beside **Try again
+with more time**, and, at research, **What the research check objected to**, what the
+last attempt took and **Continue without research**. First-run setup opens **Writing
+preferences** and marks an assistant that is not installed.
+
 Conversation methods remain available through the normal operation references.
 The report commands are `studio.py --root WORKSPACE prepublish --id ID` and
 `studio.py --root WORKSPACE plan --topic TOPIC`; neither changes a manuscript.
