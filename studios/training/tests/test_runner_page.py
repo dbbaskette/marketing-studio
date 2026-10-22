@@ -1610,6 +1610,20 @@ class WholeUpgradeTests(PageCase):
 
 
 class CombinedReviewTests(PageCase):
+    def test_combined_reviews_have_beads(self):
+        path = self.started(review_level='balanced')
+        self.decide(Path(path), 'research-plan')
+        stages = self.get('training', path=path)['stages']
+        by_name = {item['stage']: item for item in stages}
+        names = list(by_name)
+        self.assertEqual(by_name['review:direction']['state'], 'review')
+        self.assertEqual(by_name['review:final']['state'], 'not-started')
+        self.assertEqual(names[names.index('brief') + 1], 'review:direction')
+        self.assertEqual(names[names.index('package') - 1], 'review:final')
+        plain = self.started(title='Plain', review_level='step_by_step')
+        self.assertFalse(any(item['stage'].startswith('review:')
+                             for item in self.get('training', path=plain)['stages']))
+
     def test_grouped_reviews_are_revision_bound_over_the_authenticated_page(self):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):

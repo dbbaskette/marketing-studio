@@ -426,6 +426,7 @@ class RunnerPage(desk.Page):
         item['last_shared'] = found and found['last_shared']
         if found is None or 'error' in item:
             return item
+        item['stages'] = self.engine.review_beads(item['path'], item['stages'])
         # A worker in hand is activity too, from the moment it began.
         if found.get('busy_since') and item.get('activity_at'):
             item['activity_at'] = max(item['activity_at'], found['busy_since'])

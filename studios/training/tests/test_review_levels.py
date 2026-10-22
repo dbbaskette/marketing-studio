@@ -9,6 +9,26 @@ from studio_core import review_policy
 
 
 class ReviewLevelsTests(DeckCase):
+    def test_row_124_finish_level_waits_for_building(self):
+        root = None
+        controls = []
+
+        def preparing(tools, job):
+            controls.append(self.view(root)['controls']['finish_level'])
+            self.workers.document(tools, job)
+
+        def building(tools, job):
+            controls.append(self.view(root)['controls']['finish_level'])
+            self.workers.section(tools, job)
+
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
+            root = self.begin(levels=['101'])
+        self.workers.then('document', preparing)
+        self.decide(root, 'research-plan')
+        self.workers.then('section', building)
+        self.approve_review(root, self.view(root))
+        self.assertEqual(controls, [None, '101'])
+
     def test_balanced_reviews_the_direction_before_any_brief_is_written(self):
         root, shown = self.choose('balanced', levels=['101', '201'])
         self.assertEqual(shown['review']['phase'], 'direction')
@@ -117,7 +137,7 @@ class ReviewLevelsTests(DeckCase):
     def test_the_deck_can_be_left_out_from_the_direction_review_before_it_is_drawn(self):
         root, shown = self.choose('balanced')
         self.assertEqual(shown['review']['phase'], 'direction')
-        self.assertEqual(shown['controls'], {'finish_level': None, 'finishing': None,
+        self.assertEqual(shown['controls'], {'grouped': True, 'finish_level': None, 'finishing': None,
                                              'skip_deck': True})
         self.assertIn('outline:', [item['target'] for item in shown['review']['items']])
         since = len(self.workers.jobs)

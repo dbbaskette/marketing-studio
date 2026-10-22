@@ -4251,6 +4251,33 @@ class Engine(Reviewing):
                 if entry['state'] != 'not-made'
                 or found.state.get(entry['artifact']) == 'approved']
 
+    def review_beads(self, path, stages: list[dict]) -> list[dict]:
+        """Keep each new combined review visible in the stage row."""
+        import desk
+        root = self.driven(path)
+        if root is None:
+            return stages
+        record = self._load(root)
+        if review_layout.layout(record) < 2 or review_policy.level(record) == 'step_by_step':
+            return stages
+        found = self._survey(root, record)
+        row = list(stages)
+        for step in found.steps:
+            if step.id not in ('review:direction', 'review:final'):
+                continue
+            state = ('done' if step.id in found.done else 'review'
+                     if found.next.kind == 'review' and found.next.step.id == step.id
+                     else 'not-started')
+            item = {'stage': step.id, 'name': step.label, 'state': state,
+                    'words': desk.STAGE_STATES[state]}
+            if step.id == 'review:direction':
+                at = max((i + 1 for i, entry in enumerate(row)
+                          if entry['stage'] in ('blueprint', 'document', 'brief')), default=0)
+            else:
+                at = next((i for i, entry in enumerate(row) if entry['stage'] == 'package'), len(row))
+            row.insert(at, item)
+        return row
+
     def view(self, path) -> dict | None:
         """Everything the page shows for one run. None when no run is driving it."""
         root = self.driven(path)
@@ -4402,12 +4429,14 @@ class Engine(Reviewing):
         left out from here."""
         ahead = found.next.step
         level = self._level(ahead) if ahead else None
-        building = level is not None and ahead.stage not in WHOLE_TRAINING
+        grouped = review_policy.level(record) in ('balanced', 'automatic')
+        building = (level is not None and ahead.stage not in WHOLE_TRAINING
+                    and not (grouped and review_layout.preparing(record, ahead)))
         wanted = 'deck' in pipeline.wanted(found.session)
         started = any(name.startswith('deck-start') for name in found.done) or any(
             found.state.get(workspace.qualify('deck', each), 'not-started') != 'not-started'
             for each in found.session['levels'] or [None])
-        return {'finish_level': (level if mine and building and state == 'working'
+        return {'grouped': grouped, 'finish_level': (level if mine and building and state == 'working'
                                  and record.get('halt_after') is None else None),
                 'finishing': record.get('halt_after') if mine and state == 'working' else None,
                 'skip_deck': bool(mine and wanted and not started and found.next.kind != 'deck'

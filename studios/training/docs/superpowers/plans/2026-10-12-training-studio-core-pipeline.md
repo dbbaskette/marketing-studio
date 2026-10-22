@@ -378,6 +378,8 @@ Each row is one test in `tests/test_workspace.py` or, where it names `check`, `t
 
 | 123 | Grouped run with no review layout, direction approved | Survey after upgrade | Direction stays approved and old grouping is retained; briefs are not queued twice. Covered by `test_row_123_a_run_past_its_direction_review_keeps_it`. |
 
+| 124 | Grouped run preparing or building a level | Offer Finish this level | Hidden during shared preparation; offered during building, with the final combined review visible and waiting for all levels. Covered by `test_row_124_finish_level_waits_for_building` and `test_combined_reviews_have_beads`. |
+
 Shared setup readiness adds the independently verified transitions in
 [the suite setup matrix](../../../../../docs/shared-setup.md): no/partial settings
 → shared setup; successful finish → normal home; completed setup elsewhere →

@@ -2593,6 +2593,19 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     """What the runner adds to the page: set-up, a new training, a run, and running work in
     every list. Each screen is driven through its own controls."""
 
+    def test_grouped_build_controls_say_when_the_final_review_waits(self):
+        self.started()
+        run = a_run('working', 'Drawing the deck.', controls={
+            'finish_level': '101', 'finishing': None, 'skip_deck': False, 'grouped': True})
+        detail = self.detail('working', 'Drawing the deck.')
+        detail['body']['stages'].insert(-1, {'stage': 'review:direction',
+            'name': 'Review the first drafts', 'state': 'done', 'words': 'done'})
+        result = self.run_page(self.answers(**{
+            'GET /api/trainings': [self.listed('working')], 'GET /api/training': [detail],
+            'GET /api/run': [run]}), [{'click': 'Open Rolling restarts'}, {'snapshot': 'build'}])
+        self.assertIn('The final review waits until every level is made.', result['snapshots']['build']['text'])
+        self.assertIn('Review the first drafts', result['snapshots']['build']['text'])
+
     def test_google_doc_conflicts_have_explicit_confirmed_choices(self):
         self.started()
         problem = 'Someone has changed the Google Doc since it was last sent.'

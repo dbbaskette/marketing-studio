@@ -5491,6 +5491,7 @@ function deckLeftPart(run) {
 function controlsPart(run) {
   const found = run.controls;
   const node = callout('', make('h2', 'aside-title', 'Steer it'));
+  if (found.grouped) add(node, make('p', 'quiet', 'The final review waits until every level is made.'));
   const bar = make('div', 'bar');
   if (found.finishing) {
     add(node, make('p', '', 'It finishes level ' + found.finishing + ', then waits. Resume it '
