@@ -867,7 +867,7 @@ class BlogRunnerTests(RunnerCase):
         directory, _ = studio.item(self.root, 'articles', found['id'])
         (directory / 'OUTLINE.md').write_text('A local change outside the runner')
         shown = runner.document(self.root, found['id'], 'outline')
-        self.assertFalse(shown['checks'][1]['passed'])
+        self.assertEqual(shown['status'], 'stale')
         history = next((directory / 'history').glob('derived-blog-approved-outline-*.md'))
         history.write_text('Changed outside the runner')
         self.assertIsNone(runner.document(self.root, found['id'], 'outline')['previous'])
