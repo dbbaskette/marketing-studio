@@ -754,5 +754,67 @@ class RunFailureTests(ResearchCase):
         self.assertIn('ran out of the time a step may take', str(caught.exception))
 
 
+class MissingAssistantTests(MeteredWorkerTests):
+    """An assistant that is not installed or cannot start points at Status, like any CLI
+    failure, and never says "analysis" in a writing step."""
+
+    def assertPointsAtStatus(self, caught, name):
+        self.assertEqual(caught.exception.reason, 'cli')
+        self.assertEqual(
+            str(caught.exception),
+            name + ' is not installed or cannot start here. Check it under Status → Check '
+            'this computer, then try again.',
+        )
+
+    def test_a_missing_cli_points_at_status(self):
+        for agent, name in (('codex', 'Codex'), ('claude', 'Claude Code')):
+            with (
+                self.subTest(agent=agent),
+                patch('computer.cli_path', return_value=None),
+                self.assertRaises(blog_worker.WorkerFailure) as caught,
+            ):
+                blog_worker.generate(agent, {'x': 1}, 'Synthetic job', seconds=5)
+            self.assertPointsAtStatus(caught, name)
+
+    def test_a_cli_that_cannot_start_points_at_status(self):
+        missing = str(Path(self.temp.name) / 'no-such-agent')
+        with (
+            patch.object(blog_worker.source_curator, 'executable', return_value=missing),
+            patch.object(blog_worker.source_curator, 'codex_options', return_value=[]),
+            self.assertRaises(blog_worker.WorkerFailure) as caught,
+        ):
+            blog_worker.generate('claude', {}, 'Synthetic job', seconds=5)
+        self.assertPointsAtStatus(caught, 'Claude Code')
+
+    def test_a_codex_profile_it_cannot_use_points_at_status(self):
+        self.executable('print("unused")\n')
+        with (
+            patch.object(blog_worker.source_curator, 'executable', return_value=str(self.binary)),
+            patch.object(
+                blog_worker.source_curator,
+                'codex_options',
+                side_effect=ValueError('Select a direct model configuration.'),
+            ),
+            self.assertRaises(blog_worker.WorkerFailure) as caught,
+        ):
+            blog_worker.generate('codex', {}, 'Synthetic job', seconds=5)
+        self.assertPointsAtStatus(caught, 'Codex')
+
+
+class MissingAssistantRunTests(ResearchCase):
+    def test_the_run_offers_status_for_an_assistant_that_is_not_installed(self):
+        found = self.create(page=True, stop='draft')
+        engine = runner.Engine(self.root, worker=blog_worker.generate)
+        self.addCleanup(engine.close)
+        engine.control(found['id'], 'resume')
+        with patch('computer.cli_path', return_value=None):
+            engine._once(found['id'])
+        shown = engine.describe(found['id'])
+        self.assertEqual(shown['status'], 'failed')
+        self.assertEqual(shown['reason'], 'cli')
+        self.assertIn('is not installed or cannot start here', shown['error'])
+        self.assertNotIn('analysis', shown['error'])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -17,6 +17,20 @@ STATUS = 'Status → Check this computer'
 SAID_LINES = 20  # The end of what a CLI wrote to stderr, kept for the person on this computer.
 
 
+NAMES = {'codex': 'Codex', 'claude': 'Claude Code'}
+
+
+def cannot_start(engine):
+    """The failure for an assistant that is missing here or cannot be started as it is set up."""
+    return WorkerFailure(
+        NAMES[engine]
+        + ' is not installed or cannot start here. Check it under '
+        + STATUS
+        + ', then try again.',
+        'cli',
+    )
+
+
 class WorkerFailure(ValueError):
     """A job that ended without a document. `reason` is 'cli' for a CLI that failed or gave
     no readable answer, or 'time-limit'; `said` holds the last lines the CLI wrote to stderr,
@@ -171,7 +185,12 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
     """
     if engine not in ('codex', 'claude'):
         raise ValueError('Choose Codex or Claude.')
-    binary = source_curator.executable(engine)
+    try:
+        binary = source_curator.executable(engine)
+        # A Codex profile that cannot run unattended stops the job before it starts, too.
+        options = source_curator.codex_options() if engine == 'codex' else []
+    except (OSError, ValueError) as error:
+        raise cannot_start(engine) from error
     review = payload.get('response_kind') == 'editing-review'
     response_schema = REVIEW_SCHEMA if review else SCHEMA
     output_guidance = (
@@ -189,7 +208,7 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
             command = [
                 binary,
                 'exec',
-                *source_curator.codex_options(),
+                *options,
                 '-c',
                 'features.unified_exec=false',
                 '-c',
@@ -247,15 +266,18 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                 + json.dumps(payload)
             )
             stdin.seek(0)
-            process = subprocess.Popen(
-                command,
-                stdin=stdin,
-                stdout=stdout,
-                stderr=stderr,
-                cwd=scratch,
-                env=env,
-                start_new_session=True,
-            )
+            try:
+                process = subprocess.Popen(
+                    command,
+                    stdin=stdin,
+                    stdout=stdout,
+                    stderr=stderr,
+                    cwd=scratch,
+                    env=env,
+                    start_new_session=True,
+                )
+            except OSError as error:
+                raise cannot_start(engine) from error
             deadline = time.monotonic() + seconds
             spent = (None, None)  # What the CLI reported it used, where it says.
             try:
