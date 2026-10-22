@@ -1427,6 +1427,7 @@ class Engine(Reviewing):
                              drive=ready['drive'], pictures=ready['pictures'],
                              lacks=list(ready['missing']))
                 found['runtimes']['slides'] = str(tool.runtime)
+                found['pool'] = bool(tool.has('google-preview-pool'))
                 if ready['tool']:   # read from what it lists; asked only when it lists none
                     found['needs'] = list(tool.lacks())
             except (WorkspaceError, OSError) as refusal:
@@ -1509,6 +1510,7 @@ class Engine(Reviewing):
                  [fact('Installed', can[seen['pictures']])],
                  ' '.join([NO_PICTURES, *seen['lacks']]) if not seen['pictures'] else '')]
         return {'missing': missing, 'how': how, 'drive': seen['drive'], 'local': seen['local'],
+                'pool': bool(seen.get('pool')),
                 'brand': dict(brand), 'brands': list(brand['brands']), 'items': items,
                 'lacks': lacks, 'update': update}
 

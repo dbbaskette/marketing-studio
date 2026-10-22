@@ -43,7 +43,7 @@ NOTE = 4000
 def _title(run: dict, revision: int) -> str:
     title = run.get('title') or (run.get('form') or {}).get('title') or 'Deck'
     if decks.user_first(run):
-        title += ' — Unreviewed first draft'
+        title += ' — first draft, not checked'
     return title if revision == 1 else f'{title} (revision {revision})'
 
 

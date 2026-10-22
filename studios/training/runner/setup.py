@@ -155,7 +155,7 @@ def describe(engine) -> dict:
             'agent': {'default': chosen.agent, 'model': chosen.model,
                       'effort': chosen.effort},
             'limits': chosen.limits,
-            'previews': {'how': chosen.previews, 'drive': needs['drive'],
+            'previews': {'how': chosen.previews, 'pool': needs['pool'], 'drive': needs['drive'],
                          'local': needs['local'], 'left': engine.previews_left()},
             'brand': {**needs['brand'], 'skills': engine.brand_skills(),
                       'repository': chosen.brand_repository,

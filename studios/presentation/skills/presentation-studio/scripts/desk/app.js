@@ -160,6 +160,13 @@ const PREVIEW_SAYS = [
   'Google Drive: each deck keeps one presentation named “Preview: …” in your Drive, written '
     + 'again at each render. Presentation Studio never deletes it.',
 ];
+// With a slides tool that keeps a pool of preview presentations, no file is named for a deck.
+const POOL_SAYS = 'Google Drive: previews are drawn in a few shared presentations named '
+  + '“Preview: …” in your Drive, reused by every deck. Presentation Studio never deletes them.';
+function previewSays() {
+  const pooled = Boolean(view.setup && view.setup.previews && view.setup.previews.pool);
+  return pooled ? [PREVIEW_SAYS[0], POOL_SAYS] : PREVIEW_SAYS;
+}
 const PREVIEW_ABSENT = [
   'LibreOffice was not found on this computer, so Google Drive is the one way there is.',
   'Google access on this computer does not reach Drive, so LibreOffice is the one way there '
@@ -2490,7 +2497,7 @@ function previewsCard(form) {
       make('p', 'fix', 'It needs LibreOffice, or Google access that reaches Drive. The Status '
         + 'screen says what a deck needs.'));
   }
-  const [control, meanings] = explained('Make them with', PREVIEW_NAMES, PREVIEW_SAYS,
+  const [control, meanings] = explained('Make them with', PREVIEW_NAMES, previewSays(),
     PREVIEWS.indexOf(form.previews), (index) => {
       form.previews = PREVIEWS[index];
     }, 'previews');
@@ -2924,7 +2931,7 @@ function reviewLevelCard() {
 }
 
 function aboutStep(draft) {
-  const research = draft.route !== 'existing' ? chip('Research it first', draft.research,
+  const research = draft.route !== 'existing' ? chip('Research the public web first', draft.research,
     (on) => {
       draft.research = on;
     }, 'research') : null;
@@ -2983,10 +2990,10 @@ function startStep(draft) {
       }, 'new-output'),
     ...agentFields(draft, 'new', 'For this deck', told),
     ...(draft.level === 'selected' ? [] : [add(make('div', 'field'),
-      chip('Show first draft before AI review', firstDraftChoice(draft), on => {
+      chip('See the first draft before the deck is checked', firstDraftChoice(draft), on => {
         draft.firstDraft = on; draft.firstDraftExplicit = true;
-      }, 'first-draft'), make('p', 'quiet field-hint', 'Still validates and renders your '
-        + 'slides. Lets you review the first build before AI critique and polishing.'))]),
+      }, 'first-draft'), make('p', 'quiet field-hint', 'It is still built and rendered. The '
+        + 'check and its repairs run when you ask.'))]),
     make('p', 'quiet', (limitsSays(limits) || 'No limits are set for this computer.')
       + ' A deck that reaches a limit stops and asks you. The limits are changed in '
       + 'Settings.'));
@@ -4475,9 +4482,9 @@ function auditPart(gate) {
 
 function buildProgressCard(progress) {
   const node = card('Slides taking shape');
-  add(node, state('late', view.run?.unreviewed ? 'Unreviewed first draft' : 'Unreviewed'), make('p', 'quiet', progress.incomplete
+  add(node, state('late', view.run?.unreviewed ? 'First draft, not checked' : 'Unreviewed'), make('p', 'quiet', progress.incomplete
     ? 'The render stopped before it finished. These previews are kept so you can inspect them.'
-    : view.run?.unreviewed ? 'AI review is skipped for this first draft. You can request it at the draft checkpoint.' : 'Previews appear as each slide is drawn. The deck still needs its review and your decision.'));
+    : view.run?.unreviewed ? 'The check is left out of this first draft. You can ask for it when the deck stops for you.' : 'Previews appear as each slide is drawn. The deck still needs its review and your decision.'));
   const slides = list(progress.slides).map((one) => ({ ...one, partial: true,
     where: pictureOf(view.path, { kind: 'progress', ref: one.ref }),
     mark: one.ref }));
@@ -4554,14 +4561,14 @@ function stepLabel(run, name) {
 }
 
 function buildPanel(gate, readonly) {
-  const node = card(gate.unreviewed ? 'Unreviewed first draft' : 'The deck');
+  const node = card(gate.unreviewed ? 'First draft, not checked' : 'The deck');
   const held = chosenFor(gate);
   // A look chosen from samples nobody saw rendered: said first, in the shared words.
   if (gate.look_unreviewed) add(node, callout('', make('p', '', gate.look_unreviewed)));
   if (gate.unreviewed) {
-    add(node, state('late', 'Unreviewed first draft'), make('p', '',
-      'Validated and rendered. AI critique and visual polishing have not run. Exporting or resuming does not start them.'),
-      capsule('Run AI review', '', async event => {
+    add(node, state('late', 'First draft, not checked'), make('p', '',
+      'Built and rendered. The check and its repairs have not run. Using this first draft or resuming does not start them.'),
+      capsule('Check the deck', '', async event => {
         const pressed = event.currentTarget; if (held.reviewing) return;
         held.reviewing = true; pressed.disabled = true;
         try {
@@ -4595,7 +4602,7 @@ function buildPanel(gate, readonly) {
     .includes(finding.severity)).length, 0);
   add(node, make('p', '', count(slides.length, 'slide', 'slides') + '. ' + (findings
     ? count(findings, 'finding remains', 'findings remain') + ' from the review, each shown '
-      + 'with its slide.' : gate.unreviewed ? 'AI review has not run. Whether the deck is useful is yours to judge.' : 'The review has nothing left to raise. Whether the deck is good '
+      + 'with its slide.' : gate.unreviewed ? 'The check has not run. Whether the deck is useful is yours to judge.' : 'The review has nothing left to raise. Whether the deck is good '
       + 'is still yours to judge.')),
   serious ? state('late', count(serious, 'serious finding', 'serious findings')
     + ' still listed.') : null,
@@ -4696,8 +4703,8 @@ function gateLine(run) {
 
 function deliverPart(run) {
   const found = run.deliver;
-  const node = card(run.unreviewed || found.review_status === 'unreviewed' ? 'Delivered — unreviewed first draft' : 'Delivered');
-  if (run.unreviewed || found.review_status === 'unreviewed') add(node, make('p', 'quiet', 'AI review has not run on this draft.'));
+  const node = card(run.unreviewed || found.review_status === 'unreviewed' ? 'Delivered: first draft, not checked' : 'Delivered');
+  if (run.unreviewed || found.review_status === 'unreviewed') add(node, make('p', 'quiet', 'The deck check has not run on this draft.'));
   add(node, state('done', 'Revision ' + (found.revision || 1) + '.'),
     found.at ? add(make('p', 'quiet'), 'Delivered ', when(found.at), '.') : null);
   const bar = make('div', 'bar');
@@ -5293,7 +5300,7 @@ function deckActions(run, lead) {
     // a stop reviewed item by item it says what it will do with the marks. Pressed, it
     // acts on the gate as it is then, as `decide` does.
     const approve = capsule(REVIEWED.includes(run.gate.name) ? reviewOf(run.gate).label
-      : run.gate.unreviewed ? 'Use/export draft as-is' : 'Approve', lead === 'approve' ? 'filled' : '', () => {
+      : run.gate.unreviewed ? 'Use this first draft' : 'Approve', lead === 'approve' ? 'filled' : '', () => {
       const gate = view.run.gate;
       if (gate && REVIEWED.includes(gate.name)) sendReview(gate, approve);
       else if (gate && gate.name === 'gate:look' && gate.offered) {

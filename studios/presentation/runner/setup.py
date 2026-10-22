@@ -149,7 +149,7 @@ def describe(engine) -> dict:
             'limits': chosen.limits,
             # The shared review level, so the start form can say where a deck stops.
             'review_level': review_policy.capture()['level'],
-            'previews': {'how': chosen.previews, 'drive': needs['drive'],
+            'previews': {'how': chosen.previews, 'pool': needs['pool'], 'drive': needs['drive'],
                          'local': needs['local']},
             'brand': {**needs['brand'], 'skills': engine.brand_skills(),
                       'repository': chosen.brand_repository,

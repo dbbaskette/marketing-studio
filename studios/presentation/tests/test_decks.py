@@ -7,6 +7,17 @@ import helpers  # noqa: F401
 from runner import decks, gitstate
 from workspace import WorkspaceError
 
+
+class FirstDraftWordsTests(unittest.TestCase):
+    def test_the_first_draft_choice_is_refused_in_its_own_words(self):
+        from runner.steps import deliver
+        with self.assertRaisesRegex(WorkspaceError, '^Choose a checked deck, or the first draft '
+                                    'before the check.$'):
+            decks.check_form({'route': 'scratch', 'title': 'A deck', 'output': 'pptx',
+                              'initial_review': 'whatever'}, None)
+        run = {'title': 'A deck', 'form': {'initial_review': 'user-first'}}
+        self.assertEqual(deliver._title(run, 1), 'A deck — first draft, not checked')
+
 BRANDS = [{'brand': 'acme', 'variants': ['light']},
           {'brand': 'globex', 'variants': ['light', 'dark']}]
 

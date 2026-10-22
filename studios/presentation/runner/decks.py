@@ -143,7 +143,7 @@ def check_form(sent: dict, brands: list | None) -> dict:
     mode = sent.get('initial_review')
     if mode is not None:
         if mode not in ('standard', 'user-first'):
-            raise WorkspaceError('Choose normal AI review or show the first draft before AI review.')
+            raise WorkspaceError('Choose a checked deck, or the first draft before the check.')
         if route == 'existing' and sent.get('level') == 'selected' and mode == 'user-first':
             raise WorkspaceError('First-draft mode applies to a full build, not a selected-slide patch.')
         checked.update(initial_review=mode, initial_review_source='form')

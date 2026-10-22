@@ -3341,7 +3341,7 @@ class PageCase(DeckCase):
 class PageTests(PageCase):
     def test_set_up_says_how_previews_are_rendered_and_which_brand_was_found(self):
         found = self.get('setup')
-        self.assertEqual(found['previews'], {'how': 'drive', 'drive': True, 'local': False,
+        self.assertEqual(found['previews'], {'how': 'drive', 'pool': False, 'drive': True, 'local': False,
                                              'left': []})
         self.assertEqual(found['brand'], {
             'found': True, 'name': 'Example Co brand kit', 'problem': None,
@@ -3374,7 +3374,7 @@ class PageTests(PageCase):
                                  'detail': 'not asked, as LibreOffice makes them'}))
         self.assertEqual(needs['missing'], [])
         self.assertEqual(self.get('setup')['previews'],
-                         {'how': 'local', 'drive': None, 'local': True, 'left': []})
+                         {'how': 'local', 'pool': False, 'drive': None, 'local': True, 'left': []})
         # Choosing Drive asks it again.
         self.post('setup', {'previews': 'drive'})
         self.assertIn('drive_check', [name for name, *_ in self.slides.calls])

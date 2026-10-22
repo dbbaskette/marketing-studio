@@ -2576,7 +2576,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
             {'fill': 'Who is it for?', 'value': 'New operators'},
             {'click': 'Continue'}, {'click': 'No deck'}, {'click': 'Learner guide'},
-            {'click': 'Continue'}, {'click': 'Your documents only'}, {'snapshot': 'ready'},
+            {'click': 'Continue'}, {'click': 'Only what you supply'}, {'snapshot': 'ready'},
             {'click': 'Start the training'}, {'snapshot': 'kept'}])
         posted = self.posts(result)
         self.assertEqual(len(posted), 1)
@@ -3992,7 +3992,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         # The way back comes before the way on, as it is read.
         self.assertIn('Back a step', three['buttons'])
         self.assertIn('Start the training', three['buttons'])
-        for shown in ('The public web: it searches for pages anyone can read', 'Claude Code',
+        for shown in ('The public web only: it searches for pages anyone can read', 'Claude Code',
                       'A step may take up to 15 minutes.',
                       'at least 14 decisions for research, the selected teaching materials and '
                       'each deck', 'plus each practice scenario',
@@ -4002,7 +4002,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             self.assertIn(shown, three['text'])
         self.assertNotIn('not offered yet', three['text'])
         self.assertEqual((three['pressed'], three['posts']),
-                         (['Step by step', 'The public web', 'Claude Code'], 0))
+                         (['Step by step', 'The public web only', 'Claude Code'], 0))
         self.assertEqual((three['fields']['Its model'], three['fields']['Its reasoning level']),
                          ('', ''))
         self.assertEqual(self.asked(result, 'agents'), ['/api/agents'] * 2)
@@ -4607,19 +4607,20 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         waits, going = 'Waiting for your documents.', 'Drafting the research questions.'
         first = 'First, add your documents on the next screen'
         meanings = (
-            'The public web: it searches for pages anyone can read, and keeps every page it '
-            'quotes with the training.',
-            'Your documents only: it reads the documents you give it and nothing else, and '
+            'The public web only: it searches for pages anyone can read, and keeps every page '
+            'it quotes with the training.',
+            'Only what you supply: it reads the documents you give it and nothing else, and '
             'never searches the web or opens a page. You add them right after starting, and '
             'they stay on this computer.',
-            'Both: it reads your documents and researches the public web as well. You add the '
-            'documents right after starting, and they stay on this computer.')
+            'What you supply and the public web: it reads your documents and researches the '
+            'public web as well. You add the documents right after starting, and they stay on '
+            'this computer.')
         plain = 'at least 5 decisions for research and the selected teaching materials'
         shaped = [{'click': 'Reference brief'}, {'click': 'Practice scenarios'}, {'click': '101'},
                   {'click': 'Extra copies and Yoodli'}, {'click': 'Make scenarios for Yoodli'}]
         for choice, scope, shape in ((None, 'public-web', []),
-                                     ('Your documents only', 'supplied-only', shaped),
-                                     ('Both', 'both', [])):
+                                     ('Only what you supply', 'supplied-only', shaped),
+                                     ('What you supply and the public web', 'both', [])):
             with self.subTest(scope):
                 web = scope == 'public-web'
                 state, says = ('working', going) if web else ('waiting', waits)
@@ -4636,7 +4637,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                     *([{'click': choice}] if choice else []), {'snapshot': 'three'},
                     {'click': 'Start the training'}, {'snapshot': 'run'}])
                 three, landed = result['snapshots']['three'], result['snapshots']['run']
-                self.assertEqual(three['pressed'], ['Step by step', choice or 'The public web'])
+                self.assertEqual(three['pressed'], ['Step by step', choice or 'The public web only'])
                 for said in meanings:
                     self.assertIn(said, three['text'])
                 # With documents, the first thing it does is wait for them, and it says so.
@@ -5302,6 +5303,31 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('A deck adds three stops', shots['three']['text'])
         (address, sent), = self.posts(result)
         self.assertEqual((sent['deck_target'], sent['brand']), (None, None))
+
+    def test_a_preview_pool_is_said_as_it_is(self):
+        pool = ('Google Drive: previews are drawn in a few shared presentations named '
+                '“Preview: …” in your Drive, reused by every deck. Training Studio never '
+                'deletes them.')
+        left = [{'name': 'Preview: 1', 'training': 'Rolling restarts',
+                 'url': 'https://docs.example.com/presentation/d/abc'}]
+        pooled = {'how': 'drive', 'pool': True, 'drive': True, 'local': True, 'left': left}
+        result = self.run_page(self.answers({**SET_UP, 'previews': pooled}), [
+            {'click': 'Settings'}, {'snapshot': 'settings'},
+            {'click': 'Change the set-up'}, {'snapshot': 'set-up'}])
+        shots = result['snapshots']
+        self.assertIn(pool, shots['set-up']['text'])
+        self.assertNotIn('each deck keeps one presentation', shots['set-up']['text'])
+        self.assertIn('drawn in a few shared presentations there', shots['settings']['text'])
+        self.assertNotIn('keeps one presentation there', shots['settings']['text'])
+
+    def test_each_research_choice_has_one_name(self):
+        result = self.run_page(self.answers(), [*self.to_the_last_step(), {'snapshot': 'ready'}])
+        ready = result['snapshots']['ready']
+        for name in ('The public web only', 'Only what you supply',
+                     'What you supply and the public web'):
+            self.assertIn(name, ready['buttons'])
+        for old in ('Your documents only', 'Both'):
+            self.assertNotIn(old, ready['buttons'])
 
     def test_how_previews_are_made_is_chosen_at_set_up_and_drive_files_are_listed(self):
         local = 'LibreOffice: the pictures are made on this computer, and nothing leaves it.'

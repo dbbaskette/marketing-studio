@@ -1184,6 +1184,7 @@ class Engine(Jobs, Researching):
                              drive=ready['drive'], pictures=ready['pictures'],
                              lacks=list(ready['missing']))
                 found['runtimes']['slides'] = str(tool.runtime)
+                found['pool'] = bool(tool.has('google-preview-pool'))
             except (WorkspaceError, OSError) as refusal:
                 found['tool'] = str(refusal)
             try:
@@ -1258,6 +1259,7 @@ class Engine(Jobs, Researching):
                  [fact('Installed', can[bool(seen['research'])])],
                  seen['research_problem'] or '')]
         return {'missing': missing, 'how': how, 'drive': seen['drive'],
+                'pool': bool(seen.get('pool')),
                 'local': seen['local'], 'google': bool(seen['drive']),
                 'tool': not seen['tool'], 'version': seen['version'],
                 'brand': dict(brand), 'brands': list(brand['brands']),
@@ -1722,11 +1724,12 @@ class Engine(Jobs, Researching):
             record = self._load(root)
             last = (build.read_state(root).get('rounds') or [{}])[-1]
             if not expected or last.get('deck') != expected:
-                raise WorkspaceError('The draft changed. Reload it before requesting AI review.')
+                raise WorkspaceError('The draft changed. Reload it before asking for the check.')
             if record.get('review_requested'):
                 return self.view(path)
             if not decks.user_first(record) or gate_state(record, 'gate:build') != 'waiting':
-                raise WorkspaceError('AI review can be requested at the unreviewed draft checkpoint.')
+                raise WorkspaceError('The check can be asked for while the first draft waits '
+                                     'for you.')
             record['review_requested'] = {'at': home.now(), 'deck': expected}
             for name in ('build-review', 'build-repair', 'build-render'):
                 record['steps'].pop(name, None)

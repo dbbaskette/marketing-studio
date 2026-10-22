@@ -325,6 +325,7 @@ class ScreenTests(ScriptedPage, PageCase):
             {'fill': 'A short title', 'value': 'Rolling restarts'},
             {'fill': 'Who is it for?', 'value': 'Operators'},
             {'fill': 'What should they take away?', 'value': 'Skip AI review on the first build.'},
+            {'snapshot': 'about'},
             {'click': 'Continue'}, {'snapshot': 'last'}, {'click': 'Options'},
             {'snapshot': 'opened'}, {'click': 'Start the deck'}])
         last, opened = result['snapshots']['last'], result['snapshots']['opened']
@@ -332,9 +333,14 @@ class ScreenTests(ScriptedPage, PageCase):
                       'together) and the deck', last['text'])
         self.assertNotIn('Change', [link['name'] for link in last['links']])
         self.assertNotIn('First native build', last['text'])
-        self.assertNotIn('Show first draft before AI review', last['buttons'])
+        self.assertNotIn('See the first draft before the deck is checked', last['buttons'])
         self.assertIn('Options', last['buttons'])
-        self.assertIn('Show first draft before AI review', opened['buttons'])
+        self.assertIn('See the first draft before the deck is checked', opened['buttons'])
+        self.assertIn('It is still built and rendered. The check and its repairs run when you '
+                      'ask.', opened['text'])
+        for old in ('AI review', 'AI critique', 'Research it first'):
+            self.assertNotIn(old, opened['text'])
+        self.assertIn('Research the public web first', result['snapshots']['about']['buttons'])
         # The goal's words never flip the first draft silently: only the chip does.
         self.assertEqual(result['errors'], [])
         posted = [body for address, body in self.posts(result) if address == '/api/decks']
@@ -348,7 +354,7 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.run_page(answers, [
             {'click': 'New deck'}, {'click': 'Start from scratch'},
             {'fill': 'A short title', 'value': 'Rolling restarts'},
-            {'click': 'Research it first'},
+            {'click': 'Research the public web first'},
             {'click': 'Continue'}, {'snapshot': 'balanced'},
             {'click': 'Step by step'}, {'snapshot': 'step'},
             {'click': 'Start the deck'}])
@@ -652,6 +658,20 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(shown['gate']['name'], 'gate:outline')
         result = self.deck_screen(path, [{'click': 'Ask for changes'}, {'snapshot': 'sheet'}])
         self.assertIn(shown['gate']['redo']['says'], result['snapshots']['sheet']['sheet'])
+
+    def test_a_preview_pool_is_said_as_it_is(self):
+        described = self.get('setup')
+        pool = ('Google Drive: previews are drawn in a few shared presentations named '
+                '“Preview: …” in your Drive, reused by every deck. Presentation Studio never '
+                'deletes them.')
+        for pooled, said in ((True, pool), (False, 'Google Drive: each deck keeps one '
+                                                   'presentation named “Preview: …”')):
+            fresh = {**described, 'configured': False, 'workspace': None,
+                     'previews': {**described['previews'], 'pool': pooled,
+                                  'drive': True, 'local': True}}
+            result = self.run_page(self.answers(**{'GET /api/setup': [ok(fresh)]}),
+                                   [{'snapshot': 'first'}])
+            self.assertIn(said, result['snapshots']['first']['text'])
 
     def test_a_phone_keeps_one_decision_in_the_toolbar(self):
         path = self.started()
@@ -1059,10 +1079,13 @@ class ScreenTests(ScriptedPage, PageCase):
             if gate['name'] == 'gate:build': break
             self.decided(path)
         shown = self.run_of(path)
-        result = self.deck_screen(path, [{'snapshot': 'draft'}, {'click': 'Run AI review'}],
+        result = self.deck_screen(path, [{'snapshot': 'draft'}, {'click': 'Check the deck'}],
             **{'POST /api/review-draft': [ok(shown)]})
-        self.assertIn('Unreviewed first draft', result['snapshots']['draft']['text'])
-        self.assertIn('Use/export draft as-is', result['snapshots']['draft']['buttons'])
+        self.assertIn('First draft, not checked', result['snapshots']['draft']['text'])
+        self.assertIn('Use this first draft', result['snapshots']['draft']['buttons'])
+        for old in ('Unreviewed first draft', 'AI review', 'AI critique', 'as-is'):
+            self.assertNotIn(old, result['snapshots']['draft']['text']
+                             + '\n'.join(result['snapshots']['draft']['buttons']))
         self.assertNotIn('The review has nothing left to raise', result['snapshots']['draft']['text'])
         (_, body), = self.posts(result)
         self.assertEqual(body, {'path': path, 'expected': shown['gate']['expected_deck']})

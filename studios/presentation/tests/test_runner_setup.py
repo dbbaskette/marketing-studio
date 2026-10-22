@@ -85,7 +85,7 @@ class SetUpTests(FirstTimeCase):
         self.assertEqual((said['shared'], said['shared_problem']), ({}, None))
         self.assertEqual((said['notify'], said['updates'], said['upkeep']),
                          ({'on': False, 'can': True, 'problem': None}, {'look': True}, None))
-        self.assertEqual(said['previews'], {'how': None, 'drive': True, 'local': True})
+        self.assertEqual(said['previews'], {'how': None, 'pool': False, 'drive': True, 'local': True})
         self.assertIn('No workspace is set up on this computer yet',
                       self.post('decks', {'form': FORM}, 409)['error'])
         self.assertIn('No workspace is set up', self.post('share', {}, 409)['error'])
@@ -291,6 +291,14 @@ class SharedConfigTests(FirstTimeCase):
         refused = self.post('review-level', {'level': 'balanced', 'seen': 'step_by_step'}, 409)
         self.assertIn('could not be read', refused['error'])
         self.assertEqual(self.config.read_text(), '{')
+
+    def test_the_set_up_says_whether_previews_share_a_pool(self):
+        self.assertIs(self.get('setup')['previews']['pool'], False)
+        tool = self.engine.slides()
+        with mock.patch.object(type(tool), 'has', lambda me, name: name == 'google-preview-pool'):
+            self.engine.deck_needs(fresh=True)
+            self.assertIs(self.get('setup')['previews']['pool'], True)
+        self.engine.deck_needs(fresh=True)
 
     def test_with_no_file_the_defaults_are_the_built_in_ones(self):
         self.assertFalse(self.config.exists())

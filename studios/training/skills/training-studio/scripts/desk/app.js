@@ -174,15 +174,16 @@ const REVIEW_SAYS = {
     + 'anything, and the spending limit still holds.',
   step_by_step: 'Stops at every stage of every level.',
 };
-const SOURCES = [['public-web', 'The public web'], ['supplied-only', 'Your documents only'],
-  ['both', 'Both']];
+const SOURCES = [['public-web', 'The public web only'], ['supplied-only', 'Only what you supply'],
+  ['both', 'What you supply and the public web']];
 const SOURCE_SAYS = [
-  'The public web: it searches for pages anyone can read, and keeps every page it quotes '
+  'The public web only: it searches for pages anyone can read, and keeps every page it quotes '
     + 'with the training.',
-  'Your documents only: it reads the documents you give it and nothing else, and never '
+  'Only what you supply: it reads the documents you give it and nothing else, and never '
     + 'searches the web or opens a page. You add them right after starting, and they stay on '
     + 'this computer.',
-  'Both: it reads your documents and researches the public web as well. You add the '
+  'What you supply and the public web: it reads your documents and researches the public '
+    + 'web as well. You add the '
     + 'documents right after starting, and they stay on this computer.',
 ];
 // A training where the run has made everything it can, and the deck is all that is left.
@@ -215,6 +216,15 @@ const PREVIEW_SAYS = [
     + 'again at each render. Training Studio never deletes it. Settings lists the ones it '
     + 'made, each with its address, so that you can.',
 ];
+// With a slides tool that keeps a pool of preview presentations, no file is named for a deck.
+const POOL_SAYS = 'Google Drive: previews are drawn in a few shared presentations named '
+  + '“Preview: …” in your Drive, reused by every deck. Training Studio never deletes them.';
+function pooled() {
+  return Boolean(view.setup && view.setup.previews && view.setup.previews.pool);
+}
+function previewSays() {
+  return pooled() ? [PREVIEW_SAYS[0], POOL_SAYS] : PREVIEW_SAYS;
+}
 const PREVIEW_ABSENT = [
   'LibreOffice was not found on this computer, so Google Drive is the one way there is.',
   'Google access on this computer does not reach Drive, so LibreOffice is the one way there '
@@ -3372,7 +3382,10 @@ function leftCard() {
   const left = list(found && found.left);
   if (!found || (!left.length && found.how !== 'drive')) return null;
   const node = card('Preview files in your Google Drive');
-  add(node, make('p', '', 'A deck whose previews are made through Google Drive keeps one '
+  add(node, make('p', '', pooled() ? 'Previews made through Google Drive are drawn in a few '
+    + 'shared presentations there, named “Preview: …”, and reused by every deck. Training '
+    + 'Studio never deletes them, so removing them is yours to do, in Drive.'
+    : 'A deck whose previews are made through Google Drive keeps one '
     + 'presentation there, named “Preview: …”. Training Studio never deletes one, so '
     + 'removing them is yours to do, in Drive, once a deck is finished.'));
   if (!left.length) return add(node, make('p', 'quiet', 'It has made none so far.'));
@@ -3943,7 +3956,7 @@ function previewsCard(form) {
       make('p', 'fix', 'It needs LibreOffice, or Google access that reaches Drive. Everything '
         + 'but the deck can be made meanwhile, and the Status screen says what a deck needs.'));
   }
-  const [control, meanings] = explained('Make them with', PREVIEW_NAMES, PREVIEW_SAYS,
+  const [control, meanings] = explained('Make them with', PREVIEW_NAMES, previewSays(),
     PREVIEWS.indexOf(form.previews), (index) => {
       form.previews = PREVIEWS[index];
     }, 'previews');
