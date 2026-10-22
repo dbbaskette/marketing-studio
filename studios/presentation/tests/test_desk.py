@@ -328,9 +328,9 @@ class ScreenTests(ScriptedPage, PageCase):
             {'click': 'Continue'}, {'snapshot': 'last'}, {'click': 'Options'},
             {'snapshot': 'opened'}, {'click': 'Start the deck'}])
         last, opened = result['snapshots']['last'], result['snapshots']['opened']
-        self.assertIn('Balanced: it stops for the outline and the deck', last['text'])
-        self.assertIn('/onboarding/#token=', next(link['href'] for link in last['links']
-                                                   if link['name'] == 'Change'))
+        self.assertIn('Balanced: it stops for the direction (the outline and the look '
+                      'together) and the deck', last['text'])
+        self.assertNotIn('Change', [link['name'] for link in last['links']])
         self.assertNotIn('First native build', last['text'])
         self.assertNotIn('Show first draft before AI review', last['buttons'])
         self.assertIn('Options', last['buttons'])
@@ -339,6 +339,61 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(result['errors'], [])
         posted = [body for address, body in self.posts(result) if address == '/api/decks']
         self.assertNotIn('initial_review', posted[0]['form'])
+
+    def test_where_this_deck_stops_is_chosen_on_the_form(self):
+        answers = self.answers(**{'GET /api/setup': [self.setup_with(review_level='balanced')],
+                                  'POST /api/decks': [ok({'path': '/nowhere', 'id': 'x'})],
+                                  'GET /api/run': [{'status': 404,
+                                                    'body': {'error': 'There is no deck there.'}}]})
+        result = self.run_page(answers, [
+            {'click': 'New deck'}, {'click': 'Start from scratch'},
+            {'fill': 'A short title', 'value': 'Rolling restarts'},
+            {'click': 'Research it first'},
+            {'click': 'Continue'}, {'snapshot': 'balanced'},
+            {'click': 'Step by step'}, {'snapshot': 'step'},
+            {'click': 'Start the deck'}])
+        balanced, step = result['snapshots']['balanced'], result['snapshots']['step']
+        self.assertIn('Where this deck stops', balanced['text'])
+        for level in ('Balanced', 'Automatic draft', 'Step by step'):
+            self.assertIn(level, balanced['buttons'])
+        self.assertIn('Balanced', balanced['pressed'])
+        self.assertIn('Use this for new work in every studio', balanced['buttons'])
+        self.assertIn('Balanced: it stops for the direction (the research, the outline and the '
+                      'look together) and the deck', balanced['text'])
+        self.assertIn('Step by step: it stops for the research plan, the research, the outline, '
+                      'the look and the deck', step['text'])
+        self.assertFalse([link for link in balanced['links'] + step['links']
+                          if link['href'].startswith('/onboarding/')],
+                         'nothing on the form leaves it')
+        posted = [body for address, body in self.posts(result) if address == '/api/decks']
+        form = posted[0]['form']
+        self.assertEqual((form['review_level'], form['review_seen'], form['review_default']),
+                         ('step_by_step', 'balanced', False))
+
+    def test_settings_saves_where_new_work_stops_at_once(self):
+        from studio_core import review_policy
+        answers = self.answers(**{
+            'GET /api/setup': [self.setup_with(review_level='balanced')],
+            'POST /api/review-level': [self.setup_with(review_level='automatic'),
+                                       {'status': 409, 'body': {'error': review_policy.STALE}}]})
+        result = self.run_page(answers, [
+            {'click': 'Settings'}, {'snapshot': 'settings'},
+            {'click': 'Automatic draft'}, {'snapshot': 'saved'},
+            {'click': 'Step by step'}, {'snapshot': 'refused'}])
+        shots = result['snapshots']
+        self.assertIn('Where new work stops', shots['settings']['text'])
+        self.assertIn('Balanced', shots['settings']['pressed'])
+        sent = [body for address, body in self.posts(result) if address == '/api/review-level']
+        self.assertEqual(sent, [{'level': 'automatic', 'seen': 'balanced'},
+                                {'level': 'step_by_step', 'seen': 'automatic'}])
+        self.assertIn('Automatic draft', shots['saved']['pressed'])
+        self.assertIn(review_policy.STALE, shots['refused']['text'])
+
+    def test_a_deck_calls_its_look_stage_look(self):
+        path = self.started(title='Rolling restarts')
+        result = self.deck_screen(path, [{'snapshot': 'deck'}])
+        self.assertIn('Look: Still to come', result['snapshots']['deck']['text'].split('\n'))
+        self.assertNotIn('Check the brand', result['snapshots']['deck']['text'])
 
     def test_the_new_deck_form_asks_once_whether_it_is_a_talk_or_a_handout(self):
         answers = self.answers(**{'GET /api/run': [{'status': 404,

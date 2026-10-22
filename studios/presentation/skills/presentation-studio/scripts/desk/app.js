@@ -66,7 +66,7 @@ const STEP_WORDS = {
   later: ['out', 'Coming later'],
 };
 const STAGES = [['intake', 'Intake'], ['classify', 'Classify'], ['research', 'Research'],
-  ['outline', 'Outline'], ['look', 'Brand'], ['build', 'Build'], ['deliver', 'Deliver'],
+  ['outline', 'Outline'], ['look', 'Look'], ['build', 'Build'], ['deliver', 'Deliver'],
   ['rehearse', 'Rehearse with Yoodli']];
 const STEERED = {
   pause: 'Paused. Nothing more is started until you resume it.',
@@ -1697,6 +1697,8 @@ function drawSettings(fresh) {
     ['shared-settings', [], () => add(card('Shared settings'),
       make('p', '', 'Your assistant, work folder, brand and delivery choices apply across all studios.'),
       capsule('Change shared settings', 'quiet', () => { location.href = settingsAddress(); }, 'shared-settings'))],
+    ['review-level', [view.setup && view.setup.review_level, view.reviewRefused],
+      reviewLevelCard],
     ['workspace', around(), workspaceCard], ['studios', studiosMark(), studiosCard],
     ['defaults', [view.setup], defaultsCard],
     ['alerts', [alerts()], alertsCard], ['notify', around(), notifyCard],
@@ -2839,11 +2841,17 @@ function firstDraftChoice(draft) {
   return Boolean(draft.firstDraft);
 }
 
-// The gates that stop for the person under the shared review level, in the words of what
+// The level a deck stops at: the one its form chose, else the shared level the form read.
+function levelOf(draft) {
+  return draft.review_level || (view.setup && view.setup.review_level) || 'step_by_step';
+}
+
+// The gates that stop for the person under the deck's review level, in the words of what
 // they decide: the level's own rule, as review_policy.automatic applies it to a deck.
+// Under Balanced the outline's stop is the direction: the research, the outline and the
+// look, read together.
 function stopsFor(draft) {
-  // A deck's own level, where one is chosen, else the one every studio shares.
-  const level = draft.review_level || (view.setup && view.setup.review_level) || 'step_by_step';
+  const level = levelOf(draft);
   const gates = [];
   if (draft.route !== 'scratch') {
     gates.push(['gate:classify', draft.route === 'document' ? 'the kind of document'
@@ -2853,8 +2861,14 @@ function stopsFor(draft) {
     gates.push(['gate:research-plan', 'the research plan'], ['gate:research', 'the research']);
   }
   const chosen = draft.route === 'existing' ? draft.level : null;
-  if (!chosen || chosen === 'rework') gates.push(['gate:outline', 'the outline']);
-  if (!chosen || ['redesign', 'rework'].includes(chosen)) gates.push(['gate:look', 'the brand']);
+  const looks = !chosen || ['redesign', 'rework'].includes(chosen);
+  if (!chosen || chosen === 'rework') {
+    const together = [draft.research && draft.route !== 'existing' ? 'the research' : null,
+      'the outline', looks ? 'the look' : null].filter(Boolean);
+    gates.push(['gate:outline', level === 'balanced'
+      ? 'the direction (' + series(together) + ' together)' : 'the outline']);
+  }
+  if (looks) gates.push(['gate:look', 'the look']);
   gates.push(['gate:build', 'the deck']);
   const stops = level === 'step_by_step' ? gates : level === 'balanced'
     ? gates.filter(([name]) => ['gate:outline', 'gate:build'].includes(name))
@@ -2862,11 +2876,47 @@ function stopsFor(draft) {
   return REVIEW_WORDS[level] + ': it stops for ' + series(stops.map(([, words]) => words));
 }
 
-function stopsLine(draft) {
-  const change = make('a', '', 'Change');
-  change.href = settingsAddress();
-  return add(make('p', 'quiet stops-line'), make('span', '', stopsFor(draft)),
-    make('span', '', ' · '), change);
+const LEVELS_SHOWN = Object.keys(REVIEW_WORDS);
+
+// Where this deck stops, chosen for this deck on its form. The chip also makes it the level
+// new work starts at in every studio, written when the deck starts. Nothing here leaves the
+// form.
+function whereItStops(draft) {
+  const line = make('p', 'quiet stops-line', stopsFor(draft));
+  return add(card('Where this deck stops'),
+    choice('Review level', LEVELS_SHOWN.map((one) => REVIEW_WORDS[one]),
+      LEVELS_SHOWN.indexOf(levelOf(draft)), (index) => {
+        draft.review_level = LEVELS_SHOWN[index];
+        line.textContent = stopsFor(draft);
+      }, 'review-level'),
+    line,
+    add(make('div', 'field'), chip('Use this for new work in every studio',
+      draft.review_default, (on) => { draft.review_default = on; }, 'review-default'),
+    make('p', 'quiet field-hint', 'Saved when the deck starts.')));
+}
+
+// Settings: where new work stops in every studio, saved at once. A refusal, such as a level
+// another studio changed since this page read it, is said in the card.
+function reviewLevelCard() {
+  const problem = alertLine('review-level-problem');
+  if (view.reviewRefused) say(problem, view.reviewRefused);
+  const level = (view.setup && view.setup.review_level) || 'step_by_step';
+  return add(card('Where new work stops'),
+    make('p', '', 'Where new work stops for you, in every studio. A start form can choose '
+      + 'differently for one deck.'),
+    choice('Review level', LEVELS_SHOWN.map((one) => REVIEW_WORDS[one]),
+      LEVELS_SHOWN.indexOf(level), async (index) => {
+        const chosen = LEVELS_SHOWN[index];
+        try {
+          view.setup = await send('review-level', { level: chosen, seen: level });
+          view.reviewRefused = '';
+          toast('New work in every studio now starts at ' + REVIEW_WORDS[chosen] + '.');
+        } catch (failure) {
+          view.reviewRefused = failure.message;
+        }
+        draw(false);
+      }, 'review-level'),
+    problem);
 }
 
 function aboutStep(draft) {
@@ -2936,11 +2986,10 @@ function startStep(draft) {
     make('p', 'quiet', (limitsSays(limits) || 'No limits are set for this computer.')
       + ' A deck that reaches a limit stops and asks you. The limits are changed in '
       + 'Settings.'));
-  return [add(card('How it looks'), brandFields(draft, 'new')), options,
+  return [add(card('How it looks'), brandFields(draft, 'new')), options, whereItStops(draft),
   add(callout('', make('h2', 'aside-title', 'What happens when you start')),
     make('p', '', 'It starts at once and works on its own. From the first decision on, you '
       + 'see the slides themselves.'),
-    stopsLine(draft),
     drafted, make('p', 'quiet', 'This page tells you each time. In between, you can close '
       + 'it.'))];
 }
@@ -3044,7 +3093,9 @@ function formOf(draft) {
     variant: draft.variant || null, output: OUTPUTS[draft.output][0],
     delivery: DELIVERIES[deliveryOf(draft)][0],
     research: draft.route !== 'existing' && draft.research,
-    agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null };
+    agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null,
+    review_level: levelOf(draft), review_seen: (view.setup && view.setup.review_level) || null,
+    review_default: Boolean(draft.review_default) };
   if (draft.firstDraftExplicit) form.initial_review = draft.firstDraft ? 'user-first' : 'standard';
   const uploads = {};
   if (draft.route === 'existing') {

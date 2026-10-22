@@ -270,6 +270,28 @@ class CheckTests(FirstTimeCase):
 class SharedConfigTests(FirstTimeCase):
     """The studios config is the only place the values every studio shares are kept."""
 
+    def test_review_level_route_saves_and_refuses_a_stale_level(self):
+        from studio_core import review_policy
+        self.review_capture.stop()    # the test's own studios config is read for real
+        self.write_config('{"schema": 1, "share": "asked"}')
+        self.assertEqual(self.get('setup')['review_level'], 'balanced')
+        shown = self.post('review-level', {'level': 'automatic', 'seen': 'balanced'})
+        self.assertEqual(shown['review_level'], 'automatic')
+        self.assertEqual(json.loads(self.config.read_text()),
+                         {'schema': 1, 'share': 'asked', 'review': {'level': 'automatic'}})
+        before = self.config.read_text()
+        refused = self.post('review-level', {'level': 'step_by_step', 'seen': 'balanced'}, 409)
+        self.assertEqual(refused['error'], review_policy.STALE)
+        bad = self.post('review-level', {'level': 'fast', 'seen': 'automatic'}, 400)
+        self.assertEqual(bad['error'], 'Choose Balanced, Automatic draft, or Step by step.')
+        self.assertEqual(self.config.read_text(), before)
+        # An unreadable file shows Step by step, and refuses with its own sentence.
+        self.write_config('{')
+        self.assertEqual(self.get('setup')['review_level'], 'step_by_step')
+        refused = self.post('review-level', {'level': 'balanced', 'seen': 'step_by_step'}, 409)
+        self.assertIn('could not be read', refused['error'])
+        self.assertEqual(self.config.read_text(), '{')
+
     def test_with_no_file_the_defaults_are_the_built_in_ones(self):
         self.assertFalse(self.config.exists())
         said = self.get('setup')

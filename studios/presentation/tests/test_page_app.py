@@ -85,8 +85,8 @@ class LinkTests(unittest.TestCase):
         # suiteHome, which takes only this host on another port. External links still come
         # only from the server or a downloaded deck.
         targets = re.findall(r'\.href = ([^;]+);', script)
-        self.assertEqual(sorted(targets), ['address', 'held', "home + '/'", 'settingsAddress()',
-                                           'settingsAddress()'])
+        # The start form has no such link: where a deck stops is chosen on it.
+        self.assertEqual(sorted(targets), ['address', 'held', "home + '/'", 'settingsAddress()'])
         self.assertIn("return '/onboarding/#token=' + view.token;", script)
         self.assertIn('let home = suiteHome(window.location.hash, window.location)\n'
                       '    || suitePort(document.body?.dataset?.suitePort, window.location);', script)

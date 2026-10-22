@@ -181,7 +181,7 @@ RUN = {
     'deliver': '_deliver', 'rehearse': None}
 # What each gate decides on, as a commit and a sentence say it.
 WORDS = {'gate:classify': 'classification', 'gate:research-plan': 'research plan',
-         'gate:research': 'research', 'gate:outline': 'outline', 'gate:look': 'brand',
+         'gate:research': 'research', 'gate:outline': 'outline', 'gate:look': 'look',
          'gate:build': 'deck'}
 # The build's steps, whose work is kept under work/build/ on the computer that did it.
 BUILT = ('build-start', 'build-sections', 'build-whole', 'build-review', 'build-repair',
@@ -718,6 +718,7 @@ class Engine(Jobs, Researching):
         space, chosen = self.space(), settings.load()
         gitstate.identity(space.repo)
         checked = decks.check_form(form, self.brands())
+        level, seen, default = decks.review_choice(form)
         given = self._given(form, checked, uploads or {})
         named = isinstance(form, dict) and form.get('agent') not in (None, '')
         agent = settings.check_agent(form['agent']) if named else chosen.agent
@@ -736,6 +737,13 @@ class Engine(Jobs, Researching):
         if checked['route'] == 'existing' and source.get('kind') == 'google' \
                 and not self._google_ready():
             raise WorkspaceError(existing.NOT_READY)
+        if default:
+            # Refused, with nothing made, when another studio changed the level the form read.
+            import studios_config
+            try:
+                review_policy.change(studios_config.update, level, seen)
+            except ValueError as error:
+                raise WorkspaceError(str(error)) from None
         with self.files:
             root = decks.create(space, checked)
             try:
@@ -745,7 +753,9 @@ class Engine(Jobs, Researching):
                     target.write_bytes(data)
                 record = self._load(root)
                 record.update(agent=agent, model=model, level_of_effort=effort,
-                              model_profiles=profiles, review_policy=review_policy.capture(),
+                              model_profiles=profiles,
+                              review_policy=({'schema': 1, 'level': level} if level
+                                             else review_policy.capture()),
                               driver=team.claim(space),
                               limits={'step_seconds': chosen.step_seconds,
                                       'dollars': chosen.deck_dollars})

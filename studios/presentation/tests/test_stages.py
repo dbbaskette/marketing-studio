@@ -15,6 +15,12 @@ def names(r):
     return [s.name for s in stages.steps(r)]
 
 
+class NameTests(unittest.TestCase):
+    def test_the_look_stop_is_named_choose_the_look(self):
+        self.assertEqual(stages.BY_NAME['gate:look'].label, 'Choose the look')
+        self.assertEqual(stages.BY_NAME['gate:look'].doing, 'Waiting for you to choose the look')
+
+
 class SkipMapTests(unittest.TestCase):
     CASES = [
         (run('scratch'), ['intake-source', 'outline', 'gate:outline', 'brand',

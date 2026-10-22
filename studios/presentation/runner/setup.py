@@ -148,7 +148,7 @@ def describe(engine) -> dict:
             'output': chosen.output,
             'limits': chosen.limits,
             # The shared review level, so the start form can say where a deck stops.
-            'review_level': review_policy.level({'review_policy': review_policy.capture()}),
+            'review_level': review_policy.capture()['level'],
             'previews': {'how': chosen.previews, 'drive': needs['drive'],
                          'local': needs['local']},
             'brand': {**needs['brand'], 'skills': engine.brand_skills(),
@@ -156,6 +156,28 @@ def describe(engine) -> dict:
                       'release': chosen.brand_release,
                       'default': decks.default_brand(chosen.brand, chosen.variant,
                                                   needs['brand'].get('brands'))}}
+
+
+def review_choice(sent) -> tuple:
+    """The level Settings' Where new work stops sent, and the one the page read."""
+    if not isinstance(sent, dict) or set(sent) != {'level', 'seen'}:
+        raise WorkspaceError('Send the level and the level the page read.')
+    try:
+        review_policy.check({'level': sent['level']})
+    except ValueError as error:
+        raise WorkspaceError(str(error)) from None
+    return sent['level'], sent['seen']
+
+
+def save_review_level(engine, level: str, seen) -> dict:
+    """Make `level` the one new work starts at in every studio, under the studios config's
+    lock. Refused, with nothing written, when another studio changed the level the page
+    read, or the file cannot be read. The set-up described."""
+    try:
+        review_policy.change(studios_config.update, level, seen)
+    except ValueError as error:
+        raise WorkspaceError(str(error)) from None
+    return describe(engine)
 
 
 def save_brand(engine, sent: dict) -> dict:
