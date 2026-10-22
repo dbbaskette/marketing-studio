@@ -91,11 +91,12 @@ async function check(){
   await toolsAreNamed();
   await researchRefusal();
   await researchRounds();
+  await skipResearch();
   pageDefinesEveryElement();
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -2074,4 +2075,40 @@ async function researchRounds(){
   // Nothing kept, and an assistant that reports no usage.
   f.set('found',{...stopped,engine:'codex',error:'Research could not produce valid evidence and report data after one correction attempt.',research:{...stopped.research,kept:false,last:{jobs:2,rounds:1,seconds:120,tokens:null,dollars:null}}});f.run('sRun(found)');
   assert.ok(text().includes('Try again starts the research again: up to 3 rounds of writing and checking, within this blog’s 10-minute limit for the whole research step. The last attempt took 2 jobs in 1 round: 2 min; the assistant reported no tokens or cost.'),text().join('|'));
+}
+
+// A new blog stopped at its research offers Continue without research: a confirmation that says
+// what it does, one request, and the run's stops line without the research. Only a blog with a
+// manuscript is told to open Edit manuscript.
+async function skipResearch(){
+  const requests=[];
+  const stages=[{stage:'research-plan',label:'Research questions',path:'derived/blog-research-plan.md',status:'approved'},{stage:'research',label:'Research findings',path:'derived/blog-research.md',status:'pending'},{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'pending'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'},{stage:'review',label:'Review',path:'derived/blog-review.md',status:'pending'},{stage:'package',label:'Export package',path:'derived/blog-package.md',status:'pending'}];
+  const stopped={id:'synthetic',title:'Synthetic blog',status:'failed',enabled:false,next:'research',approval:'page',expected:'version-1',directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'step_by_step',existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},error:'The selected CLI failed.',research:{kept:false,rounds:3,refusal:null,last:null},stages};
+  const after={...stopped,status:'queued',enabled:true,error:'',next:'outline',expected:'version-2',research:null,stages:stages.slice(2),decisions:[{event:'Continued without research',at:new Date().toISOString()}]};
+  const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});if(url==='/api/run-skip-research'||url.startsWith('/api/run?'))return after;return {items:[],total:0};});f.loadRunner();
+  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),line=()=>nodes().find(e=>e.className==='quiet stops-line')?.textContent;
+  f.set('found',stopped);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
+  assert.equal(line(),'Step by step: it stops for the research plan, the research findings, the outline, the draft, the review and the export package');
+  assert.ok(text().includes('Research is optional. Continue without research takes this blog on to the outline, from your brief and selected sources; the later steps get no research findings.'),text().join('|'));
+  assert.equal(text().some(t=>/Open Edit manuscript/.test(t)),false,'a new blog has no manuscript to edit');
+  assert.equal(f.get('actions').children.some(e=>e.textContent==='Edit manuscript'),false);
+  const skip=f.get('actions').children.find(e=>e.textContent==='Continue without research');assert.ok(skip,f.get('actions').children.map(e=>e.textContent).join('|'));
+  await skip.listeners.click();
+  assert.equal(requests.length,0,'opening the confirmation sends nothing');
+  const sheet=descendants(f.get('sheet'));
+  assert.ok(sheet.some(e=>e.textContent==='Continue without research?'));
+  assert.ok(sheet.some(e=>e.textContent==='The research steps leave this blog’s run, and it goes on to the outline from your brief and selected sources. The later steps get no research findings, and research cannot be added back to this run.'),sheet.map(e=>e.textContent).join('|'));
+  await sheet.find(e=>e.tagName==='button'&&e.textContent==='Continue without research').listeners.click();
+  assert.deepEqual(requests.find(r=>r.url==='/api/run-skip-research').data,{id:'synthetic',expected:'version-1'});
+  assert.equal(line(),'Step by step: it stops for the outline, the draft, the review and the export package','the stops line no longer names research');
+  assert.ok(descendants(f.get('toasts')).some(e=>e.textContent==='Continuing without research.'));
+  assert.equal(f.get('actions').children.some(e=>e.textContent==='Continue without research'),false,'not once research is gone');
+  // An existing draft keeps the editing hint, and a working research offers no skip.
+  f.set('found',{...stopped,existing:true});f.run('sRun(found)');
+  assert.ok(text().includes('Research is optional for editing. Open Edit manuscript to polish the writing without research.'));
+  f.set('found',{...stopped,status:'working',enabled:true,error:'',started_at:new Date().toISOString()});f.run('sRun(found)');
+  assert.equal(f.get('actions').children.some(e=>e.textContent==='Continue without research'),false,'stop the research first');
+  // Balanced stops at the outline either way.
+  f.set('found',{...stopped,review_level:'balanced'});f.run('sRun(found)');
+  assert.equal(line(),'Balanced: it stops for the outline and the export package');
 }

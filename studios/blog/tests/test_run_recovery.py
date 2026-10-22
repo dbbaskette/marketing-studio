@@ -465,5 +465,110 @@ class MeteredWorkerTests(unittest.TestCase):
         self.assertEqual(len(jobs), 2)
 
 
+class ContinueWithoutResearchTests(ResearchCase):
+    def stopped_at_research(self):
+        found = self.research_run()
+        engine = self.engine()
+
+        def refusing(case_root, run, payload, worker, *, seconds, stop, progress=None):
+            refused_case(case_root / research_contract.CASE)
+            raise research_contract.ReviewRefused(
+                research_contract.objections(case_root / research_contract.CASE), 3
+            )
+
+        engine.control(found['id'], 'resume')
+        with patch('synthesis_research.generate', refusing):
+            engine._once(found['id'])
+        return engine, engine.describe(found['id'])
+
+    def test_the_outline_then_runs_without_research_and_the_run_says_so(self):
+        engine, shown = self.stopped_at_research()
+        directory = Path(shown['directory'])
+        self.assertTrue((directory / DRAFT).is_dir())
+        shown = runner.dispatch(
+            self.root, 'skip-research', {'id': shown['id'], 'expected': shown['expected']}
+        )
+        self.assertEqual(
+            [row['stage'] for row in shown['stages']], ['outline', 'draft', 'review', 'package']
+        )
+        self.assertEqual(shown['next'], 'outline')
+        self.assertEqual(shown['status'], 'queued', 'it resumes')
+        self.assertEqual(shown['error'], '')
+        self.assertIsNone(shown['research'])
+        self.assertEqual(shown['decisions'][-1]['event'], 'Continued without research')
+        self.assertFalse((directory / DRAFT).exists(), 'the kept research draft is let go')
+        _, record, run = runner.load(self.root, shown['id'])
+        self.assertEqual(run['pipeline'], ['outline', 'draft', 'review', 'package'])
+        self.assertNotIn('research', run['stages'])
+        self.assertNotIn('research-plan', run['stages'])
+        self.assertEqual(run['research_skipped']['from'], 'research')
+        self.assertEqual(record['research_policy'], 'supplied-only', 'the blog keeps its policy')
+        # The later stages get no bundle and are told there is none.
+        _, payload, guidance = runner.job(self.root, shown['id'])
+        self.assertNotIn('research_bundle', payload)
+        self.assertEqual(payload['research_policy'], 'none')
+        self.assertIn('continued without research', guidance)
+        seen = []
+
+        def worker(*args, **kwargs):
+            seen.append(args[1])
+            return {'content': '# Outline\nSynthetic writing.', 'notes': 'Synthetic.'}
+
+        engine.worker = worker
+        engine._once(shown['id'])
+        shown = engine.describe(shown['id'])
+        self.assertEqual(shown['next'], 'outline')
+        self.assertEqual(shown['status'], 'waiting-for-approval', shown['error'])
+        self.assertNotIn('research_bundle', seen[0])
+        self.assertEqual(seen[0]['research_policy'], 'none')
+
+    def test_research_questions_that_failed_can_be_skipped_too(self):
+        found = self.research_run()
+        engine = self.engine()
+        # Back to the plan: ask for changes, then let its job fail.
+        found = runner.decide(
+            self.root,
+            found['id'],
+            found['expected'],
+            'changes',
+            'Narrow it.',
+            True,
+            'research-plan',
+        )
+        engine.keep_local(
+            found['id'], {'enabled': False, 'status': 'failed', 'error': 'The selected CLI failed.'}
+        )
+        shown = engine.describe(found['id'])
+        self.assertEqual(shown['next'], 'research-plan')
+        shown = runner.dispatch(
+            self.root, 'skip-research', {'id': shown['id'], 'expected': shown['expected']}
+        )
+        self.assertEqual(shown['next'], 'outline')
+        self.assertEqual(
+            runner.load(self.root, shown['id'])[2]['research_skipped']['from'], 'research-plan'
+        )
+
+    def test_it_is_refused_away_from_research_while_working_and_from_chat(self):
+        found = self.create(page=True)
+        with self.assertRaisesRegex(ValueError, 'not waiting on research'):
+            runner.dispatch(
+                self.root, 'skip-research', {'id': found['id'], 'expected': found['expected']}
+            )
+        engine, shown = self.stopped_at_research()
+        engine.current = shown['id']
+        self.addCleanup(setattr, engine, 'current', None)
+        runner.ENGINES[str(self.root)] = engine
+        with self.assertRaisesRegex(ValueError, 'Stop the research first'):
+            runner.dispatch(
+                self.root, 'skip-research', {'id': shown['id'], 'expected': shown['expected']}
+            )
+        engine.current = None
+        chat = runner.decide(self.root, shown['id'], shown['expected'], 'handoff', page=True)
+        with self.assertRaisesRegex(ValueError, 'decided in chat'):
+            runner.dispatch(
+                self.root, 'skip-research', {'id': chat['id'], 'expected': chat['expected']}
+            )
+
+
 if __name__ == '__main__':
     unittest.main()

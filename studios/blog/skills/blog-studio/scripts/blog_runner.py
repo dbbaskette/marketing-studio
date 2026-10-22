@@ -1240,6 +1240,21 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
     return survey(root, ident)
 
 
+RESEARCH_STAGES = ('research-plan', 'research')
+
+
+def skip_research(root, directory, record, run, at):
+    """Take research out of a run that stopped at it: its stages leave the pipeline, the
+    decision is recorded, and the later stages are told there is no research bundle. The
+    blog keeps its own research policy, so no other stage's input pin changes."""
+    run['pipeline'] = [stage for stage in run['pipeline'] if stage not in RESEARCH_STAGES]
+    for stage in RESEARCH_STAGES:
+        run['stages'].pop(stage, None)
+        run.get('approved', {}).pop(stage, None)
+    run['research_skipped'] = {'from': at, 'at': studio.now()}
+    save(root, directory, record, run, 'Continued without research')
+
+
 def keep_finished(root, directory, record, run):
     """Keep a finished blog's draft in the library; what happened, in a few words, or None
     when the run ends without a draft (ideas, an outline). run['library'] says it for the
@@ -1359,6 +1374,8 @@ def job(root, ident):
     directory, record, run = load(root, ident)
     payload = inputs(root, record, run)
     payload.setdefault('style', None)
+    if run.get('research_skipped'):
+        payload['research_policy'] = 'none'  # The job payload is not hashed; pins hold.
     evidence = payload['sources']  # What the carried-over check may still allow below.
     # The package works from the saved writing, and only evidence checks review against
     # sources. inputs() above still refuses a changed source pin for every step.
@@ -1433,6 +1450,12 @@ def job(root, ident):
     else:
         guidance = STAGES[stage][2] + '\n\n' + (references / GUIDES[stage]).read_text()
     guidance = brief_line(root, record, payload) + '\n\n' + guidance
+    if run.get('research_skipped'):
+        guidance += (
+            '\n\nThe author continued without research: there is no research_bundle and no '
+            'research findings. Work from the brief and the supplied sources; mark a claim that '
+            'needs evidence they lack as unresolved.'
+        )
     guidance += '\n\n' + (references / 'style/house.md').read_text()
     if payload['style'] and stage in ('outline', 'draft', 'review', 'package'):
         guidance += (
@@ -2258,6 +2281,22 @@ def dispatch(root, action, data):
         notes[stage] = (notes.get(stage, '') + '\n' + request).strip()
         runner.keep_local(ident, state)
         return {**runner.describe(ident), 'noted': stage}
+    if action == 'skip-research':
+        # Continue without research: from a run stopped at its research, on the page.
+        guard(root, ident, data['expected'], page=True)
+        if found['next'] not in RESEARCH_STAGES:
+            raise ValueError('This blog is not waiting on research. Continue it as usual.')
+        if runner.current == ident:
+            raise ValueError(
+                'Research is still working. Stop the research first, then continue without it.'
+            )
+        directory, record, run = load(root, ident)
+        skip_research(root, directory, record, run, found['next'])
+        shutil.rmtree(directory / RESEARCH_DRAFT, ignore_errors=True)
+        state = runner.local(ident)
+        state.pop('research', None)
+        runner.keep_local(ident, state)
+        return runner.control(ident, 'resume')
     if action == 'adopt':
         if not found['next'] or not found['content']:
             raise ValueError('There is no saved stage to review.')
