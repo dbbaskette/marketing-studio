@@ -1,14 +1,60 @@
 """Bounded writing jobs through the author's signed-in CLI; no workspace tools."""
 
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 
 import source_curator
+
+_METER = threading.local()
+
+
+@contextmanager
+def metered():
+    """The CLI jobs run on this thread inside the block, each with the tokens and dollars its
+    CLI reported, or None where it reported none. Claude Code reports both; Codex, run as
+    this worker runs it, reports neither."""
+    saved = getattr(_METER, 'jobs', None)
+    _METER.jobs = jobs = []
+    try:
+        yield jobs
+    finally:
+        _METER.jobs = saved
+
+
+def reported(tokens=None, dollars=None):
+    """Note one CLI job's reported usage in the metered block around it, if any."""
+    jobs = getattr(_METER, 'jobs', None)
+    if jobs is not None:
+        jobs.append({'tokens': tokens, 'dollars': dollars})
+
+
+def usage(result):
+    """(tokens, dollars) from a Claude Code JSON result, None for what it does not say."""
+    if not isinstance(result, dict):
+        return None, None
+    counts, cost = result.get('usage'), result.get('total_cost_usd')
+    tokens = None
+    if isinstance(counts, dict):
+        parts = (
+            counts.get(name)
+            for name in (
+                'input_tokens',
+                'cache_read_input_tokens',
+                'cache_creation_input_tokens',
+                'output_tokens',
+            )
+        )
+        tokens = sum(part for part in parts if isinstance(part, int)) or None
+    dollars = cost if isinstance(cost, (int, float)) and not isinstance(cost, bool) else None
+    return tokens, dollars
+
 
 SCHEMA = {
     'type': 'object',
@@ -168,6 +214,7 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                 start_new_session=True,
             )
             deadline = time.monotonic() + seconds
+            spent = (None, None)  # What the CLI reported it used, where it says.
             try:
                 while process.poll() is None:
                     if stop is not None and stop.wait(0.1):
@@ -192,6 +239,7 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                     raise ValueError('The worker returned too much text.')
                 result = json.loads(raw)
                 if engine == 'claude':
+                    spent = usage(result)
                     if result.get('is_error'):
                         raise ValueError('The selected CLI could not finish this step.')
                     result = result.get('structured_output') or json.loads(result['result'])
@@ -228,6 +276,7 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                     except ProcessLookupError:
                         pass
                     process.wait()
+                reported(*spent)
 
 
 def validate(result):

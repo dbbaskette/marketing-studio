@@ -160,6 +160,27 @@ def refusal_words(refusal):
     )
 
 
+def research_cost(jobs):
+    """What the last research attempt took: its jobs, rounds and seconds, with tokens and
+    dollars only when the CLI reported them for every job. None before any job ended."""
+    if not isinstance(jobs, list) or not jobs:
+        return None
+
+    def total(key):
+        values = [job.get(key) for job in jobs]
+        if any(not isinstance(value, (int, float)) for value in values):
+            return None
+        return round(sum(values), 4) if key == 'dollars' else sum(values)
+
+    return {
+        'jobs': len(jobs),
+        'rounds': max((job.get('round') or 0) for job in jobs),
+        'seconds': round(sum(float(job.get('seconds') or 0) for job in jobs), 1),
+        'tokens': total('tokens'),
+        'dollars': total('dollars'),
+    }
+
+
 def research_kept_words(kept, refused):
     """What happened to the research made so far, in a sentence for the stop message."""
     if kept is True:
@@ -1561,6 +1582,21 @@ class Engine:
             return found['next']
         return names[at + 1] if at + 1 < len(names) else None
 
+    def note_research(self, ident, event):
+        """Note the research round that started, or a research job that ended, in this
+        computer's run state. Best effort: a busy workspace skips a note, never the work."""
+        try:
+            with studio.locked(self.root):
+                state = self.local(ident)
+                research = state.setdefault('research', {})
+                if 'job' in event:
+                    research['jobs'] = (research.get('jobs') or [])[-59:] + [event['job']]
+                else:
+                    research.update(round=event.get('round'), phase=event.get('phase'))
+                self.keep_local(ident, state)
+        except (ValueError, OSError):
+            pass
+
     def describe(self, ident, listing=False):
         found = survey(self.root, ident, listing)
         local = self.local(ident)
@@ -1586,11 +1622,16 @@ class Engine:
         if found['next'] in ('research-plan', 'research'):
             saved = local.get('research') or {}
             kept = Path(found['directory']) / RESEARCH_DRAFT / '.harness-research/synthesis.json'
+            working = status == 'working'
             research = {
                 # A draft a stopped research kept here, which Try again continues from.
                 'kept': kept.is_file(),
                 'refusal': saved.get('refusal'),
                 'rounds': research_contract.ROUNDS,
+                # The round under way (0 while public sources are found), while it works.
+                'round': saved.get('round') if working else None,
+                'phase': saved.get('phase') if working else None,
+                'last': research_cost(saved.get('jobs')),
             }
         return {
             **found,
@@ -1670,6 +1711,9 @@ class Engine:
                 # Audit metadata changes the optimistic token, so use the freshly saved version.
                 found['expected'] = survey(self.root, ident)['expected']
             local.update(status='working', error='', started_at=studio.now())
+            if found['next'] == 'research':
+                # A new attempt: its rounds and jobs replace the last one's.
+                local.setdefault('research', {}).update(jobs=[], round=None, phase=None)
             self.keep_local(ident, local)
             self.current = ident
             self.stop.clear()
@@ -1697,7 +1741,13 @@ class Engine:
                     research_contract.copy_case(origin, target / research_contract.CASE)
                     (target / research_contract.CASE / '.gitignore').unlink(missing_ok=True)
                 result = synthesis_research.generate(
-                    target, run, payload, self.worker, seconds=found['seconds'], stop=self.stop
+                    target,
+                    run,
+                    payload,
+                    self.worker,
+                    seconds=found['seconds'],
+                    stop=self.stop,
+                    progress=lambda event: self.note_research(ident, event),
                 )
             else:
                 started = time.monotonic()
@@ -1769,7 +1819,7 @@ class Engine:
                 if pending:
                     # The accepted research replaces any draft an earlier stop kept.
                     shutil.rmtree(directory / RESEARCH_DRAFT, ignore_errors=True)
-                    state.setdefault('research', {})['refusal'] = None
+                    state.setdefault('research', {}).update(refusal=None, round=None, phase=None)
                 if run.get('editor_check'):
                     state['enabled'] = False
                 self.keep_local(ident, state)
@@ -1809,6 +1859,7 @@ class Engine:
                     if pending:
                         refused = isinstance(exc, research_contract.ReviewRefused)
                         research = state.setdefault('research', {})
+                        research.update(round=None, phase=None)
                         research['refusal'] = (
                             research_refusal(exc, target / research_contract.CASE)
                             if refused

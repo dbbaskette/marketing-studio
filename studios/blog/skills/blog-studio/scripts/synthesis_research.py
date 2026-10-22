@@ -96,11 +96,21 @@ def refusal_groups(refusal, case):
     return grouped(case)
 
 
-def generate(directory, run, payload, worker, *, seconds, stop):
+def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
+    """Research the blog in `directory` and publish its reviewed bundle there. `progress`,
+    when given, hears {'round', 'phase'} as each job starts (round 0 is public source
+    discovery, before the first author) and {'job': ...} as each ends, with its seconds and
+    the tokens and dollars its CLI reported."""
     import blog_library
+    import blog_worker
     from performance import extract
 
     started = time.monotonic()
+    rounds = [0]  # Author rounds so far; the shared contract allows ROUNDS of them.
+
+    def tell(event):
+        if progress is not None:
+            progress(event)
 
     def call(phase, data, guidance, web=False):
         if stop.is_set():
@@ -114,15 +124,36 @@ def generate(directory, run, payload, worker, *, seconds, stop):
             'research-' + phase,
             purpose='review' if phase == 'review' else 'research',
         )
-        return worker(
-            run['engine'],
-            data,
-            guidance,
-            seconds=max(1, int(remaining)),
-            web=web,
-            stop=stop,
-            model_selection=selection,
-        )
+        tell({'round': rounds[0], 'phase': phase})
+        began, outcome = time.monotonic(), 'failed'
+        with blog_worker.metered() as jobs:
+            try:
+                answer = worker(
+                    run['engine'],
+                    data,
+                    guidance,
+                    seconds=max(1, int(remaining)),
+                    web=web,
+                    stop=stop,
+                    model_selection=selection,
+                )
+                outcome = 'kept'
+                return answer
+            finally:
+                tokens = [job['tokens'] for job in jobs if job['tokens'] is not None]
+                dollars = [job['dollars'] for job in jobs if job['dollars'] is not None]
+                tell(
+                    {
+                        'job': {
+                            'phase': phase,
+                            'round': rounds[0],
+                            'seconds': round(time.monotonic() - began, 1),
+                            'tokens': sum(tokens) if tokens else None,
+                            'dollars': round(sum(dollars), 4) if dollars else None,
+                            'outcome': outcome,
+                        }
+                    }
+                )
 
     sources = []
     with tempfile.TemporaryDirectory(prefix='blog-research-captures-') as scratch:
@@ -241,6 +272,7 @@ def generate(directory, run, payload, worker, *, seconds, stop):
             ]
             data['source_limits'] = gaps
             if phase == 'author':
+                rounds[0] += 1
                 guidance += (
                     '\nDossier format: schema=2; sources, facts, findings, sections and brief '
                     'are arrays. sections and brief contain {id,title,blocks:[{text,kind,refs}]}. '

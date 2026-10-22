@@ -8,14 +8,21 @@ research workflow are synthetic.
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
+import sys
+import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
 from test_blog_runner import RunnerCase
 import blog_runner as runner
+import blog_worker
+import synthesis_research
 from studio_core import research_contract
+from synthesis_fixture import dossier
 
 CONTRACT = {'schema': 2, 'version': '1.0.0', 'digest': 'a' * 64}
 DRAFT = '.studio-research-draft'
@@ -276,6 +283,186 @@ class RefusedResearchTests(ResearchCase):
         self.assertFalse((directory / DRAFT).exists())
         self.assertNotIn('kept on this computer', shown['error'])
         self.assertFalse(shown['research']['kept'])
+
+
+class FakeWorkflow:
+    """The shared contract's loop over synthesis_research's own invoke, with no helper: an
+    author and an independent check each round, then a refusal after `rounds` rounds."""
+
+    rounds = 2
+
+    def __init__(self, runtime=None, call=None):
+        pass
+
+    def command(self, case, action, file=None, worker=None):
+        return {}
+
+    def run(self, root, task, invoke, sources=()):
+        case = Path(root) / research_contract.CASE
+        case.mkdir(parents=True, exist_ok=True)
+        for _ in range(self.rounds):
+            author = {'task': task, 'worker': 'author-' + 'a' * 24}
+            invoke('author', 'Synthetic author guidance.', author, sources, False)
+            check = {'task': task, 'worker': 'reviewer-' + 'b' * 24, 'review_template': {}}
+            invoke('review', 'Synthetic check guidance.', check, sources, False)
+        refused_case(case)
+        raise research_contract.ReviewRefused(research_contract.objections(case), self.rounds)
+
+
+def research_worker(during=None):
+    """A worker that answers the author with a dossier citing the capture it was shown and
+    the check with a review, reporting tokens and cost as a CLI would."""
+
+    def worker(engine, data, guidance, **options):
+        if during:
+            during(data)
+        blog_worker.reported(1000, 0.01)
+        if 'review_template' in data:
+            return {'content': json.dumps(REFUSED), 'notes': ''}
+        capture = data['sources'][0]
+        value = dossier(data['worker'], capture['file'], capture['origin'], 'selected')
+        return {'content': json.dumps(value), 'notes': ''}
+
+    return worker
+
+
+class ResearchRoundTests(ResearchCase):
+    def setUp(self):
+        super().setUp()
+        for patcher in (
+            patch.object(research_contract, 'Workflow', FakeWorkflow),
+            patch.object(research_contract, 'runtime_for', lambda saved, runtime=None: '/x'),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_research_says_its_round_and_records_each_job(self):
+        found = self.research_run()
+        directory, _, run = runner.load(self.root, found['id'])
+        _, payload, _ = runner.job(self.root, found['id'])
+        events = []
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaises(research_contract.ReviewRefused):
+                synthesis_research.generate(
+                    Path(temp),
+                    run,
+                    payload,
+                    research_worker(),
+                    seconds=60,
+                    stop=threading.Event(),
+                    progress=events.append,
+                )
+        rounds = [(e['round'], e['phase']) for e in events if 'job' not in e]
+        self.assertEqual(rounds, [(1, 'author'), (1, 'review'), (2, 'author'), (2, 'review')])
+        jobs = [e['job'] for e in events if 'job' in e]
+        self.assertEqual(
+            [(j['round'], j['phase'], j['outcome']) for j in jobs],
+            [
+                (1, 'author', 'kept'),
+                (1, 'review', 'kept'),
+                (2, 'author', 'kept'),
+                (2, 'review', 'kept'),
+            ],
+        )
+        self.assertTrue(all(j['tokens'] == 1000 and j['dollars'] == 0.01 for j in jobs))
+        self.assertTrue(all(isinstance(j['seconds'], float) for j in jobs))
+
+    def test_the_run_shows_the_round_under_way_and_what_the_last_attempt_took(self):
+        found = self.research_run()
+        engine = self.engine()
+        seen = []
+        engine.worker = research_worker(
+            during=lambda data: seen.append(engine.describe(found['id']))
+        )
+        engine.control(found['id'], 'resume')
+        engine._once(found['id'])
+        self.assertEqual(
+            [(s['status'], s['research']['round'], s['research']['phase']) for s in seen],
+            [
+                ('working', 1, 'author'),
+                ('working', 1, 'review'),
+                ('working', 2, 'author'),
+                ('working', 2, 'review'),
+            ],
+        )
+        self.assertEqual(seen[0]['research']['rounds'], 3)
+        shown = engine.describe(found['id'])
+        self.assertEqual(shown['status'], 'failed')
+        self.assertIsNone(shown['research']['round'], 'no round is under way after a stop')
+        last = shown['research']['last']
+        self.assertEqual(
+            (last['jobs'], last['rounds'], last['tokens'], last['dollars']), (4, 2, 4000, 0.04)
+        )
+        self.assertIsInstance(last['seconds'], float)
+        # Try again starts a new attempt: what it took replaces the last one's figures.
+        FakeWorkflow.rounds = 1
+        self.addCleanup(setattr, FakeWorkflow, 'rounds', 2)
+        runner.dispatch(self.root, 'retry', {'id': found['id'], 'expected': shown['expected']})
+        engine._once(found['id'])
+        last = engine.describe(found['id'])['research']['last']
+        self.assertEqual((last['jobs'], last['rounds'], last['tokens']), (2, 1, 2000))
+
+    def test_a_cli_that_reports_nothing_leaves_tokens_and_cost_unsaid(self):
+        found = self.research_run()
+        engine = self.engine()
+
+        def quiet(engine_name, data, guidance, **options):
+            if 'review_template' in data:
+                return {'content': json.dumps(REFUSED), 'notes': ''}
+            capture = data['sources'][0]
+            value = dossier(data['worker'], capture['file'], capture['origin'], 'selected')
+            return {'content': json.dumps(value), 'notes': ''}
+
+        engine.worker = quiet
+        engine.control(found['id'], 'resume')
+        engine._once(found['id'])
+        last = engine.describe(found['id'])['research']['last']
+        self.assertEqual((last['jobs'], last['tokens'], last['dollars']), (4, None, None))
+
+
+class MeteredWorkerTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.binary = Path(self.temp.name) / 'fixture-agent'
+        environment = patch.dict(
+            os.environ, {'STUDIOS_CONFIG': str(Path(self.temp.name) / 'shared.json')}
+        )
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def executable(self, body):
+        self.binary.write_text(
+            '#!' + sys.executable + '\nimport sys,json\nfrom pathlib import Path\n' + body
+        )
+        self.binary.chmod(0o700)
+
+    def generate(self, agent):
+        with (
+            patch.object(blog_worker.source_curator, 'executable', return_value=str(self.binary)),
+            patch.object(blog_worker.source_curator, 'codex_options', return_value=[]),
+        ):
+            return blog_worker.generate(agent, {}, 'Synthetic job', seconds=5)
+
+    def test_the_cli_reports_tokens_and_cost_where_it_says_them(self):
+        self.executable(
+            'args=sys.argv[1:]\n'
+            "value={'content':'# Synthetic','notes':'Fixture CLI; no account.'}\n"
+            "if '--output-last-message' in args:\n"
+            " Path(args[args.index('--output-last-message')+1]).write_text(json.dumps(value))\n"
+            'else:\n'
+            " print(json.dumps({'structured_output':value,'total_cost_usd':0.0125,"
+            "'usage':{'input_tokens':100,'cache_read_input_tokens':900,"
+            "'cache_creation_input_tokens':0,'output_tokens':50}}))\n"
+        )
+        with blog_worker.metered() as jobs:
+            self.generate('claude')
+            self.generate('codex')
+        self.assertEqual(
+            jobs, [{'tokens': 1050, 'dollars': 0.0125}, {'tokens': None, 'dollars': None}]
+        )
+        self.generate('claude')  # Outside a metered block nothing is kept.
+        self.assertEqual(len(jobs), 2)
 
 
 if __name__ == '__main__':

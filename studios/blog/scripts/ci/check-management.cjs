@@ -90,11 +90,12 @@ async function check(){
   await runVoiceChange();
   await toolsAreNamed();
   await researchRefusal();
+  await researchRounds();
   pageDefinesEveryElement();
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -1155,7 +1156,7 @@ async function sharedPattern(){
   // A time limit that ran out offers more time, and says what a plain retry costs.
   f.set('found',{...found,status:'failed',enabled:false,started_at:null,error:'This step reached its time limit. Retry or continue in chat.'});f.run('sRun(found)');
   const more=f.get('actions').children.find(e=>e.textContent==='Try again with more time');assert.equal(more.className,'button button-filled');
-  assert.ok(text().some(t=>t==='Try again re-runs the draft from the start with the same 10-minute limit. More time doubles it to 20 minutes.'),text().join('|'));
+  assert.ok(text().some(t=>t==='Try again makes the draft again in a new job, with the same 10-minute limit; saved work is kept. More time doubles it to 20 minutes.'),text().join('|'));
   await more.listeners.click();
   assert.deepEqual(requests.find(r=>r.url==='/api/run-retry').data,{id:'synthetic',expected:'version-1',seconds:1200});
   // Copy Markdown sits beside the download.
@@ -2045,4 +2046,32 @@ async function researchRefusal(){
   assert.ok(text().includes('The check could not read the original of “Synthetic”.'));
   f.set('found',{...refused,error:'Research ran out of the time a step may take (10 minutes).',research:{kept:true,rounds:3,refusal:null}});f.run('sRun(found)');
   assert.equal(nodes().some(e=>e.tagName==='details'&&e.children[0]?.textContent==='What the research check objected to'),false,'only a refusal has objections');
+}
+
+// Research says its round while it works, and a stopped research says what Try again does: it
+// continues from the kept draft for up to three more rounds, and the last attempt's jobs, time,
+// tokens and cost as the assistant reported them. No "from the start" for anything.
+async function researchRounds(){
+  const base={id:'synthetic',title:'Synthetic blog',next:'research',approval:'page',expected:'version-1',directory:'/synthetic/articles/synthetic',seconds:600,engine:'claude',mode:'write',review_level:'balanced',existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},
+    stages:[{stage:'research-plan',label:'Research questions',path:'derived/blog-research-plan.md',status:'approved'},{stage:'research',label:'Research findings',path:'derived/blog-research.md',status:'pending'},{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'pending'}]};
+  const f=fixture(()=>({items:[],total:0}));f.loadRunner();
+  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),now=()=>nodes().find(e=>e.className==='now-line')?.textContent;
+  const working={...base,status:'working',enabled:true,error:'',started_at:new Date(Date.now()-4*60000).toISOString(),research:{kept:false,rounds:3,round:2,phase:'review',refusal:null,last:null}};
+  f.set('found',working);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
+  assert.equal(now(),'Researching · Round 2 of 3, the independent check · 4 min of up to 10');
+  f.set('found',{...working,research:{...working.research,round:1,phase:'author'}});f.run('sRun(found)');
+  assert.equal(now(),'Researching · Round 1 of 3, writing the report · 4 min of up to 10');
+  f.set('found',{...working,research:{...working.research,round:0,phase:'discovery'}});f.run('sRun(found)');
+  assert.equal(now(),'Researching · Finding public sources · 4 min of up to 10');
+  f.set('found',{...working,next:'outline',research:null});f.run('sRun(found)');
+  assert.equal(now(),'Outlining · 4 min of up to 10','other steps say no round');
+  // Stopped with a kept draft: Try again continues from it, and says what the last attempt took.
+  const stopped={...base,status:'failed',enabled:false,started_at:null,error:'The research check still objected after 3 rounds of correction: 4 objections in 3 groups. The draft report and the check’s notes are kept on this computer; Try again continues from them.',research:{kept:true,rounds:3,round:null,phase:null,refusal:null,last:{jobs:6,rounds:3,seconds:552.4,tokens:410250,dollars:1.234}}};
+  f.set('found',stopped);f.run('sRun(found)');
+  assert.ok(text().includes('Try again continues from the kept draft: up to 3 more rounds of correction and checking, within this blog’s 10-minute limit for the whole research step. The last attempt took 6 jobs in 3 rounds: 9 min 12 s, 410,250 tokens and about $1.23, as the assistant reported.'),text().join('|'));
+  assert.ok(f.get('actions').children.some(e=>e.textContent==='Try again'));
+  assert.equal(text().some(t=>/from the start/.test(t)),false,'Try again never claims to start over');
+  // Nothing kept, and an assistant that reports no usage.
+  f.set('found',{...stopped,engine:'codex',error:'Research could not produce valid evidence and report data after one correction attempt.',research:{...stopped.research,kept:false,last:{jobs:2,rounds:1,seconds:120,tokens:null,dollars:null}}});f.run('sRun(found)');
+  assert.ok(text().includes('Try again starts the research again: up to 3 rounds of writing and checking, within this blog’s 10-minute limit for the whole research step. The last attempt took 2 jobs in 1 round: 2 min; the assistant reported no tokens or cost.'),text().join('|'));
 }
