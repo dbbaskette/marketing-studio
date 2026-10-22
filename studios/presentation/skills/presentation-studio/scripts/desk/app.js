@@ -63,7 +63,6 @@ const RUN_WORDS = {
 // Each step of a deck, and each stage, as the timeline says it.
 const STEP_WORDS = {
   done: ['done', 'Done'], current: ['current', 'Now'], upcoming: ['none', 'Still to come'],
-  later: ['out', 'Coming later'],
 };
 const STAGES = [['intake', 'Intake'], ['classify', 'Classify'], ['research', 'Research'],
   ['outline', 'Outline'], ['look', 'Look'], ['build', 'Build'], ['deliver', 'Deliver']];
@@ -3509,13 +3508,11 @@ function stepFacts(step) {
 }
 
 function stepItem(step) {
-  const later = step.state === 'later';
   const [shape, words] = step.failed ? ['late', 'Stopped here'] : STEP_WORDS[step.state]
     || STEP_WORDS.upcoming;
   const facts = make('p', 'quiet step-facts', stepFacts(step));
   facts.hidden = !facts.textContent;
-  const label = later ? 'Rehearse with Yoodli' : step.label;
-  const text = add(make('div', 'row-text'), make('p', 'step-name', label), facts);
+  const text = add(make('div', 'row-text'), make('p', 'step-name', step.label), facts);
   if (step.error) add(text, make('p', step.failed ? 'problem' : 'quiet', step.error));
   const item = make('li', 'row step' + (step.state === 'current' ? ' working' : ''));
   item.dataset.state = step.state;

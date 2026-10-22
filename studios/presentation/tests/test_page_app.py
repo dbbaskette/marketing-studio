@@ -181,10 +181,10 @@ class WordTests(unittest.TestCase):
         tags = re.search(r"const ABOUT_TAGS = \{([^}]*)\}", read('app.js')).group(1)
         self.assertEqual(sorted(re.findall(r"(\w+):", tags)), sorted(build.ABOUT))
 
-    def test_rehearsing_with_yoodli_is_coming_later(self):
+    def test_no_rehearsal_placeholder_is_drawn(self):
         script = read('app.js')
-        self.assertIn('Rehearse with Yoodli', script)
-        self.assertIn('Coming later', script)
+        self.assertNotIn('Rehearse with Yoodli', script)
+        self.assertNotIn('Coming later', script)
 
 
 if __name__ == '__main__':

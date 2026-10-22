@@ -203,8 +203,13 @@ spending limit; your account's usage charges or limits still apply.
 | A review | Which findings need changes? |
 | The handoff | Are the title, excerpt and links ready to hand over? |
 
-How often you decide depends on the shared **Review level** in **Settings**; a
-run keeps the level it started with. The default, **Balanced**, stops for you
+How often you decide is chosen on the last step of the form, in **Where this run
+stops**: its control sets this blog's level, and **Use this for new work in every
+studio** also makes it the shared level when the blog starts. **Settings** has
+**Where new work stops**, saved at once. A run keeps the level it started with, and
+one line under its stages says how many steps are left, where it next stops and what
+its jobs have cost so far. **Ask for changes** says what is drawn again and what those
+steps took the last time they ran. The default, **Balanced**, stops for you
 twice: at the outline, with the research questions and findings beside it, and
 at the run's last step (the handoff or your chosen stop), with the steps
 since the outline beside it. The steps between continue on their own; Blog Studio

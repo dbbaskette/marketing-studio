@@ -25,11 +25,11 @@ Compose each slide from its content. Build batches of up to three slides, inspec
 every changed native image before continuing, then complete whole-deck review and
 the brand audit. Preserve existing-deck scope and show before/after. Show native pictures, findings and the contact sheet at the final checkpoint; keep technical coverage separate from user acceptance.
 
-## Explicit unreviewed first draft
+## First draft, not checked
 
-“Show first draft before AI review” and “Skip AI review on the first build” opt
-in; urgency or “quick” does not. Validate assets/design and render natively; skip AI pixel critique, reviewer jobs and polishing. Label output **Unreviewed first draft** and offer AI review, changes
-or explicit as-is export. Resume/download/export never backfill review or create
+“See the first draft before the deck is checked” and “Skip AI review on the first build” opt
+in; urgency or “quick” does not. Validate assets/design and render natively; skip AI pixel critique, reviewer jobs and polishing. Label it **First draft, not checked**; offer **Check the deck**, changes
+or **Use this first draft**. Resume/download/export never backfill review or create
 inspection evidence. Other permissions remain unchanged.
 
 ## Delivery

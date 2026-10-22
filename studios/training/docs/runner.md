@@ -160,8 +160,12 @@ questions, then groups the teaching plan (with each deck's wireframe draft and i
 look) and, after each drawn deck, the finished-material decisions; Automatic draft
 stops at each drawn deck and brings the finished materials for review. A deck that
 continued past its own gate under the saved level before this release is not held
-again: only decks drawn from now on stop at it. A training can choose
-its own review level on the last step of the form; the shared level is the default. Only selected material stages run. Earlier trainings keep
+again: only decks drawn from now on stop at it. A training chooses where it stops on
+the last step of the form, in **Where this training stops**; the shared level is the
+default, and **Use this for new work in every studio** also makes it the shared level
+when the training starts. Under Step by step a deck adds three stops per level: its
+outline, its look and the deck. Settings has **Where new work stops**. Only selected
+material stages run. Earlier trainings keep
 the review level they started with. The research-plan stop is part of what Balanced
 means, not a new version of it: it applies to any Balanced training that has not
 reached its research plan yet, including one started earlier, and a run already past
@@ -189,7 +193,7 @@ With levels, every blueprint is drafted first. Then each level is finished in tu
 
 **The deck.** Choose "No deck" when you start and the deck is left out. Otherwise you choose its brand and the brand's variant from what your brand skill offers, and whether it is a PowerPoint file or Google Slides. The deck is made for each level after its brief, the brand's way: the deck's slide task is started through the brand's own guidance, the brand's guidance for composers goes to every agent that draws, and the brand decides how it looks. You decide three times.
 
-- **The look.** After what the deck says is approved (`gate:deck-look`), the brand draws one of its slides in each of its looks (`deck-look`), rendered the way this computer renders every preview, which the page says. You pick one on a picker that shows each look with what it is for, and may say why; your words are kept with the choice, and the brand writes the look into the deck's outline. Under Balanced you pick it in the direction review instead. If the looks cannot be rendered, nothing is picked blind: try again, or carry on knowingly in the brand's default, and the deck says it is an unreviewed draft of its look. Automatic draft uses the brand's default and says why. A brand too old to offer looks is noted, and the deck is drawn in its default direction.
+- **The look.** After what the deck says is approved (`gate:deck-look`), the brand draws one of its slides in each of its looks (`deck-look`), rendered the way this computer renders every preview, which the page says. You pick one on a picker that shows each look with what it is for, and may say why; your words are kept with the choice, and the brand writes the look into the deck's outline. Under Balanced you pick it in **Review the first drafts** instead. If the looks cannot be rendered, nothing is picked blind: try again, or carry on knowingly in the brand's default, and the deck says it is an unreviewed draft of its look. Automatic draft uses the brand's default and says why. A brand too old to offer looks is noted, and the deck is drawn in its default direction.
 
 - **What the deck says, and how each slide is drawn.** Every slide's title, points, caveat and notes, before any slide is drawn. Words are quick to change here and slow to change later. The run says what a deck of this size has cost before.
   - Each slide's words sit beside its design: the visual and what it teaches, how it is laid out, the claim, what it was weighed against, the assets it needs and any not found yet, and the wording it must keep. A slide that is right as text says why.
@@ -221,7 +225,7 @@ You can close the page while it works. Home, and the browser if you turned notif
 
 ## Your own documents
 
-The last step of "New training" asks where the research looks: the public web, your documents only, or both.
+The last step of "New training" asks where the research looks: **The public web only**, **Only what you supply**, or **What you supply and the public web**.
 
 When documents are wanted, the run waits for them before anything else. Add text, Markdown, HTML or Word files, and PDFs when this computer has `pdftotext`. Each is shown with its size and whether it could be read. Press "That is all of them" and the run begins.
 
