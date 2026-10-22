@@ -1219,6 +1219,63 @@ class SharedPatternTests(RunnerCase):
         studios_config.update({'review': {'level': 'balanced'}})
         self.assertEqual(runner.settings(self.root)['review_level'], 'balanced')
 
+    def blogs(self):
+        folder = self.root / 'articles'
+        return sorted(path.name for path in folder.iterdir()) if folder.is_dir() else []
+
+    def test_a_blog_keeps_the_level_its_form_chose(self):
+        import studios_config
+        from studio_core import review_policy
+
+        studios_config.update({'review': {'level': 'balanced'}})
+        found = self.create(page=True, review_level='step_by_step', review_seen='balanced')
+        _, _, run = runner.load(self.root, found['id'])
+        self.assertEqual(review_policy.level(run), 'step_by_step')
+        self.assertEqual(found['review_level'], 'step_by_step')
+        self.assertEqual(studios_config.read()[0]['review'], {'level': 'balanced'})
+        with self.assertRaisesRegex(ValueError, 'Choose Balanced, Automatic draft, or Step by step'):
+            self.create(page=True, review_level='fast', review_seen='balanced')
+
+    def test_the_default_is_written_only_with_the_chip_and_refused_when_stale(self):
+        import studios_config
+        from studio_core import review_policy
+
+        studios_config.update({'review': {'level': 'balanced'}})
+        self.create(
+            page=True, review_level='step_by_step', review_seen='balanced', review_default=True
+        )
+        self.assertEqual(studios_config.read()[0]['review'], {'level': 'step_by_step'})
+        studios_config.update({'review': {'level': 'automatic'}})
+        made = self.blogs()
+        with self.assertRaises(ValueError) as caught:
+            self.create(
+                page=True,
+                title='Another synthetic guide',
+                review_level='balanced',
+                review_seen='step_by_step',
+                review_default=True,
+            )
+        self.assertEqual(str(caught.exception), review_policy.STALE)
+        self.assertEqual(self.blogs(), made, 'a refused start makes no blog')
+        self.assertEqual(studios_config.read()[0]['review'], {'level': 'automatic'})
+
+    def test_review_level_route_saves_and_refuses(self):
+        import studios_config
+        from studio_core import review_policy
+
+        studios_config.update({'review': {'level': 'balanced'}})
+        shown = management.dispatch(
+            self.root, 'review-level', {'level': 'automatic', 'seen': 'balanced'}
+        )
+        self.assertEqual(shown['review_level'], 'automatic')
+        self.assertEqual(studios_config.read()[0]['review'], {'level': 'automatic'})
+        with self.assertRaises(ValueError) as caught:
+            management.dispatch(self.root, 'review-level', {'level': 'balanced', 'seen': 'balanced'})
+        self.assertEqual(str(caught.exception), review_policy.STALE)
+        with self.assertRaisesRegex(ValueError, 'Choose Balanced, Automatic draft, or Step by step'):
+            management.dispatch(self.root, 'review-level', {'level': 'fast', 'seen': 'automatic'})
+        self.assertEqual(studios_config.read()[0]['review'], {'level': 'automatic'})
+
     def test_the_worker_records_when_it_started_and_the_page_reads_it(self):
         found = self.create(page=True, stop='draft')
         engine = runner.Engine(self.root, worker=self.worker())

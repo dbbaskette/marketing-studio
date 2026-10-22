@@ -78,6 +78,7 @@ async function check(){
   await interviewVoice();
   await staleSharedForms();
   await sharedPattern();
+  await whereThisRunStops();
   await finishAndDelete();
   await filesJourney();
   await voiceLinksJourney();
@@ -98,7 +99,7 @@ async function check(){
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -1083,6 +1084,43 @@ async function contextualTools(){
   const slow=deferred(),h=fixture(()=>slow.promise);h.loadRunner();const reading=h.run("sPrepublishTool('fixture')");h.run('sCloseSheet()');slow.resolve({findings:[],coverage:'Local'});await reading;assert.equal(h.run('studio.sheet'),null);
 }
 
+// Where this run stops is chosen on the form, for this blog only; the chip also makes it the
+// level new work starts at in every studio. Settings saves it at once. Nothing leaves the form.
+async function whereThisRunStops(){
+  const requests=[];let refuse=false;const found={id:'synthetic',title:'Synthetic blog',status:'queued',expected:'version-1',stages:[],decisions:[],brief:{goal:'Explain',audience:'Authors'},seconds:600,engine:'codex',mode:'write'};
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});if(url==='/api/review-level'){if(refuse)return {__http:400,error:'Another studio changed where new work stops. Reload the page and try again.'};return {defaults,workspace:'/synthetic',shared_before:{},review_level:data.level};}if(url==='/api/run-create')return found;return url.startsWith('/api/run?')?found:{};});f.loadRunner();
+  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),line=()=>nodes().find(e=>e.className==='quiet stops-line')?.textContent;
+  f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[],profiles:[],agents:{codex:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'package',minutes:'10',operation:'a'.repeat(32)};sWizard()");
+  const card=nodes().find(e=>e.tagName==='section'&&e.children[0]?.textContent==='Where this run stops');assert.ok(card,'the last step has a Where this run stops card: '+text().join('|'));
+  const segments=descendants(card).filter(e=>e.className==='seg-option');assert.deepEqual(segments.map(e=>e.textContent),['Balanced','Automatic draft','Step by step']);
+  assert.equal(segments[0].attributes['aria-pressed'],'true','it starts at the shared level the form read');
+  assert.equal(line(),'Balanced: it stops for the outline and the handoff');
+  assert.ok(descendants(card).some(e=>e.tagName==='span'&&e.textContent==='Use this for new work in every studio'),'the chip');
+  assert.ok(descendants(card).some(e=>e.textContent==='Saved when the blog starts.'),'the chip says when it is saved');
+  assert.equal(nodes().some(e=>e.tagName==='a'&&String(e.href||'').startsWith('/onboarding/')),false,'nothing on the form leaves it');
+  await segments[2].listeners.click();
+  assert.equal(line(),'Step by step: it stops for the outline, the draft, the review and the handoff');
+  assert.equal(f.run('studio.options.settings.review_level'),'balanced','the shared level is not changed by the form');
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const created=requests.find(r=>r.url==='/api/run-create');assert.ok(created,'Start writing creates the run');
+  assert.equal(created.data.review_level,'step_by_step');assert.equal(created.data.review_seen,'balanced');assert.equal(created.data.review_default,false);
+  // Settings: Where new work stops, saved at once; a refusal shows in its own problem line.
+  f.run("studio.settings={defaults,workspace:'/synthetic',shared_before:{},review_level:'balanced'};studio.team={};studio.brand=null;studio.screen='settings';sSettings()");
+  const shared=nodes().find(e=>e.tagName==='a'&&e.textContent==='Change shared settings');assert.ok(shared&&shared.href.startsWith('/onboarding/'),'Settings keeps its way to the shared settings');
+  const where=nodes().find(e=>e.tagName==='section'&&e.children[0]?.textContent==='Where new work stops');assert.ok(where,'Settings shows Where new work stops: '+text().join('|'));
+  const choices=descendants(where).filter(e=>e.className==='seg-option');assert.deepEqual(choices.map(e=>e.textContent),['Balanced','Automatic draft','Step by step']);
+  await choices[1].listeners.click();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/review-level').pop().data,{level:'automatic',seen:'balanced'});
+  assert.equal(f.run('studio.settings.review_level'),'automatic');
+  refuse=true;
+  const again=nodes().find(e=>e.tagName==='section'&&e.children[0]?.textContent==='Where new work stops');
+  await descendants(again).filter(e=>e.className==='seg-option')[2].listeners.click();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/review-level').pop().data,{level:'step_by_step',seen:'automatic'});
+  const after=nodes().find(e=>e.tagName==='section'&&e.children[0]?.textContent==='Where new work stops');
+  assert.ok(descendants(after).some(e=>e.className==='problem'&&e.textContent==='Another studio changed where new work stops. Reload the page and try again.'),'the refusal is in the card: '+descendants(after).map(e=>e.textContent).join('|'));
+}
+
 // The pattern every studio shares: the start form says where it stops, the run says what it
 // is doing now and for how long, a retry says what it costs, a note reaches the next job
 // without stopping, and a phone keeps one decision in the toolbar.
@@ -1104,9 +1142,9 @@ async function sharedPattern(){
    assert.deepEqual(descendants(f.get('studio-page')).find(e=>e.id==='new-profile').children.map(o=>[o.value,o.textContent]),[['*default','My voice — Avery · confirmed'],['p2','Sam · provisional'],['','No particular voice (use the described tone)'],['*learn','Learn a new voice…']]);
    f.run("studio.options.profiles=[];studio.options.default_voice=null;studio.draft.profile='';studio.draft.step=1;sWizard()");}
   f.run("studio.options.settings.review_level='balanced';studio.draft.mode='from-outline';studio.draft.stop='package';sWizard()");
-  assert.ok(text().some(t=>t==='Balanced: it stops for the draft and the export package'),'Balanced reads the first writing stage a run has: '+text().join('|'));
+  assert.ok(text().some(t=>t==='Balanced: it stops for the draft and the handoff'),'Balanced reads the first writing stage a run has: '+text().join('|'));
   f.run("studio.draft.mode='write';studio.draft.stop='draft';sWizard()");
-  const change=descendants(f.get('studio-page')).find(e=>e.tagName==='a'&&e.textContent==='Change');assert.equal(change.href,'/onboarding/#fixture');
+  assert.equal(descendants(f.get('studio-page')).some(e=>e.tagName==='a'&&e.textContent==='Change'),false,'the form has no Change link: where it stops is chosen on it');
   // The second step takes every file at once and lists each one with its text and role; the old one-at-a-time input is gone.
   {const nodes=()=>descendants(f.get('studio-page')),byId=id=>nodes().find(e=>e.id===id);
    assert.equal(nodes().some(e=>e.textContent==='Add a document'),false,'no single-file upload on the wizard');
@@ -1134,9 +1172,9 @@ async function sharedPattern(){
   f.run("studio.options.settings.review_level='automatic';studio.draft.mode='ideas';sWizard()");
   assert.ok(text().some(t=>t==='Automatic draft: it stops for the ideas'),text().join('|'));
   f.run("studio.options.settings.review_level='step_by_step';studio.draft.mode='write';studio.draft.research='supplied-only';studio.draft.stop='package';sWizard()");
-  assert.ok(text().some(t=>t==='Step by step: it stops for the outline, the draft, the review and the export package'),'selected sources with none selected is no research: '+text().join('|'));
+  assert.ok(text().some(t=>t==='Step by step: it stops for the outline, the draft, the review and the handoff'),'selected sources with none selected is no research: '+text().join('|'));
   f.run("studio.draft.sources=['one'];sWizard()");
-  assert.ok(text().some(t=>t==='Step by step: it stops for the research plan, the research findings, the outline, the draft, the review and the export package'),text().join('|'));
+  assert.ok(text().some(t=>t==='Step by step: it stops for the research plan, the research findings, the outline, the draft, the review and the handoff'),text().join('|'));
   // New blog without a task chosen shows the same start cards as Home.
   f.run("studio.draft={...defaults,mode:null,step:0};sWizard()");
   assert.equal(f.get('title').textContent,'New blog');assert.ok(descendants(f.get('studio-page')).some(e=>e.className==='pick-card'&&e.textContent==='Write from a brief'));
@@ -1333,7 +1371,7 @@ async function filesJourney(){
   assert.ok(byId('files-title')&&byId('files-point')&&byId('files-audience'),'the point path asks for the title, the point and the reader: '+text().join('|'));
   assert.equal(byId('files-goal'),undefined);
   assert.equal(start().textContent,'Start writing');
-  assert.ok(text().some(t=>/^Balanced: it stops for the outline and the export package$/.test(t)),'no angles on the point path: '+text().join('|'));
+  assert.ok(text().some(t=>/^Balanced: it stops for the outline and the handoff$/.test(t)),'no angles on the point path: '+text().join('|'));
   await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   assert.ok(text().some(t=>/title, the point/.test(t)),'an empty point is refused on the page: '+text().join('|'));
   assert.equal(requests.filter(r=>r.url==='/api/run-create').length,1);
@@ -2098,7 +2136,7 @@ async function skipResearch(){
   const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});if(url==='/api/run-skip-research'||url.startsWith('/api/run?'))return after;return {items:[],total:0};});f.loadRunner();
   const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),line=()=>nodes().find(e=>e.className==='quiet stops-line')?.textContent;
   f.set('found',stopped);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
-  assert.equal(line(),'Step by step: it stops for the research plan, the research findings, the outline, the draft, the review and the export package');
+  assert.equal(line(),'Step by step: it stops for the research plan, the research findings, the outline, the draft, the review and the handoff');
   assert.ok(text().includes('Research is optional. Continue without research takes this blog on to the outline, from your brief and selected sources; the later steps get no research findings.'),text().join('|'));
   assert.equal(text().some(t=>/Open Edit manuscript/.test(t)),false,'a new blog has no manuscript to edit');
   assert.equal(f.get('actions').children.some(e=>e.textContent==='Edit manuscript'),false);
@@ -2110,7 +2148,7 @@ async function skipResearch(){
   assert.ok(sheet.some(e=>e.textContent==='The research steps leave this blog’s run, and it goes on to the outline from your brief and selected sources. The later steps get no research findings, and research cannot be added back to this run.'),sheet.map(e=>e.textContent).join('|'));
   await sheet.find(e=>e.tagName==='button'&&e.textContent==='Continue without research').listeners.click();
   assert.deepEqual(requests.find(r=>r.url==='/api/run-skip-research').data,{id:'synthetic',expected:'version-1'});
-  assert.equal(line(),'Step by step: it stops for the outline, the draft, the review and the export package','the stops line no longer names research');
+  assert.equal(line(),'Step by step: it stops for the outline, the draft, the review and the handoff','the stops line no longer names research');
   assert.ok(descendants(f.get('toasts')).some(e=>e.textContent==='Continuing without research.'));
   assert.equal(f.get('actions').children.some(e=>e.textContent==='Continue without research'),false,'not once research is gone');
   // An existing draft keeps the editing hint, and a working research offers no skip.
@@ -2120,7 +2158,7 @@ async function skipResearch(){
   assert.equal(f.get('actions').children.some(e=>e.textContent==='Continue without research'),false,'stop the research first');
   // Balanced stops at the outline either way.
   f.set('found',{...stopped,review_level:'balanced'});f.run('sRun(found)');
-  assert.equal(line(),'Balanced: it stops for the outline and the export package');
+  assert.equal(line(),'Balanced: it stops for the outline and the handoff');
   // Only where research stopped: not at the research gates, and the hint goes with the button.
   for(const status of ['stopped','paused','needs-attention']){f.set('found',{...stopped,status,error:status==='needs-attention'?'Saved writing or its inputs changed.':''});f.run('sRun(found)');assert.ok(f.get('actions').children.some(e=>e.textContent==='Continue without research'),status);}
   for(const next of ['research','research-plan']){f.set('found',{...stopped,next,status:'waiting-for-approval',enabled:true,error:'An earlier note.'});f.run('sRun(found)');

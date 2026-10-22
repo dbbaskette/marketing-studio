@@ -1550,6 +1550,10 @@ def _dispatch(root, route, data):
             from blog_runner import settings
 
             return settings(root, data)
+        if route == 'review-level':
+            from blog_runner import review_level
+
+            return review_level(root, data)
         if route == 'blog-restore':
             import blog_delete
 
@@ -1846,7 +1850,7 @@ def dispatch(root, route, data):
             else None,
         )
     result = _dispatch(root, route, data)
-    if space(root) and route != 'run-settings':
+    if space(root) and route not in ('run-settings', 'review-level'):
         if route == 'tool-action':
             # A tool result may be a job or a profile, whose IDs are not blogs: the blog
             # a tool worked on is the one the request named.

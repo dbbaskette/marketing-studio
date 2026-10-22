@@ -312,8 +312,8 @@ def settings(root, data=None):
 
     path = studio.inside(root, '.blog-run-settings.json')
     migration_notice, migration_problem = studios_config.migrate(root)
-    shared, shared_problem = studios_config.read()
-    shared_problem = shared_problem or migration_problem
+    shared, read_problem = studios_config.read()
+    shared_problem = read_problem or migration_problem
     saved = studio.read_json(path) if path.is_file() else {}
     private = {
         key: value
@@ -407,10 +407,7 @@ def settings(root, data=None):
             'author': shared.get('person', {}).get('name') or DEFAULTS['author'],
         }
         saved = {'defaults': private}
-    try:
-        review_level = review_policy.snapshot(shared)['level']
-    except ValueError:
-        review_level = 'step_by_step'
+    review_level = review_policy.effective(shared, read_problem)
     personal = writing_defaults.personal(root)['values'].get('voice')
     return {
         'configured': bool(saved) or shared_ready(shared),
@@ -910,6 +907,17 @@ def save(root, directory, record, run, event):
     receipt(root, 'Guided blog', result, 'article')
 
 
+def review_level(root, data):
+    """Settings' Where new work stops: write the level new work starts at in every studio,
+    refused when another studio changed the one the page read. Answers the settings."""
+    import studios_config
+
+    if not isinstance(data, dict) or set(data) != {'level', 'seen'}:
+        raise ValueError('Give the level and the level the page read.')
+    review_policy.change(studios_config.update, data['level'], data['seen'])
+    return settings(root)
+
+
 def research_scope(research, sources):
     """Supplied-only research has nothing to read without supplied sources."""
     return 'none' if research == 'supplied-only' and not sources else research
@@ -947,9 +955,21 @@ def create(root, data, approval='conversation'):
         'point',
         'revision',
         'library',
+        'review_level',
+        'review_seen',
+        'review_default',
     }
     if set(data) - allowed:
         raise ValueError('Unknown new-blog field.')
+    # Where this blog stops: the level its form chose, else the shared one. The form's chip
+    # also makes it the level new work starts at in every studio, written when it starts.
+    chosen_level = data.get('review_level')
+    if chosen_level is not None:
+        review_policy.check({'level': chosen_level})
+    if data.get('review_default', False) not in (True, False):
+        raise ValueError('Say whether to use this level for new work: true or false.')
+    if data.get('review_default') and chosen_level is None:
+        raise ValueError('Choose where this blog stops before using it for new work.')
     mode = data.get('mode', 'write')
     if mode not in MODES:
         raise ValueError(
@@ -1163,7 +1183,11 @@ def create(root, data, approval='conversation'):
     contract = research_contract.snapshot() if research != 'none' else None
     if contract:
         run['research_contract'] = contract
-    run['review_policy'] = review_policy.snapshot(shared)
+    run['review_policy'] = (
+        {'schema': 1, 'level': chosen_level}
+        if chosen_level
+        else review_policy.snapshot(shared)
+    )
     if review_policy.level(run) != 'step_by_step':
         run['schema'] = 2
     if contract:
@@ -1177,6 +1201,9 @@ def create(root, data, approval='conversation'):
     if selected_brand:
         run['brand'] = selected_brand
     inputs(root, record, run)  # Refuse unusable context before creating a partial blog.
+    if data.get('review_default'):
+        # Refused, with nothing made, when another studio changed the level the form read.
+        review_policy.change(studios_config.update, chosen_level, data.get('review_seen'))
     if style:
         record['style'] = studio.style_pin(root, style, record['style']['revision'])
     if not data.get('id'):
