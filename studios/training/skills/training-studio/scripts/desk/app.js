@@ -877,6 +877,29 @@ async function picture(params) {
   return held;
 }
 
+async function downloadFile(path, params, name, pressed) {
+  if (pressed.disabled) return;
+  pressed.disabled = true;
+  try {
+    const response = await reach('download?' + new URLSearchParams({path, ...params}),
+      {headers: {[TOKEN_HEADER]: view.token}, cache: 'no-store'});
+    if (!response.ok) throw refusal(response, await saidBy(response));
+    const held = URL.createObjectURL(await response.blob());
+    const link = make('a', 'offscreen', 'Download');
+    link.href = held;
+    link.download = name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(held), 60000);
+    toast('Downloaded ' + name + '.');
+  } catch (failure) {
+    toast(failure.message + ' Nothing was downloaded.');
+  } finally {
+    pressed.disabled = false;
+  }
+}
+
 function send(endpoint, body) {
   return call(endpoint, {
     method: 'POST',
@@ -2064,7 +2087,10 @@ function documentBody(shown, found) {
         : 'This is not text, so it is not shown here. It is ') + size(shown.size)
         + '. Open it from the training folder:'),
       pathInto(make('p', 'path'), found.path + '/' + shown.file),
-      copyButton('Copy where it is', 'Copied', found.path + '/' + shown.file, 'copy-file'));
+      copyButton('Copy where it is', 'Copied', found.path + '/' + shown.file, 'copy-file'),
+      capsule('Download ' + shown.file.split('/').pop(), 'quiet', (event) =>
+        downloadFile(found.path, {artifact: found.artifact}, shown.file.split('/').pop(),
+          event.currentTarget), 'download-file'));
   }
   if (shown.kind === 'link') {
     add(node, make('p', 'quiet', shown.file.split('/').pop() + ', ' + size(shown.size)
@@ -5049,7 +5075,14 @@ function madeCard(training, theirs) {
       go.setAttribute('aria-label', (review ? 'Review ' : 'Open ') + lower(file.label));
       add(items, add(make('li', 'row'), bead(file.waiting ? 'review' : FILE_BEADS[file.status]),
         add(make('div', 'row-text'), make('p', 'step-name', file.label),
-          make('p', 'quiet', capital(words))), go));
+          make('p', 'quiet', capital(words))), go,
+        (() => {
+          const save = capsule('Download', 'quiet', (event) => downloadFile(training.path,
+            {artifact: file.artifact}, file.file.split('/').pop(), event.currentTarget),
+            'download-' + file.artifact);
+          save.setAttribute('aria-label', 'Download ' + lower(file.label));
+          return save;
+        })()));
     }
     add(node, items);
   }
@@ -5331,6 +5364,11 @@ function copyItem(found) {
   const why = found.problem || (found.state === 'not-made' ? 'No reason was given.' : '');
   if (found.state !== 'made' && why) add(text, make('p', '', why));
   add(text, copyLink(found, kind, what));
+  if (found.kind === 'word' && found.link && found.state !== 'not-made') {
+    add(text, capsule('Download the Word copy', 'quiet', (event) =>
+      downloadFile(view.path, {artifact: found.artifact, copy: 'word'},
+        found.link.split('/').pop(), event.currentTarget), 'download-word-' + found.artifact));
+  }
   const item = make('li', 'row step');
   item.dataset.state = found.state;
   return add(item, bead(shape), text, make('span', 'step-words', words));
@@ -6021,6 +6059,11 @@ function combinedReview(run) {
         + (finding.fix ? ' Suggested: ' + finding.fix : '')));
       if (!list(item.deck_view.slides).length) add(part, make('p', 'fix', 'Slide pictures are unavailable on this computer. Read the saved deck before approving.'));
       add(part, capsule('Open the saved deck and its review', '', () => show('gate', {path: view.path, artifact: item.target}), 'read-' + item.target));
+    }
+    if (review.phase === 'final' && /^(document|brief|deck)(@|$)|^(scenario|yoodli):/.test(item.target)) {
+      add(part, capsule('Download ' + lower(item.label), 'quiet', (event) =>
+        downloadFile(view.path, {artifact: item.target}, item.label, event.currentTarget),
+        'download-' + item.target));
     }
     if (item.notes) add(part, window.TrainingStudioMarkdown.render(item.notes));
     if (!theirs) {
@@ -7887,7 +7930,9 @@ async function drawIndex(fresh) {
     place({ title: 'The index', name: 'The index · ' + (found.title || 'Untitled'), back: true,
       above: [button(found.title || 'Untitled', 'link', home, 'training')] },
     [add(make('div', 'reading index'), documentBody(asDocument(read),
-      { label: 'The index', path, files: true }))], true);
+      { label: 'The index', path, files: true }),
+      capsule('Download the index', 'quiet', (event) => downloadFile(path,
+        {artifact: 'README.md'}, 'README.md', event.currentTarget), 'download-index'))], true);
   } catch (failure) {
     if (turn !== view.turn) return;
     unopened(failure, false, true, { title: 'The index cannot be opened',

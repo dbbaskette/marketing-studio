@@ -234,7 +234,7 @@ class FakeElement extends FakeNode {
   click() {
     if (this.disabled || this.behind) return;
     document.activeElement = this;
-    const event = { target: this, preventDefault() {} };
+    const event = { target: this, currentTarget: this, preventDefault() {} };
     this.dispatch('click', event);
     if (this.tagName === 'SUMMARY' && this.parentNode) this.parentNode.open = !this.parentNode.open;
     if (this.tagName === 'BUTTON' && this.type === 'submit') {

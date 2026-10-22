@@ -1923,6 +1923,27 @@ class PageScriptTests(ScriptedPage, PageCase):
     left a control without a name, or put a click on something that is not a control fails.
     """
 
+    def test_every_deliverable_can_be_downloaded(self):
+        self.research()
+        self.complete()
+        session = workspace.load(self.root)
+        session['artifacts']['deck'].pop('approved', None)
+        workspace.store(self.root, session)
+        self.cli('checkpoint', '--approval', 'page', '--gate', 'deck', '--stage', 'deck',
+                 '--question', 'Ready?')
+        answers = {'GET /api/trainings': [self.read('trainings')],
+                   'GET /api/computer': [self.read('computer')],
+                   'GET /api/gate': [self.read('gate', path=str(self.root), artifact='deck')],
+                   'GET /api/download': [{'status': 200, 'picture': 'UEs=',
+                       'type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'}]}
+        result = self.run_page(answers, [{'click': 'Review the slide deck'},
+            {'snapshot': 'gate'}, {'click': 'Download deck.pptx'}, {'snapshot': 'saved'}])
+        self.assertIn('Copy where it is', result['snapshots']['gate']['buttons'])
+        self.assertIn('Downloaded deck.pptx.', result['snapshots']['saved']['toasts'])
+        sent = next(r for r in result['requests'] if r['address'].startswith('/api/download?'))
+        self.assertEqual(sent['headers'], {desk.TOKEN_HEADER: 'the-test-key'})
+        self.assertIn('artifact=deck', sent['address'])
+
     def test_the_research_stop_leads_with_the_brief_and_the_check(self):
         from synthesis_fixture import research_stop
         from studio_core import research_view
@@ -2571,6 +2592,17 @@ SHOWN = [{'number': at, 'id': slide['id'], 'title': slide['title']}
 class RunnerScreenTests(ScriptedPage, PageCase):
     """What the runner adds to the page: set-up, a new training, a run, and running work in
     every list. Each screen is driven through its own controls."""
+
+    def test_made_files_and_word_copies_have_download_controls(self):
+        self.research()
+        self.content()
+        run = a_run('working', 'Building the deck.', copies=[
+            a_copy('document', 'the learner guide', 'word', 'made', 'document.docx')])
+        answers = self.answers(**{'GET /api/trainings': [self.listed('working', 'Building the deck.')],
+            'GET /api/training': [self.detail('working', 'Building the deck.')], 'GET /api/run': [run]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'}, {'snapshot': 'made'}])
+        self.assertIn('Download the learner guide', result['snapshots']['made']['buttons'])
+        self.assertIn('Download the Word copy', result['snapshots']['made']['buttons'])
 
     def test_a_sample_slide_that_could_not_be_drawn_is_a_note_on_the_direction_review(self):
         self.started()
