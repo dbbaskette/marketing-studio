@@ -133,6 +133,8 @@ What a caller needs to know
 - The page's check of this computer gains what a deck needs here. Asking for a new look
   also lets the trainings that were waiting on what was missing carry on, and looks at the
   skills again, putting back a link the installer placed that has gone missing.
+- `GET /api/download?path=&artifact=&copy=word` sends a managed deliverable or its Word
+  copy as an attachment, with the same authenticated read rules. `README.md` names the index.
 - `GET /api/file` also answers for `README.md`, the index at the top of a training this
   computer knows, once it is written. The index is derived and is not one of a training's
   own files, so the desk alone refuses it.
@@ -156,6 +158,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
@@ -172,13 +175,20 @@ from runner import engine as engines
 from runner import gitstate, pipeline, setup
 
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
-         '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket')
+         '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket')
 WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
           '/api/brand', '/api/brand/install', '/api/shared', '/api/note', '/api/look',
           '/api/review-level')
+KINDS = {
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.pdf': 'application/pdf', '.md': 'text/markdown; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+}
+NAMED = re.compile(r'[^A-Za-z0-9._-]+')
 PNG = 'image/png'
 DOCUMENTS = '/api/documents'
 ASSET = '/api/asset'
@@ -212,6 +222,13 @@ class RunnerPage(desk.Page):
 
     def read(self, path: str, one):
         self.engine.seen()
+        if path == '/api/download':
+            def given(name):
+                try:
+                    return one(name)
+                except desk.Refusal:
+                    return None
+            return self.download(one('path'), one('artifact'), given('copy'))
         if path == '/api/status':
             return desk.as_json(HTTPStatus.OK, self.engine.standing())
         if path == '/api/published':
@@ -244,6 +261,30 @@ class RunnerPage(desk.Page):
         if path == '/api/file' and one('artifact') in (pipeline.INDEX, 'reviews/research.md'):
             return desk.as_json(HTTPStatus.OK, self.index(one('path'), one('artifact')))
         return super().read(path, one)
+
+    def download(self, path: str, artifact: str, copy: str | None = None) -> tuple:
+        """Send only a managed deliverable, as an attachment under the page's read rules."""
+        desk.registered(path)
+        if copy is not None and copy != 'word':
+            raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give copy as word.')
+        root, level = Path(path), None
+        if artifact == pipeline.INDEX and copy is None:
+            relative = pipeline.INDEX
+        else:
+            root, session = desk.artifact_of(path, artifact)
+            level = workspace.split(artifact)[1]
+            relative = workspace.artifact(root, session, artifact)['file']
+            if copy == 'word':
+                relative = (session['exports'].get(artifact) or {}).get('file')
+                if not relative:
+                    raise desk.Refusal(HTTPStatus.NOT_FOUND,
+                                       f'There is no Word copy of {desk.named(artifact)} yet.')
+        file = desk.inside(root, relative)
+        if not file.is_file():
+            raise desk.Refusal(HTTPStatus.NOT_FOUND, f'{relative} has not been made yet.')
+        name = NAMED.sub('-', '-'.join(filter(None, [root.name, level, Path(relative).name])))
+        return (HTTPStatus.OK, KINDS.get(file.suffix.lower(), 'application/octet-stream'),
+                file.read_bytes(), {'Content-Disposition': f'attachment; filename="{name}"'})
 
     def index(self, path: str, relative=pipeline.INDEX) -> dict:
         """A training's index, in the shape the desk gives any of its files."""

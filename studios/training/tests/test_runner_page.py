@@ -2493,3 +2493,62 @@ class ResearchFileTests(PageCase):
         found = self.get('file', path=str(root), artifact='reviews/research.md')
         self.assertEqual(found['text'], '# Independent check\n\n- Too broad.\n')
         self.get('file', path=str(root), artifact='reviews/../intake.md', expect=403)
+
+
+class DownloadTests(PageCase):
+    """Managed deliverables leave the authenticated page only as attachments."""
+
+    def setUp(self):
+        super().setUp()
+        self.path = self.started(levels=['101'], stages=['document', 'brief', 'deck'], copies=['word'])
+        self.root = Path(self.path)
+        (self.root / '101').mkdir(exist_ok=True)
+
+    def download(self, artifact, **params):
+        target = '/api/download?' + urlencode({'path': self.path, 'artifact': artifact, **params})
+        return self.page.answer(target, self.headers(), 'GET')
+
+    def test_a_deck_downloads_as_an_attachment(self):
+        (self.root / '101/deck.pptx').write_bytes(b'PK\x03\x04deck')
+        status, kind, data, headers = self.download('deck@101')
+        self.assertEqual((status, kind, data), (200,
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            b'PK\x03\x04deck'))
+        self.assertEqual(headers['Content-Disposition'],
+                         f'attachment; filename="{self.root.name}-101-deck.pptx"')
+
+    def test_a_word_copy_downloads(self):
+        (self.root / '101/document.md').write_text('A guide.')
+        (self.root / '101/document.docx').write_bytes(b'PK word')
+        workspace.export(self.root, 'document@101')
+        status, kind, data, _ = self.download('document@101', copy='word')
+        self.assertEqual((status, kind, data), (200,
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document', b'PK word'))
+
+    def test_the_index_downloads(self):
+        (self.root / 'README.md').write_text('# Made\n')
+        status, kind, data, _ = self.download('README.md')
+        self.assertEqual((status, kind, data), (200, 'text/markdown; charset=utf-8', b'# Made\n'))
+
+    def test_refusals(self):
+        for artifact, params, expected in (
+                ('unknown', {}, 403), ('../README.md', {}, 403), ('/etc/hosts', {}, 403),
+                ('deck@999', {}, 403), ('deck@101', {'copy': 'pdf'}, 400),
+                ('deck@101', {}, 404), ('document@101', {'copy': 'word'}, 404)):
+            with self.subTest(artifact=artifact, params=params):
+                with self.assertRaises(desk.Refusal) as refused:
+                    self.download(artifact, **params)
+                self.assertEqual(refused.exception.status, expected)
+        target = '/api/download?' + urlencode({'path': self.path, 'artifact': 'README.md'})
+        with self.assertRaises(desk.Refusal) as refused:
+            self.page.answer(target, self.headers(token=False), 'GET')
+        self.assertEqual(refused.exception.status, 403)
+        outside = self.base / 'outside.pptx'
+        outside.write_bytes(b'private')
+        (self.root / '101/deck.pptx').symlink_to(outside)
+        with self.assertRaisesRegex(desk.Refusal, 'leads outside the training folder') as refused:
+            self.download('deck@101')
+        self.assertEqual(refused.exception.status, 403)
+        self.assertEqual(self.get('download', 403, path=str(self.base / 'unknown'),
+                                  artifact='README.md')['error'],
+                         'That folder is not a training this computer knows.')
