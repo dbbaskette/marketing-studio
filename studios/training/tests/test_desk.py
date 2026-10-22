@@ -2593,6 +2593,25 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     """What the runner adds to the page: set-up, a new training, a run, and running work in
     every list. Each screen is driven through its own controls."""
 
+    def test_google_doc_conflicts_have_explicit_confirmed_choices(self):
+        self.started()
+        problem = 'Someone has changed the Google Doc since it was last sent.'
+        copy = a_copy('document', 'the learner guide', 'google', 'out-of-date',
+                      'https://docs.example.com/d/one/edit', problem)
+        first = a_run('waiting', 'Waiting for your review.', copies=[copy])
+        both = a_run('waiting', 'Waiting for your review.', copies=[{**copy, 'conflict': True}])
+        both['body']['said'] = 'Both versions kept.'
+        answers = self.answers(**{'GET /api/trainings': [self.listed('waiting')],
+            'GET /api/training': [self.detail('waiting', '')], 'GET /api/run': [first],
+            'POST /api/copies': [both]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+            {'click': "Bring the Doc's changes in"}, {'snapshot': 'both'},
+            {'click': "Use the Doc's version"}, {'snapshot': 'theirs'},
+            {'click': 'Cancel'}, {'click': 'Keep this version and send it'}, {'snapshot': 'ours'}])
+        self.assertIn('replaces the local learner guide', result['snapshots']['theirs']['sheet'])
+        self.assertIn('replaces the changes in the Google Doc', result['snapshots']['ours']['sheet'])
+        self.assertEqual(self.posts(result), [('/api/copies', {'path': str(self.root), 'pull': 'document'})])
+
     def test_made_files_and_word_copies_have_download_controls(self):
         self.research()
         self.content()

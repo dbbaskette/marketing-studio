@@ -373,6 +373,9 @@ Each row is one test in `tests/test_workspace.py` or, where it names `check`, `t
 | 118 | New schema-2 research or explicit conversation import; original runs retain schema 1 | Investigate, independently review, approve research, consume stable finding IDs, then alter a capture | The purpose-led bundle must be complete with matching digest and file hashes. Drafts block authoring; changed evidence invalidates approval and downstream inputs. Stop preserves the draft without recording a failure. Covered by `test_synthesis_integration.py` and suite `test_research_contract.py`. |
 | 120 | Contract research from supplied documents only | Start with up to 8 questions or none | Write the plan from the form with no planning job and no search words. Balanced and Automatic approve under the saved policy; Step by step waits at the plan. Public web still runs the plan worker. Covered by test_row_120 and FormPlanPolicyTests. |
 
+| 121 | Approved file, its Doc edited elsewhere | Bring the Doc’s changes in | File holds the Doc’s text, not approved; downstream out of date. Covered by `PullTests.test_row_121_a_doc_edited_elsewhere_is_brought_in`. |
+| 122 | File and Doc both changed | Bring in, then choose | Both kept until chosen; theirs saved as an edit or ours pushed with force; later changes refuse the old choice. Covered by `PullTests.test_row_122_both_changed_keeps_both`. |
+
 Shared setup readiness adds the independently verified transitions in
 [the suite setup matrix](../../../../../docs/shared-setup.md): no/partial settings
 → shared setup; successful finish → normal home; completed setup elsewhere →

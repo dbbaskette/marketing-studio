@@ -753,6 +753,13 @@ class RunnerPage(desk.Page):
     def copied(self, sent: dict) -> dict:
         path = desk.text(sent, 'path')
         self.run(path)
+        if 'pull' in sent:
+            artifact = desk.text(sent, 'pull')
+            desk.artifact_of(path, artifact)
+            choose = sent.get('choose')
+            if choose not in (None, 'ours', 'theirs'):
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Choose the Doc’s version or this version.')
+            return self.engine.pull_copy(path, artifact, choose)
         return self.engine.copies_again(path)
 
 

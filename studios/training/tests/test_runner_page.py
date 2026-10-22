@@ -2552,3 +2552,32 @@ class DownloadTests(PageCase):
         self.assertEqual(self.get('download', 403, path=str(self.base / 'unknown'),
                                   artifact='README.md')['error'],
                          'That folder is not a training this computer knows.')
+
+
+class PullCopyTests(PageCase):
+    def test_the_page_brings_in_a_doc_and_reopens_its_review(self):
+        import gdocs
+        path = self.started(levels=['101'], copies=['google'])
+        root = Path(path)
+        self.to_gate(root, 'document@101')
+        self.decide(root, 'document@101')
+        ident = gdocs.read_links(root)['docs']['document@101']['file_id']
+        self.copies.drive.docs[ident] += '\nFrom a teammate.\n'
+        run = self.post('copies', {'path': path, 'pull': 'document@101'})
+        self.assertIn('From a teammate.', (root / '101/document.md').read_text())
+        self.assertIn("The Doc's changes are in.", run['said'])
+        self.assertEqual(workspace.status(root)['gate'], 'document@101')
+
+    def test_pulling_is_refused_while_a_dependent_worker_builds(self):
+        refused = []
+        path = self.started(levels=['101'], copies=['google'])
+        root = Path(path)
+        self.to_gate(root, 'blueprint@101')
+
+        def building(tools, job):
+            refused.append(self.post('copies', {'path': path, 'pull': 'document@101'}, 409))
+            self.workers.document(tools, job)
+
+        self.workers.then('document', building)
+        self.decide(root, 'blueprint@101')
+        self.assertEqual(refused, [{'error': 'It is being worked on. Bring the Doc\'s changes in once it stops.'}])

@@ -332,16 +332,22 @@ def pull(root: Path, name: str, transport: Transport | None = None,
         incoming.write_bytes(text.encode('utf-8'))
         # An edit made in Google is an edit, not a rebuild: it must not clear staleness.
         workspace.save(root, name, source=incoming, edit=True)
-    with workspace.locked(root):
-        links = read_links(root)
-        links['docs'][name] = {**entry, 'local_sha256': workspace.sha256_file(path),
-                               'remote_sha256': digest(remote),
-                               'anchors': strip_comments(text)[1], 'synced_at': home.now()}
-        write_links(root, links)
+    settle(root, name, entry, text, remote)
     after = workspace.statuses(root, workspace.load(root))
     return {'artifact': name, 'result': 'pulled', 'file': spec['file'], 'status': after[name],
             'stale': [other for other, state in after.items() if state == 'stale'],
             'unplaced': unplaced}
+
+
+def settle(root: Path, name: str, entry: dict, text: str, remote: str) -> None:
+    """Record the baseline after an explicitly accepted Google Doc edit."""
+    _, _, path = target(root, name)
+    with workspace.locked(root):
+        links = read_links(root)
+        links['docs'][name] = {**{key: value for key, value in entry.items() if key != 'conflict'}, 'local_sha256': workspace.sha256_file(path),
+                               'remote_sha256': digest(remote),
+                               'anchors': strip_comments(text)[1], 'synced_at': home.now()}
+        write_links(root, links)
 
 
 def status(root: Path, transport: Transport | None = None) -> dict:

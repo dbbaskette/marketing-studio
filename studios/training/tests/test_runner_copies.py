@@ -538,3 +538,56 @@ class PandocTests(Built):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PullTests(Built):
+    def linked(self):
+        self.built('google', levels=('101',))
+        self.copy()
+        return gdocs.read_links(self.root)['docs']['document@101']['file_id']
+
+    def test_row_121_a_doc_edited_elsewhere_is_brought_in(self):
+        ident = self.linked()
+        self.drive.docs[ident] += '\nRemote addition.\n'
+        self.assertEqual(copies.pull(self.root, 'document@101', self.drive)['result'], 'pulled')
+        self.assertIn('Remote addition.', (self.root / '101/document.md').read_text())
+        state = workspace.statuses(self.root, workspace.load(self.root))
+        self.assertEqual((state['document@101'], state['deck@101']), ('draft', 'stale'))
+
+    def test_row_122_both_changed_keeps_both(self):
+        ident = self.linked()
+        local = self.root / '101/document.md'
+        local.write_text(local.read_text() + '\nLocal addition.\n')
+        self.drive.docs[ident] += '\nRemote addition.\n'
+        for choice in ('theirs', 'ours'):
+            with self.subTest(choice=choice):
+                before = local.read_text()
+                remote = self.drive.docs[ident]
+                found = copies.pull(self.root, 'document@101', self.drive)
+                self.assertEqual((found['result'], found['beside']),
+                                 ('both-changed', '101/document.remote.md'))
+                self.assertEqual((local.read_text(), self.drive.docs[ident]), (before, remote))
+                copies.pull(self.root, 'document@101', self.drive, choose=choice)
+                if choice == 'theirs':
+                    self.assertIn('Remote addition.', local.read_text())
+                    self.assertNotIn('Local addition.', local.read_text())
+                    local.write_text(local.read_text() + '\nAnother local edit.\n')
+                    self.drive.docs[ident] += '\nAnother remote edit.\n'
+                else:
+                    self.assertIn('Another local edit.', self.drive.docs[ident])
+
+    def test_a_choice_refuses_changes_since_the_conflict_was_shown(self):
+        ident = self.linked()
+        local = self.root / '101/document.md'
+        local.write_text(local.read_text() + '\nLocal edit.\n')
+        self.drive.docs[ident] += '\nRemote edit.\n'
+        copies.pull(self.root, 'document@101', self.drive)
+        local.write_text(local.read_text() + '\nNew local edit.\n')
+        with self.assertRaisesRegex(WorkspaceError, 'changed again'):
+            copies.pull(self.root, 'document@101', self.drive, choose='theirs')
+        self.assertIn('New local edit.', local.read_text())
+        copies.pull(self.root, 'document@101', self.drive)
+        self.drive.docs[ident] += '\nNew remote edit.\n'
+        with self.assertRaisesRegex(WorkspaceError, 'changed again'):
+            copies.pull(self.root, 'document@101', self.drive, choose='ours')
+        self.assertIn('New remote edit.', self.drive.docs[ident])

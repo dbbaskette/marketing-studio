@@ -1423,7 +1423,7 @@ function drawSheet() {
   const holder = byId('sheet');
   const shown = view.after || (view.sheet && (view.gate || view.deciding || outlined()
     || TEAM_SHEETS.includes(view.sheet)
-    || ['delete', 'companions', 'upgrade', 'redesign', 'brand'].includes(view.sheet)
+    || ['delete', 'companions', 'upgrade', 'redesign', 'brand', 'copy-choice'].includes(view.sheet)
     || (view.sheet === 'approve-combined' && view.run && view.run.review)));
   holder.hidden = !shown;
   // While a sheet is open it holds the one filled button, so the toolbar's are put away.
@@ -1442,6 +1442,7 @@ function drawSheet() {
   else if (view.sheet === 'upgrade') body = upgradeSheet();
   else if (view.sheet === 'redesign') body = redesignSheet();
   else if (view.sheet === 'brand') body = brandSheet();
+  else if (view.sheet === 'copy-choice') body = copyChoiceSheet();
   else if (view.sheet === 'approve-combined') body = combinedConfirm();
   else if (TEAM_SHEETS.includes(view.sheet)) body = teamSheet(view.sheet);
   else if (FORMS[view.sheet]) body = noteSheet(view.sheet);
@@ -5364,6 +5365,20 @@ function copyItem(found) {
   const why = found.problem || (found.state === 'not-made' ? 'No reason was given.' : '');
   if (found.state !== 'made' && why) add(text, make('p', '', why));
   add(text, copyLink(found, kind, what));
+  if (found.kind === 'google' && view.run?.mine !== false) {
+    if (found.conflict) {
+      for (const [choose, label] of [['theirs', "Use the Doc's version"],
+        ['ours', 'Keep this version and send it']]) {
+        add(text, capsule(label, 'quiet', (event) => {
+          view.copyChoice = {found, choose};
+          openSheet('copy-choice', event.currentTarget)();
+        }, 'choose-copy-' + choose + '-' + found.artifact));
+      }
+    } else if (/^Someone has changed the Google Doc/.test(found.problem || '')) {
+      add(text, capsule("Bring the Doc's changes in", 'quiet', (event) =>
+        pullCopy(found, null, event.currentTarget), 'pull-copy-' + found.artifact));
+    }
+  }
   if (found.kind === 'word' && found.link && found.state !== 'not-made') {
     add(text, capsule('Download the Word copy', 'quiet', (event) =>
       downloadFile(view.path, {artifact: found.artifact, copy: 'word'},
@@ -5372,6 +5387,37 @@ function copyItem(found) {
   const item = make('li', 'row step');
   item.dataset.state = found.state;
   return add(item, bead(shape), text, make('span', 'step-words', words));
+}
+
+function copyChoiceSheet() {
+  const {found, choose} = view.copyChoice;
+  const theirs = choose === 'theirs';
+  const go = capsule(theirs ? "Use the Doc's version" : 'Keep this version and send it',
+    'filled', async () => {
+      if (await pullCopy(found, choose, go)) closeSheet();
+    }, 'confirm-copy');
+  return [sheetTitle(theirs ? "Use the Doc's version?" : 'Send this version?'),
+    make('p', '', theirs ? 'This replaces the local ' + lower(found.label).replace(/^the /, '')
+      + ' with the Doc’s kept text. Review it again before continuing.'
+      : 'This replaces the changes in the Google Doc with this training’s version.'),
+    add(make('div', 'bar'), go, capsule('Cancel', 'quiet', closeSheet, 'cancel'))];
+}
+
+async function pullCopy(found, choose, pressed) {
+  pressed.disabled = true;
+  try {
+    const run = await send('copies', {path: view.path, pull: found.artifact,
+      ...(choose ? {choose} : {})});
+    view.run = run;
+    toast(run.said);
+    paintRun(false);
+    return true;
+  } catch (failure) {
+    toast(failure.message + ' Nothing was replaced.');
+    return false;
+  } finally {
+    pressed.disabled = false;
+  }
 }
 
 async function tryCopies() {

@@ -208,6 +208,7 @@ from workspace import WorkspaceError
 from runner import agents, companion, deck, gitstate, pipeline, settings, team, worker_tools
 from runner import brand as brand_skill
 from runner import copies as copies_made
+from runner.copies import BOTH, KEPT_OURS, PULLED
 from runner import documents as documents_kept
 from runner import index as index_written
 from runner import research as research_cli
@@ -3729,6 +3730,34 @@ class Engine(Reviewing):
         self.wake(root)
         return self.view(root)
 
+    def _busy_on(self, root: Path, artifact: str) -> bool:
+        """A worker writing this file or a downstream file must finish before a pull."""
+        from runner import reviews
+        record = self._load(root)
+        found = self._survey(root, record)
+        affected = {artifact, *reviews.rewritten(root, found.session, found.decks, artifact)}
+        working = self._run(root).workers
+        return any(step.id in working and (step.artifact in affected or step.stage == 'review')
+                   for step in found.steps)
+
+    def pull_copy(self, path, artifact: str, choose=None) -> dict:
+        root = self._held(path)
+        with self.files:
+            if self._busy_on(root, artifact):
+                raise WorkspaceError("It is being worked on. Bring the Doc's changes in once it stops.")
+            outcome = self.copies.pull(root, artifact, choose=choose)
+            record = self._load(root)
+            self._make(root, record)
+            self._store(root, record)
+            self._commit(root, 'bring the Google Doc’s changes into '
+                         + workspace.label(artifact) + ', as asked on the page')
+        self.wake(root)
+        said = (BOTH if outcome['result'] == 'both-changed' else
+                KEPT_OURS if outcome['result'] == 'kept' else
+                PULLED if outcome['result'] == 'pulled' else
+                'The Doc has no new changes to bring in.')
+        return {**self.view(root), 'said': said.format(label=workspace.label(artifact))}
+
     def copies_again(self, path) -> dict:
         """Make the copies that are not made, again, as the person asks. One that still
         cannot be made says why."""
@@ -4213,7 +4242,8 @@ class Engine(Reviewing):
         is behind a file that has changed since. One not made of a file not approved yet
         is left out, since there is nothing to make it from. A copy's label is the core's
         name for its file, to read in the middle of a sentence."""
-        return [{**{key: entry.get(key) for key in ('artifact', 'kind', 'state', 'link',
+        return [{**({'conflict': True} if entry.get('conflict') else {}),
+                 **{key: entry.get(key) for key in ('artifact', 'kind', 'state', 'link',
                                                     'problem')},
                  'label': workspace.label(entry['artifact'])} for entry in found.copies
                 if entry['state'] != 'not-made'
