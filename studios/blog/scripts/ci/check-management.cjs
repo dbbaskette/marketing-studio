@@ -71,6 +71,7 @@ async function check(){
   await writingReviewJourneys();
   await taskJourneys();
   await phase4Starts();
+  await phase4GoogleHandoff();
   await revisionCompletion();
   await deliveryRecovery();
   await brandInputs();
@@ -102,7 +103,7 @@ async function check(){
   await finishEveryLevel();
   await failureRecovery();
   pageDefinesEveryElement();
-  const checks=['starts on Home: Outline only, Revise or review a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
+  const checks=['Open as a Google Doc, confirmed, private, once','starts on Home: Outline only, Revise or review a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
     'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','one name for each thing','copy that says what the form and gates do','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','element ids'];
@@ -321,6 +322,24 @@ async function revisionCompletion(){
   assert.equal(nodes().some(e=>e.textContent==='No wording changes found'),false);
   await nodes().find(e=>e.textContent==='Use revised draft').listeners.click();
   assert.ok(nodes().some(e=>e.textContent==='Download polished document'));
+}
+
+async function phase4GoogleHandoff(){
+  const requests=[],url='https://docs.google.com/document/d/fixture-doc/edit';
+  const found={id:'finished',title:'Finished draft',status:'complete',complete:true,approval:'page',expected:'v1',enabled:true,decisions:[],directory:'/synthetic/articles/finished',mode:'write',stages:[{stage:'draft',label:'Draft',path:'DRAFT.md',status:'approved'}],brief:{goal:'Explain',audience:'Authors'},engine:'codex',seconds:600};
+  const f=fixture((route,options)=>{requests.push({route,data:options?.body?JSON.parse(options.body):null});return route==='/api/google-open'?{id:'finished',url,transfer:'one'}:{items:[]};});f.loadRunner();f.set('done',found);f.run("studio.screen='run';studio.id=done.id;sPage(sDoneCard(done))");
+  const nodes=()=>descendants(f.get('studio-page')),sheet=()=>descendants(f.get('sheet'));
+  await nodes().find(n=>n.textContent==='Open as a Google Doc').listeners.click();
+  assert.ok(sheet().some(n=>/private to you. Nothing is shared/.test(n.textContent)));
+  assert.equal(requests.length,0);
+  await sheet().find(n=>n.textContent==='Cancel').listeners.click();
+  assert.equal(requests.length,0);
+  await nodes().find(n=>n.textContent==='Open as a Google Doc').listeners.click();
+  await sheet().find(n=>n.textContent==='Make the Google Doc').listeners.click();
+  assert.equal(requests.filter(r=>r.route==='/api/google-open').length,1);
+  assert.equal(requests[0].data.id,'finished');assert.equal(requests[0].data.expected,'v1');assert.equal(requests[0].data.confirmed,true);
+  assert.ok(nodes().some(n=>n.textContent==='Open the Google Doc ↗'&&n.href===url));
+  assert.equal(nodes().some(n=>n.textContent==='Open as a Google Doc'),false);
 }
 
 async function phase4Starts(){

@@ -890,11 +890,19 @@ function sDoneCard(found){
   publish.disabled=!sCanEdit(found);
   const prepublish=sButton('Pre-publish check',()=>sPrepublishTool(found.id));prepublish.disabled=!sCanEdit(found);
   const repurpose=sButton('Repurpose',()=>sRepurposeTool(found.id));repurpose.disabled=!sCanEdit(found);
+  const google=found.google?.url?link(found.google.url,'Open the Google Doc ↗'):sButton('Open as a Google Doc',()=>{
+    const error=sNode('p','sheet-error');error.setAttribute('role','alert');
+    sOpenSheet('Open as a Google Doc?',sNode('p','','This makes a new Google Doc of the approved draft in your Google Drive, private to you. Nothing is shared.'),error,
+      sAdd(sNode('div','bar'),sButton('Make the Google Doc',async button=>busy(button,'Making…',async()=>{
+        try{const result=await api('google-open',{id:found.id,expected:found.expected,confirmed:true});found.google={url:result.url};sCloseSheet();sToast('The private Google Doc is ready.');if(studio.screen==='run'&&studio.id===found.id)sRun(found);}catch(failure){error.textContent=failure.message;}
+      }),'filled'),sButton('Cancel',sCloseSheet)));
+  });
+  if(!found.google?.url)google.disabled=!sCanEdit(found);
   const remove=sButton('Delete this blog',()=>sDeleteSheet(found),'danger');remove.disabled=!sCanEdit(found);
   // Finish keeps the blog in the team library; the card says so, or why not.
   const kept=found.library?.id?sNode('p','quiet','Kept in the team library, where the next blog can pick it as an example.'):found.library?.reason?sNode('p','quiet','Not kept in the team library: '+found.library.reason):null;
   return sCard('Done',sNode('p','',found.publication?'Published at '+found.publication:'The draft is approved. Take it where it goes, then say where it was published.'),kept,found.publication?link(found.publication,'Open the published blog ↗'):null,
-    sAdd(sNode('div','bar'),copy,download,prepublish,repurpose,sButton('Polish or edit the draft',()=>sRoute('editor',found.id))),
+    sAdd(sNode('div','bar'),copy,download,google,prepublish,repurpose,sButton('Polish or edit the draft',()=>sRoute('editor',found.id))),
     found.publication?null:sAdd(sNode('div'),sField('published-url','Where was it published?',held,'url',{type:'url',max:2000,hint:'The public https address. Recording it posts nothing.'}),publish),
     problem,sAdd(sNode('div','bar'),remove));
 }

@@ -27,6 +27,9 @@ these options. Opening a tool starts no model, research or Google write.
 - **Clarity and citation readiness / title and opening:** prepare located
   suggestions in the existing editor. Choose one alternative per passage, adjust
   it, and explicitly save selected edits. No invented evidence or automatic CTA.
+- **Open as a Google Doc:** on Done, confirm a private Doc of the approved draft.
+  A verified readback links it; an uncertain upload is reconciled rather than repeated.
+  Pre-publish and Repurpose are on Done too. Sharing stays separate.
 - **Pre-publish:** local report only: headings, placeholders, link syntax, image
   alternatives and selected evidence IDs. No factual, rights or live-link claim.
 - **Check topic overlap:** bounded local reference leads; historical posts require

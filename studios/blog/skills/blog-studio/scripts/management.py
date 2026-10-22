@@ -1559,6 +1559,17 @@ def _dispatch(root, route, data):
 
             return blog_delete.restore(root, data)
         adapter = authorize_write(root)
+        if route == 'google-open':
+            import blog_runner
+            import google_handoff
+
+            if data.get('confirmed') is not True:
+                raise ValueError('Confirm making a private Google Doc first.')
+            try:
+                blog_runner.guard(root, data['id'], data.get('expected'), page=True)
+            except ValueError as error:
+                raise google_handoff.Conflict(str(error)) from None
+            return google_handoff.open_as_doc(root, data['id'])
         if route in ('google-preview', 'google-start'):
             import google_intake
 
@@ -1846,7 +1857,7 @@ def dispatch(root, route, data):
             data.get('id')
             if route.startswith(('run-', 'editor-'))
             and route != 'run-create'
-            or route in ('schedule', 'tool-action', 'blog-delete')
+            or route in ('schedule', 'tool-action', 'blog-delete', 'google-open')
             else None,
         )
     result = _dispatch(root, route, data)
@@ -1855,7 +1866,11 @@ def dispatch(root, route, data):
             # A tool result may be a job or a profile, whose IDs are not blogs: the blog
             # a tool worked on is the one the request named.
             ident = data.get('id')
-        elif route.startswith(('run-', 'editor-')) or route in ('schedule', 'google-start'):
+        elif route.startswith(('run-', 'editor-')) or route in (
+            'schedule',
+            'google-start',
+            'google-open',
+        ):
             ident = result.get('id')
         else:
             ident = None
@@ -1893,6 +1908,10 @@ def note_unexpected(exc):
 
 def failure(exc, writing=False):
     """(HTTP status, JSON body) for any exception. Authored messages pass through; internals never do."""
+    from google_handoff import Conflict as HandoffConflict
+
+    if isinstance(exc, HandoffConflict):
+        return 409, {'error': str(exc)[:500]}
     if isinstance(exc, CurationConflict):
         # A refused save is a conflict; a read of a reference that went away is an ordinary 400, as before.
         return (409 if writing else 400), {'error': str(exc)[:500], 'code': 'source-conflict'}

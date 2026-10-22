@@ -960,7 +960,45 @@ def start(root, args):
     }
 
 
+def prepare_transfer(root, ident, kind='draft', new_document=False, *, args=None):
+    """Freeze the selected local copy using the same checkpoint as the CLI."""
+    if args is None:
+        args = argparse.Namespace(
+            action='prepare',
+            id=ident,
+            kind=kind,
+            new_document=new_document,
+            observation=None,
+            file=None,
+            snapshot=None,
+        )
+    return _command(root, args)
+
+
+def confirm_transfer(root, ident, kind, transfer, snapshot, *, args=None):
+    """Confirm a captured readback, preserving every checkpoint and formatting guard."""
+    if args is None:
+        args = argparse.Namespace(
+            action='confirm',
+            id=ident,
+            kind=kind,
+            transfer=transfer,
+            snapshot=str(snapshot),
+            observation=None,
+            file=None,
+        )
+    return _command(root, args)
+
+
 def command(root, args):
+    if args.action == 'prepare':
+        return prepare_transfer(root, args.id, args.kind, args.new_document, args=args)
+    if args.action == 'confirm':
+        return confirm_transfer(root, args.id, args.kind, args.transfer, args.snapshot, args=args)
+    return _command(root, args)
+
+
+def _command(root, args):
     if args.action == 'pull':
         import google_reconcile
         import manuscript_editor
