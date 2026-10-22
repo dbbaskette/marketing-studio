@@ -2932,6 +2932,7 @@ function aboutStep(draft) {
   const research = draft.route !== 'existing' ? chip('Research the public web first', draft.research,
     (on) => {
       draft.research = on;
+      draw(false);
     }, 'research') : null;
   return [add(card('About it'),
     field('new-title', 'A short title', draft, 'title',
@@ -2949,7 +2950,11 @@ function aboutStep(draft) {
       draft.route === 'document' ? 'Only where your document turns out to be material to '
         + 'build from. You approve the research plan, then the findings, before the outline '
         + 'is drafted.' : 'You approve the research plan, then the findings, before the '
-        + 'outline is drafted.')) : null)];
+        + 'outline is drafted. Research uses the public web.')) : null,
+    draft.route === 'document' && draft.research ? choice('Where may research look?',
+      ['Your documents only', 'Your documents and the public web'], draft.researchSources || 0,
+      (index) => { draft.researchSources = index; }, 'research-sources',
+      'With your documents only, nothing about them is searched for on the public web.') : null)];
 }
 
 // The decisions a deck will ask for, in the order it asks.
@@ -3104,6 +3109,8 @@ function formOf(draft) {
     variant: draft.variant || null, output: OUTPUTS[draft.output][0],
     delivery: DELIVERIES[deliveryOf(draft)][0],
     research: draft.route !== 'existing' && draft.research,
+    research_sources: draft.route === 'document' && draft.research
+      ? (draft.researchSources === 1 ? 'both' : 'documents') : undefined,
     agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null,
     review_level: levelOf(draft), review_seen: (view.setup && view.setup.review_level) || null,
     review_default: Boolean(draft.review_default) };

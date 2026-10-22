@@ -480,6 +480,10 @@ class Researching:
                    'documents can answer as well as what the web can:\n'
                    + '\n'.join(f"- {source.get('title') or source.get('id')}"
                                for source in listed)) if listed else 'the public web.'
+        only = (record.get('form') or {}).get('research_sources') == 'documents'
+        if only:
+            allowed = ('only the documents the person supplied. Ask what these can answer, and give no question any search words:\n'
+                       + '\n'.join(f"- {source.get('title') or source.get('id')}" for source in listed))
         task = ('Draft the research questions for this presentation.\n\n'
                 f'{self._about(record)}\n'
                 f'Sources that may be used: {allowed}\n\n'
@@ -494,7 +498,7 @@ class Researching:
             task += (f'\n\nAn earlier try at this job did not work: {error}\nTake care not to '
                      'end the same way.')
         prepared = {'inputs': {'intake': text_of(root / 'intake.md') or ''},
-                    'artifacts': {name: {'kind': 'research-plan', 'scope': 'public-web',
+                    'artifacts': {name: {'kind': 'research-plan', 'scope': 'supplied-only' if only else 'public-web',
                                          'sources': listed}},
                     'ask': True}
         synthesis = bool(record.get('research_contract'))

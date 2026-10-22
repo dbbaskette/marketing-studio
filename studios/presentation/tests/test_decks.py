@@ -34,6 +34,16 @@ UPLOAD = {'kind': 'upload', 'name': 'a.pptx'}
 
 
 class FormTests(unittest.TestCase):
+    def test_research_from_a_document_says_where_it_may_look(self):
+        sent = form(route='document', research=True, source={'kind': 'paste', 'text': 'Synthetic notes.'})
+        for value, words in ((None, 'your documents only'), ('both', 'your documents and the public web')):
+            checked = decks.check_form({**sent, **({'research_sources': value} if value else {})}, BRANDS)
+            self.assertEqual(checked['research_sources'], value or 'documents')
+            self.assertIn('yes (' + words + ')', decks.intake(checked))
+        with self.assertRaisesRegex(WorkspaceError, 'Choose where research may look'):
+            decks.check_form({**sent, 'research_sources': 'web'}, BRANDS)
+        self.assertNotIn('research_sources', decks.check_form(form(research=True), BRANDS))
+
     def test_scratch_form(self):
         checked = decks.check_form(form(), BRANDS)
         self.assertEqual(checked['route'], 'scratch')

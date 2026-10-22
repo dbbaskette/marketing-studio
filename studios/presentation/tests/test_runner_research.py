@@ -554,6 +554,29 @@ if __name__ == '__main__':
 
 
 class SynthesisBriefTests(DeckCase):
+    def test_documents_only_research_plans_with_no_search_words(self):
+        from runner.engine import Engine
+        for scope, expected in (('documents', 'supplied-only'), ('both', 'public-web'), (None, 'public-web')):
+            record = {'research_contract': {'schema': 2}, 'form': {'research_sources': scope}}
+            work = Engine()._plan_work(self.root, record, None, None)
+            self.assertEqual(work.prepared['artifacts']['research-plan']['scope'], expected)
+            self.assertIn('only the documents the person supplied' if scope == 'documents' else 'the public web', work.task)
+
+    def test_the_research_task_keeps_the_boundary(self):
+        from runner.engine import Engine
+        from studio_core import research_contract
+        self.write('run.json', json.dumps({'research_contract': {'schema': 2}, 'form': {}}))
+        self.write('research/plan.json', json.dumps({**PLAN, 'scope': 'supplied-only'}))
+        captured = []
+        def native(engine, root, run, task, sources, product):
+            captured.append(task)
+            raise RuntimeError('captured before workers')
+        with mock.patch.object(research_contract, 'native', side_effect=native), \
+                mock.patch.object(Engine, '_load', return_value={'research_contract': {'schema': 2}, 'form': {}}):
+            with self.assertRaisesRegex(RuntimeError, 'captured before workers'):
+                Engine()._research(self.root, None, None)
+        self.assertEqual(captured[0]['source_mode'], 'selected')
+
     def test_a_contract_plan_job_uses_the_one_investigation_brief(self):
         from runner.engine import Engine
         from runner import briefs
