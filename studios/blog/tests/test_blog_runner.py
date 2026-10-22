@@ -3342,6 +3342,7 @@ class ApplyReviewTests(RunnerCase):
     def at_package(self):
         found = self.create(page=True)
         for stage in ('outline', 'draft', 'review'):
+            self.assertEqual(found['next'], stage)
             found = self.approve(self.submit(found, page=True), page=True)
         return self.submit(found, page=True)
 
