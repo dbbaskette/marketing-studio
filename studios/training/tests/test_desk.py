@@ -2737,7 +2737,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
 
     def test_start_preview_describes_the_actual_review_preference(self):
         for policy, phrase in (('balanced', 'Balanced: it stops for the research plan, the '
-                                             'direction review and the finished materials'),
+                                             'first drafts and the finished materials'),
                                 ('automatic', 'Automatic draft: it stops for the finished '
                                               'materials'),
                                 ('step_by_step', 'Step by step: it stops for at least 5 '
@@ -2754,7 +2754,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                 text = result['snapshots']['ready']['text']
                 self.assertIn(phrase, text)
                 if policy == 'balanced':
-                    self.assertIn('The direction review comes after research and the '
+                    self.assertNotIn('direction review', text)
+                    self.assertIn('Review the first drafts comes after research and the '
                                   'blueprint, guide and brief for each level', text)
                 if policy != 'step_by_step':
                     self.assertNotIn('at least 5 decisions', text)
@@ -2811,7 +2812,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
 
     def test_start_preview_says_a_drawn_deck_always_stops(self):
         for policy, phrase in (('balanced', 'Balanced: it stops for the research plan, the '
-                                             'direction review, each drawn deck and the '
+                                             'first drafts, each drawn deck and the '
                                              'finished materials'),
                                 ('automatic', 'Automatic draft: it stops for each drawn deck '
                                               'and the finished materials')):
@@ -2841,7 +2842,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         shots = result['snapshots']
         self.assertIn('Shared default: Balanced', shots['shared']['text'])
         self.assertIn('Stops to read the research plan', shots['shared']['text'])
-        self.assertIn('Balanced: it stops for the research plan, the direction review and the '
+        self.assertIn('Balanced: it stops for the research plan, the first drafts and the '
                       'finished materials', shots['shared']['text'])
         self.assertIn('Stops only for the finished materials', shots['picked']['text'])
         # The stops line follows the pick.
@@ -2892,18 +2893,21 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                 {'status': 409, 'body': {'error': 'The saved review has changed.'}}, working]})
         result = self.run_page(answers, [
             {'click': 'Open Rolling restarts'}, {'snapshot': 'review'},
-            {'click': 'Approve the direction'}, {'snapshot': 'confirm'},
+            {'click': 'Approve the first drafts'}, {'snapshot': 'confirm'},
             {'click': 'Approve'}, {'snapshot': 'refused'},
             {'click': 'Approve'}, {'snapshot': 'sent'}])
         review_shot = result['snapshots']['review']
-        self.assertEqual(review_shot['filled'], ['Approve the direction'])
-        self.assertIn('Approve the direction', review_shot['toolbarButtons'])
-        self.assertEqual(review_shot['buttons'].count('Approve the direction'), 1)
+        self.assertEqual(review_shot['filled'], ['Approve the first drafts'])
+        self.assertIn('Approve the first drafts', review_shot['toolbarButtons'])
+        self.assertEqual(review_shot['buttons'].count('Approve the first drafts'), 1)
         self.assertEqual(review_shot['sheet'], '')
         # The approval is confirmed in the sheet, which says what it commits to.
         confirm = result['snapshots']['confirm']
-        self.assertIn('Approve the direction?', confirm['sheet'])
-        self.assertIn('Approving the direction writes the learner guide for the training', confirm['sheet'])
+        self.assertIn('Approve the first drafts?', confirm['sheet'])
+        # The learner guide was written before this stop: approving writes nothing more.
+        self.assertIn('Nothing more is written for the training. It spends from the same limit',
+                      confirm['sheet'])
+        self.assertNotIn('learner guide', confirm['sheet'])
         self.assertIn('Approve', confirm['filled'])
         self.assertEqual(confirm['posts'], 0)
         self.assertIn('The saved review has changed.', result['snapshots']['refused']['sheet'])
@@ -2939,9 +2943,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'POST /api/review': [working]})
         result = self.run_page(answers, [
             {'click': 'Open Rolling restarts'}, {'snapshot': 'review'},
-            {'click': 'Approve the direction'}, {'click': 'Approve'}, {'snapshot': 'unpicked'},
+            {'click': 'Approve the first drafts'}, {'click': 'Approve'}, {'snapshot': 'unpicked'},
             {'click': 'Cancel'}, {'click': 'Calm'},
-            {'click': 'Approve the direction'}, {'click': 'Approve'}, {'snapshot': 'sent'}])
+            {'click': 'Approve the first drafts'}, {'click': 'Approve'}, {'snapshot': 'sent'}])
         shown = result['snapshots']['review']
         for said in ('Pick the look of this deck', 'Against an alternative', 'Explanations.',
                      'Rendered through Google Slides'):
@@ -2983,7 +2987,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         result = self.run_page(answers, [
             {'click': 'Open Rolling restarts'},
             {'click': 'Carry on in the brand\u2019s default look'},
-            {'click': 'Approve the direction'}, {'click': 'Approve'}])
+            {'click': 'Approve the first drafts'}, {'click': 'Approve'}])
         self.assertEqual(self.posts(result)[-1][1]['looks'],
                          {'': {'choice': 'default', 'words': ''}})
 
@@ -3023,6 +3027,72 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertEqual(result['snapshots']['newer']['focus'], 'change-research')
         self.assertIn('Try the updated review.', result['snapshots']['refused']['text'])
 
+    def test_the_first_drafts_sheet_says_what_approving_writes(self):
+        self.started()
+        for materials, said in (
+                (['document', 'brief', 'scenario'],
+                 'Approving the first drafts writes the practice scenarios for each of the 2 '
+                 'levels, and the deck is then drawn: estimated at about $7.20 and 40 minutes of '
+                 "agent time for a deck of this size (a fixed estimate, not this computer's "
+                 'history). It spends from the same limit as the rest of the training.'),
+                # A saved review from before lists the guide and the brief; they are not said.
+                (['document', 'brief'],
+                 'Nothing more is written for the levels: approving carries on to the deck.')):
+            with self.subTest(materials=materials):
+                waiting = a_run('waiting', 'Review the first drafts.')
+                waiting['body']['review'] = {
+                    'phase': 'direction', 'label': 'Review the first drafts', 'expected': 'v1',
+                    'commits': {'levels': 2, 'materials': materials, 'deck': True,
+                                'dollars': 7.2, 'minutes': 40},
+                    'items': [{'target': 'research', 'label': 'the research report',
+                               'text': '# Findings', 'rewrites': []}]}
+                answers = self.answers(**{
+                    'GET /api/trainings': [self.listed('waiting', 'Review the first drafts.')],
+                    'GET /api/training': [self.detail('waiting', 'Review the first drafts.')],
+                    'GET /api/run': [waiting]})
+                result = self.run_page(answers, [
+                    {'click': 'Open Rolling restarts'}, {'snapshot': 'review'},
+                    {'click': 'Approve the first drafts'}, {'snapshot': 'confirm'}])
+                confirm = result['snapshots']['confirm']['sheet']
+                self.assertIn('Approve the first drafts?', confirm)
+                self.assertIn(said, confirm)
+                for old in ('direction', 'has cost', 'learner guide'):
+                    self.assertNotIn(old, confirm)
+
+    def test_the_now_line_says_the_limit_the_run_stops_at(self):
+        self.started()
+        going = 'Drafting the research questions.'
+        working = a_run('working', going, steps=steps('done', 'working'),
+                        spent={'dollars': 21.0, 'tokens': None, 'stops_at': 40.0})
+        answers = self.answers(**{'GET /api/trainings': [self.listed('working', going)],
+                                  'GET /api/training': [self.detail('working', going)],
+                                  'GET /api/run': [working]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'}, {'snapshot': 'run'}])
+        self.assertIn('stops at $40.00', result['snapshots']['run']['text'])
+        self.assertNotIn('stops at $20.00', result['snapshots']['run']['text'])
+
+    def test_the_research_stop_reads_every_objection_where_it_stops(self):
+        self.started()
+        stopped = 'The independent check still objected.'
+        failed = a_run('failed', stopped, steps=steps('done', 'done', 'done', 'working'),
+                       problem={'what': stopped, 'action': 'retry', 'label': 'Try again',
+                                'kept': 'The draft report and the check’s objections are kept '
+                                        'with this training: Read every objection shows them.',
+                                'objections': 'reviews/research.md'})
+        gate = ok({'artifact': 'research', 'waiting': False, 'review':
+                   '## Independent research review: changes still needed\n\n- Too broad.'})
+        answers = self.answers(**{'GET /api/trainings': [self.listed('failed', stopped)],
+                                  'GET /api/training': [self.detail('failed', stopped)],
+                                  'GET /api/run': [failed], 'GET /api/gate': [gate]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'snapshot': 'stopped'},
+                                         {'click': 'Read every objection'}, {'snapshot': 'read'}])
+        self.assertNotIn('reviews/research.md', result['snapshots']['stopped']['text'])
+        self.assertIn('Too broad.', result['snapshots']['read']['text'])
+        asked = [request for request in result['requests'] if request['method'] == 'GET'
+                 and request['address'].startswith('/api/gate')]
+        self.assertTrue(asked and 'artifact=research' in asked[-1]['address'], asked)
+
     def test_grouped_change_requests_go_together_and_say_what_they_rewrite(self):
         self.started()
         waiting = a_run('waiting', 'Review the direction.')
@@ -3049,7 +3119,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'What should change in the research report', 'value': 'Cite the platform docs.'},
             {'click': 'Needs changes in the level 101 blueprint'},
             {'fill': 'What should change in the level 101 blueprint', 'value': 'Add a module on health checks.'},
-            {'snapshot': 'two'}, {'click': 'Approve the direction'}, {'snapshot': 'confirm'},
+            {'snapshot': 'two'}, {'click': 'Approve the first drafts'}, {'snapshot': 'confirm'},
             {'key': 'Escape'}, {'click': 'Send 2 requests'}, {'snapshot': 'sent'}])
         one = result['snapshots']['one']
         self.assertIn('1 item is marked for changes.', one['text'])
@@ -3065,9 +3135,10 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Send 2 requests', two['buttons'])
         confirm = result['snapshots']['confirm']['sheet']
         self.assertIn('2 items are marked for changes. Approving does not send them.', confirm)
-        self.assertIn('writes the learner guide and brief for each of the 2 levels, and the deck '
-                      'is then drawn: a deck of this size has cost about $3.50 and about 12 minutes '
-                      'of agent time before', confirm)
+        self.assertIn('Nothing more is written for the levels: approving carries on to the deck. '
+                      'The deck is estimated at about $3.50 and 12 minutes of agent time for a '
+                      "deck of this size (a fixed estimate, not this computer's history).",
+                      confirm)
         self.assertEqual(self.posts(result), [('/api/review', {
             'path': str(self.root), 'expected': 'v1', 'decision': 'revise',
             'target': None, 'note': None,
@@ -3115,8 +3186,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     def test_a_file_the_direction_review_covers_is_read_only_at_its_gate(self):
         self.at_the_blueprint_gate()
         waits = 'Waiting for you to review the direction.'
-        combined = {'phase': 'direction', 'label': 'Review the direction',
-                    'name': 'direction review'}
+        combined = {'phase': 'direction', 'label': 'Review the first drafts',
+                    'name': 'first drafts review'}
         waiting = a_run('waiting', waits)
         waiting['body']['review'] = {
             'phase': 'direction', 'label': 'Review the direction', 'expected': 'v1',
@@ -3132,7 +3203,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         result = self.run_page(answers, [
             {'click': 'Review the blueprint'}, {'snapshot': 'gate'},
             {'click': 'More'}, {'snapshot': 'more'},
-            {'click': 'Request changes in the direction review'}, {'snapshot': 'review'}])
+            {'click': 'Request changes in the first drafts review'}, {'snapshot': 'review'}])
         gate = result['snapshots']['gate']
         self.assertEqual(gate['heading'], 'The blueprint')
         # Only a stage can be left out from here; the file itself is decided in the review.
@@ -3141,10 +3212,10 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Skip this stage', result['snapshots']['more']['buttons'])
         for absent in ('Approve', 'Ask for changes', 'Rebuild it'):
             self.assertNotIn(absent, result['snapshots']['more']['buttons'])
-        self.assertIn('part of the direction review that is waiting for you', gate['text'])
+        self.assertIn('part of the first drafts review that is waiting for you', gate['text'])
         review = result['snapshots']['review']
         self.assertEqual(review['heading'], 'Rolling restarts')
-        self.assertIn('Approve the direction', review['toolbarButtons'])
+        self.assertIn('Approve the first drafts', review['toolbarButtons'])
         self.assertEqual(self.posts(result), [])
 
     def test_grouped_review_keeps_a_section_closed_when_content_refreshes(self):
@@ -3164,7 +3235,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'Research'}, {'poll': True}, {'snapshot': 'closed'}])
         self.assertIn('Needs changes in Research', result['snapshots']['open']['buttons'])
         self.assertNotIn('Needs changes in Research', result['snapshots']['closed']['buttons'])
-        self.assertIn('Approve the direction', result['snapshots']['closed']['toolbarButtons'])
+        self.assertIn('Approve the first drafts', result['snapshots']['closed']['toolbarButtons'])
         self.assertEqual(self.posts(result), [])
 
     def test_final_review_leads_with_materials_and_keeps_research_available(self):

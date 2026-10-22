@@ -64,6 +64,7 @@ production detail. Reading a document or expanding details approves nothing.
 | Use this for new work in every studio | Not started | Shared level written under the lock, or refused when stale ("Another studio changed where new work stops. Reload the page and try again."); nothing made | `test_row_120_the_shared_default_is_written_only_with_the_chip` |
 | New source/blueprint revision | Approved derived output | Existing stale/rebuild behavior | Reuse existing lineage suite |
 | Confirm a runner gate or slide-direction approval | Reading the reviewed version | Return to the same training, announce success; no second navigation dialog | Gate and outline page journeys |
+| Approve the first drafts | Waiting for the first drafts | Only scenarios, Yoodli and the deck are started; the sheet listed only those | `test_row_121_first_drafts_approval_starts_only_what_is_still_to_write` |
 | Grouped review | Waiting for direction or final review | One persistent toolbar approval with the displayed revision | Grouped approval/refusal regression |
 | Edit a grouped change request, then refresh or fail | Unsaved request text | Keep the text for that training, phase and material; show refusal beside the request | Grouped revision refresh regression |
 | Refresh a review while reading | Expanded and collapsed sections chosen by the reader | Preserve both disclosure states | Grouped disclosure regression and phone walkthrough |

@@ -1637,7 +1637,7 @@ class RunTests(PageCase):
         self.assertEqual((run['state'], run['agent'], run['model'], run['effort'],
                           run['workers'], run['question'], run['problem']),
                          ('waiting', 'claude', None, None, [], None, None))
-        self.assertEqual(run['spent'], {'dollars': 0.5, 'tokens': 1200})
+        self.assertEqual(run['spent'], {'dollars': 0.5, 'tokens': 1200, 'stops_at': 20.0})
         self.assertIsInstance(run['sentence'], str)
         for step in run['steps']:
             self.assertEqual(sorted(step), STEP_KEYS)

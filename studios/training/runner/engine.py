@@ -298,7 +298,7 @@ SETTLED = ('The research for this training was planned from the documents alread
            'they cannot be changed now.')
 REVIEW_DECIDES = ('This is part of the {name} that is waiting for you, so it is decided there, '
                   'with everything the review covers. Nothing was changed.')
-REVIEW_NAMES = {'direction': 'direction review', 'final': 'final review'}
+REVIEW_NAMES = {'direction': 'first drafts review', 'final': 'final review'}
 PREVIEWS = 'previews'   # in the per-user data folder: the render's turn, and each deck's file
 DECK_KEPT = ('What you approved the deck should say is kept, and so is everything made '
              'before it.')
@@ -3209,8 +3209,8 @@ class Engine(Reviewing):
             self._store(root, record)
             self._commit(root, 'keep the objections of the independent research check')
         self._problem(root, 'research', 'failed', str(refusal), (
-            'The draft report and the check’s objections are kept with this training: the '
-            'objections are listed in its research review (reviews/research.md)'
+            'The draft report and the check’s objections are kept with this training: Read '
+            'every objection shows them'
             + (', under what the check called them' if groups else '')
             + '. The research plan you approved is kept.'))
 
@@ -4210,6 +4210,10 @@ class Engine(Reviewing):
             problem = {'what': found.next.why, 'action': None, 'label': None,
                        'kept': 'Everything in the training\'s folder is as it was.'}
         dollars, tokens = spent(record)
+        # The limit this run stops at: Settings' limit, raised by every Carry on.
+        limit = (record.get('limits') or {}).get('training_dollars')
+        stops_at = None if limit is None else round(limit + record.get('cleared', 0.0), 2)
+        objections = workspace.review_file('research')
         drawing = self._drawing(found)
         level = self._level(drawing) if drawing else None
         return {
@@ -4224,13 +4228,16 @@ class Engine(Reviewing):
             'review': self._review_view(root, record, found),
             'steps': self._steps(record, found, state, root),
             'workers': self._workers(run),
-            'spent': {'dollars': dollars, 'tokens': tokens},
+            'spent': {'dollars': dollars, 'tokens': tokens, 'stops_at': stops_at},
             'ahead': self._still_to_come(record, found),
             'note': self._note_view(record),
             'question': ({'id': asked['id'], 'text': asked['text'], 'from': asked['from']}
                          if asked else None),
             'problem': ({**{key: problem.get(key) for key in ('what', 'kept', 'action', 'label')},
                          **({'seconds': problem['seconds']} if problem.get('seconds') else {}),
+                         # The research check's objections, read where the stop is.
+                         **({'objections': objections} if problem.get('step') == 'research'
+                            and (root / objections).is_file() else {}),
                          **self._research_tried(record, problem, root)}
                         if problem else None),
             'documents': self._supplied(root, record, found),

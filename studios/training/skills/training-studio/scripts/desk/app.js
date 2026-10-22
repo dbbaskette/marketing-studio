@@ -168,7 +168,7 @@ const MATERIALS = [['document', 'Learner guide'], ['brief', 'Reference brief'],
 const REVIEW_LEVELS = [['balanced', 'Balanced'], ['automatic', 'Automatic draft'],
   ['step_by_step', 'Step by step']];
 const REVIEW_SAYS = {
-  balanced: 'Stops to read the research plan, then the direction for every level together, '
+  balanced: 'Stops to read the research plan, then the first drafts of every level together, '
     + 'then the finished materials together.',
   automatic: 'Stops only for the finished materials. It costs more before you first see '
     + 'anything, and the spending limit still holds.',
@@ -773,8 +773,10 @@ function nowLine(run) {
   if (began.length) parts.push(lasted((Date.now() - Math.min(...began)) / 1000));
   const spent = run.spent || {};
   if (given(spent.dollars)) parts.push(money(spent.dollars) + ' so far');
+  // The run's own limit, raised by every Carry on; Settings' only where the run says none.
   const limits = (view.setup && view.setup.limits) || {};
-  if (given(limits.training_dollars)) parts.push('stops at ' + money(limits.training_dollars));
+  const stopsAt = given(spent.stops_at) ? spent.stops_at : limits.training_dollars;
+  if (given(stopsAt)) parts.push('stops at ' + money(stopsAt));
   return parts.length ? make('p', 'now-line', parts.join(' · ')) : null;
 }
 
@@ -4427,7 +4429,7 @@ function startStep(draft) {
       : 'Research starts after you start the training.';
     // A drawn deck always comes to the person, whatever the level.
     const deck = Boolean(DECKS[draft.deck][0]);
-    const stops = policy === 'balanced' ? 'the research plan, the direction review'
+    const stops = policy === 'balanced' ? 'the research plan, the first drafts'
         + (deck ? ', each drawn deck' : '') + ' and the finished materials'
       : policy === 'automatic' ? (deck ? 'each drawn deck and ' : '') + 'the finished materials'
         : 'at least ' + gatesFor(draft) + ' decisions for research'
@@ -4438,7 +4440,7 @@ function startStep(draft) {
     then.textContent = REVIEW_WORDS[policy] + ': it stops for ' + stops;
     const levels = draft.levels.length ? 'each level' : 'the training';
     comes.textContent = (policy === 'balanced'
-      ? 'The direction review comes after research and the blueprint, guide and brief for '
+      ? 'Review the first drafts comes after research and the blueprint, guide and brief for '
         + levels + ', so the first stop is some minutes in. '
       : policy === 'automatic' ? 'Intermediate drafts continue automatically. ' : '')
       + (DECKS[draft.deck][0] ? (policy === 'step_by_step'
@@ -4886,11 +4888,29 @@ function problemPart(run, lead) {
   const title = run.state === 'waiting' ? 'It is waiting for you'
     : theirs ? 'It has stopped' : 'It has stopped, and needs you';
   const does = theirs ? '' : actionSays(run, found);
+  // The research check's objections, every one under its group, read where the stop is.
+  let read = null;
+  const shown = found.objections ? make('div', 'card-part') : null;
+  if (found.objections) {
+    read = capsule('Read every objection', 'quiet', async () => {
+      read.disabled = true;
+      try {
+        const gate = await ask('gate', { path: view.path, artifact: 'research' });
+        shown.replaceChildren(make('h3', 'row-title', 'The research check'),
+          ...String(gate.review || '').split('\n').filter((line) => line.trim())
+            .map((line) => make('p', '', line)));
+      } catch (failure) {
+        shown.replaceChildren(make('p', 'problem', failure.message));
+      } finally {
+        read.disabled = false;
+      }
+    }, 'read-objections');
+  }
   return callout('late', make('h2', 'aside-title', title),
     add(make('p', ''), make('strong', '', 'What happened: '), found.what),
     keptPart(found.kept),
     does ? make('p', 'quiet', does) : null,
-    add(make('div', 'bar'), go));
+    add(make('div', 'bar'), go, read), shown);
 }
 
 function questionPart(run, title) {
@@ -5694,7 +5714,7 @@ function deckCard(run) {
 }
 
 function combinedLabel(review) {
-  return 'Approve ' + (review.phase === 'direction' ? 'the direction' : 'the finished materials');
+  return 'Approve ' + (review.phase === 'direction' ? 'the first drafts' : 'the finished materials');
 }
 
 // What one item of a combined review is marked as on this page: 'changes', 'good' or ''.
@@ -5713,6 +5733,9 @@ function marked(review) {
       label: item.label, rewrites: list(item.rewrites) }));
 }
 
+// The stages written before the first drafts stop: approving it does not write them.
+const PREPARED = ['research-plan', 'research', 'blueprint', 'document', 'brief'];
+
 // What approving a combined review commits to, said before it is approved.
 function commitsSays(review) {
   const commits = review.commits;
@@ -5720,20 +5743,29 @@ function commitsSays(review) {
     return 'Approving finishes this draft. Everything is kept as it stands, and publishing '
       + 'is a separate action.';
   }
-  const names = { document: 'learner guide', brief: 'brief', scenario: 'practice scenarios',
-    yoodli: 'Yoodli scenarios' };
-  const made = list(commits.materials).map((stage) => names[stage] || stage);
+  const names = { scenario: 'practice scenarios', yoodli: 'Yoodli layouts' };
+  // What was written before this stop is not written by approving it, even where a saved
+  // review from before still lists it.
+  const made = list(commits.materials).filter((stage) => !PREPARED.includes(stage))
+    .map((stage) => names[stage] || stage);
   const levels = commits.levels > 1 ? 'each of the ' + commits.levels + ' levels' : 'the training';
-  let said = 'Approving the direction ' + (made.length ? 'writes the ' + series(made) + ' for '
-    + levels : 'carries on with ' + levels);
-  if (commits.deck) {
-    const parts = [];
-    if (given(commits.dollars)) parts.push('about ' + money(commits.dollars));
-    if (given(commits.minutes)) parts.push('about ' + lasted(Number(commits.minutes) * 60) + ' of agent time');
-    said += ', and the deck is then drawn' + (parts.length ? ': a deck of this size has cost '
-      + parts.join(' and ') + ' before' : '');
+  const parts = [];
+  if (given(commits.dollars)) parts.push('about ' + money(commits.dollars));
+  if (given(commits.minutes)) parts.push(lasted(Number(commits.minutes) * 60) + ' of agent time');
+  const estimate = parts.length ? parts.join(' and ') + ' for a deck of this size (a fixed '
+    + "estimate, not this computer's history)" : '';
+  let said;
+  if (made.length) {
+    said = 'Approving the first drafts writes the ' + series(made) + ' for ' + levels
+      + (commits.deck ? ', and the deck is then drawn' + (estimate ? ': estimated at '
+        + estimate : '') : '') + '.';
+  } else {
+    const what = commits.levels > 1 ? 'the levels' : 'the training';
+    said = commits.deck ? 'Nothing more is written for ' + what + ': approving carries on to '
+      + 'the deck.' + (estimate ? ' The deck is estimated at ' + estimate + '.' : '')
+      : 'Nothing more is written for ' + what + '.';
   }
-  return said + '. It spends from the same limit as the rest of the training.';
+  return said + ' It spends from the same limit as the rest of the training.';
 }
 
 // The sheet that confirms a combined approval: the same one a file's approval gets, saying
@@ -5744,7 +5776,7 @@ function combinedConfirm() {
   const problem = problemLine();
   const confirm = capsule(spec.send, 'filled', () => decideCombined(review, 'approve', null,
     null, confirm, problem), 'send');
-  const what = review.phase === 'direction' ? 'the direction' : 'the finished materials';
+  const what = review.phase === 'direction' ? 'the first drafts' : 'the finished materials';
   // Requests marked but not sent are said before the approval goes without them.
   const held = marked(review).length;
   return [sheetTitle(spec.title(what)), make('p', '', spec.says),
@@ -5891,7 +5923,7 @@ function combinedReview(run) {
   const small = narrow();
   const node = card(review.label);
   add(node, make('p', 'lede', review.phase === 'direction'
-    ? 'Review the research and teaching direction below. Approve the direction to build your selected materials.'
+    ? 'Review the first drafts below: the research and what is written so far for each level. Approve them to go on to what is still to write.'
     : 'Review the completed materials together. Approval finishes this draft; publishing is a separate action.'));
   if (!theirs) {
     add(node, make('p', 'quiet', 'Mark what needs changes as you read, and send every request '

@@ -56,12 +56,13 @@ class ReviewLevelsTests(DeckCase):
         root, shown = self.choose('balanced')
         self.assertEqual(shown['review']['phase'], 'direction')
         gate = self.gate(root, 'research')
-        self.assertEqual(gate['combined'], {'phase': 'direction', 'label': 'Review the direction',
-                                            'name': 'direction review'})
+        self.assertEqual(gate['combined'], {'phase': 'direction',
+                                            'label': 'Review the first drafts',
+                                            'name': 'first drafts review'})
         requests = len(workspace.load(root)['requests'])
-        with self.assertRaisesRegex(desk.Refusal, 'direction review'):
+        with self.assertRaisesRegex(desk.Refusal, 'first drafts review'):
             self.decide(root, 'research', 'revise', 'Add a worked example.')
-        with self.assertRaisesRegex(desk.Refusal, 'direction review'):
+        with self.assertRaisesRegex(desk.Refusal, 'first drafts review'):
             self.decide(root, 'blueprint', 'rebuild')
         self.assertEqual(len(workspace.load(root)['requests']), requests)
         self.assertEqual(self.view(root)['review']['phase'], 'direction')
@@ -225,6 +226,20 @@ class ReviewLevelsTests(DeckCase):
                 self.assertEqual(workspace.load(root)['artifacts']['deck']['approved']['by'],
                                  'page')
 
+    def test_the_first_drafts_sheet_lists_only_what_approving_writes(self):
+        root, shown = self.choose('balanced', levels=['101'])
+        self.assertEqual(shown['review']['label'], 'Review the first drafts')
+        # The guide and the brief were written before the stop: only the scenarios are to come.
+        self.assertEqual(shown['review']['commits']['materials'], ['scenario'])
+
+    def test_row_121_first_drafts_approval_starts_only_what_is_still_to_write(self):
+        root, shown = self.choose('balanced', levels=['101'])
+        since = len(self.workers.jobs)
+        self.approve_review(root, shown)
+        started = {kind for kind, _, _ in self.workers.jobs[since:]}
+        self.assertIn('scenario', started)
+        self.assertFalse(started & {'research', 'blueprint', 'document', 'brief'}, started)
+
     def test_balanced_all_levels_have_two_combined_reviews(self):
         root, shown = self.choose('balanced', levels=['101', '201'])
         self.assertEqual(shown['review']['phase'], 'direction')
@@ -297,7 +312,7 @@ class ReviewLevelsTests(DeckCase):
         self.assertEqual(items['outline:201']['rewrites'], [])
         commits = shown['review']['commits']
         self.assertEqual({key: commits[key] for key in ('levels', 'materials', 'deck')},
-                         {'levels': 2, 'materials': ['document', 'brief', 'scenario'], 'deck': True})
+                         {'levels': 2, 'materials': ['scenario'], 'deck': True})
         self.assertGreater(commits['dollars'], 0)
         self.assertGreater(commits['minutes'], 0)
         expected = shown['review']['expected']

@@ -96,7 +96,7 @@ def group(root, session, run, listed, done):
     boundaries = {}
     for phase in ('direction', 'final'):
         ident = 'review:' + phase
-        label = 'Review the direction' if phase == 'direction' else 'Review the finished materials'
+        label = 'Review the first drafts' if phase == 'direction' else 'Review the finished materials'
         boundaries[phase] = pipeline.Step(ident, 'review', label,
                                            'Waiting for you to ' + label.lower(), 'review')
         accepted = (run.get('review_decisions') or {}).get(phase) or {}
@@ -128,15 +128,17 @@ def rewritten(root, session, decks, target):
 
 
 def commits(root, session, decks, phase):
-    """What approving a review commits to: for the direction, the materials of every level
-    and the deck, with what a deck of this size has cost before. The final review commits
-    to nothing more: it finishes the draft."""
+    """What approving a review commits to: for the first drafts, the materials of every level
+    not yet written (what was written before the stop is in `PREPARED`) and the deck, with
+    the fixed estimate for a deck of this size. The final review commits to nothing more: it
+    finishes the draft."""
     if phase != 'direction':
         return None
     slides = sum(len(deck.slides_of(mine.outline)) for mine in decks.values())
     before = deck.before(slides) if slides else {}
     return {'levels': len(session['levels'] or [None]),
-            'materials': [stage for stage in pipeline.wanted(session) if stage != 'deck'],
+            'materials': [stage for stage in pipeline.wanted(session)
+                          if stage != 'deck' and stage not in PREPARED],
             'deck': bool(decks),
             'dollars': before.get('dollars'), 'minutes': before.get('minutes')}
 

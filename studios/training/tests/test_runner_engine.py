@@ -295,7 +295,7 @@ class FormToGateThreeTests(StudioCase):
         self.assertEqual(json.loads(committed), record)
         view = self.view(root)
         self.assertEqual((view['spent'], view['model'], view['effort']),
-                         ({'dollars': 0.25, 'tokens': 1200}, 'a-model', 'high'))
+                         ({'dollars': 0.25, 'tokens': 1200, 'stops_at': 20.0}, 'a-model', 'high'))
         step = self.steps(root)['research-plan']
         self.assertEqual((step['attempts'], step['seconds'], step['dollars'], step['kind'],
                           step['label']), (1, 1.5, 0.25, 'agent', 'Draft the research plan'))
@@ -939,8 +939,8 @@ class ResearchTests(StudioCase):
         self.assertEqual(view['problem'], {
             'what': str(refusal), 'action': 'retry', 'label': 'Try again',
             'kept': 'The draft report and the check’s objections are kept with this training: '
-                    'the objections are listed in its research review (reviews/research.md). '
-                    'The research plan you approved is kept.',
+                    'Read every objection shows them. The research plan you approved is kept.',
+            'objections': 'reviews/research.md',
             # What the page says Try again does: no research job ran here.
             'research': {'rounds': 0, 'jobs': 0, 'seconds': 0, 'dollars': None, 'most': 3,
                          'drafted': False}})
@@ -973,8 +973,9 @@ class ResearchTests(StudioCase):
         refusal.rounds = 3
         with mock.patch.object(engine_module.research_contract, 'native', side_effect=refusal):
             self.decide(root, 'research-plan')
-        self.assertIn('listed in its research review (reviews/research.md), under what the '
-                      'check called them.', self.view(root)['problem']['kept'])
+        self.assertIn('Read every objection shows them, under what the check called them.',
+                      self.view(root)['problem']['kept'])
+        self.assertNotIn('reviews/research.md', self.view(root)['problem']['kept'])
         review = (root / 'reviews' / 'research.md').read_text()
         self.assertIn('> 2 facts the check calls narrow:\n> - f01: Too broad.\n'
                       '> - f02: Too broad too.\n>\n> coverage needs revision:\n'
@@ -1211,7 +1212,7 @@ class LimitTests(StudioCase):
                          {'supported': 1, 'pending': 3})
 
         self.assertEqual(self.engine.act(root, 'resume')['state'], 'stopped')
-        self.assertEqual(self.view(root)['spent'], {'dollars': 2.4, 'tokens': 4800})
+        self.assertEqual(self.view(root)['spent'], {'dollars': 2.4, 'tokens': 4800, 'stops_at': 2.2})
         after = self.engine.act(root, 'resume')
         self.assertEqual((after['state'], after['problem'], after['spent']['dollars']),
                          ('waiting', None, 3.0))
