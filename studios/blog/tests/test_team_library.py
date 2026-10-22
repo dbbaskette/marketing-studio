@@ -202,22 +202,53 @@ def encoded_file(name, body):
 class AddTests(RunnerCase):
     """Task 4: Add to library, in one sheet, with the author typed or each post's own."""
 
-    def captured(self, title='Messaging Doc', body='# Messaging\n\nThe platform name is open.'):
-        def capture(_client, file_id, _revision, snapshot):
-            snapshot.mkdir(parents=True)
-            (snapshot / 'document.md').write_text(body)
-            studio.write_json(snapshot / 'native.json', {'title': title})
-            return {'summary': {}}
+    class Docs:
+        """The Google Docs API as the Doc reader sees it: one Doc, one tab."""
 
-        return capture
+        def __init__(self, account=None):
+            pass
+
+        def native_read(self, file_id, inline=False, **_):
+            return {
+                'documentId': file_id,
+                'revisionId': 'r1',
+                'title': 'Messaging Doc',
+                'tabs': [
+                    {
+                        'tabProperties': {'tabId': 't.0', 'title': 'Tab 1'},
+                        'documentTab': {
+                            'body': {
+                                'content': [
+                                    {'sectionBreak': {}},
+                                    {
+                                        'paragraph': {
+                                            'paragraphStyle': {'namedStyleType': 'NORMAL_TEXT'},
+                                            'elements': [
+                                                {
+                                                    'textRun': {
+                                                        'content': 'The platform name is open.\n',
+                                                        'textStyle': {},
+                                                    }
+                                                }
+                                            ],
+                                        }
+                                    },
+                                ]
+                            }
+                        },
+                    }
+                ],
+            }
+
+        def export(self, file_id, fmt):
+            return b''
 
     def add(self, route, data, reader=None):
         import google_intake
 
         with (
             patch.object(library, 'fetch', reader or Pages({})),
-            patch.object(google_intake.roundtrip, 'capture', self.captured()),
-            patch.object(google_intake.drive, 'Client', lambda account: object()),
+            patch.object(google_intake.drive, 'Client', self.Docs),
             patch.object(library.time, 'sleep', lambda seconds: None),
         ):
             return management.dispatch(self.root, route, data)
