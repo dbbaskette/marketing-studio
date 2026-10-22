@@ -549,8 +549,9 @@ class Researching:
         plan = home.read_json(root / PLAN, None)
         if not isinstance(plan, dict) or not isinstance(plan.get('items'), list):
             raise WorkspaceError('There is no research plan to add a question to.')
-        if len(plan['items']) + len(texts) > worker_tools.QUESTIONS:
-            raise WorkspaceError(f'A plan holds at most {worker_tools.QUESTIONS} '
+        most = worker_tools.PLAN_MOST if record.get('research_contract') else worker_tools.QUESTIONS
+        if len(plan['items']) + len(texts) > most:
+            raise WorkspaceError(f'A plan holds at most {most} '
                                  'questions.')
         taken = [item.get('id') for item in plan['items'] if isinstance(item, dict)]
         added = []
@@ -561,7 +562,7 @@ class Researching:
             plan['items'].append({'id': ident, 'question': text, 'public_query': None,
                                   'claim': None})
             added.append(ident)
-        checked = worker_tools.check_research_plan(plan)
+        checked = worker_tools.check_research_plan(plan, most=most)
         if checked['status'] == 'failed':
             raise WorkspaceError(' '.join(checked['problems']))
         self._keep_plan(root, record, json.dumps(plan, indent=2, ensure_ascii=False))

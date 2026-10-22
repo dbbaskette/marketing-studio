@@ -166,8 +166,8 @@ default, and **Use this for new work in every studio** also makes it the shared 
 when the training starts. Under Step by step a deck adds three stops per level: its
 outline, its look and the deck. Settings has **Where new work stops**. Only selected
 material stages run. Earlier trainings keep
-the review level they started with. The research-plan stop is part of what Balanced
-means, not a new version of it: it applies to any Balanced training that has not
+the review level they started with. For web research and legacy queues, the research-plan stop is part of what Balanced
+means: it applies to any Balanced training that has not
 reached its research plan yet, including one started earlier, and a run already past
 its plan is unaffected.
 
@@ -329,3 +329,18 @@ The original folder is left exactly as it was, with nothing deleted. From then o
 - `sh ~/.local/share/training-studio/studio status` prints what is set up and where every run is, as JSON. From a copy of the repository it is `python3 runner/studio.py status`.
 
 The design is in [the runner's specification](superpowers/specs/2026-10-13-studio-runner-design.md). Working as a team is specified in [milestone 5](superpowers/specs/2026-10-13-milestone-5-team.md).
+
+## Reading and changing research
+
+Research reviews lead with the authored brief, the independent check's note, remaining
+gaps and source limitations. They map findings to the questions you asked and fold the
+full report and evidence below. Read every objection opens the saved independent check.
+Before sending a research change, the page says that the whole investigation may run up
+to three writing/checking rounds, what its last try took and which made materials follow it.
+
+Synthesis plans ask at most eight questions in one investigation. With Your documents only,
+the form writes that plan without a planning job. You can ask up to eight questions, each
+up to 300 characters; with none, the plan asks what the documents say that serves your goal.
+Step by step stops at the plan. Balanced and Automatic accept this plan under the saved
+policy, so Balanced's first stop is the first-drafts review. Web research still drafts a
+plan with your questions. Older runs retain their saved source scope and legacy queue.

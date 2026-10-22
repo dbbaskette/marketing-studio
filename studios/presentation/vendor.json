@@ -226,7 +226,7 @@
     {
       "path": "runner/briefs/research-plan.md",
       "from": "runner/briefs/research-plan.md",
-      "revision": "ffbd01dab15a30aa1083a21563f41675d6b9ee15",
+      "revision": "e016be343fac13a3b249804271a1dce794276dbc",
       "note": "Phase 3 synthesis brief ported with the legacy queue brief retained; see Marketing Studio phase implementation history."
     },
     {
@@ -456,8 +456,8 @@
     },
     {
       "path": "runner/briefs/research-plan-queue.md",
-      "from": "runner/briefs/research-plan.md",
-      "revision": "c7ff8e9c83c41b9194c740986c0be9f985da8883",
+      "from": "runner/briefs/research-plan-queue.md",
+      "revision": "e016be343fac13a3b249804271a1dce794276dbc",
       "note": "Unchanged legacy queue brief."
     }
   ]

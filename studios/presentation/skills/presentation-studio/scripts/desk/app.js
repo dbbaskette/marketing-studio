@@ -4050,7 +4050,7 @@ function findingCard(gate, item, readonly, folded) {
     leave.setAttribute('aria-label', (out ? 'Bring it back: “' : 'Leave out “') + title + '”');
     const why = last ? switchedOff(leave, 'leave-why-' + item.id, 'The last finding kept '
       + 'cannot be left out: the outline is drafted from the findings.') : null;
-    const redo = out ? null : capsule(again ? (gate.contract ? 'Keep this finding' : 'Don’t research it again')
+    const redo = out || gate.direction ? null : capsule(again ? (gate.contract ? 'Keep this finding' : 'Don’t research it again')
       : gate.contract ? 'Ask about this finding' : 'Research again',
       'quiet', () => {
         if (again) delete held.again[item.id];
@@ -4278,7 +4278,7 @@ function outlinePanel(gate, readonly) {
   const node = card(gate.look ? 'Review the direction' : 'The outline');
   add(node, sayingLine(gate, readonly), classifyLine(gate, readonly));
   if (gate.research?.text) {
-    const research = { ...gate.research, name: 'gate:research', round: gate.round };
+    const research = { ...gate.research, name: 'gate:research', round: gate.round, direction: true };
     add(node, researchPanel(research, readonly, true),
       gate.leave_out_price ? make('p', 'quiet', gate.leave_out_price.words) : null);
   }

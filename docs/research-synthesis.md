@@ -110,3 +110,42 @@ conversation workflows can explicitly import a complete synthesis case:
 
 Imports preserve the actual review state and source captures. They refuse legacy
 research conversion and do not grant approval or publication authority.
+
+## Research stops and source boundaries
+
+A complete bundle is shown as its authored brief first, the independent check's acceptance
+and note, the gaps the findings and prose name (once each), partial-source limitations and
+the number of supplied and public sources. Planning questions list their answering findings;
+findings outside those questions appear under Also found. The full report and evidence stay
+folded below. Version hashes remain internal to integrity and approval checks.
+
+Planning questions have stable IDs. Harness Research is asked to name a finding after its
+question, with `--` before the finding suffix, keeping the whole ID within 64 characters.
+An exact question ID also matches; the longest match wins. A prefix without `--` does not.
+One investigation answers at most eight planning questions together. Saved legacy queues
+keep their separate brief and thirty-question limit.
+
+A research-change request says before sending that it reruns the complete investigation
+from the saved report, for up to three writing/checking rounds. It names the last try's
+recorded time and money and the saved downstream work that will be made again. Missing
+cost is described as unrecorded. Leaving findings out at Presentation Studio's Balanced
+direction review instead redrafts the outline and looks without researching again; the
+bundle stays intact and the saved selection controls what the outline may use.
+
+Presentation Studio document research defaults to supplied documents only; public research
+requires the explicit documents-and-web choice. Scratch research uses the public web.
+Training Studio keeps its saved source scope. Supplied-only synthesis runs in both deck
+studios write a plan from the form's optional questions (up to eight, 300 characters each),
+or one question about the goal, without a planning assistant job. Step by step still reviews
+that plan; Training Studio Balanced and Automatic accept it under the saved policy.
+
+New Blog Studio supplied-only runs use a claims map instead of synthesis research: one
+worker lists the claims and exact passages in selected facts/material. Whitespace and line
+breaks may differ; words may not. One correction is allowed, within the stage's time limit.
+The map is handed to later stages without judging the author's claims. Balanced and
+Automatic continue; Step by step reviews it. From-files supplied-only runs already read
+the files at every stage and add no claims-map stage. Older saved pipelines remain intact.
+
+A missing, changed or draft bundle never becomes an accepted account. The saved report
+remains readable; unresolved research still blocks downstream jobs. An unread original
+belongs to the blocked-research view: Harness Research cannot accept such a check.

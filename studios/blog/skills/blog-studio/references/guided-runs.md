@@ -150,3 +150,21 @@ and explicit Google suggestions/comments delivery. Opening a Google Doc goes the
 after preview. Preserve the original author voice; selected replacements can be
 applied locally before delivery. Each send is previewed and revision-checked through
 the same Google review helpers as the CLI. Conflicts remain local until reconciled.
+
+## Research stops and supplied material
+
+New supplied-only runs with selected facts/material map the claims in that material
+instead of running research. Each claim names a source ID and an exact passage. The runner
+checks words against that source (ignoring whitespace and line breaks), allows one
+correction and stops on another failure. Later writers receive the map and keep the
+claims within what the material says. Balanced and Automatic continue to the outline;
+Step by step reviews the map. Continue without research drops this stage too.
+From-files supplied-only runs remain unchanged: their files are read at every stage.
+
+Web research uses a separate tool-less plan with at most eight questions, investigated
+together and checked independently. The research review leads with the authored brief,
+checker's note, gaps, source limitations and findings mapped to questions. Report and
+evidence are folded below. Ask for changes says before sending that the full research
+runs again, what its last try recorded and which saved later stages it will make again.
+Home keeps the saved research default, except Explore ideas, Revise and Review, which
+start with none. Saved older runs continue through their original research pipeline.

@@ -65,3 +65,12 @@ preferences** and marks an assistant that is not installed.
 Conversation methods remain available through the normal operation references.
 The report commands are `studio.py --root WORKSPACE prepublish --id ID` and
 `studio.py --root WORKSPACE plan --topic TOPIC`; neither changes a manuscript.
+
+## Research review
+
+The research stage shows the brief, independent check's note, gaps, source limitations
+and question mapping, with report and evidence in folds. Ask for changes shows the full
+research rerun estimate when research is selected, and updates it if another stage is
+chosen. New supplied-only blogs instead show Claims in your material, an exact-source map
+with one correction; from-files supplied-only keeps its existing flow. Settings supplies
+Home's research default for new writing, while Explore ideas, Revise and Review use none.

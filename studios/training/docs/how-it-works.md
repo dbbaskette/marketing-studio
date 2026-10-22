@@ -7,7 +7,7 @@ This page explains what Training Studio does behind the conversation. For the fu
 | Stage | Done by | Produces | Gate |
 | --- | --- | --- | --- |
 | Intake | Training Studio | `intake.md` and your settings | |
-| Research plan | Training Studio | Up to 30 focused questions | 1 |
+| Research plan | Training Studio | Up to 8 synthesis questions; 30 in legacy queues | 1 |
 | Research | The harness-research skill | A cited report | 2 |
 | Blueprint | Training Studio | Objectives, modules, assessment and practice plans | 3 |
 | Document | Training Studio | The learner guide | 4 |
@@ -128,3 +128,11 @@ The skill drives a small command-line helper, `skills/training-studio/scripts/tr
 `--help` after any command lists its flags and the values each takes. A reason is always given with `--reason`, and a list is separated by spaces. A refusal says what puts it right.
 
 It needs only Python and never commits to git. Apart from `google`, the team hub and, on the page, the check of this computer that you ask for, none of it touches the network. The assistant's instructions for using it are in [the workspace reference](../skills/training-studio/references/workspace.md).
+
+## Research from your documents
+
+For supplied-only synthesis, Training Studio writes the plan from the optional questions
+on your form and runs no planning assistant. Research itself remains with Harness Research.
+The research stop shows its brief, independent assessment, gaps, source limitations and
+question mapping. Research changes rerun the whole investigation and downstream made
+materials; the request says the scope and last recorded cost before it is sent.

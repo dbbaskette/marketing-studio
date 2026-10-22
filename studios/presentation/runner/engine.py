@@ -1970,7 +1970,7 @@ class Engine(Jobs, Researching):
 
     @staticmethod
     def _leave_out_price(record):
-        tried = attempts(record, 'outline') + attempts(record, 'look-preview')
+        tried = [own[-1] for name in ('outline', 'look-preview') if (own := attempts(record, name))]
         dollars = [a['dollars'] for a in tried if a.get('dollars') is not None]
         cost = research_contract.took(sum(a.get('seconds') or 0 for a in tried),
                                       sum(dollars) if dollars else None)

@@ -199,9 +199,9 @@
       "sha256": "6ead74e1bcaea3972e6a3be7967fa0ee72314814e092bc02cce78cfccd5e4b2e"
     },
     "references/guided-runs.md": {
-      "characters": 10072,
-      "estimated_tokens": 2518,
-      "sha256": "93dab75c3274e082d7abe3218e512b5d73710a1ed02fe2483b764818a2236cac"
+      "characters": 11311,
+      "estimated_tokens": 2828,
+      "sha256": "fc80bfa96fd305642b5a79adb9d47f82eb793e8bde2d32a15863043a6af96b18"
     },
     "references/headline-lab.md": {
       "characters": 574,
@@ -374,9 +374,9 @@
       "sha256": "e3bcb2d1a5de00f6ee34987d7ec525382b99b87623c1a436edd9bd669834f7c7"
     },
     "references/page-tools.md": {
-      "characters": 4668,
-      "estimated_tokens": 1167,
-      "sha256": "cfa6a8a469b490b0b25fa38bca49fa1b4acb3f526797c4e7d60bfcbe8e394b1f"
+      "characters": 5219,
+      "estimated_tokens": 1305,
+      "sha256": "41b73c008112437ce36a502771aa1de75a0b38098780a9d37ddaabc7760fd021"
     },
     "references/privacy.md": {
       "characters": 4170,
@@ -794,7 +794,7 @@
       "sha256": "4c95901507d60239adadfec8ddd4001a409a52b5c5f7bf20b49bb10a79890142"
     }
   },
-  "library_tokens": 224090,
+  "library_tokens": 224538,
   "routes": {
     "outline_with_sources": {
       "files": [

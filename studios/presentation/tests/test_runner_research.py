@@ -622,6 +622,18 @@ class SynthesisBriefTests(DeckCase):
 
 
 class ResearchAccountTests(DeckCase):
+    def test_contract_question_additions_keep_the_eight_question_limit(self):
+        from runner.engine import Engine
+        self.write('research/plan.json', json.dumps({**PLAN, 'items': [{'id': f'q-{n}', 'question': 'Why?'} for n in range(8)]}))
+        with self.assertRaisesRegex(WorkspaceError, 'at most 8'):
+            Engine()._add_questions(self.root, {'research_contract': {'schema': 2}}, ['What next?'])
+
+    def test_leave_out_price_uses_only_the_last_outline_and_look_tries(self):
+        from runner.engine import Engine
+        record = {'steps': {'outline': {'tries': [{'seconds': 1200}, {'seconds': 60}]},
+                            'look-preview': {'tries': [{'seconds': 1200}, {'seconds': 60}]}}}
+        self.assertEqual(Engine._leave_out_price(record)['words'], 'Leaving findings out redraws the outline and the look samples without researching again. They last took 2 minutes.')
+
     def test_a_contract_research_gate_carries_the_account(self):
         from runner.engine import Engine
         from synthesis_fixture import research_stop

@@ -363,6 +363,7 @@ class ScreenTests(ScriptedPage, PageCase):
                                   **{'POST /api/decide': [ok(self.run_of(path))]})
         self.assertIn('Prioritized handoff', result['snapshots']['direction']['text'])
         self.assertNotIn('Research findings', result['snapshots']['direction']['text'])
+        self.assertNotIn('Ask about this finding', result['snapshots']['direction']['text'])
         self.assertIn('Leaving findings out redraws the outline and the look samples without researching again.', result['snapshots']['left']['text'])
         body = self.posts(result)[0][1]
         self.assertEqual(body['decision'], 'changes')
