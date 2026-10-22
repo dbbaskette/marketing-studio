@@ -1268,15 +1268,17 @@ class Engine(Reviewing):
             pass
 
     def _problem(self, root: Path, step: str | None, state: str, what: str, kept: str,
-                 action: str | None = 'retry', waits: str | None = None) -> None:
+                 action: str | None = 'retry', waits: str | None = None,
+                 detail: dict | None = None) -> None:
         """Stop a training in a state that says what went wrong and offers one action.
-        `waits` names what it waits for, when something done on the page settles it."""
+        `waits` names what it waits for, when something done on the page settles it.
+        `detail` is kept with the problem for what its action needs to know."""
         label = {'retry': 'Try again', 'resume': 'Carry on'}.get(action)
         with self.files:
             record = self._load(root)
             record['problem'] = {'state': state, 'step': step, 'what': what, 'kept': kept,
                                  'action': action, 'label': label, 'at': home.now(),
-                                 **({'waits': waits} if waits else {})}
+                                 **({'waits': waits} if waits else {}), **(detail or {})}
             self._store(root, record)
             self._commit(root, f'stop. {workspace.shortened(what)}')
 
@@ -3151,6 +3153,26 @@ class Engine(Reviewing):
             'objections are listed in its research review (reviews/research.md). The research '
             'plan you approved is kept.'))
 
+    def _check_unfinished(self, root: Path, refusal: WorkspaceError) -> None:
+        """The independent check could not read an original it must attest to, and that is
+        all it objected to: no correction can change it, so the research stopped after that
+        round, which is not counted. Try again waits until the original can be read."""
+        named = '\n'.join(f"- {item.get('title') or item.get('source')}: "
+                          f"{item.get('original') or item.get('file') or 'its capture'} "
+                          f"({item.get('access_error') or 'no reason given'})"
+                          for item in refusal.cause)
+        workspace.append_review(root, 'research', 'Independent research review: the check could not finish', (
+            'The check could not read what it must attest to, so no round of correction could '
+            'change its answer. That is a studio problem, not a research problem:\n' + named))
+        with self.files:
+            record = self._load(root)
+            self._store(root, record)
+            self._commit(root, 'keep why the independent research check could not finish')
+        self._problem(root, 'research', 'failed', str(refusal), (
+            'The draft report is kept with this training, and the research plan you approved. '
+            'Try again works once the original can be read.'),
+                      detail={'unreadable': list(refusal.cause)})
+
     def _hand_over(self, root: Path, step: pipeline.Step) -> None:
         """Give harness-research the approved plan. Without harness-research the training
         stops here and says so."""
@@ -3197,6 +3219,8 @@ class Engine(Reviewing):
             except WorkspaceError as refusal:
                 if getattr(refusal, 'objections', None) is None:
                     raise
+                if getattr(refusal, 'cause', None):
+                    return self._check_unfinished(root, refusal)
                 return self._review_refused(root, refusal)
             with self.files:
                 record = self._load(root)
@@ -3434,6 +3458,10 @@ class Engine(Reviewing):
                                          'is nothing to resume.')
             elif problem.get('action') != 'retry':
                 raise WorkspaceError('Nothing here failed, so there is nothing to try again.')
+            elif problem.get('unreadable') and research_contract.dry_read(
+                    self, root, problem['unreadable']):
+                # The check would stop the same way: say so again, and start nothing.
+                raise WorkspaceError(problem['what'])
             if action in ('resume', 'retry'):
                 if problem.get('action') == 'resume':  # it may spend as much again
                     record['cleared'] = spent(record)[0] or 0.0

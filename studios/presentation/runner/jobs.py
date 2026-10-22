@@ -206,14 +206,16 @@ class Jobs:
     """The engine's part that runs workers: one job, its tries, its questions and limits."""
 
     def _problem(self, root: Path, step: str | None, state: str, what: str, kept: str,
-                 action: str | None = 'retry', limit: bool = False) -> None:
+                 action: str | None = 'retry', limit: bool = False,
+                 detail: dict | None = None) -> None:
         """Stop a deck in a state that says what went wrong and offers one action. `limit`
-        says it stopped because it spent what it may."""
+        says it stopped because it spent what it may; `detail` is kept with the halt for
+        what its action needs to know."""
         with self.files:
             record = self._load(root)
             record['halted'] = {'state': state, 'step': step, 'why': what, 'kept': kept,
                                 'action': action, 'at': home.now(),
-                                **({'limit': True} if limit else {})}
+                                **({'limit': True} if limit else {}), **(detail or {})}
             self._store(root, record)
             self._commit(root, f'stop. {what[:160].rstrip()}')
 

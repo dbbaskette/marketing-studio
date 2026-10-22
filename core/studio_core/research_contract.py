@@ -286,8 +286,10 @@ class Workflow:
         """
         case = inside(root, str(CASE))
         case.mkdir(parents=True, exist_ok=True)
+        rounds = 0
         for phase in ('author', 'review') * ROUNDS:
             if phase == 'author':
+                rounds += 1
                 worker = 'author-' + secrets.token_hex(12)
                 guide = '\n\n'.join((self.runtime / 'references' / name).read_text()
                                       for name in ('investigate.md', 'synthesize.md', 'studio-handoff.md'))
@@ -358,6 +360,14 @@ class Workflow:
                 status = self.command(case, 'review', 'review.json', worker)
                 if status.get('status') == 'complete':
                     break
+                # A check that could not read an original it must attest to refuses whatever
+                # the author corrects: stop now, and do not count this round as a correction.
+                try:
+                    cause = unreadable_originals(json.loads(result), dossier)
+                except (TypeError, ValueError):
+                    cause = []
+                if cause:
+                    raise CheckCouldNotFinish(objections(case), rounds - 1, cause)
         verified = self.command(case, 'verify')
         if verified.get('status') != 'complete' or verified.get('artifact_integrity') == 'failed':
             raise ReviewRefused(objections(case), ROUNDS)
@@ -384,6 +394,75 @@ class ReviewRefused(ValueError):
         else:
             said += ', and did not say what: read the saved check.'
         super().__init__(said + ' The draft report and the check’s notes are saved for correction.')
+
+
+class CheckCouldNotFinish(ReviewRefused):
+    """The independent check could not read the original of a source it must attest to,
+    and that is all it objected to. No correction can change that: it is the studio's
+    problem, not the research's. `cause` holds each such source as {'source', 'title',
+    'file', 'original', 'access_error'}; `rounds` counts only the rounds of correction
+    before it, so this one is not counted."""
+
+    def __init__(self, objections, rounds, cause):
+        self.objections = list(objections)
+        self.rounds = rounds
+        self.cause = list(cause)
+        first = self.cause[0] if self.cause else {}
+        named = f'the original of "{first.get("title") or first.get("source") or "a source"}"'
+        if first.get('access_error'):
+            named += f' ({shortened(first["access_error"]).rstrip(".")}.)'
+        more = len(self.cause) - 1
+        if more:
+            named += f' and of {more} more source' + ('' if more == 1 else 's')
+        ValueError.__init__(self, (
+            f'The research check could not read {named}. That is a studio problem, not a '
+            'research problem: the report is not wrong, the check could not finish. Nothing '
+            'to correct until the original is readable.'))
+
+
+def unreadable_originals(review, dossier):
+    """The sources a review says it could not read, when every verdict it did not support
+    rests on one of them; else []. A verdict rests on the sources its fact cites, its
+    finding's facts cite, or its passage's facts and findings cite. Each is {'source',
+    'title', 'file', 'original', 'access_error'}."""
+    if not isinstance(review, dict) or not isinstance(dossier, dict):
+        return []
+    unread = {item.get('source'): item.get('access_error') or 'it gave no reason'
+              for item in review.get('originals') or ()
+              if isinstance(item, dict) and item.get('read_original') is False}
+    if not unread:
+        return []
+    cited = {fact.get('id'): {citation.get('source') for citation in fact.get('citations') or ()
+                              if isinstance(citation, dict)}
+             for fact in dossier.get('facts') or () if isinstance(fact, dict)}
+    found = {finding.get('id'): set().union(*(cited.get(ident, set()) for ident in
+                                            (finding.get('support') or []) + (finding.get('counter') or [])))
+             for finding in dossier.get('findings') or () if isinstance(finding, dict)}
+    rests = {**cited, **found}
+    passages = {}
+    for prefix, sections in (('', dossier.get('sections')), ('brief:', dossier.get('brief'))):
+        for section in sections or ():
+            for number, block in enumerate(section.get('blocks') or ()):
+                passages[f"{prefix}{section.get('id')}:{number}"] = block.get('refs') or []
+    for number, comparison in enumerate(dossier.get('comparisons') or ()):
+        for row_number, row in enumerate(comparison.get('rows') or ()):
+            for cell_number, cell in enumerate(row.get('cells') or ()):
+                passages[f'comparison:{number}:{row_number}:{cell_number}'] = cell.get('refs') or []
+    for group in ('facts', 'findings', 'prose'):
+        for item in review.get(group) or ():
+            if not isinstance(item, dict) or item.get('verdict') in (None, 'supported', 'pending'):
+                continue
+            ident = item.get('id')
+            sources = (set().union(*(rests.get(ref, set()) for ref in passages.get(ident, ())))
+                       if group == 'prose' else rests.get(ident, set()))
+            if not sources & unread.keys():
+                return []
+    named = {source.get('id'): source for source in dossier.get('sources') or ()
+             if isinstance(source, dict)}
+    return [{'source': ident, 'title': (named.get(ident) or {}).get('title') or ident,
+             'file': (named.get(ident) or {}).get('file'),
+             'original': (named.get(ident) or {}).get('original_file'), 'access_error': said}
+            for ident, said in unread.items()]
 
 
 def shortened(note, limit=160):
@@ -570,12 +649,42 @@ def native(engine, root, run, task, sources, product):
         # The studio stops at its research step and keeps the objections with the review.
         failure = WorkspaceError(str(refusal))
         failure.objections, failure.rounds = refusal.objections, refusal.rounds
+        failure.cause = getattr(refusal, 'cause', None)
         raise failure from refusal
     except ValueError as error:
         raise WorkspaceError(str(error)) from error
     finally:
         for folder in folders:
             shutil.rmtree(folder, ignore_errors=True)
+
+
+def dry_read(engine, root, cause):
+    """Whether the studio can now serve each original a check could not read: None once
+    it can, else the tools' own answer. Each original is read as a check reads it, from a
+    job folder of its own, and nothing else is done. A source the studio no longer offers an
+    original for needs nothing read."""
+    from runner import worker_tools, documents
+    kept = getattr(engine, 'documents', None) or documents
+    listed = {item['file']: item for item in kept.listed(root) if item.get('file')}
+    for item in cause or ():
+        entry = listed.get((item or {}).get('file'))
+        if not entry or not entry.get('original') or not entry.get('distinct', True):
+            continue
+        with tempfile.TemporaryDirectory(prefix='research-dry-read-') as temp:
+            folder = Path(temp) / 'job'
+            try:
+                worker_tools.prepare(folder, sources=[{
+                    'title': entry.get('title') or item.get('title') or entry['file'],
+                    'origin': 'a dry read', 'file': entry['file'],
+                    'text': (Path(root) / entry['file']).read_text(encoding='utf-8'),
+                    'original': entry['original'],
+                    'original_path': Path(root) / entry['original']}], fetch=False, ask=False)
+                ok, said = worker_tools.WorkerTools(folder).read_source('s1', original=True)
+            except (OSError, ValueError) as failure:
+                ok, said = False, str(failure)
+        if not ok:
+            return said
+    return None
 
 
 def main(argv=None):

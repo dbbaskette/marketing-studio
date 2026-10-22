@@ -108,7 +108,7 @@ What a caller needs to know
 """
 from __future__ import annotations
 
-from studio_core import deck_flow, review_policy
+from studio_core import deck_flow, research_contract, review_policy
 
 import contextvars
 import json
@@ -2215,6 +2215,10 @@ class Engine(Jobs, Researching):
                 elif halted.get('action') != 'retry':
                     raise WorkspaceError('Nothing here failed, so there is nothing to try '
                                          'again.')
+                elif halted.get('unreadable') and research_contract.dry_read(
+                        self, root, halted['unreadable']):
+                    # The check would stop the same way: say so again, and start nothing.
+                    raise WorkspaceError(halted.get('why') or 'It has stopped.')
                 if action in ('resume', 'retry'):
                     if halted.get('limit'):
                         record['cleared'] = spent(record)[0] or 0.0

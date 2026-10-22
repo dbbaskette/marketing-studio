@@ -216,6 +216,72 @@ class OriginalClaimTests(WorkflowCase):
 
 
 
+class UnfinishedCheckTests(WorkflowCase):
+    """A check that cannot read an original it must attest to cannot be satisfied by any
+    correction: the research stops after that round, and says it is the studio's problem."""
+
+    def unread(self, template, error='There is no tool to read it.', verdict='narrow'):
+        result = review(template)
+        result['originals'][0].update(read_original=False, access_error=error)
+        for item in result['facts']:
+            item.update(verdict=verdict, note='The original could not be inspected.')
+        return result
+
+    def test_unread_originals_are_the_cause_only_when_every_objection_rests_on_them(self):
+        value = self.authored({'worker': 'author-1'})
+        template = {'originals': [{'source': 'source-a', 'read_original': True}],
+                    'facts': [{'id': 'fact-a'}], 'findings': [], 'prose': []}
+        unread = self.unread(template, 'No tool serves it.')
+        self.assertEqual(contract.unreadable_originals(unread, value), [{
+            'source': 'source-a', 'title': 'Synthetic source', 'file': self.FILE,
+            'original': None, 'access_error': 'No tool serves it.'}])
+        # Prose and findings trace to their facts, and so to the source.
+        for group, ident in (('findings', 'instance-min'), ('prose', 'explain:0'),
+                             ('prose', 'brief:teaching:0')):
+            with self.subTest(ident):
+                shaped = {**unread, 'facts': [], 'findings': [], 'prose': [],
+                          group: [{'id': ident, 'verdict': 'unsupported', 'note': ''}]}
+                self.assertEqual(len(contract.unreadable_originals(shaped, value)), 1)
+        # An objection that rests on something else can still be corrected.
+        value['facts'].append({'id': 'fact-b', 'citations': [{'source': 'source-b'}]})
+        mixed = {**unread, 'facts': [*unread['facts'], {'id': 'fact-b', 'verdict': 'unsupported'}]}
+        self.assertEqual(contract.unreadable_originals(mixed, value), [])
+        self.assertEqual(contract.unreadable_originals(review(template), value), [])
+
+    def test_the_research_stops_after_the_round_that_could_not_read_an_original(self):
+        def invoke(phase, guidance, payload, sources, fetch):
+            if phase == 'author':
+                return json.dumps(self.authored(payload)), self.captured()
+            return json.dumps(self.unread(payload['review_template'])), []
+        with self.assertRaises(contract.CheckCouldNotFinish) as caught:
+            self.run_with(invoke)
+        self.assertEqual([phase for phase, _ in self.calls], ['author', 'review'])
+        refusal = caught.exception
+        self.assertIsInstance(refusal, contract.ReviewRefused)
+        self.assertEqual(refusal.rounds, 0)
+        self.assertEqual(refusal.cause[0]['original'], self.ORIGINAL)
+        self.assertEqual(str(refusal), (
+            'The research check could not read the original of "Synthetic source" (There is '
+            'no tool to read it.). That is a studio problem, not a research problem: the report '
+            'is not wrong, the check could not finish. Nothing to correct until the original is '
+            'readable.'))
+        self.assertTrue(refusal.objections)
+
+    def test_a_real_objection_still_goes_back_for_correction(self):
+        reviews = []
+
+        def invoke(phase, guidance, payload, sources, fetch):
+            if phase == 'author':
+                return json.dumps(self.authored(payload)), self.captured()
+            reviews.append(1)
+            if len(reviews) == 1:
+                return json.dumps(review(payload['review_template'], False)), []
+            return json.dumps(review(payload['review_template'])), []
+        self.assertEqual(self.run_with(invoke)[0], {'facts': 'read'})
+        self.assertEqual([phase for phase, _ in self.calls], ['author', 'review'] * 2)
+
+
+
 def fake_runtime(folder, version, text):
     """Just enough of an installed helper for its capability to be described."""
     (folder / 'scripts/lib').mkdir(parents=True)

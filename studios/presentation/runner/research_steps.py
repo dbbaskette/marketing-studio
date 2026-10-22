@@ -259,6 +259,17 @@ class Researching:
             except WorkspaceError as refusal:
                 if getattr(refusal, 'objections', None) is None:
                     raise
+                if getattr(refusal, 'cause', None):
+                    # The check could not read an original it must attest to: no correction
+                    # can change that, so Try again waits until the original can be read.
+                    named = ''.join(f"\n- {item.get('title') or item.get('source')}: "
+                                    f"{item.get('access_error') or 'no reason given'}"
+                                    for item in refusal.cause)
+                    self._problem(root, 'research', 'failed', str(refusal), (
+                        'The draft report and the research plan you approved are kept. Try '
+                        'again works once the original can be read:' + named),
+                                  detail={'unreadable': list(refusal.cause)})
+                    raise Halted()
                 # The check still objected after its last round: stop at the research step
                 # with its objections, so that the person reads them and Try again says
                 # what it re-runs.

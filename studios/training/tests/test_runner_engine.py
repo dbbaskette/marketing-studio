@@ -834,6 +834,47 @@ class ResearchTests(StudioCase):
             self.assertEqual(self.engine.act(root, 'retry')['state'], 'failed')
         self.assertEqual(again.call_count, 1)
 
+    def test_a_check_that_could_not_read_an_original_stops_at_once_and_says_whose_problem(self):
+        from runner import engine as engine_module
+        from studio_core import research_contract
+        root = self.start()
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        self.engine._store(root, record)
+        cause = [{'source': 'source-a', 'title': 'Handbook', 'file': 'sources/supplied/handbook.text',
+                  'original': 'sources/supplied/handbook.md',
+                  'access_error': 'There is no tool to read it.'}]
+        said = str(research_contract.CheckCouldNotFinish(['fact-a (narrow): Not read.'], 0, cause))
+        refusal = WorkspaceError(said)
+        refusal.objections, refusal.rounds, refusal.cause = ['fact-a (narrow): Not read.'], 0, cause
+        with mock.patch.object(engine_module.research_contract, 'native', side_effect=refusal):
+            self.decide(root, 'research-plan')
+        view = self.view(root)
+        self.assertEqual(view['state'], 'failed')
+        self.assertEqual(view['problem']['what'], said)
+        self.assertIn('could not read the original of "Handbook"', said)
+        self.assertIn('Try again works once the original can be read.', view['problem']['kept'])
+        self.assertEqual(self.record(root)['problem']['unreadable'], cause)
+        review = (root / 'reviews' / 'research.md').read_text()
+        self.assertIn('## Independent research review: the check could not finish', review)
+        self.assertIn('Handbook: sources/supplied/handbook.md (There is no tool to read it.)', review)
+        self.assertNotIn('rounds of correction', review)
+        # Try again is refused, in the same words, while the original still cannot be read.
+        with mock.patch.object(engine_module.research_contract, 'dry_read',
+                               return_value='It cannot be read.') as read, \
+                mock.patch.object(engine_module.research_contract, 'native') as again:
+            with self.assertRaises(WorkspaceError) as caught:
+                self.engine.act(root, 'retry')
+        self.assertEqual(str(caught.exception), said)
+        self.assertEqual((read.call_args[0][2], again.call_count), (cause, 0))
+        self.assertEqual(self.view(root)['state'], 'failed')
+        # Once it can be read, Try again runs the research again.
+        with mock.patch.object(engine_module.research_contract, 'dry_read', return_value=None), \
+                mock.patch.object(engine_module.research_contract, 'native',
+                                  side_effect=refusal) as again:
+            self.engine.act(root, 'retry')
+        self.assertEqual(again.call_count, 1)
+
     def test_an_agent_that_cannot_be_used_stops_the_research_at_once(self):
         self.engine = self.make(at_once=1)
         self.workers.then('question:instance-min', fails('Not signed in.', 'unavailable'))

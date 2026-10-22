@@ -13,7 +13,7 @@ from stand_ins import brand as brand_stand_in
 from runner_support import LONG_OUTLINE, OUTLINE, StudioCase, asks, fails, unsettled
 from workspace import WorkspaceError
 
-from runner import decks, marks, stages
+from runner import decks, marks, stages, worker_tools
 from runner.steps import build
 
 
@@ -631,6 +631,65 @@ class ResearchTests(StudioCase):
         report = (root / 'research' / 'report.md').read_text()
         self.assertEqual(report.count('What the page says about instance-min.'), 1)
         self.assertIn('What the page says about instance-min. More besides.', report)
+
+
+class SynthesisStopTests(StudioCase):
+    """How a deck's research, done as one authored report and one independent check,
+    stops: and what Try again does then."""
+
+    CAUSE = [{'source': 'source-a', 'title': 'Handbook',
+              'file': 'sources/supplied/handbook-html.txt',
+              'original': 'sources/supplied/handbook-html.original.html',
+              'access_error': 'There is no tool to read it.'}]
+
+    def synthesis(self):
+        root = self.start(research=True)
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        self.engine._store(root, record)
+        return root
+
+    def test_a_check_that_could_not_read_an_original_stops_and_says_whose_problem_it_is(self):
+        from runner import research_steps
+        from studio_core import research_contract
+        root = self.synthesis()
+        said = str(research_contract.CheckCouldNotFinish(['fact-a (narrow): Not read.'], 0,
+                                                        self.CAUSE))
+        refusal = WorkspaceError(said)
+        refusal.objections, refusal.rounds, refusal.cause = ['fact-a (narrow): Not read.'], 0, self.CAUSE
+        with mock.patch.object(research_steps.research_contract, 'native', side_effect=refusal):
+            self.decide(root, 'gate:research-plan')
+        view = self.view(root)
+        self.assertEqual((view['state'], view['problem']['why']), ('failed', said))
+        self.assertIn('could not read the original of "Handbook"', view['sentence'])
+        self.assertIn('Try again works once the original can be read:\n- Handbook: There is '
+                      'no tool to read it.', view['problem']['kept'])
+        self.assertEqual(self.record(root)['halted']['unreadable'], self.CAUSE)
+        # Try again is refused, in the same words, while the original still cannot be read.
+        with mock.patch.object(research_contract, 'dry_read', return_value='No.') as read, \
+                mock.patch.object(research_contract, 'native') as again:
+            with self.assertRaises(WorkspaceError) as caught:
+                self.engine.act(root, 'retry')
+        self.assertEqual(str(caught.exception), said)
+        self.assertEqual((read.call_args[0][2], again.call_count), (self.CAUSE, 0))
+        # Once it can be read, Try again runs the research again.
+        with mock.patch.object(research_contract, 'dry_read', return_value=None), \
+                mock.patch.object(research_contract, 'native', side_effect=refusal) as again:
+            self.engine.act(root, 'retry')
+        self.assertEqual(again.call_count, 1)
+
+    def test_a_dry_read_reads_each_original_as_the_check_would(self):
+        from studio_core import research_contract
+        root = self.start(route='document', source={'kind': 'upload', 'name': 'handbook.html'},
+                          uploads={'handbook.html': b'<p>Restart one batch at a time.</p>'})
+        self.assertIsNone(research_contract.dry_read(self.engine, root, self.CAUSE))
+        with mock.patch.object(worker_tools.WorkerTools, '_original',
+                               side_effect=worker_tools.Refusal('No tool serves it.')):
+            self.assertEqual(research_contract.dry_read(self.engine, root, self.CAUSE),
+                             'No tool serves it.')
+            # A source with no original of its own needs nothing read.
+            self.assertIsNone(research_contract.dry_read(self.engine, root, [
+                {'file': 'sources/supplied/other.txt'}]))
 
 
 class PlanMarkTests(StudioCase):

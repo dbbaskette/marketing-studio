@@ -186,3 +186,28 @@ class SuppliedOriginalTests(StudioCase):
         self.assertEqual(self.read, [])
         facts, _ = research_contract.read_bundle(root / 'research')
         self.assertNotIn('original_file', facts['sources'][0])
+
+    def test_a_check_that_cannot_read_the_original_stops_after_one_round(self):
+        def blind(tools, job):
+            payload = json.loads(tools.read_input('research-task')[1])
+            result = review(payload['review_template'])
+            for attested in result['originals']:
+                if 'original_sha256' in attested:
+                    attested.update(read_original=False, access_error='No tool serves it.')
+            for item in result['facts']:
+                item.update(verdict='narrow', note='The original could not be inspected.')
+            self.assertTrue(tools.submit_artifact('research-result', json.dumps(result))[0])
+        self.workers.queued['research-result'] = [self.author, blind]
+        root = self.deck('notes.html', self.PAGE)
+        view = self.view(root)
+        self.assertEqual(len(self.workers.of('research-result')), 2)
+        self.assertEqual(view['state'], 'failed')
+        self.assertEqual(view['problem']['why'], (
+            'The research check could not read the original of "Synthetic source" (No tool '
+            'serves it.). That is a studio problem, not a research problem: the report is not '
+            'wrong, the check could not finish. Nothing to correct until the original is '
+            'readable.'))
+        # The studio can serve it, so Try again runs the research again.
+        self.workers.then('research-result', self.author, self.checker)
+        self.engine.act(root, 'retry')
+        self.assertIsNone(self.view(root)['problem'], self.view(root))
