@@ -1516,6 +1516,12 @@ class Engine(Jobs, Researching):
         then share its contact sheet and commit."""
         made = build.draw_whole(root, self._load(root), self.slides(), how)
         count = len(made['slides'])
+        # The brand's check before the review, so that its blockers are drawn again.
+        try:
+            skill = self._skill()
+        except WorkspaceError:
+            skill = None
+        build.audit_round(root, self._load(root), skill)
         with self.files:
             build.share_sheet(root)
             self._commit(root, f"put the deck together: {count} slide"

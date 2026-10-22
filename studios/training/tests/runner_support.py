@@ -1043,6 +1043,7 @@ class Brand:
 
     def __init__(self):
         self.revision, self.refuse, self.exports, self.audited = 1, {}, [], []
+        self.blockers = []
         # What a test gives the contract to say of how decks look, and what the skill writes
         # beside it: {file name: text}.
         self.design, self.beside = None, {}
@@ -1209,7 +1210,10 @@ class Brand:
     def audit(self, deck, brand_id, variant) -> dict:
         self._asked('audit')
         self.audited.append((Path(deck).read_bytes(), brand_id, variant))
-        return {'status': 'WARN' if self.warnings else 'PASS', 'blockers': [],
+        # `blockers` holds what each audit in turn blocks: the first is taken by the next.
+        blocked = self.blockers.pop(0) if self.blockers else []
+        return {'status': 'BLOCKED' if blocked else 'WARN' if self.warnings else 'PASS',
+                'blockers': [dict(blocker) for blocker in blocked],
                 'warnings': [dict(warning) for warning in self.warnings]}
 
     def ready(self) -> dict:

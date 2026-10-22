@@ -1946,7 +1946,8 @@ def review_work(root: Path, found: Survey, step: Step, error: str | None) -> Wor
             + _again(None, None, error, [], 'the review'))
     questions = deck.round_questions(last)
     prepared = {'inputs': {'the review': deck.asked(objectives, slides, earlier,
-                                                    last.get('screens'), questions)},
+                                                    last.get('screens'), questions,
+                                                    last.get('audit_warnings'))},
                 'ask': False,
                 'review': {'preview': str(work / last['preview']), 'deck': last['deck'],
                            'slides': slides, 'objectives': list(objectives),

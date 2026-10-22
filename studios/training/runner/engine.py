@@ -2459,8 +2459,11 @@ class Engine(Reviewing):
             slides = worker_tools.pictures(shown, folder / seen, shots)
             home.write_json(shots / pipeline.ABOUT, {'deck': shown['deckSha256'], 'slides': [
                 {key: slide[key] for key in ('number', 'id', 'title')} for slide in slides]})
+            # The brand's check before the review, so that its blockers are drawn again.
+            audit, audit_note = self._audit_round(file, found.session)
             screens = deck.screened(self._screened(folder, slides) if judged else slides,
-                                    shown.get('repair'), self._audit_now(file, found.session))
+                                    shown.get('repair'), audit)
+            blocked, noticed = deck.audit_findings(audit, slides)
         except (WorkspaceError, OSError, KeyError, ValueError, TypeError) as refusal:
             shutil.rmtree(folder, ignore_errors=True)
             shutil.rmtree(shots, ignore_errors=True)
@@ -2493,10 +2496,12 @@ class Engine(Reviewing):
                    if mine.start.get('assets') is not None else {}),
                 **({'judged': shown['judged']} if judged else
                    {'questions': list(asked_now)}),
-                'deck': shown['deckSha256'], 'slides': slides, 'screens': screens})
-            # What the screens send back is drawn again before anyone reviews it, within the
-            # rounds a deck has: the last round is always reviewed.
-            back = deck.sent_back(screens)
+                'deck': shown['deckSha256'], 'slides': slides, 'screens': screens,
+                'audit_findings': blocked, 'audit_warnings': noticed,
+                **({'auditNote': audit_note} if audit_note else {})})
+            # What the screens and the brand's check send back is drawn again before anyone
+            # reviews it, within the rounds a deck has: the last round is always reviewed.
+            back = deck.sent_back(screens) + blocked
             if back and len(rounds) <= deck.REPAIRS:
                 rounds[-1]['review'] = {'findings': back, 'weakest': None, 'coverage': {},
                                         'by': 'screen', 'at': home.now()}
@@ -2504,13 +2509,13 @@ class Engine(Reviewing):
             self._done(root, it, clock, f'put {workspace.label(it.artifact)} together: '
                        f"{len(slides)} slide{'' if len(slides) == 1 else 's'}")
 
-    def _audit_now(self, file: Path, session: dict) -> dict | None:
-        """The brand's audit of a deck as it was just rendered, for the screens a review
-        is given; None when it cannot be run, which stops nothing."""
+    def _audit_round(self, file: Path, session: dict) -> tuple[dict | None, str | None]:
+        """The brand's audit of a deck as it was just rendered, before its review, and
+        None with a note when it cannot be run, which stops nothing."""
         try:
-            return self._skill().audit(file, *pipeline.brand_of(session))
-        except (WorkspaceError, OSError, ValueError, TypeError):
-            return None
+            return self._skill().audit(file, *pipeline.brand_of(session)), None
+        except (WorkspaceError, OSError, ValueError, TypeError) as refusal:
+            return None, f"The brand's check of this deck could not be run. {refusal}"
 
     @staticmethod
     def _screened(folder: Path, slides: list[dict]) -> list[dict]:

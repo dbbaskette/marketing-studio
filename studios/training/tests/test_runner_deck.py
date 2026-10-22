@@ -1946,6 +1946,54 @@ class RepairTests(DeckCase):
         self.assertEqual(self.log()[-5].partition(': ')[2],
                          'keep section 1 of the slide deck, drawn again')
 
+    BLOCKER = {'code': 'OFF_PALETTE', 'slide': 2, 'says': 'A colour outside the palette.'}
+
+    def test_a_brand_blocker_sends_its_section_back(self):
+        self.workers.found = [[]]
+        self.brand.blockers = [[self.BLOCKER]]
+        told = []
+
+        def composer(tools, job):
+            told.append(tools.read_input('what the review found'))
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', *[self.workers.section] * 2, composer)
+        root = self.begin()
+        self.drawn(root)
+        rounds = self.built(root)['rounds']
+        first = rounds[0]
+        self.assertEqual(first['audit_findings'], [{
+            'slide': 'what-it-does', 'number': 2, 'severity': 'critical', 'about': 'drawing',
+            'question': None, 'note': "The brand's check: A colour outside the palette.",
+            'fix': None, 'source': 'brand'}])
+        self.assertEqual(first['review']['by'], 'screen')
+        self.assertEqual(len(rounds), 2, 'the section was drawn again, then reviewed')
+        self.assertEqual(self.kinds().count('review'), 1)
+        self.assertTrue(told and "The brand's check: A colour outside the palette." in
+                        told[0][1], told)
+
+    def test_brand_warnings_reach_the_reviewer(self):
+        self.workers.found = [[]]
+        root = self.begin()
+        self.drawn(root)
+        work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
+                                    pipeline.gate_for('deck'), None)
+        asked = work.prepared['inputs']['the review']
+        self.assertIn("## What the brand's check noticed", asked)
+        self.assertIn('- Slide 2: Text under 18 points.', asked)
+
+    def test_an_audit_that_cannot_run_changes_nothing(self):
+        self.workers.found = [[]]
+        self.brand.refuse['audit'] = ['The deck could not be opened.']
+        root = self.begin()
+        self.drawn(root)
+        rounds = self.built(root)['rounds']
+        self.assertEqual(len(rounds), 1, 'no repair round is spent on it')
+        self.assertTrue(rounds[0]['auditNote'].startswith(
+            "The brand's check of this deck could not be run."), rounds[0])
+        self.assertEqual(rounds[0].get('audit_findings') or [], [])
+        self.assertEqual(self.kinds().count('review'), 1)
+
     def test_reviewer_is_asked_the_rounds_questions(self):
         three = ('Is the point plain at a glance?', 'Is the space balanced?',
                  'Is there exactly one emphasis?')

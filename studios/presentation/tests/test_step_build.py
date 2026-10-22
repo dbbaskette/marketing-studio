@@ -1076,6 +1076,76 @@ class CriticQuestionsTests(Deck):
             build.read_state(self.root)['rounds'][-1]['slides'], None, critic.LEGACY))
 
 
+class BrandAuditTests(Deck):
+    """The brand's check runs over each round's previewed deck, before its review."""
+    BLOCKED = {'status': 'BLOCKED',
+               'blockers': [{'code': 'OFF_PALETTE', 'slide': 3,
+                             'says': 'A colour outside the palette.'}],
+               'warnings': []}
+    WARNED = {'status': 'WARN', 'blockers': [],
+              'warnings': [{'code': 'SMALL_TEXT', 'slide': 2, 'says': 'Text under 18 points.'},
+                           {'code': 'HIGH_TEXT_DENSITY', 'slide': 4,
+                            'says': 'Many words for one slide.'}]}
+
+    def audited(self, report=None, refusal=None) -> dict:
+        self.built()
+        answer = mock.patch.object(self.brand, 'audit', side_effect=refusal) if refusal \
+            else mock.patch.object(self.brand, 'audit', return_value=report)
+        with answer as audit:
+            build.audit_round(self.root, self.run_, self.brand)
+        self.assertEqual(audit.call_args[0][0],
+                         self.root / build.read_state(self.root)['rounds'][-1]['file'])
+        return build.read_state(self.root)
+
+    def test_a_brand_blocker_sends_its_section_back(self):
+        state = self.audited(self.BLOCKED)
+        last = state['rounds'][-1]
+        third = last['slides'][2]['id']
+        finding = last['audit_findings'][0]
+        self.assertEqual((finding['slide'], finding['severity'], finding['about'],
+                          finding['question'], finding['source']),
+                         (third, 'critical', 'drawing', None, 'brand'))
+        self.assertEqual(finding['note'], "The brand's check: A colour outside the palette.")
+        section = next(entry['id'] for entry in state['start']['sections']
+                       if third in entry['slides'])
+        self.assertEqual(build.to_draw(self.root), [section])
+        self.assertEqual(state['repaired'], 1, 'a brand repair counts against REPAIRS')
+        work = build.section_work(self.root, self.run_, section, None, None)
+        told = work.prepared['inputs']['what the review found']
+        self.assertIn("- **critical**, The brand's check: A colour outside the palette.", told)
+
+    def test_brand_warnings_reach_the_reviewer(self):
+        self.audited(self.WARNED)
+        self.assertEqual(build.to_draw(self.root), [])
+        asked = build.review_work(self.root, self.run_).prepared['inputs']['the review']
+        self.assertIn("## What the brand's check noticed", asked)
+        self.assertIn('- Slide 2: Text under 18 points.', asked)
+        self.assertIn('- Slide 4: Many words for one slide.', asked)
+
+    def test_an_audit_that_cannot_run_changes_nothing(self):
+        state = self.audited(refusal=WorkspaceError('The deck could not be opened.'))
+        last = state['rounds'][-1]
+        self.assertEqual(build.to_draw(self.root), [])
+        self.assertEqual(last['auditNote'], "The brand's check of this deck could not be run. "
+                                            'The deck could not be opened.')
+        self.assertEqual(last.get('audit_findings') or [], [])
+        asked = build.review_work(self.root, self.run_).prepared['inputs']['the review']
+        self.assertNotIn("brand's check noticed", asked)
+
+    def test_audit_refusal_spends_no_repair_round(self):
+        state = self.audited(refusal=WorkspaceError('The deck could not be opened.'))
+        self.assertEqual(state.get('repaired', 0), 0)
+        self.assertEqual(state.get('repair'), [])
+
+    def test_render_still_audits_the_delivered_deck(self):
+        self.audited(self.WARNED)
+        self.review(lambda slides: [])
+        with mock.patch.object(self.brand, 'audit', return_value=self.BLOCKED) as audit:
+            deck = build.render(self.root, self.run_, self.slides, brand=self.brand)
+        self.assertEqual(audit.call_args[0][0], deck)
+        self.assertEqual(build.read_state(self.root)['audit']['errors'], 1)
+
+
 class ReviewReuseTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

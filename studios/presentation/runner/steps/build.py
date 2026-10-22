@@ -1064,6 +1064,10 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
     last = state['rounds'][-1] if state['rounds'] else None
     found = [finding for finding in ((last or {}).get('review') or {}).get('findings') or ()
              if finding['slide'] in ids] if drawn else []
+    # The brand's check of this round, before its review, never of an earlier one.
+    found += [finding for finding in (last or {}).get('audit_findings') or ()
+              if finding['slide'] in ids] if drawn and section in (
+        state.get('repair') or ()) else []
     # Sent back by the screen of the whole deck's preview, before any review.
     previewed = [entry for entry in (last or {}).get('preview_repair') or ()
                  if entry.get('slide') in ids] if drawn and section in (
@@ -1445,36 +1449,98 @@ def told_findings(findings, slides: list[dict], questions=critic.LEGACY) -> str:
         for finding in mine:
             what = ('This is about what the slide says, which is not yours to change: '
                     'leave the words as they are. ' if finding['about'] == ABOUT[1] else '')
+            quoted = asked_text(finding, questions)
             lines.append(f"- **{finding['severity']}**, "
-                         f"{asked_text(finding, questions)} {what}{finding['note']}"
+                         f"{quoted + ' ' if quoted else ''}{what}{finding['note']}"
                          + (f" Suggested: {finding['fix']}" if finding.get('fix') else ''))
         lines.append('')
     return '\n'.join(lines)
 
 
 def asked_text(finding: dict, questions) -> str:
-    """The question a finding answers "no" to, quoted, as a composer or a person reads it."""
+    """The question a finding answers "no" to, quoted, as a composer or a person reads it.
+    A finding of the brand's check answers none: its note says so."""
     number = finding.get('question')
     if type(number) is int and 1 <= number <= len(questions):
         return f'"{questions[number - 1]}"'
-    return "The brand's check:"
+    return ''
 
 
-def asked(slides: list[dict], earlier=None, questions=critic.LEGACY) -> str:
+def audit_findings(report: dict, slides: list[dict]) -> tuple[list[dict], list[str]]:
+    """What the brand's check of a round's deck found: each blocker on a slide it numbers
+    as a critical finding about how that slide is drawn, in the check's own words, and each
+    warning as a line for the reviewer to look at."""
+    ids = {slide['number']: slide['id'] for slide in slides}
+    findings, lines = [], []
+    for blocker in (report or {}).get('blockers') or ():
+        if isinstance(blocker, dict) and blocker.get('slide') in ids:
+            findings.append({'slide': ids[blocker['slide']], 'number': blocker['slide'],
+                             'severity': 'critical', 'about': ABOUT[0], 'question': None,
+                             'note': "The brand's check: "
+                                     + str(blocker.get('says') or blocker.get('code')),
+                             'fix': None, 'source': 'brand'})
+    for warning in (report or {}).get('warnings') or ():
+        if isinstance(warning, dict) and (warning.get('says') or warning.get('code')):
+            slide = f"Slide {warning['slide']}: " if warning.get('slide') is not None else ''
+            lines.append(f"{slide}{warning.get('says') or warning.get('code')}")
+    return findings, lines
+
+
+def audit_round(root, run: dict, brand) -> dict:
+    """Run the brand's check over the deck the last round previewed, before it is reviewed.
+    A blocker on a slide sends that slide's section back to be drawn again, within REPAIRS
+    rounds, as a reviewer's finding does; a warning goes to the reviewer. A check that
+    cannot be run leaves the round as it is, with a note. Returns the round."""
+    root = Path(root)
+    state = read_state(root)
+    last, began = _last(state), _started(state)
+    form = run.get('form') or {}
+    if brand is None:
+        last['auditNote'] = 'The brand skill was not there to check this deck.'
+        write_state(root, state)
+        return last
+    try:
+        report = brand.audit(root / last['file'], form.get('brand'), form.get('variant'))
+    except WorkspaceError as refusal:
+        last['auditNote'] = f"The brand's check of this deck could not be run. {refusal}"
+        write_state(root, state)
+        return last
+    findings, lines = audit_findings(report, last['slides'])
+    where = {ident: entry['id'] for entry in began['sections'] for ident in entry['slides']}
+    for finding in findings:
+        finding['section'] = where.get(finding['slide'])
+    last.update(audit=audited(report), audit_findings=findings, audit_warnings=lines)
+    sections = {finding['section'] for finding in findings if finding['section']}
+    already = set(state.get('repair') or ())
+    if sections - already and (already or state.get('repaired', 0) < REPAIRS):
+        if not already:
+            state['repaired'] = state.get('repaired', 0) + 1
+        state['repair'] = sorted(already | sections, key=numbered)
+    write_state(root, state)
+    return last
+
+
+def asked(slides: list[dict], earlier=None, questions=critic.LEGACY, noticed=None) -> str:
     """What a reviewer is asked: the slides tool's questions, how grave a "no" is, the
-    slides, and on a later round what was found before."""
+    slides, what the brand's check noticed, and on a later round what was found before."""
     lines = ['# The review', '', '## The questions, asked of every slide', '']
     lines += [f'{number}. {question}' for number, question in enumerate(questions, start=1)]
     lines += ['', '## How grave a "no" is', '']
     lines += [f'- `{severity}`: {words}' for severity, words in SEVERITY_WORDS.items()]
     lines += ['', '## The slides', '']
     lines += [f"- {slide['number']}. `{slide['id']}`: \"{slide['title']}\"" for slide in slides]
+    if noticed:
+        lines += ['', "## What the brand's check noticed", '',
+                  'Look at each of these, and record it where it makes a slide weaker.', '']
+        lines += [f'- {line}' for line in noticed]
     if earlier:
         lines += ['', '## What an earlier review found', '',
                   'These slides were drawn again since. Look for each of these, and where '
                   'one is not put right, record it again.', '']
-        lines += [f"- Slide `{finding['slide']}`, {finding['severity']}, question "
-                  f"{finding['question']}: {finding['note']}" for finding in ordered(earlier)]
+        lines += [f"- Slide `{finding['slide']}`, {finding['severity']}, "
+                  + (f"question {finding['question']}" if finding.get('question')
+                     else "the brand's check")
+                  + f": {finding['note']}" for finding in ordered(earlier)]
     return '\n'.join(lines) + '\n'
 
 
@@ -1549,7 +1615,8 @@ def review_work(root, run: dict) -> Work:
               'reused': reused, 'sheet': str(root / last['sheet']) if last.get('sheet') else None}
     return Work(guidance=briefs.guidance('review'), task=task, profile='write',
                 guard=('whole', (run.get('build_feedback_revisions') or {}).get('whole', 0)),
-                prepared={'inputs': {'the review': asked(slides, earlier, questions)},
+                prepared={'inputs': {'the review': asked(slides, earlier, questions,
+                                                          last.get('audit_warnings'))},
                           'ask': False,
                           'review': review})
 

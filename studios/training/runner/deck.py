@@ -1237,11 +1237,32 @@ def sent_back(screens: list[dict]) -> list[dict]:
 
 
 def asked_text(finding: dict, questions) -> str:
-    """The question a finding answers "no" to, quoted, as a composer or a person reads it."""
+    """The question a finding answers "no" to, quoted, as a composer or a person reads it.
+    A finding of the brand's check answers none: its note says so."""
     number = finding.get('question')
     if type(number) is int and 1 <= number <= len(questions):
         return f'"{questions[number - 1]}"'
-    return "The brand's check:"
+    return ''
+
+
+def audit_findings(report: dict | None, slides: list[dict]) -> tuple[list[dict], list[str]]:
+    """What the brand's check of a round's deck found: each blocker on a slide it numbers
+    as a critical finding about how that slide is drawn, in the check's own words, and each
+    warning as a line for the reviewer to look at."""
+    ids = {slide['number']: slide['id'] for slide in slides}
+    findings, lines = [], []
+    for blocker in (report or {}).get('blockers') or ():
+        if isinstance(blocker, dict) and blocker.get('slide') in ids:
+            findings.append({'slide': ids[blocker['slide']], 'number': blocker['slide'],
+                             'severity': 'critical', 'about': ABOUT[0], 'question': None,
+                             'note': "The brand's check: "
+                                     + str(blocker.get('says') or blocker.get('code')),
+                             'fix': None, 'source': 'brand'})
+    for warning in (report or {}).get('warnings') or ():
+        if isinstance(warning, dict) and (warning.get('says') or warning.get('code')):
+            slide = f"Slide {warning['slide']}: " if warning.get('slide') is not None else ''
+            lines.append(f"{slide}{warning.get('says') or warning.get('code')}")
+    return findings, lines
 
 
 def told(findings, slides: list[dict], questions=critic.LEGACY) -> str:
@@ -1264,7 +1285,8 @@ def told(findings, slides: list[dict], questions=critic.LEGACY) -> str:
             asked_as = (f"{CATEGORIES.get(finding.get('category'), 'Found')}, "
                         f"`{finding['criterion']}`:" if 'criterion' in finding else
                         asked_text(finding, questions))
-            lines.append(f"- **{finding['severity']}**, {asked_as} {what}{finding['note']}"
+            lead = f'{asked_as} ' if asked_as else ''
+            lines.append(f"- **{finding['severity']}**, {lead}{what}{finding['note']}"
                          + (f" Suggested: {finding['fix']}" if finding['fix'] else ''))
         lines.append('')
     return '\n'.join(lines)
@@ -1288,7 +1310,7 @@ def _looked(screens) -> list[str]:
 
 
 def asked(objectives: dict, slides: list[dict], earlier=None, screens=None,
-          questions=critic.LEGACY) -> str:
+          questions=critic.LEGACY, noticed=None) -> str:
     """What a reviewer is asked: the slides tool's questions, how grave a "no" is, the
     slides, the objectives, what to look for beyond the questions with what the screens
     found, and on a later round what was found before."""
@@ -1303,6 +1325,10 @@ def asked(objectives: dict, slides: list[dict], earlier=None, screens=None,
     lines += ['', '## The objectives', '']
     lines += [f'- {ident}: {text}' for ident, text in objectives.items()]
     lines += _looked(screens)
+    if noticed:
+        lines += ['', "## What the brand's check noticed", '',
+                  'Look at each of these, and record it where it makes a slide weaker.', '']
+        lines += [f'- {line}' for line in noticed]
     if earlier:
         lines += ['', '## What an earlier review found', '',
                   'These slides were drawn again since. Look for each of these, and where '
@@ -1314,8 +1340,10 @@ def asked(objectives: dict, slides: list[dict], earlier=None, screens=None,
 
 def _named(finding: dict) -> str:
     """Which question or criterion a finding answered, as an earlier review is listed."""
-    return f"`{finding['criterion']}`" if 'criterion' in finding \
-        else f"question {finding['question']}"
+    if 'criterion' in finding:
+        return f"`{finding['criterion']}`"
+    return f"question {finding['question']}" if finding.get('question') \
+        else "the brand's check"
 
 
 def to_outline(findings) -> list[dict]:
