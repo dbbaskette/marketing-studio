@@ -56,6 +56,19 @@ class StopWordsTests(unittest.TestCase):
         self.assertEqual(stops.cost(720, 1.4), '12 minutes and about $1.40')
         self.assertEqual(stops.cost(720, None), '12 minutes; the assistant reported no cost')
 
+    def test_a_change_says_what_it_draws_again_and_what_that_took_last_time(self):
+        self.assertEqual(stops.redone('the outline', 6, 1320, 3.1), (
+            'Drawn again: the outline and every step after it, 6 steps. Last time they took '
+            '22 minutes and about $3.10.'))
+        self.assertEqual(stops.redone('the outline', 6, None, None), (
+            'Drawn again: the outline and every step after it, 6 steps; this computer has no '
+            'record of what they cost.'))
+        self.assertEqual(stops.redone('the handoff', 1, 120, None), (
+            'Drawn again: the handoff. Last time it took 2 minutes; the assistant reported no '
+            'cost.'))
+        self.assertEqual(stops.redone('the handoff', 1, None, None), (
+            'Drawn again: the handoff; this computer has no record of what it cost.'))
+
     def test_no_job_starts_with_less_than_the_floor_left(self):
         self.assertEqual((stops.floor(20), stops.floor(1), stops.floor(0)), (0.5, 0.25, 0.0))
 

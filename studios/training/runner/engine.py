@@ -4247,6 +4247,54 @@ class Engine(Reviewing):
                           'blocking': list(report['blocking']), 'index': report['file']}
                          if report and not resting else None)}
 
+    def redo(self, path, name: str) -> dict | None:
+        """What Ask for changes at `name`'s gate writes again: the file and everything
+        written from it, as steps, with what they took the last time each ran. None for the
+        research stops, which keep their own words, and for a training no run drives."""
+        root = self.driven(path)
+        if root is None:
+            return None
+        record = self._load(root)
+        return self._redo_view(root, record, self._survey(root, record,
+                                                          self._wanted(root, record)), name)
+
+    def _redo_view(self, root: Path, record: dict, found: pipeline.Survey, name: str,
+                   below=None) -> dict | None:
+        """`redo` for one file: what a change to it writes again, and what that took. None
+        for the research, which keeps its own words. `below` is what is written from it,
+        where the caller already knows."""
+        if workspace.split(name)[0] in ('research', 'research-plan'):
+            return None
+        if below is None:
+            from runner import reviews
+            below = reviews.rewritten(root, found.session, found.decks, name)
+        below = {name, *below}
+        again = [step for step in found.steps if step.kind == 'agent' and step.id in below]
+        if not again:
+            return None
+        took = self._redo_steps(record, [step.id for step in again])
+        seconds, dollars = took if took else (None, None)
+        return {'steps': len(again), 'names': [workspace.label(step.id) for step in again],
+                'seconds': seconds, 'dollars': dollars,
+                'says': stops.redone(workspace.label(again[0].id), len(again), seconds,
+                                     dollars)}
+
+    @staticmethod
+    def _redo_steps(record: dict, names: list[str]) -> tuple | None:
+        """(seconds, dollars) of the last try of each step named, with its jobs; dollars None
+        unless every one reported them. None when one of them has never run here."""
+        seconds, dollars = 0.0, []
+        for name in names:
+            own = [entry for step, entry in record['steps'].items()
+                   if (step == name or step.startswith(name + ':')) and entry.get('attempts')]
+            if not own:
+                return None
+            for entry in own:
+                last = entry['attempts'][-1]
+                seconds += float(last.get('seconds') or 0)
+                dollars.append(last.get('dollars'))
+        return seconds, (None if None in dollars else round(sum(dollars), 4))
+
     @staticmethod
     def _still_to_come(record: dict, found: pipeline.Survey) -> dict:
         """What is left of a training, and what it has spent: the steps not done, the first

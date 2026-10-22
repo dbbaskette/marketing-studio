@@ -106,6 +106,45 @@ class AheadTests(StudioCase):
         self.assertNotEqual(self.view(fast)['ahead']['next_gate'], 'gate:research-plan')
 
 
+class RedoTests(StudioCase):
+    """Ask for changes says, before it is sent, what it writes again and what that took."""
+
+    def test_a_change_request_says_what_it_writes_again(self):
+        root = self.start()
+        self.to_gate(root, 'blueprint')
+        redo = self.engine.redo(str(root), 'blueprint')
+        self.assertEqual(redo['names'][0], 'the blueprint')
+        self.assertGreater(redo['steps'], 1, 'what is written from the blueprint comes again')
+        # Nothing after the blueprint has run yet: there is no record of what it all costs.
+        self.assertTrue(redo['says'].startswith('Drawn again: the blueprint and every step '
+                                                f"after it, {redo['steps']} steps; this "
+                                                'computer has no record'), redo['says'])
+        # The research stops keep their own words: Phase 3 prices them.
+        self.assertIsNone(self.engine.redo(str(root), 'research'))
+        self.assertIsNone(self.engine.redo(str(root), 'research-plan'))
+        # The blueprint alone, once run: what its last try took, priced as reported.
+        record = self.engine._load(root)
+        record['steps']['blueprint']['attempts'][-1].update(seconds=120, dollars=0.3)
+        self.engine._store(root, record)
+        alone = self.engine._redo_steps(record, ['blueprint'])
+        self.assertEqual(alone, (120.0, 0.3))
+
+    def test_each_item_of_a_combined_review_says_what_it_writes_again(self):
+        from unittest import mock
+        with mock.patch('studio_core.review_policy.capture',
+                        return_value={'schema': 1, 'level': 'automatic'}):
+            root = self.start()
+        review = self.view(root)['review']
+        self.assertEqual(review['phase'], 'final')
+        items = {item['target']: item for item in review['items']}
+        said = items['blueprint']['redo']['says']
+        # Everything written from the blueprint has run once here, its agent reporting no cost.
+        self.assertTrue(said.startswith('Drawn again: the blueprint and every step after it, '),
+                        said)
+        self.assertTrue(said.endswith('; the assistant reported no cost.'), said)
+        self.assertIsNone(items.get('research', {}).get('redo'))
+
+
 class FormToGateThreeTests(StudioCase):
     def test_the_form_becomes_a_training_made_through_the_core_in_page_mode(self):
         root = self.start()

@@ -935,6 +935,34 @@ def review_level(root, data):
     return settings(root)
 
 
+def redo(found, jobs):
+    """What Ask for changes at each writing stage draws again: that stage and every one
+    after it, with what they took the last time each ran on this computer. The research
+    stages keep their own words."""
+    stages = [row['stage'] for row in found['stages']]
+    last = {}
+    for job in jobs or ():
+        if isinstance(job, dict) and job.get('stage'):
+            last[job['stage']] = job
+    shown = {}
+    for at, stage in enumerate(stages):
+        if stage in RESEARCH_STAGES or stage == 'angles':
+            continue
+        again = stages[at:]
+        ran = [last.get(name) for name in again]
+        recorded = all(ran)
+        seconds = sum(float(job.get('seconds') or 0) for job in ran) if recorded else None
+        dollars = [job.get('dollars') for job in ran] if recorded else [None]
+        priced = None if None in dollars else round(sum(dollars), 4)
+        shown[stage] = {
+            'stages': again,
+            'says': stops.redone(
+                'the ' + STAGES[stage][0].lower(), len(again), seconds, priced
+            ),
+        }
+    return shown
+
+
 def research_scope(research, sources):
     """Supplied-only research has nothing to read without supplied sources."""
     return 'none' if research == 'supplied-only' and not sources else research
@@ -1831,6 +1859,7 @@ class Engine:
             **took,
             'spent': stops.cost(took['seconds'], took['dollars']) if took['jobs'] else None,
         }
+        found['redo'] = redo(found, local.get('jobs'))
         status = local.get('status', 'paused')
         if found['complete']:
             status = 'complete'

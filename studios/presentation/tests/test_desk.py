@@ -630,6 +630,29 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.deck_screen(path, [{'snapshot': 'old'}], **{'GET /api/run': [ok(old)]})
         self.assertNotIn('steps left', result['snapshots']['old']['text'])
 
+    def test_asking_for_changes_at_the_deck_stop_with_nothing_marked_says_the_whole_deck_is_drawn_again(self):
+        path = self.started()
+        for _ in range(10):
+            if self.run_of(path)['gate']['name'] == 'gate:build':
+                break
+            self.decided(path)
+        shown = self.run_of(path)
+        self.assertEqual(shown['gate']['name'], 'gate:build')
+        priced = {**shown, 'gate': {**shown['gate'],
+                                    'last_build': {'dollars': 7.2, 'seconds': 1080,
+                                                   'sections': 1}}}
+        result = self.deck_screen(path, [{'click': 'Ask for changes'}, {'snapshot': 'sheet'}],
+                                  **{'GET /api/run': [ok(priced)]})
+        self.assertIn('No slides marked: the whole deck is drawn again (about $7.20 and 18 '
+                      'minutes, as the last build took).', result['snapshots']['sheet']['sheet'])
+
+    def test_asking_for_changes_at_the_outline_says_what_is_drawn_again(self):
+        path = self.started()
+        shown = self.run_of(path)
+        self.assertEqual(shown['gate']['name'], 'gate:outline')
+        result = self.deck_screen(path, [{'click': 'Ask for changes'}, {'snapshot': 'sheet'}])
+        self.assertIn(shown['gate']['redo']['says'], result['snapshots']['sheet']['sheet'])
+
     def test_a_phone_keeps_one_decision_in_the_toolbar(self):
         path = self.started()
         result = self.deck_screen(path, [{'snapshot': 'phone'}, {'click': 'More'},

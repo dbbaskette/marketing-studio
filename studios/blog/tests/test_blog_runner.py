@@ -1237,6 +1237,24 @@ class SharedPatternTests(RunnerCase):
         shown = engine.describe(found['id'])['ahead']
         self.assertEqual((shown['jobs'], shown['spent']), (0, None))
 
+    def test_redo_says_what_a_change_draws_again(self):
+        found = self.create(page=True, stop='package')
+        engine = runner.Engine(self.root, worker=self.worker())
+        self.addCleanup(engine.close)
+        redo = engine.describe(found['id'])['redo']
+        self.assertEqual(redo['draft']['stages'], ['draft', 'review', 'package'])
+        self.assertEqual(redo['draft']['says'], (
+            'Drawn again: the draft and every step after it, 3 steps; this computer has no '
+            'record of what they cost.'))
+        state = engine.local(found['id'])
+        state['jobs'] = [{'stage': stage, 'seconds': 300, 'tokens': None, 'dollars': 0.5}
+                         for stage in ('outline', 'draft', 'review', 'package')]
+        engine.keep_local(found['id'], state)
+        redo = engine.describe(found['id'])['redo']
+        self.assertEqual(redo['review']['says'], (
+            'Drawn again: the review and every step after it, 2 steps. Last time they took '
+            '10 minutes and about $1.00.'))
+
     def blogs(self):
         folder = self.root / 'articles'
         return sorted(path.name for path in folder.iterdir()) if folder.is_dir() else []

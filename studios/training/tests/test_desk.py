@@ -4232,6 +4232,25 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             self.assertNotIn(absent, end['buttons'])
         self.assertIn('Open the research plan', end['buttons'])
 
+    def test_a_change_request_sheet_says_what_it_writes_again(self):
+        self.started()
+        self.at_the_questions_gate()
+        asking = 'Waiting for your decision on the research questions.'
+        gate = {'path': str(self.root), 'artifact': 'research-plan'}
+        shown = self.read('gate', **gate)
+        self.assertIsNone(shown['body'].get('redo'), 'the research stops keep their own words')
+        said = ('Drawn again: the blueprint and every step after it, 4 steps; this computer '
+                'has no record of what they cost.')
+        priced = {**shown, 'body': {**shown['body'], 'redo': {'says': said}}}
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', asking)],
+            'GET /api/gate': [priced],
+            'GET /api/run': [a_run('waiting', asking, steps=steps('done', 'done', 'waiting'))]})
+        result = self.run_page(answers, [
+            {'click': 'Review the research plan'},
+            {'click': 'Ask for changes'}, {'snapshot': 'asking'}])
+        self.assertIn(said, result['snapshots']['asking']['sheet'])
+
     def test_approval_returns_to_the_same_run_without_another_dialog(self):
         self.started()
         self.at_the_questions_gate()

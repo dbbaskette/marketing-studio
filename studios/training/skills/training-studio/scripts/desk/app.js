@@ -1329,8 +1329,10 @@ function noteSheet(kind) {
   field.addEventListener('input', () => {
     view.notes[key] = field.value;
   });
-  const hint = make('p', 'quiet', runOf(view.path) ? spec.hint.replace('Your assistant makes',
-    'Training Studio makes') : spec.hint);
+  // What a change writes again, and what that took the last time, said before it is sent.
+  const redo = kind === 'revise' && view.gate && view.gate.redo ? ' ' + view.gate.redo.says : '';
+  const hint = make('p', 'quiet', (runOf(view.path) ? spec.hint.replace('Your assistant makes',
+    'Training Studio makes') : spec.hint) + redo);
   hint.id = 'note-hint';
   const problem = problemLine();
   const submit = submitButton(spec.send, 'send');
@@ -5950,8 +5952,9 @@ function combinedReview(run) {
       const key = noteKeyOf(review, item);
       request.value = view.notes[key] || '';
       request.addEventListener('input', () => { view.notes[key] = request.value; });
-      const hint = make('p', 'quiet', list(item.rewrites).length ? 'If it changes, these are '
-        + 'written again from it: ' + series(item.rewrites) + '.' : 'Nothing else is built from it.');
+      const hint = make('p', 'quiet', (list(item.rewrites).length ? 'If it changes, these are '
+        + 'written again from it: ' + series(item.rewrites) + '.' : 'Nothing else is built from it.')
+        + (item.redo ? ' ' + item.redo.says : ''));
       const asking = add(make('div', 'review-request'), label, request, hint);
       asking.hidden = mark !== 'changes';
       const marks = make('div', 'review-marks chips');

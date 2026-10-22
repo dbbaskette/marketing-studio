@@ -1208,6 +1208,14 @@ async function sharedPattern(){
   assert.ok(text().some(t=>t==='The limit is in Settings → Step time limit and applies to blogs started after a change. Try again with more time doubles it to 20 minutes for this blog.'),'a time limit says where it lives: '+text().join('|'));
   await more.listeners.click();
   assert.deepEqual(requests.find(r=>r.url==='/api/run-retry').data,{id:'synthetic',expected:'version-1',seconds:1200});
+  // Ask for changes says what it draws again, and what that took, before it is sent.
+  f.set('found',{...found,status:'waiting-for-approval',stages:[found.stages[0],{...found.stages[1],status:'draft'},found.stages[2]],redo:{outline:{stages:['outline','draft','review'],says:'Drawn again: the outline and every step after it, 3 steps. Last time they took 12 minutes and about $1.40.'},draft:{stages:['draft','review'],says:'Drawn again: the draft and every step after it, 2 steps; this computer has no record of what they cost.'}}});
+  f.run("sChanges(found,'draft')");
+  {const sheet=()=>descendants(f.get('sheet')).map(e=>e.textContent);
+   assert.ok(sheet().includes('Drawn again: the draft and every step after it, 2 steps; this computer has no record of what they cost.'),'the sheet prices the change: '+sheet().join('|'));
+   const pick=descendants(f.get('sheet')).find(e=>e.id==='change-stage');pick.value='outline';pick.listeners.change();
+   assert.ok(sheet().includes('Drawn again: the outline and every step after it, 3 steps. Last time they took 12 minutes and about $1.40.'),'and follows the stage chosen: '+sheet().join('|'));
+   f.run('sCloseSheet()');}
   // Copy Markdown sits beside the download.
   const shown={id:found.id,title:found.title,name:'DRAFT.md',stage:'draft',label:'Draft',expected:found.expected,status:'draft',content:'# Draft',notes:'',checks:[],previous:null,diff:[]};
   f.set('shown',shown);f.run("studio.screen='gate';studio.found=found;sGate({...found,status:'waiting-for-approval'},shown)");

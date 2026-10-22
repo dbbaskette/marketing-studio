@@ -13,6 +13,7 @@ What a caller needs to know
     stops.agent_stopped(title, outcome, detail)   # either of those, or None
     stops.took(attempts)                  # {'jobs', 'seconds', 'dollars'} of a run's jobs
     stops.cost(seconds, dollars)          # "12 minutes and about $1.40"
+    stops.redone(first, steps, seconds, dollars)   # what a change draws again, priced
 
 - `thing` is what the studio makes, as a person calls it: 'training' or 'deck'.
 - A step limit is the run's own: the one Settings gave it when it started or was last
@@ -61,6 +62,17 @@ def cost(seconds, dollars) -> str:
     if dollars is None:
         return f'{lasted(seconds)}; the assistant reported no cost'
     return f'{lasted(seconds)} and about ${float(dollars):,.2f}'
+
+
+def redone(first: str, steps: int, seconds, dollars) -> str:
+    """What an Ask for changes sheet says before it is sent: what is drawn again, from
+    `first` on, and what those steps took the last time they ran. `seconds` is None when
+    this computer has no record of one of them."""
+    many = steps > 1
+    said = f'Drawn again: {first}' + (f' and every step after it, {steps} steps' if many else '')
+    if seconds is None:
+        return said + f'; this computer has no record of what {"they" if many else "it"} cost.'
+    return said + f'. Last time {"they" if many else "it"} took {cost(seconds, dollars)}.'
 
 
 def floor(limit) -> float:

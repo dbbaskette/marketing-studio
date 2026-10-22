@@ -263,6 +263,8 @@ class RunnerPage(desk.Page):
         scenario's names the scenario it was laid out from, to show beside it."""
         shown = desk.gate(path, name)
         shown['combined'] = self.engine.reviewing(path)
+        # What Ask for changes writes again, and what that took, said before it is asked for.
+        shown['redo'] = self.engine.redo(path, name)
         kind = workspace.split(name)[0].partition(':')[0]
         if kind == 'scenario':
             shown['whose'] = self.engine.whose(path, name)

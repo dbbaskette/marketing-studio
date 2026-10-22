@@ -2654,6 +2654,12 @@ class Engine(Jobs, Researching):
                  'said': record['said'].get(FED_BY.get(nxt.name, ''))}
         view = getattr(self, f"_show_{nxt.name.partition(':')[2].replace('-', '_')}")
         shown.update(view(root, record))
+        # What Ask for changes draws again, and what that took, said before it is asked for.
+        # The research stops keep their own words; the deck's stop says the whole deck's.
+        if nxt.name == 'gate:build':
+            shown['last_build'] = self._last_build(record)
+        elif nxt.name not in ('gate:research-plan', 'gate:research'):
+            shown['redo'] = self._redo(record, nxt.name)
         if nxt.name == 'gate:outline' and review_policy.level(record) == 'balanced':
             shown['research'] = self._show_research(root, record)
             shown['look'] = self._show_look(root, record)
@@ -2883,6 +2889,36 @@ class Engine(Jobs, Researching):
                          == 'google'}
                         if said else None),
             'contactSheet': (root / build.SHEET).is_file()}
+
+    def _redo(self, record: dict, gate: str) -> dict | None:
+        """The steps Ask for changes at `gate` runs again, and what they took the last time
+        each ran: the seconds of its last try, and the dollars of its agent's, said only when
+        every one of them reported its cost. None of it when one has never run here."""
+        names = self._reopened(record, gate)
+        again = [step for step in stages.steps(record) if step.name in names
+                 and step.kind != 'gate' and step.name != 'rehearse']
+        if not again:
+            return None
+        kept = record.get('steps') or {}
+        seconds, dollars, recorded = 0.0, [], True
+        for step in again:
+            own = [entry for name, entry in kept.items() if isinstance(entry, dict)
+                   and (name == step.name or name.startswith(step.name + ':'))
+                   and entry.get('tries')]
+            if not own:
+                recorded = False
+                break
+            for entry in own:
+                last = entry['tries'][-1]
+                seconds += float(last.get('seconds') or 0)
+                if step.kind == 'agent':
+                    dollars.append(last.get('dollars'))
+        priced = None if None in dollars else round(sum(dollars), 4)
+        return {'steps': len(again), 'names': [step.label for step in again],
+                'seconds': seconds if recorded else None,
+                'dollars': priced if recorded else None,
+                'says': stops.redone(f'“{again[0].label}”', len(again),
+                                     seconds if recorded else None, priced)}
 
     @staticmethod
     def _still_to_come(record: dict) -> dict:

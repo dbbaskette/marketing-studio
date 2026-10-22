@@ -1257,8 +1257,12 @@ function noteSheet(kind) {
       + 'your note.' : ' What you marked in the list goes with your note.';
   // On a delivered deck with nothing marked, every part is drawn again: it says what that
   // took last time, before it is asked for.
-  const whole = !gate && view.run && view.run.deliver && !marked.length
-    ? ' ' + wholeDeckSays(view.run.deliver.last_build) : '';
+  // At the deck's own stop it is the same: the whole deck, as the last build took. At any
+  // other stop, what is drawn again from it and what that took the last time.
+  const whole = !marked.length && (!gate && view.run && view.run.deliver
+    ? ' ' + wholeDeckSays(view.run.deliver.last_build)
+    : gate && gate.name === 'gate:build' ? ' ' + wholeDeckSays(gate.last_build)
+      : gate && gate.redo ? ' ' + gate.redo.says : '');
   const hint = make('p', 'quiet', spec.hint + (marked.length ? ' The parts of the deck '
     + 'that hold ' + slidesNamed(marked) + ', which you marked, are drawn again.' : '')
     + whole + listed);

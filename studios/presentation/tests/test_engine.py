@@ -117,6 +117,39 @@ class AheadTests(StudioCase):
         self.assertEqual(self.view(plain)['ahead']['next_stop'], 'Approve the outline')
 
 
+class RedoTests(StudioCase):
+    """Ask for changes says, before it is sent, what it draws again and what that took."""
+
+    def test_redo_counts_the_steps_reopen_runs_again(self):
+        root = self.start()
+        self.assertEqual(self.waiting(root), 'gate:outline')
+        record = decks.read_run(root)
+        redo = self.view(root)['gate']['redo']
+        again = [step for step in stages.steps(stages.reopen(record, 'gate:outline'))
+                 if step.kind != 'gate' and step.name != 'rehearse'
+                 and step.name in self.engine._reopened(record, 'gate:outline')]
+        self.assertEqual(redo['names'][0], 'Draft the outline')
+        self.assertEqual(redo['steps'], len(again))
+        # The build has never run here: there is no record of what it all costs.
+        self.assertEqual(redo['says'], 'Drawn again: “Draft the outline” and every step after '
+                         f"it, {len(again)} steps; this computer has no record of what they cost.")
+        # Each step once tried, a minute and ten cents a try: the last tries are summed.
+        for step in again:
+            entry = record['steps'].setdefault(step.name, {'failed': 0, 'tries': []})
+            entry['tries'] = [{'seconds': 60, 'dollars': 0.1 if step.kind == 'agent' else None}]
+        decks.write_run(root, record)
+        priced = sum(step.kind == 'agent' for step in again)
+        self.assertEqual(self.view(root)['gate']['redo']['says'], (
+            f'Drawn again: “Draft the outline” and every step after it, {len(again)} steps. '
+            f'Last time they took {len(again)} minutes and about ${0.1 * priced:.2f}.'))
+        # The research stops keep their own wording: Phase 3 prices them.
+        with mock.patch('studio_core.review_policy.capture',
+                        return_value={'schema': 1, 'level': 'step_by_step'}):
+            searched = self.start(title='Searched deck', research=True)
+        self.assertEqual(self.waiting(searched), 'gate:research-plan')
+        self.assertIsNone(self.view(searched)['gate'].get('redo'))
+
+
 class ScratchTests(StudioCase):
     def test_a_scratch_deck_stops_at_each_gate_and_is_delivered(self):
         root = self.start()

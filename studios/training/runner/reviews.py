@@ -296,6 +296,8 @@ class Reviewing:
         for item in items:
             below = rewritten(root, found.session, found.decks, item['target'])
             item['rewrites'] = [labels[name] for name in labels if name in below]
+            # What a change to it writes again, and what that took, said before it is sent.
+            item['redo'] = self._redo_view(root, record, found, item['target'], below)
         return {'phase': phase, 'label': found.next.step.label, 'items': items,
                 'commits': commits(root, found.session, found.decks, phase),
                 'expected': signature(root, found.session, record, phase)}
