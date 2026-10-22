@@ -168,6 +168,11 @@ CHARSET = re.compile(r'charset\s*=\s*["\']?([\w.:-]+)', re.IGNORECASE)
 META_CHARSET = re.compile(rb'<meta[^>]+charset\s*=\s*["\']?([\w.:-]+)', re.IGNORECASE)
 REDIRECTS = (301, 302, 303, 307, 308)
 TEXT_TYPES = ('application/xhtml+xml', 'application/xml', 'application/json')
+# What a saved source's original is, by its ending, as the checker is told it. The
+# first are text, and are read as they are; a PDF or a Word file is not.
+ORIGINAL_TEXT = {'.md': 'Markdown', '.txt': 'text', '.html': 'a web page',
+                 '.htm': 'a web page', '.raw': 'text'}
+ORIGINAL_FILES = {'.pdf': 'a PDF', '.docx': 'a Word document'}
 # A person's browser sends these; some sites refuse a request without them.
 HEADERS = {
     'User-Agent': ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 '
@@ -204,6 +209,13 @@ def tidy(text: str) -> str:
     text = text.replace('\x00', '').replace('﻿', '')
     lines = [' '.join(line.split()) for line in text.splitlines()]
     return re.sub(r'\n{3,}', '\n\n', '\n'.join(lines)).strip() + '\n'
+
+
+def flag(value) -> bool:
+    """A yes or no an agent sent, which may have arrived as text."""
+    if isinstance(value, str):
+        return value.strip().lower() in ('true', 'yes', '1')
+    return bool(value)
 
 
 def whole(value, label: str) -> int:
@@ -1050,6 +1062,54 @@ class WorkerTools:
             raise Refusal(f'There is no source {source_id}. Saved sources: {known}.')
         return entry, (self.folder / entry['local']).read_text(encoding='utf-8')
 
+    def _original_path(self, entry: dict) -> Path:
+        """Where a saved source's original is in this job's folder. Refused for a path
+        that would leave it."""
+        name = str(entry.get('original') or '')
+        path, here = self.folder / name, self.folder
+        linked = False
+        for piece in Path(name).parts:
+            here = here / piece
+            linked = linked or here.is_symlink()
+        if (not name or Path(name).is_absolute() or '..' in Path(name).parts or linked
+                or self.folder.resolve() not in path.resolve().parents or not path.is_file()):
+            raise Refusal(f"The original of {entry['id']} is not in this job, so it "
+                          'cannot be read. Say so in your review: it is not something '
+                          'the research can correct.')
+        return path
+
+    def _original(self, source_id) -> tuple[dict, str]:
+        """A saved source's original: its entry, and its text after a first line that
+        says what it is, how large, and its SHA-256. A file that is not text is read as
+        the text taken from it, and the first line says so."""
+        entry, capture = self._source(source_id)
+        if not entry.get('original'):
+            raise Refusal(f"{entry['id']} has no original apart from its capture: the "
+                          'capture is the document itself. Read it with read_source '
+                          'without original.')
+        path = self._original_path(entry)
+        data = path.read_bytes()
+        ending = path.suffix.lower()
+        kind = ORIGINAL_TEXT.get(ending) or ORIGINAL_FILES.get(ending) or 'a file'
+        about = (f"{entry['id']} original: {entry['original']}, {kind}, {len(data):,} "
+                 f'bytes, sha256 {hashlib.sha256(data).hexdigest()}')
+        if ending in ORIGINAL_TEXT:
+            return entry, f'[{about}. It is shown as it is.]\n\n' + data.decode('utf-8', 'replace')
+        if ending == '.pdf':
+            try:
+                text = self.pdf(path)
+            except Refusal:
+                text = None
+            if text is not None:
+                return entry, (f'[{about}. A PDF is not text: this is the text read from '
+                               'that file now, with its layout.]\n\n' + text.replace('\x00', ''))
+        if ending in ORIGINAL_FILES:
+            return entry, (f'[{about}. {kind[0].upper()}{kind[1:]} is not text: this is the '
+                           'text taken from that file when it was added, which is also '
+                           'its capture.]\n\n' + capture)
+        raise Refusal(f"The original of {entry['id']} is {kind}, which cannot be shown as "
+                      'text. Read its capture, and say so in your review.')
+
     def _refused(self, problems: list[str], left: int) -> tuple[bool, str]:
         """The answer to a hand-back the checks did not let through."""
         listed = '\n- '.join(problems)
@@ -1114,7 +1174,7 @@ class WorkerTools:
             lines.append(f"- {entry['name']}: {entry['chars']:,} characters"
                          + (f', in {count} parts' if count > 1 else ''))
         saved = [f"- {entry['id']}: \"{entry['title']}\", {entry['chars']:,} characters; capture: {entry['file']}; origin: {entry['url']}"
-                 for entry in self._index()]
+                 + self._original_named(entry) for entry in self._index()]
         if not lines and not saved:
             return True, 'This job has no inputs. Everything you need is in your task.'
         text = 'Inputs, read with read_input:\n' + '\n'.join(lines) if lines else ''
@@ -1122,6 +1182,16 @@ class WorkerTools:
             text += ('\n\n' if text else '') + ('Saved sources, read with read_source and '
                                                'search_source:\n' + '\n'.join(saved))
         return True, text
+
+    def _original_named(self, entry: dict) -> str:
+        """How list_inputs names a supplied source's original, when it has one."""
+        if not entry.get('offered') or not entry.get('original'):
+            return ''
+        try:
+            size = f"{self._original_path(entry).stat().st_size:,} bytes"
+        except (Refusal, OSError):
+            return f"; original: {entry['original']}, which cannot be read"
+        return f"; original: {entry['original']}, {size} (read_source with original=true)"
 
     def _input(self, entry: dict) -> str:
         return (self.folder / entry['file']).read_text(encoding='utf-8')
@@ -1802,22 +1872,35 @@ class WorkerTools:
         return tidy(text), urllib.parse.unquote(target.path.rsplit('/', 1)[-1])
 
     @tool
-    def read_source(self, source_id, offset=0, length=WINDOW):
-        """Part of a saved source, from a character offset."""
-        entry, text = self._source(source_id)
+    def read_source(self, source_id, offset=0, length=WINDOW, original=False):
+        """Part of a saved source, from a character offset. With `original`, part of the
+        document it was taken from, after a line that names that file."""
+        said = ''
+        if flag(original):
+            entry, text = self._original(source_id)
+            said, _, text = text.partition('\n\n')
+            said += '\n'
+        else:
+            entry, text = self._source(source_id)
+        what = entry['id'] + (' original' if said else '')
         start = max(0, whole(offset, 'offset'))
         size = min(max(1, whole(length, 'length')), WINDOW)
         if start >= len(text):
-            raise Refusal(f"{entry['id']} has {len(text):,} characters; there is nothing "
+            raise Refusal(f"{what} has {len(text):,} characters; there is nothing "
                           f'at {start:,}.')
         end = min(len(text), start + size)
-        return True, (f"[{entry['id']}: characters {start:,} to {end:,} of {len(text):,}]"
+        return True, (f"{said}[{what}: characters {start:,} to {end:,} of {len(text):,}]"
                       f'\n\n{text[start:end]}')
 
     @tool
-    def search_source(self, source_id, query):
-        """Where a word or phrase appears in a saved source."""
-        entry, text = self._source(source_id)
+    def search_source(self, source_id, query, original=False):
+        """Where a word or phrase appears in a saved source, or with `original` in the
+        document it was taken from."""
+        if flag(original):
+            entry, text = self._original(source_id)
+            text = text.partition('\n\n')[2]
+        else:
+            entry, text = self._source(source_id)
         wanted = ' '.join(str(query).lower().split())
         if not wanted:
             raise Refusal('Say what to look for.')
@@ -1947,7 +2030,7 @@ def _described(name: str, description: str, properties: dict, required: list[str
                             'required': required}}
 
 
-TEXT, NUMBER = {'type': 'string'}, {'type': 'integer'}
+TEXT, NUMBER, FLAG = {'type': 'string'}, {'type': 'integer'}, {'type': 'boolean'}
 TOOLS = [
     _described('list_inputs', 'List what this job was given to read: its inputs by name, '
                'and any sources already saved.', {}, []),
@@ -2027,11 +2110,15 @@ TOOLS = [
     _described('save_source', 'Fetch a public web page or PDF, keep it, and return the '
                'start of its text. Only sources saved this way count as evidence.',
                {'url': TEXT}, ['url']),
-    _described('read_source', 'Read part of a saved source, from a character offset.',
-               {'source_id': TEXT, 'offset': NUMBER, 'length': NUMBER}, ['source_id']),
+    _described('read_source', 'Read part of a saved source, from a character offset. With '
+               'original true, read the document a supplied source was taken from '
+               '(list_inputs names each one), after a line giving its size and SHA-256.',
+               {'source_id': TEXT, 'offset': NUMBER, 'length': NUMBER, 'original': FLAG},
+               ['source_id']),
     _described('search_source', 'Find a word or phrase in a saved source. Each match comes '
-               'with its offset and the text around it.',
-               {'source_id': TEXT, 'query': TEXT}, ['source_id', 'query']),
+               'with its offset and the text around it. With original true, search the '
+               'document a supplied source was taken from.',
+               {'source_id': TEXT, 'query': TEXT, 'original': FLAG}, ['source_id', 'query']),
     _described('submit_finding', 'Hand back the finding for your research question. Each '
                'quote must be copied exactly from a saved source; its place is worked out '
                'for you.',

@@ -206,7 +206,9 @@ def describe(tool: str, given: dict) -> str:
         'submit_artifact': f"Handing back {given.get('name', 'a draft')}",
         'submit_review': 'Writing its own notes on the draft',
         'save_source': f"Saving a source: {given.get('url', '')}",
-        'read_source': f"Reading saved source {given.get('source_id', '')}",
+        'read_source': (f"Reading the original of saved source {given.get('source_id', '')}"
+                        if worker_tools.flag(given.get('original')) else
+                        f"Reading saved source {given.get('source_id', '')}"),
         'search_source': (f"Searching {given.get('source_id', 'a source')} for "
                           f"\"{given.get('query', '')}\""),
         'submit_finding': f"Handing back the finding for {given.get('item', 'its question')}",

@@ -520,9 +520,15 @@ def native(engine, root, run, task, sources, product):
                           worker=payload['worker'], task={key: task[key] for key in TASK_FIELDS})
         doing = ('Investigating sources and writing the report' if phase == 'author'
                  else 'Independently checking the research and brief')
+        told = ('' if phase == 'author' else
+                ' list_inputs names the original of each supplied source that has one: read it '
+                'with read_source(source_id, original=true), as well as its capture, before you '
+                'attest read_original. If a tool cannot serve an original, set read_original to '
+                'false and give the tool\'s answer as its access_error.')
         work = Work(guidance + '\n\nUse only the studio tools; the parent runs helper commands. '
                     'Read list_inputs and sources; return the requested JSON using submit_artifact '
-                    'under the name research-result. Keep public queries generic and nonconfidential.',
+                    'under the name research-result. Keep public queries generic and nonconfidential.'
+                    + told,
                     json.dumps(payload), 'research' if fetch else 'write',
                     {'inputs': {'research-task': json.dumps(payload)}, 'sources': offered,
                      'fetch': fetch, 'ask': False,
