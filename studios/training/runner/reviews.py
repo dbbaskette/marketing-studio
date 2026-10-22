@@ -422,6 +422,8 @@ class Reviewing:
                 for ask in asked:
                     self._request(root, record, decisions, ask['target'], ask['note'])
             self._store(root, record)
+            if decision != 'approve' or not again:
+                self._remember_decision(root, record, view['label'].removeprefix('Review '), decision)
             self._commit(root, 'draw the looks again for the direction review'
                          if decision == 'approve' and again else
                          'approve the combined review' if decision == 'approve'

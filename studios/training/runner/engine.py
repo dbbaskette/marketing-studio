@@ -1193,6 +1193,14 @@ class Engine(Reviewing):
                         self._policy_accept(root, step.step)
                     continue
                 if self._resting(record) or step.kind not in (*WORK, 'deck'):
+                    if (record.get('last_decision') and not record.get('last_decision_stop')
+                            and (record.get('question') or record.get('problem')
+                                 or step.kind in ('wait', 'outline', 'look', 'review', 'stuck', 'documents', 'done'))):
+                        with self.files:
+                            record = self._load(root)
+                            record['last_decision_stop'] = home.now()
+                            self._store(root, record)
+                            self._commit(root, 'record reaching the next stop after a decision')
                     if record.get('halt_after') is not None and not self._resting(record):
                         self._wait_arrived(root)  # a review or a gate: the wait asked for
                     return
@@ -3457,6 +3465,14 @@ class Engine(Reviewing):
         if pending:
             raise WorkspaceError(REVIEW_DECIDES.format(name=pending['name']))
 
+    def _remember_decision(self, root, record, label, decision):
+        """Keep the action and the resulting next step until another stop is reached."""
+        self._store(root, record)
+        record['last_decision'] = {'label': label, 'decision': decision, 'at': home.now(),
+                                   'next': self.ahead(root)[1]}
+        record.pop('last_decision_stop', None)
+        self._store(root, record)
+
     def decided(self, path, outcome: dict) -> bool:
         """Commit a decision the page has just recorded. False when no run is driving the
         training, so there is nothing to commit or wake.
@@ -3493,6 +3509,8 @@ class Engine(Reviewing):
             ahead = found.next.step
             if found.next.kind in WORK and ahead.stage != found.session['stage']:
                 workspace.checkpoint(root, stage=ahead.stage, level=self._level(ahead))
+            if target and outcome.get('decision') in ('approve', 'revise', 'accept'):
+                self._remember_decision(root, record, workspace.label(target), outcome['decision'])
             self._commit(root, outcome.get('said') or 'a decision was made on the page')
         return True
 
@@ -4307,6 +4325,8 @@ class Engine(Reviewing):
             outline['redo'] = self._redo_view(root, record, found, 'outline:' + (level or ''))
         return {
             'state': state, 'sentence': sentence, 'agent': record['agent'],
+            'decided': (record.get('last_decision') if state == 'working' and not asked
+                        and not problem and not record.get('last_decision_stop') else None),
             'mine': mine, 'driver': who, 'queue': self._queue(run) if mine else None,
             'notice': self._notice(root), 'taken': None if mine else team.taken(root),
             'last_shared': last, 'kept': self._set_aside(root),
@@ -4342,8 +4362,16 @@ class Engine(Reviewing):
             'controls': self._controls(record, found, state, mine),
             'finished': ({'ready': bool(report['ready']),
                           'limitations': list(report['limitations']),
-                          'blocking': list(report['blocking']), 'index': report['file']}
+                          'blocking': list(report['blocking']), 'index': report['file'],
+                          'yoodli': self._yoodli(root, found.session)}
                          if report and not resting else None)}
+
+    @staticmethod
+    def _yoodli(root, session):
+        return [{'artifact': name, 'label': workspace.label(name),
+                 'text': review_layout.contained(root, workspace.artifact(root, session, name)['file']).read_text(encoding='utf-8')}
+                for name in workspace.artifact_names(root, session) if name.startswith('yoodli:')
+                and review_layout.contained(root, workspace.artifact(root, session, name)['file']).is_file()]
 
     def redo(self, path, name: str) -> dict | None:
         """What Ask for changes at `name`'s gate writes again: the file and everything

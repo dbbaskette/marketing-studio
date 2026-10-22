@@ -47,7 +47,7 @@ POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/a
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
          '/api/note', '/api/review-level')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
-RUN_KEYS = ['agent', 'ahead', 'clash', 'controls', 'copies', 'deck', 'deck_left', 'documents', 'driver', 'effort',
+RUN_KEYS = ['agent', 'ahead', 'clash', 'controls', 'decided', 'copies', 'deck', 'deck_left', 'documents', 'driver', 'effort',
             'finished', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
             'question', 'queue', 'redesign', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
             'workers']
@@ -2595,3 +2595,43 @@ class PullCopyTests(PageCase):
         self.workers.then('document', building)
         self.decide(root, 'blueprint@101')
         self.assertEqual(refused, [{'error': 'It is being worked on. Bring the Doc\'s changes in once it stops.'}])
+
+
+class DecisionMessageTests(PageCase):
+    def test_combined_approval_persists_the_next_step_and_done_yoodli_fields(self):
+        path = self.started(review_level='balanced', yoodli=True)
+        root = Path(path)
+        self.decide(root, 'research-plan')
+        working = []
+
+        def build(tools, job):
+            working.append(self.get('run', path=path)['decided'])
+            self.workers.brief(tools, job)
+
+        self.workers.then('brief', build)
+        run = self.get('run', path=path)
+        run = self.post('review', {'path': path, 'expected': run['review']['expected'], 'decision': 'approve'})
+        self.assertEqual(working[0]['label'], 'the first drafts')
+        self.assertIsNone(run['decided'])
+        run = self.post('review', {'path': path, 'expected': run['review']['expected'], 'decision': 'approve'})
+        self.assertEqual(run['finished']['yoodli'][0]['artifact'], 'yoodli:main')
+        self.assertIn('Roleplay name', run['finished']['yoodli'][0]['text'])
+
+    def test_a_decision_is_said_until_the_next_stop(self):
+        path = self.started()
+        root = Path(path)
+        self.to_gate(root, 'document')
+        working = []
+
+        def build(tools, job):
+            working.append(self.get('run', path=path)['decided'])
+            self.workers.brief(tools, job)
+
+        self.workers.then('brief', build)
+        self.decide(root, 'document')
+        self.assertEqual(working[0]['label'], 'the learner guide')
+        self.assertEqual(working[0]['decision'], 'approve')
+        self.assertIn('brief', working[0]['next'])
+        self.assertIsNone(self.get('run', path=path)['decided'])
+        record = self.engine._load(root)
+        self.assertEqual(record['last_decision']['label'], 'the learner guide')

@@ -450,6 +450,10 @@ function ago(then) {
     { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+function clock(stamp) {
+  return new Date(stamp).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+}
+
 function when(stamp) {
   const then = Date.parse(stamp);
   if (Number.isNaN(then)) return make('span', 'quiet', 'not recorded');
@@ -2205,9 +2209,8 @@ function yoodliFields(text) {
 
 // A Yoodli scenario at its gate offers each field to copy, ready to paste into the Builder.
 function yoodliCopies(found) {
-  const shown = found.document || {};
-  if (!String(found.artifact || '').startsWith('yoodli:') || shown.kind !== 'markdown') return null;
-  const fields = yoodliFields(shown.text);
+  if (!String(found.artifact || '').startsWith('yoodli:')) return null;
+  const fields = yoodliFields(found.text || '');
   if (!fields.length) return null;
   const bar = make('div', 'bar');
   fields.forEach((field, index) => add(bar, copyButton('Copy ' + field.name,
@@ -2509,7 +2512,7 @@ function paintGate(fresh) {
   place({ title: found.label, name: found.label + ' · ' + found.title, above, back: true,
     actions: gateActions(found) },
   [intro, theirs ? readNote(found.path) : null, inChat(found), standing(found),
-    yoodliCopies(found),
+    yoodliCopies({artifact: found.artifact, text: found.document?.text}),
     add(make('div', found.beside ? 'gate gate-pair'
       : 'gate'), reading(found), found.beside ? besidePart(found) : null, aside)],
   fresh);
@@ -4748,7 +4751,15 @@ function aheadLine(run) {
 }
 
 function runIntro(run, training, promised) {
-  const node = add(make('div', 'intro'), nowLine(run), state(...runStanding(run)));
+  const node = make('div', 'intro');
+  if (run.decided) {
+    const last = run.decided;
+    const line = make('p', 'quiet', (last.decision === 'revise' ? 'You asked for changes to '
+      : 'You approved ') + last.label + ' at ' + clock(last.at) + '. ' + last.next);
+    line.setAttribute('role', 'status');
+    add(node, line);
+  }
+  add(node, nowLine(run), state(...runStanding(run)));
   if (list(training.stages).length) add(node, beads(training.stages, false));
   add(node, aheadLine(run));
   add(node, make('p', 'lede run-says', run.sentence));
@@ -5518,6 +5529,8 @@ function controlsPart(run) {
 function finishedPart(run, lead) {
   const found = run.finished;
   const limits = list(found.limitations);
+  const yoodli = list(found.yoodli).map((item) => add(make('div', 'card-part'),
+    make('h3', 'row-title', item.label || 'Yoodli scenario'), yoodliCopies(item)));
   // The index is one more file of the training, read on a screen of its own.
   const open = found.index && !found.ready ? capsule('Open the index', '',
     () => show('index', { path: view.path, artifact: found.index }), 'index') : null;
@@ -5529,7 +5542,7 @@ function finishedPart(run, lead) {
     return callout('', make('h2', 'aside-title', 'Ready to use'),
       ...(limited.length ? limited : [make('p', '', 'Nothing was left out or limited.')]),
       found.index ? make('p', 'quiet', 'Open the index for the materials and how to use them, '
-        + 'or open an individual material below.') : null);
+        + 'or open an individual material below.') : null, ...yoodli);
   }
   const blocking = list(found.blocking);
   const go = capsule('See what is in the way', lead ? 'filled' : '',
@@ -5539,7 +5552,7 @@ function finishedPart(run, lead) {
       + ' in the way:' : 'Something is in the way, and it was not said what.'),
     blocking.length ? bullets(blocking, 'reasons') : null,
     add(make('p', ''), make('strong', '', 'What was kept: '), 'everything that was made.'),
-    ...limited, indexed, add(make('div', 'bar'), go, open));
+    ...limited, ...yoodli, indexed, add(make('div', 'bar'), go, open));
 }
 
 async function steer(action, pressed) {
@@ -6052,7 +6065,7 @@ function combinedReview(run) {
   const problem = problemLine();
   problem.id = 'combined-problem';
   add(node, problem);
-  const material = (item) => /^(document|brief|deck)(@|$)|^scenario:/.test(item.target);
+  const material = (item) => /^(document|brief|deck)(@|$)|^(scenario|yoodli):/.test(item.target);
   const items = [...review.items];
   if (review.phase === 'final') items.sort((a, b) => Number(material(b)) - Number(material(a)));
   const firstMaterial = items.find(material);
@@ -6107,6 +6120,7 @@ function combinedReview(run) {
       if (!list(item.deck_view.slides).length) add(part, make('p', 'fix', 'Slide pictures are unavailable on this computer. Read the saved deck before approving.'));
       add(part, capsule('Open the saved deck and its review', '', () => show('gate', {path: view.path, artifact: item.target}), 'read-' + item.target));
     }
+    if (item.target.startsWith('yoodli:')) add(part, yoodliCopies({artifact: item.target, text: item.text}));
     if (review.phase === 'final' && /^(document|brief|deck)(@|$)|^(scenario|yoodli):/.test(item.target)) {
       add(part, capsule('Download ' + lower(item.label), 'quiet', (event) =>
         downloadFile(view.path, {artifact: item.target}, item.label, event.currentTarget),
@@ -6198,7 +6212,7 @@ function paintRun(fresh) {
   mark: [title, training.levels, run.state, lead, offered, waiting, outline
     && run.outline.level, theirs, driver, Boolean(run.outline), run.review,
     run.finished] }, [
-    ['intro', [run.state, run.sentence, training.stages, promised, view.steered,
+    ['intro', [run.state, run.sentence, run.decided, training.stages, promised, view.steered,
       nextGate(run), Boolean(run.problem), runStanding(run), supplying, outline, theirs,
       run.queue, run.steps, run.workers, run.spent],
     () => runIntro(run, training, promised)],

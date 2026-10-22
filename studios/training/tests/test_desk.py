@@ -2593,6 +2593,35 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     """What the runner adds to the page: set-up, a new training, a run, and running work in
     every list. Each screen is driven through its own controls."""
 
+    def test_yoodli_fields_copy_from_the_final_review_and_done(self):
+        self.started()
+        text = test_cli.example('yoodli.md')
+        waiting = a_run('waiting', 'Review the finished materials.')
+        waiting['body']['review'] = {'phase': 'final', 'label': 'Review the finished materials',
+            'expected': 'v1', 'items': [{'target': 'yoodli:main', 'label': 'The Yoodli scenario',
+                                       'text': text, 'rewrites': []}]}
+        done = a_run('done', 'Ready.', finished={'ready': True, 'index': 'README.md',
+            'limitations': [], 'blocking': [], 'yoodli': [{'artifact': 'yoodli:main', 'text': text}]})
+        result = self.run_page(self.answers(**{
+            'GET /api/trainings': [self.listed('waiting')],
+            'GET /api/training': [self.detail('waiting', '')], 'GET /api/run': [waiting],
+            'POST /api/review': [done]}), [{'click': 'Open Rolling restarts'},
+            {'snapshot': 'review'}, {'click': 'Copy Roleplay name'},
+            {'click': 'Approve the finished materials'}, {'click': 'Approve'}, {'snapshot': 'done'}])
+        for name in ('review', 'done'):
+            self.assertIn('Copy into Yoodli', result['snapshots'][name]['text'])
+            self.assertIn('Copy Roleplay name', result['snapshots'][name]['buttons'])
+
+    def test_the_decision_message_stays_above_the_working_line(self):
+        self.started()
+        run = a_run('working', 'Writing the brief.')
+        run['body']['decided'] = {'label': 'the learner guide', 'decision': 'approve',
+            'at': '2026-10-22T14:42:00Z', 'next': 'Writing the brief.'}
+        result = self.run_page(self.answers(**{'GET /api/trainings': [self.listed('working')],
+            'GET /api/training': [self.detail('working', '')], 'GET /api/run': [run]}),
+            [{'click': 'Open Rolling restarts'}, {'snapshot': 'working'}])
+        self.assertIn('You approved the learner guide at', result['snapshots']['working']['text'])
+
     def test_grouped_build_controls_say_when_the_final_review_waits(self):
         self.started()
         run = a_run('working', 'Drawing the deck.', controls={
