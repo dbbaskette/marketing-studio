@@ -350,6 +350,24 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('answered by the sources', text)
         self.assertNotIn('0 to look at', text)
 
+    def test_the_direction_review_triages_the_research(self):
+        from studio_core import review_policy
+        from synthesis_fixture import research_stop
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
+            path = self.started(research=True)
+        research_stop(Path(path) / 'research')
+        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
+        self.engine._store(Path(path), record)
+        result = self.deck_screen(path, [{'snapshot': 'direction'}, {'click': 'Leave out “Capacity condition”'},
+                                        {'snapshot': 'left'}, {'click': 'Redraw the direction'}],
+                                  **{'POST /api/decide': [ok(self.run_of(path))]})
+        self.assertIn('Prioritized handoff', result['snapshots']['direction']['text'])
+        self.assertNotIn('Research findings', result['snapshots']['direction']['text'])
+        self.assertIn('Leaving findings out redraws the outline and the look samples without researching again.', result['snapshots']['left']['text'])
+        body = self.posts(result)[0][1]
+        self.assertEqual(body['decision'], 'changes')
+        self.assertEqual(body['extra'], {'direction_target': 'gate:research', 'left_out': ['instance-min--capacity']})
+
     def test_the_start_step_says_where_it_stops_and_folds_the_options(self):
         from studio_core import review_policy
         self.assertIn(self.get('setup')['review_level'], review_policy.LEVELS)

@@ -1860,6 +1860,9 @@ class Engine(Jobs, Researching):
         if not after and gate_state(record, gate) != 'waiting':
             raise WorkspaceError(NOT_WAITING.format(it=it))
         marked = marks.check(gate, decision, extra, self._marked_ids(root, gate, extra))
+        if combined and target == 'gate:research' and decision == 'changes' and not note and set(marked) == {'left_out'}:
+            self._leave_out(root, record, marked['left_out'], at, by)
+            return 'leave research findings out of the direction', ()
         if gate == 'gate:research' and 'left_out' not in marked:
             out = (record.get('research') or {}).get('left_out') or ()
             for ident in marked.get('again') or ():
@@ -1953,6 +1956,26 @@ class Engine(Jobs, Researching):
         self._store(root, record)
         return ('make it in ' + decks.brand_words(record['form']) if rebrand
                 else f'ask for changes to the {it}'), ()
+
+    def _leave_out(self, root: Path, record: dict, ids, at, by) -> None:
+        record['research'] = {**(record.get('research') or {}), 'left_out': list(ids)}
+        if not record.get('research_contract'):
+            write_atomic(root / REPORT, self._report_text(root, record))
+        record.update(stages.reopen(record, 'gate:outline'))
+        for step in self._reopened(record, 'gate:outline'):
+            self._fresh(record, step)
+        record['gates']['gate:research'] = {**(record['gates'].get('gate:research') or {}),
+                                            'state': 'approved', 'at': at, 'by': by}
+        self._store(root, record)
+
+    @staticmethod
+    def _leave_out_price(record):
+        tried = attempts(record, 'outline') + attempts(record, 'look-preview')
+        dollars = [a['dollars'] for a in tried if a.get('dollars') is not None]
+        cost = research_contract.took(sum(a.get('seconds') or 0 for a in tried),
+                                      sum(dollars) if dollars else None)
+        return {'words': 'Leaving findings out redraws the outline and the look samples without researching again.'
+                         + (f' They last took {cost}.' if cost else '')}
 
     def _reclassify(self, root: Path, record: dict, extra: dict, note: str | None, at: str,
                     by) -> str:
@@ -2673,6 +2696,7 @@ class Engine(Jobs, Researching):
             shown['redo'] = self._redo(record, nxt.name)
         if nxt.name == 'gate:outline' and review_policy.level(record) == 'balanced':
             shown['research'] = self._show_research(root, record)
+            shown['leave_out_price'] = self._leave_out_price(record)
             shown['look'] = self._show_look(root, record)
             shown['label'] = 'Review the direction'
             shown['expected'] = self._direction_signature(root, record)

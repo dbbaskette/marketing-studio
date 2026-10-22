@@ -3924,7 +3924,7 @@ function planRow(gate, item, readonly) {
 // What the research found: the findings that need a look first, as cards, and the answered
 // ones a line each that opens into the same card. Each can be researched again or left out,
 // and a question added.
-function researchPanel(gate, readonly) {
+function researchPanel(gate, readonly, direction = false) {
   const node = card('What the research found');
   const items = list(gate.items);
   if (gate.research) {
@@ -3942,7 +3942,7 @@ function researchPanel(gate, readonly) {
     findings.id = 'findings';
     add(node, findings);
     paintFindings(gate, findings, readonly);
-    if (!readonly) add(node, reviewBar(gate));
+    if (!readonly && !direction) add(node, reviewBar(gate));
     return add(node, fullText('Read the full report', 'The research report', found.report, 'report-text'),
       fullText('The evidence and the check’s notes', 'The evidence', found.evidence, 'evidence-text'), ...gateSaid(gate));
   }
@@ -4274,7 +4274,11 @@ function sayingLine(gate, readonly) {
 function outlinePanel(gate, readonly) {
   const node = card(gate.look ? 'Review the direction' : 'The outline');
   add(node, sayingLine(gate, readonly), classifyLine(gate, readonly));
-  if (gate.research?.text) add(node, documentPart('Research findings', gate.research.text));
+  if (gate.research?.text) {
+    const research = { ...gate.research, name: 'gate:research', round: gate.round };
+    add(node, researchPanel(research, readonly, true),
+      gate.leave_out_price ? make('p', 'quiet', gate.leave_out_price.words) : null);
+  }
   if (gate.look) {
     add(node, lookPanel(gate.look, readonly || !gate.look.offered, chosenFor(gate),
       gate.look.offered ? gate : null));
@@ -5080,6 +5084,13 @@ function reviewOf(gate) {
       approve: true, extra: { left_out: marks.left_out }, tally };
     }
     return { label: 'Approve', approve: true, extra: null, tally };
+  }
+  if (gate.name === 'gate:outline' && gate.look && gate.research) {
+    const research = { ...gate.research, name: 'gate:research', round: gate.round };
+    const ids = leftOut(research);
+    if (movedOut(research, ids)) return { label: 'Redraw the direction', approve: false,
+      extra: { direction_target: 'gate:research', left_out: ids.slice() },
+      tally: count(ids.length, 'finding left out', 'findings left out') };
   }
   const slides = sized(marks.slides);
   const edited = held.edited ? { edited: held.work } : null;
