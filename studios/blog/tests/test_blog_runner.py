@@ -3397,3 +3397,72 @@ class ApplyReviewTests(RunnerCase):
         _, _, run = runner.load(self.root, found['id'])
         self.assertTrue(run['stages']['draft']['apply_review'])
         self.assertIn('Keep the author', runner.job(self.root, found['id'])[1]['changes'])
+
+
+class GateCheckTests(RunnerCase):
+    def drafted(self, text='# Draft\n\nSynthetic writing.', **settings):
+        found = self.approve(self.submit(self.create(page=True, **settings), page=True), page=True)
+        return self.submit(found, text, page=True)
+
+    def test_checks_show_what_lint_found(self):
+        guide, rules = self.base / 'voice.md', self.base / 'rules.json'
+        guide.write_text('Short direct sentences.')
+        rules.write_text(json.dumps({'no_em_dashes': True}))
+        voice = self.command(
+            'profile',
+            'create',
+            '--name',
+            'Avery',
+            '--guide-file',
+            str(guide),
+            '--rules-file',
+            str(rules),
+            '--status',
+            'confirmed',
+        )
+        found = self.drafted('# Draft\n\nTwo — pauses — here.', profile=voice['id'])
+        shown = runner.document(self.root, found['id'], 'draft')
+        row = next(row for row in shown['checks'] if row['label'] == '2 em dashes')
+        self.assertFalse(row['passed'])
+        self.assertIn('line 3: —', row['detail'])
+
+    def test_old_preservation_notes_are_read_as_a_check(self):
+        found = self.drafted()
+        directory, record, run = runner.load(self.root, found['id'])
+        run['stages']['draft']['notes'] = 'Useful note.\nPreservation check: ' + json.dumps(
+            {'needs_review': True, 'changes': {'numbers': {'before': ['12'], 'after': ['13']}}}
+        )
+        runner.save(self.root, directory, record, run, 'Synthetic old note')
+        shown = runner.document(self.root, found['id'], 'draft')
+        self.assertEqual(shown['notes'], 'Useful note.')
+        self.assertTrue(
+            any(row['label'] == 'Numbers, links or quotations changed' for row in shown['checks'])
+        )
+
+    def test_preservation_is_data_and_survives_into_the_review(self):
+        found = self.approve(self.drafted('# Draft\n\nKeep 12 units.'), page=True)
+        found = runner.decide(
+            self.root,
+            found['id'],
+            found['expected'],
+            'changes',
+            'Correct the number.',
+            page=True,
+            target='draft',
+        )
+        found = self.submit(found, '# Draft\n\nKeep 13 units.', page=True)
+        _, _, run = runner.load(self.root, found['id'])
+        self.assertTrue(run['stages']['draft']['preservation']['needs_review'])
+        self.assertNotIn('Preservation check:', run['stages']['draft']['notes'])
+        found = self.submit(self.approve(found, page=True), page=True)
+        rows = runner.document(self.root, found['id'], 'review')['checks']
+        self.assertTrue(any(row['label'] == 'Numbers, links or quotations changed' for row in rows))
+
+    def test_no_always_true_rows(self):
+        found = self.submit(self.create(page=True), page=True)
+        labels = [
+            row['label'] for row in runner.document(self.root, found['id'], 'outline')['checks']
+        ]
+        self.assertNotIn('Saved document contains readable text', labels)
+        self.assertNotIn('Document matches its submitted version and selected inputs', labels)
+        self.assertEqual(labels, ['No automatic checks apply to Outline.'])
