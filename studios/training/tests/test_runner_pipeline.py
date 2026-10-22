@@ -627,6 +627,13 @@ class WorkTests(StudioCase):
         self.root = pipeline.create(self.space, pipeline.check_form(
             {**FORM, 'levels': ['101', '301'], 'brief_kind': 'competitive'}))
 
+    def test_a_contract_plan_job_uses_the_one_investigation_brief(self):
+        found = pipeline.survey(self.root)
+        for synthesis, brief in ((True, 'research-plan'), (False, 'research-plan-queue')):
+            work = pipeline.plan_work(self.root, found, None, None, [], synthesis=synthesis)
+            self.assertEqual(work.guidance, pipeline.briefs.guidance(brief))
+            self.assertEqual(work.prepared['artifacts']['research-plan'].get('most'), 8 if synthesis else None)
+
     def test_a_drafting_job_is_told_why_it_is_being_done_again(self):
         found = pipeline.survey(self.root)
         step = found.next.step

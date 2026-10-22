@@ -1833,3 +1833,10 @@ class PreviewPoolTests(unittest.TestCase):
         self.assertTrue(worker_tools.replaced(refused))
         other = slides_tool.Refused(['LibreOffice is not installed.'])
         self.assertFalse(worker_tools.replaced(other))
+
+
+class SynthesisPlanLimitTests(unittest.TestCase):
+    def test_a_synthesis_plan_holds_at_most_eight_questions(self):
+        text = json.dumps({'topic': 'T', 'items': [dict(id=f'q-{n}', question='Why?') for n in range(9)]})
+        self.assertIn('"items" must hold 1 to 8 questions.', worker_tools.check_plan(text, {'scope': 'public-web', 'most': 8})[0])
+        self.assertEqual(worker_tools.check_plan(text, {'scope': 'public-web'})[0], [])

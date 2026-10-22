@@ -1283,7 +1283,7 @@ def _titles(sources) -> str:
 
 
 def plan_work(root: Path, found: Survey, request: dict | None, error: str | None,
-              answered: list[dict], sources=None) -> Work:
+              answered: list[dict], sources=None, synthesis=False, asked=()) -> Work:
     """The job of drafting the research questions. `sources` is what `documents.sources`
     returned, for a training researched from documents the person supplied: the worker is
     told what they are, by title, and the plan it hands back lists them."""
@@ -1308,7 +1308,10 @@ def plan_work(root: Path, found: Survey, request: dict | None, error: str | None
                 'artifacts': {name: {'kind': 'research-plan', 'scope': scope,
                                      'sources': listed}},
                 'ask': _can_ask(answered)}
-    return Work(briefs.guidance('research-plan'), task, 'write', prepared, name)
+    if synthesis:
+        from runner import worker_tools
+        prepared['artifacts'][name]['most'] = worker_tools.PLAN_MOST
+    return Work(briefs.guidance('research-plan' if synthesis else 'research-plan-queue'), task, 'write', prepared, name)
 
 
 def question_work(root: Path, found: Survey, ident: str, request: dict | None,
@@ -1946,14 +1949,14 @@ NAMED = ('document', 'brief', 'scenario')   # the writers a brand's naming rules
 
 def work(root: Path, found: Survey, step: Step, request: dict | None, error: str | None,
          answered: list[dict], sources=None, naming: str | None = None,
-         designed: bool = False, icons: bool = False) -> Work:
+         designed: bool = False, icons: bool = False, synthesis=False, asked=()) -> Work:
     """The job a drafting step gives a worker. `sources` is what `documents.sources`
     returned, which only the research questions are drafted from. `naming` is how the
     training's brand names the organisation and its products, which the writers of the
     guide, the brief and the scenarios are given. `designed` says the writer of what a deck
     says proposes its design too, and `icons` that it names each icon by its library ID."""
     if step.id == 'research-plan':
-        return plan_work(root, found, request, error, answered, sources)
+        return plan_work(root, found, request, error, answered, sources, synthesis=synthesis, asked=asked)
     if bare(step.id) == 'deck-outline':
         return outline_work(root, found, step, request, error, answered, designed, icons)
     if bare(step.id) == 'deck-review':

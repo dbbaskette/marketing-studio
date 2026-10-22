@@ -551,3 +551,15 @@ class StandInTests(DeckCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SynthesisBriefTests(DeckCase):
+    def test_a_contract_plan_job_uses_the_one_investigation_brief(self):
+        from runner.engine import Engine
+        from runner import briefs
+        engine = Engine()
+        for synthesis, brief in ((True, 'research-plan'), (False, 'research-plan-queue')):
+            record = {'form': {}, **({'research_contract': {'schema': 2}} if synthesis else {})}
+            work = engine._plan_work(self.root, record, None, None)
+            self.assertEqual(work.guidance, briefs.guidance(brief))
+            self.assertEqual(work.prepared['artifacts']['research-plan'].get('most'), 8 if synthesis else None)

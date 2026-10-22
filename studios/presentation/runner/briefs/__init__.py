@@ -31,7 +31,7 @@ from __future__ import annotations
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-KINDS = ('classify', 'research-plan', 'research-question', 'outline-brief', 'outline-material',
+KINDS = ('research-plan-queue', 'classify', 'research-plan', 'research-question', 'outline-brief', 'outline-material',
          'outline-spec', 'extract', 'restructure', 'section', 'section-repair',
          'review', 'patch', 'change-request')
 LEVELS = ('brand-only', 'polish', 'redesign', 'rework')

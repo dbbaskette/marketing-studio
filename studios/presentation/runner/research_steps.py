@@ -497,7 +497,10 @@ class Researching:
                     'artifacts': {name: {'kind': 'research-plan', 'scope': 'public-web',
                                          'sources': listed}},
                     'ask': True}
-        return Work(briefs.guidance('research-plan'), task, 'write', prepared, name)
+        synthesis = bool(record.get('research_contract'))
+        if synthesis:
+            prepared['artifacts'][name]['most'] = worker_tools.PLAN_MOST
+        return Work(briefs.guidance('research-plan' if synthesis else 'research-plan-queue'), task, 'write', prepared, name)
 
     @staticmethod
     def _keep_plan(root: Path, record: dict, text: str) -> None:

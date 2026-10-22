@@ -3136,7 +3136,8 @@ class Engine(Reviewing):
                   if it.stage in pipeline.NAMED and it.kind == 'agent' else None)
         work = pipeline.work(root, found, it, step.request, last_error(record, it.id),
                              record['answers'].get(it.id, []), sources, naming, designed,
-                             bool(designed) and self._has('design-icon-ids'))
+                             bool(designed) and self._has('design-icon-ids'),
+                             synthesis=bool(record.get('research_contract')))
         outcome, handed, started_at, folder = self._job(root, run, it, work)
         if outcome.reason == 'stopped':
             return self._stopped(root, it, outcome, started_at)

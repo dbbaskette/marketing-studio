@@ -43,7 +43,7 @@ def own(text: str) -> str:
 
 class BriefTests(JobCase):
     def test_there_is_a_brief_for_each_job_and_no_other(self):
-        self.assertEqual(briefs.JOBS, ('research-plan', 'research-question', 'blueprint',
+        self.assertEqual(briefs.JOBS, ('research-plan', 'research-plan-queue', 'research-question', 'blueprint',
                                        'document', 'brief', 'scenario', 'yoodli',
                                        'deck-outline', 'deck-section', 'deck-review'))
         self.assertEqual(sorted(path.name for path in briefs.HERE.glob('*.md')),
@@ -53,7 +53,7 @@ class BriefTests(JobCase):
                           'deck-review-design.md', 'deck-review.md',
                           'deck-section-assets.md', 'deck-section-design.md',
                           'deck-section.md',
-                          'document.md', 'level.md', 'naming.md', 'research-plan.md',
+                          'document.md', 'level.md', 'naming.md', 'research-plan-queue.md', 'research-plan.md',
                           'research-question.md', 'scenario.md', 'yoodli.md'])
         with self.assertRaisesRegex(WorkspaceError, 'There is a brief for: research-plan'):
             briefs.guidance('deck')
@@ -251,10 +251,7 @@ class BriefTests(JobCase):
                                                         'scope': 'public-web'}})
         self.assertEqual(self.ok(tools.submit_artifact('research-plan', shown)),
                          'Accepted: research-plan.')
-        for area in ('Facts', 'Misconceptions', 'Prerequisites', 'Objections', 'Examples',
-                     'Comparison'):
-            self.assertIn(f'**{area}', EVERY['research-plan'])
-        self.assertIn('at most 30 questions', EVERY['research-plan'])
+        self.assertIn('at most 8 questions', EVERY['research-plan'])
 
     def test_the_research_brief_states_the_rules_the_tools_enforce(self):
         text = EVERY['research-question']
@@ -269,3 +266,12 @@ class BriefTests(JobCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SynthesisBriefTests(unittest.TestCase):
+    def test_the_synthesis_plan_brief_speaks_of_one_investigation(self):
+        text = briefs.guidance('research-plan')
+        self.assertIn('Ask at most 8 questions.', text)
+        self.assertIn('One investigation answers them together', text)
+        self.assertNotIn('researched on its own', text)
+        self.assertNotIn('30', text)

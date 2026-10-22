@@ -76,3 +76,12 @@ class BriefTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SynthesisBriefTests(unittest.TestCase):
+    def test_the_synthesis_plan_brief_speaks_of_one_investigation(self):
+        text = briefs.guidance('research-plan')
+        self.assertIn('Ask at most 8 questions.', text)
+        self.assertIn('One investigation answers them together', text)
+        self.assertNotIn('researched on its own', text)
+        self.assertNotIn('30', text)
