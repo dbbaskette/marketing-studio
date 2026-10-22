@@ -445,7 +445,7 @@ class RetryTests(StudioCase):
         view = self.view(root)
         self.assertEqual((view['state'], len(self.workers.jobs)), ('failed', 1))
         self.assertEqual(view['problem']['what'], 'scripted could not be used. Claude Code is '
-                         'not installed on this computer.')
+                         'not installed on this computer. Check this computer, on the Status screen, says what it needs.')
         self.assertEqual(self.engine.act(root, 'retry')['state'], 'waiting')
 
     def test_a_worker_that_runs_out_of_time_is_tried_again(self):
@@ -909,7 +909,7 @@ class ResearchTests(StudioCase):
         view = self.view(root)
         self.assertEqual((view['state'], view['problem']['what'],
                           len(self.workers.of('question'))),
-                         ('failed', 'scripted could not be used. Not signed in.', 2))
+                         ('failed', 'scripted could not be used. Not signed in. Check this computer, on the Status screen, says what it needs.', 2))
         self.assertEqual(self.engine.act(root, 'retry')['state'], 'waiting')
         self.assertEqual(len(self.workers.of('question')), 5)
 
@@ -1071,8 +1071,9 @@ class LimitTests(StudioCase):
             'stopped', 'This training has spent $1.20. It stops and asks each time it has '
             'spent another $1.00.', 1.2))
         self.assertEqual(view['problem'], {
-            'what': view['sentence'], 'kept': 'Everything made so far is kept.',
-            'action': 'resume', 'label': 'Carry on'})
+            'what': view['sentence'], 'action': 'resume', 'label': 'Carry on',
+            # Carry on is one way on; raising the limit in Settings is the other.
+            'kept': 'Everything made so far is kept. Carry on lets it spend up to another $1.00. To let it spend more before it asks, raise the limit in Settings, under Limits, then carry on.'})
         self.assertEqual(([job.limits.dollars for job in self.workers.of('question')],
                           self.steps(root)['research']['status']), ([0.4], 'to-do'))
         self.assertEqual(workspace.status(root)['research']['findings'],
@@ -1084,6 +1085,92 @@ class LimitTests(StudioCase):
         self.assertEqual((after['state'], after['problem'], after['spent']['dollars']),
                          ('waiting', None, 3.0))
         self.assertEqual(workspace.status(root)['gate'], 'research')
+
+    def test_a_step_that_spends_what_is_left_stops_for_money_not_as_a_failed_try(self):
+        from runner.agents import Outcome
+        settings.save(replace(settings.load(), training_dollars=1.0))
+        self.workers.then('research-plan', lambda tools, job: Outcome(
+            False, 'limit', 'It stopped without finishing: its spending limit was reached',
+            cost=1.0, budget=True))
+        root = self.start()
+        view = self.view(root)
+        self.assertEqual((view['state'], len(self.workers.jobs)), ('stopped', 1))
+        self.assertEqual(view['problem'], {
+            'what': 'Draft the research plan was stopped when this training reached what it '
+                    'may spend: it has spent $1.00. It stops and asks each time it has spent '
+                    'another $1.00.',
+            'kept': 'Everything finished before this step is kept, and the step starts again '
+                    'when you carry on. Carry on lets it spend up to another $1.00. To let it '
+                    'spend more before it asks, raise the limit in Settings, under Limits, then '
+                    'carry on.',
+            'action': 'resume', 'label': 'Carry on'})
+        entry = self.record(root)['steps']['research-plan']
+        self.assertEqual((entry['failed'], entry['attempts'][0]['outcome']), (0, 'limit'))
+        self.assertEqual(self.engine.act(root, 'resume')['state'], 'waiting')
+        self.assertEqual(len(self.workers.jobs), 2)
+
+    def test_no_job_starts_with_too_little_left_to_spend(self):
+        settings.save(replace(settings.load(), training_dollars=20.0))
+        self.workers.cost = 19.7
+        self.engine = self.make(at_once=1)
+        root = self.start()
+        self.decide(root, 'research-plan')
+        view = self.view(root)
+        self.assertEqual(self.workers.of('question'), [], 'no job starts with $0.30 left')
+        self.assertEqual((view['state'], view['sentence']), (
+            'stopped', 'This training has spent $19.70, and the $0.30 it may still spend is too '
+            'little to start another step. It stops and asks each time it has spent another '
+            '$20.00.'))
+        self.assertEqual(view['problem']['action'], 'resume')
+
+    def test_a_step_that_runs_out_of_time_offers_more_time_for_this_training(self):
+        settings.save(replace(settings.load(), step_seconds=600))
+        self.workers.then('research-plan', *[fails(SLOW, 'timeout')] * 3)
+        root = self.start()
+        view = self.view(root)
+        self.assertEqual(view['problem'], {
+            'what': 'Draft the research plan ran out of the time a step may take: its last try '
+                    'was stopped after 10 minutes, and it did not work in 3 tries. That limit, '
+                    '10 minutes a step, is in Settings, under Limits.',
+            'kept': 'Everything kept before this step is still here. Nothing from the tries '
+                    'that failed was kept.',
+            'action': 'more-time', 'label': 'Give it more time and try again', 'seconds': 600})
+        self.assertEqual([job.limits.seconds for job in self.workers.of('research-plan')],
+                         [600] * 3)
+        with self.assertRaisesRegex(WorkspaceError, 'nothing to resume'):
+            self.engine.act(root, 'resume')
+        self.assertEqual(self.engine.act(root, 'more-time')['state'], 'waiting')
+        self.assertEqual(self.workers.of('research-plan')[-1].limits.seconds, 1200)
+        # The run keeps its time when its limits are read again; Settings keeps its own.
+        self.assertEqual((self.record(root)['limits']['step_seconds'],
+                          self.record(root)['more_time'], settings.load().step_seconds),
+                         (1200, 1200, 600))
+        self.decide(root, 'research-plan')
+        self.assertEqual({job.limits.seconds for job in self.workers.of('question')}, {1200})
+
+    def test_a_research_job_that_runs_out_of_time_or_money_says_so(self):
+        from runner import engine as engine_module
+        from runner.agents import Outcome
+        root = self.start()
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        self.engine._store(root, record)
+        late = WorkspaceError('Research did not finish its author job in round 1 of 3.')
+        late.outcome = Outcome(False, 'timeout', SLOW)
+        with mock.patch.object(engine_module.research_contract, 'native', side_effect=late):
+            self.decide(root, 'research-plan')
+        problem = self.view(root)['problem']
+        self.assertEqual((problem['action'], problem['seconds']), ('more-time', 900))
+        self.assertTrue(problem['what'].startswith('The research ran out of the time a step may '
+                                                   'take: it was stopped after 15 minutes.'))
+        spent = WorkspaceError('Research did not finish its review job in round 2 of 3.')
+        spent.outcome = Outcome(False, 'limit', 'its spending limit was reached', budget=True)
+        with mock.patch.object(engine_module.research_contract, 'native', side_effect=spent):
+            self.engine.act(root, 'more-time')
+        problem = self.view(root)['problem']
+        self.assertEqual(problem['action'], 'resume')
+        self.assertTrue(problem['what'].startswith('The research was stopped when this training '
+                                                   'reached what it may spend'))
 
     def test_a_step_is_given_its_time_and_what_the_training_may_still_spend(self):
         settings.save(replace(settings.load(), step_seconds=120, training_dollars=5.0))
@@ -1311,7 +1398,8 @@ class HaltTests(StudioCase):
         self.refused(root, 'resume', 'This training is not paused or stopped, so there is '
                      'nothing to resume.')
         self.refused(root, 'retry', 'Nothing here failed, so there is nothing to try again.')
-        self.refused(root, 'restart', 'A run can be asked to: pause, resume, stop, retry, finish-level.')
+        self.refused(root, 'restart', 'A run can be asked to: pause, resume, stop, retry, '
+                     'finish-level, more-time.')
 
         self.workers.then('research-plan', fails(), fails(), fails())
         failed = self.start(title='Health checks')

@@ -7,7 +7,7 @@ What a caller needs to know
     engine.resume(wait=False)                # the same, fetching in the background
     made = engine.start(form)                # {'path', 'id', 'gates'}; the run starts at once
     engine.view(path)                        # what the page shows for one run
-    engine.act(path, 'pause')                # or 'resume', 'stop', 'retry'
+    engine.act(path, 'pause')                # or 'resume', 'stop', 'retry', 'more-time'
     engine.answer(path, question_id, text)   # a person answers a worker's question
     engine.supply(path, 'add', name, data)   # a document of theirs; or 'remove', or 'done'
     engine.whose(path, 'scenario:main')      # who wrote a scenario: 'runner' or 'you'
@@ -110,11 +110,18 @@ What a caller needs to know
   Whoever else writes there in this process, such as the page recording a decision, holds
   it too, and lets go of it before calling `carry_on`, `act` or `answer`.
 - Limits: a worker's time, what a training may spend where its agent reports spending,
-  and three tries at a step. A training that has spent what it may stops and asks; "carry
-  on" lets it spend as much again.
+  and three tries at a step. A training that has spent what it may, or has less than
+  `stops.floor` left, stops and asks; "carry on" lets it spend as much again. A job that
+  spent all the training had left is not a failed try: it stops the same way. A step whose
+  last try ran out of time offers "Give it more time and try again" (`more-time`), which
+  doubles this training's step limit (`more_time` in the record, kept when its limits are
+  read again). An agent that cannot be used, or whose account refused the job, stops the
+  training at once and points at the Status screen.
 - What a person may ask of a run depends on its state: pause while it is working; stop
   while it is working, waiting or paused; resume while it is paused or stopped; and try
-  again, or carry on, when a problem offers that. Anything else is refused in a sentence.
+  again, give it more time, or carry on, when a problem offers that. Anything else is
+  refused in a sentence. A research job is recorded as `research:author-<round>` or
+  `research:review-<round>` under the research step.
 - `background=False` does every step in the caller's thread, which is how the tests drive
   it. `adapters` maps an agent's name to its adapter, and `research` makes the
   harness-research wrapper; both are replaceable so that no test starts an agent.
@@ -193,7 +200,7 @@ from pathlib import Path, PurePosixPath
 import runner  # noqa: F401  puts the core on the import path
 import computer
 import home
-from studio_core import brand_guidance, deck_direction, deck_flow, model_profiles, review_policy, research_contract
+from studio_core import brand_guidance, deck_direction, deck_flow, model_profiles, review_policy, research_contract, stops
 import hub
 import workspace
 from workspace import WorkspaceError
@@ -218,7 +225,7 @@ MODELS_FOR = 3600       # seconds a list of an agent's models is reused
 MODELS_MISSED = 60      # seconds before a list that could not be made is asked for again
 LOOKED_FOR = 300        # seconds a look at what this computer has for a deck is reused
 BUSY_TRIES = 20         # times a finding is offered while another save holds the lock
-ACTIONS = ('pause', 'resume', 'stop', 'retry', 'finish-level')
+ACTIONS = ('pause', 'resume', 'stop', 'retry', 'finish-level', stops.MORE_TIME)
 # The stages that are for the whole training, before each level is built in turn: a level's
 # blueprint is drafted among them, so finishing "this level" means nothing there yet.
 WHOLE_TRAINING = ('intake', 'research-plan', 'research', 'blueprint')
@@ -1275,7 +1282,8 @@ class Engine(Reviewing):
         """Stop a training in a state that says what went wrong and offers one action.
         `waits` names what it waits for, when something done on the page settles it.
         `detail` is kept with the problem for what its action needs to know."""
-        label = {'retry': 'Try again', 'resume': 'Carry on'}.get(action)
+        label = {'retry': 'Try again', 'resume': 'Carry on',
+                 stops.MORE_TIME: stops.MORE_TIME_LABEL}.get(action)
         with self.files:
             record = self._load(root)
             record['problem'] = {'state': state, 'step': step, 'what': what, 'kept': kept,
@@ -2938,13 +2946,10 @@ class Engine(Reviewing):
             record = self._load(root)
             if self._closing or self._resting(record):
                 return False
-            if self._left(record) > 0:
+            left = self._left(record)
+            if left > 0 and left >= stops.floor(record['limits']['training_dollars']):
                 return True
-            dollars, limit = spent(record)[0], record['limits']['training_dollars']
-            self._problem(root, None, 'stopped', (
-                f'This training has spent ${dollars:,.2f}. It stops and asks each time it '
-                f'has spent another ${limit:,.2f}.'), 'Everything made so far is kept.',
-                'resume')
+            self._spend_stop(root)
             return False
 
     # --- one job for one worker ----------------------------------------------------------
@@ -3044,21 +3049,45 @@ class Engine(Reviewing):
     def _failed(self, root: Path, step: pipeline.Step, outcome: agents.Outcome,
                 started_at: str, detail: str) -> None:
         """Note a try that did not work. After the last one a step may have, or when the
-        agent cannot be used at all, the training stops and says so."""
+        agent cannot be used at all, the training stops and says so: a step whose last try
+        ran out of time offers more time. A job that spent all the training had left is not
+        a failed try: the training stops as it does for money, to carry on."""
         question = step.id.startswith('research:')
+        budget = outcome.reason == 'limit' and outcome.budget
         with self.files:
             record = self._load(root)
-            entry = self._tried(record, step.id, started_at, outcome.seconds, 'failed',
-                                detail, **self._cost(outcome))
+            entry = self._tried(record, step.id, started_at, outcome.seconds,
+                                'limit' if budget else 'failed', detail, **self._cost(outcome))
             self._store(root, record)
-            self._commit(root, f'a try at this step did not work: {step.label}')
-        if outcome.reason == 'unavailable':
+            self._commit(root, f'a step spent what the training may: {step.label}' if budget
+                         else f'a try at this step did not work: {step.label}')
+        if budget:
+            self._spend_stop(root, step.label)
+        elif outcome.reason == 'unavailable' or stops.account_limit(outcome):
             self._problem(root, 'research' if question else step.id, 'failed',
-                          f"{self._title(record['agent'])} could not be used. {detail}", KEPT)
+                          stops.unusable(self._title(record['agent']), detail), KEPT)
         elif not question and entry['failed'] >= pipeline.ATTEMPTS:
+            if outcome.reason == 'timeout':
+                return self._out_of_time(root, step.id, step.label, record, pipeline.ATTEMPTS)
             self._problem(root, step.id, 'failed', (
                 f'This step did not work in {pipeline.ATTEMPTS} tries: {step.label}. The '
                 f'last one: {detail}'), KEPT)
+
+    def _out_of_time(self, root: Path, step: str, label: str, record: dict,
+                     tries: int) -> None:
+        """Stop at a step whose last try ran out of the time a step may take, saying so
+        and offering more time."""
+        seconds = record['limits']['step_seconds']
+        self._problem(root, step, 'failed', stops.timed_out(label, seconds, tries), KEPT,
+                      stops.MORE_TIME, detail={'seconds': seconds})
+
+    def _spend_stop(self, root: Path, label: str | None = None) -> None:
+        """Stop because the training spent what it may before it asks, or has too little
+        left to start a step; `label` names a step stopped mid-way for it."""
+        record = self._load(root)
+        what, kept = stops.spent('training', spent(record)[0], record['limits']['training_dollars'],
+                                 self._left(record), label)
+        self._problem(root, None, 'stopped', what, kept, 'resume')
 
     def _title(self, name: str) -> str:
         """An agent's name as a person knows it."""
@@ -3166,6 +3195,20 @@ class Engine(Reviewing):
             + (', under what the check called them' if groups else '')
             + '. The research plan you approved is kept.'))
 
+    def _research_job_failed(self, root: Path, refusal: WorkspaceError) -> None:
+        """One job of the research did not finish. A job that ran out of time offers more
+        time; one that spent what the training may stops as money does; an agent that could
+        not be used says where to look. Anything else stops with what went wrong."""
+        outcome, record = refusal.outcome, self._load(root)
+        if outcome.reason == 'limit' and outcome.budget:
+            return self._spend_stop(root, 'The research')
+        if outcome.reason == 'unavailable' or stops.account_limit(outcome):
+            return self._problem(root, 'research', 'failed', stops.unusable(
+                self._title(record['agent']), outcome.detail), KEPT)
+        if outcome.reason == 'timeout':
+            return self._out_of_time(root, 'research', 'The research', record, 1)
+        self._problem(root, 'research', 'failed', str(refusal), KEPT)
+
     def _check_unfinished(self, root: Path, refusal: WorkspaceError) -> None:
         """The independent check could not read an original it must attest to, and that is
         all it objected to: no correction can change it, so the research stopped after that
@@ -3230,6 +3273,8 @@ class Engine(Reviewing):
             try:
                 research_contract.native(self, root, run, task, offered, 'training')
             except WorkspaceError as refusal:
+                if getattr(refusal, 'outcome', None) is not None:
+                    return self._research_job_failed(root, refusal)
                 if getattr(refusal, 'objections', None) is None:
                     raise
                 if getattr(refusal, 'cause', None):
@@ -3469,28 +3514,34 @@ class Engine(Reviewing):
                 if state not in ('paused', 'stopped') and problem.get('action') != 'resume':
                     raise WorkspaceError('This training is not paused or stopped, so there '
                                          'is nothing to resume.')
-            elif problem.get('action') != 'retry':
+            elif problem.get('action') not in ('retry', stops.MORE_TIME) or (
+                    action == stops.MORE_TIME and problem.get('action') != stops.MORE_TIME):
                 raise WorkspaceError('Nothing here failed, so there is nothing to try again.')
             elif problem.get('unreadable') and research_contract.dry_read(
                     self, root, problem['unreadable']):
                 # The check would stop the same way: say so again, and start nothing.
                 raise WorkspaceError(problem['what'])
-            if action in ('resume', 'retry'):
+            if action in ('resume', 'retry', stops.MORE_TIME):
                 if problem.get('action') == 'resume':  # it may spend as much again
                     record['cleared'] = spent(record)[0] or 0.0
                 elif problem:
                     self._fresh(record, problem.get('step'))
+                if action == stops.MORE_TIME:  # this run's steps may take twice as long
+                    record['more_time'] = stops.more_time(
+                        problem.get('seconds') or record['limits']['step_seconds'])
                 record['problem'] = record['halt'] = None
-                # the limits this computer has now
+                # the limits this computer has now, with the time this run was given
                 chosen = settings.load()
-                record['limits'] = {'step_seconds': chosen.step_seconds,
+                record['limits'] = {'step_seconds': max(chosen.step_seconds,
+                                                        record.get('more_time') or 0),
                                     'training_dollars': chosen.training_dollars}
             self._store(root, record)
             self._commit(root, {'pause': 'paused on the page', 'stop': 'stopped on the page',
                                 'resume': 'resumed on the page',
                                 'retry': 'asked to try again on the page',
+                                stops.MORE_TIME: 'asked to try again with more time on the page',
                                 'finish-level': 'asked to finish the level, then wait'}[action])
-        if action in ('resume', 'retry'):
+        if action in ('resume', 'retry', stops.MORE_TIME):
             run.stop.clear()
             self.wake(root)
         return self.view(root)
@@ -4149,6 +4200,7 @@ class Engine(Reviewing):
             'question': ({'id': asked['id'], 'text': asked['text'], 'from': asked['from']}
                          if asked else None),
             'problem': ({**{key: problem.get(key) for key in ('what', 'kept', 'action', 'label')},
+                         **({'seconds': problem['seconds']} if problem.get('seconds') else {}),
                          **self._research_tried(record, problem)}
                         if problem else None),
             'documents': self._supplied(root, record, found),

@@ -762,16 +762,24 @@ def native(engine, root, run, task, sources, product):
         for key in ('dollars', 'tokens'):
             if cost.get(key) is not None:
                 spent[key] = (spent[key] or 0) + cost[key]
+        accepted = handed['artifacts'].get('research-result')
+        # A job that spent all it was given is not a failed try: the studio stops for money.
+        ended = ('kept' if accepted and outcome.reason != 'stopped' else
+                 'limit' if outcome.reason == 'limit' and getattr(outcome, 'budget', False)
+                 else 'failed')
         with engine.files:
             record = engine._load(root)
-            accepted = handed['artifacts'].get('research-result')
-            engine._tried(record, name, started, outcome.seconds,
-                          'kept' if accepted and outcome.reason != 'stopped' else 'failed',
-                          **cost)
+            engine._tried(record, name, started, outcome.seconds, ended,
+                          None if ended == 'kept' else outcome.detail or None, **cost)
             engine._store(root, record)
             engine._commit(root, 'record independent research job: ' + phase)
         if not accepted or outcome.reason == 'stopped':
-            raise WorkspaceError('Research did not finish its ' + phase + ' job. Saved work is kept.')
+            said = ' '.join(str(outcome.detail or '').split())
+            failure = WorkspaceError(f'Research did not finish its {phase} job in round '
+                                     f'{number} of {ROUNDS}' + (f': {said}' if said else '.')
+                                     + ' Saved work is kept.')
+            failure.outcome = outcome   # how the job ended, for the studio's stop
+            raise failure
         return accepted['text'], handed['sources']
 
     try:

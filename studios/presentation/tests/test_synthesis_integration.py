@@ -87,6 +87,25 @@ class SynthesisIntegrationTests(StudioCase):
         entry = self.engine._load(root)['steps']['research:author-1']
         self.assertIn('stopped', str(entry))
 
+    def test_a_research_job_that_runs_out_of_time_offers_more_time(self):
+        from runner.agents import Outcome
+        slow = 'It did not finish in 900 seconds, so it was stopped.'
+        self.workers.queued['research-result'] = [
+            lambda tools, job: Outcome(False, 'timeout', slow), self.author, self.checker]
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'automatic'}):
+            root = self.start(research=True)
+        problem = self.view(root)['problem']
+        self.assertEqual((problem['action'], problem['seconds']), ('more-time', 900))
+        self.assertTrue(problem['why'].startswith('The research ran out of the time a step may '
+                                                  'take: it was stopped after 15 minutes.'))
+        entry = self.engine._load(root)['steps']['research:author-1']
+        self.assertEqual((entry['tries'][0]['outcome'], entry['tries'][0]['error']),
+                         ('failed', slow))
+        self.engine.act(root, 'more-time')
+        self.assertIsNone(self.view(root)['problem'], self.view(root))
+        self.assertEqual([job.limits.seconds for job in self.workers.of('research-result')],
+                         [900, 1800, 1800])
+
     def test_finding_marks_use_synthesis_ids_and_never_rewrite_the_checked_report(self):
         def authored(tools, job):
             payload = json.loads(tools.read_input('research-task')[1])

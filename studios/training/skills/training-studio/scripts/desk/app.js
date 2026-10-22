@@ -132,6 +132,7 @@ const STEERED = {
   stop: 'Stopped. The step in hand was ended and its work so far is lost; everything '
     + 'finished before it is kept.',
   retry: 'Trying again.',
+  'more-time': 'Trying again, with twice the time for each step.',
   'finish-level': 'It finishes this level, then waits. Resume it when you are ready for the next.',
 };
 const AGENTS = ['claude', 'codex'];
@@ -4675,6 +4676,7 @@ function actionSays(run, found) {
   if (found.action === 'resume') {
     return 'Carry on starts that step again; everything finished before it is kept.';
   }
+  if (found.action === 'more-time') return moreTime(found, 'training');
   if (found.action !== 'retry') return '';
   // Research done as one report and one independent check carries on from its saved draft.
   if (found.research) return researchAgain(found.research);
@@ -4703,6 +4705,14 @@ function researchAgain(research) {
   return 'Try again continues from the saved draft and runs up to '
     + count(research.most || 3, 'more round', 'more rounds') + ' of writing and checking'
     + (took.length ? '; ' + rounds + ' took ' + took.join(' and ') : '') + '.';
+}
+
+// What "Give it more time and try again" does, after a step ran out of the time it may take.
+function moreTime(found, thing) {
+  if (!found.seconds) return '';
+  return 'Give it more time and try again lets each step of this ' + thing + ' take up to '
+    + lasted(2 * found.seconds) + ', and runs this step again from the start. Raising the '
+    + 'limit in Settings, under Limits, is the other way on, for every ' + thing + '.';
 }
 
 // What a stop kept: a sentence and, where it names things one a line, those as a list.

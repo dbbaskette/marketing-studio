@@ -9,7 +9,7 @@ What a caller needs to know
     engine.view(path)                        # what the page shows for one deck
     engine.decks()                           # every deck: needs, working, finished, elsewhere
     engine.decide(path, 'gate:outline', 'approve', note, extra)   # the only way a gate moves
-    engine.act(path, 'pause')                # or 'resume', 'stop', 'retry', 'undo'
+    engine.act(path, 'pause')                # or 'resume', 'stop', 'retry', 'undo', 'more-time'
     engine.answer(path, question_id, text)   # a person answers a worker's question
     engine.picture(path, 'build', 3)         # one slide's picture, as PNG bytes
     engine.download(path)                    # (name, bytes) of the rendered .pptx
@@ -34,12 +34,18 @@ What a caller needs to know
   cost, outcome and error (`steps[name]['tries']`, and `failed`, the failures in a row);
   a worker's `question` and the person's `answers`; `halted`, why the deck stopped, as
   {'state': 'paused'|'stopped'|'failed', 'step', 'why', 'kept', 'action': 'resume'|'retry'|
-  None, 'at'}; `cleared`, what had been spent when the person last said to carry on; which
+  'more-time'|None, 'at'}, with `seconds` (the step limit that ran out) for 'more-time' and
+  `unreadable` for a research check that could not read an original; `more_time`, the step
+  limit "Give it more time and try again" gave this deck, kept when its limits are read
+  again; `cleared`, what had been spent when the person last said to carry on; which
   research run holds the approved plan (`research`); and what each worker said of its work
   (`said`). It is committed with everything else.
 - One try at an agent step, its limits and questions, and what the record holds of tries,
   are runner/jobs.py's (`jobs.Jobs`, a part of the engine); the research steps are
-  runner/research_steps.py's. `retry` starts a step that stopped afresh.
+  runner/research_steps.py's. `retry` starts a step that stopped afresh; `more-time` does
+  that too, after a step ran out of the time a step may take, with this deck's step limit
+  doubled. A research job is recorded as `research:author-<round>` or
+  `research:review-<round>` under the research step.
 - A gate is opened by the step that feeds it, or by the engine when the deck reaches it,
   and the run waits. `decide` is the only way a gate moves: it records the decision on the
   gate ({'state', 'note', 'at', 'by', 'round'}), applies what the gate takes beside it
@@ -108,7 +114,7 @@ What a caller needs to know
 """
 from __future__ import annotations
 
-from studio_core import deck_flow, research_contract, review_policy
+from studio_core import deck_flow, research_contract, review_policy, stops
 
 import contextvars
 import json
@@ -148,7 +154,7 @@ MODELS_FOR = 3600       # seconds a list of an agent's models is reused
 MODELS_MISSED = 60      # seconds before a list that could not be made is asked for again
 LOOKED_FOR = 300        # seconds a look at what this computer has for a deck is reused
 NOTE = 4000             # characters in a person's note at a gate
-ACTIONS = ('pause', 'resume', 'stop', 'retry', 'undo')
+ACTIONS = ('pause', 'resume', 'stop', 'retry', 'undo', stops.MORE_TIME)
 DECISIONS = ('approve', 'changes')
 DRIVING = ('take', 'hand-over')
 FETCH_EVERY = 180       # seconds between fetches while the runner serves
@@ -2212,28 +2218,37 @@ class Engine(Jobs, Researching):
                     if halted.get('action') != 'resume':
                         raise WorkspaceError('This deck is not paused or stopped, so there is '
                                              'nothing to resume.')
-                elif halted.get('action') != 'retry':
+                elif halted.get('action') not in ('retry', stops.MORE_TIME) or (
+                        action == stops.MORE_TIME and halted.get('action') != stops.MORE_TIME):
                     raise WorkspaceError('Nothing here failed, so there is nothing to try '
                                          'again.')
                 elif halted.get('unreadable') and research_contract.dry_read(
                         self, root, halted['unreadable']):
                     # The check would stop the same way: say so again, and start nothing.
                     raise WorkspaceError(halted.get('why') or 'It has stopped.')
-                if action in ('resume', 'retry'):
+                if action in ('resume', 'retry', stops.MORE_TIME):
                     if halted.get('limit'):
                         record['cleared'] = spent(record)[0] or 0.0
-                    if action == 'retry':
+                    if action != 'resume':
                         self._fresh(record, halted.get('step'))
+                    if action == stops.MORE_TIME:  # this deck's steps may take twice as long
+                        record['more_time'] = stops.more_time(
+                            halted.get('seconds') or (record.get('limits') or {}).get(
+                                'step_seconds') or settings.load().step_seconds)
                     record['halted'] = None
+                    # The limits this computer has now, with the time this deck was given.
                     chosen = settings.load()
-                    record['limits'] = {'step_seconds': chosen.step_seconds,
+                    record['limits'] = {'step_seconds': max(chosen.step_seconds,
+                                                            record.get('more_time') or 0),
                                         'dollars': chosen.deck_dollars}
                 self._store(root, record)
                 self._commit(root, {'pause': 'paused on the page',
                                     'stop': 'stopped on the page',
                                     'resume': 'resumed on the page',
-                                    'retry': 'asked to try again on the page'}[action])
-        if action in ('resume', 'retry', 'undo'):
+                                    'retry': 'asked to try again on the page',
+                                    stops.MORE_TIME: 'asked to try again with more time on '
+                                                     'the page'}[action])
+        if action in ('resume', 'retry', 'undo', stops.MORE_TIME):
             run.stop.clear()
             self.wake(root)
         return self.view(root)
@@ -2833,6 +2848,7 @@ class Engine(Jobs, Researching):
             'question': ({'id': asked['id'], 'text': asked['text'], 'from': asked['from']}
                          if asked and mine else None),
             'problem': ({**{key: halted.get(key) for key in ('state', 'why', 'kept', 'action')},
+                         **({'seconds': halted['seconds']} if halted.get('seconds') else {}),
                          **self._research_tried(record, halted)}
                         if halted else None),
             'deliver': ({**said, 'revisions': list(record.get('revisions') or []),

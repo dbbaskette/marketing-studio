@@ -73,6 +73,7 @@ const STEERED = {
   resume: 'Carrying on.',
   stop: 'Stopped. Everything made so far is kept.',
   retry: 'Trying again.',
+  'more-time': 'Trying again, with twice the time for each step.',
   undo: 'The last step was undone. It carries on from there.',
 };
 const AGENTS = ['claude', 'codex'];
@@ -3461,7 +3462,8 @@ function stepsCard(run) {
 // What went wrong, what was kept, and the one thing to do about it.
 function problemPart(run, lead) {
   const found = run.problem;
-  const label = found.action === 'retry' ? 'Try again' : 'Resume';
+  const label = { retry: 'Try again', 'more-time': 'Give it more time and try again' }[found.action]
+    || 'Resume';
   const go = found.action && !theirs(run)
     ? capsule(label, lead ? 'filled' : '', () => steer(found.action, go), 'problem-action')
     : null;
@@ -3471,7 +3473,9 @@ function problemPart(run, lead) {
   const failed = list(run.timeline).find((row) => row.failed)
     || list(run.timeline).find((row) => row.state === 'current');
   let again = null;
-  if (found.action === 'retry' && found.research) {
+  if (found.action === 'more-time') {
+    again = found.seconds ? make('p', 'quiet', moreTime(found, 'deck')) : null;
+  } else if (found.action === 'retry' && found.research) {
     again = make('p', 'quiet', researchAgain(found.research));
   } else if (found.action === 'retry' && failed) {
     const took = [given(failed.seconds) ? lasted(failed.seconds) : '',
@@ -3505,6 +3509,14 @@ function researchAgain(research) {
   return 'Try again continues from the saved draft and runs up to '
     + count(research.most || 3, 'more round', 'more rounds') + ' of writing and checking'
     + (took.length ? '; ' + rounds + ' took ' + took.join(' and ') : '') + '.';
+}
+
+// What "Give it more time and try again" does, after a step ran out of the time it may take.
+function moreTime(found, thing) {
+  if (!found.seconds) return '';
+  return 'Give it more time and try again lets each step of this ' + thing + ' take up to '
+    + lasted(2 * found.seconds) + ', and runs this step again from the start. Raising the '
+    + 'limit in Settings, under Limits, is the other way on, for every ' + thing + '.';
 }
 
 // What a stop kept: a sentence and, where it names things one a line, those as a list.

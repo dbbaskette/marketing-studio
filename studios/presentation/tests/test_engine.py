@@ -242,8 +242,41 @@ class RetryTests(StudioCase):
         self.workers.then('outline', fails('Not signed in.', reason='unavailable'))
         root = self.start()
         self.assertEqual(self.state(root), 'failed')
-        self.assertIn('could not be used. Not signed in.', self.view(root)['sentence'])
+        self.assertIn('could not be used. Not signed in. Check this computer, on the Status '
+                      'screen, says what it needs.', self.view(root)['sentence'])
         self.assertEqual(len(self.workers.of('outline')), 1)
+
+    def test_an_account_at_its_usage_limit_stops_at_once_and_says_where_to_look(self):
+        self.workers.then('outline', fails("You've hit your usage limit.", reason='limit'))
+        root = self.start()
+        self.assertEqual(self.state(root), 'failed')
+        self.assertIn("could not be used. You've hit your usage limit. Check this computer",
+                      self.view(root)['sentence'])
+        self.assertEqual(len(self.workers.of('outline')), 1)
+
+    def test_a_step_that_runs_out_of_time_offers_more_time_for_this_deck(self):
+        from dataclasses import replace
+        self.workers.then('outline', *[fails('It did not finish in 900 seconds, so it was stopped.', reason='timeout')] * 3)
+        root = self.start()
+        view = self.view(root)
+        self.assertEqual(view['problem'], {
+            'state': 'failed', 'action': 'more-time', 'seconds': 900,
+            'why': 'Draft the outline ran out of the time a step may take: its last try was '
+                   'stopped after 15 minutes, and it did not work in 3 tries. That limit, 15 '
+                   'minutes a step, is in Settings, under Limits.',
+            'kept': 'Everything kept before this step is still here. Nothing from the tries '
+                    'that failed was kept.'})
+        self.engine.act(root, 'more-time')
+        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertEqual(self.workers.of('outline')[-1].limits.seconds, 1800)
+        self.assertEqual((self.record(root)['limits']['step_seconds'],
+                          self.record(root)['more_time']), (1800, 1800))
+        # Settings keeps its own limit, for other decks, and a larger one there still counts.
+        self.assertEqual(self.settings.load().step_seconds, 900)
+        self.settings.save(replace(self.settings.load(), step_seconds=3600))
+        self.engine.act(root, 'stop')
+        self.engine.act(root, 'resume')
+        self.assertEqual(self.record(root)['limits']['step_seconds'], 3600)
 
 
 class QuestionTests(StudioCase):
@@ -439,6 +472,57 @@ class HaltTests(StudioCase):
         self.assertEqual(self.workers.of('section'), [])
         self.engine.act(root, 'resume')
         self.assertEqual(self.waiting(root), 'gate:build')
+
+    def test_a_step_that_spends_what_is_left_stops_for_money_not_as_a_failed_try(self):
+        from dataclasses import replace
+        from runner.agents import Outcome
+        self.settings.save(replace(self.settings.load(), deck_dollars=1.0))
+        self.workers.then('outline', lambda tools, job: Outcome(
+            False, 'limit', 'It stopped without finishing: its spending limit was reached',
+            cost=1.0, budget=True))
+        root = self.start()
+        view = self.view(root)
+        self.assertEqual((view['state'], len(self.workers.of('outline'))), ('stopped', 1))
+        self.assertEqual(view['problem']['why'], (
+            'Draft the outline was stopped when this deck reached what it may spend: it has '
+            'spent $1.00. It stops and asks each time it has spent another $1.00.'))
+        self.assertIn('Resume lets it spend up to another $1.00. To let it spend more before '
+                      'it asks, raise the limit in Settings, under Limits, then resume.',
+                      view['problem']['kept'])
+        self.assertEqual(view['problem']['action'], 'resume')
+        entry = self.record(root)['steps']['outline']
+        self.assertEqual((entry['failed'], entry['tries'][0]['outcome']), (0, 'limit'))
+        self.engine.act(root, 'resume')
+        self.assertEqual(self.waiting(root), 'gate:outline')
+
+    def test_no_job_starts_with_too_little_left_to_spend(self):
+        from dataclasses import replace
+        self.settings.save(replace(self.settings.load(), deck_dollars=20.0))
+        self.workers.cost = 19.7
+        root = self.start()
+        self.decide(root, 'gate:outline')
+        self.decide(root, 'gate:look')
+        view = self.view(root)
+        self.assertEqual(self.workers.of('section'), [])
+        self.assertEqual(view['sentence'], (
+            'This deck has spent $19.70, and the $0.30 it may still spend is too little to '
+            'start another step. It stops and asks each time it has spent another $20.00.'))
+
+    def test_a_research_job_that_runs_out_of_time_offers_more_time(self):
+        from runner import research_steps
+        from runner.agents import Outcome
+        root = self.start(research=True)
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        self.engine._store(root, record)
+        late = WorkspaceError('Research did not finish its author job in round 1 of 3.')
+        late.outcome = Outcome(False, 'timeout', 'It did not finish in 900 seconds, so it was stopped.')
+        with mock.patch.object(research_steps.research_contract, 'native', side_effect=late):
+            self.decide(root, 'gate:research-plan')
+        problem = self.view(root)['problem']
+        self.assertEqual((problem['action'], problem['seconds']), ('more-time', 900))
+        self.assertTrue(problem['why'].startswith(
+            'The research ran out of the time a step may take: it was stopped after 15 minutes.'))
 
     def test_undo_takes_back_the_last_step(self):
         root = self.start()

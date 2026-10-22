@@ -14,10 +14,14 @@ What a caller needs to know
 - One try at an agent step (`Jobs._agent`) is an empty job folder under `agents.staging()`,
   a brief, a worker and results taken only from what the worker tools accepted. It is tried
   up to ATTEMPTS times, with the reason for the last failure added to its task; then the
-  deck stops and says what went wrong. An agent that cannot be used stops it at once. A
-  worker's question stops the run until the person answers; the answers go into the task
-  of the next try, and after QUESTIONS answers the worker may ask no more.
-- A deck that has spent what it may stops and asks before the next worker starts.
+  deck stops and says what went wrong, and a step whose last try ran out of time offers
+  more time (`stops.MORE_TIME`). An agent that cannot be used, or whose account refused the
+  job, stops it at once and points at the Status screen. A worker's question stops the run
+  until the person answers; the answers go into the task of the next try, and after
+  QUESTIONS answers the worker may ask no more.
+- A deck that has spent what it may stops and asks before the next worker starts, and so
+  does one with less than `stops.floor` left. A job that spent all the deck had left is not
+  a failed try: the deck stops in the same way, to carry on.
 - `Jobs` is a part of the engine and is not used alone: it reads and writes through the
   engine's `files`, `_load`, `_store`, `_commit`, `adapter` and `_look`.
 """
@@ -35,7 +39,7 @@ from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import home
-from studio_core import model_profiles, research_contract
+from studio_core import model_profiles, research_contract, stops
 from workspace import WorkspaceError
 
 from runner import agents, briefs, settings, stages, worker_tools
@@ -336,7 +340,7 @@ class Jobs:
 
     def _may_go(self, root: Path) -> bool:
         """Whether a worker may start now. Stops the deck, and asks, once it has spent what
-        it may."""
+        it may, or has too little left to start a job."""
         with self.files:
             record = self._load(root)
             if self._closing or self._resting(record):
@@ -346,16 +350,32 @@ class Jobs:
                 self._problem(root, None, 'stopped', shared, 'Everything made so far is kept.',
                               'resume')
                 return False
-            if self._left(record) > 0:
+            left = self._left(record)
+            if left > 0 and left >= stops.floor(self._limit(record)):
                 return True
-            dollars = spent(record)[0] or 0.0
-            limit = (record.get('limits') or {}).get('dollars') \
-                or settings.load().deck_dollars
-            self._problem(root, None, 'stopped', (
-                f'This deck has spent ${dollars:,.2f}. It stops and asks each time it has spent '
-                f'another ${limit:,.2f}.'), 'Everything made so far is kept.', 'resume',
-                limit=True)
+            self._spend_stop(root)
             return False
+
+    def _limit(self, record: dict) -> float:
+        """What a deck may spend before it asks."""
+        return (record.get('limits') or {}).get('dollars') or settings.load().deck_dollars
+
+    def _spend_stop(self, root: Path, label: str | None = None) -> None:
+        """Stop because the deck spent what it may before it asks, or has too little left
+        to start a job; `label` names a step stopped mid-way for it."""
+        record = self._load(root)
+        what, kept = stops.spent('deck', spent(record)[0], self._limit(record),
+                                 self._left(record), label, go='Resume')
+        self._problem(root, None, 'stopped', what, kept, 'resume', limit=True)
+
+    def _out_of_time(self, root: Path, step: str, label: str, record: dict,
+                     tries: int) -> None:
+        """Stop at a step whose last try ran out of the time a step may take, saying so
+        and offering more time."""
+        seconds = int((record.get('limits') or {}).get('step_seconds')
+                      or settings.load().step_seconds)
+        self._problem(root, step, 'failed', stops.timed_out(label, seconds, tries), KEPT,
+                      stops.MORE_TIME, detail={'seconds': seconds})
 
     def _folder(self, root: Path, name: str, number: int) -> Path:
         base, stem = agents.staging(), f'{root.name}--{folder_name(name)}-'
@@ -472,21 +492,28 @@ class Jobs:
     def _failed(self, root: Path, name: str, label: str, outcome: agents.Outcome,
                 started_at: str, detail: str, question: bool = False, guard=None) -> None:
         """Note a try that did not work. After the last one a step may have, or when the
-        agent cannot be used at all, the deck stops and says so."""
+        agent cannot be used at all, the deck stops and says so: a step whose last try ran
+        out of time offers more time. A job that spent all the deck had left is not a failed
+        try: the deck stops as it does for money, to carry on."""
+        budget = outcome.reason == 'limit' and outcome.budget
         with self.files:
             record = self._load(root)
             if self._superseded(root, record, guard, name, started_at, outcome):
                 return
-            entry = self._tried(record, name, started_at, outcome.seconds, 'failed', detail,
-                                **self._cost(outcome))
+            entry = self._tried(record, name, started_at, outcome.seconds,
+                                'limit' if budget else 'failed', detail, **self._cost(outcome))
             self._store(root, record)
-            self._commit(root, f'a try at this step did not work: {label}')
+            self._commit(root, f'a step spent what the deck may: {label}' if budget
+                         else f'a try at this step did not work: {label}')
         step = name.partition(':')[0]
-        if outcome.reason == 'unavailable':
+        if budget:
+            self._spend_stop(root, label)
+        elif outcome.reason == 'unavailable' or stops.account_limit(outcome):
             self._problem(root, step, 'failed',
-                          f"{self._title(record.get('agent'))} could not be used. {detail}",
-                          KEPT)
+                          stops.unusable(self._title(record.get('agent')), detail), KEPT)
         elif not question and entry['failed'] >= ATTEMPTS:
+            if outcome.reason == 'timeout':
+                return self._out_of_time(root, step, label, record, ATTEMPTS)
             self._problem(root, step, 'failed', (
                 f'This step did not work in {ATTEMPTS} tries: {label}. The last one: '
                 f'{detail}'), KEPT)

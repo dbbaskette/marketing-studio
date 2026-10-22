@@ -35,8 +35,8 @@ from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, documents, marks, stages, worker_tools
 from runner import research as research_cli
-from studio_core import research_contract
-from runner.jobs import Halted, Run, given_up, last_error, sha256_of, text_of, tries
+from studio_core import research_contract, stops
+from runner.jobs import KEPT, Halted, Run, given_up, last_error, sha256_of, text_of, tries
 from runner.steps import Work
 
 BUSY_TRIES = 20         # times a finding is offered while another save holds the lock
@@ -271,6 +271,21 @@ class Researching:
             try:
                 research_contract.native(self, root, run, task, offered, 'presentation')
             except WorkspaceError as refusal:
+                outcome = getattr(refusal, 'outcome', None)
+                if outcome is not None:
+                    # One job of the research did not finish: more time for a job that ran
+                    # out of it, the money stop for one that spent what the deck may, and
+                    # where to look for an agent that could not be used.
+                    if outcome.reason == 'limit' and outcome.budget:
+                        self._spend_stop(root, 'The research')
+                    elif outcome.reason == 'unavailable' or stops.account_limit(outcome):
+                        self._problem(root, 'research', 'failed', stops.unusable(
+                            self._title(record.get('agent')), outcome.detail), KEPT)
+                    elif outcome.reason == 'timeout':
+                        self._out_of_time(root, 'research', 'The research', record, 1)
+                    else:
+                        self._problem(root, 'research', 'failed', str(refusal), KEPT)
+                    raise Halted()
                 if getattr(refusal, 'objections', None) is None:
                     raise
                 if getattr(refusal, 'cause', None):

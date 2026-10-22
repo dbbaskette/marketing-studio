@@ -441,6 +441,27 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('Try again re-runs ' + row['label'] + ' from the start; the tries so far '
                       'took 2 minutes and $0.30.', shot['text'])
 
+    def test_a_step_that_ran_out_of_time_offers_more_time(self):
+        path = self.started()
+        shown = self.run_of(path)
+        row = next(row for row in shown['timeline'] if row['state'] != 'done')
+        row.update(state='current', failed=True, seconds=2700, dollars=0.9)
+        said = ('Draft the outline ran out of the time a step may take: its last try was '
+                'stopped after 15 minutes, and it did not work in 3 tries. That limit, 15 '
+                'minutes a step, is in Settings, under Limits.')
+        shown.update(state='failed', gate=None, sentence=said, problem={
+            'state': 'failed', 'why': said, 'kept': 'Everything made so far.',
+            'action': 'more-time', 'seconds': 900})
+        result = self.deck_screen(path, [{'snapshot': 'failed'},
+                                         {'click': 'Give it more time and try again'}],
+                                  **{'GET /api/run': [ok(shown)], 'POST /api/run': [ok(shown)]})
+        shot = result['snapshots']['failed']
+        self.assertEqual(shot['filled'], ['Give it more time and try again'])
+        self.assertIn('Give it more time and try again lets each step of this deck take up to '
+                      '30 minutes, and runs this step again from the start. Raising the limit in '
+                      'Settings, under Limits, is the other way on, for every deck.', shot['text'])
+        self.assertEqual(self.posts(result), [('/api/run', {'path': path, 'action': 'more-time'})])
+
     def test_a_research_retry_carries_on_from_the_draft_and_lists_what_was_kept(self):
         path = self.started()
         shown = self.run_of(path)

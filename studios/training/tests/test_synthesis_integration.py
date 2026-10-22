@@ -109,6 +109,23 @@ class SynthesisIntegrationTests(StudioCase):
         entry = self.engine._load(root)['steps']['research:author-1']
         self.assertIn('stopped', str(entry))
 
+    def test_a_research_job_that_runs_out_of_money_stops_for_money(self):
+        from runner.agents import Outcome
+        self.workers.queued['research-result'] = [lambda tools, job: Outcome(
+            False, 'limit', 'It stopped without finishing: its spending limit was reached',
+            cost=0.5, budget=True), self.author, self.checker]
+        root = self.start()
+        self.to_gate(root, 'research-plan')
+        self.decide(root, 'research-plan')
+        problem = self.view(root)['problem']
+        self.assertEqual((problem['action'], problem['label']), ('resume', 'Carry on'))
+        self.assertTrue(problem['what'].startswith('The research was stopped when this training '
+                                                   'reached what it may spend'), problem)
+        entry = self.engine._load(root)['steps']['research:author-1']
+        self.assertEqual((entry['failed'], entry['attempts'][0]['outcome']), (0, 'limit'))
+        self.engine.act(root, 'resume')
+        self.assertIsNone(self.view(root)['problem'], self.view(root))
+
     def test_unfinished_research_continues_with_the_retained_helper_after_an_update(self):
         holder = tempfile.TemporaryDirectory()
         self.addCleanup(holder.cleanup)

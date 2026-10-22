@@ -22,8 +22,9 @@ What a caller needs to know
   in `folder/stderr.txt`. A folder under a shared temporary folder is refused, because an
   agent's own sandbox lets it write there: use `staging()`.
 - `run` never raises for something the agent did. It returns an Outcome whose `reason` is
-  `timeout`, `limit`, `failed`, `unavailable` or `stopped`, with a sentence in `detail`. It
-  raises WorkspaceError only for a job that is wrong before it starts.
+  `timeout`, `limit`, `failed`, `unavailable` or `stopped`, with a sentence in `detail`. A
+  `limit` because the job spent all it was given has `budget` set. It raises WorkspaceError
+  only for a job that is wrong before it starts.
 - `stop` is a threading.Event. Setting it ends the worker and everything it started within
   a moment, and the outcome's reason is `stopped`. The time limit ends everything too, and
   whatever a worker leaves running is ended when it ends; see `companion.supervise`.
@@ -130,6 +131,7 @@ class Outcome:
     tokens: dict | None = None  # {'input', 'cached', 'output'}, where reported
     seconds: float = 0.0
     events: Path | None = None  # where the raw event stream was saved
+    budget: bool = False        # a `limit` because the job spent all it was given
 
 
 @dataclass(frozen=True)
@@ -259,6 +261,7 @@ class ClaudeEvents:
         self.calls: dict[str, str] = {}
         self.text, self.cost, self.tokens = '', None, None
         self.ended, self.reason, self.detail = False, None, ''
+        self.budget = False     # it ended because it spent all it was given
 
     def feed(self, event: dict) -> list[str]:
         kind, lines = event.get('type'), []
@@ -314,6 +317,7 @@ class ClaudeEvents:
         if subtype == 'success' and not event.get('is_error'):
             return
         said = clip(self.text or CLAUDE_ENDINGS.get(subtype, subtype), 300)
+        self.budget = subtype == 'error_max_budget_usd'
         if subtype in ('error_max_budget_usd', 'error_max_turns') or status == 429:
             self.reason = 'limit'
         elif status in (401, 403):
@@ -494,7 +498,8 @@ class _Agent:
                            reader.tokens, seconds, events)
         reason, detail = self.verdict(job, reader, code, tail(folder / 'stderr.txt'))
         return Outcome(reason is None, reason, detail, self.last(job, reader), reader.cost,
-                       reader.tokens, seconds, events)
+                       reader.tokens, seconds, events,
+                       budget=reason == 'limit' and getattr(reader, 'budget', False))
 
     def last(self, job: Job, reader) -> str:
         return reader.text

@@ -553,6 +553,8 @@ class RunTests(AgentCase):
         self.assertEqual((outcome.finished, outcome.reason, outcome.cost), (False, 'limit', 1.02))
         self.assertEqual(outcome.detail, 'It stopped without finishing: its spending limit '
                          'was reached')
+        # The job spent all it was given: the studio stops for money, not for a failure.
+        self.assertTrue(outcome.budget)
 
     def test_a_codex_run_that_cannot_reach_its_service_is_unavailable(self):
         stream = [{'type': 'thread.started', 'thread_id': 't'}, {'type': 'turn.started'},

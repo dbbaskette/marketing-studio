@@ -3976,6 +3976,33 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.asked(result, 'run'),
                          [f'/api/run?{urlencode({"path": self.root})}'] * 2)
 
+    def test_a_step_that_ran_out_of_time_offers_more_time(self):
+        self.started()
+        said = ('Draft the research plan ran out of the time a step may take: its last try was '
+                'stopped after 15 minutes, and it did not work in 3 tries. That limit, 15 '
+                'minutes a step, is in Settings, under Limits.')
+        failed = a_run('failed', said, steps=[
+            a_step('research-plan', 'Draft the research plan', 'agent', 'failed', attempts=3,
+                   seconds=2700, dollars=0.9),
+            *steps()[1:]], problem={
+                'what': said, 'kept': 'Everything kept before this step is still here.',
+                'action': 'more-time', 'label': 'Give it more time and try again',
+                'seconds': 900})
+        answers = self.answers(**{'GET /api/trainings': [self.listed('failed', said, needs=True)],
+                                  'GET /api/training': [self.detail('failed', said)],
+                                  'GET /api/run': [failed], 'POST /api/run': [failed]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'snapshot': 'failed'},
+                                         {'click': 'Give it more time and try again'}])
+        down = result['snapshots']['failed']
+        self.assertEqual(down['filled'], ['Give it more time and try again'])
+        self.assertIn('Give it more time and try again lets each step of this training take up '
+                      'to 30 minutes, and runs this step again from the start. Raising the limit '
+                      'in Settings, under Limits, is the other way on, for every training.',
+                      down['text'])
+        self.assertEqual(self.posts(result), [('/api/run', {'path': str(self.root),
+                                                            'action': 'more-time'})])
+
     def test_a_stop_at_the_research_says_try_again_carries_on_from_the_draft(self):
         self.started()
         broke = 'The independent check of the research still needs changes after 3 rounds.'
