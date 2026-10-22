@@ -139,6 +139,6 @@ materials; the request says the scope and last recorded cost before it is sent.
 
 ## Finish from the page
 
-New combined-review runs prepare every level's guide and deck direction first, then wait for the first review. Briefs are written after approval. Existing runs keep their saved review order. The first and final combined reviews have timeline beads, and the last decision stays visible while work continues.
+New combined-review runs prepare every level's guide and deck direction first. Balanced waits for the first review; Automatic draft continues under its saved policy. Briefs are written afterwards. Existing runs keep their saved review order. The first and final combined reviews have timeline beads, and the last decision stays visible while work continues.
 
 Download buttons take away supported made files, Word copies and the finished index. Google changes are pulled only on request. When both texts changed, both are kept and a confirmation chooses which text replaces the other; later edits require another pull. Yoodli fields can be copied from the final review and Done.

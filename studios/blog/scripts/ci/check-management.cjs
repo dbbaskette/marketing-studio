@@ -378,6 +378,18 @@ async function phase4GoogleHandoff(){
   assert.equal(requests[0].data.id,'finished');assert.equal(requests[0].data.expected,'v1');assert.equal(requests[0].data.confirmed,true);
   assert.ok(nodes().some(n=>n.textContent==='Open the Google Doc ↗'&&n.href===url));
   assert.equal(nodes().some(n=>n.textContent==='Open as a Google Doc'),false);
+  const pending={...found,google:null,google_pending:{url}};
+  let attempts=0;
+  const retry=fixture((route)=>route==='/api/google-open'?(++attempts===1?{__http:409,error:'The readback needs reconciliation.'}:{id:found.id,url,transfer:'one'}):pending);
+  retry.loadRunner();retry.set('done',{...found,google:null});retry.run("studio.screen='run';studio.id=done.id;sPage(sDoneCard(done))");
+  const retryNodes=()=>descendants(retry.get('studio-page')),retrySheet=()=>descendants(retry.get('sheet'));
+  await retryNodes().find(n=>n.textContent==='Open as a Google Doc').listeners.click();
+  await retrySheet().find(n=>n.textContent==='Make the Google Doc').listeners.click();
+  assert.ok(retrySheet().some(n=>n.href===url));
+  assert.ok(retrySheet().some(n=>n.textContent==='Check the existing Google Doc'));
+  await retrySheet().find(n=>n.textContent==='Check the existing Google Doc').listeners.click();
+  assert.equal(attempts,2);
+  assert.ok(retryNodes().some(n=>n.textContent==='Open the Google Doc ↗'&&n.href===url));
 }
 
 async function phase4Starts(){

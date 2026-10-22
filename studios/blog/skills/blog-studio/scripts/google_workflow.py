@@ -1218,17 +1218,90 @@ def canonical_text(text):
     return '\n'.join(lines)
 
 
+def canonical_markdown(text):
+    """Normalize only equivalent link/heading spellings, preserving code and escapes.
+
+    This is a bounded comparison for native readback, not text extraction: heading
+    levels, formatting marks and exact link destinations still participate in equality.
+    Unrecognized Markdown stays unchanged and therefore requires reconciliation.
+    """
+
+    inline_marker = None
+
+    def links(line):
+        nonlocal inline_marker
+        parts, at = [], 0
+        if inline_marker:
+            end = re.search(r'(?<!`)' + re.escape(inline_marker) + r'(?!`)', line)
+            if not end:
+                return line
+            parts.append(line[: end.end()])
+            at = end.end()
+            inline_marker = None
+        # Code spans are literal; an unmatched code marker is kept conservatively too.
+        for marker in re.finditer(r'`+', line):
+            if marker.start() < at:
+                continue
+            parts.append(link_text(line[at : marker.start()]))
+            end = re.search(r'(?<!`)' + re.escape(marker[0]) + r'(?!`)', line[marker.end() :])
+            stop = marker.end() + end.end() if end else len(line)
+            if not end:
+                inline_marker = marker[0]
+            parts.append(line[marker.start() : stop])
+            at = stop
+        parts.append(link_text(line[at:]))
+        return ''.join(parts)
+
+    def link_text(line):
+        return re.sub(
+            r'(?<![\\!])\[([^\[\]\n]+)\]\(((?:https?://|mailto:)[^()<>\s]+)\)', r'[\1](<\2>)', line
+        )
+
+    result, fence = [], None
+    for line in canonical_text(text).split('\n'):
+        marker = re.match(r'^ {0,3}(`{3,}|~{3,})', line)
+        if inline_marker:
+            result.append(links(line))
+            continue
+        if fence:
+            result.append(line)
+            if re.fullmatch(r' {0,3}' + re.escape(fence[0]) + '{' + str(fence[1]) + r',}\s*', line):
+                fence = None
+            continue
+        if marker:
+            fence = (marker[1][0], len(marker[1]))
+            result.append(line)
+            continue
+        if line.startswith(('    ', '\t')):
+            result.append(line)
+            continue
+        # Setext needs a preceding, unindented paragraph, not another block or code.
+        if (
+            re.fullmatch(r' {0,3}(?:={3,}|-{3,})\s*', line)
+            and result
+            and result[-1]
+            and not re.match(r'^(?:\s|[#>`~]|[-+*] |\d+[.)] )', result[-1])
+        ):
+            result[-1] = ('# ' if line.lstrip().startswith('=') else '## ') + result[-1]
+        else:
+            result.append(links(line))
+    return '\n'.join(result)
+
+
 def same_text(directory, transfer, saved, obs, body):
-    """Readback equals the frozen copy: byte for byte, or differing only in incidental whitespace."""
+    """Readback equals the frozen copy, allowing incidental whitespace and bounded native Markdown spelling equivalence."""
     if saved['local_sha256'] == obs['content_sha256']:
         return True
     frozen = snapshot_path(directory, transfer, 'local')
     if frozen.is_symlink() or not frozen.is_file():
         return False
     data = frozen.read_bytes()
-    return studio.digest(data) == saved['local_sha256'] and canonical_text(
-        data.decode('utf-8')
-    ) == canonical_text(body)
+    if studio.digest(data) != saved['local_sha256']:
+        return False
+    from google_roundtrip import PROJECTION
+
+    canonical = canonical_markdown if obs.get('projection') == PROJECTION else canonical_text
+    return canonical(data.decode('utf-8')) == canonical(body)
 
 
 def finish_staging(root, args, result):

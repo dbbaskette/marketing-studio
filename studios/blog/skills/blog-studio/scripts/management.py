@@ -2138,9 +2138,9 @@ def view(root, name, query):
             if name == 'tool-history':
                 return advanced_tools.history_preview(root, arg('id'), arg('revision'))
             if name == 'prepublish':
-                return advanced_tools.prepublish.report(
-                    root, arg('id'), whole(arg('title_limit', 80))
-                )
+                import prepublish
+
+                return prepublish.report(root, arg('id'), whole(arg('title_limit', 80)))
             return advanced_tools.overview(root, arg('id'), whole(arg('offset', 0)))
     if name == 'manuscript':
         import manuscript_editor

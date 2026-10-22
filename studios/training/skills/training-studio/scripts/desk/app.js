@@ -5385,7 +5385,8 @@ function copyItem(found) {
           openSheet('copy-choice', event.currentTarget)();
         }, 'choose-copy-' + choose + '-' + found.artifact));
       }
-    } else if (/^Someone has changed the Google Doc/.test(found.problem || '')) {
+    }
+    if (found.conflict || /^Someone has changed the Google Doc/.test(found.problem || '')) {
       add(text, capsule("Bring the Doc's changes in", 'quiet', (event) =>
         pullCopy(found, null, event.currentTarget), 'pull-copy-' + found.artifact));
     }
@@ -5867,7 +5868,6 @@ function marked(review) {
 }
 
 // The stages written before the first drafts stop: approving it does not write them.
-const PREPARED = ['research-plan', 'research', 'blueprint', 'document', 'brief'];
 
 // What approving a combined review commits to, said before it is approved.
 function commitsSays(review) {
@@ -5876,10 +5876,10 @@ function commitsSays(review) {
     return 'Approving finishes this draft. Everything is kept as it stands, and publishing '
       + 'is a separate action.';
   }
-  const names = { scenario: 'practice scenarios', yoodli: 'Yoodli layouts' };
-  // What was written before this stop is not written by approving it, even where a saved
-  // review from before still lists it.
-  const made = list(commits.materials).filter((stage) => !PREPARED.includes(stage))
+  const names = { document: 'learner guides', brief: 'briefs', scenario: 'practice scenarios',
+    yoodli: 'Yoodli layouts' };
+  // The runner lists only work still unwritten in this run, including legacy runs.
+  const made = list(commits.materials)
     .map((stage) => names[stage] || stage);
   const levels = commits.levels > 1 ? 'each of the ' + commits.levels + ' levels' : 'the training';
   const parts = [];

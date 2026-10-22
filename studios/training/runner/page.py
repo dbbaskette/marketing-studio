@@ -30,7 +30,7 @@ What a caller needs to know
   actions, an answer, its documents, its copies, and what its deck says. A training
   driven elsewhere never counts as needing the person here.
 - `GET /api/download?path=&artifact=[&copy=word]` answers authenticated attachment bytes for a registered supported deliverable or the finished index; names are never filesystem paths.
-- `POST /api/copies` with `action: pull` and an artifact explicitly pulls its Google Doc. `choose: ours|theirs` resolves a confirmed conflict only while the local, remote and kept-text revisions still match. It answers the refreshed run and a sentence.
+- `POST /api/copies` with `pull: "<artifact>"` explicitly pulls its Google Doc. `choose: ours|theirs` resolves a confirmed conflict only while the local, remote and kept-text revisions still match. It answers the refreshed run and a sentence.
 - The run adds `decided` while work continues after a decision and combined-review beads to its saved stage row. New runs use review layout 2; existing runs retain layout 1.
 - `GET /api/models?agent=codex` answers what an agent offers to choose from: {"agent",
   "models": [{"name", "label", "family", "about", "levels", "default_level"}], "levels",

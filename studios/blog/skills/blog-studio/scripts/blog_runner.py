@@ -795,6 +795,8 @@ def research_price(root, directory, run):
 
 def survey(root, ident, listing=False):
     """Stage states. A listing skips the version token and next document a decision needs."""
+    from google_handoff import pending_link
+
     directory, record, run = load(root, ident)
     research, bundle_problem = None, False
     if run.get('research_contract') and run['stages'].get('research'):
@@ -898,6 +900,7 @@ def survey(root, ident, listing=False):
         'id': ident,
         'title': record['title'],
         'google': editorial.doc_link(record),
+        'google_pending': pending_link(record),
         'approval': run['approval'],
         'engine': run['engine'],
         'model_mode': (run.get('model_profiles') or {}).get('mode', 'single'),

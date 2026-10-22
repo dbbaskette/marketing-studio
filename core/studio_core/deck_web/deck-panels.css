@@ -1,6 +1,8 @@
 /* The deck panels both studios' pages show. Choices are opaque paper, as forms are. */
 .deck-looks {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 0.6rem;
 }
 
@@ -11,6 +13,8 @@
 }
 
 .deck-look {
+  min-width: 0;
+  overflow-wrap: anywhere;
   flex: 1 1 12rem;
   font: inherit;
   color: inherit;
@@ -23,6 +27,12 @@
   border: 1px solid var(--paper-line, #d8d8dc);
   border-radius: 10px;
   cursor: pointer;
+}
+
+.deck-looks > *,
+.deck-look > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .deck-look[aria-checked="true"] {

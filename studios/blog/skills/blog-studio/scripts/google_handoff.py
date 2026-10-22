@@ -24,6 +24,16 @@ class Conflict(ValueError):
     """A finished-draft handoff cannot proceed in its current state."""
 
 
+def pending_link(record):
+    """The existing unconfirmed Doc, available for inspection without importing again."""
+    pending = (record.get('google') or {}).get('page_handoff') or {}
+    try:
+        document = drive.identifier(pending.get('document_id') or '')
+    except drive.GoogleError:
+        return None
+    return {'url': 'https://docs.google.com/document/d/' + document + '/edit'}
+
+
 def open_as_doc(root, ident, client=None, capture=None):
     directory, record, run = blog_runner.load(root, ident)
     linked = editorial.doc_link(record)
@@ -87,6 +97,8 @@ def open_as_doc(root, ident, client=None, capture=None):
             url='https://docs.google.com/document/d/' + document + '/edit',
         )
         studio.write_json(receipt_path, receipt)
+    pending['document_id'] = drive.identifier(document)
+    studio.persist(directory, 'articles', record)
     transfer = pending['transfer']
     saved = google['transfers'][transfer]
     # The frozen copy must still be the approved local draft, including after a failed readback.

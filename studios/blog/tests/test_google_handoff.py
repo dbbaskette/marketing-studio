@@ -52,17 +52,47 @@ class HandoffTests(RunnerCase):
         signed_in.start()
         self.addCleanup(signed_in.stop)
 
-    def finished(self):
+    def finished(self, spelling=None):
         found = self.create(page=True)
         for stage in ('outline', 'draft', 'review', 'package'):
             found = self.submit(
                 found,
-                accepted_markdown(self.drive.doc).decode('utf-8') if stage == 'draft' else None,
+                (spelling or accepted_markdown(self.drive.doc).decode('utf-8'))
+                if stage == 'draft'
+                else None,
                 page=True,
             )
             found = self.approve(found, page=True)
         self.assertTrue(found['complete'])
         return found['id']
+
+    def test_equivalent_link_and_heading_spellings_confirm_one_native_doc(self):
+        native = accepted_markdown(self.drive.doc).decode('utf-8')
+        ordinary = native.replace('](<https://example.invalid>)', '](https://example.invalid)')
+        ordinary = ordinary.replace(
+            '## The delay is in handoffs.', 'The delay is in handoffs.\n-------------------------'
+        )
+        ident = self.finished(ordinary)
+        result = handoff.open_as_doc(self.root, ident, self.drive)
+        self.assertTrue(result['url'])
+        self.assertEqual(len(self.drive.imports), 1)
+        self.assertEqual(handoff.open_as_doc(self.root, ident, self.drive), result)
+
+    def test_handoff_rejects_changed_urls_structure_formatting_and_code(self):
+        native = accepted_markdown(self.drive.doc).decode('utf-8')
+        link = '[Keep this link.](<https://example.invalid>)'
+        for changed in (
+            native.replace('https://example.invalid', 'https://different.invalid'),
+            native.replace('## ', '# ', 1),
+            native.replace('Keep this link.', '**Keep this link.**'),
+            native.replace(link, '`[Keep this link.](https://example.invalid)`'),
+            native.replace(link, '```\n[Keep this link.](https://example.invalid)\n```'),
+            native.replace(link, r'\[Keep this link.](https://example.invalid)'),
+        ):
+            with self.subTest(changed=changed):
+                ident = self.finished(changed)
+                with self.assertRaisesRegex(handoff.Conflict, 'readback does not match'):
+                    handoff.open_as_doc(self.root, ident, self.drive)
 
     def test_a_finished_blog_becomes_its_linked_doc_once(self):
         ident = self.finished()
@@ -137,6 +167,8 @@ class HandoffTests(RunnerCase):
             handoff.open_as_doc(self.root, ident, self.drive, different)
         _, record = studio.item(self.root, 'articles', ident)
         self.assertIsNone(editorial.doc_link(record))
+        pending = __import__('blog_runner').survey(self.root, ident)['google_pending']
+        self.assertEqual(pending['url'], 'https://docs.google.com/document/d/fixture-doc/edit')
         with self.assertRaisesRegex(ValueError, 'readback does not match'):
             handoff.open_as_doc(self.root, ident, self.drive)
         self.assertEqual(len(self.drive.imports), 1)

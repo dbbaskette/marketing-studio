@@ -2654,6 +2654,27 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('replaces the changes in the Google Doc', result['snapshots']['ours']['sheet'])
         self.assertEqual(self.posts(result), [('/api/copies', {'path': str(self.root), 'pull': 'document'})])
 
+    def test_a_changed_google_conflict_can_be_refreshed_and_confirmed_again(self):
+        self.started()
+        copy = a_copy('document', 'the learner guide', 'google', 'out-of-date',
+                      'https://docs.example.com/d/one/edit', 'Both texts changed.')
+        both = a_run('waiting', 'Waiting.', copies=[{**copy, 'conflict': True}])
+        made = a_run('waiting', 'Waiting.', copies=[{**copy, 'conflict': False}])
+        result = self.run_page(self.answers(**{
+            'GET /api/trainings': [self.listed('waiting')],
+            'GET /api/training': [self.detail('waiting', '')], 'GET /api/run': [both],
+            'POST /api/copies': [{'status': 409, 'body': {'error': 'Bring the changes in again.'}}, both, made]}), [
+            {'click': 'Open Rolling restarts'}, {'click': "Use the Doc's version"},
+            {'click': "Use the Doc's version"}, {'snapshot': 'refused'}, {'click': 'Cancel'},
+            {'click': "Bring the Doc's changes in"}, {'click': "Use the Doc's version"},
+            {'snapshot': 'renewed'}, {'click': "Use the Doc's version"}, {'snapshot': 'resolved'}])
+        self.assertIn('Bring the changes in again. Nothing was replaced.', result['snapshots']['refused']['toasts'])
+        self.assertIn('replaces the local learner guide', result['snapshots']['renewed']['sheet'])
+        self.assertEqual([body for _, body in self.posts(result)], [
+            {'path': str(self.root), 'pull': 'document', 'choose': 'theirs'},
+            {'path': str(self.root), 'pull': 'document'},
+            {'path': str(self.root), 'pull': 'document', 'choose': 'theirs'}])
+
     def test_made_files_and_word_copies_have_download_controls(self):
         self.research()
         self.content()
@@ -3153,13 +3174,14 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     def test_the_first_drafts_sheet_says_what_approving_writes(self):
         self.started()
         for materials, said in (
-                (['document', 'brief', 'scenario'],
+                (['brief'], 'Approving the first drafts writes the briefs for each of the 2 levels'),
+                (['scenario'],
                  'Approving the first drafts writes the practice scenarios for each of the 2 '
                  'levels, and the deck is then drawn: estimated at about $7.20 and 40 minutes of '
                  "agent time for a deck of this size (a fixed estimate, not this computer's "
                  'history). It spends from the same limit as the rest of the training.'),
-                # A saved review from before lists the guide and the brief; they are not said.
-                (['document', 'brief'],
+                # Existing runs have no unwritten guide or brief at this stop.
+                ([],
                  'Nothing more is written for the levels: approving carries on to the deck.')):
             with self.subTest(materials=materials):
                 waiting = a_run('waiting', 'Review the first drafts.')

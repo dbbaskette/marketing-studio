@@ -892,12 +892,18 @@ function sDoneCard(found){
   publish.disabled=!sCanEdit(found);
   const prepublish=sButton('Pre-publish check',()=>sPrepublishTool(found.id));prepublish.disabled=!sCanEdit(found);
   const repurpose=sButton('Repurpose',()=>sRepurposeTool(found.id));repurpose.disabled=!sCanEdit(found);
-  const google=found.google?.url?link(found.google.url,'Open the Google Doc ↗'):sButton('Open as a Google Doc',()=>{
+  const pendingWords='The existing Google Doc is kept. Inspect it, then check it again after reconciling its content with the approved draft. No second Doc is made.';
+  const google=found.google?.url?link(found.google.url,'Open the Google Doc ↗'):sButton(found.google_pending?.url?'Check the existing Google Doc':'Open as a Google Doc',()=>{
     const error=sNode('p','sheet-error');error.setAttribute('role','alert');
-    sOpenSheet('Open as a Google Doc?',sNode('p','','This makes a new Google Doc of the approved draft in your Google Drive, private to you. Nothing is shared.'),error,
-      sAdd(sNode('div','bar'),sButton('Make the Google Doc',async button=>busy(button,'Making…',async()=>{
-        try{const result=await api('google-open',{id:found.id,expected:found.expected,confirmed:true});found.google={url:result.url};sCloseSheet();sToast('The private Google Doc is ready.');if(studio.screen==='run'&&studio.id===found.id)sRun(found);}catch(failure){error.textContent=failure.message;}
-      }),'filled'),sButton('Cancel',sCloseSheet)));
+    const intro=sNode('p','',found.google_pending?.url?pendingWords:'This makes a new Google Doc of the approved draft in your Google Drive, private to you. Nothing is shared.');
+    if(found.google_pending?.url)error.append(link(found.google_pending.url,'Inspect the existing Google Doc ↗'));
+    sOpenSheet(found.google_pending?.url?'Check the existing Google Doc?':'Open as a Google Doc?',intro,error,
+      sAdd(sNode('div','bar'),sButton(found.google_pending?.url?'Check the existing Google Doc':'Make the Google Doc',async button=>busy(button,'Checking…',async()=>{
+        try{const result=await api('google-open',{id:found.id,expected:found.expected,confirmed:true});found.google={url:result.url};sCloseSheet();sToast('The private Google Doc is ready.');if(studio.screen==='run'&&studio.id===found.id)sRun(found);}catch(failure){
+          error.textContent=failure.message;
+          try{const latest=await api('run?id='+encodeURIComponent(found.id));if(latest.google_pending?.url){found.google_pending=latest.google_pending;found.expected=latest.expected;intro.textContent=pendingWords;button.textContent='Check the existing Google Doc';error.append(link(latest.google_pending.url,'Inspect the existing Google Doc ↗'));}}catch(readFailure){/* The original failure remains visible; the durable receipt is kept. */}
+        }
+      }).then(()=>{if(found.google_pending?.url&&!found.google?.url)button.textContent='Check the existing Google Doc';}),'filled'),sButton('Cancel',sCloseSheet)));
   });
   if(!found.google?.url)google.disabled=!sCanEdit(found);
   const remove=sButton('Delete this blog',()=>sDeleteSheet(found),'danger');remove.disabled=!sCanEdit(found);
