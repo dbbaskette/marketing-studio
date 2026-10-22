@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 from pathlib import Path
@@ -170,12 +171,13 @@ class WorkflowCase(unittest.TestCase):
             value['sources'][0]['original_file'] = named
         return value
 
-    def run_with(self, invoke):
+    def run_with(self, invoke, readable=None):
         def counted(phase, guidance, payload, sources, fetch):
             self.calls.append((phase, sources))
             return invoke(phase, guidance, payload, sources, fetch)
         with mock.patch.object(contract, 'read_bundle', return_value=({'facts': 'read'}, {})):
-            return contract.Workflow(self.runtime, self.helper).run(self.root, self.task, counted)
+            return contract.Workflow(self.runtime, self.helper).run(
+                self.root, self.task, counted, readable=readable)
 
 
 class OriginalClaimTests(WorkflowCase):
@@ -217,8 +219,10 @@ class OriginalClaimTests(WorkflowCase):
 
 
 class UnfinishedCheckTests(WorkflowCase):
-    """A check that cannot read an original it must attest to cannot be satisfied by any
-    correction: the research stops after that round, and says it is the studio's problem."""
+    """A check that could not read an original the studio offered, when that is all it
+    objected to and the studio's own tools cannot serve that original either, cannot be
+    satisfied by any correction: the research stops after that round and says it is the
+    studio's problem. Anything less is the check's to put right in the next round."""
 
     def unread(self, template, error='There is no tool to read it.', verdict='narrow'):
         result = review(template)
@@ -227,14 +231,19 @@ class UnfinishedCheckTests(WorkflowCase):
             item.update(verdict=verdict, note='The original could not be inspected.')
         return result
 
-    def test_unread_originals_are_the_cause_only_when_every_objection_rests_on_them(self):
+    def with_original(self):
         value = self.authored({'worker': 'author-1'})
+        value['sources'][0]['original_file'] = self.ORIGINAL
+        return value
+
+    def test_unread_originals_are_the_cause_only_when_every_objection_rests_on_them(self):
+        value = self.with_original()
         template = {'originals': [{'source': 'source-a', 'read_original': True}],
                     'facts': [{'id': 'fact-a'}], 'findings': [], 'prose': []}
         unread = self.unread(template, 'No tool serves it.')
         self.assertEqual(contract.unreadable_originals(unread, value), [{
             'source': 'source-a', 'title': 'Synthetic source', 'file': self.FILE,
-            'original': None, 'access_error': 'No tool serves it.'}])
+            'original': self.ORIGINAL, 'access_error': 'No tool serves it.'}])
         # Prose and findings trace to their facts, and so to the source.
         for group, ident in (('findings', 'instance-min'), ('prose', 'explain:0'),
                              ('prose', 'brief:teaching:0')):
@@ -248,24 +257,80 @@ class UnfinishedCheckTests(WorkflowCase):
         self.assertEqual(contract.unreadable_originals(mixed, value), [])
         self.assertEqual(contract.unreadable_originals(review(template), value), [])
 
-    def test_the_research_stops_after_the_round_that_could_not_read_an_original(self):
-        def invoke(phase, guidance, payload, sources, fetch):
-            if phase == 'author':
-                return json.dumps(self.authored(payload)), self.captured()
-            return json.dumps(self.unread(payload['review_template'])), []
+    def test_a_source_with_no_original_is_never_the_cause(self):
+        # A Markdown document is its own capture: a check that says it could not read the
+        # original of one has only to read the capture, so the next round may finish.
+        value = self.authored({'worker': 'author-1'})
+        template = {'originals': [{'source': 'source-a', 'read_original': True}],
+                    'facts': [{'id': 'fact-a'}], 'findings': [], 'prose': []}
+        self.assertEqual(contract.unreadable_originals(self.unread(template), value), [])
+
+    def test_an_objection_that_rests_on_a_readable_source_too_or_on_coverage_is_real(self):
+        value = self.with_original()
+        value['sources'].append({**value['sources'][0], 'id': 'source-b', 'file': 'sources/b.txt'})
+        value['sources'][1].pop('original_file')
+        value['facts'][0]['citations'].append({'source': 'source-b', 'quote': 'x'})
+        template = {'originals': [{'source': 'source-a'}, {'source': 'source-b'}],
+                    'facts': [{'id': 'fact-a'}], 'findings': [], 'prose': []}
+        both = self.unread(template)
+        self.assertEqual(contract.unreadable_originals(both, value), [],
+                         'the fact also rests on a source the check could read')
+        alone = self.with_original()
+        template = {'originals': [{'source': 'source-a'}], 'facts': [{'id': 'fact-a'}],
+                    'findings': [], 'prose': []}
+        coverage = self.unread(template, verdict='supported')
+        coverage['assessment'] = {'coverage': 'needs-revision', 'usefulness': 'adequate',
+                                  'note': 'Alternatives are missing.'}
+        self.assertEqual(contract.unreadable_originals(coverage, alone), [],
+                         'coverage the author can put right is a real objection')
+        coverage['assessment']['coverage'] = 'accurate'
+        self.assertEqual(len(contract.unreadable_originals(coverage, alone)), 1)
+
+    def blind(self, phase, guidance, payload, sources, fetch):
+        if phase == 'author':
+            return json.dumps(self.authored(payload)), self.captured()
+        return json.dumps(self.unread(payload['review_template'])), []
+
+    def test_the_research_stops_after_a_round_whose_original_the_studio_cannot_serve(self):
+        asked = []
+
+        def readable(cause):
+            asked.append(cause)
+            return 'The original of s1 is not in this job, so it cannot be read.'
         with self.assertRaises(contract.CheckCouldNotFinish) as caught:
-            self.run_with(invoke)
+            self.run_with(self.blind, readable)
         self.assertEqual([phase for phase, _ in self.calls], ['author', 'review'])
+        self.assertEqual(asked[0][0]['original'], self.ORIGINAL)
         refusal = caught.exception
         self.assertIsInstance(refusal, contract.ReviewRefused)
         self.assertEqual(refusal.rounds, 0)
         self.assertEqual(refusal.cause[0]['original'], self.ORIGINAL)
         self.assertEqual(str(refusal), (
-            'The research check could not read the original of "Synthetic source" (There is '
-            'no tool to read it.). That is a studio problem, not a research problem: the report '
-            'is not wrong, the check could not finish. Nothing to correct until the original is '
-            'readable.'))
+            'The research check could not read the original of "Synthetic source" (The original '
+            'of s1 is not in this job, so it cannot be read.). That is a studio problem, not a '
+            'research problem: nothing was found wrong with the report, but the check could not '
+            'finish. Nothing to correct until the original is readable.'))
         self.assertTrue(refusal.objections)
+
+    def test_an_original_the_studio_can_serve_is_the_check_s_to_read_next_round(self):
+        def invoke(phase, guidance, payload, sources, fetch):
+            if phase == 'review' and len(self.calls) > 2:
+                return json.dumps(review(payload['review_template'])), []
+            return self.blind(phase, guidance, payload, sources, fetch)
+        self.assertEqual(self.run_with(invoke, lambda cause: None)[0], {'facts': 'read'})
+        self.assertEqual([phase for phase, _ in self.calls], ['author', 'review'] * 2)
+
+    def test_a_check_that_never_reads_a_servable_original_ends_as_any_refusal_does(self):
+        with self.assertRaises(contract.ReviewRefused) as caught:
+            self.run_with(self.blind, lambda cause: None)
+        self.assertNotIsInstance(caught.exception, contract.CheckCouldNotFinish)
+        self.assertEqual(len(self.calls), 2 * contract.ROUNDS)
+        self.assertIn('1 fact the check calls narrow', str(caught.exception))
+
+    def test_without_a_way_to_ask_the_studio_the_check_s_word_stands(self):
+        with self.assertRaises(contract.CheckCouldNotFinish) as caught:
+            self.run_with(self.blind)
+        self.assertIn('(There is no tool to read it.)', str(caught.exception))
 
     def test_a_real_objection_still_goes_back_for_correction(self):
         reviews = []
@@ -279,7 +344,6 @@ class UnfinishedCheckTests(WorkflowCase):
             return json.dumps(review(payload['review_template'])), []
         self.assertEqual(self.run_with(invoke)[0], {'facts': 'read'})
         self.assertEqual([phase for phase, _ in self.calls], ['author', 'review'] * 2)
-
 
 
 class GroupedObjectionTests(unittest.TestCase):
@@ -491,6 +555,48 @@ class ResearchContractTests(unittest.TestCase):
         self.assertEqual(len(self.calls), 6)
         facts, _ = contract.read_bundle(self.root / contract.CASE / 'research', complete=False)
         self.assertEqual(facts['status'], 'needs-revision')
+
+    def test_a_markdown_document_once_offered_as_its_own_original_finishes_on_retry(self):
+        # The live deck: a Google Doc kept as Markdown, whose original was offered and could
+        # not be read. Its saved state names the original; the next try offers none.
+        file, original = 'sources/supplied/google-doc-md.txt', 'sources/supplied/google-doc-md.original.md'
+        (self.root / 'sources/supplied').mkdir(parents=True)
+        for name in (file, original):
+            (self.root / name).write_text(TEXT)
+
+        def captured(offered):
+            return [dict(file=file, path=self.root / file, origin='supplied google-doc.md',
+                         offered=True, **(dict(original=original, original_path=self.root / original)
+                                          if offered else {}))]
+
+        def before(phase, guidance, payload, sources, fetch):
+            if phase == 'author':
+                return json.dumps(dossier(payload['worker'], file, 'supplied google-doc.md',
+                                          'selected')), captured(True)
+            result = review(payload['review_template'])
+            for item in result['originals']:
+                item.update(read_original=False, access_error='No tool serves it.')
+            for item in result['facts']:
+                item.update(verdict='narrow', note='The original could not be inspected.')
+            return json.dumps(result), []
+        with self.assertRaises(contract.ReviewRefused):
+            contract.Workflow(RUNTIME).run(self.root, self.task, before)
+        state = json.loads((self.root / contract.CASE / '.harness-research/synthesis.json').read_text())
+        self.assertEqual(state['dossier']['sources'][0]['original_file'], original)
+        seen = {}
+
+        def after(phase, guidance, payload, sources, fetch):
+            if phase == 'author':
+                value = dossier(payload['worker'], file, 'supplied google-doc.md', 'selected')
+                value['sources'] = copy.deepcopy(payload['previous_dossier']['sources'])
+                return json.dumps(value), captured(False)
+            seen.update(template=payload['review_template'], offered=sources)
+            return json.dumps(review(payload['review_template'])), []
+        facts, manifest = contract.Workflow(RUNTIME).run(self.root, self.task, after)
+        self.assertEqual(manifest['status'], 'complete')
+        self.assertNotIn('original_sha256', seen['template']['originals'][0])
+        self.assertNotIn('original', seen['offered'][0])
+        self.assertNotIn('original_file', facts['sources'][0])
 
     def test_generated_permission_and_uncaptured_source_are_refused(self):
         def bad(phase, guidance, payload, sources, fetch):

@@ -750,7 +750,11 @@ class SynthesisStopTests(StudioCase):
                       'no tool to read it.', view['problem']['kept'])
         self.assertEqual(self.record(root)['halted']['unreadable'], self.CAUSE)
         # Try again is refused, in the same words, while the original still cannot be read.
-        with mock.patch.object(research_contract, 'dry_read', return_value='No.') as read, \
+        # The dry read is done before the deck's files are held.
+        def unread(*given):
+            self.assertFalse(self.engine.files._is_owned())
+            return 'No.'
+        with mock.patch.object(research_contract, 'dry_read', side_effect=unread) as read, \
                 mock.patch.object(research_contract, 'native') as again:
             with self.assertRaises(WorkspaceError) as caught:
                 self.engine.act(root, 'retry')

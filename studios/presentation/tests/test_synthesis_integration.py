@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest import mock
 from runner_support import StudioCase, URL
-from runner import research
+from runner import documents, research, worker_tools
 from studio_core import research_contract, review_policy
 from synthesis_fixture import TEXT, dossier, review
 
@@ -224,27 +224,130 @@ class SuppliedOriginalTests(StudioCase):
         self.assertIn('## 2 findings the check calls narrow',
                       (root / 'research/review.md').read_text())
 
-    def test_a_check_that_cannot_read_the_original_stops_after_one_round(self):
-        def blind(tools, job):
-            payload = json.loads(tools.read_input('research-task')[1])
-            result = review(payload['review_template'])
-            for attested in result['originals']:
-                if 'original_sha256' in attested:
-                    attested.update(read_original=False, access_error='No tool serves it.')
-            for item in result['facts']:
-                item.update(verdict='narrow', note='The original could not be inspected.')
-            self.assertTrue(tools.submit_artifact('research-result', json.dumps(result))[0])
-        self.workers.queued['research-result'] = [self.author, blind]
-        root = self.deck('notes.html', self.PAGE)
-        view = self.view(root)
-        self.assertEqual(len(self.workers.of('research-result')), 2)
-        self.assertEqual(view['state'], 'failed')
-        self.assertTrue(view['problem']['why'].startswith(
-            'The research check could not read the original of "Synthetic source" (No tool '
-            'serves it.). That is a studio problem, not a research problem: the report is not '
-            'wrong, the check could not finish. Nothing to correct until the original is '
-            'readable.'), view['problem']['why'])
-        # The studio can serve it, so Try again runs the research again.
+    def blind(self, tools, job):
+        """A check that says it could not read the original, and objects to each fact."""
+        payload = json.loads(tools.read_input('research-task')[1])
+        result = review(payload['review_template'])
+        for attested in result['originals']:
+            if 'original_sha256' in attested:
+                attested.update(read_original=False, access_error='No tool serves it.')
+        for item in result['facts']:
+            item.update(verdict='narrow', note='The original could not be inspected.')
+        self.assertTrue(tools.submit_artifact('research-result', json.dumps(result))[0])
+
+    def test_a_check_whose_original_the_studio_cannot_serve_stops_after_one_round(self):
+        refuse = mock.patch.object(worker_tools.WorkerTools, '_original', side_effect=(
+            worker_tools.Refusal('The original of s1 cannot be shown as text.')))
+        self.workers.queued['research-result'] = [self.author, self.blind]
+        with refuse:
+            root = self.deck('notes.html', self.PAGE)
+            view = self.view(root)
+            self.assertEqual(len(self.workers.of('research-result')), 2)
+            self.assertEqual(view['state'], 'failed')
+            self.assertTrue(view['problem']['why'].startswith(
+                'The research check could not read the original of "Synthetic source" (The '
+                'original of s1 cannot be shown as text.). That is a studio problem, not a '
+                'research problem: nothing was found wrong with the report, but the check '
+                'could not finish. Nothing to correct until the original is readable.'),
+                view['problem']['why'])
+            # While the studio still cannot serve it, Try again says so and starts nothing.
+            with self.assertRaises(Exception) as caught:
+                self.engine.act(root, 'retry')
+            self.assertEqual(str(caught.exception), view['problem']['why'])
+        # Once it can, Try again runs the research again.
         self.workers.then('research-result', self.author, self.checker)
         self.engine.act(root, 'retry')
         self.assertIsNone(self.view(root)['problem'], self.view(root))
+
+    def test_a_check_that_misses_an_original_the_studio_can_serve_reads_it_next_round(self):
+        self.workers.queued['research-result'] = [self.author, self.blind, self.author,
+                                                  self.checker]
+        root = self.deck('notes.html', self.PAGE)
+        self.assertIsNone(self.view(root)['problem'], self.view(root))
+        self.assertEqual(len(self.workers.of('research-result')), 4)
+        self.assertEqual(len(self.read), 1, 'the second check read the original')
+
+
+@unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME for the real helper integration.')
+class LiveDeckTests(StudioCase):
+    """The deck that ran 31 research jobs: made from a supplied Markdown document (as a
+    Google Doc's export is kept), whose research began before originals were readable and
+    only offered when distinct. Its saved synthesis state names the original, its jobs are
+    recorded under their old names and it stopped with the old refusal. Try again finishes."""
+
+    def setUp(self):
+        super().setUp()
+        self.research = research.Research(Path(RUNTIME))
+        self.templates, self.offered = [], []
+
+    def author(self, tools, job):
+        payload = json.loads(tools.read_input('research-task')[1])
+        source = tools._index()[0]
+        value = dossier(payload['worker'], source['file'], source['url'], 'selected')
+        value['source_mode'] = 'mixed'
+        previous = payload.get('previous_dossier')
+        if previous:   # the author copies what its previous dossier said of the source
+            value['sources'][0]['original_file'] = previous['sources'][0].get('original_file')
+        self.assertTrue(tools.submit_artifact('research-result', json.dumps(value))[0])
+
+    def blind(self, tools, job):
+        payload = json.loads(tools.read_input('research-task')[1])
+        self.templates.append(payload['review_template'])
+        result = review(payload['review_template'])
+        for item in result['originals']:
+            if 'original_sha256' in item:
+                item.update(read_original=False,
+                            access_error='required distinct original cannot be inspected')
+        for item in result['facts']:
+            item.update(verdict='narrow', note='required distinct original cannot be inspected')
+        self.assertTrue(tools.submit_artifact('research-result', json.dumps(result))[0])
+
+    def checker(self, tools, job):
+        payload = json.loads(tools.read_input('research-task')[1])
+        self.templates.append(payload['review_template'])
+        self.offered.append(tools.list_inputs()[1])
+        result = review(payload['review_template'])
+        self.assertTrue(tools.submit_artifact('research-result', json.dumps(result))[0])
+
+    def test_try_again_on_the_live_deck_finishes(self):
+        real = documents._entry
+        # As it was then: every supplied document's original was offered, and the check's
+        # tools could not serve it.
+        offered = mock.patch.object(documents, '_entry',
+                                    lambda root, kept: {**real(root, kept), 'distinct': True})
+        unserved = mock.patch.object(worker_tools.WorkerTools, '_original', side_effect=(
+            worker_tools.Refusal('There is no source s1 original.')))
+        self.workers.queued['research-result'] = [self.author, self.blind]
+        with offered, unserved, mock.patch.object(
+                review_policy, 'capture', return_value={'schema': 1, 'level': 'automatic'}):
+            root = self.start(route='document', source={'kind': 'upload', 'name': 'google-doc.md'},
+                              uploads={'google-doc.md': TEXT.encode()}, research=True)
+        self.assertIn('original_sha256', self.templates[0]['originals'][0])
+        state = json.loads((root / '.studio-research/.harness-research/synthesis.json').read_text())
+        self.assertTrue(state['dossier']['sources'][0].get('original_file'))
+        # The record as the old runner left it: the old job names and the old halt.
+        with self.engine.files:
+            record = self.engine._load(root)
+            for new, old in (('research:author-1', 'research-author'),
+                             ('research:review-1', 'research-review')):
+                record['steps'][old] = record['steps'].pop(new)
+            record['halted'] = {'state': 'failed', 'step': 'research', 'action': 'retry',
+                                'why': 'The independent check of the research still needs '
+                                       'changes after 3 rounds of correction: 40 objections, '
+                                       'such as f47', 'kept': 'The draft report.',
+                                'at': record['halted']['at']}
+            self.engine._store(root, record)
+        row = next(row for row in self.view(root)['timeline'] if row['name'] == 'research')
+        self.assertEqual(row['attempts'], 2, 'the old jobs count under the research step')
+        # Now the Markdown document is its own capture, and Try again finishes.
+        self.assertFalse(documents.listed(root)[0]['distinct'])
+        self.workers.then('research-result', self.author, self.checker)
+        self.engine.act(root, 'retry')
+        view = self.view(root)
+        self.assertIsNone(view['problem'], view['problem'])
+        self.assertNotIn('original_sha256', self.templates[-1]['originals'][0])
+        self.assertNotIn('original:', self.offered[-1])
+        facts, _ = research_contract.read_bundle(root / 'research')
+        self.assertNotIn('original_file', facts['sources'][0])
+        row = next(row for row in view['timeline'] if row['name'] == 'research')
+        self.assertEqual(row['attempts'], 5, 'two old jobs, two new ones and the step itself')

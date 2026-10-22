@@ -227,7 +227,7 @@ When documents are wanted, the run waits for them before anything else. Add text
 
 Your documents stay on this computer. Passages quoted from them appear in the research report, which is shared with your team. With documents only, the agents doing the research cannot search the web or open a page.
 
-The research is checked against what you sent. The agent that checks it reads the text of each document, and, for a PDF, a Word file or a web page, the file itself as well, with its size and fingerprint, so that it can say it read both. A text or Markdown file is its own text, so there is nothing more to read. If the check cannot read a document it must vouch for, the research stops at once and says so: that is the studio's problem, not the research's, and no round of correction is spent on it. Try again works once the document can be read.
+The research is checked against what you sent. The agent that checks it reads the text of each document, and, for a PDF, a Word file or a web page, the file itself as well, with its size and fingerprint, so that it can say it read both. A text or Markdown file is its own text, so there is nothing more to read. If the check says it could not read a document it must vouch for, the studio reads it the same way itself. When it can, the next round's check reads it. When it cannot, the research stops at once and says so: that is the studio's problem, not the research's, and no round of correction is spent on it. Try again works once the document can be read.
 
 ## Watching a run
 

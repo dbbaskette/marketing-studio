@@ -886,8 +886,12 @@ class ResearchTests(StudioCase):
         self.assertIn('Handbook: sources/supplied/handbook.md (There is no tool to read it.)', review)
         self.assertNotIn('rounds of correction', review)
         # Try again is refused, in the same words, while the original still cannot be read.
+        # The dry read is done before the training's files are held.
+        def unread(*given):
+            self.assertFalse(self.engine.files._is_owned())
+            return 'It cannot be read.'
         with mock.patch.object(engine_module.research_contract, 'dry_read',
-                               return_value='It cannot be read.') as read, \
+                               side_effect=unread) as read, \
                 mock.patch.object(engine_module.research_contract, 'native') as again:
             with self.assertRaises(WorkspaceError) as caught:
                 self.engine.act(root, 'retry')

@@ -41,13 +41,19 @@ own capture, so the check is asked for nothing more. The studio decides which
 sources have an original; one a previous draft named and the studio no longer
 offers is dropped.
 
-When every verdict a review did not support rests on a source whose original the
-check could not read, no correction can change its answer. The contract then stops
-before the next author round with `CheckCouldNotFinish` (a `ReviewRefused` with a
-`cause` naming each source and its access error), and that round is not counted.
-The studios stop at the research step saying it is a studio problem, not a research
-problem, and refuse Try again in the same words while a dry read of that original
-through the checker's own tools still fails. A refusal after the last round counts
+When a review's only objections rest on sources whose original the check says it
+could not read (every unsupported verdict rests only on such sources, and the
+assessment asks for no revision), no correction by the author can change its answer.
+Only a source with an `original_file` counts: one whose capture is the document is the
+check's to read. The contract then asks the studio, through `Workflow.run`'s
+`readable` callback (`dry_read` for the studios), whether its own tools can serve
+that original. When they can, the check failed, not the studio: the next round goes
+ahead, and if the rounds run out the usual grouped refusal applies. When they cannot,
+the contract stops before the next author round with `CheckCouldNotFinish` (a
+`ReviewRefused` with a `cause` naming each source and the studio's answer), and that
+round is not counted. The studios stop at the research step saying it is a studio
+problem, not a research problem, and refuse Try again in the same words while the dry
+read still fails. A refusal after the last round counts
 its objections by cause ("12 facts the check calls narrow (…), 3 findings
 unsupported (…), coverage needs revision (…)"), lists each one under its group in
 the studio's research review, and says what the try's research jobs took in time

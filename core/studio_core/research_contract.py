@@ -277,12 +277,17 @@ class Workflow:
             raise ValueError((result.stderr.strip().splitlines() or ['Harness Research failed.'])[-1])
         return json.loads(result.stdout)
 
-    def run(self, root, task, invoke, sources=()):
+    def run(self, root, task, invoke, sources=(), readable=None):
         """One authored dossier followed by a separate checker. Refusals keep the draft.
 
         invoke(phase, guidance, payload, sources, fetch) returns JSON text plus only
         sources captured by the studio's confined tools. Worker IDs originate here,
         so the author cannot choose its reviewer identity.
+
+        readable(cause) says whether the studio can serve the originals a check could not
+        read: None when it can, so the next round is the check's to read them in, else the
+        studio's own answer, and the research stops at once. Without it, the check's word
+        stands and the research stops.
         """
         case = inside(root, str(CASE))
         case.mkdir(parents=True, exist_ok=True)
@@ -361,13 +366,16 @@ class Workflow:
                 if status.get('status') == 'complete':
                     break
                 # A check that could not read an original it must attest to refuses whatever
-                # the author corrects: stop now, and do not count this round as a correction.
+                # the author corrects. When the studio cannot serve that original either, stop
+                # now and do not count this round as a correction; when it can, the check
+                # failed, not the studio, and the next round is its to read it in.
                 try:
                     cause = unreadable_originals(json.loads(result), dossier)
                 except (TypeError, ValueError):
                     cause = []
-                if cause:
-                    raise CheckCouldNotFinish(objections(case), rounds - 1, cause)
+                said = (readable(cause) if readable else '') if cause else None
+                if cause and said is not None:
+                    raise CheckCouldNotFinish(objections(case), rounds - 1, cause, said or None)
         verified = self.command(case, 'verify')
         if verified.get('status') != 'complete' or verified.get('artifact_integrity') == 'failed':
             raise ReviewRefused(objections(case), ROUNDS, grouped(case))
@@ -405,40 +413,53 @@ class ReviewRefused(ValueError):
 
 
 class CheckCouldNotFinish(ReviewRefused):
-    """The independent check could not read the original of a source it must attest to,
-    and that is all it objected to. No correction can change that: it is the studio's
-    problem, not the research's. `cause` holds each such source as {'source', 'title',
-    'file', 'original', 'access_error'}; `rounds` counts only the rounds of correction
-    before it, so this one is not counted."""
+    """The independent check could not read the original of a source the studio offered,
+    that is all it objected to, and the studio cannot serve that original either. No
+    correction can change that: it is the studio's problem, not the research's. `cause`
+    holds each such source as {'source', 'title', 'file', 'original', 'access_error'};
+    `said` is the studio's own answer, when it was asked; `rounds` counts only the rounds of
+    correction before it, so this one is not counted."""
 
-    def __init__(self, objections, rounds, cause):
+    def __init__(self, objections, rounds, cause, said=None):
         self.objections = list(objections)
         self.rounds = rounds
         self.cause = list(cause)
+        self.said = said
         first = self.cause[0] if self.cause else {}
         named = f'the original of "{first.get("title") or first.get("source") or "a source"}"'
-        if first.get('access_error'):
-            named += f' ({shortened(first["access_error"]).rstrip(".")}.)'
+        why = said or first.get('access_error')
+        if why:
+            named += f' ({shortened(why).rstrip(".")}.)'
         more = len(self.cause) - 1
         if more:
             named += f' and of {more} more source' + ('' if more == 1 else 's')
         ValueError.__init__(self, (
             f'The research check could not read {named}. That is a studio problem, not a '
-            'research problem: the report is not wrong, the check could not finish. Nothing '
-            'to correct until the original is readable.'))
+            'research problem: nothing was found wrong with the report, but the check could '
+            'not finish. Nothing to correct until the original is readable.'))
 
 
 def unreadable_originals(review, dossier):
-    """The sources a review says it could not read, when every verdict it did not support
-    rests on one of them; else []. A verdict rests on the sources its fact cites, its
-    finding's facts cite, or its passage's facts and findings cite. Each is {'source',
-    'title', 'file', 'original', 'access_error'}."""
+    """The sources with an original of their own that a review says it could not read,
+    when they are all it objected to; else []. That is: every verdict it did not support
+    rests only on such sources, and its assessment asks for no revision. A verdict rests on
+    the sources its fact cites, its finding's facts cite, or its passage's facts and
+    findings cite. A source with no original (its capture is the document) is never the
+    cause: the check has only to read its capture. Each is {'source', 'title', 'file',
+    'original', 'access_error'}."""
     if not isinstance(review, dict) or not isinstance(dossier, dict):
         return []
+    named = {source.get('id'): source for source in dossier.get('sources') or ()
+             if isinstance(source, dict)}
     unread = {item.get('source'): item.get('access_error') or 'it gave no reason'
               for item in review.get('originals') or ()
-              if isinstance(item, dict) and item.get('read_original') is False}
+              if isinstance(item, dict) and item.get('read_original') is False
+              and (named.get(item.get('source')) or {}).get('original_file')}
     if not unread:
+        return []
+    assessment = review.get('assessment') or {}
+    if isinstance(assessment, dict) and 'needs-revision' in (assessment.get('coverage'),
+                                                            assessment.get('usefulness')):
         return []
     cited = {fact.get('id'): {citation.get('source') for citation in fact.get('citations') or ()
                               if isinstance(citation, dict)}
@@ -463,10 +484,8 @@ def unreadable_originals(review, dossier):
             ident = item.get('id')
             sources = (set().union(*(rests.get(ref, set()) for ref in passages.get(ident, ())))
                        if group == 'prose' else rests.get(ident, set()))
-            if not sources & unread.keys():
+            if not sources or not sources <= unread.keys():
                 return []
-    named = {source.get('id'): source for source in dossier.get('sources') or ()
-             if isinstance(source, dict)}
     return [{'source': ident, 'title': (named.get(ident) or {}).get('title') or ident,
              'file': (named.get(ident) or {}).get('file'),
              'original': (named.get(ident) or {}).get('original_file'), 'access_error': said}
@@ -737,7 +756,8 @@ def native(engine, root, run, task, sources, product):
         told = ('' if phase == 'author' else
                 ' list_inputs names the original of each supplied source that has one: read it '
                 'with read_source(source_id, original=true), as well as its capture, before you '
-                'attest read_original. If a tool cannot serve an original, set read_original to '
+                'attest read_original. A source with no original: read its capture and set '
+                'read_original true. If a tool cannot serve an original, set read_original to '
                 'false and give the tool\'s answer as its access_error.')
         work = Work(guidance + '\n\nUse only the studio tools; the parent runs helper commands. '
                     'Read list_inputs and sources; return the requested JSON using submit_artifact '
@@ -783,7 +803,8 @@ def native(engine, root, run, task, sources, product):
         return accepted['text'], handed['sources']
 
     try:
-        return Workflow(tool.runtime, tool._json).run(root, task, invoke, sources)
+        return Workflow(tool.runtime, tool._json).run(
+            root, task, invoke, sources, readable=lambda cause: dry_read(engine, root, cause))
     except ReviewRefused as refusal:
         # The studio stops at its research step and keeps the objections with the review,
         # saying what this try's rounds took.

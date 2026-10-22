@@ -2189,6 +2189,11 @@ class Engine(Jobs, Researching):
         if action not in ACTIONS:
             raise WorkspaceError('A run can be asked to: ' + ', '.join(ACTIONS) + '.')
         run = self._run(root)
+        # Whether the originals a research check could not read can be served now, asked
+        # before the files are held: a dry read reads files of its own.
+        held = (self._load(root).get('halted') or {}).get('unreadable')
+        unserved = (research_contract.dry_read(self, root, held)
+                    if held and action in ('retry', stops.MORE_TIME) else None)
         with self.files:
             record = self._load(root)
             state = self.view(root)['state']
@@ -2222,8 +2227,7 @@ class Engine(Jobs, Researching):
                         action == stops.MORE_TIME and halted.get('action') != stops.MORE_TIME):
                     raise WorkspaceError('Nothing here failed, so there is nothing to try '
                                          'again.')
-                elif halted.get('unreadable') and research_contract.dry_read(
-                        self, root, halted['unreadable']):
+                elif halted.get('unreadable') and unserved:
                     # The check would stop the same way: say so again, and start nothing.
                     raise WorkspaceError(halted.get('why') or 'It has stopped.')
                 if action in ('resume', 'retry', stops.MORE_TIME):
