@@ -282,6 +282,77 @@ class UnfinishedCheckTests(WorkflowCase):
 
 
 
+class GroupedObjectionTests(unittest.TestCase):
+    """Real objections are counted by what they are about and what the check called them,
+    so forty notes with one cause read as one group."""
+
+    def review(self):
+        return {
+            'facts': [*({'id': f'f{number:02}', 'verdict': 'narrow', 'note': f'Too broad {number}.'}
+                        for number in range(1, 13)),
+                      {'id': 'f13', 'verdict': 'supported', 'note': 'Fine.'}],
+            'findings': [{'id': name, 'verdict': 'unsupported', 'note': 'No fact says so.'}
+                         for name in ('instance-min', 'health-checks', 'batches')],
+            'prose': [{'id': 'brief:teaching:0', 'verdict': 'narrow', 'note': ''}],
+            'assessment': {'coverage': 'needs-revision', 'usefulness': 'adequate',
+                           'note': 'Alternatives are missing.'}}
+
+    def case(self, review):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        (Path(temp.name) / 'review.json').write_text(json.dumps(review))
+        return Path(temp.name)
+
+    def test_objections_are_grouped_by_kind_and_verdict_with_a_count_and_the_first_note(self):
+        groups = contract.grouped(self.case(self.review()))
+        self.assertEqual([(group['title'], group['count'], group['note']) for group in groups], [
+            ('12 facts the check calls narrow', 12, 'f01: Too broad 1.'),
+            ('3 findings unsupported', 3, 'instance-min: No fact says so.'),
+            ('1 passage of the report or brief the check calls narrow', 1,
+             'brief:teaching:0: no note'),
+            ('coverage needs revision', 1, 'Alternatives are missing.')])
+        self.assertEqual(groups[0]['items'][:2], ['f01: Too broad 1.', 'f02: Too broad 2.'])
+        self.assertEqual(len(groups[0]['items']), 12)
+        self.assertEqual(contract.grouped(self.case([])), [])
+
+    def test_a_refusal_with_groups_says_each_group_and_its_first_note(self):
+        case = self.case(self.review())
+        refusal = contract.ReviewRefused(contract.objections(case), 3, contract.grouped(case))
+        self.assertEqual(str(refusal), (
+            'The independent check of the research still needs changes after 3 rounds of '
+            'correction: 17 objections in 4 groups: 12 facts the check calls narrow (f01: Too '
+            'broad 1.), 3 findings unsupported (instance-min: No fact says so.), 1 passage of '
+            'the report or brief the check calls narrow (brief:teaching:0: no note), coverage '
+            'needs revision (Alternatives are missing.). The draft report and the check’s '
+            'notes are saved for correction.'))
+        self.assertEqual((refusal.rounds, len(refusal.groups)), (3, 4))
+
+    def test_what_the_rounds_took_is_said_plainly(self):
+        self.assertEqual(contract.took(2880, 9.8), '48 minutes and $9.80')
+        self.assertEqual(contract.took(45, None), '45 seconds')
+        self.assertEqual(contract.took(61, 0.005), '1 minute and $0.01')
+        self.assertEqual(contract.took(5400, 12), '1 hour 30 minutes and $12.00')
+        self.assertEqual(contract.took(0, None), '')
+
+
+class RoundCostTests(WorkflowCase):
+    """What every round of a research run took is said when the research stops."""
+
+    def test_the_last_round_raises_its_objections_in_groups(self):
+        def invoke(phase, guidance, payload, sources, fetch):
+            if phase == 'author':
+                return json.dumps(self.authored(payload)), self.captured()
+            return json.dumps(review(payload['review_template'], False)), []
+        with self.assertRaises(contract.ReviewRefused) as caught:
+            self.run_with(invoke)
+        self.assertEqual(len(self.calls), 2 * contract.ROUNDS)
+        self.assertEqual([group['title'] for group in caught.exception.groups], [
+            '1 fact the check calls narrow', '2 findings the check calls narrow',
+            '2 passages of the report or brief the check calls narrow'])
+        self.assertIn('5 objections in 3 groups', str(caught.exception))
+
+
+
 def fake_runtime(folder, version, text):
     """Just enough of an installed helper for its capability to be described."""
     (folder / 'scripts/lib').mkdir(parents=True)

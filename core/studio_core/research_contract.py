@@ -370,7 +370,7 @@ class Workflow:
                     raise CheckCouldNotFinish(objections(case), rounds - 1, cause)
         verified = self.command(case, 'verify')
         if verified.get('status') != 'complete' or verified.get('artifact_integrity') == 'failed':
-            raise ReviewRefused(objections(case), ROUNDS)
+            raise ReviewRefused(objections(case), ROUNDS, grouped(case))
         facts, manifest = read_bundle(case / 'research')
         return facts, manifest
 
@@ -380,15 +380,23 @@ ROUNDS = 3
 
 class ReviewRefused(ValueError):
     """The independent check still objected after every round of correction. The message
-    says what it objected to; `objections` holds every objection for the studio's review."""
+    says what it objected to; `objections` holds every objection for the studio's review,
+    and `groups`, when given, the same objections counted by cause (see `grouped`)."""
 
-    def __init__(self, objections, rounds):
+    def __init__(self, objections, rounds, groups=None):
         self.objections = list(objections)
         self.rounds = rounds
+        self.groups = list(groups or ())
         count = len(self.objections)
         said = ('The independent check of the research still needs changes after '
                 f'{rounds} rounds of correction')
-        if count:
+        if self.groups:
+            total = sum(group['count'] for group in self.groups)
+            said += (f': {total} objection' + ('' if total == 1 else 's')
+                     + f' in {len(self.groups)} group' + ('' if len(self.groups) == 1 else 's')
+                     + ': ' + ', '.join(f"{group['title']} ({group['note']})"
+                                        for group in self.groups) + '.')
+        elif count:
             said += f': {count} objection' + ('' if count == 1 else 's') + ', such as '
             said += ' '.join(shortened(note) for note in self.objections[:2])
         else:
@@ -496,6 +504,65 @@ def objections(case):
     return found[:40]
 
 
+NOUNS = {'facts': ('fact', 'facts'), 'findings': ('finding', 'findings'),
+         'prose': ('passage of the report or brief', 'passages of the report or brief')}
+
+
+def grouped(case):
+    """What the last saved review objected to, by cause: one group for each kind of item
+    (facts, findings, passages) and verdict, then one for an assessment that asks for
+    revision. Each group is {'title', 'count', 'note', 'items'}: 'title' such as "12 facts
+    the check calls narrow", 'note' the first item's, and 'items' every one, as `objections`
+    words them."""
+    path = Path(case) / 'review.json'
+    try:
+        review = json.loads(path.read_text()) if path.is_file() else {}
+    except ValueError:
+        return []
+    if not isinstance(review, dict):
+        return []
+    groups = []
+    for kind in ('facts', 'findings', 'prose'):
+        found = {}
+        for item in review.get(kind) or ():
+            if isinstance(item, dict) and item.get('verdict') not in (None, 'supported', 'pending'):
+                note = ' '.join(str(item.get('note') or '').split()) or 'no note'
+                found.setdefault(str(item['verdict']), []).append(f"{item.get('id')}: {note}")
+        for verdict in sorted(found, key=lambda name: (name != 'unsupported', name)):
+            items = found[verdict]
+            noun = NOUNS[kind][len(items) != 1]
+            said = 'unsupported' if verdict == 'unsupported' else f'the check calls {verdict}'
+            groups.append({'title': f'{len(items)} {noun} {said}', 'count': len(items),
+                           'note': shortened(items[0], 100), 'items': items})
+    assessment = review.get('assessment') or {}
+    if isinstance(assessment, dict):
+        asked = [name for name in ('coverage', 'usefulness') if assessment.get(name) == 'needs-revision']
+        if asked:
+            note = ' '.join(str(assessment.get('note') or '').split()) or 'no note'
+            groups.append({'title': ' and '.join(asked) + (' needs' if len(asked) == 1 else ' need')
+                           + ' revision', 'count': 1, 'note': shortened(note, 100), 'items': [note]})
+    return groups
+
+
+def took(seconds, dollars):
+    """What some work took, in words: "48 minutes and $9.80". Empty when nothing was
+    recorded."""
+    said = []
+    seconds = round(seconds or 0)
+    if seconds >= 90 * 60:
+        hours, minutes = divmod(round(seconds / 60), 60)
+        said.append(f"{hours} hour{'' if hours == 1 else 's'}"
+                    + (f" {minutes} minute{'' if minutes == 1 else 's'}" if minutes else ''))
+    elif seconds >= 60:
+        minutes = round(seconds / 60)
+        said.append(f"{minutes} minute{'' if minutes == 1 else 's'}")
+    elif seconds >= 1:
+        said.append(f"{seconds} second{'' if seconds == 1 else 's'}")
+    if dollars is not None:
+        said.append(f'${dollars:,.2f}')
+    return ' and '.join(said)
+
+
 def check_json(text, spec):
     problems = []
     try:
@@ -596,6 +663,8 @@ def native(engine, root, run, task, sources, product):
     if tool is None:
         raise WorkspaceError('This research run needs its saved Harness Research version. Restore it before continuing.')
     folders = []
+    # What every job of this try took, so the stop can say what the rounds cost.
+    spent = {'jobs': 0, 'seconds': 0.0, 'dollars': None, 'tokens': None}
 
     def invoke(phase, guidance, payload, offered, fetch):
         if run.stop.is_set() or not engine._may_go(root):
@@ -631,12 +700,18 @@ def native(engine, root, run, task, sources, product):
         if outcome.reason == 'stopped':
             engine._stopped(root, name if product == 'presentation' else step, outcome, started)
             raise companion.Stopped()
+        cost = engine._cost(outcome)
+        spent['jobs'] += 1
+        spent['seconds'] += outcome.seconds or 0
+        for key in ('dollars', 'tokens'):
+            if cost.get(key) is not None:
+                spent[key] = (spent[key] or 0) + cost[key]
         with engine.files:
             record = engine._load(root)
             accepted = handed['artifacts'].get('research-result')
             engine._tried(record, name, started, outcome.seconds,
                           'kept' if accepted and outcome.reason != 'stopped' else 'failed',
-                          **engine._cost(outcome))
+                          **cost)
             engine._store(root, record)
             engine._commit(root, 'record independent research job: ' + phase)
         if not accepted or outcome.reason == 'stopped':
@@ -646,10 +721,17 @@ def native(engine, root, run, task, sources, product):
     try:
         return Workflow(tool.runtime, tool._json).run(root, task, invoke, sources)
     except ReviewRefused as refusal:
-        # The studio stops at its research step and keeps the objections with the review.
-        failure = WorkspaceError(str(refusal))
+        # The studio stops at its research step and keeps the objections with the review,
+        # saying what this try's rounds took.
+        cost = took(spent['seconds'], spent['dollars'])
+        jobs = spent['jobs']
+        failure = WorkspaceError(str(refusal) + (
+            f" This try's {jobs} research job{'' if jobs == 1 else 's'} took {cost}."
+            if cost else ''))
         failure.objections, failure.rounds = refusal.objections, refusal.rounds
         failure.cause = getattr(refusal, 'cause', None)
+        failure.groups = getattr(refusal, 'groups', None) or []
+        failure.spent = dict(spent)
         raise failure from refusal
     except ValueError as error:
         raise WorkspaceError(str(error)) from error

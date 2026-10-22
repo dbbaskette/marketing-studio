@@ -3137,21 +3137,31 @@ class Engine(Reviewing):
         """The independent check still objected after its last round of correction: keep
         its objections with the research review, where the page shows them, and stop at
         the research step so that Try again says what it re-runs."""
-        objections = list(refusal.objections)
-        workspace.append_review(root, 'research', 'Independent research review: changes still needed', (
-            f'After {refusal.rounds} rounds of correction the independent check still objected. '
-            'Each objection names the fact, finding or brief block it concerns:\n'
-            + '\n'.join('- ' + note for note in objections)) if objections else (
-            f'After {refusal.rounds} rounds of correction the independent check still objected, '
-            'without saying to what.'))
+        objections, groups = list(refusal.objections), getattr(refusal, 'groups', None) or []
+        if groups:
+            said = (f'After {refusal.rounds} rounds of correction the independent check still '
+                    'objected. Each objection names the fact, finding or brief block it '
+                    'concerns, under what the check called it:\n'
+                    + '\n'.join(f"\n{group['title']}:\n"
+                                + '\n'.join('- ' + item for item in group['items'])
+                                for group in groups))
+        elif objections:
+            said = (f'After {refusal.rounds} rounds of correction the independent check still '
+                    'objected. Each objection names the fact, finding or brief block it '
+                    'concerns:\n' + '\n'.join('- ' + note for note in objections))
+        else:
+            said = (f'After {refusal.rounds} rounds of correction the independent check still '
+                    'objected, without saying to what.')
+        workspace.append_review(root, 'research', 'Independent research review: changes still needed', said)
         with self.files:
             record = self._load(root)
             self._store(root, record)
             self._commit(root, 'keep the objections of the independent research check')
         self._problem(root, 'research', 'failed', str(refusal), (
             'The draft report and the check’s objections are kept with this training: the '
-            'objections are listed in its research review (reviews/research.md). The research '
-            'plan you approved is kept.'))
+            'objections are listed in its research review (reviews/research.md)'
+            + (', under what the check called them' if groups else '')
+            + '. The research plan you approved is kept.'))
 
     def _check_unfinished(self, root: Path, refusal: WorkspaceError) -> None:
         """The independent check could not read an original it must attest to, and that is

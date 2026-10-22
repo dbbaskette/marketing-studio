@@ -43,6 +43,7 @@ BUSY_TRIES = 20         # times a finding is offered while another save holds th
 PLAN = Path('research') / 'plan.json'
 PLAN_MD = Path('research') / 'plan.md'
 REPORT = Path('research') / 'report.md'
+REVIEW = Path('research') / 'review.md'     # what the independent check still objected to
 RECORD = Path('.harness-research') / 'research.json'
 UNRESOLVED = ('insufficient', 'unavailable')
 
@@ -83,6 +84,19 @@ class Researching:
             write_atomic(root / REPORT, self._report_text(root, record))
             (record.get('research') or {}).pop('again', None)
             self._done(root, step, clock, 'keep the research report', record)
+
+    def _keep_objections(self, root: Path, refusal, groups: list) -> None:
+        """Write every objection the independent check still had, under its group, where
+        the person can read them all: research/review.md."""
+        lines = ['# Independent research check', '',
+                 f'After {refusal.rounds} rounds of correction the independent check still '
+                 'objected. Each objection names the fact, finding or passage it concerns.']
+        for group in groups or [{'title': 'Objections', 'items': list(refusal.objections)}]:
+            lines += ['', f"## {group['title'][:1].upper()}{group['title'][1:]}", '']
+            lines += [f'- {item}' for item in group['items']]
+        with self.files:
+            write_atomic(root / REVIEW, '\n'.join(lines) + '\n')
+            self._commit(root, 'keep the objections of the independent research check')
 
     def _report_text(self, root: Path, record: dict) -> str:
         """The report the person reads and the outline is drafted from: what the research
@@ -272,11 +286,15 @@ class Researching:
                     raise Halted()
                 # The check still objected after its last round: stop at the research step
                 # with its objections, so that the person reads them and Try again says
-                # what it re-runs.
-                listed = ''.join('\n- ' + note for note in refusal.objections)
+                # what it re-runs. Each is listed under its group in research/review.md.
+                groups = getattr(refusal, 'groups', None) or []
+                self._keep_objections(root, refusal, groups)
+                listed = ''.join(f"\n- {group['title']} ({group['note']})" for group in groups) \
+                    or ''.join('\n- ' + note for note in refusal.objections)
                 self._problem(root, 'research', 'failed', str(refusal), (
-                    'The draft report and the check’s objections are kept under the research '
-                    'folder. The research plan you approved is kept.' + listed))
+                    'The draft report and the check’s objections are kept: every objection is '
+                    f'listed under its group in {REVIEW}. The research plan you approved is '
+                    'kept.' + listed))
                 raise Halted()
             with self.files:
                 self._done(root, step, time.monotonic(), 'complete independent research review')

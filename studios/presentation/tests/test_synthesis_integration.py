@@ -187,6 +187,24 @@ class SuppliedOriginalTests(StudioCase):
         facts, _ = research_contract.read_bundle(root / 'research')
         self.assertNotIn('original_file', facts['sources'][0])
 
+    def test_a_check_that_still_objects_says_its_groups_and_what_its_rounds_took(self):
+        def objects(tools, job):
+            payload = json.loads(tools.read_input('research-task')[1])
+            result = review(payload['review_template'], False)
+            for attested in result['originals']:
+                tools.read_source('s1', original=True)
+            self.assertTrue(tools.submit_artifact('research-result', json.dumps(result))[0])
+        self.workers.cost = 0.5
+        self.workers.queued['research-result'] = [self.author, objects] * 3
+        root = self.deck('notes.html', self.PAGE)
+        why = self.view(root)['problem']['why']
+        self.assertEqual(len(self.workers.of('research-result')), 6)
+        self.assertIn('after 3 rounds of correction: 5 objections in 3 groups: 1 fact the check '
+                      'calls narrow (fact-a:', why)
+        self.assertTrue(why.endswith("This try's 6 research jobs took 9 seconds and $3.00."), why)
+        self.assertIn('## 2 findings the check calls narrow',
+                      (root / 'research/review.md').read_text())
+
     def test_a_check_that_cannot_read_the_original_stops_after_one_round(self):
         def blind(tools, job):
             payload = json.loads(tools.read_input('research-task')[1])
@@ -202,11 +220,11 @@ class SuppliedOriginalTests(StudioCase):
         view = self.view(root)
         self.assertEqual(len(self.workers.of('research-result')), 2)
         self.assertEqual(view['state'], 'failed')
-        self.assertEqual(view['problem']['why'], (
+        self.assertTrue(view['problem']['why'].startswith(
             'The research check could not read the original of "Synthetic source" (No tool '
             'serves it.). That is a studio problem, not a research problem: the report is not '
             'wrong, the check could not finish. Nothing to correct until the original is '
-            'readable.'))
+            'readable.'), view['problem']['why'])
         # The studio can serve it, so Try again runs the research again.
         self.workers.then('research-result', self.author, self.checker)
         self.engine.act(root, 'retry')

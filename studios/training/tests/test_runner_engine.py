@@ -834,6 +834,30 @@ class ResearchTests(StudioCase):
             self.assertEqual(self.engine.act(root, 'retry')['state'], 'failed')
         self.assertEqual(again.call_count, 1)
 
+    def test_objections_in_groups_are_listed_under_each_group(self):
+        from runner import engine as engine_module
+        root = self.start()
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        self.engine._store(root, record)
+        refusal = WorkspaceError('The independent check of the research still needs changes.')
+        refusal.objections = ['f01 (narrow): Too broad.', 'f02 (narrow): Too broad too.',
+                              'Coverage needs revision: Alternatives are missing.']
+        refusal.groups = [
+            {'title': '2 facts the check calls narrow', 'count': 2, 'note': 'f01: Too broad.',
+             'items': ['f01: Too broad.', 'f02: Too broad too.']},
+            {'title': 'coverage needs revision', 'count': 1, 'note': 'Alternatives are missing.',
+             'items': ['Alternatives are missing.']}]
+        refusal.rounds = 3
+        with mock.patch.object(engine_module.research_contract, 'native', side_effect=refusal):
+            self.decide(root, 'research-plan')
+        self.assertIn('listed in its research review (reviews/research.md), under what the '
+                      'check called them.', self.view(root)['problem']['kept'])
+        review = (root / 'reviews' / 'research.md').read_text()
+        self.assertIn('> 2 facts the check calls narrow:\n> - f01: Too broad.\n'
+                      '> - f02: Too broad too.\n>\n> coverage needs revision:\n'
+                      '> - Alternatives are missing.', review)
+
     def test_a_check_that_could_not_read_an_original_stops_at_once_and_says_whose_problem(self):
         from runner import engine as engine_module
         from studio_core import research_contract

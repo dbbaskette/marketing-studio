@@ -678,6 +678,23 @@ class SynthesisStopTests(StudioCase):
             self.engine.act(root, 'retry')
         self.assertEqual(again.call_count, 1)
 
+    def test_objections_are_kept_under_their_groups(self):
+        from runner import research_steps
+        root = self.synthesis()
+        refusal = WorkspaceError('The independent check of the research still needs changes.')
+        refusal.objections, refusal.rounds = ['f01 (narrow): Too broad.'], 3
+        refusal.groups = [{'title': '1 fact the check calls narrow', 'count': 1,
+                           'note': 'f01: Too broad.', 'items': ['f01: Too broad.']}]
+        with mock.patch.object(research_steps.research_contract, 'native', side_effect=refusal):
+            self.decide(root, 'gate:research-plan')
+        kept = self.view(root)['problem']['kept']
+        self.assertIn('every objection is listed under its group in research/review.md', kept)
+        self.assertTrue(kept.endswith('\n- 1 fact the check calls narrow (f01: Too broad.)'))
+        self.assertEqual((root / 'research/review.md').read_text(), (
+            '# Independent research check\n\nAfter 3 rounds of correction the independent '
+            'check still objected. Each objection names the fact, finding or passage it '
+            'concerns.\n\n## 1 fact the check calls narrow\n\n- f01: Too broad.\n'))
+
     def test_a_dry_read_reads_each_original_as_the_check_would(self):
         from studio_core import research_contract
         root = self.start(route='document', source={'kind': 'upload', 'name': 'handbook.html'},
