@@ -5,6 +5,11 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **A Google Doc with several tabs is read whole.** Adding a Doc link to a blog's files
+  reads every tab, each under its own title, and the file row says which tabs were read.
+  A link to one tab (the address Google Docs shows for that tab) reads that tab alone. Such
+  a Doc used to be refused with a message about snapshots, and Start stayed grey without
+  saying why; the files screen now says it needs one file with text.
 - **One team library.** Every finished blog lands in the library when you choose
   **Finish**, as a reference and an example of its kind of post by its author; a second
   Finish updates the same item. Files added to a blog land there too unless you untick

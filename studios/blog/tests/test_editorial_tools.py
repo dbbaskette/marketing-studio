@@ -4,6 +4,7 @@ import isolation  # noqa: F401  (first: keeps every test off this computer's own
 import base64
 import http.client
 import io
+import copy
 import json
 import os
 from pathlib import Path
@@ -2723,36 +2724,73 @@ class RealFileNameTests(Fixture):
         with self.assertRaisesRegex(ValueError, 'Upload each file once'):
             self.upload('d4' * 16, self.entry('a%20b.md'), self.entry('a b.md'))
 
-    def captured(
-        self, title='Messaging Doc', body='# Messaging\n\nThe platform name is still open.'
-    ):
-        def capture(_client, file_id, _revision, snapshot):
-            self.asked = file_id
-            snapshot.mkdir(parents=True)
-            (snapshot / 'document.md').write_text(body)
-            studio.write_json(snapshot / 'native.json', {'title': title})
-            return {'summary': {}}
+    DOC_ID = '1AbC_dEf-2gHiJkLmNoPqRsTuVwXyZ012345'
 
-        return capture
+    def google_doc(
+        self, title='Messaging Doc', tabs=(('Blog', ('The platform name is still open.',)),)
+    ):
+        """A native Google Doc as the Docs API returns it: a tab per (title, paragraphs)."""
+
+        def paragraph(text, heading=False):
+            return {
+                'paragraph': {
+                    'paragraphStyle': {'namedStyleType': 'HEADING_1' if heading else 'NORMAL_TEXT'},
+                    'elements': [{'textRun': {'content': text + '\n', 'textStyle': {}}}],
+                }
+            }
+
+        return {
+            'documentId': self.DOC_ID,
+            'revisionId': 'r1',
+            'title': title,
+            'tabs': [
+                {
+                    'tabProperties': {'tabId': 't.' + str(number), 'title': name},
+                    'documentTab': {
+                        'body': {
+                            'content': [{'sectionBreak': {}}]
+                            + [paragraph(line, heading=line.startswith('# ')) for line in lines]
+                        }
+                    },
+                }
+                for number, (name, lines) in enumerate(tabs)
+            ],
+        }
+
+    def docs(self, doc, export=b''):
+        """Patches the Google client to serve `doc`; `self.asked` is the file read."""
+        tests = self
+
+        class Client:
+            def __init__(self, account):
+                pass
+
+            def native_read(self, file_id, inline=False, **_):
+                tests.asked = file_id
+                return copy.deepcopy(doc)
+
+            def export(self, file_id, fmt):
+                return export
+
+        import google_intake
+
+        return patch.object(google_intake.drive, 'Client', Client)
 
     def test_a_google_doc_link_is_read_as_one_more_file(self):
-        import google_intake
 
         link = (
             'https://docs.google.com/document/d/1AbC_dEf-2gHiJkLmNoPqRsTuVwXyZ012345/edit?tab=t.0'
         )
-        with (
-            patch.object(google_intake.roundtrip, 'capture', self.captured()),
-            patch.object(google_intake.drive, 'Client', lambda account: object()),
-        ):
+        with self.docs(self.google_doc()):
             result = self.upload('e5' * 16, {'google': link}, self.entry('plain.txt'))
             again = self.upload('e5' * 16, {'google': link}, self.entry('plain.txt'))
         self.assertEqual(result, again)
-        self.assertEqual(self.asked, '1AbC_dEf-2gHiJkLmNoPqRsTuVwXyZ012345')
+        self.assertEqual(self.asked, self.DOC_ID)
         doc, plain = result['files']
         self.assertEqual(doc['filename'], 'Messaging Doc')
         self.assertEqual(doc['state'], 'ready')
-        self.assertEqual(doc['chars'], len('# Messaging\n\nThe platform name is still open.'))
+        self.assertEqual(doc['chars'], len('The platform name is still open.\n'))
+        self.assertEqual(doc['note'], '', 'one tab: nothing to explain')
         self.assertEqual(
             doc['link'],
             'https://docs.google.com/document/d/1AbC_dEf-2gHiJkLmNoPqRsTuVwXyZ012345/edit',
@@ -2770,19 +2808,68 @@ class RealFileNameTests(Fixture):
         staging = google_drive.staging_root(self.root)
         self.assertEqual(list(staging.iterdir()) if staging.exists() else [], [])
 
+    def test_a_google_doc_with_several_tabs_is_read_whole_or_one_tab_by_its_address(self):
+        doc = self.google_doc(
+            tabs=(
+                ('Overview', ('# Why', 'Agents need a platform.')),
+                ('Messaging', ('The pillars are speed, safety and scale.',)),
+                ('FAQ', ('Is it available today? Yes.',)),
+            )
+        )
+        link = 'https://docs.google.com/document/d/' + self.DOC_ID + '/edit'
+        with self.docs(doc):
+            whole = self.upload('e6' * 16, {'google': link})['files'][0]
+        self.assertEqual(whole['filename'], 'Messaging Doc')
+        self.assertEqual(
+            whole['note'],
+            'All 3 tabs were read: “Overview”, “Messaging”, “FAQ”. Link one tab to read only that tab.',
+        )
+        directory, _ = studio.item(self.root, 'sources', whole['source']['id'])
+        content = (directory / 'content.md').read_text()
+        for passage in (
+            '# Overview',
+            '# Why',
+            '# Messaging',
+            'speed, safety and scale',
+            '# FAQ',
+            'Yes.',
+        ):
+            self.assertIn(passage, content)
+        self.assertLess(content.index('# Overview'), content.index('# Messaging'))
+        # A tab's own address reads that tab alone, and says so.
+        with self.docs(doc):
+            one = self.upload('e7' * 16, {'google': link + '?tab=t.1'})['files'][0]
+        self.assertEqual(one['filename'], 'Messaging Doc · Messaging')
+        self.assertEqual(
+            one['note'],
+            'Only the tab “Messaging” was read, as its address asks; the Doc has 3 tabs. '
+            'Paste the Doc link instead to read every tab.',
+        )
+        self.assertEqual(one['link'], link + '?tab=t.1')
+        directory, _ = studio.item(self.root, 'sources', one['source']['id'])
+        content = (directory / 'content.md').read_text()
+        self.assertIn('speed, safety and scale', content)
+        self.assertNotIn('Agents need a platform', content)
+        self.assertNotIn('# Messaging', content, 'one tab needs no tab heading')
+        # An address for a tab the Doc does not have says so, and saves nothing.
+        with self.docs(doc), self.assertRaisesRegex(ValueError, 'no tab at the address'):
+            self.upload('e8' * 16, {'google': link + '?tab=t.9'})
+        # A linked tab without text says which tab is empty, not that the Doc is.
+        empty = self.google_doc(tabs=(('Overview', ('Words.',)), ('Notes', ())))
+        saved = sorted((self.root / '.uploads' / 'material').glob('*/record.json'))
+        with self.docs(empty), self.assertRaisesRegex(ValueError, 'tab you linked has no text'):
+            self.upload('e9' * 16, {'google': link + '?tab=t.1'})
+        self.assertEqual(sorted((self.root / '.uploads' / 'material').glob('*/record.json')), saved)
+
     def test_a_link_that_is_not_a_readable_google_doc_saves_nothing(self):
-        import google_intake
 
         with self.assertRaisesRegex(ValueError, 'docs.google.com/document'):
             self.upload('f6' * 16, {'google': 'https://example.com/doc'}, self.entry('a.md'))
         with (
-            patch.object(google_intake.roundtrip, 'capture', self.captured(body='')),
-            patch.object(google_intake.drive, 'Client', lambda account: object()),
+            self.docs(self.google_doc(tabs=(('Blog', ()),))),
             self.assertRaisesRegex(ValueError, 'no text'),
         ):
-            self.upload(
-                'a7' * 16, self.entry('a.md'), {'google': '1AbC_dEf-2gHiJkLmNoPqRsTuVwXyZ012345'}
-            )
+            self.upload('a7' * 16, self.entry('a.md'), {'google': self.DOC_ID})
         self.assertFalse((self.root / '.uploads' / 'material').exists())
         with self.assertRaisesRegex(ValueError, 'Google Doc link'):
             self.upload('b8' * 16, {'google': 'x', 'filename': 'a.md'})

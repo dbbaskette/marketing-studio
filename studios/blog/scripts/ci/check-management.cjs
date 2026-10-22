@@ -1184,7 +1184,7 @@ async function filesJourney(){
   const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});
     if(url==='/api/run-options')return {settings:{defaults,review_level:'balanced'},sources:[],profiles:[{id:'p1',name:'Avery',status:'confirmed'},{id:'p2',name:'Sam',status:'provisional'}],default_voice:{scope:'personal',profile:'p1',name:'Avery',revision:3,status:'confirmed'},agents:{codex:true}};
     if(url==='/api/source-role'&&refuseRole)return {__http:400,error:'A started blog read this file as facts; its role stays.'};
-    if(url==='/api/upload')return (JSON.parse(options.body).files||[]).some(e=>e.google)?{files:[{filename:'Messaging Doc',source:{id:'s9',name:'Messaging Doc'},state:'ready',chars:4200,note:'',link:'https://docs.google.com/document/d/abc/edit'}]}:uploaded;
+    if(url==='/api/upload')return (JSON.parse(options.body).files||[]).some(e=>e.google)?{files:[{filename:'Messaging Doc',source:{id:'s9',name:'Messaging Doc'},state:'ready',chars:4200,note:'All 3 tabs were read: “Overview”, “Messaging”, “FAQ”. Link one tab to read only that tab.',link:'https://docs.google.com/document/d/abc/edit'}]}:uploaded;
     if(url==='/api/source-role')return {id:JSON.parse(options.body).id,role:JSON.parse(options.body).role};
     if(url==='/api/run-create'||url.startsWith('/api/run?'))return found;
     if(url.startsWith('/api/run-'))return found;
@@ -1208,6 +1208,7 @@ async function filesJourney(){
   assert.equal(nodes().some(e=>e.id==='new-profile'),false);
   const start=()=>nodes().find(e=>e.type==='submit');
   assert.equal(start().disabled,true,'nothing to start before a file has text');
+  assert.ok(text().some(t=>/^Add at least one file with text, from your computer, a Google Doc or the library, and this lights up\.$/.test(t)),'and the screen says why Start is grey: '+text().join('|'));
   assert.equal(start().textContent,'Find three angles');
   assert.ok(text().some(t=>/stops for the angles/.test(t)),'the stops line names the angles: '+text().join('|'));
   // Each upload says what the files are for: facts by default, or an example of the kind of post.
@@ -1240,6 +1241,7 @@ async function filesJourney(){
   assert.ok(text().some(t=>/Needs text/.test(t)),'a file without text says so');
   assert.ok(text().some(t=>/no PDF reader/.test(t)),'and why');
   assert.equal(start().disabled,false);
+  assert.equal(text().some(t=>/^Add at least one file with text/.test(t)),false,'the hint goes once a file has text');
   // A file's role can change until Start: the row's select calls source-role.
   const rowRole=()=>byId('files-role-s1');
   assert.equal(rowRole().value,'material');
@@ -1304,7 +1306,7 @@ async function filesJourney(){
   assert.deepEqual(asked()[0].data.files,[{google:'https://docs.google.com/document/d/abc/edit',purpose:'material'}],'a Doc has a role too');
   assert.equal(asked()[0].data.purpose,'material');assert.match(asked()[0].data.operation,/^[0-9a-f]{32}$/);
   assert.ok(text().some(t=>/^Messaging Doc$/.test(t)),'the Doc is listed by its title: '+text().join('|'));
-  assert.ok(text().some(t=>/Google Doc · 4,200 characters/.test(t)),'with how much text it has');
+  assert.ok(text().some(t=>/Google Doc · 4,200 characters · All 3 tabs were read: “Overview”, “Messaging”, “FAQ”\. Link one tab/.test(t)),'with how much text it has and which tabs were read: '+text().join('|'));
   assert.equal(start().disabled,false,'a Doc with text can start the blog: the screen is not left busy');
   assert.equal(docAdd().disabled,false,'and another Doc can be added');
   byId('files-goal').value='A team post';byId('files-goal').listeners.input();
