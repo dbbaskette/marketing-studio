@@ -3506,8 +3506,13 @@ class PageTests(PageCase):
         self.to_outline(root)
         run = self.get('run', path=str(root))
         shown = run['outline']
-        self.assertEqual(sorted(shown), ['checked', 'design', 'level', 'note', 'sha256',
+        self.assertEqual(sorted(shown), ['checked', 'design', 'level', 'note', 'redo', 'sha256',
                                          'slides', 'waiting', 'worth'])
+        # The page's outline change sheet receives the price alongside the outline itself.
+        self.assertEqual(shown['redo']['steps'], 4)
+        self.assertIsNone(shown['redo']['seconds'], 'the downstream deck has never run')
+        self.assertIsNone(shown['redo']['dollars'])
+        self.assertIn('no record', shown['redo']['says'])
         self.assertIsNone(shown['design'], 'a tool without a design session: words alone')
         self.assertEqual((shown['level'], shown['waiting'], shown['note'], len(shown['slides']),
                           shown['checked']), (None, True, None, 6,
