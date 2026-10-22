@@ -89,11 +89,16 @@ async function check(){
   await voiceCandidates();
   await runVoiceChange();
   await toolsAreNamed();
+  await researchRefusal();
+  await researchRounds();
+  await skipResearch();
+  await finishEveryLevel();
+  await failureRecovery();
   pageDefinesEveryElement();
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -1154,7 +1159,8 @@ async function sharedPattern(){
   // A time limit that ran out offers more time, and says what a plain retry costs.
   f.set('found',{...found,status:'failed',enabled:false,started_at:null,error:'This step reached its time limit. Retry or continue in chat.'});f.run('sRun(found)');
   const more=f.get('actions').children.find(e=>e.textContent==='Try again with more time');assert.equal(more.className,'button button-filled');
-  assert.ok(text().some(t=>t==='Try again re-runs the draft from the start with the same 10-minute limit. More time doubles it to 20 minutes.'),text().join('|'));
+  assert.ok(text().some(t=>t==='Try again makes the draft again in a new job, with the same 10-minute limit; saved work is kept.'),text().join('|'));
+  assert.ok(text().some(t=>t==='The limit is in Settings → Step time limit and applies to blogs started after a change. Try again with more time doubles it to 20 minutes for this blog.'),'a time limit says where it lives: '+text().join('|'));
   await more.listeners.click();
   assert.deepEqual(requests.find(r=>r.url==='/api/run-retry').data,{id:'synthetic',expected:'version-1',seconds:1200});
   // Copy Markdown sits beside the download.
@@ -2019,4 +2025,194 @@ async function toolsAreNamed(){
   f.run("sCloseSheet();studio.settings={defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''},workspace:'/synthetic'};studio.brand={};studio.team={};sSettings()");
   const link=descendants(f.get('studio-page')).find(e=>e.tagName==='button'&&e.textContent==='Open voices and styles');assert.ok(link,'Settings links to voices and styles');
   await link.listeners.click();assert.equal(f.get('sheet').children[0].children[0].textContent,'Voices and styles');
+}
+
+// A research case the independent check refused: the run says how many objections in how many
+// groups, lists each group by what it checked and its verdict with its first note, and says the
+// draft is kept on this computer. Nothing is listed for a run the check did not refuse.
+async function researchRefusal(){
+  const refused={id:'synthetic',title:'Synthetic blog',status:'failed',enabled:false,next:'research',approval:'page',expected:'version-1',directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},
+    error:'The research check still objected after 3 rounds of writing and checking: 4 objections in 3 groups. The draft report and the check’s notes are kept on this computer; Try again continues from them.',
+    research:{kept:true,rounds:3,refusal:{rounds:3,count:4,cause:null,groups:[{kind:'facts',verdict:'narrow',count:2,note:'Only the fictional example says this.',ids:['fact-a','fact-b']},{kind:'findings',verdict:'unsupported',count:1,note:'No saved fact supports it.',ids:['instance-min']},{kind:'assessment',verdict:'needs-revision',count:1,note:'The brief leaves out the strongest objection.',ids:[],asked:['coverage']}]}},
+    stages:[{stage:'research-plan',label:'Research questions',path:'derived/blog-research-plan.md',status:'approved'},{stage:'research',label:'Research findings',path:'derived/blog-research.md',status:'pending'},{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'pending'}]};
+  const f=fixture(()=>({items:[],total:0}));f.loadRunner();
+  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent);
+  f.set('found',refused);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
+  assert.ok(text().includes(refused.error),'the stop sentence is shown as it is: '+text().join('|'));
+  const box=nodes().find(e=>e.tagName==='details'&&e.children[0]?.textContent==='What the research check objected to');
+  assert.ok(box,'the objections sit under their own disclosure: '+text().join('|'));
+  const inside=descendants(box).map(e=>e.textContent);
+  for(const words of ['2 facts marked narrow','Only the fictional example says this.','1 finding marked unsupported','No saved fact supports it.','Coverage needs revision','The brief leaves out the strongest objection.'])assert.ok(inside.includes(words),words+' in '+inside.join('|'));
+  assert.ok(inside.some(t=>/4 objections in its last review, after 3 rounds of writing and checking/.test(t)),inside.join('|'));
+  assert.ok(inside.some(t=>/kept on this computer, in this blog’s \.studio-research-draft folder, and are not shared/.test(t)),inside.join('|'));
+  // A cause the contract names leads the list; a run nothing refused lists nothing.
+  f.set('found',{...refused,research:{...refused.research,refusal:{...refused.research.refusal,cause:'The check could not read the original of “Synthetic”.'}}});f.run('sRun(found)');
+  assert.ok(text().includes('The check could not read the original of “Synthetic”.'));
+  f.set('found',{...refused,error:'Research ran out of the time a step may take (10 minutes).',research:{kept:true,rounds:3,refusal:null}});f.run('sRun(found)');
+  assert.equal(nodes().some(e=>e.tagName==='details'&&e.children[0]?.textContent==='What the research check objected to'),false,'only a refusal has objections');
+}
+
+// Research says its round while it works, and a stopped research says what Try again does: it
+// continues from the kept draft for up to three more rounds, and the last attempt's jobs, time,
+// tokens and cost as the assistant reported them. No "from the start" for anything.
+async function researchRounds(){
+  const base={id:'synthetic',title:'Synthetic blog',next:'research',approval:'page',expected:'version-1',directory:'/synthetic/articles/synthetic',seconds:600,engine:'claude',mode:'write',review_level:'balanced',existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},
+    stages:[{stage:'research-plan',label:'Research questions',path:'derived/blog-research-plan.md',status:'approved'},{stage:'research',label:'Research findings',path:'derived/blog-research.md',status:'pending'},{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'pending'}]};
+  const f=fixture(()=>({items:[],total:0}));f.loadRunner();
+  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),now=()=>nodes().find(e=>e.className==='now-line')?.textContent;
+  const working={...base,status:'working',enabled:true,error:'',started_at:new Date(Date.now()-4*60000).toISOString(),research:{kept:false,rounds:3,round:2,phase:'review',refusal:null,last:null}};
+  f.set('found',working);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
+  assert.equal(now(),'Researching · Round 2 of 3, the independent check · 4 min of up to 10');
+  f.set('found',{...working,research:{...working.research,round:1,phase:'author'}});f.run('sRun(found)');
+  assert.equal(now(),'Researching · Round 1 of 3, writing the report · 4 min of up to 10');
+  f.set('found',{...working,research:{...working.research,round:0,phase:'discovery'}});f.run('sRun(found)');
+  assert.equal(now(),'Researching · Finding public sources · 4 min of up to 10');
+  f.set('found',{...working,next:'outline',research:null});f.run('sRun(found)');
+  assert.equal(now(),'Outlining · 4 min of up to 10','other steps say no round');
+  // Stopped with a kept draft: Try again continues from it, and says what the last attempt took.
+  const stopped={...base,status:'failed',enabled:false,started_at:null,error:'The research check still objected after 3 rounds of writing and checking: 4 objections in 3 groups. The draft report and the check’s notes are kept on this computer; Try again continues from them.',research:{contract:true,kept:true,from:'kept',rounds:3,round:null,phase:null,refusal:null,last:{jobs:6,rounds:3,seconds:552.4,tokens:410250,dollars:1.234,reported:6}}};
+  f.set('found',stopped);f.run('sRun(found)');
+  assert.ok(text().includes('Try again continues from the kept draft: up to 3 more rounds of writing and checking, within this blog’s 10-minute limit for the whole research step. The last attempt took 6 jobs in 3 rounds: 9 min 12 s, 410,250 tokens and about $1.23, as the assistant reported.'),text().join('|'));
+  assert.ok(f.get('actions').children.some(e=>e.textContent==='Try again'));
+  assert.equal(text().some(t=>/from the start/.test(t)),false,'Try again never claims to start over');
+  // Nothing kept, and an assistant that reports no usage.
+  f.set('found',{...stopped,engine:'codex',error:'Research could not produce valid evidence and report data after one correction attempt.',research:{...stopped.research,kept:false,from:null,last:{jobs:2,rounds:1,seconds:120,tokens:null,dollars:null,reported:0}}});f.run('sRun(found)');
+  assert.ok(text().includes('Try again starts the research again: up to 3 rounds of writing and checking, within this blog’s 10-minute limit for the whole research step. The last attempt took 2 jobs in 1 round: 2 min; the assistant reported no tokens or cost.'),text().join('|'));
+  // From the accepted research, when some jobs reported usage and some did not.
+  f.set('found',{...stopped,research:{...stopped.research,kept:false,from:'accepted',last:{jobs:2,rounds:1,seconds:90,tokens:null,dollars:null,reported:1}}});f.run('sRun(found)');
+  assert.ok(text().includes('Try again starts from the accepted research: up to 3 rounds of writing and checking, within this blog’s 10-minute limit for the whole research step. The last attempt took 2 jobs in 1 round: 1 min 30 s; the assistant reported no tokens or cost for every job.'),text().join('|'));
+  // Research from before the shared contract is one plain job: no rounds, no check.
+  f.set('found',{...stopped,error:'The selected CLI failed.',research:{contract:false,kept:false,from:null,rounds:3,refusal:null,last:null}});f.run('sRun(found)');
+  assert.ok(text().includes('Try again makes the research findings again in a new job, with the same 10-minute limit; saved work is kept.'),text().join('|'));
+  assert.equal(text().some(t=>/rounds of writing and checking/.test(t)),false);
+}
+
+// A new blog stopped at its research offers Continue without research: a confirmation that says
+// what it does, one request, and the run's stops line without the research. Only a blog with a
+// manuscript is told to open Edit manuscript.
+async function skipResearch(){
+  const requests=[];
+  const stages=[{stage:'research-plan',label:'Research questions',path:'derived/blog-research-plan.md',status:'approved'},{stage:'research',label:'Research findings',path:'derived/blog-research.md',status:'pending'},{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'pending'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'},{stage:'review',label:'Review',path:'derived/blog-review.md',status:'pending'},{stage:'package',label:'Export package',path:'derived/blog-package.md',status:'pending'}];
+  const stopped={id:'synthetic',title:'Synthetic blog',status:'failed',enabled:false,next:'research',approval:'page',expected:'version-1',directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'step_by_step',existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},error:'The selected CLI failed.',research:{kept:false,rounds:3,refusal:null,last:null},stages};
+  const after={...stopped,status:'queued',enabled:true,error:'',next:'outline',expected:'version-2',research:null,stages:stages.slice(2),decisions:[{event:'Continued without research',at:new Date().toISOString()}]};
+  const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});if(url==='/api/run-skip-research'||url.startsWith('/api/run?'))return after;return {items:[],total:0};});f.loadRunner();
+  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),line=()=>nodes().find(e=>e.className==='quiet stops-line')?.textContent;
+  f.set('found',stopped);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
+  assert.equal(line(),'Step by step: it stops for the research plan, the research findings, the outline, the draft, the review and the export package');
+  assert.ok(text().includes('Research is optional. Continue without research takes this blog on to the outline, from your brief and selected sources; the later steps get no research findings.'),text().join('|'));
+  assert.equal(text().some(t=>/Open Edit manuscript/.test(t)),false,'a new blog has no manuscript to edit');
+  assert.equal(f.get('actions').children.some(e=>e.textContent==='Edit manuscript'),false);
+  const skip=f.get('actions').children.find(e=>e.textContent==='Continue without research');assert.ok(skip,f.get('actions').children.map(e=>e.textContent).join('|'));
+  await skip.listeners.click();
+  assert.equal(requests.length,0,'opening the confirmation sends nothing');
+  const sheet=descendants(f.get('sheet'));
+  assert.ok(sheet.some(e=>e.textContent==='Continue without research?'));
+  assert.ok(sheet.some(e=>e.textContent==='The research steps leave this blog’s run, and it goes on to the outline from your brief and selected sources. The later steps get no research findings, and research cannot be added back to this run.'),sheet.map(e=>e.textContent).join('|'));
+  await sheet.find(e=>e.tagName==='button'&&e.textContent==='Continue without research').listeners.click();
+  assert.deepEqual(requests.find(r=>r.url==='/api/run-skip-research').data,{id:'synthetic',expected:'version-1'});
+  assert.equal(line(),'Step by step: it stops for the outline, the draft, the review and the export package','the stops line no longer names research');
+  assert.ok(descendants(f.get('toasts')).some(e=>e.textContent==='Continuing without research.'));
+  assert.equal(f.get('actions').children.some(e=>e.textContent==='Continue without research'),false,'not once research is gone');
+  // An existing draft keeps the editing hint, and a working research offers no skip.
+  f.set('found',{...stopped,existing:true});f.run('sRun(found)');
+  assert.ok(text().includes('Research is optional for editing. Open Edit manuscript to polish the writing without research.'));
+  f.set('found',{...stopped,status:'working',enabled:true,error:'',started_at:new Date().toISOString()});f.run('sRun(found)');
+  assert.equal(f.get('actions').children.some(e=>e.textContent==='Continue without research'),false,'stop the research first');
+  // Balanced stops at the outline either way.
+  f.set('found',{...stopped,review_level:'balanced'});f.run('sRun(found)');
+  assert.equal(line(),'Balanced: it stops for the outline and the export package');
+  // Only where research stopped: not at the research gates, and the hint goes with the button.
+  for(const status of ['stopped','paused','needs-attention']){f.set('found',{...stopped,status,error:status==='needs-attention'?'Saved writing or its inputs changed.':''});f.run('sRun(found)');assert.ok(f.get('actions').children.some(e=>e.textContent==='Continue without research'),status);}
+  for(const next of ['research','research-plan']){f.set('found',{...stopped,next,status:'waiting-for-approval',enabled:true,error:'An earlier note.'});f.run('sRun(found)');
+    assert.equal(f.get('actions').children.some(e=>e.textContent==='Continue without research'),false,'not at the '+next+' gate');
+    assert.equal(text().some(t=>/^Research is optional/.test(t)),false,'no hint without the button');}
+}
+
+// Finish asks first at every review level, names what it does with the team library, and the
+// toast says whether the draft was kept there or why not. Earlier grouped stops still approve
+// the displayed version directly.
+async function finishEveryLevel(){
+  const stages=[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'approved'},{stage:'package',label:'Export package',path:'derived/blog-package.md',status:'draft'}];
+  const atPackage={id:'synthetic',title:'Synthetic blog',status:'waiting-for-approval',complete:false,next:'package',approval:'page',expected:'version-2',enabled:true,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},stages};
+  const shown={id:'synthetic',title:'Synthetic blog',name:'blog-package.md',stage:'package',label:'Export package',expected:'version-2',status:'draft',content:'# Handoff',notes:'',checks:[],previous:null,diff:[],bundle:[{stage:'draft',label:'Draft',content:'# The draft text'}]};
+  for(const [level,library,toast] of [['step_by_step',{id:'kept',revision:1},'Finished. Kept in the team library.'],['balanced',{id:'kept',revision:2},'Finished. Kept in the team library.'],['automatic',{reason:'it could not be saved here.'},'Finished. Not kept in the team library: it could not be saved here.']]){
+    const requests=[];const done={...atPackage,review_level:level,status:'complete',complete:true,next:null,expected:'version-3',stages:stages.map(row=>({...row,status:'approved'})),library};
+    const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});if(url==='/api/run-approve'||url.startsWith('/api/run?'))return done;if(url.startsWith('/api/run-file'))return {content:'# The draft',name:'DRAFT.md'};return {items:[],total:0};});f.loadRunner();
+    f.set('found',{...atPackage,review_level:level});f.set('shown',shown);f.run("studio.screen='gate';studio.found=found;sGate(found,shown)");
+    const finish=f.get('actions').children.find(e=>e.textContent==='Finish');assert.ok(finish,level+': '+f.get('actions').children.map(e=>e.textContent).join('|'));
+    await finish.listeners.click();
+    assert.equal(requests.length,0,level+': Finish opens its sheet before anything is approved');
+    const sheet=descendants(f.get('sheet'));
+    assert.ok(sheet.some(e=>e.textContent==='Finish this blog?'),level);
+    assert.ok(sheet.some(e=>/kept in the team library as a reference and an example of its kind of post/.test(e.textContent)),level+': the sheet names the library: '+sheet.map(e=>e.textContent).join('|'));
+    await sheet.find(e=>e.tagName==='button'&&e.textContent==='Finish').listeners.click();
+    assert.deepEqual(requests[0],{url:'/api/run-approve',data:{id:'synthetic',expected:'version-2'}},level);
+    assert.ok(descendants(f.get('toasts')).some(e=>e.textContent===toast),level+': '+descendants(f.get('toasts')).map(e=>e.textContent).join('|'));
+    assert.equal(descendants(f.get('toasts')).some(e=>/The next stage can begin/.test(e.textContent)),false,level+': Finish has no next stage');
+  }
+  // A run without a draft says why nothing is kept in the team library.
+  const f=fixture(()=>({items:[],total:0}));f.loadRunner();
+  f.set('found',{...atPackage,existing:false,review_level:'balanced',stages:[{stage:'review',label:'Review',path:'derived/blog-review.md',status:'draft'}],next:'review'});f.set('shown',{...shown,stage:'review',label:'Review',bundle:[]});
+  f.run("studio.screen='gate';studio.found=found;sGate(found,shown)");
+  await f.get('actions').children.find(e=>e.textContent==='Finish').listeners.click();
+  assert.ok(descendants(f.get('sheet')).some(e=>/Nothing is kept in the team library: this blog has no saved draft\./.test(e.textContent)),descendants(f.get('sheet')).map(e=>e.textContent).join('|'));
+  assert.equal(descendants(f.get('sheet')).some(e=>/as a reference and an example/.test(e.textContent)),false);
+  f.run('sCloseSheet()');f.set('found',{...atPackage,review_level:'balanced',keeps_draft:false});f.set('shown',shown);f.run("studio.screen='gate';studio.found=found;sGate(found,shown)");
+  await f.get('actions').children.find(e=>e.textContent==='Finish').listeners.click();
+  assert.ok(descendants(f.get('sheet')).some(e=>/Nothing is kept in the team library/.test(e.textContent)),'the server says there is no draft to keep');
+}
+
+// Failures that say what to do: a CLI failure points at Status and shows the last lines the
+// assistant printed; a step out of time says where its limit lives beside Try again with more
+// time; first-run setup opens Writing preferences and marks an assistant that is not installed.
+async function failureRecovery(){
+  const requests=[];
+  const failed={id:'synthetic',title:'Synthetic blog',status:'failed',enabled:false,next:'draft',approval:'page',expected:'version-1',directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},
+    error:'The selected CLI failed. Check its sign-in and usage under Status → Check this computer, then try again.',reason:'cli',said:['Synthetic: not signed in.','Synthetic: run the login command.'],research:null,
+    stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'}]};
+  const f=fixture((url,options)=>{requests.push(url);if(url==='/api/computer')return {checks:[{label:'Codex',status:'action',detail:'Sign-in needed',next_step:'Run codex login'}]};if(url==='/api/run-settings')return {defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''},workspace:'/synthetic',shared_before:{}};return {items:[],total:0};});f.loadRunner();
+  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent);
+  f.set('found',failed);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
+  assert.ok(text().includes(failed.error),'the error names Status → Check this computer');
+  const said=nodes().find(e=>e.tagName==='details'&&e.children[0]?.textContent==='What the assistant said');
+  assert.ok(said,'what the assistant said sits under its own disclosure: '+text().join('|'));
+  assert.ok(descendants(said).some(e=>e.textContent==='Synthetic: not signed in.\nSynthetic: run the login command.'));
+  assert.ok(descendants(said).some(e=>/kept on this computer only/.test(e.textContent)));
+  const status=nodes().find(e=>e.tagName==='button'&&e.textContent==='Open Status');assert.ok(status,'a CLI failure offers Status');
+  await status.listeners.click();
+  assert.equal(f.get('title').textContent,'Status');assert.ok(requests.includes('/api/computer'));
+  // Without lines there is nothing to disclose, and Status is still offered.
+  f.set('found',{...failed,said:null});f.run("studio.screen='run';sRun(found)");
+  assert.equal(nodes().some(e=>e.tagName==='details'&&e.children[0]?.textContent==='What the assistant said'),false);
+  assert.ok(nodes().some(e=>e.textContent==='Open Status'));
+  // Out of time: the error names the limit, the page says where it lives, beside more time.
+  f.set('found',{...failed,reason:'time-limit',said:null,error:'This step ran out of the time a step may take (10 minutes).'});f.run('sRun(found)');
+  assert.ok(text().includes('This step ran out of the time a step may take (10 minutes).'));
+  assert.ok(text().includes('The limit is in Settings → Step time limit and applies to blogs started after a change. Try again with more time doubles it to 20 minutes for this blog.'),text().join('|'));
+  assert.ok(f.get('actions').children.some(e=>e.textContent==='Try again with more time'));
+  assert.equal(nodes().some(e=>e.textContent==='Open Status'),false,'a time limit is not a sign-in problem');
+  // The words follow the limit exactly, and nothing doubles past the longest a step may take.
+  for(const [seconds,words,retry] of [[90,'Try again with more time doubles it to 3 minutes for this blog.','with the same 1.5-minute limit'],[45,'Try again with more time doubles it to 1.5 minutes for this blog.','with the same 45-second limit'],[2400,'Try again with more time raises it to 60 minutes for this blog.','with the same 40-minute limit']]){
+    f.set('found',{...failed,seconds,reason:'time-limit',said:null,error:'This step ran out of the time a step may take.'});f.run('sRun(found)');
+    assert.ok(text().includes('The limit is in Settings → Step time limit and applies to blogs started after a change. '+words),seconds+': '+text().join('|'));
+    assert.ok(text().some(t=>t.includes(retry)),seconds+': '+text().join('|'));
+    assert.ok(f.get('actions').children.some(e=>e.textContent==='Try again with more time'));}
+  f.set('found',{...failed,seconds:3600,reason:'time-limit',said:null,error:'This step ran out of the time a step may take (60 minutes).'});f.run('sRun(found)');
+  assert.ok(text().includes('The limit is in Settings → Step time limit and applies to blogs started after a change. 60 minutes is the longest a step may take.'),text().join('|'));
+  assert.equal(f.get('actions').children.some(e=>e.textContent==='Try again with more time'),false,'no more time past the longest');
+  assert.equal(f.get('actions').children.find(e=>e.textContent==='Try again').className,'button button-filled');
+  // First-run setup: Writing preferences open, and an assistant that is not installed marked.
+  f.run("studio.options={agents:{codex:false,claude:true}};studio.settings={defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''},workspace:'/synthetic',shared_before:{}};studio.team={};studio.brand=null;sSettings(true)");
+  const preferences=()=>nodes().find(e=>e.tagName==='details'&&e.children[0]?.textContent==='Writing preferences');
+  assert.equal(preferences().open,true,'setup opens Writing preferences');
+  assert.ok(descendants(preferences()).some(e=>e.textContent==='Codex: Not installed — see Status.'),descendants(preferences()).map(e=>e.textContent).join('|'));
+  assert.equal(descendants(preferences()).some(e=>/Claude Code: Not installed/.test(e.textContent)),false);
+  f.run('sSettings(false)');assert.equal(!!preferences().open,false,'Settings keeps it folded');
+  // The setup route reads which assistants are installed.
+  f.run('studio.options=null');requests.length=0;await f.run("sRoute('setup')");
+  assert.ok(requests.includes('/api/run-options'),requests.join('|'));
+  // The start form says so before a step fails.
+  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[],profiles:[],agents:{codex:false,claude:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',minutes:'10',operation:'a'.repeat(32)};sWizard()");
+  assert.ok(text().includes('Codex: Not installed — see Status. Every step stops until it is.'),text().join('|'));
 }

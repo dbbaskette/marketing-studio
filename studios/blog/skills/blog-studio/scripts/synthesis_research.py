@@ -21,33 +21,141 @@ def offered(source):
     )
 
 
-def generate(directory, run, payload, worker, *, seconds, stop):
+KINDS = ('facts', 'findings', 'prose')
+# The run says how long a step may take; the research's limit covers all its rounds.
+OUT_OF_TIME = 'Research ran out of the time a step may take.'
+
+
+def grouped(case):
+    """What the last saved check objected to, grouped by kind and verdict: each group's
+    count, its first note and a few of its IDs, largest first within a kind, then the
+    assessment when it asks for revision. Empty when the check said nothing readable."""
+    try:
+        review = json.loads((Path(case) / 'review.json').read_text())
+    except (OSError, ValueError):
+        return []
+    if not isinstance(review, dict):
+        return []
+    groups = []
+    for kind in KINDS:
+        found = {}
+        for item in review.get(kind) or ():
+            if not isinstance(item, dict) or item.get('verdict') in (None, 'supported'):
+                continue
+            verdict = str(item['verdict'])[:40]
+            group = found.setdefault(
+                verdict, {'kind': kind, 'verdict': verdict, 'count': 0, 'note': '', 'ids': []}
+            )
+            group['count'] += 1
+            if item.get('id') and len(group['ids']) < 5:
+                group['ids'].append(str(item['id'])[:80])
+            note = ' '.join(str(item.get('note') or '').split())
+            if note and not group['note']:
+                group['note'] = research_contract.shortened(note, 300)
+        groups += sorted(found.values(), key=lambda group: -group['count'])
+    assessment = review.get('assessment')
+    if isinstance(assessment, dict):
+        asked = [
+            name for name in ('coverage', 'usefulness') if assessment.get(name) == 'needs-revision'
+        ]
+        if asked:
+            note = ' '.join(str(assessment.get('note') or '').split())
+            groups.append(
+                {
+                    'kind': 'assessment',
+                    'verdict': 'needs-revision',
+                    'count': 1,
+                    'note': research_contract.shortened(note, 300) if note else '',
+                    'ids': [],
+                    'asked': asked,
+                }
+            )
+    return groups
+
+
+def refusal_groups(refusal, case):
+    """The refusal's own grouping when the shared contract gives one, else the case's."""
+    given = getattr(refusal, 'groups', None)
+    if isinstance(given, list) and given:
+        groups = []
+        for group in given:
+            if not isinstance(group, dict) or type(group.get('count')) is not int:
+                groups = []
+                break
+            note = group.get('note') or (group.get('notes') or [''])[0]
+            groups.append(
+                {
+                    'kind': str(group.get('kind') or 'objections')[:40],
+                    'verdict': str(group.get('verdict') or '')[:40],
+                    'count': group['count'],
+                    'note': research_contract.shortened(str(note or ''), 300),
+                    'ids': [str(ident)[:80] for ident in (group.get('ids') or [])[:5]],
+                    **({'asked': list(group['asked'])} if group.get('asked') else {}),
+                }
+            )
+        if groups:
+            return groups
+    return grouped(case)
+
+
+def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
+    """Research the blog in `directory` and publish its reviewed bundle there. `progress`,
+    when given, hears {'round', 'phase'} as each job starts (round 0 is public source
+    discovery, before the first author) and {'job': ...} as each ends, with its seconds and
+    the tokens and dollars its CLI reported."""
     import blog_library
+    import blog_worker
     from performance import extract
 
     started = time.monotonic()
+    rounds = [0]  # Author rounds so far; the shared contract allows ROUNDS of them.
+
+    def tell(event):
+        if progress is not None:
+            progress(event)
 
     def call(phase, data, guidance, web=False):
         if stop.is_set():
             raise ValueError('Research stopped. Saved work is kept.')
         remaining = seconds - (time.monotonic() - started)
         if remaining <= 0:
-            raise ValueError('Research reached its time limit. The saved draft is kept.')
+            raise blog_worker.WorkerFailure(OUT_OF_TIME, 'time-limit')
         selection = model_profiles.route(
             run,
             'Blog Studio',
             'research-' + phase,
             purpose='review' if phase == 'review' else 'research',
         )
-        return worker(
-            run['engine'],
-            data,
-            guidance,
-            seconds=max(1, int(remaining)),
-            web=web,
-            stop=stop,
-            model_selection=selection,
-        )
+        tell({'round': rounds[0], 'phase': phase})
+        began, outcome = time.monotonic(), 'failed'
+        with blog_worker.metered() as jobs:
+            try:
+                answer = worker(
+                    run['engine'],
+                    data,
+                    guidance,
+                    seconds=max(1, int(remaining)),
+                    web=web,
+                    stop=stop,
+                    model_selection=selection,
+                )
+                outcome = 'kept'
+                return answer
+            finally:
+                tokens = [job['tokens'] for job in jobs if job['tokens'] is not None]
+                dollars = [job['dollars'] for job in jobs if job['dollars'] is not None]
+                tell(
+                    {
+                        'job': {
+                            'phase': phase,
+                            'round': rounds[0],
+                            'seconds': round(time.monotonic() - began, 1),
+                            'tokens': sum(tokens) if tokens else None,
+                            'dollars': round(sum(dollars), 4) if dollars else None,
+                            'outcome': outcome,
+                        }
+                    }
+                )
 
     sources = []
     with tempfile.TemporaryDirectory(prefix='blog-research-captures-') as scratch:
@@ -111,10 +219,10 @@ def generate(directory, run, payload, worker, *, seconds, stop):
             ):
                 raise ValueError('Research source discovery returned an invalid source list.')
             for url in dict.fromkeys(urls):
-                if stop.is_set() or time.monotonic() - started >= seconds:
-                    raise ValueError(
-                        'Research stopped or reached its time limit. Saved work is kept.'
-                    )
+                if stop.is_set():
+                    raise ValueError('Research stopped. Saved work is kept.')
+                if time.monotonic() - started >= seconds:
+                    raise blog_worker.WorkerFailure(OUT_OF_TIME, 'time-limit')
                 try:
                     parsed = urlsplit(blog_library.canonical(url))
                     content, origin, kind = blog_library.fetch(
@@ -166,6 +274,7 @@ def generate(directory, run, payload, worker, *, seconds, stop):
             ]
             data['source_limits'] = gaps
             if phase == 'author':
+                rounds[0] += 1
                 guidance += (
                     '\nDossier format: schema=2; sources, facts, findings, sections and brief '
                     'are arrays. sections and brief contain {id,title,blocks:[{text,kind,refs}]}. '
@@ -203,7 +312,7 @@ def generate(directory, run, payload, worker, *, seconds, stop):
                     except (ValueError, KeyError, TypeError, AttributeError) as error:
                         if attempt:
                             raise ValueError(
-                                'Research could not produce valid evidence and report data after one correction attempt. Your manuscript and source access are unchanged. Retry research or continue editing locally.'
+                                'Research could not produce valid evidence and report data after one correction attempt. Your manuscript and source access are unchanged. Choose Try again, or Continue without research.'
                             ) from None
                         answer = call(
                             phase,

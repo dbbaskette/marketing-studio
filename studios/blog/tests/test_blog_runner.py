@@ -1070,7 +1070,7 @@ else:
     def test_timeout_ends_the_cli_process(self):
         self.executable('time.sleep(30)\n')
         with patch.object(blog_worker.source_curator, 'executable', return_value=str(self.binary)):
-            with self.assertRaisesRegex(ValueError, 'time limit'):
+            with self.assertRaisesRegex(ValueError, 'time a step may take'):
                 blog_worker.generate('claude', {}, 'Synthetic', seconds=0.1)
 
     def test_stop_ends_the_cli_process(self):

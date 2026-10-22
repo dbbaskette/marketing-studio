@@ -241,7 +241,36 @@ Blog Studio factual checks as passed.
 
 **Pause after this step** lets the current job finish and prevents another.
 **Stop** ends its process. Failed jobs retain previous writing and offer
-**Try again**. No job approves its own result or publishes a blog.
+**Try again**, which makes that step again in a new job. No job approves its own
+result or publishes a blog. **Finish**, at the last step, always opens its
+confirmation, whatever the review level: it approves the shown version and keeps
+the draft in the team library as a reference and an example of its kind of post.
+
+A stopped run says what to do next beside the error:
+
+- **A CLI failure** names **Status → Check this computer** and offers **Open
+  Status**, including for an assistant that is not installed or cannot start.
+  **What the assistant said** shows the last 20 lines its command printed, redacted
+  and without any line that echoes the job it was given, kept in
+  `.blog-runs/diagnostics/cli` on this computer only, and replaced by the next job.
+- **A step out of time** says it ran out of the time a step may take, with this
+  blog's minutes. The limit is in **Settings → Step time limit** for new blogs;
+  **Try again with more time** doubles it for this one.
+- **Research** says its round while it works ("Round 2 of 3, the independent
+  check"); each job's seconds are kept with the run on this computer, and its tokens and cost where
+  the CLI reports them (Claude Code does; Codex, as Blog Studio runs it, does not).
+  Research that stops before its check accepts it is kept in the blog's
+  `.studio-research-draft` folder, which the Team Hub skips and a shared studios
+  repository ignores. It is used only while the blog's inputs and research version
+  are the ones it was made for; research saved any other way lets it go. A refusal lists **What the research check objected to**,
+  grouped by kind and verdict with the first note of each. **Try again** continues
+  from the kept draft for up to three more rounds, within the step's limit, and says
+  what the last attempt took. **Continue without research** takes the research steps
+  out of the run, with a confirmation; the outline and later steps then work from the
+  brief and selected sources alone.
+
+First-run setup opens **Writing preferences**, and an assistant that is not
+installed is marked "Not installed — see Status" there and on the start form.
 One job works at a time in this workspace. Models can search the web only in a
 public research job; they have no shell, file tools, connected apps or approval
 tools. Only the runner saves their returned documents.

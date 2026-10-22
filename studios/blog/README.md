@@ -98,13 +98,21 @@ Once the page is open, use its controls to drive the work:
    carry on by themselves. **Step by step** stops at every stage. Open the item
    under **Needs you** on Home or choose **Review** on its run. Read the
    document, assistant notes, and any comparison with the last approved version.
-   Choose **Approve** and confirm to let the run continue.
+   Choose **Approve** and confirm to let the run continue. **Finish**, at the last
+   step, always asks first and keeps the draft in the team library.
 5. **Request changes in the UI.** Choose **Ask for changes**, select the stage,
    and describe what you want—for example, “Make the introduction more direct.”
    The next version comes back for review. If the run is paused, choose **Resume**.
 6. **Collect your writing.** Open saved documents under **Made so far** and use
    **Download** to keep a Markdown copy. Your originals, stages, and decisions
    stay saved with the blog.
+
+If a step stops, its run says why and what to do: a CLI failure points at
+**Status → Check this computer** and shows what the assistant printed; a step that
+ran out of time says its limit, which lives in **Settings**, beside **Try again
+with more time**. Research the independent check refused is kept on this computer
+and listed by what the check objected to; **Try again** continues from it, and
+**Continue without research** carries on without it.
 
 You can leave the browser while it works and return to **Home** to see **Needs
 you**, **In progress**, and **Finished**. Use **Pause after this step** to pause
