@@ -99,6 +99,19 @@ class ProfileTests(IsolatedHome):
             record['model_profiles']['policy'] = 1
             self.assertEqual(models.route(record, 'Presentation Studio', 'build-repair:section-1')['profile'], 'complex')
 
+    def test_a_research_job_s_receipt_names_its_phase(self):
+        record = {'agent': 'codex', 'model_profiles': models.snapshot(
+            configuration('codex'), 'codex', 'shared-model', 'medium')}
+        for product in ('Presentation Studio', 'Training Studio'):
+            for step, purpose in (('research:author-2', 'research-author'),
+                                  ('research:review-1', 'research-review'),
+                                  ('research:instance-min', 'research')):
+                with self.subTest(product=product, step=step):
+                    choice = models.route(record, product, step)
+                    self.assertEqual((choice['purpose'], choice['profile']), (purpose, 'main'))
+        self.assertEqual(models.route(record, 'Presentation Studio', 'research:review-1',
+                                      purpose='review')['purpose'], 'review')
+
     def test_snapshot_is_immutable_and_work_override_stays_single(self):
         values = configuration()
         saved = models.snapshot(values, 'codex', 'shared-model', 'medium')

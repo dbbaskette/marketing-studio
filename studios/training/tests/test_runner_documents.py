@@ -434,6 +434,21 @@ class DistinctTests(Supplied):
         self.assertEqual([entry['distinct'] for entry in documents.listed(self.root)],
                          [False, True])
         self.assertEqual(same['original'], documents.listed(self.root)[0]['original'])
+        # Worked out once, it is noted in the list, so no later look reads the files again.
+        self.assertEqual([entry.get('distinct') for entry in
+                          json.loads(index.read_text())['documents']], [False, True])
+        with mock.patch.object(documents, '_differs', side_effect=AssertionError('read again')):
+            self.assertEqual([entry['distinct'] for entry in documents.listed(self.root)],
+                             [False, True])
+
+    def test_a_document_of_its_own_from_before_is_known_without_reading_it(self):
+        self.add('page.html', PAGE)
+        index = self.root / 'sources/supplied/index.json'
+        listing = json.loads(index.read_text())
+        listing['documents'][0].pop('distinct')
+        index.write_text(json.dumps(listing))
+        with mock.patch.object(documents, '_differs', side_effect=AssertionError('read')):
+            self.assertIs(documents.listed(self.root)[0]['distinct'], True)
 
 
 class ListTests(Supplied):

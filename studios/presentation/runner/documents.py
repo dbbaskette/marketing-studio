@@ -298,8 +298,11 @@ def _distinct(root: Path, kept: dict, file: str, original: str) -> bool:
     list from before that was noted, worked out from its files."""
     if isinstance(kept.get('distinct'), bool):
         return kept['distinct']
+    ending = _ending(kept['name'])
+    if ending not in SAME:     # a PDF, a Word file or a web page: nothing need be read
+        return True
     try:
-        return _differs(_ending(kept['name']), (root / original).read_bytes(),
+        return _differs(ending, (root / original).read_bytes(),
                         (root / file).read_bytes().decode('utf-8'))
     except (OSError, UnicodeDecodeError):
         return True
@@ -608,9 +611,22 @@ def remove(root: Path, name: str) -> None:
 
 
 def listed(root: Path) -> list[dict]:
-    """Every document's entry, in the order they were added."""
+    """Every document's entry, in the order they were added. Whether a readable document
+    from a list made before it was noted is distinct is noted in the list once worked out,
+    so that it is not worked out again."""
     root = Path(root)
-    return [_entry(root, kept) for kept in _kept(root)]
+    kept = _kept(root)
+    entries = [_entry(root, one) for one in kept]
+    if any(entry['readable'] and not isinstance(one.get('distinct'), bool)
+           for one, entry in zip(kept, entries)):
+        with _CHANGING:
+            fresh = _kept(root)
+            worked = {entry['id']: entry['distinct'] for entry in entries if entry['readable']}
+            for one in fresh:
+                if not isinstance(one.get('distinct'), bool) and one['id'] in worked:
+                    one['distinct'] = worked[one['id']]
+            _store(root, fresh)
+    return entries
 
 
 def sources(root: Path) -> tuple[list[dict], list[dict]]:

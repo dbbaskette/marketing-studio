@@ -141,6 +141,10 @@ def capture(agent, model=None, effort=None, validate=None):
 def route(record, product, step, *, purpose=None, effort_key='effort'):
     """Only structured task IDs choose a tier. Retries keep their tier and permissions."""
     base = step.split('@', 1)[0].split(':', 1)[0]
+    # A research job's receipt names its phase: research:author-2 is research-author.
+    phase, _, number = step.split('@', 1)[0].partition(':')[2].rpartition('-')
+    if purpose is None and base == 'research' and phase in ('author', 'review') and number.isdigit():
+        purpose = 'research-' + phase
     profile = 'main'
     if base in ('classify', 'extract', 'source-classification'):
         profile = 'quick'

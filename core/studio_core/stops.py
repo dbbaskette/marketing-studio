@@ -46,12 +46,17 @@ def floor(limit) -> float:
     return min(FLOOR, max(0.0, float(limit or 0)) / 4)
 
 
-def timed_out(label: str, seconds, tries: int) -> str:
-    """What a stop says of a step whose last try ran out of the time a step may take."""
+def timed_out(label: str, seconds, tries: int, thing: str = 'run', own: bool = False) -> str:
+    """What a stop says of a step whose last try ran out of the time a step may take.
+    `own` says the limit was the run's own, given by more time, not the one in Settings."""
     said = (f'{label} ran out of the time a step may take: it was stopped after '
             f'{lasted(seconds)}.' if tries <= 1 else
             f'{label} ran out of the time a step may take: its last try was stopped after '
             f'{lasted(seconds)}, and it did not work in {tries} tries.')
+    if own:
+        return said + (f' That limit, now {lasted(seconds)} a step for this {thing}, was given '
+                       f'when you asked for more time; the limit for every {thing} is in '
+                       f'{SETTINGS}.')
     return said + f' That limit, {lasted(seconds)} a step, is in {SETTINGS}.'
 
 

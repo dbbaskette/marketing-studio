@@ -4702,8 +4702,12 @@ function researchAgain(research) {
     given(research.dollars) ? money(research.dollars) : ''].filter(Boolean);
   const rounds = research.rounds === 1 ? 'the last round' : research.rounds
     ? 'the last ' + count(research.rounds, 'round', 'rounds') : 'the last try';
-  return 'Try again continues from the saved draft and runs up to '
-    + count(research.most || 3, 'more round', 'more rounds') + ' of writing and checking'
+  const most = research.most || 3;
+  return (research.drafted
+    ? 'Try again continues from the saved draft and runs up to '
+      + count(most, 'more round', 'more rounds')
+    : 'Try again runs the research again, up to ' + count(most, 'round', 'rounds'))
+    + ' of writing and checking'
     + (took.length ? '; ' + rounds + ' took ' + took.join(' and ') : '') + '.';
 }
 

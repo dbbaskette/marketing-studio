@@ -143,7 +143,7 @@ from runner import slides as slides_tool
 from runner.jobs import (FED, KEPT_SO_FAR, NEXT_NOTE, Gone as _Gone, Halted as _Halted, Jobs,
                          Run as _Run, Slots as _Slots, attempts, first, gate_state,
                          last_error, spent, text_of, tries, sha256_of)
-from runner.research_steps import PLAN, PLAN_MD, REPORT, Researching
+from runner.research_steps import PLAN, PLAN_MD, REPORT, REVIEW, Researching
 from runner.steps import build, deliver as delivering, existing, intake
 from runner.steps import look as looks
 from runner.steps import outline as outlines
@@ -2596,7 +2596,13 @@ class Engine(Jobs, Researching):
                  'lines': list(worker['lines'])} for ident, worker in live]
 
     @staticmethod
-    def _research_tried(record: dict, halted: dict) -> dict:
+    def _drafted(root: Path | None) -> bool:
+        """Whether research done as one report and an independent check has a saved draft
+        that Try again carries on from."""
+        return bool(root) and (Path(root) / research_contract.CASE / '.harness-research'
+                               / 'synthesis.json').is_file()
+
+    def _research_tried(self, record: dict, halted: dict, root: Path | None = None) -> dict:
         """For a stop at research done as one report and one independent check, its
         'research': what its last try took, and how many rounds Try again may run."""
         if halted.get('step') != 'research' or not record.get('research_contract'):
@@ -2605,7 +2611,7 @@ class Engine(Jobs, Researching):
                                                for name, entry in (record.get('steps') or {}).items()
                                                if isinstance(entry, dict)})
         return {'research': {**(tried or {'rounds': 0, 'jobs': 0, 'seconds': 0, 'dollars': None}),
-                             'most': research_contract.ROUNDS}}
+                             'most': research_contract.ROUNDS, 'drafted': self._drafted(root)}}
 
     def _timeline(self, record: dict, state: str, root: Path | None = None) -> list[dict]:
         """stages.timeline, with each step's tries, time, cost and last error."""
@@ -2853,7 +2859,9 @@ class Engine(Jobs, Researching):
                          if asked and mine else None),
             'problem': ({**{key: halted.get(key) for key in ('state', 'why', 'kept', 'action')},
                          **({'seconds': halted['seconds']} if halted.get('seconds') else {}),
-                         **self._research_tried(record, halted)}
+                         **({'objections': str(REVIEW)} if halted.get('step') == 'research'
+                            and (root / REVIEW).is_file() else {}),
+                         **self._research_tried(record, halted, root)}
                         if halted else None),
             'deliver': ({**said, 'revisions': list(record.get('revisions') or []),
                          'download': self._rendered(root, record),

@@ -374,8 +374,9 @@ class Jobs:
         and offering more time."""
         seconds = int((record.get('limits') or {}).get('step_seconds')
                       or settings.load().step_seconds)
-        self._problem(root, step, 'failed', stops.timed_out(label, seconds, tries), KEPT,
-                      stops.MORE_TIME, detail={'seconds': seconds})
+        own = bool(record.get('more_time')) and seconds == record['more_time']
+        self._problem(root, step, 'failed', stops.timed_out(label, seconds, tries, 'deck', own),
+                      KEPT, stops.MORE_TIME, detail={'seconds': seconds})
 
     def _folder(self, root: Path, name: str, number: int) -> Path:
         base, stem = agents.staging(), f'{root.name}--{folder_name(name)}-'

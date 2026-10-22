@@ -442,6 +442,8 @@ def older(version: str, needed: str) -> bool:
 def folder_name(step: str) -> str:
     """A step's name as part of a folder's. A research question can never be mistaken for
     another step, whatever its ID."""
+    if research_contract.job_round(step):    # one job of research done as one report
+        return re.sub(r'[^a-z0-9]+', '-', step.lower()).strip('-')
     if step.startswith('research:'):
         return 'question-' + step.partition(':')[2]
     return re.sub(r'[^a-z0-9]+', '-', step.lower()).strip('-')
@@ -3079,7 +3081,9 @@ class Engine(Reviewing):
         """Stop at a step whose last try ran out of the time a step may take, saying so
         and offering more time."""
         seconds = record['limits']['step_seconds']
-        self._problem(root, step, 'failed', stops.timed_out(label, seconds, tries), KEPT,
+        own = bool(record.get('more_time')) and seconds == record['more_time']
+        self._problem(root, step, 'failed',
+                      stops.timed_out(label, seconds, tries, 'training', own), KEPT,
                       stops.MORE_TIME, detail={'seconds': seconds})
 
     def _spend_stop(self, root: Path, label: str | None = None) -> None:
@@ -3844,7 +3848,13 @@ class Engine(Reviewing):
         return f'{step.step.doing}.'
 
     @staticmethod
-    def _research_tried(record: dict, problem: dict) -> dict:
+    def _drafted(root: Path | None) -> bool:
+        """Whether research done as one report and an independent check has a saved draft
+        that Try again carries on from."""
+        return bool(root) and (Path(root) / research_contract.CASE / '.harness-research'
+                               / 'synthesis.json').is_file()
+
+    def _research_tried(self, record: dict, problem: dict, root: Path | None = None) -> dict:
         """For a stop at research done as one report and one independent check, its
         'research': what its last try took, and how many rounds Try again may run."""
         if problem.get('step') != 'research' or not record.get('research_contract'):
@@ -3852,7 +3862,7 @@ class Engine(Reviewing):
         tried = research_contract.last_rounds({name: entry.get('attempts', [])
                                                for name, entry in record['steps'].items()})
         return {'research': {**(tried or {'rounds': 0, 'jobs': 0, 'seconds': 0, 'dollars': None}),
-                             'most': research_contract.ROUNDS}}
+                             'most': research_contract.ROUNDS, 'drafted': self._drafted(root)}}
 
     def _synthesis_doing(self, record: dict, run: _Run | None) -> str:
         """Where research done as one authored report and one independent check stands:
@@ -4206,7 +4216,7 @@ class Engine(Reviewing):
                          if asked else None),
             'problem': ({**{key: problem.get(key) for key in ('what', 'kept', 'action', 'label')},
                          **({'seconds': problem['seconds']} if problem.get('seconds') else {}),
-                         **self._research_tried(record, problem)}
+                         **self._research_tried(record, problem, root)}
                         if problem else None),
             'documents': self._supplied(root, record, found),
             'copies': self._copies(found),

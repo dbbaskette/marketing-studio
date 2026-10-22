@@ -4016,7 +4016,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                         '- 12 facts the check calls narrow (f01: Too broad.)\n'
                         '- coverage needs revision (Alternatives are missing.)',
                 'research': {'rounds': 3, 'jobs': 6, 'seconds': 2880, 'dollars': 9.8,
-                             'most': 3}})
+                             'most': 3, 'drafted': True}})
         answers = self.answers(**{'GET /api/trainings': [self.listed('failed', broke, needs=True)],
                                   'GET /api/training': [self.detail('failed', broke)],
                                   'GET /api/run': [failed]})

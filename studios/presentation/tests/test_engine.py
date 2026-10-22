@@ -782,6 +782,15 @@ class SynthesisStopTests(StudioCase):
             '# Independent research check\n\nAfter 3 rounds of correction the independent '
             'check still objected. Each objection names the fact, finding or passage it '
             'concerns.\n\n## 1 fact the check calls narrow\n\n- f01: Too broad.\n'))
+        # The stop's pointer opens: the page may read the file, and the stop names it.
+        from runner import page
+        self.assertIn('research/review.md', page.FILES)
+        self.assertEqual(self.view(root)['problem']['objections'], 'research/review.md')
+        # Research that later passes leaves no objections behind.
+        with mock.patch.object(research_steps.research_contract, 'native', return_value=None):
+            self.engine.act(root, 'retry')
+        self.assertFalse((root / 'research/review.md').exists())
+        self.assertNotIn('research/review.md', self.git('ls-files'))
 
     def test_a_dry_read_reads_each_original_as_the_check_would(self):
         from studio_core import research_contract
@@ -826,7 +835,11 @@ class ResearchRoundTests(StudioCase):
         root = self.synthesis()
         self.engine._problem(root, 'research', 'failed', 'It stopped.', 'Kept.')
         self.assertEqual(self.view(root)['problem']['research'], {
-            'rounds': 2, 'jobs': 3, 'seconds': 480.0, 'dollars': 1.4, 'most': 3})
+            'rounds': 2, 'jobs': 3, 'seconds': 480.0, 'dollars': 1.4, 'most': 3,
+            'drafted': False})
+        (root / '.studio-research/.harness-research').mkdir(parents=True)
+        (root / '.studio-research/.harness-research/synthesis.json').write_text('{}')
+        self.assertIs(self.view(root)['problem']['research']['drafted'], True)
         self.engine._problem(root, 'outline', 'failed', 'It stopped.', 'Kept.')
         self.assertNotIn('research', self.view(root)['problem'])
 

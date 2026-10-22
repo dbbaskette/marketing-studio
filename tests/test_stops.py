@@ -16,6 +16,12 @@ class StopWordsTests(unittest.TestCase):
         self.assertEqual(stops.timed_out('Do the research', 600, 1), (
             'Do the research ran out of the time a step may take: it was stopped after 10 '
             'minutes. That limit, 10 minutes a step, is in Settings, under Limits.'))
+        # After more time, the limit that ran out is the run's own, not the one in Settings.
+        self.assertEqual(stops.timed_out('Draft the outline', 1800, 3, 'deck', own=True), (
+            'Draft the outline ran out of the time a step may take: its last try was stopped '
+            'after 30 minutes, and it did not work in 3 tries. That limit, now 30 minutes a step '
+            'for this deck, was given when you asked for more time; the limit for every deck is '
+            'in Settings, under Limits.'))
         self.assertEqual(stops.more_time(900), 1800)
         self.assertEqual(stops.lasted(5400), '1 hour 30 minutes')
         self.assertEqual(stops.lasted(45), '45 seconds')

@@ -794,7 +794,12 @@ def native(engine, root, run, task, sources, product):
             engine._store(root, record)
             engine._commit(root, 'record independent research job: ' + phase)
         if not accepted or outcome.reason == 'stopped':
-            said = ' '.join(str(outcome.detail or '').split())
+            # What it handed back and the checks refused says more than how the agent ended.
+            refused = [problem for found in handed['problems'].values() for problem in found]
+            said = (('What it handed back did not pass the checks: ' + ' '.join(refused[:3])
+                     + (' And more.' if len(refused) > 3 else '')) if refused else
+                    ' '.join(str(outcome.detail or '').split())
+                    or 'It ended without handing anything back.')
             failure = WorkspaceError(f'Research did not finish its {phase} job in round '
                                      f'{number} of {ROUNDS}' + (f': {said}' if said else '.')
                                      + ' Saved work is kept.')

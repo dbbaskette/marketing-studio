@@ -106,6 +106,17 @@ class SynthesisIntegrationTests(StudioCase):
         self.assertEqual([job.limits.seconds for job in self.workers.of('research-result')],
                          [900, 1800, 1800])
 
+    def test_a_research_job_that_hands_back_nothing_acceptable_says_why(self):
+        def wrong(tools, job):
+            self.assertFalse(tools.submit_artifact('research-result', '{not json')[0])
+        self.workers.queued['research-result'] = [wrong]
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'automatic'}):
+            root = self.start(research=True)
+        why = self.view(root)['problem']['why']
+        self.assertTrue(why.startswith('Research did not finish its author job in round 1 of 3: '
+                                       'What it handed back did not pass the checks: Return '
+                                       'valid JSON'), why)
+
     def test_finding_marks_use_synthesis_ids_and_never_rewrite_the_checked_report(self):
         def authored(tools, job):
             payload = json.loads(tools.read_input('research-task')[1])

@@ -832,7 +832,8 @@ class ResearchTests(StudioCase):
                     'the objections are listed in its research review (reviews/research.md). '
                     'The research plan you approved is kept.',
             # What the page says Try again does: no research job ran here.
-            'research': {'rounds': 0, 'jobs': 0, 'seconds': 0, 'dollars': None, 'most': 3}})
+            'research': {'rounds': 0, 'jobs': 0, 'seconds': 0, 'dollars': None, 'most': 3,
+                         'drafted': False}})
         self.assertEqual(self.record(root)['problem']['step'], 'research')
         review = (root / 'reviews' / 'research.md').read_text()
         self.assertIn('## Independent research review: changes still needed', review)
@@ -1018,6 +1019,12 @@ class SynthesisWordsTests(StudioCase):
         live()
         self.assertEqual(says(), first)
 
+    def test_a_research_job_s_folder_is_named_for_the_research_not_a_question(self):
+        from runner.engine import folder_name
+        self.assertEqual(folder_name('research:author-1'), 'research-author-1')
+        self.assertEqual(folder_name('research:review-3'), 'research-review-3')
+        self.assertEqual(folder_name('research:instance-min'), 'question-instance-min')
+
     def test_a_stop_at_the_research_says_what_its_last_try_took(self):
         root = self.start()
         record = self.engine._load(root)
@@ -1032,7 +1039,8 @@ class SynthesisWordsTests(StudioCase):
         self.engine._store(root, record)
         self.engine._problem(root, 'research', 'failed', 'It stopped.', 'Kept.')
         self.assertEqual(self.view(root)['problem']['research'], {
-            'rounds': 1, 'jobs': 1, 'seconds': 200.0, 'dollars': 0.5, 'most': 3})
+            'rounds': 1, 'jobs': 1, 'seconds': 200.0, 'dollars': 0.5, 'most': 3,
+            'drafted': False})
         self.engine._problem(root, 'blueprint', 'failed', 'It stopped.', 'Kept.')
         self.assertNotIn('research', self.view(root)['problem'])
 
@@ -1160,6 +1168,18 @@ class LimitTests(StudioCase):
                          (1200, 1200, 600))
         self.decide(root, 'research-plan')
         self.assertEqual({job.limits.seconds for job in self.workers.of('question')}, {1200})
+
+    def test_running_out_of_the_time_more_time_gave_names_the_run_s_own_limit(self):
+        settings.save(replace(settings.load(), step_seconds=600))
+        self.workers.then('research-plan', *[fails(SLOW, 'timeout')] * 6)
+        root = self.start()
+        self.engine.act(root, 'more-time')
+        self.assertEqual(self.view(root)['problem']['what'], (
+            'Draft the research plan ran out of the time a step may take: its last try was '
+            'stopped after 20 minutes, and it did not work in 3 tries. That limit, now 20 '
+            'minutes a step for this training, was given when you asked for more time; the limit '
+            'for every training is in Settings, under Limits.'))
+        self.assertEqual(self.view(root)['problem']['seconds'], 1200)
 
     def test_a_research_job_that_runs_out_of_time_or_money_says_so(self):
         from runner import engine as engine_module

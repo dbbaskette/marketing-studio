@@ -462,6 +462,22 @@ class ScreenTests(ScriptedPage, PageCase):
                       'Settings, under Limits, is the other way on, for every deck.', shot['text'])
         self.assertEqual(self.posts(result), [('/api/run', {'path': path, 'action': 'more-time'})])
 
+    def test_a_research_stop_opens_every_objection(self):
+        path = self.started()
+        shown = self.run_of(path)
+        row = next(row for row in shown['timeline'] if row['state'] != 'done')
+        row.update(state='current', failed=True)
+        shown.update(state='failed', gate=None, sentence='It has stopped.', problem={
+            'state': 'failed', 'why': 'The check still objected.', 'action': 'retry',
+            'kept': 'The draft report is kept.', 'objections': 'research/review.md',
+            'research': {'rounds': 3, 'jobs': 6, 'seconds': 60, 'dollars': None, 'most': 3,
+                         'drafted': True}})
+        read = ok({'name': 'research/review.md', 'size': 40, 'truncated': False,
+                   'text': '# Independent research check\n\n- f01: Too broad.\n'})
+        result = self.deck_screen(path, [{'click': 'Read every objection'}, {'snapshot': 'read'}],
+                                  **{'GET /api/run': [ok(shown)], 'GET /api/file': [read]})
+        self.assertIn('f01: Too broad.', result['snapshots']['read']['text'])
+
     def test_a_research_retry_carries_on_from_the_draft_and_lists_what_was_kept(self):
         path = self.started()
         shown = self.run_of(path)
@@ -471,7 +487,8 @@ class ScreenTests(ScriptedPage, PageCase):
             'state': 'failed', 'why': 'The check still objected.', 'action': 'retry',
             'kept': 'The draft report is kept.\n- 12 facts the check calls narrow (f01: Too '
                     'broad.)\n- coverage needs revision (Alternatives are missing.)',
-            'research': {'rounds': 3, 'jobs': 6, 'seconds': 2880, 'dollars': 9.8, 'most': 3}})
+            'research': {'rounds': 3, 'jobs': 6, 'seconds': 2880, 'dollars': 9.8, 'most': 3,
+                         'drafted': True}})
         result = self.deck_screen(path, [{'snapshot': 'failed'}], **{'GET /api/run': [ok(shown)]})
         text = result['snapshots']['failed']['text']
         self.assertIn('Try again continues from the saved draft and runs up to 3 more rounds of '
@@ -480,6 +497,11 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('12 facts the check calls narrow (f01: Too broad.)', text)
         self.assertNotIn('- 12 facts', text, 'each group is an item of a list')
         self.assertNotIn('from the start', text)
+        # With no draft saved, there is nothing to carry on from.
+        shown['problem']['research'].update(drafted=False, rounds=1, seconds=50, dollars=None)
+        result = self.deck_screen(path, [{'snapshot': 'failed'}], **{'GET /api/run': [ok(shown)]})
+        self.assertIn('Try again runs the research again, up to 3 rounds of writing and checking; '
+                      'the last round took 50 seconds.', result['snapshots']['failed']['text'])
 
     def test_a_build_retry_says_how_many_sections_are_kept(self):
         path = self.started()

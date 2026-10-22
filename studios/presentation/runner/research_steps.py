@@ -312,6 +312,8 @@ class Researching:
                     'kept.' + listed))
                 raise Halted()
             with self.files:
+                # The objections of an earlier try are answered: none is left to read.
+                (root / REVIEW).unlink(missing_ok=True)
                 self._done(root, step, time.monotonic(), 'complete independent research review')
             return
         with self.files:

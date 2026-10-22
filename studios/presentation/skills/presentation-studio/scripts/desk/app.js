@@ -3492,10 +3492,26 @@ function problemPart(run, lead) {
     again = make('p', 'quiet', does + (took.length ? '; the tries so far took '
       + took.join(' and ') : '') + '.');
   }
+  // The research check's objections, every one under its group, read where the stop is.
+  let read = null;
+  const shown = found.objections ? make('div', 'card-part') : null;
+  if (found.objections) {
+    read = capsule('Read every objection', 'quiet', async () => {
+      read.disabled = true;
+      try {
+        const file = await ask('file', { path: run.path, name: found.objections });
+        shown.replaceChildren(documentPart('The research check', file.text));
+      } catch (failure) {
+        shown.replaceChildren(make('p', 'problem', failure.message));
+      } finally {
+        read.disabled = false;
+      }
+    }, 'read-objections');
+  }
   return callout(found.state === 'failed' ? 'late' : '', make('h2', 'aside-title', title),
     add(make('p', ''), make('strong', '', 'What happened: '), found.why || ''),
     found.kept ? keptPart(found.kept) : null,
-    again, go ? add(make('div', 'bar'), go) : null);
+    again, go || read ? add(make('div', 'bar'), go, read) : null, shown);
 }
 
 // What Try again does at research done as one report and one independent check: it carries
@@ -3506,8 +3522,12 @@ function researchAgain(research) {
     given(research.dollars) ? money(research.dollars) : ''].filter(Boolean);
   const rounds = research.rounds === 1 ? 'the last round' : research.rounds
     ? 'the last ' + count(research.rounds, 'round', 'rounds') : 'the last try';
-  return 'Try again continues from the saved draft and runs up to '
-    + count(research.most || 3, 'more round', 'more rounds') + ' of writing and checking'
+  const most = research.most || 3;
+  return (research.drafted
+    ? 'Try again continues from the saved draft and runs up to '
+      + count(most, 'more round', 'more rounds')
+    : 'Try again runs the research again, up to ' + count(most, 'round', 'rounds'))
+    + ' of writing and checking'
     + (took.length ? '; ' + rounds + ' took ' + took.join(' and ') : '') + '.';
 }
 
