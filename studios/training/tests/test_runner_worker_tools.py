@@ -12,6 +12,7 @@ import socket
 import subprocess
 import threading
 import unittest
+import zipfile
 from unittest import mock
 
 import helpers
@@ -1240,6 +1241,17 @@ class ResearchCitationTests(JobCase):
         self.ok(tools.submit_artifact('research-result', json.dumps(value)))
 
 
+def a_word_file(text: str) -> bytes:
+    """A Word file that holds one paragraph."""
+    xml = ('<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/'
+           'wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>' + text
+           + '</w:t></w:r></w:p></w:body></w:document>')
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, 'w') as archive:
+        archive.writestr('word/document.xml', xml)
+    return out.getvalue()
+
+
 class OriginalTests(JobCase):
     """The independent research check can read a supplied document's original, by the
     source's ID, as well as its capture: it attests to having read both."""
@@ -1284,14 +1296,53 @@ class OriginalTests(JobCase):
         self.assertIn('text read from that file', first)
         self.assertIn('Text of the PDF.', said)
 
-    def test_a_word_original_is_read_as_the_text_taken_from_it_and_says_so(self):
-        data = b'PK\x03\x04 pretend'
+    def test_a_word_original_is_read_from_that_file_now_and_says_so(self):
+        # Read from the file itself, not served as its capture: a check may not attest to
+        # an original by reading only the extraction.
+        data = a_word_file('Restart two batches, read from the Word file itself.')
         tools = self.research(self.offered('notes.original.docx', data))
         said = self.ok(tools.read_source('s1', original=True))
         first = said.partition('\n')[0]
         self.assertIn('a Word document', first)
         self.assertIn('sha256 ' + hashlib.sha256(data).hexdigest(), first)
-        self.assertIn('Restart one batch at a time.', said)
+        self.assertIn('text read from that file now', first)
+        self.assertIn('Restart two batches, read from the Word file itself.', said)
+        self.assertNotIn('Restart one batch at a time.', said, 'not the capture')
+        self.job = self.base / 'another-job'
+        broken = self.research(self.offered('broken.original.docx', b'PK\x03\x04 pretend'))
+        self.assertIn('could not be read', self.refused(broken.read_source('s1', original=True)))
+
+    def test_the_server_a_worker_is_given_reads_a_word_original_itself(self):
+        data = a_word_file('Restart two batches, read by the server.')
+        worker_tools.prepare(self.job, ask=False, sources=[
+            self.offered('notes.original.docx', data)],
+            artifacts={'research-result': {'kind': 'research-json'}})
+        asked = '\n'.join(json.dumps(message) for message in (
+            {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}},
+            {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {
+                'name': 'read_source', 'arguments': {'source_id': 's1', 'original': True}}})) + '\n'
+        done = subprocess.run(worker_tools.command(self.job), input=asked.encode('utf-8'),
+                              capture_output=True, cwd=self.base, timeout=60,
+                              env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'})
+        self.assertEqual((done.returncode, done.stderr), (0, b''))
+        said = json.loads(done.stdout.decode('utf-8').splitlines()[1])['result']['content'][0]['text']
+        self.assertIn('Restart two batches, read by the server.', said)
+
+    def test_a_pdf_this_computer_cannot_read_is_refused_not_served_as_its_capture(self):
+        tools = self.research(self.offered('notes.original.pdf', b'%PDF-1.7 pretend'))
+        tools.pdf = lambda path: None
+        said = self.refused(tools.read_source('s1', original=True))
+        self.assertIn('no PDF reader', said)
+        self.assertNotIn('Restart one batch at a time.', said)
+
+    def test_a_file_is_read_once_a_job(self):
+        read = []
+        tools = self.research(self.offered('notes.original.pdf', b'%PDF-1.7 pretend'))
+        tools.pdf = lambda path: read.append(path) or 'Text of the PDF.\n'
+        for _ in range(3):
+            self.ok(tools.read_source('s1', original=True))
+        self.ok(tools.search_source('s1', 'PDF', original=True))
+        self.assertEqual(len(read), 1)
 
     def test_a_source_without_an_original_is_refused_in_a_sentence(self):
         tools = self.research({'title': 'Restart notes', 'origin': 'supplied restart notes',

@@ -185,6 +185,16 @@ def tidy(text: str) -> str:
     return re.sub(r'\n{3,}', '\n\n', '\n'.join(lines)).strip() + '\n'
 
 
+def word_text(data: bytes, ident: str) -> str:
+    """The text of a Word file, read as a supplied document is read when it is added."""
+    from runner import documents   # it reads Word files, and imports this module
+    try:
+        return documents._word(data)
+    except Exception:   # whatever a Word file does to the reader, it is only not read
+        raise Refusal(f'The original of {ident}, a Word document, could not be read. Say so '
+                      'in your review.') from None
+
+
 def flag(value) -> bool:
     """A yes or no an agent sent, which may have arrived as text."""
     if isinstance(value, str):
@@ -978,6 +988,7 @@ class WorkerTools:
         self.opener = opener or fetch_once
         self.resolver = resolver or resolve
         self.pdf = pdf or pdf_text
+        self._read: dict[str, str] = {}     # an original's text, by its SHA-256, read once
         self._slides, self._brand = slides, brand
 
     def slides(self):
@@ -1051,7 +1062,7 @@ class WorkerTools:
     def _original(self, source_id) -> tuple[dict, str]:
         """A saved source's original: its entry, and its text after a first line that
         says what it is, how large, and its SHA-256. A file that is not text is read as
-        the text taken from it, and the first line says so."""
+        the text read from that file now, never as its capture, and the first line says so."""
         entry, capture = self._source(source_id)
         if not entry.get('original'):
             raise Refusal(f"{entry['id']} has no original apart from its capture: the "
@@ -1065,20 +1076,31 @@ class WorkerTools:
                  f'bytes, sha256 {hashlib.sha256(data).hexdigest()}')
         if ending in ORIGINAL_TEXT:
             return entry, f'[{about}. It is shown as it is.]\n\n' + data.decode('utf-8', 'replace')
+        if ending not in ORIGINAL_FILES:
+            raise Refusal(f"The original of {entry['id']} is {kind}, which cannot be shown as "
+                          'text. Read its capture, and say so in your review.')
+        # Read from the file itself, never served as its capture: a check may not attest to
+        # an original by reading only its extraction. Read once a job.
+        digest = hashlib.sha256(data).hexdigest()
+        if digest not in self._read:
+            self._read[digest] = self._file_text(entry, path, data, ending)
+        how = ', with its layout' if ending == '.pdf' else ''
+        return entry, (f'[{about}. {kind[0].upper()}{kind[1:]} is not text: this is the text '
+                       f'read from that file now{how}.]\n\n' + self._read[digest])
+
+    def _file_text(self, entry: dict, path: Path, data: bytes, ending: str) -> str:
+        """The text of an original that is not text, read from the file itself."""
         if ending == '.pdf':
             try:
                 text = self.pdf(path)
             except Refusal:
-                text = None
-            if text is not None:
-                return entry, (f'[{about}. A PDF is not text: this is the text read from '
-                               'that file now, with its layout.]\n\n' + text.replace('\x00', ''))
-        if ending in ORIGINAL_FILES:
-            return entry, (f'[{about}. {kind[0].upper()}{kind[1:]} is not text: this is the '
-                           'text taken from that file when it was added, which is also '
-                           'its capture.]\n\n' + capture)
-        raise Refusal(f"The original of {entry['id']} is {kind}, which cannot be shown as "
-                      'text. Read its capture, and say so in your review.')
+                raise Refusal(f"The original of {entry['id']}, a PDF, could not be read. Say "
+                              'so in your review.') from None
+            if text is None:
+                raise Refusal(f"This computer has no PDF reader (pdftotext), so the original "
+                              f"of {entry['id']} cannot be read. Say so in your review.")
+            return text.replace('\x00', '')
+        return word_text(data, entry['id'])
 
     def _refused(self, problems: list[str], left: int) -> tuple[bool, str]:
         """The answer to a hand-back the checks did not let through."""

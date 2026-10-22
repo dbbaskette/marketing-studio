@@ -33,7 +33,7 @@ unresolved work stays a saved draft and blocks downstream authoring.
 The check attests that it read every source, and the original of each supplied
 source that has one. Its tools serve both: `read_source(source_id, original=true)`
 and `search_source(..., original=true)` read the original, text as it is and a PDF
-or Word file as the text taken from it, after a line with the file's size and
+or Word file as the text read from that file at the time, after a line with its size and
 SHA-256; `list_inputs` names each original beside its source. An original is only
 claimed when it is another document than its capture: a PDF, a Word file or a web
 page. A text or Markdown document, such as a Google Doc's Markdown export, is its
