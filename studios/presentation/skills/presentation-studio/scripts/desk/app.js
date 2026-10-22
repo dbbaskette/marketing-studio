@@ -2954,7 +2954,9 @@ function aboutStep(draft) {
     draft.route === 'document' && draft.research ? choice('Where may research look?',
       ['Your documents only', 'Your documents and the public web'], draft.researchSources || 0,
       (index) => { draft.researchSources = index; }, 'research-sources',
-      'With your documents only, nothing about them is searched for on the public web.') : null)];
+      'With your documents only, nothing about them is searched for on the public web.') : null,
+    draft.research ? field('research-questions', 'What should the research answer? (optional)',
+      draft, 'researchQuestions', { long: true, rows: 4, hint: 'One question a line, at most 8.' }) : null)];
 }
 
 // The decisions a deck will ask for, in the order it asks.
@@ -3109,6 +3111,7 @@ function formOf(draft) {
     variant: draft.variant || null, output: OUTPUTS[draft.output][0],
     delivery: DELIVERIES[deliveryOf(draft)][0],
     research: draft.route !== 'existing' && draft.research,
+    research_questions: (draft.researchQuestions || '').split('\n'),
     research_sources: draft.route === 'document' && draft.research
       ? (draft.researchSources === 1 ? 'both' : 'documents') : undefined,
     agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null,

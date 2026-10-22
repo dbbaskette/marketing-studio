@@ -40,6 +40,7 @@ from runner.jobs import KEPT, Halted, Run, given_up, last_error, sha256_of, text
 from runner.steps import Work
 
 BUSY_TRIES = 20         # times a finding is offered while another save holds the lock
+FROM_FORM = 'Research plan: written from your form'
 PLAN = Path('research') / 'plan.json'
 PLAN_MD = Path('research') / 'plan.md'
 REPORT = Path('research') / 'report.md'
@@ -488,6 +489,10 @@ class Researching:
                 f'{self._about(record)}\n'
                 f'Sources that may be used: {allowed}\n\n'
                 f'Hand the questions back with submit_artifact under the name "{name}".')
+        asked = (record.get('form') or {}).get('research_questions') or []
+        if asked:
+            task += ('\n\nThe person asked these questions. Keep each in the plan, in their words:\n'
+                     + '\n'.join('- ' + q for q in asked))
         earlier = text_of(root / PLAN)
         if request and request.get('note'):
             task += ('\n\nYou are revising an earlier draft. What the person asked for:\n\n'
@@ -559,6 +564,10 @@ class Researching:
         return added
 
     def _research_plan(self, root: Path, run: Run, step: stages.Step) -> None:
+        record = self._load(root)
+        if record.get('research_contract') and (record.get('form') or {}).get('research_sources') == 'documents':
+            self._plan_from_form(root, run, step)
+            return
         self._agent(root, run, step,
                     lambda record, request, error: self._plan_work(root, record, request,
                                                                    error),
@@ -566,3 +575,23 @@ class Researching:
                                                            self._text(handed, 'research-plan')),
                     'keep the research plan')
 
+
+    def _plan_from_form(self, root: Path, run: Run, step: stages.Step) -> None:
+        with self.files:
+            record = self._load(root)
+            form = record.get('form') or {}
+            asked = form.get('research_questions') or [
+                'What do the supplied documents say that serves this goal: '
+                + (form.get('goal') or record.get('title') or 'explain this topic') + '?']
+            items = []
+            for text in asked:
+                ident = marks.new_id(text, [item['id'] for item in items])
+                items.append(dict(id=ident, question=text, public_query=None, claim=None))
+            plan = dict(topic=record.get('title') or form.get('title'), purpose='planning',
+                        scope='supplied-only', sources=documents.sources(root)[0], items=items)
+            checked = worker_tools.check_research_plan(plan, most=worker_tools.PLAN_MOST)
+            if checked['problems']:
+                raise WorkspaceError(checked['problems'][0])
+            self._keep_plan(root, record, json.dumps(plan, indent=2, ensure_ascii=False))
+            record['research'] = {**(record.get('research') or {}), 'plan_from': 'form'}
+            self._done(root, step, time.monotonic(), 'write the research plan from the form', record)

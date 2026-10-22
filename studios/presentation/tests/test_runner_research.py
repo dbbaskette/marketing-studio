@@ -554,6 +554,39 @@ if __name__ == '__main__':
 
 
 class SynthesisBriefTests(DeckCase):
+    def test_a_documents_only_deck_writes_its_plan_from_the_form(self):
+        from runner.engine import Engine
+        from runner import stages
+        engine = Engine()
+        for asked in (['Why?', 'What next?'], []):
+            record = {'schema': 1, 'steps': {}, 'gates': {}, 'route': 'scratch', 'title': 'Synthetic deck',
+                      'research_contract': {'schema': 2}, 'form': {'research': True, 'research_sources': 'documents',
+                       'research_questions': asked, 'goal': 'Teach this'}}
+            self.write('run.json', json.dumps(record))
+            with mock.patch.object(engine, '_agent', side_effect=AssertionError('No planning worker')), \
+                    mock.patch.object(engine, '_commit'):
+                step = next(s for s in stages.steps(record) if s.name == 'research-plan')
+                engine._research_plan(self.root, None, step)
+            plan = json.loads((self.root / 'research/plan.json').read_text())
+            self.assertEqual(plan['scope'], 'supplied-only')
+            self.assertEqual([i['question'] for i in plan['items']], asked or ['What do the supplied documents say that serves this goal: Teach this?'])
+            self.assertTrue(all(i['public_query'] is None for i in plan['items']))
+            kept = engine._load(self.root)
+            self.assertTrue(kept['steps']['research-plan']['done'])
+            self.assertEqual(next(r for r in engine._timeline(kept, 'waiting') if r['name'] == 'research-plan')['label'], 'Research plan: written from your form')
+
+    def test_web_research_hands_the_person_s_questions_to_the_plan_job(self):
+        from runner.engine import Engine
+        work = Engine()._plan_work(self.root, {'form': {'research_sources': 'both', 'research_questions': ['Why?']}}, None, None)
+        self.assertIn('The person asked these questions. Keep each in the plan, in their words:\n- Why?', work.task)
+
+    def test_a_deck_without_research_sources_still_runs_its_plan_job(self):
+        from runner.engine import Engine
+        with mock.patch.object(Engine, '_load', return_value={'research_contract': {'schema': 2}, 'form': {}}), \
+                mock.patch.object(Engine, '_agent', side_effect=RuntimeError('planning worker used')):
+            with self.assertRaisesRegex(RuntimeError, 'planning worker used'):
+                Engine()._research_plan(self.root, None, None)
+
     def test_documents_only_research_plans_with_no_search_words(self):
         from runner.engine import Engine
         for scope, expected in (('documents', 'supplied-only'), ('both', 'public-web'), (None, 'public-web')):

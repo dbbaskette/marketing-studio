@@ -144,7 +144,7 @@ from runner import slides as slides_tool
 from runner.jobs import (FED, KEPT_SO_FAR, NEXT_NOTE, Gone as _Gone, Halted as _Halted, Jobs,
                          Run as _Run, Slots as _Slots, attempts, first, gate_state,
                          last_error, spent, text_of, tries, sha256_of)
-from runner.research_steps import PLAN, PLAN_MD, REPORT, REVIEW, Researching
+from runner.research_steps import FROM_FORM, PLAN, PLAN_MD, REPORT, REVIEW, Researching
 from runner.steps import build, deliver as delivering, existing, intake
 from runner.steps import look as looks
 from runner.steps import outline as outlines
@@ -2636,6 +2636,8 @@ class Engine(Jobs, Researching):
         """stages.timeline, with each step's tries, time, cost and last error."""
         rows, failed = stages.timeline(record), (record.get('halted') or {}).get('step')
         for row in rows:
+            if row['name'] == 'research-plan' and (record.get('research') or {}).get('plan_from') == 'form':
+                row['label'] = FROM_FORM
             if row['name'].startswith('gate:') and review_policy.automatic(
                     record, 'presentation', row['name'],
                     holding=self._holding(root, row['name']) if root else ()):

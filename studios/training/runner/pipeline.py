@@ -438,12 +438,27 @@ def brand_of(session: dict) -> tuple[str, str | None] | None:
     return (brand, variant or None) if brand else None
 
 
+def research_questions(sent) -> list[str]:
+    given = sent.get('research_questions') or []
+    if isinstance(given, str):
+        given = given.splitlines()
+    if not isinstance(given, list) or not all(isinstance(line, str) for line in given):
+        raise WorkspaceError('Write the research questions one a line.')
+    lines = [' '.join(line.split()) for line in given if line.strip()]
+    if len(lines) > 8:
+        raise WorkspaceError('Ask research at most 8 questions.')
+    if any(len(line) > 300 for line in lines):
+        raise WorkspaceError('Keep each research question to 300 characters.')
+    return lines
+
+
 def check_form(sent: dict, brands=None) -> dict:
     """The form's answers, once each makes sense. Refuses with a sentence for a person.
     `brands` is what `brand.brands()` returned on this computer, or None with no brand
     skill here: a brand is a choice among those."""
     form = {name: _words(sent, name, name in ('title', 'topic', 'audience', 'purpose'))
             for name in LIMITS}
+    form['research_questions'] = research_questions(sent)
     form['levels'] = workspace.check_levels(_listed(sent, 'levels'))
     form['copies'] = workspace.check_copies(_listed(sent, 'copies'))
     form['brief_kind'] = sent.get('brief_kind') or 'product'
@@ -1303,6 +1318,9 @@ def plan_work(root: Path, found: Survey, request: dict | None, error: str | None
             f'Hand the questions back with submit_artifact under the name "{name}".'
             + _again(request, _questions(earlier) if earlier else None, error, answered,
                      'the questions'))
+    if asked:
+        task += ('\n\nThe person asked these questions. Keep each in the plan, in their words:\n'
+                 + '\n'.join('- ' + q for q in asked))
     scope = 'supplied-only' if found.scope == 'supplied-only' else SCOPE
     prepared = {'inputs': {'intake': _read(root / 'intake.md') or ''},
                 'artifacts': {name: {'kind': 'research-plan', 'scope': scope,
@@ -1312,6 +1330,23 @@ def plan_work(root: Path, found: Survey, request: dict | None, error: str | None
         from runner import worker_tools
         prepared['artifacts'][name]['most'] = worker_tools.PLAN_MOST
     return Work(briefs.guidance('research-plan' if synthesis else 'research-plan-queue'), task, 'write', prepared, name)
+
+
+FROM_FORM = 'Research plan: written from your form'
+
+
+def plan_from_form(root: Path, found: Survey, asked) -> str:
+    goal = answers(root).get('purpose') or found.session['title']
+    asked = asked or [f'What do the supplied documents say that serves this goal: {goal}?']
+    from runner import documents, worker_tools
+    plan = dict(topic=answers(root).get('topic') or found.session['title'], purpose='planning',
+                scope='supplied-only', sources=documents.sources(root)[0],
+                items=[dict(id=f'question-{n}', question=text, public_query=None, claim=None)
+                       for n, text in enumerate(asked, 1)])
+    checked = worker_tools.check_research_plan(plan, most=worker_tools.PLAN_MOST)
+    if checked['problems']:
+        raise WorkspaceError(checked['problems'][0])
+    return json.dumps(plan, indent=2, ensure_ascii=False) + '\n'
 
 
 def question_work(root: Path, found: Survey, ident: str, request: dict | None,

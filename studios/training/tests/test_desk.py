@@ -2577,12 +2577,14 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'Who is it for?', 'value': 'New operators'},
             {'click': 'Continue'}, {'click': 'No deck'}, {'click': 'Learner guide'},
             {'click': 'Continue'}, {'click': 'Only what you supply'}, {'snapshot': 'ready'},
+            {'fill': 'What should the research answer? (optional)', 'value': 'Why?\nWhat next?'},
             {'click': 'Start the training'}, {'snapshot': 'kept'}])
         posted = self.posts(result)
         self.assertEqual(len(posted), 1)
         self.assertEqual(posted[0][1]['materials'], ['document'])
         self.assertEqual(posted[0][1]['source_scope'], 'supplied-only')
         self.assertIsNone(posted[0][1]['deck_target'])
+        self.assertEqual(posted[0][1]['research_questions'], ['Why?', 'What next?'])
         self.assertIn('Research waits', result['snapshots']['ready']['text'])
         self.assertIn('Your answers are still here', result['snapshots']['kept']['text'])
 

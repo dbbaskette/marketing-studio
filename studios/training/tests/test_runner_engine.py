@@ -2061,3 +2061,23 @@ class ModelProfileTests(StudioCase):
         other = self.start(title='Work override', agent='codex', model='own-model', effort='high')
         self.assertEqual(self.record(other)['model_profiles']['mode'], 'single')
         self.assertEqual(self.workers.jobs[-1][1].model, 'own-model')
+
+
+class FormPlanTests(StudioCase):
+    def test_a_documents_only_training_writes_its_plan_from_the_form(self):
+        from studio_core import research_contract
+        with mock.patch.object(research_contract, 'snapshot', return_value={'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'}):
+            root = self.start(source_scope='supplied-only', research_questions=['Why?', 'What next?'])
+        self.send(root, 'synthetic.md')
+        shown = self.engine.supply(root, 'done')
+        plan = json.loads((root / pipeline.PLAN).read_text())
+        self.assertEqual([i['question'] for i in plan['items']], ['Why?', 'What next?'])
+        self.assertTrue(all(i['public_query'] is None for i in plan['items']))
+        self.assertEqual(workspace.statuses(root, workspace.load(root))['research-plan'], 'draft')
+        self.assertEqual(self.workers.of('research-plan'), [])
+        self.assertEqual(workspace.status(root)['gate'], 'research-plan')
+
+    def test_a_public_web_training_still_drafts_its_plan(self):
+        root = self.start(research_questions=['Why now?'])
+        self.assertEqual(len(self.workers.of('research-plan')), 1)
+        self.assertIn('Why now?', self.workers.of('research-plan')[0].task)

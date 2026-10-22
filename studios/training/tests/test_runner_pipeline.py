@@ -141,6 +141,12 @@ class DefinitionTests(StudioCase):
 
 
 class FormTests(StudioCase):
+    def test_the_research_questions_are_kept_as_written(self):
+        self.assertEqual(pipeline.check_form({**FORM, 'research_questions': '  Why?  \n\nWhat next?'})['research_questions'], ['Why?', 'What next?'])
+        for given, message in ((['Why?'] * 9, 'Ask research at most 8'), (['x' * 301], 'Keep each research question to 300'), ([7], 'one a line')):
+            with self.assertRaisesRegex(WorkspaceError, message):
+                pipeline.check_form({**FORM, 'research_questions': given})
+
     def test_the_form_is_read_field_by_field(self):
         form = pipeline.check_form({
             'title': '  Rolling restarts ', 'topic': 'Rolling restarts on the platform',
@@ -152,7 +158,7 @@ class FormTests(StudioCase):
             'brand': None, 'levels': ['101', '301'], 'copies': ['google', 'word'],
             'brief_kind': 'product', 'deck_target': None, 'source_scope': 'public-web',
             'yoodli': False, 'materials': ['document', 'brief', 'scenario'],
-            'agent': None, 'model': None, 'effort': None})
+            'agent': None, 'model': None, 'effort': None, 'research_questions': []})
 
     def test_selected_materials_use_existing_skip_decisions_and_manual_gate_counts(self):
         form = pipeline.check_form({**FORM, 'materials': ['document', 'document']})

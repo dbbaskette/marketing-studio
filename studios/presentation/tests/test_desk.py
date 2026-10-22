@@ -321,7 +321,8 @@ class ScreenTests(ScriptedPage, PageCase):
             steps = [{'click': 'New deck'}, {'click': 'Start from a document'},
                      {'click': 'Paste the text'}, {'fill': 'The text', 'value': 'Synthetic notes.'},
                      {'click': 'Continue'}, {'fill': 'A short title', 'value': 'Synthetic deck'},
-                     {'click': 'Research the public web first'}, {'snapshot': 'boundary'}]
+                     {'click': 'Research the public web first'}, {'snapshot': 'boundary'},
+                     {'fill': 'What should the research answer? (optional)', 'value': 'Why?\nWhat next?'}]
             if both:
                 steps += [{'click': 'Your documents and the public web'}]
             steps += [{'click': 'Continue'}, {'click': 'Start the deck'}]
@@ -329,6 +330,7 @@ class ScreenTests(ScriptedPage, PageCase):
             self.assertIn('Where may research look?', result['snapshots']['boundary']['text'])
             posted = [body for address, body in self.posts(result) if address == '/api/decks']
             self.assertEqual(posted[0]['form']['research_sources'], 'both' if both else 'documents')
+            self.assertEqual(posted[0]['form']['research_questions'], ['Why?', 'What next?'])
 
     def test_the_start_step_says_where_it_stops_and_folds_the_options(self):
         from studio_core import review_policy
@@ -1746,7 +1748,7 @@ class ScreenTests(ScriptedPage, PageCase):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.started(route='document', research=True,
+            path = self.started(route='document', research=True, research_sources='both',
                                 source={'kind': 'paste', 'text': 'Notes to build a talk from.'})
         gate = self.run_of(path)['gate']
         self.assertEqual((gate['name'], gate['classify']['verdict']), ('gate:outline', 'material'))

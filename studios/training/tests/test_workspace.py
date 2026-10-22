@@ -1534,3 +1534,21 @@ class WordCopyTests(PlainCase):
         with self.assertRaisesRegex(WorkspaceError, 'checkpoint --copies'):
             self.export()
         self.assertEqual(helpers.pandoc_calls(self.tools), [])
+
+
+from runner_support import StudioCase
+
+
+class FormPlanRowTests(StudioCase):
+    def test_row_120(self):
+        from studio_core import research_contract
+        with mock.patch.object(research_contract, 'snapshot', return_value={'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'}):
+            root = self.start(source_scope='supplied-only')
+        self.send(root, 'synthetic.md')
+        self.engine.supply(root, 'done')
+        from runner import pipeline
+        plan = json.loads((root / pipeline.PLAN).read_text())
+        self.assertEqual(len(plan['items']), 1)
+        self.assertTrue(plan['items'][0]['question'].startswith('What do the supplied documents say that serves this goal: '))
+        self.assertIsNone(plan['items'][0]['public_query'])
+        self.assertEqual(self.workers.of('research-plan'), [])

@@ -4432,7 +4432,7 @@ function startStep(draft) {
       : 'Research starts after you start the training.';
     // A drawn deck always comes to the person, whatever the level.
     const deck = Boolean(DECKS[draft.deck][0]);
-    const stops = policy === 'balanced' ? 'the research plan, the first drafts'
+    const stops = policy === 'balanced' ? (SOURCES[draft.sources][0] === 'supplied-only' ? 'the first drafts' : 'the research plan, the first drafts')
         + (deck ? ', each drawn deck' : '') + ' and the finished materials'
       : policy === 'automatic' ? (deck ? 'each drawn deck and ' : '') + 'the finished materials'
         : 'at least ' + gatesFor(draft) + ' decisions for research'
@@ -4460,7 +4460,9 @@ function startStep(draft) {
     SOURCES.map((source) => source[1]), SOURCE_SAYS, draft.sources, (index) => {
       draft.sources = index;
       tell();
-    }, 'sources')),
+    }, 'sources'),
+    field('research-questions', 'What should the research answer? (optional)', draft,
+      'researchQuestions', { long: true, rows: 4, hint: 'One question a line, at most 8.' })),
   trainingOptions('Assistant and limits', 'training-assistant',
     ...agentFields(draft, 'new', 'For this training', told), drafted,
     make('p', 'quiet', limitsSays(limits) || 'No limits are set for this computer.'),
@@ -4552,6 +4554,7 @@ async function startTraining(pressed) {
     brief_kind: draft.brief ? 'competitive' : 'product',
     time_limit: draft.time.trim() || null,
     source_scope: SOURCES[draft.sources][0],
+    research_questions: (draft.researchQuestions || '').split('\n'),
     deck_target: deck,
     brand: deck ? { brand: draft.brand, variant: draft.variant || null } : null,
     copies: COPIES.map((kind) => kind[0]).filter((kind) => draft.copies.includes(kind)),

@@ -402,3 +402,17 @@ class NoDeckReviewTests(StudioCase):
         self.assertEqual(shown['review']['phase'], 'final')
         shown = self.engine.review_decide(root, shown['review']['expected'], 'approve')
         self.assertEqual(shown['state'], 'done')
+
+
+class FormPlanPolicyTests(StudioCase):
+    def test_balanced_accepts_a_plan_written_from_the_form(self):
+        from studio_core import research_contract
+        for level in ('balanced', 'automatic'):
+            with self.subTest(level=level), mock.patch.object(research_contract, 'snapshot', return_value={'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'}):
+                root = self.start(title='Supplied ' + level, source_scope='supplied-only', review_level=level)
+            self.send(root, 'synthetic.md')
+            self.engine.supply(root, 'done')
+            session = workspace.load(root)
+            self.assertEqual(workspace.statuses(root, session)['research-plan'], 'approved')
+            self.assertEqual(session['artifacts']['research-plan']['approved']['by'], 'review-policy')
+            self.assertEqual(self.workers.of('research-plan'), [])
