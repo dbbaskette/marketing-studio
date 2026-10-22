@@ -368,6 +368,27 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(body['decision'], 'changes')
         self.assertEqual(body['extra'], {'direction_target': 'gate:research', 'left_out': ['instance-min--capacity']})
 
+    def test_asking_about_a_finding_says_the_whole_research_runs_again(self):
+        from synthesis_fixture import research_stop
+        path = self.started(research=True); self.decided(path, 'gate:research-plan')
+        research_stop(Path(path) / 'research')
+        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
+        self.engine._store(Path(path), record)
+        result = self.deck_screen(path, [{'click': 'Ask about this finding: “Capacity condition”'}, {'snapshot': 'finding'},
+                                        {'click': 'Ask for changes'}, {'snapshot': 'sheet'}])
+        self.assertIn('What is wrong with “Capacity condition”?', result['snapshots']['finding']['text'])
+        self.assertIn('Asking for changes runs the research again', result['snapshots']['sheet']['sheet'])
+        self.assertIn('up to 3 rounds of writing and checking.', result['snapshots']['sheet']['sheet'])
+
+    def test_the_direction_review_prices_its_research_request(self):
+        from studio_core import review_policy
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
+            path = self.started(research=True)
+        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
+        self.engine._store(Path(path), record)
+        result = self.deck_screen(path, [{'click': 'Request changes to the research'}, {'snapshot': 'research'}])
+        self.assertIn('Asking for changes runs the research again', result['snapshots']['research']['text'])
+
     def test_the_start_step_says_where_it_stops_and_folds_the_options(self):
         from studio_core import review_policy
         self.assertIn(self.get('setup')['review_level'], review_policy.LEVELS)

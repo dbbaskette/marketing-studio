@@ -1266,7 +1266,8 @@ function noteSheet(kind) {
   // other stop, what is drawn again from it and what that took the last time.
   const whole = !marked.length && (!gate && view.run && view.run.deliver
     ? ' ' + wholeDeckSays(view.run.deliver.last_build)
-    : gate && gate.name === 'gate:build' ? ' ' + wholeDeckSays(gate.last_build)
+    : gate && gate.name === 'gate:research' && gate.research_price ? ' ' + gate.research_price.words
+      : gate && gate.name === 'gate:build' ? ' ' + wholeDeckSays(gate.last_build)
       : gate && gate.redo ? ' ' + gate.redo.says : '');
   const hint = make('p', 'quiet', spec.hint + (marked.length ? ' The parts of the deck '
     + 'that hold ' + slidesNamed(marked) + ', which you marked, are drawn again.' : '')
@@ -4030,7 +4031,8 @@ function findingCard(gate, item, readonly, folded) {
     sourcesPart(item)];
   if (!readonly) {
     if (again) {
-      body.push(field('again-' + item.id, 'What was wrong with “' + title + '” (optional)',
+      body.push(field('again-' + item.id, gate.contract ? 'What is wrong with “' + title + '”?'
+        : 'What was wrong with “' + title + '” (optional)',
         held.again, item.id, { long: true, limit: LINE, typed: () => reviewChanged(gate) }));
     }
     // The runner refuses every finding left out: the outline is drafted from them.
@@ -4048,7 +4050,8 @@ function findingCard(gate, item, readonly, folded) {
     leave.setAttribute('aria-label', (out ? 'Bring it back: “' : 'Leave out “') + title + '”');
     const why = last ? switchedOff(leave, 'leave-why-' + item.id, 'The last finding kept '
       + 'cannot be left out: the outline is drafted from the findings.') : null;
-    const redo = out ? null : capsule(again ? 'Don’t research it again' : 'Research again',
+    const redo = out ? null : capsule(again ? (gate.contract ? 'Keep this finding' : 'Don’t research it again')
+      : gate.contract ? 'Ask about this finding' : 'Research again',
       'quiet', () => {
         if (again) delete held.again[item.id];
         else held.again[item.id] = '';
@@ -4056,7 +4059,7 @@ function findingCard(gate, item, readonly, folded) {
       }, 'again ' + item.id);
     if (redo) {
       redo.setAttribute('aria-label', (again ? 'Don’t research it again: “'
-        : 'Research again: “') + title + '”');
+        : gate.contract ? 'Ask about this finding: “' : 'Research again: “') + title + '”');
     }
     body.push(why, add(make('div', 'bar'), redo, leave));
   }
@@ -4291,8 +4294,9 @@ function outlinePanel(gate, readonly) {
       request.setAttribute('aria-label', 'What should change in the research?');
       const problem = problemLine();
       const submit = submitButton('Research again', 'direction-research');
+      submit.className = 'button button-quiet';
       form.addEventListener('submit', event => { event.preventDefault(); decide('changes', request.value, problem, submit, {direction_target: 'gate:research'}); });
-      add(form, request, problem, submit);
+      add(form, request, gate.research.research_price ? make('p', 'quiet', gate.research.research_price.words) : null, problem, submit);
       const detail = add(make('details'), make('summary', '', 'Request changes to the research'), form);
       detail.dataset.key = 'direction-research-request';
       add(node, detail);

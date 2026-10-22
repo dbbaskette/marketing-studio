@@ -2745,8 +2745,15 @@ class Engine(Jobs, Researching):
 
     def _show_research(self, root: Path, record: dict) -> dict:
         contract = bool(record.get('research_contract'))
+        kept = record.get('steps') or {}
+        reopened = self._reopened(record, 'gate:research') if record.get('route') else []
+        labels = {'outline': 'the outline', 'look-preview': 'the look samples',
+                  'build-render': 'the deck', 'deliver': 'the delivered files'}
+        redone = [labels[name] for name in reopened if name in labels and kept.get(name, {}).get('done')]
+        price = research_view.price({name: entry.get('tries') or [] for name, entry in kept.items()
+                                     if isinstance(entry, dict)}, redone, drafted=self._drafted(root)) if contract else None
         return {'text': text_of(root / REPORT) or '', 'items': self._findings_shown(root, record),
-                'contract': contract, 'research': research_view.account(root / 'research',
+                'contract': contract, 'research_price': price, 'research': research_view.account(root / 'research',
                     [{'id': i, 'question': q} for i, q in self._questions(root).items()]) if contract else None}
 
     def storyboard(self, path, edited, expected: str) -> dict:
