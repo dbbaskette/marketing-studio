@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import tempfile
@@ -11,6 +12,7 @@ import threading
 import time
 
 import source_curator
+from studio_core.install_log import redact
 
 _METER = threading.local()
 STATUS = 'Status → Check this computer'
@@ -50,8 +52,8 @@ def minutes(seconds):
     return f'{value:g} minute' + ('' if value == 1 else 's')
 
 
-def tail(path, count=SAID_LINES):
-    """The last `count` non-empty lines of a file, each cut to 500 characters."""
+def tail(path):
+    """The lines at the end of a file: its last 64 KiB."""
     try:
         with open(path, 'rb') as file:
             file.seek(0, os.SEEK_END)
@@ -59,8 +61,86 @@ def tail(path, count=SAID_LINES):
             text = file.read().decode('utf-8', 'replace')
     except OSError:
         return []
-    lines = [line.rstrip()[:500] for line in text.splitlines() if line.strip()]
-    return lines[-count:]
+    return text.splitlines()
+
+
+# What the assistant said is kept for the person, so a line never carries a secret or the job
+# it was given. Secrets are redacted the way the install log does, plus provider keys and
+# `name: value` secrets. A line is dropped when it says DOCUMENT DATA, shares ECHO characters
+# in a row with the job's own text, or sits in a CLI's transcript of the prompt (Codex
+# prints the prompt under a `user` line until its next section).
+ECHO = 40
+SECRETS = (
+    (re.compile(r'\bsk-[A-Za-z0-9_-]{12,}'), '[redacted]'),
+    (
+        re.compile(
+            r'(?i)\b(api[_-]?key|access[_-]?token|token|secret|password)(\s*[:=]\s*)'
+            r'(?!bearer\b)[^\s,;]+'
+        ),
+        r'\1\2[redacted]',
+    ),
+)
+PROMPT_BLOCK = re.compile(r'(?:\[[^\]]*\]\s*)?(?:user|user instructions:?)', re.I)
+BLOCK_END = re.compile(
+    r'(?:\[[^\]]*\]\s*)?(?:thinking|codex|exec|assistant|tokens used|error|warning)\b', re.I
+)
+
+
+def secretless(line):
+    line = redact(line)
+    for pattern, replacement in SECRETS:
+        line = pattern.sub(replacement, line)
+    return line
+
+
+def strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from strings(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from strings(item)
+
+
+def echo_check(*texts):
+    """Whether a line shares ECHO characters in a row with any of `texts`. Every run that
+    long holds one of their aligned half-length blocks, so only a block hit is searched."""
+    haystack = '\n'.join(text for text in texts if text)
+    half = ECHO // 2
+    blocks = {haystack[at : at + half] for at in range(0, len(haystack) - half + 1, half)}
+
+    def echoes(line):
+        for at in range(len(line) - half + 1):
+            if line[at : at + half] in blocks:
+                for start in range(max(0, at - half), at + 1):
+                    piece = line[start : start + ECHO]
+                    if len(piece) == ECHO and piece in haystack:
+                        return True
+        return False
+
+    return echoes
+
+
+def cleaned(lines, echoes):
+    """The last SAID_LINES lines worth showing: redacted, none echoing the job."""
+    kept, quoting = [], False
+    for line in lines:
+        bare = line.strip()
+        if not bare:
+            continue
+        if PROMPT_BLOCK.fullmatch(bare):
+            quoting = True
+            continue
+        if quoting:
+            if not BLOCK_END.match(bare):
+                continue
+            quoting = False
+        if 'DOCUMENT DATA' in line or echoes(line):
+            continue
+        kept.append(secretless(line.rstrip())[:500])
+    return kept[-SAID_LINES:]
 
 
 @contextmanager
@@ -251,9 +331,16 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
         env = {k: v for k, v in os.environ.items() if not k.startswith(('CLAUDE', 'ANTHROPIC'))}
         # Regular files avoid a full stdout pipe blocking the child while we watch stop/time.
         errors = folder / 'stderr'
+        given = 'Do the job in your instructions with this data.\n\nDOCUMENT DATA:\n' + json.dumps(
+            payload
+        )
 
         def failed(message, reason='cli', said=()):
-            return WorkerFailure(message, reason, [*said, *tail(errors)][-SAID_LINES:])
+            # Only a CLI failure keeps what was said; a time limit or a stop needs none of it.
+            if reason != 'cli':
+                return WorkerFailure(message, reason)
+            echoes = echo_check(prompt, given, *strings(payload))
+            return WorkerFailure(message, reason, cleaned([*said, *tail(errors)], echoes))
 
         with (
             (folder / 'stdout').open('w+') as stdout,
@@ -261,10 +348,7 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
             errors.open('w') as stderr,
         ):
             # The policy and job guidance already are the system prompt or instructions file.
-            stdin.write(
-                'Do the job in your instructions with this data.\n\nDOCUMENT DATA:\n'
-                + json.dumps(payload)
-            )
+            stdin.write(given)
             stdin.seek(0)
             try:
                 process = subprocess.Popen(
@@ -313,11 +397,10 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                 if engine == 'claude':
                     spent = usage(result)
                     if result.get('is_error'):
-                        said = str(result.get('result') or '').splitlines()
                         raise failed(
                             'The selected CLI could not finish this step. Check its sign-in and '
                             'usage under ' + STATUS + ', then try again.',
-                            said=[line.rstrip()[:500] for line in said if line.strip()],
+                            said=str(result.get('result') or '').splitlines(),
                         )
                     result = result.get('structured_output') or json.loads(result['result'])
                 if review:

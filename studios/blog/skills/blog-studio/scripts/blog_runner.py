@@ -184,7 +184,12 @@ def keep_said(root, ident, stage, engine_name, said):
             'at': studio.now(),
             'stage': stage,
             'engine': engine_name,
-            'said': [str(line)[:500] for line in said][-blog_worker.SAID_LINES :],
+            # Redacted again here: whatever raised the failure, no secret or prompt is kept.
+            'said': [
+                blog_worker.secretless(str(line))[:500]
+                for line in said
+                if 'DOCUMENT DATA' not in str(line)
+            ][-blog_worker.SAID_LINES :],
         },
     )
     path.chmod(0o600)
@@ -1934,7 +1939,7 @@ class Engine:
                             + blog_worker.minutes(found['seconds'])
                             + ').'
                         )
-                    said = getattr(exc, 'said', None)
+                    said = getattr(exc, 'said', None) if reason == 'cli' else None
                     if said:
                         try:
                             keep_said(self.root, ident, found['next'], found['engine'], said)

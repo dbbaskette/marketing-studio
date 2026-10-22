@@ -816,5 +816,97 @@ class MissingAssistantRunTests(ResearchCase):
         self.assertNotIn('analysis', shown['error'])
 
 
+PRIVATE = 'PRIVATE SOURCE TEXT about a fictional gateway that must stay on this computer'
+TOKEN = 'sk-synthetic-0123456789abcdef'
+
+
+class SaidTests(MeteredWorkerTests):
+    """What the assistant said keeps its own errors, never the job it was given or a secret."""
+
+    def failing_cli(self, after=''):
+        # Like `codex exec`: the prompt read from stdin is echoed in a `user` block, then the
+        # CLI's own lines, a bearer token among them, then an error.
+        self.executable(
+            'data=sys.stdin.read()\n'
+            "print('user', file=sys.stderr)\n"
+            'print(data, file=sys.stderr)\n'
+            "print('Authorization: Bearer " + TOKEN + "', file=sys.stderr)\n"
+            "print('thinking', file=sys.stderr)\n"
+            "print('retrying with Authorization: Bearer " + TOKEN + "', file=sys.stderr)\n"
+            "print('debug: ' + " + repr(PRIVATE[5:60]) + ', file=sys.stderr)\n'
+            "print('ERROR: synthetic sign-in expired', file=sys.stderr)\n" + after + 'sys.exit(1)\n'
+        )
+
+    def said(self, agent='codex', seconds=5):
+        with (
+            patch.object(blog_worker.source_curator, 'executable', return_value=str(self.binary)),
+            patch.object(blog_worker.source_curator, 'codex_options', return_value=[]),
+            self.assertRaises(blog_worker.WorkerFailure) as caught,
+        ):
+            blog_worker.generate(
+                agent, {'sources': [{'text': PRIVATE}]}, 'Synthetic job', seconds=seconds
+            )
+        return caught.exception
+
+    def test_the_job_and_its_secrets_never_reach_what_the_assistant_said(self):
+        for agent in ('codex', 'claude'):
+            with self.subTest(agent=agent):
+                self.failing_cli()
+                said = self.said(agent).said
+                text = '\n'.join(said)
+                for kept_out in ('DOCUMENT DATA', 'Do the job in your instructions', TOKEN):
+                    self.assertNotIn(kept_out, text)
+                self.assertNotIn(PRIVATE[10:50], text)
+                self.assertIn('ERROR: synthetic sign-in expired', said)
+                self.assertIn('retrying with Authorization: Bearer [redacted]', said)
+
+    def test_a_step_out_of_time_keeps_nothing_it_said(self):
+        self.executable(
+            "print('synthetic progress', file=sys.stderr, flush=True)\nimport time\ntime.sleep(30)\n"
+        )
+        failure = self.said('claude', seconds=1)
+        self.assertEqual(failure.reason, 'time-limit')
+        self.assertEqual(failure.said, [])
+
+
+class KeptSaidTests(ResearchCase):
+    def run_failing(self, failure):
+        found = self.create(page=True, stop='draft')
+        engine = self.engine()
+
+        def worker(*args, **kwargs):
+            raise failure
+
+        engine.worker = worker
+        engine.control(found['id'], 'resume')
+        engine._once(found['id'])
+        return engine.describe(found['id'])
+
+    def test_what_is_kept_is_redacted_again_and_never_echoes_the_prompt(self):
+        shown = self.run_failing(
+            blog_worker.WorkerFailure(
+                'The selected CLI failed.',
+                'cli',
+                ['token: Bearer ' + TOKEN, 'DOCUMENT DATA:', 'ERROR: synthetic sign-in expired'],
+            )
+        )
+        kept = (
+            self.root / '.blog-runs' / 'diagnostics' / 'cli' / (shown['id'] + '.json')
+        ).read_text()
+        for place in (kept, json.dumps(shown['said'])):
+            self.assertNotIn(TOKEN, place)
+            self.assertNotIn('DOCUMENT DATA', place)
+        self.assertEqual(
+            shown['said'], ['token: Bearer [redacted]', 'ERROR: synthetic sign-in expired']
+        )
+
+    def test_only_a_cli_failure_keeps_what_was_said(self):
+        shown = self.run_failing(
+            blog_worker.WorkerFailure('This step ran out of time.', 'time-limit', ['progress'])
+        )
+        self.assertIsNone(shown['said'])
+        self.assertFalse((self.root / '.blog-runs' / 'diagnostics' / 'cli').exists())
+
+
 if __name__ == '__main__':
     unittest.main()
