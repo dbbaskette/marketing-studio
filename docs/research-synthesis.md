@@ -30,6 +30,31 @@ brief. Both use the saved Main model profile. Neither can approve a studio gate
 or publish content. A rejected review allows two bounded correction cycles;
 unresolved work stays a saved draft and blocks downstream authoring.
 
+The check attests that it read every source, and the original of each supplied
+source that has one. Its tools serve both: `read_source(source_id, original=true)`
+and `search_source(..., original=true)` read the original, text as it is and a PDF
+or Word file as the text taken from it, after a line with the file's size and
+SHA-256; `list_inputs` names each original beside its source. An original is only
+claimed when it is another document than its capture: a PDF, a Word file or a web
+page. A text or Markdown document, such as a Google Doc's Markdown export, is its
+own capture, so the check is asked for nothing more. The studio decides which
+sources have an original; one a previous draft named and the studio no longer
+offers is dropped.
+
+When every verdict a review did not support rests on a source whose original the
+check could not read, no correction can change its answer. The contract then stops
+before the next author round with `CheckCouldNotFinish` (a `ReviewRefused` with a
+`cause` naming each source and its access error), and that round is not counted.
+The studios stop at the research step saying it is a studio problem, not a research
+problem, and refuse Try again in the same words while a dry read of that original
+through the checker's own tools still fails. A refusal after the last round counts
+its objections by cause ("12 facts the check calls narrow (…), 3 findings
+unsupported (…), coverage needs revision (…)"), lists each one under its group in
+the studio's research review, and says what the try's research jobs took in time
+and money. `ReviewRefused(objections, rounds)`, `objections(case)` and the
+`objections` and `rounds` of the error `native` raises are unchanged; `groups`,
+`cause` and `spent` are added beside them.
+
 Blog Studio first discovers at most eight public URLs when public research was
 allowed. The parent fetches actual bounded source bytes through the existing
 public-address-pinned HTTPS reader. Search snippets and generated source text

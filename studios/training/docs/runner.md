@@ -170,7 +170,7 @@ its plan is unaffected.
 | The runner does this on its own | Then it stops for you |
 | --- | --- |
 | Drafts the research questions | You approve them, or ask for changes |
-| Researches each question, several at a time, and writes the report | You approve the research, or ask for more |
+| Researches the topic: one agent writes the report and another checks it, for up to three rounds of correction (an earlier training researches each question, several at a time) | You approve the research, or ask for more |
 | Drafts the blueprint, one for each level | You approve each blueprint |
 | Writes the learner guide | You approve it |
 | Writes the brief | You approve it |
@@ -226,6 +226,8 @@ The last step of "New training" asks where the research looks: the public web, y
 When documents are wanted, the run waits for them before anything else. Add text, Markdown, HTML or Word files, and PDFs when this computer has `pdftotext`. Each is shown with its size and whether it could be read. Press "That is all of them" and the run begins.
 
 Your documents stay on this computer. Passages quoted from them appear in the research report, which is shared with your team. With documents only, the agents doing the research cannot search the web or open a page.
+
+The research is checked against what you sent. The agent that checks it reads the text of each document, and, for a PDF, a Word file or a web page, the file itself as well, with its size and fingerprint, so that it can say it read both. A text or Markdown file is its own text, so there is nothing more to read. If the check cannot read a document it must vouch for, the research stops at once and says so: that is the studio's problem, not the research's, and no round of correction is spent on it. Try again works once the document can be read.
 
 ## Watching a run
 
@@ -308,7 +310,8 @@ The original folder is left exactly as it was, with nothing deleted. From then o
 ## Good to know
 
 - An agent the runner starts is still your own Claude Code or Codex. It knows what that agent normally knows about your account, such as the address you are signed in with, and Codex also reads your own instructions file and the names of your skills. None of that gives it a way to reach your files.
-- A research question that fails three times does not stop the training. It is named as not researched when the research comes to you, and you decide whether that matters.
+- A research question that fails three times does not stop the training. It is named as not researched when the research comes to you, and you decide whether that matters. This is how a training that researches question by question works; one researched as a single report and an independent check stops at the research instead, as below.
+- When the independent check still objects after three rounds of correction, the training stops at the research. The stop counts the objections by what they are about and what the check called them, such as "12 facts the check calls narrow", with the first of each, and says what the rounds took in time and money. Every objection is listed under its group in the research review, `reviews/research.md`.
 - The brand's own check warns on every slide with a caveat or a source line, because those lines are set smaller than the check allows. The warning is shown at the deck's gate. It is not something the runner can put right.
 - A deck is drawn in the default look. Choosing between looks, editing a deck by hand and bringing the edits back, and pictures made by a model are not in the runner.
 - What a deck is built from stays on the computer that built it and is not shared: the drawings, the previews and the pictures. Your team gets the deck, what it says, and what its gate showed. On another computer the deck's gate shows no pictures.
