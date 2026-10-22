@@ -2102,8 +2102,32 @@ function comparison(changed) {
 
 // What is read at a gate: the document, with what changed in it one press away. A deck the
 // runner rendered is its slides first, and which of them address each objective.
+function researchReading(found) {
+  const node = make('article', 'paper doc');
+  add(node, window.TrainingStudioMarkdown.render(found.brief),
+    make('h2', 'doc-title', 'What the independent check said'), make('p', '', found.check.said),
+    found.check.note ? make('p', '', found.check.note) : null,
+    ...list(found.check.unread).map((one) => make('p', '', (one.title || one.source) + ': ' + one.access_error)),
+    make('h2', 'doc-title', 'What the research could not settle'),
+    list(found.gaps).length ? bullets(found.gaps) : make('p', 'quiet', 'No gaps were named.'),
+    ...list(found.sources.partial).map((one) => make('p', '', one.title + ': ' + one.note)),
+    make('p', 'quiet', found.read));
+  const finding = (id) => list(found.findings).find((one) => one.id === id);
+  const show = (ids) => ids.map(finding).filter(Boolean).map((one) =>
+    add(make('div', 'card-part'), make('h3', 'row-title', one.title), make('p', '', one.summary)));
+  if (list(found.questions).length) add(node, make('h2', 'doc-title', 'Your questions'));
+  for (const question of list(found.questions)) add(node, make('h3', 'row-title', question.question),
+    ...(list(question.findings).length ? show(question.findings) : [make('p', 'quiet', 'The research did not answer this.')]));
+  if (list(found.unplanned).length) add(node, make('h2', 'doc-title', 'Also found'), ...show(found.unplanned));
+  for (const [label, text] of [['Read the full report', found.report], ['The evidence and the check’s notes', found.evidence]]) {
+    add(node, add(make('details', 'card-part'), make('summary', '', label), window.TrainingStudioMarkdown.render(text)));
+  }
+  return node;
+}
+
 function reading(found) {
   const node = make('div', 'reading');
+  if (found.research) return add(node, researchReading(found.research));
   if (slidesOf(found).length) add(node, slidesPart(found), coveragePart(found));
   const changed = found.changes;
   if (!changed.available || changed.same || !changed.comparable) {
@@ -2301,7 +2325,7 @@ function gateSignature(found) {
   return JSON.stringify([found.status, found.sha256, found.checked, found.out_of_date,
     found.review, found.asked, found.decisions, found.first, found.approval, found.stages,
     found.waiting, found.question, found.changes.same, found.changes.available,
-    found.whose, found.beside, found.slides, found.audit, found.coverage]);
+    found.whose, found.beside, found.slides, found.audit, found.coverage, found.research, found.research_price]);
 }
 
 function callout(kind, ...children) {
@@ -2446,7 +2470,7 @@ function paintGate(fresh) {
     decked ? make('p', 'lede', 'These are the slides themselves. The pictures were made from '
       + 'the very file you are deciding on.') : null);
   const aside = add(make('aside', 'aside'), reviewOf(found) ? findingsNote(found) : null,
-    checkedNote(found), lookNote(found), changesNote(found.changes));
+    found.research ? null : checkedNote(found), lookNote(found), changesNote(found.changes));
   aside.setAttribute('aria-label', 'The review');
   const above = [button(found.title, 'link', () => show(homeOf(found.path),
     { path: found.path }), 'training'),
@@ -5956,7 +5980,9 @@ function combinedReview(run) {
     // On a phone everything but the first material is folded away until it is opened.
     detail.open = small ? first || mark === 'changes'
       : Boolean(item.sample || item.sample_note || item.looks || item.deck_view || first);
-    if (item.text) add(part, window.TrainingStudioMarkdown.render(item.text));
+    if (item.research) add(part, researchReading(item.research));
+    else if (item.document) add(part, documentBody(item.document, {label: item.label}));
+    else if (item.text) add(part, window.TrainingStudioMarkdown.render(item.text));
     if (item.sample) add(part, pictureAt({path: view.path, ...item.sample},
       'Sample slide for ' + item.label, review.expected));
     // The draft and the look are approved together: the draft as the slides tool draws it,

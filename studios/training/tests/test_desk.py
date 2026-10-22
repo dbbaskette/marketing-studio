@@ -959,6 +959,17 @@ class DecisionTests(PageCase):
 class GateTests(PageCase):
     """What a gate shows: the document, what changed, what was checked, what is worth a look."""
 
+    def test_the_research_gate_carries_the_account(self):
+        from synthesis_fixture import research_stop
+        self.research()
+        self.assertIsNone(self.gate('research')['research'])
+        research_stop(self.root / 'research')
+        plan = {'topic': 'Synthetic', 'items': [{'id': 'instance-min', 'question': 'Minimum?'}]}
+        self.write('.training-studio/research-plan.json', json.dumps(plan))
+        found = self.gate('research')['research']
+        self.assertEqual(found['questions'][0]['findings'], ['instance-min--capacity'])
+        self.assertEqual(found['brief'], '# Prioritized handoff\n')
+
     def test_row_98_without_a_recorded_gate_the_first_unapproved_file_is_at_the_gate(self):
         self.research()
         self.content()
@@ -1911,6 +1922,23 @@ class PageScriptTests(ScriptedPage, PageCase):
     Each step presses a control the way Enter or Space would. A script that wrote markup,
     left a control without a name, or put a click on something that is not a control fails.
     """
+
+    def test_the_research_stop_leads_with_the_brief_and_the_check(self):
+        from synthesis_fixture import research_stop
+        from studio_core import research_view
+        self.research()
+        research_stop(self.root / 'research')
+        self.write('.harness-research/research-report.md', '# Updated synthetic report\n')
+        self.cli('save', 'research', '--built')
+        self.cli('checkpoint', '--approval', 'page', '--gate', 'research', '--stage', 'research', '--question', 'Ready?')
+        answers = {'GET /api/trainings': [self.read('trainings')], 'GET /api/computer': [self.read('computer')],
+                   'GET /api/gate': [self.read('gate', path=str(self.root), artifact='research')]}
+        result = self.run_page(answers, [{'click': 'Review the research report'}, {'snapshot': 'research'}])
+        text = result['snapshots']['research']['text']
+        for words in ('Prioritized handoff', research_view.CHECKED, 'An honest account.', 'What the research could not settle', 'Unknown range.', '3 sources: 2 of yours, 1 public.', 'Your questions'):
+            self.assertIn(words, text)
+        self.assertNotIn('No automatic checks apply here', text)
+        self.assertNotIn(self.gate('research')['sha256'], text)
 
     def a_gate_with_history(self) -> None:
         """The learner guide at its gate on the page, changed since it was last approved."""

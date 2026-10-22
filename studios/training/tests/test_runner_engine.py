@@ -2081,3 +2081,23 @@ class FormPlanTests(StudioCase):
         root = self.start(research_questions=['Why now?'])
         self.assertEqual(len(self.workers.of('research-plan')), 1)
         self.assertIn('Why now?', self.workers.of('research-plan')[0].task)
+
+
+class ResearchAccountTests(StudioCase):
+    def test_the_research_review_line_names_the_check_not_a_digest(self):
+        from synthesis_fixture import research_stop
+        from studio_core import research_contract, research_view
+        from types import SimpleNamespace
+        import desk
+        root = self.start(); self.to_gate(root, 'research')
+        research_stop(root / research_contract.CASE / 'research')
+        record = self.engine._load(root); record['research_contract'] = {'schema': 2}
+        self.engine._store(root, record)
+        tool = SimpleNamespace(_json=lambda *a: {'status': 'complete'})
+        with mock.patch.object(research_contract, 'matching', return_value=tool):
+            step = next(s for s in pipeline.steps([]) if s.id == 'research-report')
+            self.engine._report(root, step)
+        note = desk.latest_review(root, 'research')
+        self.assertIn(research_view.CHECKED + ' An honest account.', note)
+        self.assertNotIn('Digest', note)
+        self.assertNotIn('synthetic-digest', note)

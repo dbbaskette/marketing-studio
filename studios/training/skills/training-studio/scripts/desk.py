@@ -25,6 +25,7 @@ import checks
 import computer
 import home
 import workspace
+from studio_core import research_view
 
 HOST = '127.0.0.1'
 TOKEN_HEADER = 'X-Training-Studio-Token'
@@ -525,6 +526,8 @@ def gate(path: str, name: str) -> dict:
            if checks.artifact_of(outcome['check']) == name]
     offers, first = offered(session, spec, name, state)
     approved = (session['artifacts'].get(name) or {}).get('approved') or {}
+    plan = document(root, session, 'research-plan') if name == 'research' else {}
+    account = research_view.account(root / 'research', plan.get('questions') or []) if name == 'research' else None
     return {
         'path': path, 'title': report['title'], 'levels': report['levels'],
         'approval': report['approval'], 'stages': about['stages'],
@@ -534,6 +537,7 @@ def gate(path: str, name: str) -> dict:
         'question': report.get('pending_question') if here else None,
         'sha256': workspace.sha256_file(inside(root, spec['file'])),
         'document': document(root, session, name),
+        **({'research': account} if name == 'research' else {}),
         'changes': changes(root, session, name),
         'checked': {'passed': sum(outcome['status'] == 'passed' for outcome in own),
                     'problems': [{'check': outcome['check'], 'problems': outcome['problems'],

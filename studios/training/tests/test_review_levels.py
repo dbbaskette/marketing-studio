@@ -51,6 +51,12 @@ class ReviewLevelsTests(DeckCase):
         self.assertEqual(workspace.load(root)['artifacts']['research-plan']['approved']['by'], 'page')
         self.assertEqual(workspace.load(root)['artifacts']['research']['approved']['by'], 'review-policy')
 
+    def test_the_direction_review_shows_the_plan_s_questions(self):
+        root, shown = self.choose('balanced')
+        item = next(item for item in shown['review']['items'] if item['target'] == 'research-plan')
+        self.assertEqual(item['document']['kind'], 'questions')
+        self.assertTrue(item['document']['questions'])
+
     def test_files_a_combined_review_covers_are_decided_there_only(self):
         import desk
         root, shown = self.choose('balanced')

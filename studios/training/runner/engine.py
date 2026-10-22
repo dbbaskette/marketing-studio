@@ -200,7 +200,7 @@ from pathlib import Path, PurePosixPath
 import runner  # noqa: F401  puts the core on the import path
 import computer
 import home
-from studio_core import brand_guidance, deck_direction, deck_flow, model_profiles, review_policy, research_contract, stops
+from studio_core import brand_guidance, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_view, stops
 import hub
 import workspace
 from workspace import WorkspaceError
@@ -3392,9 +3392,10 @@ class Engine(Reviewing):
                 facts, manifest = research_contract.publish(root / research_contract.CASE, root / 'research')
                 workspace.write_atomic(root / pipeline.REPORT, (root / 'research/report.md').read_bytes())
                 workspace.save(root, 'research', built=True)
+                account = research_view.account(root / 'research')
+                check = account['check'] if account else {'said': research_view.UNCHECKED, 'note': ''}
                 workspace.append_review(root, 'research', 'Independent research review',
-                                        'The report and authored brief were reviewed against saved evidence. '
-                                        'Keep all qualifications and gaps. Digest: ' + manifest['digest'])
+                                        check['said'] + (' ' + check['note'] if check['note'] else ''))
                 record['research']['digest'] = manifest['digest']
                 record['research']['reviewed_request'] = None  # save closed the covered request
                 self._tried(record, step.id, home.now(), time.monotonic() - clock, 'kept')
