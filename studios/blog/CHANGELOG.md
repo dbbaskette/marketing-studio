@@ -21,8 +21,12 @@ changes for authors first, then what changes for maintainers.
 - For maintainers: the run's local state carries `reason` (`cli`, `time-limit`,
   `research-check`), `said` (the last 20 stderr lines, kept in
   `.blog-runs/diagnostics/cli/<id>.json`, mode 0600) and `research` (`kept`, `refusal`,
-  `round`, `phase`, `last`). The page route `run-skip-research` drops the research stages
-  and records `research_skipped`; later jobs get `research_policy: none` and no
+  `round`, `phase`, `last`, `contract`, `from`); `said` is redacted and drops lines that
+  echo the job, and is kept only for a CLI failure. The kept draft's `kept.json` ties it to
+  the research stage's pin and saved version, and saving research by any path lets it go.
+  Status carries `research_skipped` and `keeps_draft`. The page route `run-skip-research`
+  drops the research stages (not while research awaits a decision) and records
+  `research_skipped`; later jobs get `research_policy: none` and no
   `research_bundle`. `synthesis_research.generate` takes `progress`, and
   `blog_worker.metered()` collects the tokens and dollars a CLI reports. The refusal
   takes the shared contract's `groups` and `cause` when it has them.

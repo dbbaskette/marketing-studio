@@ -181,7 +181,7 @@ class SynthesisIntegrationTests(Fixture):
         found = engine.describe(ident)
         directory, _, _ = blog_runner.load(self.root, ident)
         self.assertEqual(found['status'], 'failed')
-        self.assertIn('after 3 rounds of correction', found['error'])
+        self.assertIn('after 3 rounds of writing and checking', found['error'])
         self.assertIn('kept on this computer', found['error'])
         self.assertEqual(len(authors), 3)
         kept = directory / '.studio-research-draft'

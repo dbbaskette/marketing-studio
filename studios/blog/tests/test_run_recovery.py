@@ -1054,5 +1054,83 @@ class DraftTieTests(ResearchCase):
         self.assertFalse(list(directory.glob(DRAFT + '-*')))
 
 
+class MinorReviewTests(ResearchCase):
+    def test_a_refusal_counts_rounds_of_writing_and_checking(self):
+        refusal = runner.research_refusal(research_contract.ReviewRefused([], 3), self.base)
+        self.assertEqual(
+            runner.refusal_words(refusal),
+            'The research check still objected after 3 rounds of writing and checking, and did '
+            'not say what.',
+        )
+
+    def test_continue_without_research_waits_for_a_decision_on_research_first(self):
+        found = self.research_run()
+        engine = self.engine()
+        runner.ENGINES[str(self.root)] = engine
+
+        def finished(case_root, run, payload, worker, *, seconds, stop, progress=None):
+            return reviewed_bundle(case_root / research_contract.CASE)
+
+        engine.control(found['id'], 'resume')
+        with patch('synthesis_research.generate', finished):
+            engine._once(found['id'])
+        shown = engine.describe(found['id'])
+        self.assertEqual(shown['status'], 'waiting-for-approval')
+        with self.assertRaisesRegex(ValueError, 'Decide on the research findings first'):
+            runner.dispatch(
+                self.root, 'skip-research', {'id': found['id'], 'expected': shown['expected']}
+            )
+
+    def test_right_after_stop_it_says_research_is_stopping(self):
+        found = self.research_run()
+        engine = self.engine()
+        runner.ENGINES[str(self.root)] = engine
+        engine.keep_local(found['id'], {'enabled': False, 'status': 'stopped', 'error': ''})
+        engine.current = found['id']
+        engine.stop.set()
+        self.addCleanup(setattr, engine, 'current', None)
+        shown = engine.describe(found['id'])
+        with self.assertRaisesRegex(ValueError, '^Research is stopping; try again in a moment.$'):
+            runner.dispatch(
+                self.root, 'skip-research', {'id': found['id'], 'expected': shown['expected']}
+            )
+
+    def test_status_says_research_was_skipped(self):
+        found = self.research_run()
+        self.engine().keep_local(found['id'], {'enabled': False, 'status': 'failed', 'error': 'x'})
+        self.assertIsNone(runner.survey(self.root, found['id'])['research_skipped'])
+        runner.dispatch(
+            self.root, 'skip-research', {'id': found['id'], 'expected': found['expected']}
+        )
+        skipped = runner.survey(self.root, found['id'])['research_skipped']
+        self.assertEqual(skipped['from'], 'research')
+
+    def test_usage_reported_for_some_jobs_only_is_counted(self):
+        jobs = [
+            {'phase': 'author', 'round': 1, 'seconds': 2.0, 'tokens': 100, 'dollars': 0.01},
+            {'phase': 'review', 'round': 1, 'seconds': 3.0, 'tokens': None, 'dollars': None},
+        ]
+        self.assertEqual(
+            runner.research_cost(jobs),
+            {
+                'jobs': 2,
+                'rounds': 1,
+                'seconds': 5.0,
+                'tokens': None,
+                'dollars': None,
+                'reported': 1,
+            },
+        )
+
+    def test_the_run_says_whether_finish_has_a_draft_to_keep(self):
+        found = self.create(page=True, stop='draft')
+        self.assertFalse(runner.survey(self.root, found['id'])['keeps_draft'])
+        found = self.approve(self.submit(found, page=True), page=True)
+        found = self.submit(found, '# Draft\nSynthetic writing.', page=True)
+        self.assertTrue(runner.survey(self.root, found['id'])['keeps_draft'])
+        ideas = self.create(page=True, mode='ideas')
+        self.assertFalse(runner.survey(self.root, ideas['id'])['keeps_draft'])
+
+
 if __name__ == '__main__':
     unittest.main()

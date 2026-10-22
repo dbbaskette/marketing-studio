@@ -249,9 +249,10 @@ the draft in the team library as a reference and an example of its kind of post.
 A stopped run says what to do next beside the error:
 
 - **A CLI failure** names **Status → Check this computer** and offers **Open
-  Status**. **What the assistant said** shows the last 20 lines its command printed,
-  kept in `.blog-runs/diagnostics/cli` on this computer only, and replaced by the
-  next job.
+  Status**, including for an assistant that is not installed or cannot start.
+  **What the assistant said** shows the last 20 lines its command printed, redacted
+  and without any line that echoes the job it was given, kept in
+  `.blog-runs/diagnostics/cli` on this computer only, and replaced by the next job.
 - **A step out of time** says it ran out of the time a step may take, with this
   blog's minutes. The limit is in **Settings → Step time limit** for new blogs;
   **Try again with more time** doubles it for this one.
@@ -260,7 +261,8 @@ A stopped run says what to do next beside the error:
   the CLI reports them (Claude Code does; Codex, as Blog Studio runs it, does not).
   Research that stops before its check accepts it is kept in the blog's
   `.studio-research-draft` folder, which the Team Hub skips and a shared studios
-  repository ignores. A refusal lists **What the research check objected to**,
+  repository ignores. It is used only while the blog's inputs and research version
+  are the ones it was made for; research saved any other way lets it go. A refusal lists **What the research check objected to**,
   grouped by kind and verdict with the first note of each. **Try again** continues
   from the kept draft for up to three more rounds, within the step's limit, and says
   what the last attempt took. **Continue without research** takes the research steps

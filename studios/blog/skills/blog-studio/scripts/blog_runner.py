@@ -202,7 +202,7 @@ def refusal_words(refusal):
     said = (
         'The research check still objected after '
         + str(refusal['rounds'])
-        + ' rounds of correction'
+        + ' rounds of writing and checking'
     )
     if not refusal['count']:
         return said + ', and did not say what.'
@@ -280,6 +280,11 @@ def research_cost(jobs):
         'seconds': round(sum(float(job.get('seconds') or 0) for job in jobs), 1),
         'tokens': total('tokens'),
         'dollars': total('dollars'),
+        # Jobs whose CLI reported tokens or dollars, so a partial count can be said as one.
+        'reported': sum(
+            any(isinstance(job.get(key), (int, float)) for key in ('tokens', 'dollars'))
+            for job in jobs
+        ),
     }
 
 
@@ -861,6 +866,10 @@ def survey(root, ident, listing=False):
         ],
         # Reviewed research through the shared contract, rather than a plain writing job.
         'research_contract': bool(run.get('research_contract')),
+        # When and where the person continued without research, for chat and the page.
+        'research_skipped': run.get('research_skipped'),
+        # Whether Finish has a draft to keep in the team library (see keep_finished).
+        'keeps_draft': None if listing else has_draft(directory, run),
         # What a kept research draft must still match: the research stage's input pin and
         # saved version. Only while the run waits on its research.
         'research_tie': {
@@ -1368,6 +1377,17 @@ def skip_research(root, directory, record, run, at):
         run.get('approved', {}).pop(stage, None)
     run['research_skipped'] = {'from': at, 'at': studio.now()}
     save(root, directory, record, run, 'Continued without research')
+
+
+def has_draft(directory, run):
+    """Whether finishing this run keeps a draft in the team library."""
+    draft = directory / 'DRAFT.md'
+    if run.get('mode') in ('ideas', 'outline') or not draft.is_file():
+        return False
+    try:
+        return bool(draft.read_text().strip())
+    except (OSError, ValueError):
+        return False
 
 
 def keep_finished(root, directory, record, run):
@@ -2439,9 +2459,17 @@ def dispatch(root, action, data):
         guard(root, ident, data['expected'], page=True)
         if found['next'] not in RESEARCH_STAGES:
             raise ValueError('This blog is not waiting on research. Continue it as usual.')
+        if found['awaits'] == 'decision':
+            raise ValueError(
+                'Decide on the '
+                + STAGES[found['next']][0].lower()
+                + ' first: approve them or ask for changes.'
+            )
         if runner.current == ident:
             raise ValueError(
-                'Research is still working. Stop the research first, then continue without it.'
+                'Research is stopping; try again in a moment.'
+                if runner.stop.is_set()
+                else 'Research is still working. Stop the research first, then continue without it.'
             )
         directory, record, run = load(root, ident)
         skip_research(root, directory, record, run, found['next'])
