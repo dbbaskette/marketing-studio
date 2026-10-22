@@ -695,8 +695,24 @@ class Engine(Reviewing):
         if self._run(root).gone:
             gitstate.discard(self.space(), root)
             raise _Gone('This training is no longer run from this computer.')
+        self._decision_arrived(root)
         title = workspace.load(root)['title']
         gitstate.commit(self.space(), f'{title}: {what}', [root])
+
+    def _decision_arrived(self, root: Path) -> None:
+        """Retire decision feedback in the normal commit that reaches its next stop."""
+        record = self._load(root)
+        if not record.get('last_decision') or record.get('last_decision_stop'):
+            return
+        found = self._survey(root, record)
+        step = found.next
+        automatic = step.kind in ('wait', 'outline', 'look') and review_policy.automatic(
+            record, 'training', step.step.id,
+            holding=pipeline.holding(root, found, step.step))
+        if (record.get('question') or record.get('problem') or (not automatic and step.kind in
+                ('wait', 'outline', 'look', 'review', 'stuck', 'documents', 'done'))):
+            record['last_decision_stop'] = home.now()
+            self._store(root, record)
 
     # --- one driver for each training ----------------------------------------------------
 
@@ -1193,14 +1209,6 @@ class Engine(Reviewing):
                         self._policy_accept(root, step.step)
                     continue
                 if self._resting(record) or step.kind not in (*WORK, 'deck'):
-                    if (record.get('last_decision') and not record.get('last_decision_stop')
-                            and (record.get('question') or record.get('problem')
-                                 or step.kind in ('wait', 'outline', 'look', 'review', 'stuck', 'documents', 'done'))):
-                        with self.files:
-                            record = self._load(root)
-                            record['last_decision_stop'] = home.now()
-                            self._store(root, record)
-                            self._commit(root, 'record reaching the next stop after a decision')
                     if record.get('halt_after') is not None and not self._resting(record):
                         self._wait_arrived(root)  # a review or a gate: the wait asked for
                     return

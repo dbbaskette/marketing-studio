@@ -3023,7 +3023,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     def test_grouped_review_keeps_one_approval_in_the_toolbar_and_recovers_from_refusal(self):
         self.started()
         review = {'phase': 'direction', 'label': 'Review the direction', 'expected': 'v1',
-                  'commits': {'levels': 1, 'materials': ['document'], 'deck': False,
+                  'commits': {'levels': 1, 'materials': [], 'deck': False,
                               'dollars': None, 'minutes': None},
                   'items': [{'target': 'research', 'label': 'Research', 'text': '# Findings'}]}
         waiting = a_run('waiting', 'Review the direction.')
@@ -3264,7 +3264,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         waiting = a_run('waiting', 'Review the direction.')
         waiting['body']['review'] = {
             'phase': 'direction', 'label': 'Review the direction', 'expected': 'v1',
-            'commits': {'levels': 2, 'materials': ['document', 'brief'], 'deck': True,
+            'commits': {'levels': 2, 'materials': ['brief'], 'deck': True,
                         'dollars': 3.5, 'minutes': 12},
             'items': [
                 {'target': 'research', 'label': 'the research report', 'text': '# Findings',
@@ -3301,8 +3301,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Send 2 requests', two['buttons'])
         confirm = result['snapshots']['confirm']['sheet']
         self.assertIn('2 items are marked for changes. Approving does not send them.', confirm)
-        self.assertIn('Nothing more is written for the levels: approving carries on to the deck. '
-                      'The deck is estimated at about $3.50 and 12 minutes of agent time for a '
+        self.assertIn('Approving the first drafts writes the briefs for each of the 2 levels, and '
+                      'the deck is then drawn: estimated at about $3.50 and 12 minutes of agent time for a '
                       "deck of this size (a fixed estimate, not this computer's history).",
                       confirm)
         self.assertEqual(self.posts(result), [('/api/review', {

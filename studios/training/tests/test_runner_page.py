@@ -2598,6 +2598,16 @@ class PullCopyTests(PageCase):
 
 
 class DecisionMessageTests(PageCase):
+    def test_row_125_reaching_the_next_stop_keeps_the_existing_audit_commit(self):
+        path = self.started()
+        root = Path(path)
+        self.to_gate(root, 'document')
+        self.decide(root, 'document')
+        self.assertIsNone(self.get('run', path=path)['decided'])
+        self.assertTrue(self.engine._load(root)['last_decision_stop'])
+        self.assertEqual(self.log()[-1], 'Rolling restarts: ask for a review of the brief')
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
     def test_combined_approval_persists_the_next_step_and_done_yoodli_fields(self):
         path = self.started(review_level='balanced', yoodli=True)
         root = Path(path)
