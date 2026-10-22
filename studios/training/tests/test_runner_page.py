@@ -45,7 +45,7 @@ GETS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/r
 POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
          '/api/documents', '/api/copies', '/api/share', '/api/companions', '/api/asset',
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
-         '/api/note')
+         '/api/note', '/api/review-level')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
 RUN_KEYS = ['agent', 'clash', 'controls', 'copies', 'deck', 'deck_left', 'documents', 'driver', 'effort',
             'finished', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
@@ -191,6 +191,7 @@ class RuleTests(PageCase):
                        '/api/run': {'path': self.path, 'action': 'stop'},
                        '/api/answer': {'path': self.path, 'id': 'x', 'answer': 'Yes.'},
                        '/api/note': {'path': self.path, 'expected': '0', 'text': 'Keep it short.'},
+                       '/api/review-level': {'level': 'balanced', 'seen': 'step_by_step'},
                        '/api/documents': {'path': self.path, 'action': 'add',
                                           'name': 'handbook.txt', 'content': 'V29yZHMu'},
                        '/api/copies': {'path': self.path},

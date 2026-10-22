@@ -960,12 +960,24 @@ class Engine(Reviewing):
             raise WorkspaceError(ready.problem)
         with self.files:
             record = new_record(agent, model, chosen, form['source_scope'], effort)
-            # An older page sends only the level it saw as `review_level`: that is checked too.
-            current = review_policy.level(record)
-            if form.get('review_seen', form.get('review_level', current)) != current:
-                raise WorkspaceError('The shared review preference changed while this form '
-                                     'was open. Review the updated preference before '
-                                     'starting. Nothing was started.')
+            if form.get('review_default'):
+                # Use this for new work in every studio: written under the studios config's
+                # lock, or refused, with nothing made, when another studio changed the level
+                # the form read.
+                from runner import studios_config
+                try:
+                    review_policy.change(studios_config.update, form['review_level'],
+                                         form.get('review_seen'))
+                except ValueError as error:
+                    raise WorkspaceError(str(error)) from None
+            else:
+                # An older page sends only the level it saw as `review_level`: that is
+                # checked too.
+                current = review_policy.level(record)
+                if form.get('review_seen', form.get('review_level', current)) != current:
+                    raise WorkspaceError('The shared review preference changed while this '
+                                         'form was open. Review the updated preference '
+                                         'before starting. Nothing was started.')
             if form.get('review_level'):  # this training's own choice, saved with its run
                 record['review_policy'] = {'schema': 1, 'level': form['review_level']}
             root = pipeline.create(space, form)

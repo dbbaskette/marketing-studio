@@ -177,7 +177,8 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
-          '/api/brand', '/api/brand/install', '/api/shared', '/api/note', '/api/look')
+          '/api/brand', '/api/brand/install', '/api/shared', '/api/note', '/api/look',
+          '/api/review-level')
 PNG = 'image/png'
 DOCUMENTS = '/api/documents'
 ASSET = '/api/asset'
@@ -470,6 +471,10 @@ class RunnerPage(desk.Page):
                 desk.text(sent, 'dismiss'))})
         if path == '/api/brand':
             return desk.as_json(HTTPStatus.OK, shaped(setup.save_brand, self.engine, sent))
+        if path == '/api/review-level':
+            level, seen = shaped(setup.review_choice, sent)
+            return desk.as_json(HTTPStatus.OK, setup.save_review_level(self.engine, level,
+                                                                       seen))
         if path == '/api/shared':
             if sent.get('seen') is not True:
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Send {"seen": true} once the '

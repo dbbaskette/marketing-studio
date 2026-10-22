@@ -2006,6 +2006,8 @@ function drawSettings(fresh) {
     ['shared-settings', [Boolean(view.runner)], () => view.runner ? add(card('Shared settings'),
       make('p', '', 'Your assistant, work folder, brand and delivery choices apply across all studios.'),
       capsule('Change shared settings', 'quiet', () => { location.href = settingsAddress(); }, 'shared-settings')) : null],
+    ['review-level', [Boolean(view.runner), view.setup && view.setup.review_level,
+      view.reviewRefused], whereNewWorkStopsCard],
     ['workspace', around(), workspaceCard], ['left', around(), leftCard],
     ['alerts', [alerts()], alertsCard], ['notify', around(), notifyCard],
     ['look', [view.setup && view.setup.updates, view.lookRefused], lookCard],
@@ -4186,12 +4188,13 @@ function settleDeck(draft) {
 }
 
 // The fewest times a training stops for a decision: at its questions, at its research, and at
-// the blueprint, the guide and the brief of each level. Each practice scenario asks once more,
-// and how many there are is not known until a blueprint names them. The runner says the same
-// number back once it has started.
+// the blueprint, the guide and the brief of each level. A deck stops three times a level: its
+// outline, its look and the deck. Each practice scenario asks once more, and how many there
+// are is not known until a blueprint names them. The runner says the same number back once it
+// has started.
 function gatesFor(draft) {
-  return 2 + (1 + ['document', 'brief'].filter((id) => draft.materials.includes(id)).length)
-    * Math.max(1, draft.levels.length);
+  return 2 + (1 + ['document', 'brief'].filter((id) => draft.materials.includes(id)).length
+    + (DECKS[draft.deck][0] ? 3 : 0)) * Math.max(1, draft.levels.length);
 }
 
 function times(number) {
@@ -4337,8 +4340,10 @@ function shapeStep(draft) {
 }
 
 // Where this one training stops for you. The shared level is its default; a level picked
-// here is saved with the training when it starts, and a settings change never moves it.
-function reviewLevelCard(draft) {
+// here is saved with the training when it starts, and a settings change never moves it. The
+// chip also makes it the level new work starts at in every studio, written when the training
+// starts. Nothing here leaves the form.
+function reviewLevelCard(draft, line) {
   const at = Math.max(0, REVIEW_LEVELS.findIndex(([id]) => id === draft.review_level));
   // The step is drawn again from the pick, so everything that reads the level follows it.
   const control = segmented('Review level', REVIEW_LEVELS.map(([, label]) => label), at,
@@ -4349,9 +4354,38 @@ function reviewLevelCard(draft) {
       focusKey('review-level ' + index);
     }, 'review-level');
   const shared = REVIEW_LEVELS.find(([id]) => id === draft.review_seen);
-  return add(card('Review level'), control, make('p', 'quiet', REVIEW_SAYS[draft.review_level]),
+  return add(card('Where this training stops'), control, line,
+    make('p', 'quiet', REVIEW_SAYS[draft.review_level]),
     make('p', 'quiet', (shared ? 'Shared default: ' + shared[1] + '. ' : '')
-      + 'This training keeps the level it starts with.'));
+      + 'This training keeps the level it starts with.'),
+    add(make('div', 'field'), chip('Use this for new work in every studio',
+      draft.review_default, (on) => { draft.review_default = on; }, 'review-default'),
+    make('p', 'quiet field-hint', 'Saved when the training starts.')));
+}
+
+// Settings: where new work stops in every studio, saved at once. A refusal, such as a level
+// another studio changed since this page read it, is said in the card.
+function whereNewWorkStopsCard() {
+  if (!view.runner) return null;
+  const problem = alertLine('review-level-problem');
+  if (view.reviewRefused) say(problem, view.reviewRefused);
+  const level = (view.setup && view.setup.review_level) || 'step_by_step';
+  return add(card('Where new work stops'),
+    make('p', '', 'Where new work stops for you, in every studio. A start form can choose '
+      + 'differently for one training.'),
+    choice('Review level', REVIEW_LEVELS.map(([, label]) => label),
+      Math.max(0, REVIEW_LEVELS.findIndex(([id]) => id === level)), async (index) => {
+        const chosen = REVIEW_LEVELS[index][0];
+        try {
+          view.setup = await send('review-level', { level: chosen, seen: level });
+          view.reviewRefused = '';
+          toast('New work in every studio now starts at ' + REVIEW_WORDS[chosen] + '.');
+        } catch (failure) {
+          view.reviewRefused = failure.message;
+        }
+        draw(false);
+      }, 'review-level'),
+    problem);
 }
 
 function startStep(draft) {
@@ -4381,28 +4415,27 @@ function startStep(draft) {
     const stops = policy === 'balanced' ? 'the research plan, the direction review'
         + (deck ? ', each drawn deck' : '') + ' and the finished materials'
       : policy === 'automatic' ? (deck ? 'each drawn deck and ' : '') + 'the finished materials'
-        : 'at least ' + gatesFor(draft) + ' decisions for research and the selected teaching materials'
+        : 'at least ' + gatesFor(draft) + ' decisions for research'
+          + (deck ? ', the selected teaching materials and each deck'
+            : ' and the selected teaching materials')
           + (draft.materials.includes('scenario') ? ', plus each practice scenario' : '')
           + (draft.yoodli ? ' and each Yoodli layout' : '');
-    const change = make('a', '', 'Change');
-    change.href = settingsAddress();
-    then.replaceChildren(make('span', '', REVIEW_WORDS[policy] + ': it stops for ' + stops),
-      make('span', '', ' · '), change);
+    then.textContent = REVIEW_WORDS[policy] + ': it stops for ' + stops;
     const levels = draft.levels.length ? 'each level' : 'the training';
     comes.textContent = (policy === 'balanced'
       ? 'The direction review comes after research and the blueprint, guide and brief for '
         + levels + ', so the first stop is some minutes in. '
       : policy === 'automatic' ? 'Intermediate drafts continue automatically. ' : '')
       + (DECKS[draft.deck][0] ? (policy === 'step_by_step'
-        ? 'A deck adds two reviews per level when this computer can build it.'
+        ? 'A deck adds three stops per level: its outline, its look and the deck.'
         : 'A deck has its own review.') : '');
   };
   tell();
   return [add(card('Ready to start'), make('p', 'lede', series(selected)),
     make('p', 'quiet', (draft.levels.length ? 'Levels: ' + draft.levels.join(', ') : 'One training without levels')
       + (draft.time ? ' · ' + draft.time : ' · Sized from the teaching plan')),
-    first, then, comes, make('p', 'quiet', 'You can close this page while it works. Saved materials stay available.')),
-  reviewLevelCard(draft),
+    first, comes, make('p', 'quiet', 'You can close this page while it works. Saved materials stay available.')),
+  reviewLevelCard(draft, then),
   add(card('Sources'), ...explained('Where the research looks',
     SOURCES.map((source) => source[1]), SOURCE_SAYS, draft.sources, (index) => {
       draft.sources = index;
@@ -4411,7 +4444,7 @@ function startStep(draft) {
   trainingOptions('Assistant and limits', 'training-assistant',
     ...agentFields(draft, 'new', 'For this training', told), drafted,
     make('p', 'quiet', limitsSays(limits) || 'No limits are set for this computer.'),
-    make('p', 'quiet', 'Limits are changed in Settings. The review preference is shared with Marketing Studio and is saved when this training starts.'))];
+    make('p', 'quiet', 'Limits are changed in Settings.'))];
 }
 
 function paintNew(fresh) {
@@ -4507,6 +4540,7 @@ async function startTraining(pressed) {
   };
   body.review_level = draft.review_level;
   if (draft.review_seen) body.review_seen = draft.review_seen;
+  if (draft.review_default) body.review_default = true;
   draft.starting = true;
   pressed.disabled = true;
   const form = main().querySelector('form');

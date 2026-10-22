@@ -112,6 +112,28 @@ BRANCH = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$')   # a branch a file 
 OUTPUTS = ('google', 'pptx')    # what a studio makes by default, as the shared file says
 
 
+def review_choice(sent) -> tuple:
+    """The level Settings' Where new work stops sent, and the one the page read."""
+    if not isinstance(sent, dict) or set(sent) != {'level', 'seen'}:
+        raise WorkspaceError('Send the level and the level the page read.')
+    try:
+        review_policy.check({'level': sent['level']})
+    except ValueError as error:
+        raise WorkspaceError(str(error)) from None
+    return sent['level'], sent['seen']
+
+
+def save_review_level(engine, level: str, seen) -> dict:
+    """Make `level` the one new work starts at in every studio, under the studios config's
+    lock. Refused, with nothing written, when another studio changed the level the page
+    read, or the file cannot be read. The set-up described."""
+    try:
+        review_policy.change(studios_config.update, level, seen)
+    except ValueError as error:
+        raise WorkspaceError(str(error)) from None
+    return describe(engine)
+
+
 def describe(engine) -> dict:
     """What is set up on this computer, in the shape the page reads."""
     space, chosen = engine.workspace, settings.load()

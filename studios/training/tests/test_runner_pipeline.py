@@ -135,6 +135,9 @@ class DefinitionTests(StudioCase):
             gates = [step for step in pipeline.steps(form['levels'])
                      if step.id.startswith('gate:')]
             self.assertEqual(len(gates), expect)
+        # A deck drawn here stops three times a level: its outline, its look and the deck.
+        form = pipeline.check_form({**FORM, 'levels': ['101', '201']})
+        self.assertEqual(pipeline.gates(form, deck=True), 8 + 3 * 2)
 
 
 class FormTests(StudioCase):
@@ -174,7 +177,7 @@ class FormTests(StudioCase):
                 with self.assertRaisesRegex(WorkspaceError, message):
                     pipeline.check_form({**FORM, **changes})
         deck = pipeline.check_form({**FORM, 'materials': [], 'deck_target': 'pptx'})
-        self.assertEqual(pipeline.gates(deck, deck=True), 5)
+        self.assertEqual(pipeline.gates(deck, deck=True), 6)  # the deck's outline, look, deck
         yoodli = pipeline.check_form({**FORM, 'materials': ['brief', 'scenario'],
                                      'yoodli': True})
         self.assertTrue(yoodli['yoodli'])

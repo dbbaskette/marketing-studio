@@ -2739,10 +2739,56 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                                   'blueprint, guide and brief for each level', text)
                 if policy != 'step_by_step':
                     self.assertNotIn('at least 5 decisions', text)
-                self.assertIn('/onboarding/#token=', next(
-                    link['href'] for link in result['snapshots']['ready']['links']
-                    if link['name'] == 'Change'))
+                self.assertFalse([link for link in result['snapshots']['ready']['links']
+                                  if link['href'].startswith('/onboarding/')],
+                                 'nothing on the form leaves it')
                 self.assertEqual(self.posts(result), [])
+
+    def test_where_this_training_stops_is_on_the_form(self):
+        result = self.run_page(self.answers({**SET_UP, 'review_level': 'step_by_step'}, **{
+            'POST /api/trainings': [
+                {'status': 409, 'body': {'error': 'Fixture stopped before generation.'}}]}), [
+            {'click': 'New training'},
+            {'fill': 'A short title', 'value': 'Restart practice'},
+            {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
+            {'fill': 'Who is it for?', 'value': 'New operators'},
+            {'click': 'Continue'}, {'click': '201'}, {'click': 'Learner guide'},
+            {'click': 'Reference brief'}, {'click': 'PowerPoint'},
+            {'click': 'Continue'}, {'snapshot': 'ready'},
+            {'click': 'Use this for new work in every studio'},
+            {'click': 'Start the training'}])
+        ready = result['snapshots']['ready']
+        self.assertIn('Where this training stops', ready['text'])
+        self.assertIn('Use this for new work in every studio', ready['buttons'])
+        self.assertIn('Saved when the training starts.', ready['text'])
+        self.assertNotIn('The review preference is shared with Marketing Studio', ready['text'])
+        self.assertFalse([link for link in ready['links']
+                          if link['href'].startswith('/onboarding/')])
+        # 2 + (1 + 2) × 2 for research and materials, and 3 deck stops × 2 levels.
+        self.assertIn('Step by step: it stops for at least 14 decisions', ready['text'])
+        self.assertIn('A deck adds three stops per level: its outline, its look and the deck.',
+                      ready['text'])
+        sent = [body for _, body in self.posts(result)]
+        self.assertEqual([(body['review_level'], body['review_seen'], body['review_default'])
+                          for body in sent], [('step_by_step', 'step_by_step', True)])
+
+    def test_settings_saves_where_new_work_stops_at_once(self):
+        from studio_core import review_policy
+        balanced = {**SET_UP, 'review_level': 'balanced'}
+        result = self.run_page(self.answers(balanced, **{
+            'POST /api/review-level': [ok({**SET_UP, 'review_level': 'automatic'}),
+                                       {'status': 409, 'body': {'error': review_policy.STALE}}]}), [
+            {'click': 'Settings'}, {'snapshot': 'settings'},
+            {'click': 'Automatic draft'}, {'snapshot': 'saved'},
+            {'click': 'Step by step'}, {'snapshot': 'refused'}])
+        shots = result['snapshots']
+        self.assertIn('Where new work stops', shots['settings']['text'])
+        self.assertIn('Balanced', shots['settings']['pressed'])
+        sent = [body for address, body in self.posts(result) if address == '/api/review-level']
+        self.assertEqual(sent, [{'level': 'automatic', 'seen': 'balanced'},
+                                {'level': 'step_by_step', 'seen': 'automatic'}])
+        self.assertIn('Automatic draft', shots['saved']['pressed'])
+        self.assertIn(review_policy.STALE, shots['refused']['text'])
 
     def test_start_preview_says_a_drawn_deck_always_stops(self):
         for policy, phrase in (('balanced', 'Balanced: it stops for the research plan, the '
@@ -3929,8 +3975,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Start the training', three['buttons'])
         for shown in ('The public web: it searches for pages anyone can read', 'Claude Code',
                       'A step may take up to 15 minutes.',
-                      'at least 8 decisions for research and the selected teaching materials',
-                      'plus each practice scenario', 'A deck adds two reviews per level',
+                      'at least 14 decisions for research, the selected teaching materials and '
+                      'each deck', 'plus each practice scenario',
+                      'A deck adds three stops per level: its outline, its look and the deck.',
                       'It is drafted by Claude Code, with the model it chooses itself.',
                       'You can close this page while it works.'):
             self.assertIn(shown, three['text'])
@@ -4400,7 +4447,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             self.assertIn(shown, shots['status']['text'])
         # Where a training is decided is offered only for one that no run drives.
         settings = shots['settings']
-        self.assertEqual(settings['pressed'], ['In the conversation'])
+        # Where new work stops, then where each training is decided.
+        self.assertEqual(settings['pressed'], ['Step by step', 'In the conversation'])
         self.assertIn('By Hand', settings['text'].split('Where each training is decided')[1])
         self.assertNotIn('Held', settings['text'].split('Where each training is decided')[1])
         self.assertEqual(self.asked(result, 'run'), [])
@@ -5158,7 +5206,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     def test_the_decks_brand_is_chosen_from_what_the_brand_skill_lists(self):
         self.started()
         going = 'Drafting the research questions.'
-        twice = 'A deck adds two reviews per level when this computer can build it'
+        twice = 'A deck adds three stops per level: its outline, its look and the deck.'
 
         def answers(setup: dict) -> dict:
             return self.answers(setup, **{
@@ -5213,7 +5261,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                                  {'How long it should take (optional)': ''})
         self.assertIn('A deck needs a brand skill. You can make the other materials now',
                       shots['two']['text'])
-        self.assertNotIn('A deck adds two reviews', shots['three']['text'])
+        self.assertNotIn('A deck adds three stops', shots['three']['text'])
         (address, sent), = self.posts(result)
         self.assertEqual((sent['deck_target'], sent['brand']), (None, None))
 

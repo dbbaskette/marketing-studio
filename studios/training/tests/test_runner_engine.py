@@ -35,6 +35,41 @@ class Crash(BaseException):
     """The runner's process ending in the middle of something."""
 
 
+class WhereThisTrainingStopsTests(StudioCase):
+    """Where a training stops is chosen on its form. The shared level, in a studios config of
+    the test's own, is written only with the chip, and refused when another studio changed it
+    since the form read it. Matrix rows 119 and 120."""
+
+    def setUp(self):
+        super().setUp()
+        self.review_capture.stop()    # the test's own studios config is read for real
+        from runner import studios_config
+        self.shared = studios_config
+        self.shared.update({'review': {'level': 'balanced'}})
+
+    def test_row_119_where_this_training_stops_is_chosen_on_the_form(self):
+        root = self.start(review_level='automatic', review_seen='balanced')
+        self.assertEqual(self.engine._load(root)['review_policy'],
+                         {'schema': 1, 'level': 'automatic'})
+        self.assertEqual(self.shared.read()[0]['review'], {'level': 'balanced'})
+
+    def test_row_120_the_shared_default_is_written_only_with_the_chip(self):
+        from studio_core import review_policy
+        self.start(title='Second training', review_level='automatic', review_seen='balanced',
+                   review_default=True)
+        self.assertEqual(self.shared.read()[0]['review'], {'level': 'automatic'})
+        self.shared.update({'review': {'level': 'step_by_step'}})
+        before = sorted(self.space.repo.iterdir())
+        with self.assertRaises(WorkspaceError) as caught:
+            self.start(title='Stale training', review_level='balanced',
+                       review_seen='automatic', review_default=True)
+        self.assertEqual(str(caught.exception), review_policy.STALE)
+        self.assertEqual(sorted(self.space.repo.iterdir()), before, 'nothing is made')
+        self.assertEqual(self.shared.read()[0]['review'], {'level': 'step_by_step'})
+        with self.assertRaisesRegex(WorkspaceError, 'true or false'):
+            pipeline.check_form({**FORM, 'review_default': 'yes'})
+
+
 class FormToGateThreeTests(StudioCase):
     def test_the_form_becomes_a_training_made_through_the_core_in_page_mode(self):
         root = self.start()
