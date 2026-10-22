@@ -3878,6 +3878,19 @@ class Engine(Reviewing):
         return bool(root) and (Path(root) / research_contract.CASE / '.harness-research'
                                / 'synthesis.json').is_file()
 
+    def research_price(self, path):
+        root = self.driven(path)
+        if root is None:
+            return None
+        record = self._load(root)
+        if not record.get('research_contract'):
+            return None
+        session = workspace.load(root)
+        redone = [workspace.label(name) for name in workspace.downstream(root, session, 'research')]
+        return research_view.price({name: entry.get('attempts') or []
+                                    for name, entry in record['steps'].items() if isinstance(entry, dict)},
+                                   redone, drafted=self._drafted(root))
+
     def _research_tried(self, record: dict, problem: dict, root: Path | None = None) -> dict:
         """For a stop at research done as one report and one independent check, its
         'research': what its last try took, and how many rounds Try again may run."""

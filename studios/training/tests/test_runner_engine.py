@@ -2101,3 +2101,15 @@ class ResearchAccountTests(StudioCase):
         self.assertIn(research_view.CHECKED + ' An honest account.', note)
         self.assertNotIn('Digest', note)
         self.assertNotIn('synthetic-digest', note)
+
+
+class ResearchPriceTests(StudioCase):
+    def test_a_research_change_is_priced_with_what_it_makes_again(self):
+        root = self.start(levels=['101', '201'])
+        record = self.engine._load(root); record['research_contract'] = {'schema': 2}
+        self.engine._store(root, record)
+        session = workspace.load(root)
+        for name in ['blueprint@101', 'document@101', 'blueprint@201', 'document@201']:
+            workspace.write_atomic(root / workspace.artifact(root, session, name)['file'], b'# Synthetic document\n')
+        found = self.engine.research_price(root)
+        self.assertTrue(found['words'].endswith('Then it makes again: the level 101 blueprint, the level 101 learner guide, the level 201 blueprint and the level 201 learner guide.'))

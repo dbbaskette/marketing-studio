@@ -3112,6 +3112,14 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('stops at $40.00', result['snapshots']['run']['text'])
         self.assertNotIn('stops at $20.00', result['snapshots']['run']['text'])
 
+    def test_the_research_request_sheet_says_what_it_runs(self):
+        self.started(); self.at_the_questions_gate()
+        gate = self.read('gate', path=str(self.root), artifact='research-plan')
+        gate['body'].update(artifact='research', label='The research report', research_price={'words': 'Asking for changes runs the research again: up to 3 rounds of writing and checking.'})
+        result = self.run_page(self.answers(**{'GET /api/gate': [gate]}), [
+            {'click': 'Review the research plan'}, {'click': 'Ask for changes'}, {'snapshot': 'price'}])
+        self.assertIn('Asking for changes runs the research again: up to 3 rounds of writing and checking.', result['snapshots']['price']['sheet'])
+
     def test_the_research_stop_reads_every_objection_where_it_stops(self):
         self.started()
         stopped = 'The independent check still objected.'
@@ -3120,11 +3128,11 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                                 'kept': 'The draft report and the check’s objections are kept '
                                         'with this training: Read every objection shows them.',
                                 'objections': 'reviews/research.md'})
-        gate = ok({'artifact': 'research', 'waiting': False, 'review':
+        gate = ok({'file': 'reviews/research.md', 'binary': False, 'text':
                    '## Independent research review: changes still needed\n\n> - Too broad.'})
         answers = self.answers(**{'GET /api/trainings': [self.listed('failed', stopped)],
                                   'GET /api/training': [self.detail('failed', stopped)],
-                                  'GET /api/run': [failed], 'GET /api/gate': [gate]})
+                                  'GET /api/run': [failed], 'GET /api/file': [gate]})
         result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
                                          {'snapshot': 'stopped'},
                                          {'click': 'Read every objection'}, {'snapshot': 'read'}])
@@ -3133,8 +3141,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         for raw in ('## ', '> '):
             self.assertNotIn('\n' + raw, result['snapshots']['read']['text'])
         asked = [request for request in result['requests'] if request['method'] == 'GET'
-                 and request['address'].startswith('/api/gate')]
-        self.assertTrue(asked and 'artifact=research' in asked[-1]['address'], asked)
+                 and request['address'].startswith('/api/file')]
+        self.assertTrue(asked and 'artifact=reviews%2Fresearch.md' in asked[-1]['address'], asked)
 
     def test_grouped_change_requests_go_together_and_say_what_they_rewrite(self):
         self.started()

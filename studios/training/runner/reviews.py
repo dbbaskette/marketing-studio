@@ -271,7 +271,8 @@ class Reviewing:
             items.append({'target': name, 'label': workspace.label(name),
                           'text': file.read_text(encoding='utf-8') if file.suffix == '.md' else '',
                           **({'document': document} if name == 'research-plan' else {}),
-                          **({'research': research_view.account(root / 'research', plan.get('questions') or [])}
+                          **({'research': research_view.account(root / 'research', plan.get('questions') or []),
+                              'research_price': self.research_price(root)}
                              if name == 'research' else {}),
                           'deck': spec['stage'] == 'deck',
                           'notes': contained(root, workspace.review_file(name)).read_text()

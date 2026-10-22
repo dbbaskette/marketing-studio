@@ -1552,3 +1552,13 @@ class FormPlanRowTests(StudioCase):
         self.assertTrue(plan['items'][0]['question'].startswith('What do the supplied documents say that serves this goal: '))
         self.assertIsNone(plan['items'][0]['public_query'])
         self.assertEqual(self.workers.of('research-plan'), [])
+
+
+class DownstreamTests(LevelCase):
+    def test_downstream_lists_what_is_built_from_research(self):
+        session = workspace.load(self.root)
+        self.assertEqual(workspace.downstream(self.root, session, 'research'), [])
+        for name in ('blueprint@101', 'document@101', 'brief@101', 'blueprint@301', 'document@301', 'brief@301'):
+            self.write(workspace.artifact(self.root, session, name)['file'], '# Synthetic document\n')
+        found = workspace.downstream(self.root, workspace.load(self.root), 'research')
+        self.assertEqual(found, ['blueprint@101', 'document@101', 'brief@101', 'blueprint@301', 'document@301', 'brief@301'])

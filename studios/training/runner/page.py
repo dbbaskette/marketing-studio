@@ -241,17 +241,18 @@ class RunnerPage(desk.Page):
                     return None
             return desk.as_json(HTTPStatus.OK, self.deck_draft(
                 {'path': one('path'), 'level': given('level')}))
-        if path == '/api/file' and one('artifact') == pipeline.INDEX:
-            return desk.as_json(HTTPStatus.OK, self.index(one('path')))
+        if path == '/api/file' and one('artifact') in (pipeline.INDEX, 'reviews/research.md'):
+            return desk.as_json(HTTPStatus.OK, self.index(one('path'), one('artifact')))
         return super().read(path, one)
 
-    def index(self, path: str) -> dict:
+    def index(self, path: str, relative=pipeline.INDEX) -> dict:
         """A training's index, in the shape the desk gives any of its files."""
         desk.registered(path)
-        file = desk.inside(Path(path), pipeline.INDEX)
+        file = desk.inside(Path(path), relative)
         if not file.is_file():
-            raise desk.Refusal(HTTPStatus.NOT_FOUND, 'The index has not been written yet.')
-        shown = {'artifact': pipeline.INDEX, 'file': pipeline.INDEX,
+            raise desk.Refusal(HTTPStatus.NOT_FOUND, 'The index has not been written yet.'
+                               if relative == pipeline.INDEX else 'The research check has not been saved yet.')
+        shown = {'artifact': relative, 'file': relative,
                  'size': file.stat().st_size, 'binary': True}
         found = desk.text_of(file)
         if found is None:
@@ -265,6 +266,8 @@ class RunnerPage(desk.Page):
         shown['combined'] = self.engine.reviewing(path)
         # What Ask for changes writes again, and what that took, said before it is asked for.
         shown['redo'] = self.engine.redo(path, name)
+        if name == 'research':
+            shown['research_price'] = self.engine.research_price(path)
         kind = workspace.split(name)[0].partition(':')[0]
         if kind == 'scenario':
             shown['whose'] = self.engine.whose(path, name)

@@ -579,6 +579,17 @@ def research_intact(root: Path, session: dict) -> bool:
                 and sha256_file(root / RESEARCH_COPY) == bundle['report_sha256'])
 
 
+def downstream(root: Path, session: dict, name: str) -> list[str]:
+    """Made files whose dependency chain reaches name, in workspace order."""
+    def reaches(own, seen):
+        if own in seen:
+            return False
+        upstream = artifact(root, session, own)['upstream']
+        return name in upstream or any(reaches(parent, seen | {own}) for parent in upstream)
+    return [own for own in artifact_names(root, session) if own != name
+            and reaches(own, set()) and sha256_file(root / artifact(root, session, own)['file']) is not None]
+
+
 def statuses(root: Path, session: dict) -> dict[str, str]:
     """Status of every artifact, computed from what is on disk now."""
     known: dict[str, str] = {}

@@ -1345,7 +1345,9 @@ function noteSheet(kind) {
   });
   // What a change writes again, and what that took the last time, said before it is sent.
   const price = outlined() ? view.run.outline.redo : view.gate && view.gate.redo;
-  const redo = kind === 'revise' && price ? ' ' + price.says : '';
+  const researchPrice = !outlined() && view.gate && view.gate.artifact === 'research' && view.gate.research_price;
+  const redo = kind === 'revise' && researchPrice ? ' ' + researchPrice.words
+    : kind === 'revise' && price ? ' ' + price.says : '';
   const hint = make('p', 'quiet', (runOf(view.path) ? spec.hint.replace('Your assistant makes',
     'Training Studio makes') : spec.hint) + redo);
   hint.id = 'note-hint';
@@ -4925,11 +4927,10 @@ function problemPart(run, lead) {
     read = capsule('Read every objection', 'quiet', async () => {
       read.disabled = true;
       try {
-        const gate = await ask('gate', { path: view.path, artifact: 'research' });
+        const file = await ask('file', { path: view.path, artifact: found.objections });
         shown.replaceChildren(make('h3', 'row-title', 'The research check'),
-          ...String(gate.review || '').split('\n')
-            .map((line) => line.replace(/^(#+|>)\s*/, '').replace(/^>\s*/, '').trim())
-            .filter(Boolean).map((line) => make('p', '', line)));
+          window.TrainingStudioMarkdown.render(file.text || ''));
+
       } catch (failure) {
         shown.replaceChildren(make('p', 'problem', failure.message));
       } finally {
@@ -6035,7 +6036,7 @@ function combinedReview(run) {
       request.addEventListener('input', () => { view.notes[key] = request.value; });
       const hint = make('p', 'quiet', (list(item.rewrites).length ? 'If it changes, these are '
         + 'written again from it: ' + series(item.rewrites) + '.' : 'Nothing else is built from it.')
-        + (item.redo ? ' ' + item.redo.says : ''));
+        + (item.research_price ? ' ' + item.research_price.words : item.redo ? ' ' + item.redo.says : ''));
       const asking = add(make('div', 'review-request'), label, request, hint);
       asking.hidden = mark !== 'changes';
       const marks = make('div', 'review-marks chips');
