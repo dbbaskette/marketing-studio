@@ -956,9 +956,7 @@ def redo(found, jobs):
         priced = None if None in dollars else round(sum(dollars), 4)
         shown[stage] = {
             'stages': again,
-            'says': stops.redone(
-                'the ' + STAGES[stage][0].lower(), len(again), seconds, priced
-            ),
+            'says': stops.redone('the ' + STAGES[stage][0].lower(), len(again), seconds, priced),
         }
     return shown
 
@@ -1229,9 +1227,7 @@ def create(root, data, approval='conversation'):
     if contract:
         run['research_contract'] = contract
     run['review_policy'] = (
-        {'schema': 1, 'level': chosen_level}
-        if chosen_level
-        else review_policy.snapshot(shared)
+        {'schema': 1, 'level': chosen_level} if chosen_level else review_policy.snapshot(shared)
     )
     if review_policy.level(run) != 'step_by_step':
         run['schema'] = 2

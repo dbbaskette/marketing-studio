@@ -1243,17 +1243,27 @@ class SharedPatternTests(RunnerCase):
         self.addCleanup(engine.close)
         redo = engine.describe(found['id'])['redo']
         self.assertEqual(redo['draft']['stages'], ['draft', 'review', 'package'])
-        self.assertEqual(redo['draft']['says'], (
-            'Drawn again: the draft and every step after it, 3 steps; this computer has no '
-            'record of what they cost.'))
+        self.assertEqual(
+            redo['draft']['says'],
+            (
+                'Drawn again: the draft and every step after it, 3 steps; this computer has no '
+                'record of what they cost.'
+            ),
+        )
         state = engine.local(found['id'])
-        state['jobs'] = [{'stage': stage, 'seconds': 300, 'tokens': None, 'dollars': 0.5}
-                         for stage in ('outline', 'draft', 'review', 'package')]
+        state['jobs'] = [
+            {'stage': stage, 'seconds': 300, 'tokens': None, 'dollars': 0.5}
+            for stage in ('outline', 'draft', 'review', 'package')
+        ]
         engine.keep_local(found['id'], state)
         redo = engine.describe(found['id'])['redo']
-        self.assertEqual(redo['review']['says'], (
-            'Drawn again: the review and every step after it, 2 steps. Last time they took '
-            '10 minutes and about $1.00.'))
+        self.assertEqual(
+            redo['review']['says'],
+            (
+                'Drawn again: the review and every step after it, 2 steps. Last time they took '
+                '10 minutes and about $1.00.'
+            ),
+        )
 
     def test_stage_labels(self):
         self.assertEqual(runner.STAGES['package'][0], 'Handoff')
@@ -1276,7 +1286,9 @@ class SharedPatternTests(RunnerCase):
         self.assertEqual(review_policy.level(run), 'step_by_step')
         self.assertEqual(found['review_level'], 'step_by_step')
         self.assertEqual(studios_config.read()[0]['review'], {'level': 'balanced'})
-        with self.assertRaisesRegex(ValueError, 'Choose Balanced, Automatic draft, or Step by step'):
+        with self.assertRaisesRegex(
+            ValueError, 'Choose Balanced, Automatic draft, or Step by step'
+        ):
             self.create(page=True, review_level='fast', review_seen='balanced')
 
     def test_the_default_is_written_only_with_the_chip_and_refused_when_stale(self):
@@ -1313,9 +1325,13 @@ class SharedPatternTests(RunnerCase):
         self.assertEqual(shown['review_level'], 'automatic')
         self.assertEqual(studios_config.read()[0]['review'], {'level': 'automatic'})
         with self.assertRaises(ValueError) as caught:
-            management.dispatch(self.root, 'review-level', {'level': 'balanced', 'seen': 'balanced'})
+            management.dispatch(
+                self.root, 'review-level', {'level': 'balanced', 'seen': 'balanced'}
+            )
         self.assertEqual(str(caught.exception), review_policy.STALE)
-        with self.assertRaisesRegex(ValueError, 'Choose Balanced, Automatic draft, or Step by step'):
+        with self.assertRaisesRegex(
+            ValueError, 'Choose Balanced, Automatic draft, or Step by step'
+        ):
             management.dispatch(self.root, 'review-level', {'level': 'fast', 'seen': 'automatic'})
         self.assertEqual(studios_config.read()[0]['review'], {'level': 'automatic'})
 

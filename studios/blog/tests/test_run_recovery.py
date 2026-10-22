@@ -506,9 +506,12 @@ class StageMeterTests(ResearchCase):
                 ahead = engine.describe(found['id'])['ahead']
                 self.assertEqual(ahead['jobs'], 1)
                 self.assertEqual(ahead['dollars'], dollars)
-                self.assertTrue(ahead['spent'].endswith(
-                    'and about $0.42' if dollars else '; the assistant reported no cost'),
-                    ahead['spent'])
+                self.assertTrue(
+                    ahead['spent'].endswith(
+                        'and about $0.42' if dollars else '; the assistant reported no cost'
+                    ),
+                    ahead['spent'],
+                )
 
 
 class ContinueWithoutResearchTests(ResearchCase):
