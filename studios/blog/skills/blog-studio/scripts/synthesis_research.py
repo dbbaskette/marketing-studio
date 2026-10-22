@@ -21,6 +21,81 @@ def offered(source):
     )
 
 
+KINDS = ('facts', 'findings', 'prose')
+
+
+def grouped(case):
+    """What the last saved check objected to, grouped by kind and verdict: each group's
+    count, its first note and a few of its IDs, largest first within a kind, then the
+    assessment when it asks for revision. Empty when the check said nothing readable."""
+    try:
+        review = json.loads((Path(case) / 'review.json').read_text())
+    except (OSError, ValueError):
+        return []
+    if not isinstance(review, dict):
+        return []
+    groups = []
+    for kind in KINDS:
+        found = {}
+        for item in review.get(kind) or ():
+            if not isinstance(item, dict) or item.get('verdict') in (None, 'supported'):
+                continue
+            verdict = str(item['verdict'])[:40]
+            group = found.setdefault(
+                verdict, {'kind': kind, 'verdict': verdict, 'count': 0, 'note': '', 'ids': []}
+            )
+            group['count'] += 1
+            if item.get('id') and len(group['ids']) < 5:
+                group['ids'].append(str(item['id'])[:80])
+            note = ' '.join(str(item.get('note') or '').split())
+            if note and not group['note']:
+                group['note'] = research_contract.shortened(note, 300)
+        groups += sorted(found.values(), key=lambda group: -group['count'])
+    assessment = review.get('assessment')
+    if isinstance(assessment, dict):
+        asked = [
+            name for name in ('coverage', 'usefulness') if assessment.get(name) == 'needs-revision'
+        ]
+        if asked:
+            note = ' '.join(str(assessment.get('note') or '').split())
+            groups.append(
+                {
+                    'kind': 'assessment',
+                    'verdict': 'needs-revision',
+                    'count': 1,
+                    'note': research_contract.shortened(note, 300) if note else '',
+                    'ids': [],
+                    'asked': asked,
+                }
+            )
+    return groups
+
+
+def refusal_groups(refusal, case):
+    """The refusal's own grouping when the shared contract gives one, else the case's."""
+    given = getattr(refusal, 'groups', None)
+    if isinstance(given, list) and given:
+        groups = []
+        for group in given:
+            if not isinstance(group, dict) or type(group.get('count')) is not int:
+                groups = []
+                break
+            note = group.get('note') or (group.get('notes') or [''])[0]
+            groups.append(
+                {
+                    'kind': str(group.get('kind') or 'objections')[:40],
+                    'verdict': str(group.get('verdict') or '')[:40],
+                    'count': group['count'],
+                    'note': research_contract.shortened(str(note or ''), 300),
+                    'ids': [str(ident)[:80] for ident in (group.get('ids') or [])[:5]],
+                    **({'asked': list(group['asked'])} if group.get('asked') else {}),
+                }
+            )
+        if groups:
+            return groups
+    return grouped(case)
+
+
 def generate(directory, run, payload, worker, *, seconds, stop):
     import blog_library
     from performance import extract

@@ -141,6 +141,68 @@ class SynthesisIntegrationTests(Fixture):
         directory, _, _ = blog_runner.load(self.root, ident)
         research_contract.read_bundle(directory / 'research')
 
+    def test_a_refused_page_research_is_kept_and_try_again_continues_from_it(self):
+        source = self.source(TEXT)
+        shown = blog_runner.create(
+            self.root,
+            {
+                'title': 'Synthetic explanation',
+                'goal': 'Explain the bounded example',
+                'audience': 'New learners',
+                'sources': [source['id']],
+                'research': 'supplied-only',
+            },
+            'page',
+        )
+        ident = shown['id']
+        blog_runner.submit(
+            self.root,
+            ident,
+            'research-plan',
+            {'content': '# Plan\nExplain this synthetic example.', 'notes': ''},
+            shown['expected'],
+            page=True,
+        )
+        authors, accept = [], [False]
+
+        def worker(engine, data, guidance, **options):
+            if 'review_template' in data:
+                value = review(data['review_template'], accepted=accept[0])
+            else:
+                authors.append(data)
+                captured = data['sources'][0]
+                value = dossier(data['worker'], captured['file'], captured['origin'], 'selected')
+            return {'content': json.dumps(value), 'notes': ''}
+
+        engine = blog_runner.Engine(self.root, worker)
+        self.addCleanup(engine.close)
+        engine.control(ident, 'resume')
+        engine._once(ident)
+        found = engine.describe(ident)
+        directory, _, _ = blog_runner.load(self.root, ident)
+        self.assertEqual(found['status'], 'failed')
+        self.assertIn('after 3 rounds of correction', found['error'])
+        self.assertIn('kept on this computer', found['error'])
+        self.assertEqual(len(authors), 3)
+        kept = directory / '.studio-research-draft'
+        self.assertTrue((kept / '.harness-research/synthesis.json').is_file())
+        groups = found['research']['refusal']['groups']
+        self.assertEqual({group['verdict'] for group in groups}, {'narrow'})
+        self.assertEqual(
+            found['research']['refusal']['count'], sum(group['count'] for group in groups)
+        )
+        self.assertFalse((directory / 'research').exists(), 'nothing unreviewed is published')
+        accept[0] = True
+        blog_runner.dispatch(self.root, 'retry', {'id': ident, 'expected': found['expected']})
+        engine._once(ident)
+        found = engine.describe(ident)
+        self.assertEqual(found['next'], 'outline', found['error'])
+        # The first author of the retry corrected the kept dossier against the kept review.
+        self.assertIsNotNone(authors[3]['previous_dossier'])
+        self.assertEqual(authors[3]['previous_review']['facts'][0]['verdict'], 'narrow')
+        self.assertFalse(kept.exists())
+        research_contract.read_bundle(directory / 'research')
+
     def test_unfinished_research_continues_with_the_retained_helper_after_an_update(self):
         holder = tempfile.TemporaryDirectory()
         self.addCleanup(holder.cleanup)

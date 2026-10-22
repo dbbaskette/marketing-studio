@@ -4,6 +4,7 @@ import json
 import difflib
 from pathlib import Path
 import re
+import shutil
 import threading
 import tempfile
 import time
@@ -87,6 +88,94 @@ MATERIAL_ELSEWHERE = (
     'This blog’s uploaded files stay on the computer that added them. Continue it there, '
     'or start it again here from your files.'
 )
+# Research that stopped before its check accepted it (refused, out of time, a failed job) is
+# kept beside the blog for Try again: the draft dossier, the check's last review and the
+# captures they cite. It stays on this computer: the Team Hub skips dot folders, and the
+# folder's own ignore file keeps it out of a shared studios repository.
+RESEARCH_DRAFT = Path('.studio-research-draft')
+
+
+def keep_research(directory, case):
+    """Keep `case` as the blog's research draft, replacing an earlier one. True when kept,
+    False when the case saved nothing to continue from, or the reason it could not be."""
+    if not (case / '.harness-research' / 'synthesis.json').is_file():
+        return False
+    kept = directory / RESEARCH_DRAFT
+    pending = directory / (RESEARCH_DRAFT.name + '-' + uuid.uuid4().hex)
+    try:
+        pending.mkdir()
+        (pending / '.gitignore').write_text('*\n')  # Ignored before anything else lands.
+        research_contract.copy_case(case, pending)
+        if kept.exists():
+            shutil.rmtree(kept)
+        pending.rename(kept)
+        return True
+    except (OSError, ValueError) as error:
+        return str(error)[:160] or 'it could not be copied'
+    finally:
+        shutil.rmtree(pending, ignore_errors=True)
+
+
+def fitted(said, then='', limit=500):
+    """`said` and `then` within the limit an error keeps, cutting `said` rather than `then`."""
+    room = limit - (len(then) + 1 if then else 0)
+    if len(said) > room:
+        said = said[: max(0, room - 1)].rstrip() + '…'
+    return (said + ' ' + then).strip() if then else said
+
+
+def research_refusal(refusal, case):
+    """What the independent check objected to, for the run screen: counts by kind and
+    verdict with the first note of each, and the cause when the contract names one."""
+    import synthesis_research
+
+    groups = synthesis_research.refusal_groups(refusal, case)[:12]
+    cause = getattr(refusal, 'cause', None)
+    return {
+        'rounds': getattr(refusal, 'rounds', research_contract.ROUNDS),
+        'count': sum(group['count'] for group in groups),
+        'groups': groups,
+        'cause': research_contract.shortened(str(cause), 300) if cause else None,
+        'at': studio.now(),
+    }
+
+
+def refusal_words(refusal):
+    if refusal['cause']:
+        return refusal['cause']
+    said = (
+        'The research check still objected after '
+        + str(refusal['rounds'])
+        + ' rounds of correction'
+    )
+    if not refusal['count']:
+        return said + ', and did not say what.'
+    count, groups = refusal['count'], len(refusal['groups'])
+    return (
+        f'{said}: {count} objection'
+        + ('' if count == 1 else 's')
+        + f' in {groups} group'
+        + ('' if groups == 1 else 's')
+        + '.'
+    )
+
+
+def research_kept_words(kept, refused):
+    """What happened to the research made so far, in a sentence for the stop message."""
+    if kept is True:
+        return (
+            'The draft report and the check’s notes are kept on this computer; Try again '
+            'continues from them.'
+            if refused
+            else 'The research so far is kept on this computer; Try again continues from it.'
+        )
+    if kept:
+        return (
+            'The draft could not be kept here ('
+            + kept
+            + '), so Try again starts the research again.'
+        )
+    return ''
 
 
 def settings(root, data=None):
@@ -1493,6 +1582,16 @@ class Engine:
 
         owner = driver(self.root, ident) if space(self.root) else None
         decisions = found.get('decisions') or []
+        research = None
+        if found['next'] in ('research-plan', 'research'):
+            saved = local.get('research') or {}
+            kept = Path(found['directory']) / RESEARCH_DRAFT / '.harness-research/synthesis.json'
+            research = {
+                # A draft a stopped research kept here, which Try again continues from.
+                'kept': kept.is_file(),
+                'refusal': saved.get('refusal'),
+                'rounds': research_contract.ROUNDS,
+            }
         return {
             **found,
             'team': bool(space(self.root) and space(self.root).address),
@@ -1504,6 +1603,7 @@ class Engine:
             'started_at': local.get('started_at') if status == 'working' else None,
             'touched': decisions[-1]['at'] if decisions else None,
             'error': local.get('error', ''),
+            'research': research,
             'enabled': local.get('enabled', False),
             'observation': 'Saved locally. Workers use your selected CLI sign-in. Public research links need review; no publishing is automatic.',
         }
@@ -1589,10 +1689,13 @@ class Engine:
 
                 pending = tempfile.TemporaryDirectory(prefix='blog-research-draft-')
                 target = Path(pending.name)
-                if (directory / research_contract.CASE).is_dir():
-                    research_contract.copy_case(
-                        directory / research_contract.CASE, target / research_contract.CASE
-                    )
+                # Continue from the draft a stopped research kept, else the last reviewed case.
+                origin = directory / RESEARCH_DRAFT
+                if not origin.is_dir():
+                    origin = directory / research_contract.CASE
+                if origin.is_dir():
+                    research_contract.copy_case(origin, target / research_contract.CASE)
+                    (target / research_contract.CASE / '.gitignore').unlink(missing_ok=True)
                 result = synthesis_research.generate(
                     target, run, payload, self.worker, seconds=found['seconds'], stop=self.stop
                 )
@@ -1642,6 +1745,8 @@ class Engine:
                         raise
             with studio.locked(self.root):
                 if self.stop.is_set() or self.closed.is_set():
+                    if pending and not self.closed.is_set():
+                        keep_research(directory, target / research_contract.CASE)
                     return
                 if (directory / 'session.json').read_bytes() != session:
                     raise ValueError(
@@ -1661,12 +1766,22 @@ class Engine:
                 submit(self.root, ident, found['next'], result, found['expected'], page=True)
                 state = self.local(ident)
                 state.update(status='waiting-for-approval', error='')
+                if pending:
+                    # The accepted research replaces any draft an earlier stop kept.
+                    shutil.rmtree(directory / RESEARCH_DRAFT, ignore_errors=True)
+                    state.setdefault('research', {})['refusal'] = None
                 if run.get('editor_check'):
                     state['enabled'] = False
                 self.keep_local(ident, state)
         except Exception as exc:
             with studio.locked(self.root):
                 state = self.local(ident)
+                # Research that did not finish is kept for Try again, even when stopped.
+                kept = (
+                    keep_research(directory, target / research_contract.CASE)
+                    if pending and not self.closed.is_set()
+                    else False
+                )
                 if not self.stop.is_set() and not self.closed.is_set():
                     message = (
                         str(exc)
@@ -1691,6 +1806,17 @@ class Engine:
                             diagnostic.chmod(0o600)
                         except OSError:
                             message += ' The private failure diagnostic could not be saved.'
+                    if pending:
+                        refused = isinstance(exc, research_contract.ReviewRefused)
+                        research = state.setdefault('research', {})
+                        research['refusal'] = (
+                            research_refusal(exc, target / research_contract.CASE)
+                            if refused
+                            else None
+                        )
+                        if refused:
+                            message = refusal_words(research['refusal'])
+                        message = fitted(message, research_kept_words(kept, refused))
                     state.update(enabled=False, status='failed', error=message[:500])
                     self.keep_local(ident, state)
         finally:

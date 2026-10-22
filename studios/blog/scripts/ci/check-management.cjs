@@ -89,11 +89,12 @@ async function check(){
   await voiceCandidates();
   await runVoiceChange();
   await toolsAreNamed();
+  await researchRefusal();
   pageDefinesEveryElement();
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -2019,4 +2020,29 @@ async function toolsAreNamed(){
   f.run("sCloseSheet();studio.settings={defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''},workspace:'/synthetic'};studio.brand={};studio.team={};sSettings()");
   const link=descendants(f.get('studio-page')).find(e=>e.tagName==='button'&&e.textContent==='Open voices and styles');assert.ok(link,'Settings links to voices and styles');
   await link.listeners.click();assert.equal(f.get('sheet').children[0].children[0].textContent,'Voices and styles');
+}
+
+// A research case the independent check refused: the run says how many objections in how many
+// groups, lists each group by what it checked and its verdict with its first note, and says the
+// draft is kept on this computer. Nothing is listed for a run the check did not refuse.
+async function researchRefusal(){
+  const refused={id:'synthetic',title:'Synthetic blog',status:'failed',enabled:false,next:'research',approval:'page',expected:'version-1',directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},
+    error:'The research check still objected after 3 rounds of correction: 4 objections in 3 groups. The draft report and the check’s notes are kept on this computer; Try again continues from them.',
+    research:{kept:true,rounds:3,refusal:{rounds:3,count:4,cause:null,groups:[{kind:'facts',verdict:'narrow',count:2,note:'Only the fictional example says this.',ids:['fact-a','fact-b']},{kind:'findings',verdict:'unsupported',count:1,note:'No saved fact supports it.',ids:['instance-min']},{kind:'assessment',verdict:'needs-revision',count:1,note:'The brief leaves out the strongest objection.',ids:[],asked:['coverage']}]}},
+    stages:[{stage:'research-plan',label:'Research questions',path:'derived/blog-research-plan.md',status:'approved'},{stage:'research',label:'Research findings',path:'derived/blog-research.md',status:'pending'},{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'pending'}]};
+  const f=fixture(()=>({items:[],total:0}));f.loadRunner();
+  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent);
+  f.set('found',refused);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
+  assert.ok(text().includes(refused.error),'the stop sentence is shown as it is: '+text().join('|'));
+  const box=nodes().find(e=>e.tagName==='details'&&e.children[0]?.textContent==='What the research check objected to');
+  assert.ok(box,'the objections sit under their own disclosure: '+text().join('|'));
+  const inside=descendants(box).map(e=>e.textContent);
+  for(const words of ['2 facts marked narrow','Only the fictional example says this.','1 finding marked unsupported','No saved fact supports it.','Coverage needs revision','The brief leaves out the strongest objection.'])assert.ok(inside.includes(words),words+' in '+inside.join('|'));
+  assert.ok(inside.some(t=>/4 objections in its last review, after 3 rounds of correction/.test(t)),inside.join('|'));
+  assert.ok(inside.some(t=>/kept on this computer, in this blog’s \.studio-research-draft folder, and are not shared/.test(t)),inside.join('|'));
+  // A cause the contract names leads the list; a run nothing refused lists nothing.
+  f.set('found',{...refused,research:{...refused.research,refusal:{...refused.research.refusal,cause:'The check could not read the original of “Synthetic”.'}}});f.run('sRun(found)');
+  assert.ok(text().includes('The check could not read the original of “Synthetic”.'));
+  f.set('found',{...refused,error:'Research ran out of the time a step may take (10 minutes).',research:{kept:true,rounds:3,refusal:null}});f.run('sRun(found)');
+  assert.equal(nodes().some(e=>e.tagName==='details'&&e.children[0]?.textContent==='What the research check objected to'),false,'only a refusal has objections');
 }
