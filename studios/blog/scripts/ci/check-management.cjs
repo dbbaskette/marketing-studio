@@ -79,6 +79,7 @@ async function check(){
   await staleSharedForms();
   await sharedPattern();
   await whereThisRunStops();
+  await oneVocabulary();
   await finishAndDelete();
   await filesJourney();
   await voiceLinksJourney();
@@ -1121,6 +1122,33 @@ async function whereThisRunStops(){
   assert.ok(descendants(after).some(e=>e.className==='problem'&&e.textContent==='Another studio changed where new work stops. Reload the page and try again.'),'the refusal is in the card: '+descendants(after).map(e=>e.textContent).join('|'));
 }
 
+// One name for each thing: the handoff, Record in team repository, the research choice, the
+// example role and the kind of post a style is.
+async function oneVocabulary(){
+  const f=fixture(()=>({}));f.loadRunner();
+  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent);
+  const stages=[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'approved'},{stage:'review',label:'Review',path:'derived/blog-review.md',status:'approved'},{stage:'package',label:'Handoff',path:'derived/blog-package.md',status:'pending'}];
+  const working={id:'synthetic',title:'Synthetic blog',status:'working',next:'package',approval:'page',expected:'v1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',decisions:[],brief:{goal:'Explain',audience:'Authors'},notes:{},started_at:new Date().toISOString(),stages};
+  f.set('found',working);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
+  assert.ok(text().some(t=>/^Writing the handoff · /.test(t)),'the now line names the handoff: '+text().join('|'));
+  assert.ok(nodes().some(e=>e.className==='bead-name'&&e.textContent==='Handoff'));
+  // A finished team blog this computer drives records it in the team repository.
+  f.set('found',{...working,status:'complete',complete:true,next:null,started_at:null,team:true,driver:{here:true},stages:stages.map(row=>({...row,status:'approved'}))});f.run('sRun(found)');
+  const labels=f.get('actions').children.map(e=>e.textContent);
+  assert.ok(labels.includes('Record in team repository'),labels.join('|'));assert.equal(labels.includes('Publish revision'),false);
+  // The research choice, one way in Settings, a new blog and from files.
+  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  f.run("studio.settings={defaults,workspace:'/synthetic',shared_before:{},review_level:'balanced'};studio.team={};studio.brand=null;studio.screen='settings';sSettings()");
+  assert.deepEqual(nodes().find(e=>e.id==='settings-research').children.map(o=>o.textContent),['No research','Only what you supply','What you supply and the public web']);
+  f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[],profiles:[],agents:{codex:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'package',minutes:'10',operation:'a'.repeat(32)};sWizard()");
+  assert.deepEqual(nodes().find(e=>e.id==='new-research').children.map(o=>o.textContent),['No research','Only what you supply','What you supply and the public web']);
+  f.run("studio.draft={...defaults,mode:'from-files',files:[],step:0,title:'',goal:'',audience:'',profile:'',sources:[],stop:'package',minutes:'10',operation:'b'.repeat(32)};sWizard()");
+  assert.ok(text().includes('Also research the public web'),text().join('|'));
+  assert.ok(text().includes('Off: only what you supply. On: what you supply and the public web, before the outline.'));
+  assert.ok(text().some(t=>t==='Example of the kind of post'),'one example label: '+text().join('|'));
+  for(const old of ['Examples of the kind of post','examples of a kind of writing','Selected sources only','Sources plus public research','Also research the web to fill gaps'])assert.equal(text().some(t=>t.includes(old)),false,old);
+}
+
 // The pattern every studio shares: the start form says where it stops, the run says what it
 // is doing now and for how long, a retry says what it costs, a note reaches the next job
 // without stopping, and a phone keeps one decision in the toolbar.
@@ -1432,7 +1460,7 @@ async function filesJourney(){
 // recently deleted with Restore, and the ideas gate offers the headings as picks.
 async function finishAndDelete(){
   const requests=[];
-  const complete={id:'synthetic',title:'Synthetic blog',status:'complete',complete:true,next:null,approval:'page',expected:'version-3',enabled:false,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'step_by_step',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},publication:null,stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'approved'},{stage:'package',label:'Export package',path:'derived/blog-package.md',status:'approved'}]};
+  const complete={id:'synthetic',title:'Synthetic blog',status:'complete',complete:true,next:null,approval:'page',expected:'version-3',enabled:false,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'step_by_step',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},publication:null,stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'approved'},{stage:'package',label:'Handoff',path:'derived/blog-package.md',status:'approved'}]};
   const deleted=[{id:'synthetic',title:'Synthetic blog',deleted_at:new Date().toISOString(),until:new Date(Date.now()+30*86400000).toISOString()}];
   const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});
     if(url.startsWith('/api/run-file'))return {content:'# The draft',name:'DRAFT.md'};
@@ -1450,8 +1478,8 @@ async function finishAndDelete(){
   // The Done card says whether Finish kept the blog in the team library, or why not.
   for(const [library,words] of [[{id:'kept',revision:1},'Kept in the team library, where the next blog can pick it as an example.'],[{reason:'it could not be saved here.'},'Not kept in the team library: it could not be saved here.']]){f.set('card',{...complete,library});f.run("studio.page=sPage(sDoneCard(card))");assert.ok(text().includes(words),words+': '+text().join('|'));}
   f.set('card',complete);f.run("sPage(sDoneCard(card))");assert.equal(text().some(t=>/team library/.test(t)),false,'nothing said without an outcome');
-  // The final stop: the draft is the open document, the package is handoff notes, the decision is Finish.
-  const shown={id:'synthetic',title:'Synthetic blog',name:'blog-package.md',stage:'package',label:'Export package',expected:'version-2',status:'draft',content:'# Handoff',notes:'',checks:[],previous:null,diff:[],bundle:[{stage:'draft',label:'Draft',content:'# The draft text'}]};
+  // The final stop: the draft is the open document, the package is the handoff, the decision is Finish.
+  const shown={id:'synthetic',title:'Synthetic blog',name:'blog-package.md',stage:'package',label:'Handoff',expected:'version-2',status:'draft',content:'# Handoff',notes:'',checks:[],previous:null,diff:[],bundle:[{stage:'draft',label:'Draft',content:'# The draft text'}]};
   const atPackage={...complete,complete:false,next:'package',status:'waiting-for-approval',expected:'version-2',stages:[complete.stages[0],complete.stages[1],{...complete.stages[2],status:'draft'}]};
   f.set('shown',shown);f.set('atPackage',atPackage);
   f.run("studio.screen='gate';studio.found=atPackage;sGate(atPackage,shown)");
@@ -1628,14 +1656,14 @@ async function libraryAddJourney(){
   files.files=[{name:'post.html',size:20,arrayBuffer:async()=>new TextEncoder().encode('<p>By Avery</p>').buffer}];await files.listeners.change();
   assert.ok(has(/1 chosen: post\.html/));
   byId('library-add-links').value='https://blog.example/team/a/\nhttps://blog.example/team/b/';byId('library-add-links').listeners.input();
-  const role=sheet().find(e=>e.attributes['aria-label']==='Use these as');await role.children.find(e=>e.textContent==='Examples of the kind of post').listeners.click();
+  const role=sheet().find(e=>e.attributes['aria-label']==='Use these as');await role.children.find(e=>e.textContent==='Example of the kind of post').listeners.click();
   byId('library-add-who').value='*each';await byId('library-add-who').listeners.change();
   assert.equal(byId('library-add-author'),undefined,'each post’s own author needs no name');
   byId('library-add-kind').value='product-announcement';byId('library-add-kind').listeners.change();
   await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   const checked=requests.find(r=>r.url==='/api/library-add-preview').data;
   assert.deepEqual(checked.files.map(e=>e.filename),['post.html']);assert.equal(checked.role,'example');assert.equal(checked.author,'*each');assert.equal(checked.kind,'product-announcement');assert.match(checked.links,/team\/b\//);
-  assert.ok(find('3 items'));assert.ok(has(/Examples of the kind of post · Each post’s own author · Product announcement/));
+  assert.ok(find('3 items'));assert.ok(has(/Example of the kind of post · Each post’s own author · Product announcement/));
   assert.ok(has(/1,200 characters · byline Avery Quinn/),'a file shows its size and byline');assert.ok(has(/New · fetched from blog\.example\/team\//));assert.ok(has(/Already in the library · byline Sam Rivera/));
   assert.ok(has(/1 already in the library/));assert.ok(has(/2 new pages are fetched once from blog\.example\/team\//));
   assert.equal(requests.some(r=>r.url==='/api/library-add'),false,'checking adds nothing');
@@ -1932,7 +1960,7 @@ async function voicesAndStyles(){
   await find('Add links to posts').listeners.click();assert.equal(f.run('window.linksOpened'),'voice-sample');
   await f.run('sVoiceTools()');await find('Add links to examples').listeners.click();assert.equal(f.run('window.linksOpened'),'style-sample');
   await f.run("sStyleDetail('product-announcement')");
-  assert.ok(text().includes('Edit this style guide'));assert.ok(text().includes('Retire this style'));assert.ok(text().some(t=>/^Starter style/.test(t)));
+  assert.ok(text().includes('Edit this style guide'));assert.ok(text().includes('Retire this kind of post'));assert.ok(text().some(t=>/^Starter style/.test(t)));
   // Learning a style needs the permission box, then sends the chosen examples.
   await f.run('sVoiceTools()');await find('Learn a style from examples').listeners.click();
   assert.ok(find('Use as an example'),'a reference can become an example of this kind');
@@ -2146,7 +2174,7 @@ async function researchRounds(){
 // manuscript is told to open Edit manuscript.
 async function skipResearch(){
   const requests=[];
-  const stages=[{stage:'research-plan',label:'Research questions',path:'derived/blog-research-plan.md',status:'approved'},{stage:'research',label:'Research findings',path:'derived/blog-research.md',status:'pending'},{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'pending'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'},{stage:'review',label:'Review',path:'derived/blog-review.md',status:'pending'},{stage:'package',label:'Export package',path:'derived/blog-package.md',status:'pending'}];
+  const stages=[{stage:'research-plan',label:'Research questions',path:'derived/blog-research-plan.md',status:'approved'},{stage:'research',label:'Research findings',path:'derived/blog-research.md',status:'pending'},{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'pending'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'},{stage:'review',label:'Review',path:'derived/blog-review.md',status:'pending'},{stage:'package',label:'Handoff',path:'derived/blog-package.md',status:'pending'}];
   const stopped={id:'synthetic',title:'Synthetic blog',status:'failed',enabled:false,next:'research',approval:'page',expected:'version-1',directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'step_by_step',ahead:{steps_left:5,next_gate:'research',next_stop:'Research findings',jobs:0,seconds:0,dollars:null,spent:null},existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},error:'The selected CLI failed.',research:{kept:false,rounds:3,refusal:null,last:null},stages};
   const after={...stopped,status:'queued',enabled:true,error:'',next:'outline',expected:'version-2',research:null,stages:stages.slice(2),ahead:{steps_left:4,next_gate:'outline',next_stop:'Outline',jobs:0,seconds:0,dollars:null,spent:null},decisions:[{event:'Continued without research',at:new Date().toISOString()}]};
   const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});if(url==='/api/run-skip-research'||url.startsWith('/api/run?'))return after;return {items:[],total:0};});f.loadRunner();
@@ -2186,9 +2214,9 @@ async function skipResearch(){
 // toast says whether the draft was kept there or why not. Earlier grouped stops still approve
 // the displayed version directly.
 async function finishEveryLevel(){
-  const stages=[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'approved'},{stage:'package',label:'Export package',path:'derived/blog-package.md',status:'draft'}];
+  const stages=[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'approved'},{stage:'package',label:'Handoff',path:'derived/blog-package.md',status:'draft'}];
   const atPackage={id:'synthetic',title:'Synthetic blog',status:'waiting-for-approval',complete:false,next:'package',approval:'page',expected:'version-2',enabled:true,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},stages};
-  const shown={id:'synthetic',title:'Synthetic blog',name:'blog-package.md',stage:'package',label:'Export package',expected:'version-2',status:'draft',content:'# Handoff',notes:'',checks:[],previous:null,diff:[],bundle:[{stage:'draft',label:'Draft',content:'# The draft text'}]};
+  const shown={id:'synthetic',title:'Synthetic blog',name:'blog-package.md',stage:'package',label:'Handoff',expected:'version-2',status:'draft',content:'# Handoff',notes:'',checks:[],previous:null,diff:[],bundle:[{stage:'draft',label:'Draft',content:'# The draft text'}]};
   for(const [level,library,toast] of [['step_by_step',{id:'kept',revision:1},'Finished. Kept in the team library.'],['balanced',{id:'kept',revision:2},'Finished. Kept in the team library.'],['automatic',{reason:'it could not be saved here.'},'Finished. Not kept in the team library: it could not be saved here.']]){
     const requests=[];const done={...atPackage,review_level:level,status:'complete',complete:true,next:null,expected:'version-3',stages:stages.map(row=>({...row,status:'approved'})),library};
     const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});if(url==='/api/run-approve'||url.startsWith('/api/run?'))return done;if(url.startsWith('/api/run-file'))return {content:'# The draft',name:'DRAFT.md'};return {items:[],total:0};});f.loadRunner();

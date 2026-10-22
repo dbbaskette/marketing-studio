@@ -60,7 +60,7 @@ STAGES = {
         'Distinguish your judgment from completed mechanical checks; unresolved facts stay unresolved.',
     ),
     'package': (
-        'Export package',
+        'Handoff',
         'derived/blog-package.md',
         'Prepare a publication handoff: selected title, alternative titles, excerpt, suggested '
         'description, links to check and unresolved review findings. Do not publish anything.',
@@ -1063,9 +1063,9 @@ def create(root, data, approval='conversation'):
     elif mode == 'review':
         stop = 'review'
     elif mode == 'revise' and stop == 'outline':
-        raise ValueError('A revision starts at draft. Choose draft, review or export package.')
+        raise ValueError('A revision starts at draft. Choose draft, review or the handoff.')
     if stop not in ('outline', 'draft', 'review', 'package'):
-        raise ValueError('Choose outline, draft, review or export package.')
+        raise ValueError('Choose outline, draft, review or the handoff.')
     from_files = mode == 'from-files'
     angles_first = from_files and not point
     brief = {
@@ -1124,7 +1124,7 @@ def create(root, data, approval='conversation'):
         if mode in ('revise', 'review') and not existing:
             raise ValueError('This blog has no saved manuscript to revise or review.')
         if existing and stop in ('outline', 'draft') and mode != 'revise':
-            raise ValueError('An existing draft starts at review. Choose review or export package.')
+            raise ValueError('An existing draft starts at review. Choose review or the handoff.')
     else:
         # No profile key: the default voice applies. An empty one is "No particular voice":
         # the described tone. An ID pins that voice.

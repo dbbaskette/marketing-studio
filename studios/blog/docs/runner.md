@@ -201,12 +201,12 @@ spending limit; your account's usage charges or limits still apply.
 | An outline | Is this the argument you want? |
 | A draft | Does it say what you mean, in your voice? |
 | A review | Which findings need changes? |
-| An export package | Are the title, excerpt and handoff ready? |
+| The handoff | Are the title, excerpt and links ready to hand over? |
 
 How often you decide depends on the shared **Review level** in **Settings**; a
 run keeps the level it started with. The default, **Balanced**, stops for you
 twice: at the outline, with the research questions and findings beside it, and
-at the run's last step (the export package or your chosen stop), with the steps
+at the run's last step (the handoff or your chosen stop), with the steps
 since the outline beside it. The steps between continue on their own; Blog Studio
 records that the review level accepted them, never that you approved them.
 **Step by step** stops at every row, and **Automatic draft** only at the last
@@ -291,7 +291,7 @@ For an ordinary saved blog, open its details and choose **Run this blog**.
 
 Join from **Settings** or **Status**. The page switches to its own team clone.
 Blogs have one driver, with **Take this blog**, **Take over**, **Hand over**, and
-numbered **Publish revision** controls. **Share now** retries pending decisions.
+**Record in team repository** controls. **Share now** retries pending decisions.
 See [team workspaces and migration](team-workspace.md) and the
 [shared studios settings](shared-studios.md). Settings saves shared values to
 that file directly, with no local override or additional consent toggle. Missing

@@ -1255,6 +1255,13 @@ class SharedPatternTests(RunnerCase):
             'Drawn again: the review and every step after it, 2 steps. Last time they took '
             '10 minutes and about $1.00.'))
 
+    def test_stage_labels(self):
+        self.assertEqual(runner.STAGES['package'][0], 'Handoff')
+        found = self.create(page=True)
+        self.assertEqual(found['stages'][-1]['label'], 'Handoff')
+        with self.assertRaisesRegex(ValueError, 'or the handoff'):
+            self.create(page=True, title='Stopped nowhere', stop='angles')
+
     def blogs(self):
         folder = self.root / 'articles'
         return sorted(path.name for path in folder.iterdir()) if folder.is_dir() else []
