@@ -58,18 +58,22 @@ def took(attempts) -> dict:
 
 def cost(seconds, dollars) -> str:
     """Time and money as a person says them: "12 minutes and about $1.40", or the time and
-    that the assistant reported no cost."""
-    if dollars is None:
+    that the assistant reported no cost. A cost of nothing is never said as "$0.00": none
+    reported is said so, and a few tenths of a cent are less than $0.01."""
+    if dollars is None or float(dollars) <= 0:
         return f'{lasted(seconds)}; the assistant reported no cost'
+    if float(dollars) < 0.005:
+        return f'{lasted(seconds)} and less than $0.01'
     return f'{lasted(seconds)} and about ${float(dollars):,.2f}'
 
 
-def redone(first: str, steps: int, seconds, dollars) -> str:
+def redone(first: str, steps: int, seconds, dollars, after: str = 'every step after it') -> str:
     """What an Ask for changes sheet says before it is sent: what is drawn again, from
     `first` on, and what those steps took the last time they ran. `seconds` is None when
-    this computer has no record of one of them."""
+    this computer has no record of one of them. `after` says which other steps are counted:
+    every one after it, or, where that is what runs again, what is written from it."""
     many = steps > 1
-    said = f'Drawn again: {first}' + (f' and every step after it, {steps} steps' if many else '')
+    said = f'Drawn again: {first}' + (f' and {after}, {steps} steps' if many else '')
     if seconds is None:
         return said + f'; this computer has no record of what {"they" if many else "it"} cost.'
     return said + f'. Last time {"they" if many else "it"} took {cost(seconds, dollars)}.'

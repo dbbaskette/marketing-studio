@@ -29,9 +29,9 @@ def effective(values, problem=None):
     none, Step by step when what it names cannot be used or the file cannot be read."""
     if problem:
         return 'step_by_step'
-    value = (values or {}).get('review')
-    if value is None:
+    if 'review' not in (values or {}):
         return 'balanced'
+    value = values['review']
     try:
         check(value)
     except ValueError:
@@ -63,10 +63,9 @@ def ahead(record, product, gates, last=None, first='outline'):
 def capture():
     from studio_core import studios_config
     values, problem = studios_config.read()
-    if problem:
-        # Never increase autonomy when settings cannot be read.
-        return {'schema': 1, 'level': 'step_by_step'}
-    return snapshot(values)
+    # Unusable stored defaults must not break setup or increase autonomy. Saved run
+    # policies still use level()'s strict schema validation.
+    return {'schema': 1, 'level': effective(values, problem)}
 
 
 def level(record):

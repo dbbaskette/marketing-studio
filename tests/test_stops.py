@@ -69,6 +69,19 @@ class StopWordsTests(unittest.TestCase):
         self.assertEqual(stops.redone('the handoff', 1, None, None), (
             'Drawn again: the handoff; this computer has no record of what it cost.'))
 
+    def test_no_reported_cost_is_never_said_as_nothing_spent(self):
+        # A cost nobody reported, or one that rounds to nothing, is never "$0.00".
+        self.assertEqual(stops.cost(60, 0), '1 minute; the assistant reported no cost')
+        self.assertEqual(stops.cost(60, 0.003), '1 minute and less than $0.01')
+        self.assertEqual(stops.redone('the outline', 3, 600, 0), (
+            'Drawn again: the outline and every step after it, 3 steps. Last time they took '
+            '10 minutes; the assistant reported no cost.'))
+        # What a change writes again may be what is written from a file, not every later step.
+        self.assertEqual(stops.redone('the blueprint', 4, None, None,
+                                      after='what is written from it'), (
+            'Drawn again: the blueprint and what is written from it, 4 steps; this computer '
+            'has no record of what they cost.'))
+
     def test_no_job_starts_with_less_than_the_floor_left(self):
         self.assertEqual((stops.floor(20), stops.floor(1), stops.floor(0)), (0.5, 0.25, 0.0))
 

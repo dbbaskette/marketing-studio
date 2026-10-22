@@ -2919,7 +2919,7 @@ class Engine(Jobs, Researching):
                 seconds += float(last.get('seconds') or 0)
                 if step.kind == 'agent':
                     dollars.append(last.get('dollars'))
-        priced = None if None in dollars else round(sum(dollars), 4)
+        priced = None if None in dollars or not dollars else round(sum(dollars), 4)
         return {'steps': len(again), 'names': [step.label for step in again],
                 'seconds': seconds if recorded else None,
                 'dollars': priced if recorded else None,
@@ -2942,7 +2942,8 @@ class Engine(Jobs, Researching):
         step = lambda name: stages.BY_NAME.get(name) or stages.BY_NAME.get(name.partition(':')[0])
         priced = [attempt for name, attempt in tried
                   if step(name) is None or step(name).kind == 'agent']
-        dollars = stops.took(priced)['dollars'] if priced else (0.0 if tried else None)
+        # No assistant job yet: no cost has been reported, which is not the same as $0.00.
+        dollars = stops.took(priced)['dollars'] if priced else None
         # What the stop decides, as a sentence says it: under Balanced, the outline's stop
         # is the direction.
         words = nxt and ('direction' if nxt['name'] == 'gate:outline'
@@ -2977,20 +2978,28 @@ class Engine(Jobs, Researching):
         it was kept from, and the rest of the last build, from its set-up to its render.
         Said before a whole deck is drawn again, with how many sections that is."""
         stood = (record.get('last_build') or {}).get('tries') or {}
-        tried, sections = [], 0
+        tried, agents, sections = [], [], 0
         for name, entry in (record.get('steps') or {}).items():
             if not isinstance(entry, dict):
                 continue
+            agent = stages.BY_NAME[name.partition(':')[0]].kind == 'agent' \
+                if name.partition(':')[0] in stages.BY_NAME else True
             if name.startswith('build-sections:'):
                 kept = [attempt for attempt in entry.get('tries') or []
                         if attempt.get('outcome') == 'kept']
                 if kept:
                     tried.append(kept[-1])
+                    agents += [(name, kept[-1])] if agent else []
                     sections += 1
             elif name.partition(':')[0] in BUILT:
-                tried += list(entry.get('tries') or [])[stood.get(name, 0):]
-        dollars = [attempt['dollars'] for attempt in tried if attempt.get('dollars') is not None]
-        return {'dollars': round(sum(dollars), 4) if dollars else None,
+                these = list(entry.get('tries') or [])[stood.get(name, 0):]
+                tried += these
+                agents += [(name, attempt) for attempt in these] if agent else []
+        # Dollars only when every one of its assistant's jobs reported them: a step of the
+        # runner's own reports none, and is not counted against the sum.
+        priced = [attempt.get('dollars') for name, attempt in agents]
+        dollars = None if not priced or None in priced else round(sum(priced), 4)
+        return {'dollars': dollars,
                 'seconds': round(sum(attempt.get('seconds') or 0 for attempt in tried), 1),
                 'sections': sections}
 

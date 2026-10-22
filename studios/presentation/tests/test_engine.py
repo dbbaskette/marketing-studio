@@ -81,6 +81,17 @@ class AheadTests(StudioCase):
     """Each deck's view says how many steps are left, where it next stops for the person
     under its own level, and what its agent's jobs have spent so far."""
 
+    def test_runner_only_steps_do_not_claim_a_reported_zero_cost(self):
+        root = self.start()
+        record = decks.read_run(root)
+        record['steps'] = {name: entry for name, entry in record['steps'].items()
+                           if (stages.BY_NAME.get(name) or
+                               stages.BY_NAME[name.partition(':')[0]]).kind == 'code'}
+        self.assertTrue(record['steps'])
+        ahead = self.engine._still_to_come(record)
+        self.assertIsNone(ahead['dollars'])
+        self.assertIn('the assistant reported no cost', ahead['spent'])
+
     def test_the_view_says_steps_left_the_next_stop_and_spent(self):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture',
@@ -115,6 +126,31 @@ class AheadTests(StudioCase):
             plain = self.start(title='Plain deck')
         self.assertEqual(self.view(plain)['ahead']['next_gate'], 'gate:outline')
         self.assertEqual(self.view(plain)['ahead']['next_stop'], 'Approve the outline')
+
+
+class NoCostYetTests(StudioCase):
+    """Only the runner's own steps have run, or the build's jobs reported no cost: nothing
+    is said as $0.00."""
+
+    def test_a_deck_that_ran_only_its_own_steps_reports_no_cost_yet(self):
+        root = self.start()
+        run = decks.read_run(root)
+        run['steps'] = {'intake-source': {'failed': 0, 'done': True,
+                                          'tries': [{'seconds': 2, 'dollars': None}]}}
+        decks.write_run(root, run)
+        ahead = self.view(root)['ahead']
+        self.assertIsNone(ahead['dollars'])
+        self.assertNotIn('$', ahead['spent'])
+        self.assertTrue(ahead['spent'].endswith('; the assistant reported no cost'))
+
+    def test_the_last_build_reports_no_dollars_when_a_build_job_reported_none(self):
+        record = {'steps': {
+            'build-sections:1': {'tries': [{'outcome': 'kept', 'seconds': 300, 'dollars': 1.5}]},
+            'build-review': {'tries': [{'outcome': 'kept', 'seconds': 120, 'dollars': None}]},
+            'build-render': {'tries': [{'outcome': 'kept', 'seconds': 30, 'dollars': None}]}}}
+        self.assertIsNone(self.engine._last_build(record)['dollars'])
+        record['steps']['build-review']['tries'][0]['dollars'] = 0.5
+        self.assertEqual(self.engine._last_build(record)['dollars'], 2.0)
 
 
 class RedoTests(StudioCase):

@@ -18,6 +18,12 @@ class ReviewPolicyTests(IsolatedHome):
         with mock.patch('studio_core.studios_config.read', return_value=({}, 'Unreadable')):
             self.assertEqual(review.capture()['level'], 'step_by_step')
 
+    def test_capture_uses_step_by_step_for_invalid_saved_defaults(self):
+        for invalid in (None, {}, {'level': 'unknown'}, ['automatic']):
+            with self.subTest(invalid=invalid), mock.patch(
+                    'studio_core.studios_config.read', return_value=({'review': invalid}, None)):
+                self.assertEqual(review.capture(), {'schema': 1, 'level': 'step_by_step'})
+
     def test_save_roundtrip_preserves_other_values_and_rejects_conflicts(self):
         shared.update({'private': {'keep': 7}, 'review': {'level': 'balanced'}})
         before = preferences.visible(shared.read()[0])

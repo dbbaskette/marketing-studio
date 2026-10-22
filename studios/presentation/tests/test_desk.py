@@ -652,6 +652,35 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('No slides marked: the whole deck is drawn again (about $7.20 and 18 '
                       'minutes, as the last build took).', result['snapshots']['sheet']['sheet'])
 
+    def test_the_whole_deck_sentence_says_when_no_cost_was_reported(self):
+        path = self.started()
+        for _ in range(10):
+            if self.run_of(path)['gate']['name'] == 'gate:build':
+                break
+            self.decided(path)
+        shown = self.run_of(path)
+        for dollars in (None, 0):
+            with self.subTest(dollars=dollars):
+                quiet = {**shown, 'gate': {**shown['gate'], 'last_build': {
+                    'dollars': dollars, 'seconds': 1080, 'sections': 1}}}
+                result = self.deck_screen(path, [{'click': 'Ask for changes'},
+                                                 {'snapshot': 'sheet'}],
+                                          **{'GET /api/run': [ok(quiet)]})
+                sheet = result['snapshots']['sheet']['sheet']
+                self.assertIn('No slides marked: the whole deck is drawn again (about 18 '
+                              'minutes, as the last build took; the assistant reported no '
+                              'cost).', sheet)
+                self.assertNotIn('$0.00', sheet)
+
+    def test_a_now_line_never_says_nothing_was_spent(self):
+        path = self.started()
+        shown = self.run_of(path)
+        working = {**shown, 'state': 'working', 'gate': None,
+                   'spent': {**shown['spent'], 'dollars': 0}}
+        result = self.deck_screen(path, [{'snapshot': 'deck'}],
+                                  **{'GET /api/run': [ok(working)]})
+        self.assertNotIn('$0.00', result['snapshots']['deck']['text'])
+
     def test_asking_for_changes_at_the_outline_says_what_is_drawn_again(self):
         path = self.started()
         shown = self.run_of(path)
