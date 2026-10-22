@@ -2854,6 +2854,7 @@ class Engine(Jobs, Researching):
             'kept': self._set_aside(root), 'clash': root.name in self._clash,
             'queue': self._queue(run) if mine else None,
             'spent': {'dollars': dollars, 'tokens': tokens},
+            'ahead': self._still_to_come(record),
             'agent': record.get('agent'), 'model': record.get('model'),
             'effort': record.get('level_of_effort'),
             'model_mode': (record.get('model_profiles') or {}).get('mode', 'single'),
@@ -2882,6 +2883,32 @@ class Engine(Jobs, Researching):
                          == 'google'}
                         if said else None),
             'contactSheet': (root / build.SHEET).is_file()}
+
+    @staticmethod
+    def _still_to_come(record: dict) -> dict:
+        """What is left of a deck, and what it has spent: the steps not done, the first gate
+        among them its own level always stops at (one a grave finding may still hold is not
+        counted), and the seconds of every try with the dollars of its agent's jobs, said
+        only when every one of them reported its cost."""
+        rows = [row for row in stages.timeline(record) if row['state'] not in ('done', 'later')]
+        gates = review_policy.ahead(record, 'presentation',
+                                    [row['name'] for row in rows if row['name'].startswith('gate:')])
+        nxt = next((row for row in rows if gates and row['name'] == gates[0]), None)
+        tried = [(name, attempt) for name, entry in (record.get('steps') or {}).items()
+                 if isinstance(entry, dict) for attempt in entry.get('tries') or []]
+        took = stops.took([attempt for _, attempt in tried])
+        step = lambda name: stages.BY_NAME.get(name) or stages.BY_NAME.get(name.partition(':')[0])
+        priced = [attempt for name, attempt in tried
+                  if step(name) is None or step(name).kind == 'agent']
+        dollars = stops.took(priced)['dollars'] if priced else (0.0 if tried else None)
+        # What the stop decides, as a sentence says it: under Balanced, the outline's stop
+        # is the direction.
+        words = nxt and ('direction' if nxt['name'] == 'gate:outline'
+                         and review_policy.level(record) == 'balanced' else WORDS[nxt['name']])
+        return {'steps_left': len(rows), 'next_gate': nxt and nxt['name'],
+                'next_stop': nxt and nxt['label'], 'next_words': words, 'jobs': took['jobs'],
+                'seconds': took['seconds'], 'dollars': dollars,
+                'spent': stops.cost(took['seconds'], dollars) if tried else None}
 
     @staticmethod
     def _sections_kept(root: Path) -> dict | None:

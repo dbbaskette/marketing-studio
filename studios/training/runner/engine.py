@@ -4223,6 +4223,7 @@ class Engine(Reviewing):
             'steps': self._steps(record, found, state, root),
             'workers': self._workers(run),
             'spent': {'dollars': dollars, 'tokens': tokens},
+            'ahead': self._still_to_come(record, found),
             'note': self._note_view(record),
             'question': ({'id': asked['id'], 'text': asked['text'], 'from': asked['from']}
                          if asked else None),
@@ -4245,6 +4246,28 @@ class Engine(Reviewing):
                           'limitations': list(report['limitations']),
                           'blocking': list(report['blocking']), 'index': report['file']}
                          if report and not resting else None)}
+
+    @staticmethod
+    def _still_to_come(record: dict, found: pipeline.Survey) -> dict:
+        """What is left of a training, and what it has spent: the steps not done, the first
+        decision among them its own level always stops at (one a grave finding may still
+        hold is not counted), and the seconds of every try with the dollars of its agent's
+        jobs, said only when every one of them reported its cost."""
+        left = [step for step in found.steps if step.id not in found.done]
+        decisions = [step.id for step in left if step.kind not in ('agent', 'code')]
+        gates = review_policy.ahead(record, 'training', decisions)
+        nxt = next((step for step in left if gates and step.id == gates[0]), None)
+        kinds = {step.id: step.kind for step in found.steps}
+        tried = [(name, attempt) for name, entry in record['steps'].items()
+                 for attempt in entry.get('attempts', [])]
+        took = stops.took([attempt for _, attempt in tried])
+        priced = [attempt for name, attempt in tried
+                  if kinds.get(name, kinds.get(name.partition(':')[0], 'agent')) == 'agent']
+        dollars = stops.took(priced)['dollars'] if priced else (0.0 if tried else None)
+        return {'steps_left': len(left), 'next_gate': nxt and nxt.id,
+                'next_stop': nxt and nxt.label, 'jobs': took['jobs'],
+                'seconds': took['seconds'], 'dollars': dollars,
+                'spent': stops.cost(took['seconds'], dollars) if tried else None}
 
     def _controls(self, record: dict, found: pipeline.Survey, state: str, mine: bool) -> dict:
         """The soft controls a run offers: `finish_level` names the level in hand when it

@@ -70,6 +70,42 @@ class WhereThisTrainingStopsTests(StudioCase):
             pipeline.check_form({**FORM, 'review_default': 'yes'})
 
 
+class AheadTests(StudioCase):
+    """Each training's view says how many steps are left, where it next stops for the person
+    under its own level, and what its agent's jobs have spent so far."""
+
+    def test_the_view_says_steps_left_the_next_stop_and_spent(self):
+        root = self.start()
+        shown = self.view(root)
+        ahead = shown['ahead']
+        left = [step for step in shown['steps'] if step['status'] != 'done']
+        self.assertEqual(ahead['steps_left'], len(left))
+        self.assertEqual(ahead['next_gate'], 'gate:research-plan')
+        self.assertEqual(ahead['next_stop'], next(step['label'] for step in left
+                                                   if step['id'] == 'gate:research-plan'))
+        # The scripted agents report no cost: the line says so, never $0.00.
+        self.assertIsNone(ahead['dollars'])
+        self.assertTrue(ahead['spent'].endswith('; the assistant reported no cost'),
+                        ahead['spent'])
+        record = self.engine._load(root)
+        kinds = {step['id']: step['kind'] for step in shown['steps']}
+        priced = 0
+        for name, entry in record['steps'].items():
+            if kinds.get(name, kinds.get(name.partition(':')[0], 'agent')) == 'agent':
+                for attempt in entry.get('attempts', []):
+                    attempt['dollars'] = 0.25
+                    priced += 1
+        self.assertGreater(priced, 0)
+        self.engine._store(root, record)
+        self.assertEqual(self.view(root)['ahead']['dollars'], round(0.25 * priced, 2))
+        # Balanced reads the research plan too; Automatic draft goes on past it.
+        from unittest import mock
+        with mock.patch('studio_core.review_policy.capture',
+                        return_value={'schema': 1, 'level': 'automatic'}):
+            fast = self.start(title='Fast training')
+        self.assertNotEqual(self.view(fast)['ahead']['next_gate'], 'gate:research-plan')
+
+
 class FormToGateThreeTests(StudioCase):
     def test_the_form_becomes_a_training_made_through_the_core_in_page_mode(self):
         root = self.start()

@@ -3456,6 +3456,17 @@ function stageBead(found) {
   return STEP_WORDS[found.at];
 }
 
+// One line under the beads: how many steps are left, where the deck next stops for you under
+// its own level, and what it has spent so far, all as the runner says them.
+function aheadLine(run) {
+  const ahead = run.ahead;
+  if (!ahead || !ahead.steps_left) return null;
+  const parts = [count(ahead.steps_left, 'step left', 'steps left')];
+  if (ahead.next_words) parts.push('Next stop: the ' + ahead.next_words);
+  if (ahead.spent) parts.push('So far ' + ahead.spent);
+  return make('p', 'quiet ahead-line', parts.join(' · '));
+}
+
 function timelinePart(run) {
   const row = make('ol', 'beads timeline');
   row.setAttribute('aria-label', 'Its stages');
@@ -3473,7 +3484,7 @@ function timelinePart(run) {
   const caption = told ? make('p', 'beads-caption', told.name + ': ' + stageBead(told)[1]) : null;
   if (caption) caption.setAttribute('aria-hidden', 'true');
   return add(make('section', 'card shine'), make('h2', 'card-title', 'Where it is'), row,
-    caption);
+    caption, aheadLine(run));
 }
 
 // What a step has taken so far.
@@ -5326,7 +5337,7 @@ function paintDeck(fresh) {
       run.timeline, run.workers, run.spent, run.build_progress && run.build_progress.slides],
     () => deckIntro(run)],
     noting(run) ? ['note', [run.note, run.state, read], () => notePart(run)] : null,
-    ['timeline', [run.timeline, gate && gate.name], () => timelinePart(run)],
+    ['timeline', [run.timeline, gate && gate.name, run.ahead], () => timelinePart(run)],
     read && (driver || !finished) ? ['theirs', [driver, lead, run.taken, run.notice,
       run.last_shared, run.kept, title], () => theirsPart(run, lead === 'take')] : null,
     !read && run.notice ? ['notice', [run.notice, run.clash, run.kept],

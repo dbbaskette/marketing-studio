@@ -101,7 +101,7 @@ class ReviewLevelsTests(DeckCase):
         # its plan is left where it is.
         from runner_support import fails
 
-        def before(record, product, gate, last=None, holding=()):
+        def before(record, product, gate, last=None, holding=(), first='outline'):
             return not gate.startswith('review:') and gate not in ('documents', 'intake', 'deck')
 
         with mock.patch.object(review_policy, 'automatic', before):

@@ -15,7 +15,7 @@ import uuid
 import studio
 import blog_worker
 import editorial
-from studio_core import model_profiles, review_policy, research_contract
+from studio_core import model_profiles, review_policy, research_contract, stops
 from studio_core.preferences import ready as shared_ready
 
 STATE = 'derived/blog-run.json'
@@ -792,6 +792,22 @@ def survey(root, ident, listing=False):
                 'request': saved.get('request', ''),
             }
         )
+    # What is left: the stages not yet approved, and the first of them that stops for the
+    # person under this run's own level. The angles always do: the person picks one.
+    left = [row['stage'] for row in rows if row['status'] != 'approved']
+    stops_ahead = review_policy.ahead(
+        run,
+        'blog',
+        [stage for stage in left if stage != 'angles'],
+        last=run['pipeline'][-1],
+        first='outline' if 'outline' in run['pipeline'] else 'draft',
+    )
+    next_gate = 'angles' if 'angles' in left else (stops_ahead[0] if stops_ahead else None)
+    ahead = {
+        'steps_left': len(left),
+        'next_gate': next_gate,
+        'next_stop': STAGES[next_gate][0] if next_gate else None,
+    }
     # What moves the run on: the person's decision on a submitted document, or a submission.
     awaits = None
     if next_stage:
@@ -834,6 +850,7 @@ def survey(root, ident, listing=False):
         'seconds': run['seconds'],
         'stages': rows,
         'next': next_stage,
+        'ahead': ahead,
         'awaits': awaits,
         'complete': next_stage is None,
         'content': content,
@@ -1782,9 +1799,38 @@ class Engine:
         except (ValueError, OSError):
             pass
 
+    def note_job(self, ident, stage, began, metered):
+        """Keep one stage job in this computer's run state: its seconds, and the tokens and
+        dollars its CLI reported, each None unless every CLI job in it reported one. A job
+        no CLI ran in is not kept. Best effort: a busy workspace skips a note, never the work."""
+        if not metered:
+            return
+        tokens = [job['tokens'] for job in metered]
+        dollars = [job['dollars'] for job in metered]
+        entry = {
+            'stage': stage,
+            'seconds': round(time.monotonic() - began, 1),
+            'tokens': sum(tokens) if None not in tokens else None,
+            'dollars': round(sum(dollars), 4) if None not in dollars else None,
+        }
+        try:
+            with studio.locked(self.root):
+                state = self.local(ident)
+                state['jobs'] = (state.get('jobs') or [])[-199:] + [entry]
+                self.keep_local(ident, state)
+        except (ValueError, OSError):
+            pass
+
     def describe(self, ident, listing=False):
         found = survey(self.root, ident, listing)
         local = self.local(ident)
+        # What this run has spent so far, as its stage jobs reported it on this computer.
+        took = stops.took(local.get('jobs'))
+        found['ahead'] = {
+            **found['ahead'],
+            **took,
+            'spent': stops.cost(took['seconds'], took['dollars']) if took['jobs'] else None,
+        }
         status = local.get('status', 'paused')
         if found['complete']:
             status = 'complete'
@@ -1929,6 +1975,9 @@ class Engine:
             )
         pending = None
         review_attempts = []
+        # Every CLI job this stage runs, metered: kept once it ends, whatever its outcome.
+        meter, began = blog_worker.metered(), time.monotonic()
+        metered = meter.__enter__()
         try:
             if found['next'] == 'research' and run.get('research_contract'):
                 import synthesis_research
@@ -2094,6 +2143,8 @@ class Engine:
                     )
                     self.keep_local(ident, state)
         finally:
+            meter.__exit__(None, None, None)
+            self.note_job(ident, found['next'], began, metered)
             if pending:
                 pending.cleanup()
             self.current = None

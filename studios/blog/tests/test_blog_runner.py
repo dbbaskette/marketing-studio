@@ -1219,6 +1219,24 @@ class SharedPatternTests(RunnerCase):
         studios_config.update({'review': {'level': 'balanced'}})
         self.assertEqual(runner.settings(self.root)['review_level'], 'balanced')
 
+    def test_the_view_says_steps_left_and_the_next_stop(self):
+        import studios_config
+
+        studios_config.update({'review': {'level': 'balanced'}})
+        found = self.create(page=True)
+        self.assertEqual(found['ahead']['steps_left'], 4)
+        self.assertEqual(found['ahead']['next_stop'], 'Outline')
+        self.assertEqual(found['ahead']['next_gate'], 'outline')
+        found = self.approve(self.submit(found, page=True), page=True)
+        self.assertEqual(found['ahead']['steps_left'], 3)
+        self.assertEqual(found['ahead']['next_gate'], 'package', 'Balanced reads the handoff next')
+        self.assertEqual(found['ahead']['next_stop'], runner.STAGES['package'][0])
+        # A saved run with no jobs recorded says nothing of what it spent.
+        engine = runner.Engine(self.root, worker=self.worker())
+        self.addCleanup(engine.close)
+        shown = engine.describe(found['id'])['ahead']
+        self.assertEqual((shown['jobs'], shown['spent']), (0, None))
+
     def blogs(self):
         folder = self.root / 'articles'
         return sorted(path.name for path in folder.iterdir()) if folder.is_dir() else []

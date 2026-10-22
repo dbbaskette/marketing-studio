@@ -77,6 +77,46 @@ class ReviewLevelFormTests(StudioCase):
         self.assertEqual(self.shared.read()[0]['review'], {'level': 'step_by_step'})
 
 
+class AheadTests(StudioCase):
+    """Each deck's view says how many steps are left, where it next stops for the person
+    under its own level, and what its agent's jobs have spent so far."""
+
+    def test_the_view_says_steps_left_the_next_stop_and_spent(self):
+        from studio_core import review_policy
+        with mock.patch.object(review_policy, 'capture',
+                               return_value={'schema': 1, 'level': 'balanced'}):
+            root = self.start(research=True)
+        shown = self.view(root)
+        ahead = shown['ahead']
+        self.assertEqual(ahead['next_stop'], 'Review the direction')
+        self.assertEqual(ahead['next_gate'], 'gate:outline')
+        self.assertEqual(ahead['steps_left'], len([row for row in shown['timeline']
+                                                    if row['state'] not in ('done', 'later')]))
+        self.assertEqual(ahead['steps_left'], 10)
+        # The scripted agents report no cost: the line says so, never $0.00.
+        self.assertIsNone(ahead['dollars'])
+        self.assertTrue(ahead['spent'].endswith('; the assistant reported no cost'))
+        # Every agent job priced: the dollars are their sum. A step of the runner's own costs
+        # nothing and reports nothing; it is not counted against the sum.
+        run = decks.read_run(root)
+        for name, entry in run['steps'].items():
+            if (stages.BY_NAME.get(name) or stages.BY_NAME[name.partition(':')[0]]).kind == 'agent':
+                for attempt in entry['tries']:
+                    attempt['dollars'] = 0.5
+        decks.write_run(root, run)
+        self.assertEqual(self.view(root)['ahead']['dollars'], 2.5)
+        self.assertTrue(self.view(root)['ahead']['spent'].endswith('and about $2.50'))
+        run['steps']['outline']['tries'][0]['dollars'] = None
+        decks.write_run(root, run)
+        self.assertIsNone(self.view(root)['ahead']['dollars'])
+        # Step by step stops at the next gate there is, the outline.
+        with mock.patch.object(review_policy, 'capture',
+                               return_value={'schema': 1, 'level': 'step_by_step'}):
+            plain = self.start(title='Plain deck')
+        self.assertEqual(self.view(plain)['ahead']['next_gate'], 'gate:outline')
+        self.assertEqual(self.view(plain)['ahead']['next_stop'], 'Approve the outline')
+
+
 class ScratchTests(StudioCase):
     def test_a_scratch_deck_stops_at_each_gate_and_is_delivered(self):
         root = self.start()

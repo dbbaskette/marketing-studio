@@ -608,6 +608,28 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertNotIn(f'Move down: “{first}”', closed['buttons'])
         self.assertIn(f'Move down: “{first}”', opened['buttons'])
 
+    def test_the_deck_says_steps_left_its_next_stop_and_what_it_has_spent(self):
+        path = self.started()
+        shown = self.run_of(path)
+        ahead = shown['ahead']
+        result = self.deck_screen(path, [{'snapshot': 'deck'}])
+        self.assertIn(f"{ahead['steps_left']} steps left · Next stop: the outline · So far "
+                      f"{ahead['spent']}", result['snapshots']['deck']['text'])
+        self.assertNotIn('$0.00', result['snapshots']['deck']['text'])
+        # A Codex deck that has worked three minutes, on a phone: the line wraps under the
+        # beads and the toolbar keeps its one decision.
+        codex = {**shown, 'ahead': {**ahead, 'seconds': 180, 'dollars': None,
+                                    'spent': '3 minutes; the assistant reported no cost'}}
+        result = self.deck_screen(path, [{'snapshot': 'phone'}], narrow=True,
+                                  **{'GET /api/run': [ok(codex)]})
+        phone = result['snapshots']['phone']
+        self.assertIn('So far 3 minutes; the assistant reported no cost', phone['text'])
+        self.assertEqual(phone['filled'], ['Approve'])
+        # A saved deck from before: no ahead, and the screen draws without it.
+        old = {key: value for key, value in shown.items() if key != 'ahead'}
+        result = self.deck_screen(path, [{'snapshot': 'old'}], **{'GET /api/run': [ok(old)]})
+        self.assertNotIn('steps left', result['snapshots']['old']['text'])
+
     def test_a_phone_keeps_one_decision_in_the_toolbar(self):
         path = self.started()
         result = self.deck_screen(path, [{'snapshot': 'phone'}, {'click': 'More'},

@@ -2682,6 +2682,25 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Notes for the next step', shot['text'])
         self.assertIn('Lean on the operator handbook. Went with: Do the research.', shot['text'])
 
+    def test_the_run_says_steps_left_its_next_stop_and_what_it_has_spent(self):
+        self.started()
+        going = 'Drafting the research questions.'
+        working = a_run('working', going, steps=steps('done', 'working'))
+        working['body']['ahead'] = {
+            'steps_left': 6, 'next_gate': 'gate:research-plan',
+            'next_stop': 'Your review of the research questions', 'jobs': 1, 'seconds': 180,
+            'dollars': None, 'spent': '3 minutes; the assistant reported no cost'}
+        answers = self.answers(**{'GET /api/trainings': [self.listed('working', going)],
+                                  'GET /api/training': [self.detail('working', going)],
+                                  'GET /api/run': [working]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'snapshot': 'phone'}], narrow=True)
+        phone = result['snapshots']['phone']
+        self.assertIn('6 steps left · Next stop: the research questions · So far 3 minutes; '
+                      'the assistant reported no cost', phone['text'])
+        self.assertNotIn('$0.00', phone['text'])
+        self.assertIn('Pause', phone['buttons'], 'the toolbar keeps its lead action')
+
     def test_a_phone_keeps_one_decision_in_the_toolbar(self):
         self.started()
         going = 'Drafting the research questions.'

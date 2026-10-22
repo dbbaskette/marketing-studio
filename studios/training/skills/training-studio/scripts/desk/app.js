@@ -4658,9 +4658,23 @@ function runStanding(run) {
     : runWords(run);
 }
 
+// One line under the beads: how many steps are left, where the training next stops for you
+// under its own level, and what it has spent so far, all as the runner says them.
+function aheadLine(run) {
+  const ahead = run.ahead;
+  if (!ahead || !ahead.steps_left) return null;
+  const parts = [count(ahead.steps_left, 'step left', 'steps left')];
+  if (ahead.next_stop) {
+    parts.push('Next stop: ' + lower(ahead.next_stop).replace(/^(your review of|review) /, ''));
+  }
+  if (ahead.spent) parts.push('So far ' + ahead.spent);
+  return make('p', 'quiet ahead-line', parts.join(' · '));
+}
+
 function runIntro(run, training, promised) {
   const node = add(make('div', 'intro'), nowLine(run), state(...runStanding(run)));
   if (list(training.stages).length) add(node, beads(training.stages, false));
+  add(node, aheadLine(run));
   add(node, make('p', 'lede run-says', run.sentence));
   const next = nextGate(run);
   // What someone else runs asks nothing of this person, and promises them nothing: who

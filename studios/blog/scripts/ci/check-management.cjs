@@ -1125,7 +1125,7 @@ async function whereThisRunStops(){
 // is doing now and for how long, a retry says what it costs, a note reaches the next job
 // without stopping, and a phone keeps one decision in the toolbar.
 async function sharedPattern(){
-  const requests=[];const found={id:'synthetic',title:'Synthetic blog',status:'working',next:'draft',approval:'page',expected:'version-1',enabled:true,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},started_at:new Date(Date.now()-3*60000).toISOString(),note_stage:'review',notes:{},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'},{stage:'review',label:'Review',path:'REVIEW.md',status:'pending'}]};
+  const requests=[];const found={id:'synthetic',title:'Synthetic blog',status:'working',next:'draft',approval:'page',expected:'version-1',enabled:true,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',ahead:{steps_left:2,next_gate:'draft',next_stop:'Draft',jobs:2,seconds:180,dollars:null,spent:'3 minutes; the assistant reported no cost'},decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},started_at:new Date(Date.now()-3*60000).toISOString(),note_stage:'review',notes:{},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'},{stage:'review',label:'Review',path:'REVIEW.md',status:'pending'}]};
   const f=fixture((url,options)=>{requests.push({url,options,data:options?.body?JSON.parse(options.body):null});if(url==='/api/upload')return f.run('studio.api_upload');if(url==='/api/run-create')return found;return url.startsWith('/api/run?')?found:{...found,noted:'draft'};});f.loadRunner();
   const text=()=>descendants(f.get('studio-page')).map(e=>e.textContent);
   // The start form: one line says where this run stops, from the shared review level.
@@ -1187,7 +1187,14 @@ async function sharedPattern(){
   assert.equal(now.textContent,'Drafting · 3 min of up to 10');
   f.run('studio.signature=JSON.stringify(found);const realNow=Date.now;Date.now=()=>realNow()+4*60000');await f.run('sPoll()');
   assert.equal(descendants(f.get('studio-page')).find(e=>e.className==='now-line').textContent,'Drafting · 7 min of up to 10','the now line ticks while nothing else changes');
-  assert.ok(text().some(t=>/cost is not tracked for a CLI account/.test(t)),'About says once that cost is not tracked');
+  assert.equal(text().some(t=>/cost is not tracked/.test(t)),false,'the run says what it spent instead');
+  assert.equal(descendants(f.get('studio-page')).find(e=>e.className==='quiet ahead-line')?.textContent,'2 steps left · Next stop: the draft · So far 3 minutes; the assistant reported no cost','one line under the beads: steps left, the next stop and what it has spent');
+  // A saved run from before jobs were kept says nothing of what it spent.
+  f.set('found',{...found,ahead:{...found.ahead,jobs:0,seconds:0,dollars:null,spent:null}});f.run('sRun(found)');
+  assert.equal(descendants(f.get('studio-page')).find(e=>e.className==='quiet ahead-line')?.textContent,'2 steps left · Next stop: the draft');
+  f.set('found',{...found,ahead:undefined});f.run('sRun(found)');
+  assert.equal(descendants(f.get('studio-page')).some(e=>e.className==='quiet ahead-line'),false,'a view without ahead draws without it');
+  f.set('found',found);f.run('sRun(found)');
   // A note for the next step goes with the next job and stops nothing.
   const note=descendants(f.get('studio-page')).find(e=>e.id==='note-request');note.value='Mention the gateway.';note.listeners.input();
   await descendants(f.get('studio-page')).find(e=>e.textContent==='Add the note').listeners.click();
@@ -1208,6 +1215,7 @@ async function sharedPattern(){
   // A phone keeps one decision in the toolbar and folds the rest into the menu.
   f.run("window.matchMedia=query=>({matches:/max-width/.test(query)});studio.screen='run';sRun({...found,status:'waiting-for-approval',enabled:true,error:'',stages:[found.stages[0],{...found.stages[1],status:'draft'}]})");
   const actions=f.get('actions').children;
+  assert.ok(descendants(f.get('studio-page')).some(e=>e.className==='quiet ahead-line'),'the ahead line is drawn on a phone too');
   assert.equal(actions.filter(e=>e.tagName==='button').length,1,'one action stays in the toolbar on a phone');
   assert.equal(actions[0].textContent,'Review Draft');assert.equal(actions[0].className,'button button-filled');
   const menu=actions.find(e=>e.tagName==='details');assert.equal(menu.className,'menu');
@@ -2131,12 +2139,12 @@ async function researchRounds(){
 async function skipResearch(){
   const requests=[];
   const stages=[{stage:'research-plan',label:'Research questions',path:'derived/blog-research-plan.md',status:'approved'},{stage:'research',label:'Research findings',path:'derived/blog-research.md',status:'pending'},{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'pending'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'},{stage:'review',label:'Review',path:'derived/blog-review.md',status:'pending'},{stage:'package',label:'Export package',path:'derived/blog-package.md',status:'pending'}];
-  const stopped={id:'synthetic',title:'Synthetic blog',status:'failed',enabled:false,next:'research',approval:'page',expected:'version-1',directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'step_by_step',existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},error:'The selected CLI failed.',research:{kept:false,rounds:3,refusal:null,last:null},stages};
-  const after={...stopped,status:'queued',enabled:true,error:'',next:'outline',expected:'version-2',research:null,stages:stages.slice(2),decisions:[{event:'Continued without research',at:new Date().toISOString()}]};
+  const stopped={id:'synthetic',title:'Synthetic blog',status:'failed',enabled:false,next:'research',approval:'page',expected:'version-1',directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'step_by_step',ahead:{steps_left:5,next_gate:'research',next_stop:'Research findings',jobs:0,seconds:0,dollars:null,spent:null},existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},error:'The selected CLI failed.',research:{kept:false,rounds:3,refusal:null,last:null},stages};
+  const after={...stopped,status:'queued',enabled:true,error:'',next:'outline',expected:'version-2',research:null,stages:stages.slice(2),ahead:{steps_left:4,next_gate:'outline',next_stop:'Outline',jobs:0,seconds:0,dollars:null,spent:null},decisions:[{event:'Continued without research',at:new Date().toISOString()}]};
   const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});if(url==='/api/run-skip-research'||url.startsWith('/api/run?'))return after;return {items:[],total:0};});f.loadRunner();
-  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),line=()=>nodes().find(e=>e.className==='quiet stops-line')?.textContent;
+  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),line=()=>nodes().find(e=>e.className==='quiet ahead-line')?.textContent;
   f.set('found',stopped);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
-  assert.equal(line(),'Step by step: it stops for the research plan, the research findings, the outline, the draft, the review and the handoff');
+  assert.equal(line(),'5 steps left · Next stop: the research findings');
   assert.ok(text().includes('Research is optional. Continue without research takes this blog on to the outline, from your brief and selected sources; the later steps get no research findings.'),text().join('|'));
   assert.equal(text().some(t=>/Open Edit manuscript/.test(t)),false,'a new blog has no manuscript to edit');
   assert.equal(f.get('actions').children.some(e=>e.textContent==='Edit manuscript'),false);
@@ -2148,7 +2156,7 @@ async function skipResearch(){
   assert.ok(sheet.some(e=>e.textContent==='The research steps leave this blog’s run, and it goes on to the outline from your brief and selected sources. The later steps get no research findings, and research cannot be added back to this run.'),sheet.map(e=>e.textContent).join('|'));
   await sheet.find(e=>e.tagName==='button'&&e.textContent==='Continue without research').listeners.click();
   assert.deepEqual(requests.find(r=>r.url==='/api/run-skip-research').data,{id:'synthetic',expected:'version-1'});
-  assert.equal(line(),'Step by step: it stops for the outline, the draft, the review and the handoff','the stops line no longer names research');
+  assert.equal(line(),'4 steps left · Next stop: the outline','the line no longer counts research');
   assert.ok(descendants(f.get('toasts')).some(e=>e.textContent==='Continuing without research.'));
   assert.equal(f.get('actions').children.some(e=>e.textContent==='Continue without research'),false,'not once research is gone');
   // An existing draft keeps the editing hint, and a working research offers no skip.
@@ -2156,9 +2164,9 @@ async function skipResearch(){
   assert.ok(text().includes('Research is optional for editing. Open Edit manuscript to polish the writing without research.'));
   f.set('found',{...stopped,status:'working',enabled:true,error:'',started_at:new Date().toISOString()});f.run('sRun(found)');
   assert.equal(f.get('actions').children.some(e=>e.textContent==='Continue without research'),false,'stop the research first');
-  // Balanced stops at the outline either way.
-  f.set('found',{...stopped,review_level:'balanced'});f.run('sRun(found)');
-  assert.equal(line(),'Balanced: it stops for the outline and the handoff');
+  // The next stop is the server's, under the run's own level.
+  f.set('found',{...stopped,review_level:'balanced',ahead:{...stopped.ahead,next_gate:'outline',next_stop:'Outline'}});f.run('sRun(found)');
+  assert.equal(line(),'5 steps left · Next stop: the outline');
   // Only where research stopped: not at the research gates, and the hint goes with the button.
   for(const status of ['stopped','paused','needs-attention']){f.set('found',{...stopped,status,error:status==='needs-attention'?'Saved writing or its inputs changed.':''});f.run('sRun(found)');assert.ok(f.get('actions').children.some(e=>e.textContent==='Continue without research'),status);}
   for(const next of ['research','research-plan']){f.set('found',{...stopped,next,status:'waiting-for-approval',enabled:true,error:'An earlier note.'});f.run('sRun(found)');

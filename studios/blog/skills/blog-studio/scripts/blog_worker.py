@@ -154,6 +154,8 @@ def metered():
         yield jobs
     finally:
         _METER.jobs = saved
+        if saved is not None:
+            saved.extend(jobs)  # A block inside another is metered by both.
 
 
 def reported(tokens=None, dollars=None):
