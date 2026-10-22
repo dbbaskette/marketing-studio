@@ -92,11 +92,12 @@ async function check(){
   await researchRefusal();
   await researchRounds();
   await skipResearch();
+  await finishEveryLevel();
   pageDefinesEveryElement();
   const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -2111,4 +2112,34 @@ async function skipResearch(){
   // Balanced stops at the outline either way.
   f.set('found',{...stopped,review_level:'balanced'});f.run('sRun(found)');
   assert.equal(line(),'Balanced: it stops for the outline and the export package');
+}
+
+// Finish asks first at every review level, names what it does with the team library, and the
+// toast says whether the draft was kept there or why not. Earlier grouped stops still approve
+// the displayed version directly.
+async function finishEveryLevel(){
+  const stages=[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'approved'},{stage:'package',label:'Export package',path:'derived/blog-package.md',status:'draft'}];
+  const atPackage={id:'synthetic',title:'Synthetic blog',status:'waiting-for-approval',complete:false,next:'package',approval:'page',expected:'version-2',enabled:true,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},stages};
+  const shown={id:'synthetic',title:'Synthetic blog',name:'blog-package.md',stage:'package',label:'Export package',expected:'version-2',status:'draft',content:'# Handoff',notes:'',checks:[],previous:null,diff:[],bundle:[{stage:'draft',label:'Draft',content:'# The draft text'}]};
+  for(const [level,library,toast] of [['step_by_step',{id:'kept',revision:1},'Finished. Kept in the team library.'],['balanced',{id:'kept',revision:2},'Finished. Kept in the team library.'],['automatic',{reason:'it could not be saved here.'},'Finished. Not kept in the team library: it could not be saved here.']]){
+    const requests=[];const done={...atPackage,review_level:level,status:'complete',complete:true,next:null,expected:'version-3',stages:stages.map(row=>({...row,status:'approved'})),library};
+    const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});if(url==='/api/run-approve'||url.startsWith('/api/run?'))return done;if(url.startsWith('/api/run-file'))return {content:'# The draft',name:'DRAFT.md'};return {items:[],total:0};});f.loadRunner();
+    f.set('found',{...atPackage,review_level:level});f.set('shown',shown);f.run("studio.screen='gate';studio.found=found;sGate(found,shown)");
+    const finish=f.get('actions').children.find(e=>e.textContent==='Finish');assert.ok(finish,level+': '+f.get('actions').children.map(e=>e.textContent).join('|'));
+    await finish.listeners.click();
+    assert.equal(requests.length,0,level+': Finish opens its sheet before anything is approved');
+    const sheet=descendants(f.get('sheet'));
+    assert.ok(sheet.some(e=>e.textContent==='Finish this blog?'),level);
+    assert.ok(sheet.some(e=>/kept in the team library as a reference and an example of its kind of post/.test(e.textContent)),level+': the sheet names the library: '+sheet.map(e=>e.textContent).join('|'));
+    await sheet.find(e=>e.tagName==='button'&&e.textContent==='Finish').listeners.click();
+    assert.deepEqual(requests[0],{url:'/api/run-approve',data:{id:'synthetic',expected:'version-2'}},level);
+    assert.ok(descendants(f.get('toasts')).some(e=>e.textContent===toast),level+': '+descendants(f.get('toasts')).map(e=>e.textContent).join('|'));
+    assert.equal(descendants(f.get('toasts')).some(e=>/The next stage can begin/.test(e.textContent)),false,level+': Finish has no next stage');
+  }
+  // A review-only run without a draft says nothing about the library it will not touch.
+  const f=fixture(()=>({items:[],total:0}));f.loadRunner();
+  f.set('found',{...atPackage,existing:false,review_level:'balanced',stages:[{stage:'review',label:'Review',path:'derived/blog-review.md',status:'draft'}],next:'review'});f.set('shown',{...shown,stage:'review',label:'Review',bundle:[]});
+  f.run("studio.screen='gate';studio.found=found;sGate(found,shown)");
+  await f.get('actions').children.find(e=>e.textContent==='Finish').listeners.click();
+  assert.equal(descendants(f.get('sheet')).some(e=>/team library/.test(e.textContent)),false);
 }
