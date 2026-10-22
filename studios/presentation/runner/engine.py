@@ -1095,7 +1095,10 @@ class Engine(Jobs, Researching):
         """Note a step of the runner's own that worked, and commit. Call it holding
         `files`."""
         record = record if record is not None else self._load(root)
-        self._tried(record, step.name, home.now(), time.monotonic() - clock, 'kept')
+        entry = self._tried(record, step.name, home.now(), time.monotonic() - clock, 'kept')
+        if step.kind == 'agent':
+            # Composite build steps can finish or skip without starting an assistant.
+            entry['tries'][-1]['runner'] = True
         self._finish(record, step.name)
         self._store(root, record)
         self._commit(root, what, also)
@@ -2896,6 +2899,18 @@ class Engine(Jobs, Researching):
                         if said else None),
             'contactSheet': (root / build.SHEET).is_file()}
 
+    @staticmethod
+    def _assistant_attempt(name: str, attempt: dict) -> bool:
+        """A real assistant job, excluding the runner's build-completion markers.
+
+        Bare section/repair steps have always been bookkeeping; their assistant jobs
+        have child names. A review can also be skipped, marked explicitly in new runs.
+        Unmarked older reviews remain jobs, so a missing price stays unknown.
+        """
+        step = stages.BY_NAME.get(name.partition(':')[0])
+        return (not attempt.get('runner') and name not in ('build-sections', 'build-repair')
+                and (step is None or step.kind == 'agent'))
+
     def _redo(self, record: dict, gate: str) -> dict | None:
         """The steps Ask for changes at `gate` runs again, and what they took the last time
         each ran: the seconds of its last try, and the dollars of its agent's, said only when
@@ -2908,16 +2923,18 @@ class Engine(Jobs, Researching):
         kept = record.get('steps') or {}
         seconds, dollars, recorded = 0.0, [], True
         for step in again:
-            own = [entry for name, entry in kept.items() if isinstance(entry, dict)
+            own = [(name, entry) for name, entry in kept.items() if isinstance(entry, dict)
                    and (name == step.name or name.startswith(step.name + ':'))
                    and entry.get('tries')]
             if not own:
                 recorded = False
                 break
-            for entry in own:
-                last = entry['tries'][-1]
+            for name, entry in own:
+                jobs = [attempt for attempt in entry['tries']
+                        if self._assistant_attempt(name, attempt)]
+                last = jobs[-1] if jobs else entry['tries'][-1]
                 seconds += float(last.get('seconds') or 0)
-                if step.kind == 'agent':
+                if jobs:
                     dollars.append(last.get('dollars'))
         priced = None if None in dollars or not dollars else round(sum(dollars), 4)
         return {'steps': len(again), 'names': [step.label for step in again],
@@ -2939,9 +2956,8 @@ class Engine(Jobs, Researching):
         tried = [(name, attempt) for name, entry in (record.get('steps') or {}).items()
                  if isinstance(entry, dict) for attempt in entry.get('tries') or []]
         took = stops.took([attempt for _, attempt in tried])
-        step = lambda name: stages.BY_NAME.get(name) or stages.BY_NAME.get(name.partition(':')[0])
         priced = [attempt for name, attempt in tried
-                  if step(name) is None or step(name).kind == 'agent']
+                  if Engine._assistant_attempt(name, attempt)]
         # No assistant job yet: no cost has been reported, which is not the same as $0.00.
         dollars = stops.took(priced)['dollars'] if priced else None
         # What the stop decides, as a sentence says it: under Balanced, the outline's stop
@@ -2982,22 +2998,21 @@ class Engine(Jobs, Researching):
         for name, entry in (record.get('steps') or {}).items():
             if not isinstance(entry, dict):
                 continue
-            agent = stages.BY_NAME[name.partition(':')[0]].kind == 'agent' \
-                if name.partition(':')[0] in stages.BY_NAME else True
             if name.startswith('build-sections:'):
                 kept = [attempt for attempt in entry.get('tries') or []
                         if attempt.get('outcome') == 'kept']
                 if kept:
                     tried.append(kept[-1])
-                    agents += [(name, kept[-1])] if agent else []
+                    agents += [kept[-1]] if Engine._assistant_attempt(name, kept[-1]) else []
                     sections += 1
             elif name.partition(':')[0] in BUILT:
                 these = list(entry.get('tries') or [])[stood.get(name, 0):]
                 tried += these
-                agents += [(name, attempt) for attempt in these] if agent else []
+                agents += [attempt for attempt in these
+                           if Engine._assistant_attempt(name, attempt)]
         # Dollars only when every one of its assistant's jobs reported them: a step of the
         # runner's own reports none, and is not counted against the sum.
-        priced = [attempt.get('dollars') for name, attempt in agents]
+        priced = [attempt.get('dollars') for attempt in agents]
         dollars = None if not priced or None in priced else round(sum(priced), 4)
         return {'dollars': dollars,
                 'seconds': round(sum(attempt.get('seconds') or 0 for attempt in tried), 1),

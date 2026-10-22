@@ -113,10 +113,14 @@ class AheadTests(StudioCase):
         for name, entry in run['steps'].items():
             if (stages.BY_NAME.get(name) or stages.BY_NAME[name.partition(':')[0]]).kind == 'agent':
                 for attempt in entry['tries']:
-                    attempt['dollars'] = 0.5
+                    if not attempt.get('runner'):
+                        attempt['dollars'] = 0.5
         decks.write_run(root, run)
-        self.assertEqual(self.view(root)['ahead']['dollars'], 2.5)
-        self.assertTrue(self.view(root)['ahead']['spent'].endswith('and about $2.50'))
+        # The plan, two question workers and the outline: the research completion marker
+        # did not start an assistant and has no cost to add.
+        self.assertEqual(len(self.workers.jobs), 4)
+        self.assertEqual(self.view(root)['ahead']['dollars'], 2.0)
+        self.assertTrue(self.view(root)['ahead']['spent'].endswith('and about $2.00'))
         run['steps']['outline']['tries'][0]['dollars'] = None
         decks.write_run(root, run)
         self.assertIsNone(self.view(root)['ahead']['dollars'])
@@ -142,6 +146,21 @@ class NoCostYetTests(StudioCase):
         self.assertIsNone(ahead['dollars'])
         self.assertNotIn('$', ahead['spent'])
         self.assertTrue(ahead['spent'].endswith('; the assistant reported no cost'))
+
+    def test_build_completion_markers_are_not_unpriced_assistant_jobs(self):
+        record = {'steps': {
+            'build-sections': {'tries': [{'seconds': 0, 'dollars': None}]},
+            'build-repair': {'tries': [{'seconds': 0, 'dollars': None}]},
+            'build-sections:1': {'tries': [
+                {'outcome': 'kept', 'seconds': 30, 'dollars': 0.25}]},
+            'build-review': {'tries': [
+                {'outcome': 'kept', 'seconds': 20, 'dollars': 0.25},
+                {'outcome': 'kept', 'seconds': 0, 'dollars': None, 'runner': True}]}}}
+        self.assertEqual(self.engine._last_build(record)['dollars'], 0.5)
+        # An actual assistant review without dollars still makes the total unknown.
+        record['steps']['build-review']['tries'].append(
+            {'outcome': 'kept', 'seconds': 10, 'dollars': None})
+        self.assertIsNone(self.engine._last_build(record)['dollars'])
 
     def test_the_last_build_reports_no_dollars_when_a_build_job_reported_none(self):
         record = {'steps': {
@@ -169,10 +188,18 @@ class RedoTests(StudioCase):
         # The build has never run here: there is no record of what it all costs.
         self.assertEqual(redo['says'], 'Drawn again: “Draft the outline” and every step after '
                          f"it, {len(again)} steps; this computer has no record of what they cost.")
-        # Each step once tried, a minute and ten cents a try: the last tries are summed.
+        # Each step takes a minute; each actual assistant job reports ten cents.
+        # Section/repair parent entries only record completion: their child workers do
+        # the paid work, just as in a real build.
         for step in again:
             entry = record['steps'].setdefault(step.name, {'failed': 0, 'tries': []})
-            entry['tries'] = [{'seconds': 60, 'dollars': 0.1 if step.kind == 'agent' else None}]
+            composite = step.name in ('build-sections', 'build-repair')
+            entry['tries'] = [{'seconds': 0 if composite else 60,
+                               'dollars': 0.1 if step.kind == 'agent' and not composite
+                               else None}]
+            if composite:
+                record['steps'][step.name + ':section-1'] = {
+                    'tries': [{'seconds': 60, 'dollars': 0.1}]}
         decks.write_run(root, record)
         priced = sum(step.kind == 'agent' for step in again)
         self.assertEqual(self.view(root)['gate']['redo']['says'], (
@@ -1530,6 +1557,8 @@ class SayingTests(StudioCase):
         # Two sections and a review were drawn by workers, at a quarter dollar each.
         self.assertEqual(shown['last_build']['dollars'], 0.75)
         self.assertGreater(shown['last_build']['seconds'], 0)
+        self.assertEqual(self.view(root)['ahead']['dollars'], 0.25 * len(self.workers.jobs))
+        self.assertIsNotNone(self.engine._redo(self.record(root), 'gate:build')['dollars'])
 
 
     def test_asking_to_change_words_names_the_slides_and_clears_the_deck_s_note(self):
