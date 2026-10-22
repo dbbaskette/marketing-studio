@@ -57,6 +57,12 @@ class Case(unittest.TestCase):
 
 
 class BriefTests(Case):
+    def test_the_brief_reaches_the_outline(self):
+        root, run = self.deck()
+        run['form'] = decks.check_form({**run['form'], 'title': 'Synthetic deck', 'output': 'pptx', 'notes': 'Cover rollback first.'}, None)
+        work = outline.outline_work(root, run, None, None, self.brand, slides=self.slides)
+        self.assertIn('Notes: Cover rollback first.', work.prepared['inputs']['The brief'])
+
     def work(self, **kind):
         root, run = self.deck(**kind)
         return outline.outline_work(root, run, None, None, self.brand, slides=self.slides)

@@ -314,6 +314,17 @@ class ScreenTests(ScriptedPage, PageCase):
     def setup_with(self, **more) -> dict:
         return ok({**self.get('setup'), **more})
 
+    def test_a_scratch_brief_is_sent_with_the_form(self):
+        answers = self.answers(**{'POST /api/decks': [ok({'path': '/nowhere', 'id': 'x'})],
+                                  'GET /api/run': [{'status': 404, 'body': {'error': 'There is no deck there.'}}]})
+        result = self.run_page(answers, [
+            {'click': 'New deck'}, {'click': 'Start from scratch'},
+            {'fill': 'A short title', 'value': 'Synthetic deck'},
+            {'fill': 'What should it cover? (optional)', 'value': ' Cover rollback first. '},
+            {'click': 'Continue'}, {'click': 'Start the deck'}])
+        (_, body), = self.posts(result)
+        self.assertEqual(body['form']['notes'], 'Cover rollback first.')
+
     def test_research_from_a_document_asks_where_it_may_look(self):
         for both in (False, True):
             answers = self.answers(**{'POST /api/decks': [ok({'path': '/nowhere', 'id': 'x'})],
@@ -321,13 +332,15 @@ class ScreenTests(ScriptedPage, PageCase):
             steps = [{'click': 'New deck'}, {'click': 'Start from a document'},
                      {'click': 'Paste the text'}, {'fill': 'The text', 'value': 'Synthetic notes.'},
                      {'click': 'Continue'}, {'fill': 'A short title', 'value': 'Synthetic deck'},
-                     {'click': 'Research the public web first'}, {'snapshot': 'boundary'},
+                     {'click': 'Research your documents first'}, {'snapshot': 'boundary'},
                      {'fill': 'What should the research answer? (optional)', 'value': 'Why?\nWhat next?'}]
             if both:
                 steps += [{'click': 'Your documents and the public web'}]
-            steps += [{'click': 'Continue'}, {'click': 'Start the deck'}]
+            steps += [{'snapshot': 'scope'}, {'click': 'Continue'}, {'click': 'Start the deck'}]
             result = self.run_page(answers, steps)
             self.assertIn('Where may research look?', result['snapshots']['boundary']['text'])
+            self.assertIn('Research your documents and the public web first' if both else 'Research your documents first', result['snapshots']['scope']['text'])
+            self.assertNotIn('What should it cover? (optional)', result['snapshots']['boundary']['text'])
             posted = [body for address, body in self.posts(result) if address == '/api/decks']
             self.assertEqual(posted[0]['form']['research_sources'], 'both' if both else 'documents')
             self.assertEqual(posted[0]['form']['research_questions'], ['Why?', 'What next?'])

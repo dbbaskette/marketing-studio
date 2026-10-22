@@ -2667,7 +2667,7 @@ async function saveSetup(pressed) {
 function newDraft() {
   const agent = (view.setup && view.setup.agent) || {};
   const brand = (view.setup && view.setup.brand && view.setup.brand.default) || {};
-  return settleBrand({ route: null, step: 0, title: '', audience: '', goal: '', minutes: '',
+  return settleBrand({ route: null, step: 0, title: '', audience: '', goal: '', notes: '', minutes: '',
     delivery: null,
     research: false, firstDraft: false, firstDraftExplicit: false, level: null, selected: '', source: 0, link: '', text: '', upload: null,
     reading: false, brand: brand.brand || '', variant: brand.variant || '',
@@ -2931,7 +2931,10 @@ function reviewLevelCard() {
 }
 
 function aboutStep(draft) {
-  const research = draft.route !== 'existing' ? chip('Research the public web first', draft.research,
+  const researchLabel = draft.route === 'document'
+    ? (draft.researchSources === 1 ? 'Research your documents and the public web first'
+      : 'Research your documents first') : 'Research the public web first';
+  const research = draft.route !== 'existing' ? chip(researchLabel, draft.research,
     (on) => {
       draft.research = on;
       paintNew(false);
@@ -2943,6 +2946,8 @@ function aboutStep(draft) {
       hint: 'Their role, and what they already know.' }),
     field('new-goal', 'What should they take away?', draft, 'goal', { long: true, limit: 2000,
       hint: 'A sentence or two is enough.' }),
+    draft.route === 'scratch' ? field('new-notes', 'What should it cover? (optional)',
+      draft, 'notes', { long: true, limit: 4000, hint: 'Points, examples or a rough order. It goes to the research plan and the outline.' }) : null,
     field('new-minutes', 'About how long, in minutes (optional)', draft, 'minutes',
       { short: true, mode: 'numeric' }),
     choice('Is this deck for a talk or a handout?', DELIVERIES.map((one) => one[1]),
@@ -2955,7 +2960,7 @@ function aboutStep(draft) {
         + 'outline is drafted. Research uses the public web.')) : null,
     draft.route === 'document' && draft.research ? choice('Where may research look?',
       ['Your documents only', 'Your documents and the public web'], draft.researchSources || 0,
-      (index) => { draft.researchSources = index; }, 'research-sources',
+      (index) => { draft.researchSources = index; paintNew(false); }, 'research-sources',
       'With your documents only, nothing about them is searched for on the public web.') : null,
     draft.research ? field('research-questions', 'What should the research answer? (optional)',
       draft, 'researchQuestions', { long: true, rows: 4, hint: 'One question a line, at most 8.' }) : null)];
@@ -3109,6 +3114,7 @@ function formOf(draft) {
   const minutes = draft.minutes.trim();
   const form = { route: draft.route, title: draft.title.trim(),
     audience: draft.audience.trim(), goal: draft.goal.trim(),
+    notes: draft.route === 'scratch' ? (draft.notes || '').trim() : '',
     minutes: minutes ? Number(minutes) : null, brand: draft.brand,
     variant: draft.variant || null, output: OUTPUTS[draft.output][0],
     delivery: DELIVERIES[deliveryOf(draft)][0],
