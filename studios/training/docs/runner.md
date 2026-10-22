@@ -341,6 +341,8 @@ to three writing/checking rounds, what its last try took and which made material
 Synthesis plans ask at most eight questions in one investigation. With Your documents only,
 the form writes that plan without a planning job. You can ask up to eight questions, each
 up to 300 characters; with none, the plan asks what the documents say that serves your goal.
+An explicit request to revise the plan uses the planning assistant with its current
+questions and your request, retaining the supplied-only boundary and eight-question limit.
 Step by step stops at the plan. Balanced and Automatic accept this plan under the saved
 policy, so Balanced's first stop is the first-drafts review. Web research still drafts a
 plan with your questions. Older runs retain their saved source scope and legacy queue.

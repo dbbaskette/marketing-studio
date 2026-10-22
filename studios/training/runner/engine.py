@@ -3131,7 +3131,8 @@ class Engine(Reviewing):
         if designed is None:
             return self._problem(root, it.id, 'stopped', DESIGN_GONE, KEPT)
         record = self._load(root)
-        if it.id == 'research-plan' and record.get('research_contract') and found.scope == 'supplied-only':
+        if (it.id == 'research-plan' and record.get('research_contract')
+                and found.scope == 'supplied-only' and not step.request):
             with self.files:
                 workspace.write_atomic(root / pipeline.PLAN, pipeline.plan_from_form(
                     root, found, record.get('research_questions') or []).encode('utf-8'))
@@ -3170,6 +3171,8 @@ class Engine(Reviewing):
                         asked=None, waiting=None)
                 else:
                     pipeline.keep_draft(root, it, handed, step.request, found)
+                if it.id == 'research-plan' and record.get('research_contract'):
+                    record['research'] = {**(record.get('research') or {}), 'plan_from': 'assistant'}
                 self._tried(record, it.id, started_at, outcome.seconds, 'kept',
                             **self._cost(outcome))
                 self._store(root, record)

@@ -143,6 +143,8 @@ Document research defaults to Your documents only. Your documents and the public
 an explicit choice; a scratch deck uses the public web. Supplied-only synthesis writes
 its plan from at most eight optional form questions (300 characters each), without a
 planning job. Web synthesis asks at most eight questions together; legacy queues keep 30.
+An explicit plan revision uses the planning assistant with the saved questions and your
+request, retaining the selected source boundary and question limit.
 Existing decks retain their saved scope and pipeline.
 
 Ask about this finding adds a note to the whole research request, whose sheet says what

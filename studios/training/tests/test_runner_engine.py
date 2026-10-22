@@ -2064,6 +2064,30 @@ class ModelProfileTests(StudioCase):
 
 
 class FormPlanTests(StudioCase):
+    def test_a_requested_revision_changes_a_plan_written_from_the_form(self):
+        from studio_core import research_contract
+        with mock.patch.object(research_contract, 'snapshot', return_value={'schema': 2}):
+            root = self.start(source_scope='supplied-only', research_questions=['Why?'])
+        self.send(root, 'synthetic.md')
+        self.engine.supply(root, 'done')
+        original = json.loads((root / pipeline.PLAN).read_text())
+        revised = json.loads(json.dumps(original))
+        revised['items'][0]['question'] = 'What does the source say about capacity?'
+        self.workers.plan = revised
+        self.decide(root, 'research-plan', 'revise',
+                    'Replace Why? with What does the source say about capacity?')
+        kept = json.loads((root / pipeline.PLAN).read_text())
+        self.assertEqual(kept['items'], revised['items'])
+        self.assertEqual(kept['scope'], 'supplied-only')
+        self.assertEqual(kept['sources'], self.engine.documents.sources(root)[0])
+        self.assertEqual(len(self.workers.of('research-plan')), 1)
+        task = self.workers.of('research-plan')[0].task
+        self.assertIn('Replace Why? with What does the source say about capacity?', task)
+        self.assertIn('only the documents the person supplied', task)
+        self.assertNotIn('Keep each in the plan, in their words', task)
+        self.assertEqual(self.record(root)['research']['plan_from'], 'assistant')
+        self.assertEqual(workspace.status(root)['gate'], 'research-plan')
+
     def test_a_documents_only_training_writes_its_plan_from_the_form(self):
         from studio_core import research_contract
         with mock.patch.object(research_contract, 'snapshot', return_value={'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'}):

@@ -1318,7 +1318,7 @@ def plan_work(root: Path, found: Survey, request: dict | None, error: str | None
             f'Hand the questions back with submit_artifact under the name "{name}".'
             + _again(request, _questions(earlier) if earlier else None, error, answered,
                      'the questions'))
-    if asked:
+    if asked and not request:
         task += ('\n\nThe person asked these questions. Keep each in the plan, in their words:\n'
                  + '\n'.join('- ' + q for q in asked))
     scope = 'supplied-only' if found.scope == 'supplied-only' else SCOPE

@@ -494,7 +494,7 @@ class Researching:
                 f'Sources that may be used: {allowed}\n\n'
                 f'Hand the questions back with submit_artifact under the name "{name}".')
         asked = (record.get('form') or {}).get('research_questions') or []
-        if asked:
+        if asked and not request:
             task += ('\n\nThe person asked these questions. Keep each in the plan, in their words:\n'
                      + '\n'.join('- ' + q for q in asked))
         earlier = text_of(root / PLAN)
@@ -570,15 +570,22 @@ class Researching:
 
     def _research_plan(self, root: Path, run: Run, step: stages.Step) -> None:
         record = self._load(root)
-        if record.get('research_contract') and (record.get('form') or {}).get('research_sources') == 'documents':
+        if (record.get('research_contract')
+                and (record.get('form') or {}).get('research_sources') == 'documents'
+                and not self._request(record, step.name)):
             self._plan_from_form(root, run, step)
             return
+
+        def keep(record, handed):
+            self._keep_plan(root, record, self._text(handed, 'research-plan'))
+            if record.get('research_contract'):
+                record['research'] = {**(record.get('research') or {}), 'plan_from': 'assistant'}
+                self._store(root, record)
+
         self._agent(root, run, step,
                     lambda record, request, error: self._plan_work(root, record, request,
                                                                    error),
-                    lambda record, handed: self._keep_plan(root, record,
-                                                           self._text(handed, 'research-plan')),
-                    'keep the research plan')
+                    keep, 'keep the research plan')
 
 
     def _plan_from_form(self, root: Path, run: Run, step: stages.Step) -> None:

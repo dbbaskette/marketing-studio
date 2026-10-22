@@ -138,6 +138,8 @@ Training Studio keeps its saved source scope. Supplied-only synthesis runs in bo
 studios write a plan from the form's optional questions (up to eight, 300 characters each),
 or one question about the goal, without a planning assistant job. Step by step still reviews
 that plan; Training Studio Balanced and Automatic accept it under the saved policy.
+An explicit request to revise that plan uses the planning assistant with the current
+questions and your request, keeping the supplied-only boundary and eight-question limit.
 
 New Blog Studio supplied-only runs use a claims map instead of synthesis research: one
 worker lists the claims and exact passages in selected facts/material. Whitespace and line

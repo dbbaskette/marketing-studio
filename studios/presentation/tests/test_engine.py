@@ -1076,6 +1076,44 @@ class ResearchRoundTests(StudioCase):
         self.assertIs(self.engine._noted(root, 'research:review-2', 'Checking', work), work)
 
 
+class FormPlanRevisionTests(StudioCase):
+    def test_free_text_revises_a_supplied_only_plan(self):
+        self.revise(False)
+
+    def test_structured_marks_revise_a_supplied_only_plan(self):
+        self.revise(True)
+
+    def revise(self, structured):
+        from studio_core import research_contract
+        with mock.patch.object(
+                research_contract, 'snapshot', return_value={'schema': 2}):
+            root = self.start(title='Supplied ' + str(structured), route='document',
+                              research=True, research_questions=['Why?'],
+                              source={'kind': 'paste', 'text': 'Synthetic source notes.'})
+        self.decide(root, 'gate:classify')
+        self.assertEqual(self.workers.of('research-plan'), [])
+        original = json.loads((root / 'research/plan.json').read_text())
+        revised = json.loads(json.dumps(original))
+        revised['items'][0]['question'] = 'What does the source say about capacity?'
+        extra = {'reword': {original['items'][0]['id']: revised['items'][0]['question']},
+                 'add': ['What remains unknown?']} if structured else None
+        if structured:
+            revised['items'].append({'id': 'unknown', 'question': 'What remains unknown?',
+                                     'public_query': None, 'claim': None})
+        self.workers.plan = revised
+        self.decide(root, 'gate:research-plan', decision='changes',
+                    note=None if structured else 'Replace Why? with the capacity question.',
+                    extra=extra)
+        self.assertEqual(json.loads((root / 'research/plan.json').read_text()), revised)
+        self.assertEqual(len(self.workers.of('research-plan')), 1)
+        task = self.workers.of('research-plan')[-1].task
+        self.assertIn('Reword `' if structured else 'Replace Why?', task)
+        self.assertIn('only the documents the person supplied', task)
+        self.assertNotIn('Keep each in the plan, in their words', task)
+        self.assertEqual(self.record(root)['research']['plan_from'], 'assistant')
+        self.assertEqual(self.waiting(root), 'gate:research-plan')
+
+
 class PlanMarkTests(StudioCase):
     def questions(self, root):
         return [item['id'] for item in
