@@ -59,13 +59,13 @@ def deliver(root, run: dict, slides, space=None) -> dict:
     return record(root, run, upload(root, run, slides), space)
 
 
-def upload(root, run: dict, slides) -> dict:
+def upload(root, run: dict, slides, output=None) -> dict:
     """Put the rendered deck where the form asked, and say what deliver.json will record.
     Nothing in the deck's folder is written."""
     root = Path(root)
     deck = build.delivered_deck(root, run)
     revision, at = len(run.get('revisions') or []) + 1, home.now()
-    output = (run.get('form') or {}).get('output') or 'google'
+    output = output or (run.get('form') or {}).get('output') or 'google'
     record = {'output': output, 'url': None, 'fileId': None, 'pptx': None,
               'revision': revision, 'at': at, **({'review_status': 'unreviewed'} if decks.user_first(run) else {})}
     if output == 'google':

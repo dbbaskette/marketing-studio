@@ -1312,13 +1312,18 @@ class Copies:
             now = self.STATES.get(state, 'not-made')
             listed.append({'artifact': name, 'label': workspace.label(name), 'kind': 'google',
                            'state': now, 'link': (docs.get(name) or {}).get('url'),
-                           'problem': None if now == 'made' else (problems or {}).get(name)})
+                           'problem': None if now == 'made' else (problems or {}).get(name),
+                           **({'conflict': True} if docs.get(name, {}).get('conflict') else {})})
         for name, state in workspace.export_states(root, session).items():
             made, now = session['exports'].get(name) or {}, self.STATES.get(state, 'not-made')
             listed.append({'artifact': name, 'label': workspace.label(name), 'kind': 'word',
                            'state': now, 'link': made.get('file'),
                            'problem': made.get('unavailable') if now != 'made' else None})
         return listed
+
+    def pull(self, root: Path, name: str, google=None, choose=None):
+        from runner import copies
+        return copies.pull(root, name, google or self.drive, choose)
 
     def make(self, root: Path, google=None, word=None) -> tuple[list[dict], dict]:
         import gdocs

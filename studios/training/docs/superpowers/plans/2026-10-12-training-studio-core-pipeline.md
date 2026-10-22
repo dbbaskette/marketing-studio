@@ -373,6 +373,14 @@ Each row is one test in `tests/test_workspace.py` or, where it names `check`, `t
 | 118 | New schema-2 research or explicit conversation import; original runs retain schema 1 | Investigate, independently review, approve research, consume stable finding IDs, then alter a capture | The purpose-led bundle must be complete with matching digest and file hashes. Drafts block authoring; changed evidence invalidates approval and downstream inputs. Stop preserves the draft without recording a failure. Covered by `test_synthesis_integration.py` and suite `test_research_contract.py`. |
 | 120 | Contract research from supplied documents only | Start with up to 8 questions or none | Write the plan from the form with no planning job and no search words. Balanced and Automatic approve under the saved policy; Step by step waits at the plan. Public web still runs the plan worker. Covered by test_row_120 and FormPlanPolicyTests. |
 
+| 121 | Approved file, its Doc edited elsewhere | Bring the Doc’s changes in | File holds the Doc’s text, not approved; downstream out of date. Covered by `PullTests.test_row_121_a_doc_edited_elsewhere_is_brought_in`. |
+| 122 | File and Doc both changed | Bring in, then choose | Both kept until chosen; theirs saved as an edit or ours pushed with force; later changes refuse the old choice. Covered by `PullTests.test_row_122_both_changed_keeps_both`. |
+
+| 123 | Grouped run with no review layout, direction approved | Survey after upgrade | Direction stays approved and old grouping is retained; briefs are not queued twice. Covered by `test_row_123_a_run_past_its_direction_review_keeps_it`. |
+
+| 124 | Grouped run preparing or building a level | Offer Finish this level | Hidden during shared preparation; offered during building, with the final combined review visible and waiting for all levels. Covered by `test_row_124_finish_level_waits_for_building` and `test_combined_reviews_have_beads`. |
+| 125 | Work continuing after a page decision | Reach the next person stop | Keep decision feedback during work, then retire it in the existing stop commit without adding audit noise or leaving files uncommitted. Covered by `test_row_125_reaching_the_next_stop_keeps_the_existing_audit_commit`. |
+
 Shared setup readiness adds the independently verified transitions in
 [the suite setup matrix](../../../../../docs/shared-setup.md): no/partial settings
 → shared setup; successful finish → normal home; completed setup elsewhere →

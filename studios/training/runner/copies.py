@@ -59,7 +59,7 @@ PANDOC_SAYS = {   # the core's reasons for no Word copy, said for a person
 REWORDED = (
     ('changed since the last sync',
      'Someone has changed the Google Doc since it was last sent, so it was left as it is. '
-     f'Ask your assistant to bring those changes into the training, then {AGAIN}.'),
+     f'Bring the Doc’s changes in from here, then {AGAIN}.'),
     ('could not find the Doc',
      'Google could not find the Doc. It may have been deleted, or the signed-in account '
      f'cannot open it. Ask your assistant to unlink it from the training, then {AGAIN} to '
@@ -78,8 +78,11 @@ def wanted(root: Path, problems: dict | None = None) -> list[dict]:
     listed = []
     for name in workspace.artifact_names(root, session):
         if name in docs:
-            listed.append(_entry(name, 'google', STATES[docs[name]],
-                                 links.get(name, {}).get('url'), (problems or {}).get(name)))
+            entry = _entry(name, 'google', STATES[docs[name]],
+                           links.get(name, {}).get('url'), (problems or {}).get(name))
+            if links.get(name, {}).get('conflict'):
+                entry['conflict'] = True
+            listed.append(entry)
         if name in files:
             made = session['exports'].get(name) or {}
             state = STATES[files[name]]
@@ -173,3 +176,59 @@ def pandoc(source: Path, target: Path) -> None:
     file it is given. Refuses with a sentence for a person when pandoc is not on this
     computer, does not finish or makes no copy."""
     workspace.pandoc(source, target, PANDOC_SAYS)
+
+
+PULLED = ("The Doc's changes are in. Review {label} again; what is built from it is made "
+          "again after you approve.")
+BOTH = ("{label} was changed here and in its Google Doc. The Doc's text is kept beside it; "
+        "nothing was replaced. Choose which to keep.")
+KEPT_OURS = "This version is sent to the Google Doc, replacing what was changed there."
+
+
+def pull(root: Path, name: str, google=None, choose=None) -> dict:
+    """Bring in an edit, preserving both sides of a conflict until an explicit choice."""
+    if choose not in (None, 'theirs', 'ours'):
+        raise WorkspaceError('Choose the Doc’s version or this version.')
+    google = google or gdocs.GcloudTransport()
+    _, spec, path = gdocs.target(root, name)
+    entry = gdocs.linked(gdocs.read_links(root), name)
+    beside = Path(spec['file']).with_suffix('.remote.md').as_posix()
+    remote_file = workspace.managed(root, beside)
+    if choose:
+        conflict = entry.get('conflict') or {}
+        remote = gdocs.canonical(google.export(entry['file_id']))
+        if (not conflict or workspace.sha256_file(path) != conflict.get('local')
+                or workspace.sha256_file(remote_file) != conflict.get('beside')
+                or gdocs.digest(remote) != conflict.get('remote')):
+            raise WorkspaceError('One version changed again. Bring the Doc’s changes in again before choosing.')
+        if choose == 'ours':
+            gdocs.push(root, name, google, force=True)
+            result = 'kept'
+        else:
+            text = remote_file.read_text(encoding='utf-8')
+            workspace.save(root, name, source=remote_file, edit=True)
+            gdocs.settle(root, name, entry, text, remote)
+            result = 'pulled'
+        with workspace.locked(root):
+            links = gdocs.read_links(root)
+            links['docs'][name].pop('conflict', None)
+            gdocs.write_links(root, links)
+        return {'result': result, 'beside': None}
+    try:
+        outcome = gdocs.pull(root, name, google)
+    except WorkspaceError as refusal:
+        if 'both changed since the last sync' not in str(refusal):
+            raise
+        remote = gdocs.canonical(google.export(entry['file_id']))
+        text, _ = gdocs.restore_comments(remote, entry['anchors'])
+        # The second read must still be the version saved beside the local file.
+        if remote_file.read_text(encoding='utf-8') != text:
+            raise WorkspaceError('The Doc changed again. Bring its changes in again before choosing.')
+        with workspace.locked(root):
+            links = gdocs.read_links(root)
+            links['docs'][name]['conflict'] = {
+                'local': workspace.sha256_file(path), 'remote': gdocs.digest(remote),
+                'beside': workspace.sha256_file(remote_file)}
+            gdocs.write_links(root, links)
+        return {'result': 'both-changed', 'beside': beside}
+    return {'result': 'pulled' if outcome['result'] == 'pulled' else 'nothing', 'beside': None}

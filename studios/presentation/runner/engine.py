@@ -232,6 +232,11 @@ AGAIN_HERE = ('carry on here: {steps} again, as what was made for them is kept o
               'computer that made it')
 NOT_WAITING = 'The {it} is not waiting for a decision now.'
 # The parts of the direction review a request for changes can be sent to.
+LOOK_AGAIN = ('What the deck says changed after you picked {name}, so its looks were drawn '
+              'again. Pick again; your earlier pick is marked.')
+EDITED_LOOKS = ('You edited the outline, so the looks will be drawn again from it. You pick '
+                'from the new ones before the deck is built.')
+
 DIRECTION_TARGETS = ('gate:research-plan', 'gate:research', 'gate:look', 'gate:classify')
 NOTE_CHANGED = ('The note changed since this page read it: another page sent one, or a job '
                 'took it. Read the latest before sending.')
@@ -971,7 +976,7 @@ class Engine(Jobs, Researching):
                 step = first(record)
                 if step is None:
                     return
-                if step.kind == 'gate' and review_policy.automatic(
+                if step.kind == 'gate' and not (step.name == 'gate:look' and record.get('look_again')) and review_policy.automatic(
                         record, 'presentation', step.name,
                         holding=self._holding(root, step.name)):
                     self._policy_gate(root, step)
@@ -1132,7 +1137,12 @@ class Engine(Jobs, Researching):
             if step.name == 'gate:look':
                 # The look the person picked in the direction review, in their words; else,
                 # under Automatic draft, the brand's default, saying why.
-                if not self._look_policy(root, record):
+                policy = self._look_policy(root, record)
+                if policy == 'stop':
+                    self._store(root, record)
+                    self._gate(root, self._run(root), step)
+                    return
+                if not policy:
                     record['steps']['look-preview'] = {
                         **(record['steps'].get('look-preview') or {}), 'done': False}
                     self._store(root, record)
@@ -1519,7 +1529,9 @@ class Engine(Jobs, Researching):
             record = self._load(root)
             made = delivering.record(root, record, made, space)
             record = self._load(root)
-            record['driver'] = None     # a delivered deck has no driver
+            if space.address is not None:
+                record['delivered_by'] = team.computer()
+            record['driver'] = None     # a delivered deck has no active driver
             where = made.get('url') or made.get('pptx') or ''
             self._done(root, step, clock, f"deliver revision {made['revision']}"
                        + (f': {where}' if where else ''), record, self._listed(space))
@@ -1785,7 +1797,9 @@ class Engine(Jobs, Researching):
                extra: dict | None = None, expected: str | None = None) -> dict:
         """A person's decision at a gate: the only way a gate moves. Returns the deck's
         view."""
-        root = self._held(path)
+        root = self.driven(path)
+        if root is None:
+            raise WorkspaceError('There is no deck there.')
         saved = self._load(root)
         if decision == 'approve' and saved.get('research_contract') and (saved.get('steps', {}).get('research-report') or {}).get('done'):
             from studio_core.research_contract import read_bundle
@@ -1821,7 +1835,10 @@ class Engine(Jobs, Researching):
         if rebrand and not (isinstance(extra.get('brand'), str) and extra['brand'].strip()):
             raise WorkspaceError(NO_BRAND_CHOSEN)
         brands = self.brands() if rebrand else None
-        space, it = self.space(), WORDS[gate]
+        space = self.space()
+        if gate == 'gate:build' and decision == 'changes' and self._delivered_here(saved):
+            self._take(root, space)
+        self.hold(root)
         by = gitstate.identity(space.repo)
         with self.files:
             record = self._load(root)
@@ -2144,13 +2161,24 @@ class Engine(Jobs, Researching):
                 raise WorkspaceError(LOOKS_STALE)
             looks.approve(root, record, note)
             record = self._load(root)
+            record.pop('look_again', None)
+            if picked:
+                record['look_picked'] = picked
         if gate == 'gate:outline' and review_policy.level(record) == 'balanced':
             # The direction review shows the looks: the person's pick is part of approving
             # it. It is kept in the run, so that whichever computer goes on draws the deck in
             # it, and is chosen with the brand when the look's own gate continues.
-            picked = self._look_picked(root, extra, note)
+            edited = extra.get('edited') is not None
+            offered = looks.shown_looks(root)
+            picked = self._look_picked(root, extra, note) if extra.get('look') or not edited else None
             if picked:
                 record['look_picked'] = picked
+            if edited and offered:
+                earlier = picked or looks.chosen(root) or record.get('look_picked') or {}
+                record['look_again'] = {'name': earlier.get('name'), 'choice': earlier.get('choice')}
+                looks.drop(root)
+                record['steps']['look-preview'] = {
+                    **(record['steps'].get('look-preview') or {}), 'done': False}
         return record
 
     def _look_picked(self, root: Path, extra: dict, note: str | None) -> dict | None:
@@ -2163,13 +2191,14 @@ class Engine(Jobs, Researching):
         choice, said = extra.get('look'), (note or '').strip()
         if choice == looks.DEFAULT and shown.get('failed'):
             return {'choice': choice, 'words': said or deck_flow.PROCEED_WORDS.format(
-                name=looks.DEFAULT_NAME)}
+                name=looks.DEFAULT_NAME), 'shown': sha256_of(root / looks.SHOWN), 'name': looks.DEFAULT_NAME}
         picked = next((look for look in shown.get('looks') or () if look['id'] == choice), None)
         if picked is None:
             raise WorkspaceError(looks.NO_LOOK)
-        return {'choice': choice, 'words': said or looks.NO_COMMENT.format(name=picked['name'])}
+        return {'choice': choice, 'words': said or looks.NO_COMMENT.format(name=picked['name']),
+                'shown': sha256_of(root / looks.SHOWN), 'name': picked['name']}
 
-    def _look_policy(self, root: Path, record: dict) -> bool:
+    def _look_policy(self, root: Path, record: dict) -> bool | str:
         """A look gate the saved level does not stop at: the look picked in the direction
         review, in the person's words; else the brand's default, saying why. False when the
         outline changed since the looks were drawn, which are then drawn again."""
@@ -2178,9 +2207,16 @@ class Engine(Jobs, Researching):
             return True
         picked = record.get('look_picked') or {}
         known = [look['id'] for look in shown.get('looks') or ()]
+        if picked and picked.get('shown') != sha256_of(root / looks.SHOWN):
+            record['look_again'] = {'name': picked.get('name') or picked.get('choice'),
+                                    'choice': picked.get('choice')}
+            return 'stop'
         if picked.get('choice') in known or (picked.get('choice') == looks.DEFAULT
                                               and shown.get('failed')):
             made = looks.choose(root, self._skill(), picked['choice'], picked['words'])
+            if made is None:
+                record['look_again'] = {'name': picked.get('name') or picked.get('choice'),
+                                        'choice': picked.get('choice')}
         else:
             made = looks.choose_default(root, self._skill())
         return made is not None
@@ -2616,11 +2652,18 @@ class Engine(Jobs, Researching):
             at = None
         return {'at': at, 'by': by, 'says': self._then(root, record)}
 
+    def _delivered_here(self, record: dict) -> bool:
+        return (self.workspace.address is not None and not record.get('driver')
+                and record.get('delivered_by') == team.computer()
+                and bool((record.get('steps', {}).get('deliver') or {}).get('done')))
+
     def _whose(self, root: Path, record: dict, state: str, sentence: str):
         """Whether a deck is this computer's, who drives it, and its state and sentence as
         someone who can only read it is told them."""
         space = self.workspace
         mine, who = team.ours(space, record), team.driver(space, record)
+        if state == 'finished' and self._delivered_here(record):
+            mine = True
         if mine:
             return mine, who, state, sentence, None
         if who is None:
@@ -2661,7 +2704,7 @@ class Engine(Jobs, Researching):
         for row in rows:
             if row['name'] == 'research-plan' and (record.get('research') or {}).get('plan_from') == 'form':
                 row['label'] = FROM_FORM
-            if row['name'].startswith('gate:') and review_policy.automatic(
+            if row['name'].startswith('gate:') and not (row['name'] == 'gate:look' and record.get('look_again')) and review_policy.automatic(
                     record, 'presentation', row['name'],
                     holding=self._holding(root, row['name']) if root else ()):
                 row['label'] = 'Continue the ' + WORDS[row['name']] + ' automatically'
@@ -2830,10 +2873,13 @@ class Engine(Jobs, Researching):
         form = record.get('form') or {}
         shown = looks.shown_looks(root)
         picked = looks.chosen(root)
+        again = record.get('look_again')
         offered = None
         if shown:
             notes = [deck_flow.LOOK_FAILED.format(why=shown['failed'])] if shown.get('failed') \
                 else [shown['says']] if shown.get('says') else []
+            if again:
+                notes.append(LOOK_AGAIN.format(name=again['name']) if again.get('name') else EDITED_LOOKS)
             offered = {
                 'looks': [{key: look.get(key) for key in ('id', 'name', 'useWhen', 'number')}
                           for look in shown.get('looks') or ()],
@@ -2845,7 +2891,7 @@ class Engine(Jobs, Researching):
                 'variant': form.get('variant'), 'made_in': decks.brand_words(form),
                 'picture': {'kind': 'look', 'ref': 'sample'}
                 if (root / looks.SAMPLE).is_file() else None,
-                'offered': offered,
+                'offered': offered, **({'again': again} if again else {}),
                 'older': looks.OLDER if not shown else None}
 
     def _show_build(self, root: Path, record: dict) -> dict:
@@ -2929,9 +2975,7 @@ class Engine(Jobs, Researching):
                          'download': self._rendered(root, record),
                          'slides': self._delivered_slides(root),
                          'last_build': self._last_build(record),
-                         'to_google': said.get('notice') == delivering.NOT_CONNECTED
-                         and ((record.get('form') or {}).get('output') or 'google')
-                         == 'google'}
+                         'to_google': said.get('output') == 'pptx'}
                         if said else None),
             'contactSheet': (root / build.SHEET).is_file()}
 
@@ -2988,6 +3032,8 @@ class Engine(Jobs, Researching):
         rows = [row for row in stages.timeline(record) if row['state'] not in ('done', 'later')]
         gates = review_policy.ahead(record, 'presentation',
                                     [row['name'] for row in rows if row['name'].startswith('gate:')])
+        if record.get('look_again') and any(row['name'] == 'gate:look' for row in rows):
+            gates = ['gate:look', *[name for name in gates if name != 'gate:look']]
         nxt = next((row for row in rows if gates and row['name'] == gates[0]), None)
         tried = [(name, attempt) for name, entry in (record.get('steps') or {}).items()
                  if isinstance(entry, dict) for attempt in entry.get('tries') or []]
@@ -3248,8 +3294,7 @@ class Engine(Jobs, Researching):
                 'notice': ' '.join(said) or None}
 
     def deliver_again(self, path) -> dict:
-        """Send a deck that was made as a PowerPoint file, because Google was not
-        connected, to Google Slides as its form asked. Nothing about the deck changes: the
+        """Send a deck delivered as a PowerPoint file to Google Slides on request. Nothing about the deck changes: the
         deck that was delivered goes to Google as the next revision. Returns its view."""
         root = self.driven(path)
         if root is None:
@@ -3263,8 +3308,7 @@ class Engine(Jobs, Researching):
             said = decks.delivered(root)
             if said is None:
                 raise WorkspaceError('This deck has not been delivered yet.')
-            if said.get('notice') != delivering.NOT_CONNECTED \
-                    or ((record.get('form') or {}).get('output') or 'google') != 'google':
+            if said.get('output') != 'pptx':
                 raise WorkspaceError('This deck is already delivered as you asked, so there '
                                      'is nothing to send to Google Slides.')
             if str(root) in self._sending:
@@ -3273,7 +3317,7 @@ class Engine(Jobs, Researching):
         try:
             if not slides.drive_check():
                 raise WorkspaceError(STILL_NOT_CONNECTED)
-            made = delivering.upload(root, record, slides)
+            made = delivering.upload(root, record, slides, output='google')
             if made.get('output') != 'google' or not made.get('url'):
                 raise WorkspaceError(STILL_NOT_CONNECTED)
             with self.files:

@@ -10,7 +10,7 @@ It is the third studio beside [Training Studio](https://github.com/dbbaskette/ma
 
 | You have | Choose | What happens |
 | --- | --- | --- |
-| An idea | **Start from scratch** | You write a short brief. Research is optional and off unless you turn it on. |
+| An idea | **Start from scratch** | You give it a title, audience and goal, with an optional brief of up to 4000 characters for points, examples or a rough order. The brief reaches the research plan and outline. Research is optional and off unless you turn it on. |
 | A document | **Start from a document** | A Markdown or text file, a Word file, a PDF, a Google Doc or pasted text. The studio says whether it thinks the document lays out the slides or is material to turn into slides. You can correct it. |
 | A deck | **Redesign an existing deck** | A `.pptx` file or a Google Slides link. You choose how much may change (below). Your original is never changed; you always get a new copy. |
 
@@ -161,3 +161,5 @@ while rendering continues. The pinned 0.16.0 runtime does not advertise it, so c
 sections show before the final review. Updating or installing a companion
 remains an explicit action. Comments during construction are tracked separately in
 [the live-preview issue](https://github.com/dbbaskette/marketing-studio/issues/15).
+
+The Balanced direction review requires a look from the samples shown. Editing the outline redraws those samples and asks you to choose again before the build. Delivered team decks stay their maker's to request changes; teammates still take them explicitly. A PowerPoint delivery can later be sent to Google Slides as a new revision from the page, without rebuilding.

@@ -208,6 +208,7 @@ from workspace import WorkspaceError
 from runner import agents, companion, deck, gitstate, pipeline, settings, team, worker_tools
 from runner import brand as brand_skill
 from runner import copies as copies_made
+from runner.copies import BOTH, KEPT_OURS, PULLED
 from runner import documents as documents_kept
 from runner import index as index_written
 from runner import research as research_cli
@@ -400,6 +401,7 @@ def new_record(agent: str, model: str | None, chosen: settings.Settings,
     supplied = None if scope == pipeline.SCOPE else {'scope': scope, 'done': None, 'count': 0}
     return {'schema': SCHEMA, 'agent': agent, 'model': model, 'effort': effort,
             'model_profiles': profiles, 'review_policy': review_policy.capture(),
+            'review_layout': review_layout.LAYOUT,
             'started_at': home.now(),
             'limits': {'step_seconds': chosen.step_seconds,
                        'training_dollars': chosen.training_dollars},
@@ -534,6 +536,7 @@ class _Run:
         self.workers: dict[str, dict] = {}
 
 
+from runner import reviews as review_layout
 from runner.reviews import Reviewing
 
 
@@ -692,8 +695,24 @@ class Engine(Reviewing):
         if self._run(root).gone:
             gitstate.discard(self.space(), root)
             raise _Gone('This training is no longer run from this computer.')
+        self._decision_arrived(root)
         title = workspace.load(root)['title']
         gitstate.commit(self.space(), f'{title}: {what}', [root])
+
+    def _decision_arrived(self, root: Path) -> None:
+        """Retire decision feedback in the normal commit that reaches its next stop."""
+        record = self._load(root)
+        if not record.get('last_decision') or record.get('last_decision_stop'):
+            return
+        found = self._survey(root, record)
+        step = found.next
+        automatic = step.kind in ('wait', 'outline', 'look') and review_policy.automatic(
+            record, 'training', step.step.id,
+            holding=pipeline.holding(root, found, step.step))
+        if (record.get('question') or record.get('problem') or (not automatic and step.kind in
+                ('wait', 'outline', 'look', 'review', 'stuck', 'documents', 'done'))):
+            record['last_decision_stop'] = home.now()
+            self._store(root, record)
 
     # --- one driver for each training ----------------------------------------------------
 
@@ -3454,6 +3473,14 @@ class Engine(Reviewing):
         if pending:
             raise WorkspaceError(REVIEW_DECIDES.format(name=pending['name']))
 
+    def _remember_decision(self, root, record, label, decision):
+        """Keep the action and the resulting next step until another stop is reached."""
+        self._store(root, record)
+        record['last_decision'] = {'label': label, 'decision': decision, 'at': home.now(),
+                                   'next': self.ahead(root)[1]}
+        record.pop('last_decision_stop', None)
+        self._store(root, record)
+
     def decided(self, path, outcome: dict) -> bool:
         """Commit a decision the page has just recorded. False when no run is driving the
         training, so there is nothing to commit or wake.
@@ -3490,6 +3517,8 @@ class Engine(Reviewing):
             ahead = found.next.step
             if found.next.kind in WORK and ahead.stage != found.session['stage']:
                 workspace.checkpoint(root, stage=ahead.stage, level=self._level(ahead))
+            if target and outcome.get('decision') in ('approve', 'revise', 'accept'):
+                self._remember_decision(root, record, workspace.label(target), outcome['decision'])
             self._commit(root, outcome.get('said') or 'a decision was made on the page')
         return True
 
@@ -3728,6 +3757,34 @@ class Engine(Reviewing):
                          f"{workspace.label(mine.name)}")
         self.wake(root)
         return self.view(root)
+
+    def _busy_on(self, root: Path, artifact: str) -> bool:
+        """A worker writing this file or a downstream file must finish before a pull."""
+        from runner import reviews
+        record = self._load(root)
+        found = self._survey(root, record)
+        affected = {artifact, *reviews.rewritten(root, found.session, found.decks, artifact)}
+        working = self._run(root).workers
+        return any(step.id in working and (step.artifact in affected or step.stage == 'review')
+                   for step in found.steps)
+
+    def pull_copy(self, path, artifact: str, choose=None) -> dict:
+        root = self._held(path)
+        with self.files:
+            if self._busy_on(root, artifact):
+                raise WorkspaceError("It is being worked on. Bring the Doc's changes in once it stops.")
+            outcome = self.copies.pull(root, artifact, choose=choose)
+            record = self._load(root)
+            self._make(root, record)
+            self._store(root, record)
+            self._commit(root, 'bring the Google Doc’s changes into '
+                         + workspace.label(artifact) + ', as asked on the page')
+        self.wake(root)
+        said = (BOTH if outcome['result'] == 'both-changed' else
+                KEPT_OURS if outcome['result'] == 'kept' else
+                PULLED if outcome['result'] == 'pulled' else
+                'The Doc has no new changes to bring in.')
+        return {**self.view(root), 'said': said.format(label=workspace.label(artifact))}
 
     def copies_again(self, path) -> dict:
         """Make the copies that are not made, again, as the person asks. One that still
@@ -4213,11 +4270,39 @@ class Engine(Reviewing):
         is behind a file that has changed since. One not made of a file not approved yet
         is left out, since there is nothing to make it from. A copy's label is the core's
         name for its file, to read in the middle of a sentence."""
-        return [{**{key: entry.get(key) for key in ('artifact', 'kind', 'state', 'link',
+        return [{**({'conflict': True} if entry.get('conflict') else {}),
+                 **{key: entry.get(key) for key in ('artifact', 'kind', 'state', 'link',
                                                     'problem')},
                  'label': workspace.label(entry['artifact'])} for entry in found.copies
                 if entry['state'] != 'not-made'
                 or found.state.get(entry['artifact']) == 'approved']
+
+    def review_beads(self, path, stages: list[dict]) -> list[dict]:
+        """Keep each new combined review visible in the stage row."""
+        import desk
+        root = self.driven(path)
+        if root is None:
+            return stages
+        record = self._load(root)
+        if review_layout.layout(record) < 2 or review_policy.level(record) == 'step_by_step':
+            return stages
+        found = self._survey(root, record)
+        row = list(stages)
+        for step in found.steps:
+            if step.id not in ('review:direction', 'review:final'):
+                continue
+            state = ('done' if step.id in found.done else 'review'
+                     if found.next.kind == 'review' and found.next.step.id == step.id
+                     else 'not-started')
+            item = {'stage': step.id, 'name': step.label, 'state': state,
+                    'words': desk.STAGE_STATES[state]}
+            if step.id == 'review:direction':
+                at = max((i + 1 for i, entry in enumerate(row)
+                          if entry['stage'] in ('blueprint', 'document', 'brief')), default=0)
+            else:
+                at = next((i for i, entry in enumerate(row) if entry['stage'] == 'package'), len(row))
+            row.insert(at, item)
+        return row
 
     def view(self, path) -> dict | None:
         """Everything the page shows for one run. None when no run is driving it."""
@@ -4248,6 +4333,8 @@ class Engine(Reviewing):
             outline['redo'] = self._redo_view(root, record, found, 'outline:' + (level or ''))
         return {
             'state': state, 'sentence': sentence, 'agent': record['agent'],
+            'decided': (record.get('last_decision') if state == 'working' and not asked
+                        and not problem and not record.get('last_decision_stop') else None),
             'mine': mine, 'driver': who, 'queue': self._queue(run) if mine else None,
             'notice': self._notice(root), 'taken': None if mine else team.taken(root),
             'last_shared': last, 'kept': self._set_aside(root),
@@ -4283,8 +4370,16 @@ class Engine(Reviewing):
             'controls': self._controls(record, found, state, mine),
             'finished': ({'ready': bool(report['ready']),
                           'limitations': list(report['limitations']),
-                          'blocking': list(report['blocking']), 'index': report['file']}
+                          'blocking': list(report['blocking']), 'index': report['file'],
+                          'yoodli': self._yoodli(root, found.session)}
                          if report and not resting else None)}
+
+    @staticmethod
+    def _yoodli(root, session):
+        return [{'artifact': name, 'label': workspace.label(name),
+                 'text': review_layout.contained(root, workspace.artifact(root, session, name)['file']).read_text(encoding='utf-8')}
+                for name in workspace.artifact_names(root, session) if name.startswith('yoodli:')
+                and review_layout.contained(root, workspace.artifact(root, session, name)['file']).is_file()]
 
     def redo(self, path, name: str) -> dict | None:
         """What Ask for changes at `name`'s gate writes again: the file and everything
@@ -4370,12 +4465,14 @@ class Engine(Reviewing):
         left out from here."""
         ahead = found.next.step
         level = self._level(ahead) if ahead else None
-        building = level is not None and ahead.stage not in WHOLE_TRAINING
+        grouped = review_policy.level(record) in ('balanced', 'automatic')
+        building = (level is not None and ahead.stage not in WHOLE_TRAINING
+                    and not (grouped and review_layout.preparing(record, ahead)))
         wanted = 'deck' in pipeline.wanted(found.session)
         started = any(name.startswith('deck-start') for name in found.done) or any(
             found.state.get(workspace.qualify('deck', each), 'not-started') != 'not-started'
             for each in found.session['levels'] or [None])
-        return {'finish_level': (level if mine and building and state == 'working'
+        return {'grouped': grouped, 'finish_level': (level if mine and building and state == 'working'
                                  and record.get('halt_after') is None else None),
                 'finishing': record.get('halt_after') if mine and state == 'working' else None,
                 'skip_deck': bool(mine and wanted and not started and found.next.kind != 'deck'

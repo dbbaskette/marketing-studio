@@ -151,3 +151,11 @@ Ask about this finding adds a note to the whole research request, whose sheet sa
 rounds it may run, its last recorded cost and the made work it will redo. At the Balanced
 direction review, Leave out selects findings for a new outline and new looks without
 rerunning research. The full reviewed bundle stays intact.
+
+## Finish from the page
+
+A deck from scratch has an optional brief for points, examples or a rough order, limited to 4000 characters. It goes to the research plan and outline. A document's research switch names its chosen scope: your documents only, or your documents and the public web.
+
+Balanced direction approval needs a look picked from the samples shown. If you edit the outline, its looks are drawn again and you choose from the new samples before building. A previous pick is marked for you, never applied to unseen samples.
+
+After delivery, the computer that made a team deck can ask for changes directly. The confirmation says it will run here again, and the request reclaims the deck before changing it. Teammates still take it explicitly. A deck delivered as PowerPoint can later use **Send to Google Slides** when Google is connected, whether PowerPoint was chosen or used because Google was unavailable. This sends the saved deck as the next revision and keeps the form's original output choice.

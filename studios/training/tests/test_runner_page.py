@@ -47,7 +47,7 @@ POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/a
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
          '/api/note', '/api/review-level')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
-RUN_KEYS = ['agent', 'ahead', 'clash', 'controls', 'copies', 'deck', 'deck_left', 'documents', 'driver', 'effort',
+RUN_KEYS = ['agent', 'ahead', 'clash', 'controls', 'copies', 'decided', 'deck', 'deck_left', 'documents', 'driver', 'effort',
             'finished', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
             'question', 'queue', 'redesign', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
             'workers']
@@ -1610,6 +1610,20 @@ class WholeUpgradeTests(PageCase):
 
 
 class CombinedReviewTests(PageCase):
+    def test_combined_reviews_have_beads(self):
+        path = self.started(review_level='balanced')
+        self.decide(Path(path), 'research-plan')
+        stages = self.get('training', path=path)['stages']
+        by_name = {item['stage']: item for item in stages}
+        names = list(by_name)
+        self.assertEqual(by_name['review:direction']['state'], 'review')
+        self.assertEqual(by_name['review:final']['state'], 'not-started')
+        self.assertEqual(names[names.index('brief') + 1], 'review:direction')
+        self.assertEqual(names[names.index('package') - 1], 'review:final')
+        plain = self.started(title='Plain', review_level='step_by_step')
+        self.assertFalse(any(item['stage'].startswith('review:')
+                             for item in self.get('training', path=plain)['stages']))
+
     def test_grouped_reviews_are_revision_bound_over_the_authenticated_page(self):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
@@ -2493,3 +2507,141 @@ class ResearchFileTests(PageCase):
         found = self.get('file', path=str(root), artifact='reviews/research.md')
         self.assertEqual(found['text'], '# Independent check\n\n- Too broad.\n')
         self.get('file', path=str(root), artifact='reviews/../intake.md', expect=403)
+
+
+class DownloadTests(PageCase):
+    """Managed deliverables leave the authenticated page only as attachments."""
+
+    def setUp(self):
+        super().setUp()
+        self.path = self.started(levels=['101'], stages=['document', 'brief', 'deck'], copies=['word'])
+        self.root = Path(self.path)
+        (self.root / '101').mkdir(exist_ok=True)
+
+    def download(self, artifact, **params):
+        target = '/api/download?' + urlencode({'path': self.path, 'artifact': artifact, **params})
+        return self.page.answer(target, self.headers(), 'GET')
+
+    def test_a_deck_downloads_as_an_attachment(self):
+        (self.root / '101/deck.pptx').write_bytes(b'PK\x03\x04deck')
+        status, kind, data, headers = self.download('deck@101')
+        self.assertEqual((status, kind, data), (200,
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            b'PK\x03\x04deck'))
+        self.assertEqual(headers['Content-Disposition'],
+                         f'attachment; filename="{self.root.name}-101-deck.pptx"')
+
+    def test_a_word_copy_downloads(self):
+        (self.root / '101/document.md').write_text('A guide.')
+        (self.root / '101/document.docx').write_bytes(b'PK word')
+        workspace.export(self.root, 'document@101')
+        status, kind, data, _ = self.download('document@101', copy='word')
+        self.assertEqual((status, kind, data), (200,
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document', b'PK word'))
+
+    def test_the_index_downloads(self):
+        (self.root / 'README.md').write_text('# Made\n')
+        status, kind, data, _ = self.download('README.md')
+        self.assertEqual((status, kind, data), (200, 'text/markdown; charset=utf-8', b'# Made\n'))
+
+    def test_refusals(self):
+        for artifact, params, expected in (
+                ('unknown', {}, 403), ('../README.md', {}, 403), ('/etc/hosts', {}, 403),
+                ('deck@999', {}, 403), ('deck@101', {'copy': 'pdf'}, 400),
+                ('deck@101', {}, 404), ('document@101', {'copy': 'word'}, 404)):
+            with self.subTest(artifact=artifact, params=params):
+                with self.assertRaises(desk.Refusal) as refused:
+                    self.download(artifact, **params)
+                self.assertEqual(refused.exception.status, expected)
+        target = '/api/download?' + urlencode({'path': self.path, 'artifact': 'README.md'})
+        with self.assertRaises(desk.Refusal) as refused:
+            self.page.answer(target, self.headers(token=False), 'GET')
+        self.assertEqual(refused.exception.status, 403)
+        outside = self.base / 'outside.pptx'
+        outside.write_bytes(b'private')
+        (self.root / '101/deck.pptx').symlink_to(outside)
+        with self.assertRaisesRegex(desk.Refusal, 'leads outside the training folder') as refused:
+            self.download('deck@101')
+        self.assertEqual(refused.exception.status, 403)
+        self.assertEqual(self.get('download', 403, path=str(self.base / 'unknown'),
+                                  artifact='README.md')['error'],
+                         'That folder is not a training this computer knows.')
+
+
+class PullCopyTests(PageCase):
+    def test_the_page_brings_in_a_doc_and_reopens_its_review(self):
+        import gdocs
+        path = self.started(levels=['101'], copies=['google'])
+        root = Path(path)
+        self.to_gate(root, 'document@101')
+        self.decide(root, 'document@101')
+        ident = gdocs.read_links(root)['docs']['document@101']['file_id']
+        self.copies.drive.docs[ident] += '\nFrom a teammate.\n'
+        run = self.post('copies', {'path': path, 'pull': 'document@101'})
+        self.assertIn('From a teammate.', (root / '101/document.md').read_text())
+        self.assertIn("The Doc's changes are in.", run['said'])
+        self.assertEqual(workspace.status(root)['gate'], 'document@101')
+
+    def test_pulling_is_refused_while_a_dependent_worker_builds(self):
+        refused = []
+        path = self.started(levels=['101'], copies=['google'])
+        root = Path(path)
+        self.to_gate(root, 'blueprint@101')
+
+        def building(tools, job):
+            refused.append(self.post('copies', {'path': path, 'pull': 'document@101'}, 409))
+            self.workers.document(tools, job)
+
+        self.workers.then('document', building)
+        self.decide(root, 'blueprint@101')
+        self.assertEqual(refused, [{'error': 'It is being worked on. Bring the Doc\'s changes in once it stops.'}])
+
+
+class DecisionMessageTests(PageCase):
+    def test_row_125_reaching_the_next_stop_keeps_the_existing_audit_commit(self):
+        path = self.started()
+        root = Path(path)
+        self.to_gate(root, 'document')
+        self.decide(root, 'document')
+        self.assertIsNone(self.get('run', path=path)['decided'])
+        self.assertTrue(self.engine._load(root)['last_decision_stop'])
+        self.assertEqual(self.log()[-1], 'Rolling restarts: ask for a review of the brief')
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def test_combined_approval_persists_the_next_step_and_done_yoodli_fields(self):
+        path = self.started(review_level='balanced', yoodli=True)
+        root = Path(path)
+        self.decide(root, 'research-plan')
+        working = []
+
+        def build(tools, job):
+            working.append(self.get('run', path=path)['decided'])
+            self.workers.brief(tools, job)
+
+        self.workers.then('brief', build)
+        run = self.get('run', path=path)
+        run = self.post('review', {'path': path, 'expected': run['review']['expected'], 'decision': 'approve'})
+        self.assertEqual(working[0]['label'], 'the first drafts')
+        self.assertIsNone(run['decided'])
+        run = self.post('review', {'path': path, 'expected': run['review']['expected'], 'decision': 'approve'})
+        self.assertEqual(run['finished']['yoodli'][0]['artifact'], 'yoodli:main')
+        self.assertIn('Roleplay name', run['finished']['yoodli'][0]['text'])
+
+    def test_a_decision_is_said_until_the_next_stop(self):
+        path = self.started()
+        root = Path(path)
+        self.to_gate(root, 'document')
+        working = []
+
+        def build(tools, job):
+            working.append(self.get('run', path=path)['decided'])
+            self.workers.brief(tools, job)
+
+        self.workers.then('brief', build)
+        self.decide(root, 'document')
+        self.assertEqual(working[0]['label'], 'the learner guide')
+        self.assertEqual(working[0]['decision'], 'approve')
+        self.assertIn('brief', working[0]['next'])
+        self.assertIsNone(self.get('run', path=path)['decided'])
+        record = self.engine._load(root)
+        self.assertEqual(record['last_decision']['label'], 'the learner guide')

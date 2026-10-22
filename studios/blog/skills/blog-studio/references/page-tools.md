@@ -27,6 +27,9 @@ these options. Opening a tool starts no model, research or Google write.
 - **Clarity and citation readiness / title and opening:** prepare located
   suggestions in the existing editor. Choose one alternative per passage, adjust
   it, and explicitly save selected edits. No invented evidence or automatic CTA.
+- **Open as a Google Doc:** on Done, confirm a private Doc of the approved draft.
+  A verified readback links it; an uncertain upload is reconciled rather than repeated.
+  Pre-publish and Repurpose are on Done too. Sharing stays separate.
 - **Pre-publish:** local report only: headings, placeholders, link syntax, image
   alternatives and selected evidence IDs. No factual, rights or live-link claim.
 - **Check topic overlap:** bounded local reference leads; historical posts require
@@ -74,3 +77,5 @@ research rerun estimate when research is selected, and updates it if another sta
 chosen. New supplied-only blogs instead show Claims in your material, an exact-source map
 with one correction; from-files supplied-only keeps its existing flow. Settings supplies
 Home's research default for new writing, while Explore ideas, Revise and Review use none.
+
+The Done card also opens pre-publish checks and repurposing directly. **Apply the review's findings** at review saves the prior draft and confirms the three jobs before restarting draft, review and handoff. The complete saved review accompanies the preservation rules. Review notes open beside the draft with actual checks; the fold choice is remembered per blog.

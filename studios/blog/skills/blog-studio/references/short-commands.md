@@ -32,7 +32,8 @@ from Git; pass `--destination google|hub` only when already established.
     suggestions.” Apply the corrections to `DRAFT.md` directly only when the
     author asks for local or direct edits (for example before “Push to Google
     Docs”).
-- **Push to Google Docs:** reuse the linked Doc. On first handoff, use the selected
+- **Push to Google Docs:** reuse the linked Doc. The page’s Done card can make the
+  first private Doc with confirmed readback. For a chat handoff, use the selected
   review-folder preference if present; obtain missing destination/access details.
   Read current Google state, handle conflicts, preserve formatting, and verify
   before checkpointing. The request authorizes the selected transfer, not sharing

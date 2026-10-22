@@ -115,6 +115,16 @@ class GoogleDriveTests(unittest.TestCase):
         self.client.request.assert_not_called()
         self.assertFalse((self.root / 'receipt.json').exists())
 
+    def test_markdown_import_keeps_its_type_and_private_destination(self):
+        source = self.root / 'draft.md'
+        source.write_text('# Approved draft\n')
+        self.client.request.return_value = {'id': 'doc_123', 'mimeType': gd.DOC_MIME}
+        self.client.import_new(source, 'Title', self.root / 'receipt.json')
+        body = self.client.request.call_args.kwargs['body']
+        self.assertIn(b'Content-Type: text/markdown', body)
+        self.assertIn(b'# Approved draft', body)
+        self.assertNotIn(b'parents', body)
+
     def test_import_is_native_multipart_and_never_claims_verified(self):
         source = self.root / 'draft.html'
         source.write_text('<h1>Selected draft</h1>')

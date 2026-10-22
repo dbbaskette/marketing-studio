@@ -69,7 +69,7 @@ Once the page is open, use its controls to drive the work:
    **Settings**. Under **Brand skill**, enter its repository and release or choose
    an installed skill, just as in Training Studio. See [brand setup](docs/runner.md#your-brand-skill).
 2. **Choose New blog.** Choose **Polish a document**, **Write from a brief**, **Use my
-   outline**, **Explore ideas**, **New blog from my files** or **Interview me**; give
+   outline**, **Outline only**, **Revise or review a draft**, **Explore ideas**, **New blog from my files** or **Interview me**; give
    the topic and audience, then **Write as** (whose
    voice) and **Kind of post** (the shape of the piece); then upload files or select
    saved references, and set the tone, author and an optional brand. To revise or review, supply the manuscript.
@@ -183,3 +183,9 @@ shows the map first. New blog from my files already reads the files at every sta
 keeps that flow. Public-web research still investigates and independently checks its report;
 its review shows the brief, check, gaps and source limitations. Before you send a research
 change, the page names the full rerun, its last recorded cost and the saved stages it redoes.
+
+### Finish from the page
+
+Home includes **Outline only** and **Revise or review a draft**, with a manuscript upload and a choice to improve it or give feedback only. Developing an idea continues through outline, draft, review and handoff. Done offers pre-publish checks, repurposing and **Open as a Google Doc**. Confirming the latter creates one private Doc of the approved draft; another press reopens it or reconciles an uncertain upload before trying anything else.
+
+At review, **Apply the review's findings** preserves the current draft, then runs draft, review and handoff again after confirmation. Review notes open beside the text, with actual voice, repetition, example and preservation checks. Each uploaded file can be kept in the team library or returned to this blog's material before it is shared or pinned by a run.

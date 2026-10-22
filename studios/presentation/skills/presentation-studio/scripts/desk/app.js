@@ -6,6 +6,7 @@
 // picture, and the deck itself, are fetched as bytes and held in memory, never at an address.
 'use strict';
 
+const EDITED_LOOKS = 'You edited the outline, so the looks will be drawn again from it. You pick from the new ones before the deck is built.';
 const TOKEN_HEADER = 'X-Presentation-Studio-Token';
 const POLL_SHOWN = 5000;
 const POLL_HIDDEN = 20000;
@@ -1271,7 +1272,9 @@ function noteSheet(kind) {
       : gate && gate.redo ? ' ' + gate.redo.says : '');
   const hint = make('p', 'quiet', spec.hint + (marked.length ? ' The parts of the deck '
     + 'that hold ' + slidesNamed(marked) + ', which you marked, are drawn again.' : '')
-    + whole + listed);
+    + whole + listed + (kind === 'changes' && view.run?.state === 'finished'
+      && view.run.mine && !view.run.driver
+      ? ' It runs from this computer again, and your team sees that.' : ''));
   hint.id = 'note-hint';
   const problem = problemLine();
   const submit = submitButton(spec.send, 'send');
@@ -2666,7 +2669,7 @@ async function saveSetup(pressed) {
 function newDraft() {
   const agent = (view.setup && view.setup.agent) || {};
   const brand = (view.setup && view.setup.brand && view.setup.brand.default) || {};
-  return settleBrand({ route: null, step: 0, title: '', audience: '', goal: '', minutes: '',
+  return settleBrand({ route: null, step: 0, title: '', audience: '', goal: '', notes: '', minutes: '',
     delivery: null,
     research: false, firstDraft: false, firstDraftExplicit: false, level: null, selected: '', source: 0, link: '', text: '', upload: null,
     reading: false, brand: brand.brand || '', variant: brand.variant || '',
@@ -2930,7 +2933,10 @@ function reviewLevelCard() {
 }
 
 function aboutStep(draft) {
-  const research = draft.route !== 'existing' ? chip('Research the public web first', draft.research,
+  const researchLabel = draft.route === 'document'
+    ? (draft.researchSources === 1 ? 'Research your documents and the public web first'
+      : 'Research your documents first') : 'Research the public web first';
+  const research = draft.route !== 'existing' ? chip(researchLabel, draft.research,
     (on) => {
       draft.research = on;
       paintNew(false);
@@ -2942,6 +2948,8 @@ function aboutStep(draft) {
       hint: 'Their role, and what they already know.' }),
     field('new-goal', 'What should they take away?', draft, 'goal', { long: true, limit: 2000,
       hint: 'A sentence or two is enough.' }),
+    draft.route === 'scratch' ? field('new-notes', 'What should it cover? (optional)',
+      draft, 'notes', { long: true, limit: 4000, hint: 'Points, examples or a rough order. It goes to the research plan and the outline.' }) : null,
     field('new-minutes', 'About how long, in minutes (optional)', draft, 'minutes',
       { short: true, mode: 'numeric' }),
     choice('Is this deck for a talk or a handout?', DELIVERIES.map((one) => one[1]),
@@ -2954,7 +2962,7 @@ function aboutStep(draft) {
         + 'outline is drafted. Research uses the public web.')) : null,
     draft.route === 'document' && draft.research ? choice('Where may research look?',
       ['Your documents only', 'Your documents and the public web'], draft.researchSources || 0,
-      (index) => { draft.researchSources = index; }, 'research-sources',
+      (index) => { draft.researchSources = index; paintNew(false); }, 'research-sources',
       'With your documents only, nothing about them is searched for on the public web.') : null,
     draft.research ? field('research-questions', 'What should the research answer? (optional)',
       draft, 'researchQuestions', { long: true, rows: 4, hint: 'One question a line, at most 8.' }) : null)];
@@ -3108,6 +3116,7 @@ function formOf(draft) {
   const minutes = draft.minutes.trim();
   const form = { route: draft.route, title: draft.title.trim(),
     audience: draft.audience.trim(), goal: draft.goal.trim(),
+    notes: draft.route === 'scratch' ? (draft.notes || '').trim() : '',
     minutes: minutes ? Number(minutes) : null, brand: draft.brand,
     variant: draft.variant || null, output: OUTPUTS[draft.output][0],
     delivery: DELIVERIES[deliveryOf(draft)][0],
@@ -4466,6 +4475,7 @@ function lookPanel(gate, readonly, held, review) {
 // that hosts the pick under Balanced, or nothing at the look's own gate.
 function looksPanel(gate, readonly, held, review) {
   const offered = gate.offered;
+  if (gate.again && !held.look) held.look = gate.again.choice || '';
   const made = gate.made_in || 'your brand';
   const node = card('Choose the look');
   add(node, make('p', 'lede', 'Made in ' + made + '.'),
@@ -4477,11 +4487,17 @@ function looksPanel(gate, readonly, held, review) {
       offered.chosen.words ? make('p', 'quiet', '“' + offered.chosen.words + '”') : null);
     return add(node, ...gateSaid(gate));
   }
+  if (review) {
+    const edited = make('p', 'quiet', EDITED_LOOKS);
+    edited.id = 'edited-looks';
+    edited.hidden = !held.edited;
+    add(node, edited);
+  }
   add(node, window.DeckPanels.lookPicker({
     name: 'the deck', looks: list(offered.looks), defaultId: offered.default,
     sheet: offered.sheet, notes: list(offered.notes), failed: offered.failed,
     picked: { choice: held.look || '', words: held.lookWords || '' },
-    changed: (now) => { held.look = now.choice; held.lookWords = now.words; },
+    changed: (now) => { held.look = now.choice; held.lookWords = now.words; if (review) reviewChanged(review); },
     picture: (number, alt) => pictureAt(pictureOf(view.path,
       { kind: 'look', ref: number === 0 ? 'sheet' : number }), alt, gate.round) }));
   if (offered.failed && !readonly) {
@@ -4800,13 +4816,15 @@ function deliverPart(run) {
   }
   add(node, bar);
   if (found.notice) add(node, make('p', 'fix', found.notice));
-  if (found.to_google && !theirs(run)) {
-    const google = capsule(view.delivering ? 'Delivering…' : 'Deliver to Google Slides', '',
+  if (found.to_google && !theirs(run) && googleReady()) {
+    const google = capsule(view.delivering ? 'Delivering…' : 'Send to Google Slides', '',
       () => deliverToGoogle(run, google), 'deliver-google');
     add(node, make('p', 'quiet', 'Once you are signed in to Google with gcloud on this '
       + 'computer, the same deck goes to Google Slides as the next revision. Nothing in it '
       + 'is built again.'), add(make('div', 'bar'), google));
   }
+  if (found.to_google && !theirs(run) && !googleReady()) add(node, make('p', 'quiet',
+    'Sign in to Google on Status to send this deck to Google Slides later.'));
   const revisions = list(found.revisions);
   if (revisions.length > 1) {
     const items = make('ul', 'rows');
@@ -5099,7 +5117,7 @@ function reviewOf(gate) {
   }
   const slides = sized(marks.slides);
   const edited = held.edited ? { edited: held.work } : null;
-  const tally = count(slides, 'slide to change', 'slides to change')
+  let tally = count(slides, 'slide to change', 'slides to change')
     + (held.edited ? ' · edited here' : '');
   if (slides) {
     return { label: 'Send ' + count(slides, 'change', 'changes'), approve: false,
@@ -5108,7 +5126,10 @@ function reviewOf(gate) {
   // In the direction review the look picked here goes with the approval.
   const look = gate.look?.offered && !gate.look.offered.chosen && held.look
     ? { look: held.look } : null;
-  return { label: 'Approve', approve: true,
+  const blocked = gate.name === 'gate:outline' && gate.look?.offered && !gate.look.offered.chosen
+    && !held.look && !held.edited ? 'Pick a look to approve the direction.' : '';
+  if (blocked) tally += ' · 1 look to pick';
+  return { label: 'Approve', approve: true, blocked,
     extra: edited || look ? { ...(edited || {}), ...(look || {}) } : null, tally };
 }
 
@@ -5116,6 +5137,7 @@ function reviewOf(gate) {
 // given, or else at the head of the deck.
 function sendReview(gate, pressed, problem) {
   const made = reviewOf(gate);
+  if (made.blocked) { say(problem || byId('gate-problem'), made.blocked); return; }
   const words = made.approve && made.extra?.look ? (chosenFor(gate).lookWords || '').trim() : '';
   decide(made.approve ? 'approve' : 'changes', words, problem || null, pressed, made.extra);
 }
@@ -5161,11 +5183,13 @@ function paintReviewBar(gate, node) {
   if (tally.textContent !== made.tally) tally.textContent = made.tally;
   // What was refused before is not what the marks say now. The one button that sends the
   // marks is the toolbar's, which says what it will do with them.
-  say(problem, '');
+  say(problem, made.blocked || '');
 }
 
 // A mark changed: the tally, this button and the toolbar's say so at once.
 function reviewChanged(gate) {
+  const edited = byId('edited-looks');
+  if (edited) edited.hidden = !chosenFor(gate).edited;
   paintReviewBar(gate, byId('review-bar'));
   if (view.screen === 'deck' && view.run) paintDeck(false);
 }
@@ -5410,6 +5434,7 @@ function deckActions(run, lead) {
         decide('approve', (chosenFor(gate).lookWords || '').trim(), problem, approve);
       } else decide('approve', '', problem, approve);
     }, 'approve');
+    approve.disabled = REVIEWED.includes(run.gate.name) && Boolean(reviewOf(run.gate).blocked);
     const brand = run.gate.name === 'gate:look';
     // An existing deck's slides are read by code that takes no note: nothing to ask it.
     const read = run.gate.name === 'gate:classify' && run.gate.kind === 'deck';
@@ -5451,7 +5476,8 @@ function paintDeck(fresh) {
     mark: [title, route, run.state, lead, gate && [gate.name, gate.round, chosenFor(gate).wrong],
       read, driver,
       Boolean(run.question), run.problem,
-      gate && REVIEWED.includes(gate.name) && !read ? reviewOf(gate).label : ''] }, [
+      gate && REVIEWED.includes(gate.name) && !read
+        ? [reviewOf(gate).label, reviewOf(gate).blocked] : ''] }, [
     ['intro', [run.state, run.sentence, run.queue, view.steered, read, Boolean(run.problem),
       run.timeline, run.workers, run.spent, run.build_progress && run.build_progress.slides],
     () => deckIntro(run)],

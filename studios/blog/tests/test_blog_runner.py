@@ -99,6 +99,23 @@ class RunnerCase(Fixture):
 
 
 class BlogRunnerTests(RunnerCase):
+    def test_a_developed_idea_is_reviewed_and_packaged(self):
+        found = self.submit(self.create(page=True, mode='ideas', stop='outline'), page=True)
+        found = self.approve(found, page=True)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root,
+                'develop',
+                {
+                    'id': found['id'],
+                    'expected': found['expected'],
+                    'request': 'Develop the first angle.',
+                },
+            )
+        _, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(run['pipeline'], ['outline', 'draft', 'review', 'package'])
+        self.assertEqual(record['stop_point'], 'package')
+
     def test_profiles_are_saved_and_background_worker_gets_the_saved_main(self):
         from studio_core import studios_config
 
@@ -179,7 +196,7 @@ class BlogRunnerTests(RunnerCase):
         found = self.approve(found, page=True)
         self.assertEqual(found['next'], 'draft')
 
-    def test_developing_an_idea_stops_at_an_editable_draft(self):
+    def test_developing_an_idea_finishes_review_and_package(self):
         ideas = '# Three angles\n\n1. Ownership\n2. Feedback\n3. Context'
         found = self.submit(self.create(page=True, mode='ideas', stop='outline'), ideas, page=True)
         with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
@@ -193,12 +210,12 @@ class BlogRunnerTests(RunnerCase):
                 },
             )
         directory, record, run = runner.load(self.root, found['id'])
-        self.assertEqual(run['pipeline'], ['outline', 'draft'])
-        self.assertEqual(record['stop_point'], 'draft')
+        self.assertEqual(run['pipeline'], ['outline', 'draft', 'review', 'package'])
+        self.assertEqual(record['stop_point'], 'package')
         self.assertIn('second idea', run['stages']['outline']['request'])
         self.assertEqual((directory / 'OUTLINE.md').read_text(), ideas)
         found = runner.survey(self.root, found['id'])
-        for stage in ('outline', 'draft'):
+        for stage in ('outline', 'draft', 'review', 'package'):
             self.assertEqual(found['next'], stage)
             found = self.submit(found, page=True)
             found = self.approve(found, page=True)
@@ -850,7 +867,7 @@ class BlogRunnerTests(RunnerCase):
         directory, _ = studio.item(self.root, 'articles', found['id'])
         (directory / 'OUTLINE.md').write_text('A local change outside the runner')
         shown = runner.document(self.root, found['id'], 'outline')
-        self.assertFalse(shown['checks'][1]['passed'])
+        self.assertEqual(shown['status'], 'stale')
         history = next((directory / 'history').glob('derived-blog-approved-outline-*.md'))
         history.write_text('Changed outside the runner')
         self.assertIsNone(runner.document(self.root, found['id'], 'outline')['previous'])
@@ -3306,3 +3323,146 @@ class ClaimsMapTests(RunnerCase):
             self.root, 'skip-research', {'id': found['id'], 'expected': found['expected']}
         )
         self.assertNotIn('claims-map', [s['stage'] for s in shown['stages']])
+
+
+class ApplyReviewTests(RunnerCase):
+    def test_feedback_only_can_explicitly_apply_findings_and_finish_a_package(self):
+        found = self.submit(
+            self.create(page=True, mode='review', id=self.article(), stop='review'), page=True
+        )
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root, 'apply-review', {'id': found['id'], 'expected': found['expected']}
+            )
+        _, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(run['pipeline'], ['draft', 'review', 'package'])
+        self.assertEqual(record['stop_point'], 'package')
+        self.assertEqual(runner.survey(self.root, found['id'])['next'], 'draft')
+
+    def at_package(self):
+        found = self.create(page=True)
+        for stage in ('outline', 'draft', 'review'):
+            self.assertEqual(found['next'], stage)
+            found = self.approve(self.submit(found, page=True), page=True)
+        return self.submit(found, page=True)
+
+    def test_apply_review_edits_only_for_the_findings_then_reviews_and_packages(self):
+        found = self.at_package()
+        directory, _, _ = runner.load(self.root, found['id'])
+        review = (directory / 'derived/blog-review.md').read_text()
+        before = (directory / 'DRAFT.md').read_text()
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root, 'apply-review', {'id': found['id'], 'expected': found['expected']}
+            )
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertTrue(
+            payload['changes'].startswith('Apply only the findings in the review below.')
+        )
+        self.assertIn(review, payload['changes'])
+        self.assertIn('change nothing else', payload['changes'])
+        self.assertIn('minimal edit, not a rewrite', guidance)
+        found = runner.survey(self.root, found['id'])
+        self.assertEqual(found['next'], 'draft')
+        found = self.approve(
+            self.submit(found, before + '\nRequested correction.', page=True), page=True
+        )
+        for stage in ('review', 'package'):
+            self.assertEqual(found['next'], stage)
+            found = self.approve(self.submit(found, page=True), page=True)
+        self.assertTrue(found['complete'])
+        self.assertTrue(
+            any(path.read_text() == before for path in (directory / 'history').glob('*.md'))
+        )
+
+    def test_apply_review_needs_a_review(self):
+        found = self.create(page=True)
+        with (
+            studio.locked(self.root),
+            self.assertRaisesRegex(ValueError, 'There is no review to apply yet'),
+        ):
+            runner.dispatch(
+                self.root, 'apply-review', {'id': found['id'], 'expected': found['expected']}
+            )
+
+    def test_apply_review_is_revision_bound_and_survives_recovery(self):
+        found = self.at_package()
+        with studio.locked(self.root):
+            with self.assertRaisesRegex(ValueError, 'changed'):
+                runner.dispatch(self.root, 'apply-review', {'id': found['id'], 'expected': 'old'})
+            with patch.object(runner.Engine, 'control', return_value={}):
+                runner.dispatch(
+                    self.root, 'apply-review', {'id': found['id'], 'expected': found['expected']}
+                )
+        _, _, run = runner.load(self.root, found['id'])
+        self.assertTrue(run['stages']['draft']['apply_review'])
+        self.assertIn('Keep the author', runner.job(self.root, found['id'])[1]['changes'])
+
+
+class GateCheckTests(RunnerCase):
+    def drafted(self, text='# Draft\n\nSynthetic writing.', **settings):
+        found = self.approve(self.submit(self.create(page=True, **settings), page=True), page=True)
+        return self.submit(found, text, page=True)
+
+    def test_checks_show_what_lint_found(self):
+        guide, rules = self.base / 'voice.md', self.base / 'rules.json'
+        guide.write_text('Short direct sentences.')
+        rules.write_text(json.dumps({'no_em_dashes': True}))
+        voice = self.command(
+            'profile',
+            'create',
+            '--name',
+            'Avery',
+            '--guide-file',
+            str(guide),
+            '--rules-file',
+            str(rules),
+            '--status',
+            'confirmed',
+        )
+        found = self.drafted('# Draft\n\nTwo — pauses — here.', profile=voice['id'])
+        shown = runner.document(self.root, found['id'], 'draft')
+        row = next(row for row in shown['checks'] if row['label'] == '2 em dashes')
+        self.assertFalse(row['passed'])
+        self.assertIn('line 3: —', row['detail'])
+
+    def test_old_preservation_notes_are_read_as_a_check(self):
+        found = self.drafted()
+        directory, record, run = runner.load(self.root, found['id'])
+        run['stages']['draft']['notes'] = 'Useful note.\nPreservation check: ' + json.dumps(
+            {'needs_review': True, 'changes': {'numbers': {'before': ['12'], 'after': ['13']}}}
+        )
+        runner.save(self.root, directory, record, run, 'Synthetic old note')
+        shown = runner.document(self.root, found['id'], 'draft')
+        self.assertEqual(shown['notes'], 'Useful note.')
+        self.assertTrue(
+            any(row['label'] == 'Numbers, links or quotations changed' for row in shown['checks'])
+        )
+
+    def test_preservation_is_data_and_survives_into_the_review(self):
+        found = self.approve(self.drafted('# Draft\n\nKeep 12 units.'), page=True)
+        found = runner.decide(
+            self.root,
+            found['id'],
+            found['expected'],
+            'changes',
+            'Correct the number.',
+            page=True,
+            target='draft',
+        )
+        found = self.submit(found, '# Draft\n\nKeep 13 units.', page=True)
+        _, _, run = runner.load(self.root, found['id'])
+        self.assertTrue(run['stages']['draft']['preservation']['needs_review'])
+        self.assertNotIn('Preservation check:', run['stages']['draft']['notes'])
+        found = self.submit(self.approve(found, page=True), page=True)
+        rows = runner.document(self.root, found['id'], 'review')['checks']
+        self.assertTrue(any(row['label'] == 'Numbers, links or quotations changed' for row in rows))
+
+    def test_no_always_true_rows(self):
+        found = self.submit(self.create(page=True), page=True)
+        labels = [
+            row['label'] for row in runner.document(self.root, found['id'], 'outline')['checks']
+        ]
+        self.assertNotIn('Saved document contains readable text', labels)
+        self.assertNotIn('Document matches its submitted version and selected inputs', labels)
+        self.assertEqual(labels, ['No automatic checks apply to Outline.'])

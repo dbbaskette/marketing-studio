@@ -314,6 +314,17 @@ class ScreenTests(ScriptedPage, PageCase):
     def setup_with(self, **more) -> dict:
         return ok({**self.get('setup'), **more})
 
+    def test_a_scratch_brief_is_sent_with_the_form(self):
+        answers = self.answers(**{'POST /api/decks': [ok({'path': '/nowhere', 'id': 'x'})],
+                                  'GET /api/run': [{'status': 404, 'body': {'error': 'There is no deck there.'}}]})
+        result = self.run_page(answers, [
+            {'click': 'New deck'}, {'click': 'Start from scratch'},
+            {'fill': 'A short title', 'value': 'Synthetic deck'},
+            {'fill': 'What should it cover? (optional)', 'value': ' Cover rollback first. '},
+            {'click': 'Continue'}, {'click': 'Start the deck'}])
+        (_, body), = self.posts(result)
+        self.assertEqual(body['form']['notes'], 'Cover rollback first.')
+
     def test_research_from_a_document_asks_where_it_may_look(self):
         for both in (False, True):
             answers = self.answers(**{'POST /api/decks': [ok({'path': '/nowhere', 'id': 'x'})],
@@ -321,13 +332,15 @@ class ScreenTests(ScriptedPage, PageCase):
             steps = [{'click': 'New deck'}, {'click': 'Start from a document'},
                      {'click': 'Paste the text'}, {'fill': 'The text', 'value': 'Synthetic notes.'},
                      {'click': 'Continue'}, {'fill': 'A short title', 'value': 'Synthetic deck'},
-                     {'click': 'Research the public web first'}, {'snapshot': 'boundary'},
+                     {'click': 'Research your documents first'}, {'snapshot': 'boundary'},
                      {'fill': 'What should the research answer? (optional)', 'value': 'Why?\nWhat next?'}]
             if both:
                 steps += [{'click': 'Your documents and the public web'}]
-            steps += [{'click': 'Continue'}, {'click': 'Start the deck'}]
+            steps += [{'snapshot': 'scope'}, {'click': 'Continue'}, {'click': 'Start the deck'}]
             result = self.run_page(answers, steps)
             self.assertIn('Where may research look?', result['snapshots']['boundary']['text'])
+            self.assertIn('Research your documents and the public web first' if both else 'Research your documents first', result['snapshots']['scope']['text'])
+            self.assertNotIn('What should it cover? (optional)', result['snapshots']['boundary']['text'])
             posted = [body for address, body in self.posts(result) if address == '/api/decks']
             self.assertEqual(posted[0]['form']['research_sources'], 'both' if both else 'documents')
             self.assertEqual(posted[0]['form']['research_questions'], ['Why?', 'What next?'])
@@ -1292,18 +1305,28 @@ class ScreenTests(ScriptedPage, PageCase):
         self.slides.run.drive = True
         sent = self.post('deliver', {'path': path})
         result = self.deck_screen(path, [
-            {'snapshot': 'fallback'}, {'click': 'Deliver to Google Slides'},
+            {'snapshot': 'fallback'}, {'click': 'Send to Google Slides'},
             {'snapshot': 'sent'}], **{'GET /api/run': [ok(before), ok(sent)],
                                       'POST /api/deliver': [ok(sent)]})
         fallback = result['snapshots']['fallback']
         self.assertIn("Google isn't connected, so this deck was made as a PowerPoint file.",
                       fallback['text'])
-        self.assertIn('Deliver to Google Slides', fallback['buttons'])
+        self.assertIn('Send to Google Slides', fallback['buttons'])
         self.assertEqual([body for address, body in self.posts(result)],
                          [{'path': path}])
         self.assertIn('The deck is in Google Slides now.', result['snapshots']['sent']['toasts'])
-        self.assertNotIn('Deliver to Google Slides', result['snapshots']['sent']['buttons'])
+        self.assertNotIn('Send to Google Slides', result['snapshots']['sent']['buttons'])
         self.assertIn('Revision 2.', result['snapshots']['sent']['text'])
+
+    def test_powerpoint_by_choice_offers_google_and_an_explicit_change_sheet(self):
+        path = self.started(output='pptx')
+        for gate in ('gate:outline', 'gate:look', 'gate:build'):
+            self.decided(path, gate)
+        shown = {**self.run_of(path), 'driver': None, 'mine': True}
+        result = self.deck_screen(path, [{'snapshot': 'done'}, {'click': 'Ask for changes'},
+            {'snapshot': 'changes'}], **{'GET /api/run': [ok(shown)]})
+        self.assertIn('Send to Google Slides', result['snapshots']['done']['buttons'])
+        self.assertIn('It runs from this computer again, and your team sees that.', result['snapshots']['changes']['text'])
 
     def test_an_existing_deck_shows_its_slides_at_classify(self):
         path = self.started(route='existing', level='polish',
@@ -1414,6 +1437,23 @@ class ScreenTests(ScriptedPage, PageCase):
         # What the page sent is what the runner takes: the deck goes on in the bold look.
         self.post('decide', body)
         self.assertEqual(self.run_of(path)['gate']['name'], 'gate:build')
+
+    def test_direction_approval_needs_a_pick_until_the_outline_is_edited(self):
+        from unittest import mock
+        from studio_core import review_policy
+        self.brand.run.offers_looks = True
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
+            path = self.started()
+        result = self.deck_screen(path, [{'snapshot': 'unpicked'}, {'see': 'Every look'},
+            {'see': 'Clear'}, {'click': 'Clear'}, {'snapshot': 'picked'},
+            {'fill': 'Title of slide 2', 'value': 'An edited synthetic claim'}, {'snapshot': 'edited'}],
+            **{'GET /api/slide': [PICTURE] * 3})
+        shots = result['snapshots']
+        self.assertIn('Approve', shots['unpicked']['off'])
+        self.assertIn('1 look to pick', shots['unpicked']['text'])
+        self.assertNotIn('Approve', shots['picked']['off'])
+        self.assertNotIn('Approve', shots['edited']['off'])
+        self.assertIn('You edited the outline, so the looks will be drawn again from it.', shots['edited']['text'])
 
     def test_the_direction_review_hosts_the_look_pick(self):
         from unittest import mock

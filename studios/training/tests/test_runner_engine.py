@@ -1449,7 +1449,7 @@ class HaltTests(StudioCase):
                          ('paused', 'Paused. Nothing new starts until you resume.'))
         # The level 101 guide was finished; the level 201 guide was not started.
         self.assertEqual(len(self.workers.of('document')), 1)
-        self.assertEqual(view['controls'], {'finish_level': None, 'finishing': None,
+        self.assertEqual(view['controls'], {'grouped': True, 'finish_level': None, 'finishing': None,
                                             'skip_deck': False})
         self.assertIn('Rolling restarts: level 101 finished; paused as asked on the page', self.log())
         self.refused(root, 'finish-level', 'Only a training that is working can finish its '
@@ -1496,7 +1496,7 @@ class HaltTests(StudioCase):
         # pause before the index afterwards.
         shown = self.view(root)
         self.assertEqual((shown['state'], shown['review']['phase']), ('waiting', 'final'))
-        self.assertEqual(shown['controls'], {'finish_level': None, 'finishing': None,
+        self.assertEqual(shown['controls'], {'grouped': True, 'finish_level': None, 'finishing': None,
                                              'skip_deck': False})
         self.assertIsNone(self.engine._load(root).get('halt_after'))
         self.assertIn('Rolling restarts: level 101 finished; waiting as asked on the page', self.log())

@@ -114,6 +114,7 @@ def check_form(sent: dict, brands: list | None) -> dict:
     title = _text(sent, 'title', 'title', required=True)
     audience = _text(sent, 'audience', 'audience')
     goal = _text(sent, 'goal', 'goal')
+    notes = _text(sent, 'notes', 'brief')
     minutes = sent.get('minutes')
     if minutes in (None, ''):
         minutes = None
@@ -154,7 +155,7 @@ def check_form(sent: dict, brands: list | None) -> dict:
         raise WorkspaceError('Say whether the deck is for a talk or a handout.')
     checked = {'route': route, 'title': title, 'audience': audience, 'goal': goal,
                'minutes': minutes, 'brand': brand, 'variant': variant, 'output': output,
-               'research': research, 'delivery': delivery}
+               'research': research, 'delivery': delivery, 'notes': notes}
     if research and route == 'document':
         sources = sent.get('research_sources') or 'documents'
         if sources not in RESEARCH_SOURCES:

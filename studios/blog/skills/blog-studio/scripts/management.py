@@ -590,6 +590,121 @@ def source_role(root, data):
     return result
 
 
+def uploaded_here(root, ident):
+    """Only this computer's upload receipts establish ownership of a new form upload."""
+    for path in studio.inside(root, '.uploads').glob('*.json'):
+        if path.is_symlink():
+            continue
+        saved = studio.read_json(path)
+        result = saved.get('result') or {}
+        sources = [result.get('source')] + [row.get('source') for row in result.get('files', [])]
+        if any(isinstance(source, dict) and source.get('id') == ident for source in sources):
+            return True
+    return False
+
+
+def source_shared(root, ident):
+    from hub_workspace import active
+
+    for path in studio.inside(root, '.desk-receipts').glob('*.json'):
+        value = studio.read_json(path)
+        if (
+            value.get('group') == 'source'
+            and value.get('local_id') == ident
+            and (
+                value.get('hub')
+                or value.get('sharing') in ('shared', 'synchronized', 'pending-review')
+            )
+        ):
+            return True
+    adapter = active(root)
+    if adapter:
+        adapter.reload()
+        if adapter.state.get('items', {}).get(adapter.key('sources', ident)):
+            return True
+    from team_workspace import space
+    from studio_sync import support
+
+    shared = space(root)
+    if shared:
+        # A committed shared reference can reach the team through Git history, even
+        # when sending decisions is manual. It cannot be made private by moving it.
+        directory, _ = studio.item(root, 'sources', ident)
+        relative = (
+            (directory / 'record.json').resolve().relative_to(shared.repo.resolve()).as_posix()
+        )
+        if support.passes(shared.repo, 'rev-parse', '--verify', 'HEAD'):
+            return bool(
+                support.git(shared.repo, 'log', '-1', '--format=%H', 'HEAD', '--', relative)
+            )
+    return False
+
+
+def source_keep(root, data):
+    """Move an unpinned upload without changing its ID, bytes, original or example role."""
+    if set(data) - {'id', 'keep'} or type(data.get('keep')) is not bool:
+        raise ValueError('Choose whether to keep this file in the team library.')
+    directory, record = studio.item(root, 'sources', str(data.get('id', '')))
+    material = studio.is_material(root, directory, record)
+    keep = data['keep']
+    if not material and 'reference' not in record.get('purposes', []):
+        raise ValueError('Only an uploaded file or a library reference changes where it is kept.')
+    if keep == (not material):
+        return {'id': record['id'], 'kept': keep}
+    for path in studio.inside(root, 'articles').glob('*/session.json'):
+        article = studio.read_json(path)
+        if record['id'] in article.get('material', []) or any(
+            selected.get('source_id') == record['id'] for selected in article.get('sources', [])
+        ):
+            where = 'this blog' if material else 'the team library'
+            raise ValueError(
+                f'A started blog read this file from {where}; it stays there. '
+                'Upload it again to change that.'
+            )
+    if not keep:
+        if source_shared(root, record['id']):
+            raise ValueError(
+                'It is already shared with your team; remove it from the library screen.'
+            )
+        if record.get('revision') != 1 or not uploaded_here(root, record['id']):
+            raise ValueError(
+                'Only a new file added on this computer’s start form can move out of the library.'
+            )
+    target = (
+        studio.inside(root, 'sources', record['id'])
+        if keep
+        else studio.material(root, record['id'])
+    )
+    if target.exists() or target.is_symlink():
+        raise ValueError('There is already a saved file in that place; nothing was moved.')
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    directory.rename(target)
+    old = 'material' if keep else 'reference'
+    new = 'reference' if keep else 'material'
+    record['purposes'] = [new if purpose == old else purpose for purpose in record['purposes']]
+    if keep:
+        record.setdefault(
+            'library',
+            {
+                'origin_kind': 'google-doc'
+                if record.get('origin', '').startswith('https://docs.google.com/')
+                else 'upload'
+            },
+        )
+    try:
+        studio.persist(target, 'sources', record)
+    except BaseException:
+        target.rename(directory)
+        raise
+    result = {'id': record['id'], 'kept': keep}
+    if keep:
+        # This is its first library revision; material had no shared library history.
+        blog_library.save_revision(target, record)
+        shared = share(root, 'source', record)
+        result['receipts'] = [receipt(root, 'File kept in the team library', shared, 'source')]
+    return result
+
+
 def upload(root, data):
     if set(data) - {
         'operation',
@@ -1559,6 +1674,17 @@ def _dispatch(root, route, data):
 
             return blog_delete.restore(root, data)
         adapter = authorize_write(root)
+        if route == 'google-open':
+            import blog_runner
+            import google_handoff
+
+            if data.get('confirmed') is not True:
+                raise ValueError('Confirm making a private Google Doc first.')
+            try:
+                blog_runner.guard(root, data['id'], data.get('expected'), page=True)
+            except ValueError as error:
+                raise google_handoff.Conflict(str(error)) from None
+            return google_handoff.open_as_doc(root, data['id'])
         if route in ('google-preview', 'google-start'):
             import google_intake
 
@@ -1619,6 +1745,8 @@ def _dispatch(root, route, data):
             return retry_receipt(root, adapter, data)
         if route == 'upload':
             return upload(root, data)
+        if route == 'source-keep':
+            return source_keep(root, data)
         if route == 'source-role':
             return source_role(root, data)
         if route == 'schedule':
@@ -1846,7 +1974,7 @@ def dispatch(root, route, data):
             data.get('id')
             if route.startswith(('run-', 'editor-'))
             and route != 'run-create'
-            or route in ('schedule', 'tool-action', 'blog-delete')
+            or route in ('schedule', 'tool-action', 'blog-delete', 'google-open')
             else None,
         )
     result = _dispatch(root, route, data)
@@ -1855,7 +1983,11 @@ def dispatch(root, route, data):
             # A tool result may be a job or a profile, whose IDs are not blogs: the blog
             # a tool worked on is the one the request named.
             ident = data.get('id')
-        elif route.startswith(('run-', 'editor-')) or route in ('schedule', 'google-start'):
+        elif route.startswith(('run-', 'editor-')) or route in (
+            'schedule',
+            'google-start',
+            'google-open',
+        ):
             ident = result.get('id')
         else:
             ident = None
@@ -1893,6 +2025,10 @@ def note_unexpected(exc):
 
 def failure(exc, writing=False):
     """(HTTP status, JSON body) for any exception. Authored messages pass through; internals never do."""
+    from google_handoff import Conflict as HandoffConflict
+
+    if isinstance(exc, HandoffConflict):
+        return 409, {'error': str(exc)[:500]}
     if isinstance(exc, CurationConflict):
         # A refused save is a conflict; a read of a reference that went away is an ordinary 400, as before.
         return (409 if writing else 400), {'error': str(exc)[:500], 'code': 'source-conflict'}
@@ -2002,9 +2138,9 @@ def view(root, name, query):
             if name == 'tool-history':
                 return advanced_tools.history_preview(root, arg('id'), arg('revision'))
             if name == 'prepublish':
-                return advanced_tools.prepublish.report(
-                    root, arg('id'), whole(arg('title_limit', 80))
-                )
+                import prepublish
+
+                return prepublish.report(root, arg('id'), whole(arg('title_limit', 80)))
             return advanced_tools.overview(root, arg('id'), whole(arg('offset', 0)))
     if name == 'manuscript':
         import manuscript_editor

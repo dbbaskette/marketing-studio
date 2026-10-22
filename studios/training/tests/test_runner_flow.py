@@ -119,7 +119,7 @@ class ToTheEndTests(FlowCase):
             'done', 'This training is finished, with 1 thing left out or limited.'))
         self.assertEqual(view['finished'], {
             'ready': True, 'limitations': ['The deck stage was left out'], 'blocking': [],
-            'index': 'README.md'})
+            'index': 'README.md', 'yoodli': []})
         self.assertEqual((view['deck_left'], view['documents'], view['copies'], view['problem']),
                          (None, None, [], None))
         self.assertEqual({step['status'] for step in view['steps']}, {'done'})
@@ -396,7 +396,9 @@ class YoodliTests(FlowCase):
             ('yoodli:main', 'word', 'made', 'yoodli/main.docx')])
         self.assertEqual(view['finished'], {
             'ready': True, 'limitations': ['The deck stage was left out'], 'blocking': [],
-            'index': 'README.md'})
+            'index': 'README.md', 'yoodli': [{'artifact': 'yoodli:main',
+                'label': workspace.label('yoodli:main'),
+                'text': (root / 'yoodli/main.md').read_text()}]})
         self.assertEqual(assess.run_checks(root)['practice']['basis'], 'Yoodli goals')
 
     def test_without_yoodli_no_scenario_is_laid_out(self):

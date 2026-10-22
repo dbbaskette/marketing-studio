@@ -8,8 +8,25 @@ from workspace import WorkspaceError
 from studio_core import deck_direction, research_view, review_policy
 from runner import pipeline, deck, worker_tools
 
+LAYOUT = 2
+DIRECTION_PREPARED = ('research-plan', 'research', 'blueprint', 'document')
 PREPARED = ('research-plan', 'research', 'blueprint', 'document', 'brief')
 DECK_PREPARED = ('deck-handoff', 'deck-brand', 'deck-outline', 'deck-look')
+
+
+def layout(run):
+    return run.get('review_layout', 1)
+
+
+def prepared(run):
+    return DIRECTION_PREPARED if layout(run) >= 2 else PREPARED
+
+
+def preparing(run, step):
+    """Whether this step belongs before the combined first drafts review."""
+    return (step.stage in ('intake', 'research-plan', 'research', 'blueprint')
+            or step.stage in prepared(run) and not step.id.startswith('copies:')
+            or pipeline.bare(step.id) in DECK_PREPARED)
 
 
 def contained(root, relative):
@@ -25,7 +42,7 @@ def contents(root, session, run, phase):
               'policy': run['review_policy'], 'files': {}, 'inputs': {}}
     for name in workspace.artifact_names(root, session):
         spec = workspace.artifact(root, session, name)
-        if phase == 'direction' and spec['stage'] not in ('intake', *PREPARED):
+        if phase == 'direction' and spec['stage'] not in ('intake', *prepared(run)):
             continue
         file = contained(root, spec['file'])
         values['files'][name] = workspace.sha256_file(file)
@@ -60,9 +77,7 @@ def group(root, session, run, listed, done):
     for step in listed:
         if step.id == 'package':
             package.append(step)
-        elif (step.stage in ('intake', 'research-plan', 'research', 'blueprint')
-              or step.stage in ('document', 'brief') and not step.id.startswith('copies:')
-              or pipeline.bare(step.id) in DECK_PREPARED):
+        elif preparing(run, step):
             prep.append(step)
         else:
             build.append(step)
@@ -136,9 +151,16 @@ def commits(root, session, decks, phase):
         return None
     slides = sum(len(deck.slides_of(mine.outline)) for mine in decks.values())
     before = deck.before(slides) if slides else {}
+    specs = [workspace.artifact(root, session, name)
+             for name in workspace.artifact_names(root, session)]
+
+    def unwritten(stage):
+        files = [spec['file'] for spec in specs if spec['stage'] == stage]
+        return not files or any(not contained(root, file).is_file() for file in files)
+
     return {'levels': len(session['levels'] or [None]),
             'materials': [stage for stage in pipeline.wanted(session)
-                          if stage != 'deck' and stage not in PREPARED],
+                          if stage != 'deck' and unwritten(stage)],
             'deck': bool(decks),
             'dollars': before.get('dollars'), 'minutes': before.get('minutes')}
 
@@ -263,7 +285,7 @@ class Reviewing:
         for name in workspace.artifact_names(root, found.session):
             spec = workspace.artifact(root, found.session, name)
             file = contained(root, spec['file'])
-            if not file.is_file() or phase == 'direction' and spec['stage'] not in PREPARED:
+            if not file.is_file() or phase == 'direction' and spec['stage'] not in prepared(record):
                 continue
             import desk
             document = desk.document(root, found.session, name)
@@ -400,6 +422,8 @@ class Reviewing:
                 for ask in asked:
                     self._request(root, record, decisions, ask['target'], ask['note'])
             self._store(root, record)
+            if decision != 'approve' or not again:
+                self._remember_decision(root, record, view['label'].removeprefix('Review '), decision)
             self._commit(root, 'draw the looks again for the direction review'
                          if decision == 'approve' and again else
                          'approve the combined review' if decision == 'approve'

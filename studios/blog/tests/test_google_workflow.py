@@ -774,6 +774,22 @@ class GoogleWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(confirmed['status'], 'confirmed')
 
+    def test_native_comparison_preserves_multiline_literal_code(self):
+        directory, _ = studio.item(self.root, 'articles', self.aid)
+        original = '`a\n[text](https://example.invalid)\nb`'
+        transfer = 'f' * 32
+        google.snapshot(directory, transfer, 'local', original)
+        body = original.replace('(https://example.invalid)', '(<https://example.invalid>)')
+        self.assertFalse(
+            google.same_text(
+                directory,
+                transfer,
+                {'local_sha256': studio.digest(original.encode())},
+                {'content_sha256': studio.digest(body.encode()), 'projection': rt.PROJECTION},
+                body,
+            )
+        )
+
     def test_confirmation_tolerates_incidental_whitespace_but_not_changed_paragraphs(self):
         self.save('draft', 'First paragraph.\n\nSecond paragraph.\n')
         prepared = self.run_command('google', 'prepare', '--id', self.aid)

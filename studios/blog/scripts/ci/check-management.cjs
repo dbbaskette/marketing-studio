@@ -70,6 +70,11 @@ async function check(){
   await manualEditingJourneys();
   await writingReviewJourneys();
   await taskJourneys();
+  await phase4Starts();
+  await phase4GoogleHandoff();
+  await phase4ApplyReview();
+  await phase4ReviewAside();
+  await phase4FileKeep();
   await revisionCompletion();
   await deliveryRecovery();
   await brandInputs();
@@ -101,7 +106,7 @@ async function check(){
   await finishEveryLevel();
   await failureRecovery();
   pageDefinesEveryElement();
-  const checks=['feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
+  const checks=['keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: Outline only, Revise or review a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
     'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','one name for each thing','copy that says what the form and gates do','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','element ids'];
@@ -320,6 +325,100 @@ async function revisionCompletion(){
   assert.equal(nodes().some(e=>e.textContent==='No wording changes found'),false);
   await nodes().find(e=>e.textContent==='Use revised draft').listeners.click();
   assert.ok(nodes().some(e=>e.textContent==='Download polished document'));
+}
+
+async function phase4FileKeep(){
+  const calls=[],f=fixture((route,options)=>{const data=options?.body?JSON.parse(options.body):null;calls.push({route,data});return {id:data.id,kept:data.keep};});f.loadRunner();
+  f.run("studio.screen='new';studio.options={settings:{defaults:{}},sources:[],styles:[],profiles:[]};studio.draft={mode:'from-files',files:[{id:'one',filename:'one.md',state:'ready',chars:10,kept:false,role:'material'},{id:'two',filename:'two.md',state:'ready',chars:10,kept:true,role:'material'}],keep:false,role:'material'}");
+  f.run("sPage(sFilesCard(studio.draft,sNode('p'),()=>sPage(sFilesCard(studio.draft,sNode('p'),()=>{},()=>{})),()=>{}))");
+  const rows=()=>descendants(f.get('studio-page')).filter(n=>n.tagName==='li'&&n.className.includes('row'));
+  await descendants(rows()[0]).find(n=>n.textContent==='Keep in the team library').listeners.click();
+  assert.equal(f.run('studio.draft.files[0].kept'),true);assert.equal(f.run('studio.draft.files[1].kept'),true);assert.equal(f.run('studio.draft.keep'),false);
+  await descendants(rows()[1]).find(n=>n.textContent==='Keep it to this blog').listeners.click();
+  assert.equal(f.run('studio.draft.files[1].kept'),false);
+  assert.deepEqual(calls.map(r=>r.data),[{id:'one',keep:true},{id:'two',keep:false}]);
+}
+
+async function phase4ReviewAside(){
+  const f=fixture();f.loadRunner();
+  const found={id:'aside',title:'A draft',mode:'write',next:'draft',approval:'page',expected:'v1',complete:false,stages:[{stage:'draft',label:'Draft',status:'draft'}]};
+  const shown={stage:'draft',label:'Draft',status:'draft',expected:'v1',content:'# Draft',notes:'A real note.',checks:[{label:'2 em dashes',passed:false,detail:['line 3: —']}],previous:null};
+  f.set('found',found);f.set('shown',shown);f.run('sGate(found,shown)');
+  const aside=()=>descendants(f.get('studio-page')).find(n=>n.tagName==='details'&&n.children.some(c=>c.textContent==='Review notes and checks'));
+  assert.equal(aside().open,true);aside().open=false;aside().listeners.toggle();
+  f.run('sGate(found,shown)');assert.equal(aside().open,false);
+  f.run("sGate({...found,id:'other'},shown)");assert.equal(aside().open,true);
+}
+
+async function phase4ApplyReview(){
+  const calls=[],found={id:'apply',title:'Review draft',mode:'write',status:'waiting-for-approval',next:'package',approval:'page',expected:'v1',enabled:true,complete:false,engine:'codex',seconds:600,directory:'/synthetic/articles/apply',decisions:[],brief:{goal:'Explain',audience:'Authors'},stages:[{stage:'draft',label:'Draft',status:'approved'},{stage:'review',label:'Review',status:'approved'},{stage:'package',label:'Handoff',status:'draft'}],redo:{draft:{stages:['draft','review','package'],says:'This computer has no record of what they cost.'}}};
+  const shown={stage:'package',label:'Handoff',expected:'v1',status:'draft',content:'# Handoff',checks:[],notes:'',previous:null,bundle:[]};
+  const updated={...found,status:'queued',next:'draft'};
+  const f=fixture((route,options)=>{calls.push({route,data:options?.body?JSON.parse(options.body):null});return updated;});f.loadRunner();f.set('found',found);f.set('shown',shown);f.run("studio.screen='gate';studio.id=found.id;sGate(found,shown)");
+  await descendants(f.get('actions')).find(n=>n.textContent==="Apply the review's findings").listeners.click();
+  const sheet=()=>descendants(f.get('sheet'));
+  assert.ok(sheet().some(n=>/three jobs/.test(n.textContent)));assert.ok(sheet().some(n=>/no record of what they cost/.test(n.textContent)));assert.equal(calls.length,0);
+  await sheet().find(n=>n.textContent==='Apply them').listeners.click();
+  const sent=calls.find(r=>r.route==='/api/run-apply-review');assert.equal(sent.data.id,'apply');assert.equal(sent.data.expected,'v1');
+}
+
+async function phase4GoogleHandoff(){
+  const requests=[],url='https://docs.google.com/document/d/fixture-doc/edit';
+  const found={id:'finished',title:'Finished draft',status:'complete',complete:true,approval:'page',expected:'v1',enabled:true,decisions:[],directory:'/synthetic/articles/finished',mode:'write',stages:[{stage:'draft',label:'Draft',path:'DRAFT.md',status:'approved'}],brief:{goal:'Explain',audience:'Authors'},engine:'codex',seconds:600};
+  const f=fixture((route,options)=>{requests.push({route,data:options?.body?JSON.parse(options.body):null});return route==='/api/google-open'?{id:'finished',url,transfer:'one'}:{items:[]};});f.loadRunner();f.set('done',found);f.run("studio.screen='run';studio.id=done.id;sPage(sDoneCard(done))");
+  const nodes=()=>descendants(f.get('studio-page')),sheet=()=>descendants(f.get('sheet'));
+  await nodes().find(n=>n.textContent==='Open as a Google Doc').listeners.click();
+  assert.ok(sheet().some(n=>/private to you. Nothing is shared/.test(n.textContent)));
+  assert.equal(requests.length,0);
+  await sheet().find(n=>n.textContent==='Cancel').listeners.click();
+  assert.equal(requests.length,0);
+  await nodes().find(n=>n.textContent==='Open as a Google Doc').listeners.click();
+  await sheet().find(n=>n.textContent==='Make the Google Doc').listeners.click();
+  assert.equal(requests.filter(r=>r.route==='/api/google-open').length,1);
+  assert.equal(requests[0].data.id,'finished');assert.equal(requests[0].data.expected,'v1');assert.equal(requests[0].data.confirmed,true);
+  assert.ok(nodes().some(n=>n.textContent==='Open the Google Doc ↗'&&n.href===url));
+  assert.equal(nodes().some(n=>n.textContent==='Open as a Google Doc'),false);
+  const pending={...found,google:null,google_pending:{url}};
+  let attempts=0;
+  const retry=fixture((route)=>route==='/api/google-open'?(++attempts===1?{__http:409,error:'The readback needs reconciliation.'}:{id:found.id,url,transfer:'one'}):pending);
+  retry.loadRunner();retry.set('done',{...found,google:null});retry.run("studio.screen='run';studio.id=done.id;sPage(sDoneCard(done))");
+  const retryNodes=()=>descendants(retry.get('studio-page')),retrySheet=()=>descendants(retry.get('sheet'));
+  await retryNodes().find(n=>n.textContent==='Open as a Google Doc').listeners.click();
+  await retrySheet().find(n=>n.textContent==='Make the Google Doc').listeners.click();
+  assert.ok(retrySheet().some(n=>n.href===url));
+  assert.ok(retrySheet().some(n=>n.textContent==='Check the existing Google Doc'));
+  await retrySheet().find(n=>n.textContent==='Check the existing Google Doc').listeners.click();
+  assert.equal(attempts,2);
+  assert.ok(retryNodes().some(n=>n.textContent==='Open the Google Doc ↗'&&n.href===url));
+}
+
+async function phase4Starts(){
+  const requests=[];
+  const made={id:'manuscript-run',title:'A draft',status:'queued',next:'review',approval:'page',expected:'v1',enabled:true,seconds:600,engine:'codex',decisions:[],brief:{goal:'Check it',audience:'Authors'},stages:[]};
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'supplied-only',stop:'package',tone:'',author:''}},sources:[],profiles:[],styles:[],agents:{codex:true}};if(url==='/api/upload')return {source:{id:'manuscript-source'},state:'ready'};if(url==='/api/run-create'||url.startsWith('/api/run?'))return made;return {items:[]};});
+  f.loadRunner();f.run('sHome()');
+  const nodes=()=>descendants(f.get('studio-page'));
+  for(const title of ['Outline only','Revise or review a draft'])assert.ok(nodes().some(n=>n.textContent===title));
+  await nodes().find(n=>n.textContent==='Revise or review a draft').listeners.click();
+  assert.ok(nodes().some(n=>n.attributes['aria-label']==='Upload a manuscript'),nodes().map(n=>n.textContent).join(' | '));
+  await nodes().find(n=>n.textContent==='Give feedback only').listeners.click();
+  assert.equal(f.run('studio.draft.mode'),'review');
+  await nodes().find(n=>n.textContent==='Improve it').listeners.click();
+  assert.equal(f.run('studio.draft.mode'),'revise');
+  await nodes().find(n=>n.textContent==='Give feedback only').listeners.click();
+  const file=nodes().find(n=>n.attributes['aria-label']==='Upload a manuscript');
+  file.files=[{name:'draft.md',size:10,arrayBuffer:async()=>new TextEncoder().encode('My draft.').buffer}];
+  await file.listeners.change();
+  for(const [id,value] of [['new-title','A draft'],['new-goal','Check it'],['new-audience','Authors']]){const field=nodes().find(n=>n.id===id);field.value=value;field.listeners.input();}
+  await nodes().find(n=>n.tagName==='form').listeners.submit({preventDefault(){}});
+  await nodes().find(n=>n.tagName==='form').listeners.submit({preventDefault(){}});
+  const payload=requests.find(r=>r.url==='/api/run-create').data;
+  assert.equal(payload.mode,'review');assert.equal(payload.manuscript,'manuscript-source');assert.equal(payload.stop,'review');
+  const uploaded=requests.find(r=>r.url==='/api/upload').data;assert.equal(uploaded.purpose,'manuscript');assert.equal(uploaded.analyze,false);
+  assert.equal(Buffer.from(uploaded.content,'base64').toString(),'My draft.');
+  f.set('done',{id:'done',stages:[{stage:'draft'}],complete:true});
+  f.run("sPage(sDoneCard(done))");
+  for(const title of ['Pre-publish check','Repurpose'])assert.equal(nodes().find(n=>n.textContent===title).disabled,false);
 }
 
 async function taskJourneys(){

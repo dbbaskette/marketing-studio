@@ -17,6 +17,14 @@ class AdvancedToolsTests(Fixture):
         self.ident = self.article()
         self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
 
+    def test_the_done_card_prepublication_route_returns_the_real_report(self):
+        import management
+
+        self.assertEqual(
+            management.view(self.root, 'prepublish', {'id': [self.ident]}),
+            prepublish.report(self.root, self.ident),
+        )
+
     def save(self, content):
         current = manuscript_editor.read(self.root, self.ident)
         return manuscript_editor.dispatch(

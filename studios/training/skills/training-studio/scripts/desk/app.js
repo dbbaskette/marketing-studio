@@ -450,6 +450,10 @@ function ago(then) {
     { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+function clock(stamp) {
+  return new Date(stamp).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+}
+
 function when(stamp) {
   const then = Date.parse(stamp);
   if (Number.isNaN(then)) return make('span', 'quiet', 'not recorded');
@@ -875,6 +879,29 @@ async function picture(params) {
     throw new PageError('failed', 'What came back is not a picture.');
   }
   return held;
+}
+
+async function downloadFile(path, params, name, pressed) {
+  if (pressed.disabled) return;
+  pressed.disabled = true;
+  try {
+    const response = await reach('download?' + new URLSearchParams({path, ...params}),
+      {headers: {[TOKEN_HEADER]: view.token}, cache: 'no-store'});
+    if (!response.ok) throw refusal(response, await saidBy(response));
+    const held = URL.createObjectURL(await response.blob());
+    const link = make('a', 'offscreen', 'Download');
+    link.href = held;
+    link.download = name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(held), 60000);
+    toast('Downloaded ' + name + '.');
+  } catch (failure) {
+    toast(failure.message + ' Nothing was downloaded.');
+  } finally {
+    pressed.disabled = false;
+  }
 }
 
 function send(endpoint, body) {
@@ -1400,7 +1427,7 @@ function drawSheet() {
   const holder = byId('sheet');
   const shown = view.after || (view.sheet && (view.gate || view.deciding || outlined()
     || TEAM_SHEETS.includes(view.sheet)
-    || ['delete', 'companions', 'upgrade', 'redesign', 'brand'].includes(view.sheet)
+    || ['delete', 'companions', 'upgrade', 'redesign', 'brand', 'copy-choice'].includes(view.sheet)
     || (view.sheet === 'approve-combined' && view.run && view.run.review)));
   holder.hidden = !shown;
   // While a sheet is open it holds the one filled button, so the toolbar's are put away.
@@ -1419,6 +1446,7 @@ function drawSheet() {
   else if (view.sheet === 'upgrade') body = upgradeSheet();
   else if (view.sheet === 'redesign') body = redesignSheet();
   else if (view.sheet === 'brand') body = brandSheet();
+  else if (view.sheet === 'copy-choice') body = copyChoiceSheet();
   else if (view.sheet === 'approve-combined') body = combinedConfirm();
   else if (TEAM_SHEETS.includes(view.sheet)) body = teamSheet(view.sheet);
   else if (FORMS[view.sheet]) body = noteSheet(view.sheet);
@@ -2064,7 +2092,10 @@ function documentBody(shown, found) {
         : 'This is not text, so it is not shown here. It is ') + size(shown.size)
         + '. Open it from the training folder:'),
       pathInto(make('p', 'path'), found.path + '/' + shown.file),
-      copyButton('Copy where it is', 'Copied', found.path + '/' + shown.file, 'copy-file'));
+      copyButton('Copy where it is', 'Copied', found.path + '/' + shown.file, 'copy-file'),
+      capsule('Download ' + shown.file.split('/').pop(), 'quiet', (event) =>
+        downloadFile(found.path, {artifact: found.artifact}, shown.file.split('/').pop(),
+          event.currentTarget), 'download-file'));
   }
   if (shown.kind === 'link') {
     add(node, make('p', 'quiet', shown.file.split('/').pop() + ', ' + size(shown.size)
@@ -2178,9 +2209,8 @@ function yoodliFields(text) {
 
 // A Yoodli scenario at its gate offers each field to copy, ready to paste into the Builder.
 function yoodliCopies(found) {
-  const shown = found.document || {};
-  if (!String(found.artifact || '').startsWith('yoodli:') || shown.kind !== 'markdown') return null;
-  const fields = yoodliFields(shown.text);
+  if (!String(found.artifact || '').startsWith('yoodli:')) return null;
+  const fields = yoodliFields(found.text || '');
   if (!fields.length) return null;
   const bar = make('div', 'bar');
   fields.forEach((field, index) => add(bar, copyButton('Copy ' + field.name,
@@ -2482,7 +2512,7 @@ function paintGate(fresh) {
   place({ title: found.label, name: found.label + ' · ' + found.title, above, back: true,
     actions: gateActions(found) },
   [intro, theirs ? readNote(found.path) : null, inChat(found), standing(found),
-    yoodliCopies(found),
+    yoodliCopies({artifact: found.artifact, text: found.document?.text}),
     add(make('div', found.beside ? 'gate gate-pair'
       : 'gate'), reading(found), found.beside ? besidePart(found) : null, aside)],
   fresh);
@@ -4721,7 +4751,15 @@ function aheadLine(run) {
 }
 
 function runIntro(run, training, promised) {
-  const node = add(make('div', 'intro'), nowLine(run), state(...runStanding(run)));
+  const node = make('div', 'intro');
+  if (run.decided) {
+    const last = run.decided;
+    const line = make('p', 'quiet', (last.decision === 'revise' ? 'You asked for changes to '
+      : 'You approved ') + last.label + ' at ' + clock(last.at) + '. ' + last.next);
+    line.setAttribute('role', 'status');
+    add(node, line);
+  }
+  add(node, nowLine(run), state(...runStanding(run)));
   if (list(training.stages).length) add(node, beads(training.stages, false));
   add(node, aheadLine(run));
   add(node, make('p', 'lede run-says', run.sentence));
@@ -5049,7 +5087,14 @@ function madeCard(training, theirs) {
       go.setAttribute('aria-label', (review ? 'Review ' : 'Open ') + lower(file.label));
       add(items, add(make('li', 'row'), bead(file.waiting ? 'review' : FILE_BEADS[file.status]),
         add(make('div', 'row-text'), make('p', 'step-name', file.label),
-          make('p', 'quiet', capital(words))), go));
+          make('p', 'quiet', capital(words))), go,
+        (() => {
+          const save = capsule('Download', 'quiet', (event) => downloadFile(training.path,
+            {artifact: file.artifact}, file.file.split('/').pop(), event.currentTarget),
+            'download-' + file.artifact);
+          save.setAttribute('aria-label', 'Download ' + lower(file.label));
+          return save;
+        })()));
     }
     add(node, items);
   }
@@ -5331,9 +5376,60 @@ function copyItem(found) {
   const why = found.problem || (found.state === 'not-made' ? 'No reason was given.' : '');
   if (found.state !== 'made' && why) add(text, make('p', '', why));
   add(text, copyLink(found, kind, what));
+  if (found.kind === 'google' && view.run?.mine !== false) {
+    if (found.conflict) {
+      for (const [choose, label] of [['theirs', "Use the Doc's version"],
+        ['ours', 'Keep this version and send it']]) {
+        add(text, capsule(label, 'quiet', (event) => {
+          view.copyChoice = {found, choose};
+          openSheet('copy-choice', event.currentTarget)();
+        }, 'choose-copy-' + choose + '-' + found.artifact));
+      }
+    }
+    if (found.conflict || /^Someone has changed the Google Doc/.test(found.problem || '')) {
+      add(text, capsule("Bring the Doc's changes in", 'quiet', (event) =>
+        pullCopy(found, null, event.currentTarget), 'pull-copy-' + found.artifact));
+    }
+  }
+  if (found.kind === 'word' && found.link && found.state !== 'not-made') {
+    add(text, capsule('Download the Word copy', 'quiet', (event) =>
+      downloadFile(view.path, {artifact: found.artifact, copy: 'word'},
+        found.link.split('/').pop(), event.currentTarget), 'download-word-' + found.artifact));
+  }
   const item = make('li', 'row step');
   item.dataset.state = found.state;
   return add(item, bead(shape), text, make('span', 'step-words', words));
+}
+
+function copyChoiceSheet() {
+  const {found, choose} = view.copyChoice;
+  const theirs = choose === 'theirs';
+  const go = capsule(theirs ? "Use the Doc's version" : 'Keep this version and send it',
+    'filled', async () => {
+      if (await pullCopy(found, choose, go)) closeSheet();
+    }, 'confirm-copy');
+  return [sheetTitle(theirs ? "Use the Doc's version?" : 'Send this version?'),
+    make('p', '', theirs ? 'This replaces the local ' + lower(found.label).replace(/^the /, '')
+      + ' with the Doc’s kept text. Review it again before continuing.'
+      : 'This replaces the changes in the Google Doc with this training’s version.'),
+    add(make('div', 'bar'), go, capsule('Cancel', 'quiet', closeSheet, 'cancel'))];
+}
+
+async function pullCopy(found, choose, pressed) {
+  pressed.disabled = true;
+  try {
+    const run = await send('copies', {path: view.path, pull: found.artifact,
+      ...(choose ? {choose} : {})});
+    view.run = run;
+    toast(run.said);
+    paintRun(false);
+    return true;
+  } catch (failure) {
+    toast(failure.message + ' Nothing was replaced.');
+    return false;
+  } finally {
+    pressed.disabled = false;
+  }
 }
 
 async function tryCopies() {
@@ -5407,6 +5503,7 @@ function deckLeftPart(run) {
 function controlsPart(run) {
   const found = run.controls;
   const node = callout('', make('h2', 'aside-title', 'Steer it'));
+  if (found.grouped) add(node, make('p', 'quiet', 'The final review waits until every level is made.'));
   const bar = make('div', 'bar');
   if (found.finishing) {
     add(node, make('p', '', 'It finishes level ' + found.finishing + ', then waits. Resume it '
@@ -5433,6 +5530,8 @@ function controlsPart(run) {
 function finishedPart(run, lead) {
   const found = run.finished;
   const limits = list(found.limitations);
+  const yoodli = list(found.yoodli).map((item) => add(make('div', 'card-part'),
+    make('h3', 'row-title', item.label || 'Yoodli scenario'), yoodliCopies(item)));
   // The index is one more file of the training, read on a screen of its own.
   const open = found.index && !found.ready ? capsule('Open the index', '',
     () => show('index', { path: view.path, artifact: found.index }), 'index') : null;
@@ -5444,7 +5543,7 @@ function finishedPart(run, lead) {
     return callout('', make('h2', 'aside-title', 'Ready to use'),
       ...(limited.length ? limited : [make('p', '', 'Nothing was left out or limited.')]),
       found.index ? make('p', 'quiet', 'Open the index for the materials and how to use them, '
-        + 'or open an individual material below.') : null);
+        + 'or open an individual material below.') : null, ...yoodli);
   }
   const blocking = list(found.blocking);
   const go = capsule('See what is in the way', lead ? 'filled' : '',
@@ -5454,7 +5553,7 @@ function finishedPart(run, lead) {
       + ' in the way:' : 'Something is in the way, and it was not said what.'),
     blocking.length ? bullets(blocking, 'reasons') : null,
     add(make('p', ''), make('strong', '', 'What was kept: '), 'everything that was made.'),
-    ...limited, indexed, add(make('div', 'bar'), go, open));
+    ...limited, ...yoodli, indexed, add(make('div', 'bar'), go, open));
 }
 
 async function steer(action, pressed) {
@@ -5769,7 +5868,6 @@ function marked(review) {
 }
 
 // The stages written before the first drafts stop: approving it does not write them.
-const PREPARED = ['research-plan', 'research', 'blueprint', 'document', 'brief'];
 
 // What approving a combined review commits to, said before it is approved.
 function commitsSays(review) {
@@ -5778,10 +5876,10 @@ function commitsSays(review) {
     return 'Approving finishes this draft. Everything is kept as it stands, and publishing '
       + 'is a separate action.';
   }
-  const names = { scenario: 'practice scenarios', yoodli: 'Yoodli layouts' };
-  // What was written before this stop is not written by approving it, even where a saved
-  // review from before still lists it.
-  const made = list(commits.materials).filter((stage) => !PREPARED.includes(stage))
+  const names = { document: 'learner guides', brief: 'briefs', scenario: 'practice scenarios',
+    yoodli: 'Yoodli layouts' };
+  // The runner lists only work still unwritten in this run, including legacy runs.
+  const made = list(commits.materials)
     .map((stage) => names[stage] || stage);
   const levels = commits.levels > 1 ? 'each of the ' + commits.levels + ' levels' : 'the training';
   const parts = [];
@@ -5967,7 +6065,7 @@ function combinedReview(run) {
   const problem = problemLine();
   problem.id = 'combined-problem';
   add(node, problem);
-  const material = (item) => /^(document|brief|deck)(@|$)|^scenario:/.test(item.target);
+  const material = (item) => /^(document|brief|deck)(@|$)|^(scenario|yoodli):/.test(item.target);
   const items = [...review.items];
   if (review.phase === 'final') items.sort((a, b) => Number(material(b)) - Number(material(a)));
   const firstMaterial = items.find(material);
@@ -6021,6 +6119,12 @@ function combinedReview(run) {
         + (finding.fix ? ' Suggested: ' + finding.fix : '')));
       if (!list(item.deck_view.slides).length) add(part, make('p', 'fix', 'Slide pictures are unavailable on this computer. Read the saved deck before approving.'));
       add(part, capsule('Open the saved deck and its review', '', () => show('gate', {path: view.path, artifact: item.target}), 'read-' + item.target));
+    }
+    if (item.target.startsWith('yoodli:')) add(part, yoodliCopies({artifact: item.target, text: item.text}));
+    if (review.phase === 'final' && /^(document|brief|deck)(@|$)|^(scenario|yoodli):/.test(item.target)) {
+      add(part, capsule('Download ' + lower(item.label), 'quiet', (event) =>
+        downloadFile(view.path, {artifact: item.target}, item.label, event.currentTarget),
+        'download-' + item.target));
     }
     if (item.notes) add(part, window.TrainingStudioMarkdown.render(item.notes));
     if (!theirs) {
@@ -6108,7 +6212,7 @@ function paintRun(fresh) {
   mark: [title, training.levels, run.state, lead, offered, waiting, outline
     && run.outline.level, theirs, driver, Boolean(run.outline), run.review,
     run.finished] }, [
-    ['intro', [run.state, run.sentence, training.stages, promised, view.steered,
+    ['intro', [run.state, run.sentence, run.decided, training.stages, promised, view.steered,
       nextGate(run), Boolean(run.problem), runStanding(run), supplying, outline, theirs,
       run.queue, run.steps, run.workers, run.spent],
     () => runIntro(run, training, promised)],
@@ -7887,7 +7991,9 @@ async function drawIndex(fresh) {
     place({ title: 'The index', name: 'The index · ' + (found.title || 'Untitled'), back: true,
       above: [button(found.title || 'Untitled', 'link', home, 'training')] },
     [add(make('div', 'reading index'), documentBody(asDocument(read),
-      { label: 'The index', path, files: true }))], true);
+      { label: 'The index', path, files: true }),
+      capsule('Download the index', 'quiet', (event) => downloadFile(path,
+        {artifact: 'README.md'}, 'README.md', event.currentTarget), 'download-index'))], true);
   } catch (failure) {
     if (turn !== view.turn) return;
     unopened(failure, false, true, { title: 'The index cannot be opened',

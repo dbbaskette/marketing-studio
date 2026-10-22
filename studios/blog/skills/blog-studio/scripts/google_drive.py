@@ -513,11 +513,14 @@ class Client:
         path = Path(path)
         if not title.strip() or len(title) > 500 or path.stat().st_size > LIMIT:
             raise GoogleError('Provide a title (1–500 characters) and a file no larger than 20 MB.')
-        mime = {'.html': 'text/html', '.txt': 'text/plain', '.docx': DOCX}.get(path.suffix.lower())
+        mime = {
+            '.html': 'text/html',
+            '.txt': 'text/plain',
+            '.md': 'text/markdown',
+            '.docx': DOCX,
+        }.get(path.suffix.lower())
         if not mime:
-            raise GoogleError(
-                'Import accepts HTML, plain text or DOCX. Convert Markdown deliberately before upload.'
-            )
+            raise GoogleError('Import accepts Markdown, HTML, plain text or DOCX.')
         data = path.read_bytes()
         if mime == DOCX:
             validate_docx(data)

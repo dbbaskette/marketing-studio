@@ -19,6 +19,10 @@ import claims_map
 from studio_core import model_profiles, review_policy, research_contract, research_view, stops
 from studio_core.preferences import ready as shared_ready
 
+APPLY_REQUEST = (
+    'Apply only the findings in the review below. Edit only the passages they name; '
+    "change nothing else. Keep the author's voice, qualifiers, numbers, links and quotations."
+)
 STATE = 'derived/blog-run.json'
 # A from-files run embeds the uploaded files; past this many JSON characters of source
 # text, each file is excerpted to its share and the run says which ones were.
@@ -791,6 +795,8 @@ def research_price(root, directory, run):
 
 def survey(root, ident, listing=False):
     """Stage states. A listing skips the version token and next document a decision needs."""
+    from google_handoff import pending_link
+
     directory, record, run = load(root, ident)
     research, bundle_problem = None, False
     if run.get('research_contract') and run['stages'].get('research'):
@@ -894,6 +900,7 @@ def survey(root, ident, listing=False):
         'id': ident,
         'title': record['title'],
         'google': editorial.doc_link(record),
+        'google_pending': pending_link(record),
         'approval': run['approval'],
         'engine': run['engine'],
         'model_mode': (run.get('model_profiles') or {}).get('mode', 'single'),
@@ -1394,11 +1401,11 @@ def submit(root, ident, stage, result, expected, page=False):
             )
     pin = basis(root, directory, record, run, stage)
     filename = STAGES[stage][1]
+    preservation = None
     if stage == 'draft' and (directory / 'DRAFT.md').is_file():
         from text_checks import preserve
 
-        check = preserve((directory / 'DRAFT.md').read_text(), result['content'])
-        result['notes'] += '\nPreservation check: ' + json.dumps(check)
+        preservation = preserve((directory / 'DRAFT.md').read_text(), result['content'])
     if stage in ('outline', 'draft'):
         studio.save_artifact(directory, stage, result['content'], record, 'guided run')
     else:
@@ -1419,6 +1426,7 @@ def submit(root, ident, stage, result, expected, page=False):
         'notes': result['notes'],
         'request': previous.get('request', ''),
         'model_purpose': previous.get('model_purpose', stage),
+        **({'preservation': preservation} if preservation is not None else {}),
     }
     if stage != 'angles' and review_policy.automatic(
         run,
@@ -1710,7 +1718,9 @@ def job(root, ident):
         request
         and payload['documents'].get(stage, '').strip()
         and not (stage == 'review' and run.get('editor_check'))
-        and (saved.get('hash') or (stage == 'draft' and run['existing']))
+        and (
+            saved.get('hash') or saved.get('apply_review') or (stage == 'draft' and run['existing'])
+        )
     )
     # A focused edit or a single editor check other than shape keeps to its own scope, so
     # it gets no style. The job payload is not hashed; stage pins come from inputs().
@@ -2485,6 +2495,95 @@ def options(root):
     }
 
 
+def strip_preservation(notes):
+    """Read the old structured suffix without showing raw JSON as an assistant note."""
+    before, marker, encoded = notes.rpartition('Preservation check: ')
+    if not marker or before and not before.endswith('\n'):
+        return notes, None
+    try:
+        check = json.loads(encoded)
+    except (ValueError, TypeError):
+        return notes, None
+    if not isinstance(check, dict) or not isinstance(check.get('changes'), dict):
+        return notes, None
+    return before.rstrip(), check
+
+
+def gate_checks(stage, content, rules, copied, preservation):
+    from text_checks import lint
+
+    rows = []
+    if stage in ('draft', 'review', 'package'):
+        findings = lint(content, rules or {})['findings']
+        groups = {}
+        repeated = []
+        for finding in findings:
+            if finding['rule'] == 'duplicate-paragraph':
+                repeated.append(finding)
+            else:
+                groups.setdefault(finding['rule'], []).append(finding)
+        mechanical = any(rule != 'echoed-opener' for rule in groups)
+        configured = any(
+            (rules or {}).get(key)
+            for key in (
+                'no_em_dashes',
+                'no_ascii_double_hyphen',
+                'banished_words',
+                'banished_phrases',
+            )
+        )
+        if configured and not mechanical:
+            rows.append({'label': 'No voice rule broken', 'passed': True})
+        for rule, matches in groups.items():
+            label = {
+                'em-dash': 'em dashes',
+                'double-hyphen': 'double hyphens',
+                'echoed-opener': 'repeated section openings',
+            }.get(rule, rule)
+            if rule.startswith('banished:'):
+                label = 'uses of “' + rule.partition(':')[2] + '”'
+            detail = []
+            for match in matches[:5]:
+                line = match.get('line')
+                if line is None and match.get('start') is not None:
+                    line = content.count('\n', 0, match['start']) + 1
+                detail.append(
+                    (f'line {line}: ' if line is not None else '') + match['target'][:160]
+                )
+            rows.append({'label': f'{len(matches)} {label}', 'passed': False, 'detail': detail})
+        rows.append(
+            {
+                'label': f'{len(repeated)} paragraphs repeat'
+                if repeated
+                else 'No paragraph repeats',
+                'passed': not repeated,
+                'detail': [item['target'][:160] for item in repeated[:5]],
+            }
+        )
+        if copied is not None:
+            rows.append(
+                {
+                    'label': 'Carried over from an example'
+                    if copied
+                    else 'No passage carried over from an example',
+                    'passed': not copied,
+                    'detail': [item['target'][:120] for item in copied],
+                }
+            )
+        if preservation is not None:
+            changed = bool(preservation.get('needs_review'))
+            rows.append(
+                {
+                    'label': 'Numbers, links or quotations changed'
+                    if changed
+                    else 'Numbers, links and quotations kept',
+                    'passed': not changed,
+                    'detail': list(preservation.get('changes') or {}),
+                }
+            )
+    return rows or [{'label': f'No automatic checks apply to {STAGES[stage][0]}.', 'passed': True}]
+
+
 def document(root, ident, stage):
     from manuscript_preview import fields
 
@@ -2498,14 +2597,15 @@ def document(root, ident, stage):
     path = studio.inside(directory, STAGES[stage][1])
     content = path.read_text()
     copied = None
-    if stage in ('draft', 'review') and any(
+    context = inputs(root, record, run) if stage in ('draft', 'review', 'package') else None
+    if stage in ('draft', 'review', 'package') and any(
         'inspiration' in selected['purposes'] for selected in record['sources']
     ):
         draft = directory / 'DRAFT.md'
         copied = carried(
             directory,
             run,
-            inputs(root, record, run),
+            context,
             draft.read_text() if draft.is_file() else '',
         )
     previous = None
@@ -2518,6 +2618,20 @@ def document(root, ident, stage):
             previous = before.read_text()
     found = survey(root, ident)
     row = next(row for row in found['stages'] if row['stage'] == stage)
+    notes, legacy = strip_preservation(row['notes'])
+    drafted = run['stages'].get('draft') or {}
+    preservation = (
+        drafted.get('preservation') or legacy or strip_preservation(drafted.get('notes', ''))[1]
+    )
+    rules = (context or {}).get('voice', {}).get('rules') or {}
+    if isinstance(rules, str):
+        rules = json.loads(rules)
+    draft_path = studio.inside(directory, 'DRAFT.md')
+    checked_text = (
+        draft_path.read_text()
+        if stage in ('review', 'package') and draft_path.is_file()
+        else content
+    )
     differences = (
         list(
             difflib.unified_diff(
@@ -2571,28 +2685,9 @@ def document(root, ident, stage):
         ],
         'label': row['label'],
         'status': row['status'],
-        'notes': row['notes'],
+        'notes': notes,
         'expected': found['expected'],
-        'checks': [
-            {'label': 'Saved document contains readable text', 'passed': bool(content.strip())},
-            {
-                'label': 'Document matches its submitted version and selected inputs',
-                'passed': row['status'] in ('draft', 'approved'),
-            },
-        ]
-        + (
-            [
-                {
-                    'label': 'Carried over from an example'
-                    if copied
-                    else 'No passage carried over from an example',
-                    'passed': not copied,
-                    'detail': [finding['target'][:120] for finding in copied],
-                }
-            ]
-            if copied is not None
-            else []
-        ),
+        'checks': gate_checks(stage, checked_text, rules, copied, preservation),
         'id': ident,
         'title': found['title'],
     }
@@ -2627,6 +2722,29 @@ def dispatch(root, action, data):
     found = survey(root, ident)
     if not data.get('expected') or data['expected'] != found['expected']:
         raise ValueError('This blog changed. Reload before deciding.')
+    if action == 'apply-review':
+        guard(root, ident, data['expected'], page=True)
+        directory, record, run = load(root, ident)
+        review_file = studio.inside(directory, STAGES['review'][1])
+        if not review_file.is_file():
+            raise ValueError('There is no review to apply yet.')
+        if (
+            found['next'] not in ('review', 'package')
+            or next(row['status'] for row in found['stages'] if row['stage'] == found['next'])
+            != 'draft'
+        ):
+            raise ValueError('Apply findings while the review or handoff waits for you.')
+        if runner.current == ident:
+            raise ValueError('Wait for the current writing step to stop before applying findings.')
+        review = review_file.read_text(encoding='utf-8')
+        decide(root, ident, data['expected'], 'changes', APPLY_REQUEST, page=True, target='draft')
+        directory, record, run = load(root, ident)
+        run['stages']['draft'].update(request=APPLY_REQUEST + '\n\n' + review, apply_review=True)
+        if 'package' not in run['pipeline']:
+            run['pipeline'].append('package')
+        record['stop_point'] = 'package'
+        save(root, directory, record, run, 'Apply only the review’s findings')
+        return runner.control(ident, 'resume')
     if action == 'develop':
         guard(root, ident, data['expected'], page=True)
         directory, record, run = load(root, ident)
@@ -2637,14 +2755,14 @@ def dispatch(root, action, data):
             raise ValueError('Choose a saved idea or outline before developing it.')
         request = text(data.get('request', ''), 'selected angle', 8000, required=True)
         run['mode'] = 'write'
-        run['pipeline'] = ['outline', 'draft']
+        run['pipeline'] = ['outline', 'draft', 'review', 'package']
         run['stages'] = {
             'outline': {
                 'status': 'pending',
                 'request': 'Develop this selected angle or structure: ' + request,
             }
         }
-        record['stop_point'] = 'draft'
+        record['stop_point'] = 'package'
         save(root, directory, record, run, 'Selected angle for drafting')
         return runner.control(ident, 'resume')
     if action == 'start':

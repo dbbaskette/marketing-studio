@@ -34,6 +34,12 @@ UPLOAD = {'kind': 'upload', 'name': 'a.pptx'}
 
 
 class FormTests(unittest.TestCase):
+    def test_notes_are_kept_and_limited(self):
+        self.assertEqual(decks.check_form(form(notes='  Cover rollback first.  '), BRANDS)['notes'], 'Cover rollback first.')
+        self.assertEqual(decks.check_form(form(), BRANDS)['notes'], '')
+        with self.assertRaisesRegex(WorkspaceError, '^The brief can be at most 4000 characters.$'):
+            decks.check_form(form(notes='x' * 4001), BRANDS)
+
     def test_the_research_questions_are_kept_as_written(self):
         self.assertEqual(decks.check_form({**form(), 'research_questions': '  Why?  \n\nWhat next?'}, None)['research_questions'], ['Why?', 'What next?'])
         for given, message in ((['Why?'] * 9, 'Ask research at most 8'), (['x' * 301], 'Keep each research question to 300'), ([7], 'one a line')):

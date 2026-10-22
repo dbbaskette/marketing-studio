@@ -9,6 +9,60 @@ from studio_core import review_policy
 
 
 class ReviewLevelsTests(DeckCase):
+    def test_row_124_finish_level_waits_for_building(self):
+        root = None
+        controls = []
+
+        def preparing(tools, job):
+            controls.append(self.view(root)['controls']['finish_level'])
+            self.workers.document(tools, job)
+
+        def building(tools, job):
+            controls.append(self.view(root)['controls']['finish_level'])
+            self.workers.section(tools, job)
+
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
+            root = self.begin(levels=['101'])
+        self.workers.then('document', preparing)
+        self.decide(root, 'research-plan')
+        self.workers.then('section', building)
+        self.approve_review(root, self.view(root))
+        self.assertEqual(controls, [None, '101'])
+
+    def test_balanced_reviews_the_direction_before_any_brief_is_written(self):
+        root, shown = self.choose('balanced', levels=['101', '201'])
+        self.assertEqual(shown['review']['phase'], 'direction')
+        self.assertTrue((root / '101/document.md').is_file())
+        self.assertTrue((root / '201/document.md').is_file())
+        self.assertEqual(list(root.glob('*/*-brief.md')), [])
+        self.assertFalse(any(item['target'].startswith('brief@') for item in shown['review']['items']))
+        self.assertEqual(shown['review']['commits']['materials'], ['brief', 'scenario'])
+        self.assertTrue(shown['review']['commits']['deck'])
+
+    def test_row_123_a_run_past_its_direction_review_keeps_it(self):
+        from runner import reviews
+        with mock.patch.object(reviews, 'LAYOUT', 1, create=True):
+            root, shown = self.choose('balanced', levels=['101'])
+        record = self.engine._load(root)
+        record.pop('review_layout', None)
+        self.engine._store(root, record)
+        shown = self.approve_review(root, self.view(root))
+        self.assertEqual(shown['review']['phase'], 'final')
+        since = len(self.workers.jobs)
+        self.engine.wake(root)
+        found = self.engine._survey(root, self.engine._load(root))
+        self.assertIn('review:direction', found.done)
+        self.assertFalse(any(kind == 'brief' for kind, _, _ in self.workers.jobs[since:]))
+
+    def test_approving_the_direction_writes_the_briefs_then_builds(self):
+        root, shown = self.choose('balanced', levels=['101', '201'])
+        since = len(self.workers.jobs)
+        shown = self.approve_review(root, shown)
+        kinds = [kind for kind, _, _ in self.workers.jobs[since:]]
+        self.assertEqual(kinds.count('brief'), 2)
+        self.assertLess(kinds.index('brief'), kinds.index('section'))
+        self.assertEqual(shown['review']['phase'], 'final')
+
     def choose(self, mode, **changes):
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': mode}):
             root = self.begin(**changes)
@@ -83,7 +137,7 @@ class ReviewLevelsTests(DeckCase):
     def test_the_deck_can_be_left_out_from_the_direction_review_before_it_is_drawn(self):
         root, shown = self.choose('balanced')
         self.assertEqual(shown['review']['phase'], 'direction')
-        self.assertEqual(shown['controls'], {'finish_level': None, 'finishing': None,
+        self.assertEqual(shown['controls'], {'grouped': True, 'finish_level': None, 'finishing': None,
                                              'skip_deck': True})
         self.assertIn('outline:', [item['target'] for item in shown['review']['items']])
         since = len(self.workers.jobs)
@@ -235,8 +289,8 @@ class ReviewLevelsTests(DeckCase):
     def test_the_first_drafts_sheet_lists_only_what_approving_writes(self):
         root, shown = self.choose('balanced', levels=['101'])
         self.assertEqual(shown['review']['label'], 'Review the first drafts')
-        # The guide and the brief were written before the stop: only the scenarios are to come.
-        self.assertEqual(shown['review']['commits']['materials'], ['scenario'])
+        # Guides are already written; briefs and scenarios follow this approval.
+        self.assertEqual(shown['review']['commits']['materials'], ['brief', 'scenario'])
 
     def test_row_121_first_drafts_approval_starts_only_what_is_still_to_write(self):
         root, shown = self.choose('balanced', levels=['101'])
@@ -244,7 +298,7 @@ class ReviewLevelsTests(DeckCase):
         self.approve_review(root, shown)
         started = {kind for kind, _, _ in self.workers.jobs[since:]}
         self.assertIn('scenario', started)
-        self.assertFalse(started & {'research', 'blueprint', 'document', 'brief'}, started)
+        self.assertFalse(started & {'research', 'blueprint', 'document'}, started)
 
     def test_balanced_all_levels_have_two_combined_reviews(self):
         root, shown = self.choose('balanced', levels=['101', '201'])
@@ -310,15 +364,15 @@ class ReviewLevelsTests(DeckCase):
         root, shown = self.choose('balanced', levels=['101', '201'])
         items = {item['target']: item for item in shown['review']['items']}
         self.assertEqual(items['research']['rewrites'], [
-            'the level 101 blueprint', 'the level 101 learner guide', 'the level 101 brief',
-            'the level 201 blueprint', 'the level 201 learner guide', 'the level 201 brief',
+            'the level 101 blueprint', 'the level 101 learner guide',
+            'the level 201 blueprint', 'the level 201 learner guide',
             'Deck direction · Level 101', 'Deck direction · Level 201'])
         self.assertEqual(items['blueprint@201']['rewrites'], [
-            'the level 201 learner guide', 'the level 201 brief', 'Deck direction · Level 201'])
+            'the level 201 learner guide', 'Deck direction · Level 201'])
         self.assertEqual(items['outline:201']['rewrites'], [])
         commits = shown['review']['commits']
         self.assertEqual({key: commits[key] for key in ('levels', 'materials', 'deck')},
-                         {'levels': 2, 'materials': ['scenario'], 'deck': True})
+                         {'levels': 2, 'materials': ['brief', 'scenario'], 'deck': True})
         self.assertGreater(commits['dollars'], 0)
         self.assertGreater(commits['minutes'], 0)
         expected = shown['review']['expected']

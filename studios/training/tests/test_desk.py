@@ -1923,6 +1923,27 @@ class PageScriptTests(ScriptedPage, PageCase):
     left a control without a name, or put a click on something that is not a control fails.
     """
 
+    def test_every_deliverable_can_be_downloaded(self):
+        self.research()
+        self.complete()
+        session = workspace.load(self.root)
+        session['artifacts']['deck'].pop('approved', None)
+        workspace.store(self.root, session)
+        self.cli('checkpoint', '--approval', 'page', '--gate', 'deck', '--stage', 'deck',
+                 '--question', 'Ready?')
+        answers = {'GET /api/trainings': [self.read('trainings')],
+                   'GET /api/computer': [self.read('computer')],
+                   'GET /api/gate': [self.read('gate', path=str(self.root), artifact='deck')],
+                   'GET /api/download': [{'status': 200, 'picture': 'UEs=',
+                       'type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'}]}
+        result = self.run_page(answers, [{'click': 'Review the slide deck'},
+            {'snapshot': 'gate'}, {'click': 'Download deck.pptx'}, {'snapshot': 'saved'}])
+        self.assertIn('Copy where it is', result['snapshots']['gate']['buttons'])
+        self.assertIn('Downloaded deck.pptx.', result['snapshots']['saved']['toasts'])
+        sent = next(r for r in result['requests'] if r['address'].startswith('/api/download?'))
+        self.assertEqual(sent['headers'], {desk.TOKEN_HEADER: 'the-test-key'})
+        self.assertIn('artifact=deck', sent['address'])
+
     def test_the_research_stop_leads_with_the_brief_and_the_check(self):
         from synthesis_fixture import research_stop
         from studio_core import research_view
@@ -2572,6 +2593,99 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     """What the runner adds to the page: set-up, a new training, a run, and running work in
     every list. Each screen is driven through its own controls."""
 
+    def test_yoodli_fields_copy_from_the_final_review_and_done(self):
+        self.started()
+        text = test_cli.example('yoodli.md')
+        waiting = a_run('waiting', 'Review the finished materials.')
+        waiting['body']['review'] = {'phase': 'final', 'label': 'Review the finished materials',
+            'expected': 'v1', 'items': [{'target': 'yoodli:main', 'label': 'The Yoodli scenario',
+                                       'text': text, 'rewrites': []}]}
+        done = a_run('done', 'Ready.', finished={'ready': True, 'index': 'README.md',
+            'limitations': [], 'blocking': [], 'yoodli': [{'artifact': 'yoodli:main', 'text': text}]})
+        result = self.run_page(self.answers(**{
+            'GET /api/trainings': [self.listed('waiting')],
+            'GET /api/training': [self.detail('waiting', '')], 'GET /api/run': [waiting],
+            'POST /api/review': [done]}), [{'click': 'Open Rolling restarts'},
+            {'snapshot': 'review'}, {'click': 'Copy Roleplay name'},
+            {'click': 'Approve the finished materials'}, {'click': 'Approve'}, {'snapshot': 'done'}])
+        for name in ('review', 'done'):
+            self.assertIn('Copy into Yoodli', result['snapshots'][name]['text'])
+            self.assertIn('Copy Roleplay name', result['snapshots'][name]['buttons'])
+
+    def test_the_decision_message_stays_above_the_working_line(self):
+        self.started()
+        run = a_run('working', 'Writing the brief.')
+        run['body']['decided'] = {'label': 'the learner guide', 'decision': 'approve',
+            'at': '2026-10-22T14:42:00Z', 'next': 'Writing the brief.'}
+        result = self.run_page(self.answers(**{'GET /api/trainings': [self.listed('working')],
+            'GET /api/training': [self.detail('working', '')], 'GET /api/run': [run]}),
+            [{'click': 'Open Rolling restarts'}, {'snapshot': 'working'}])
+        self.assertIn('You approved the learner guide at', result['snapshots']['working']['text'])
+
+    def test_grouped_build_controls_say_when_the_final_review_waits(self):
+        self.started()
+        run = a_run('working', 'Drawing the deck.', controls={
+            'finish_level': '101', 'finishing': None, 'skip_deck': False, 'grouped': True})
+        detail = self.detail('working', 'Drawing the deck.')
+        detail['body']['stages'].insert(-1, {'stage': 'review:direction',
+            'name': 'Review the first drafts', 'state': 'done', 'words': 'done'})
+        result = self.run_page(self.answers(**{
+            'GET /api/trainings': [self.listed('working')], 'GET /api/training': [detail],
+            'GET /api/run': [run]}), [{'click': 'Open Rolling restarts'}, {'snapshot': 'build'}])
+        self.assertIn('The final review waits until every level is made.', result['snapshots']['build']['text'])
+        self.assertIn('Review the first drafts', result['snapshots']['build']['text'])
+
+    def test_google_doc_conflicts_have_explicit_confirmed_choices(self):
+        self.started()
+        problem = 'Someone has changed the Google Doc since it was last sent.'
+        copy = a_copy('document', 'the learner guide', 'google', 'out-of-date',
+                      'https://docs.example.com/d/one/edit', problem)
+        first = a_run('waiting', 'Waiting for your review.', copies=[copy])
+        both = a_run('waiting', 'Waiting for your review.', copies=[{**copy, 'conflict': True}])
+        both['body']['said'] = 'Both versions kept.'
+        answers = self.answers(**{'GET /api/trainings': [self.listed('waiting')],
+            'GET /api/training': [self.detail('waiting', '')], 'GET /api/run': [first],
+            'POST /api/copies': [both]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+            {'click': "Bring the Doc's changes in"}, {'snapshot': 'both'},
+            {'click': "Use the Doc's version"}, {'snapshot': 'theirs'},
+            {'click': 'Cancel'}, {'click': 'Keep this version and send it'}, {'snapshot': 'ours'}])
+        self.assertIn('replaces the local learner guide', result['snapshots']['theirs']['sheet'])
+        self.assertIn('replaces the changes in the Google Doc', result['snapshots']['ours']['sheet'])
+        self.assertEqual(self.posts(result), [('/api/copies', {'path': str(self.root), 'pull': 'document'})])
+
+    def test_a_changed_google_conflict_can_be_refreshed_and_confirmed_again(self):
+        self.started()
+        copy = a_copy('document', 'the learner guide', 'google', 'out-of-date',
+                      'https://docs.example.com/d/one/edit', 'Both texts changed.')
+        both = a_run('waiting', 'Waiting.', copies=[{**copy, 'conflict': True}])
+        made = a_run('waiting', 'Waiting.', copies=[{**copy, 'conflict': False}])
+        result = self.run_page(self.answers(**{
+            'GET /api/trainings': [self.listed('waiting')],
+            'GET /api/training': [self.detail('waiting', '')], 'GET /api/run': [both],
+            'POST /api/copies': [{'status': 409, 'body': {'error': 'Bring the changes in again.'}}, both, made]}), [
+            {'click': 'Open Rolling restarts'}, {'click': "Use the Doc's version"},
+            {'click': "Use the Doc's version"}, {'snapshot': 'refused'}, {'click': 'Cancel'},
+            {'click': "Bring the Doc's changes in"}, {'click': "Use the Doc's version"},
+            {'snapshot': 'renewed'}, {'click': "Use the Doc's version"}, {'snapshot': 'resolved'}])
+        self.assertIn('Bring the changes in again. Nothing was replaced.', result['snapshots']['refused']['toasts'])
+        self.assertIn('replaces the local learner guide', result['snapshots']['renewed']['sheet'])
+        self.assertEqual([body for _, body in self.posts(result)], [
+            {'path': str(self.root), 'pull': 'document', 'choose': 'theirs'},
+            {'path': str(self.root), 'pull': 'document'},
+            {'path': str(self.root), 'pull': 'document', 'choose': 'theirs'}])
+
+    def test_made_files_and_word_copies_have_download_controls(self):
+        self.research()
+        self.content()
+        run = a_run('working', 'Building the deck.', copies=[
+            a_copy('document', 'the learner guide', 'word', 'made', 'document.docx')])
+        answers = self.answers(**{'GET /api/trainings': [self.listed('working', 'Building the deck.')],
+            'GET /api/training': [self.detail('working', 'Building the deck.')], 'GET /api/run': [run]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'}, {'snapshot': 'made'}])
+        self.assertIn('Download the learner guide', result['snapshots']['made']['buttons'])
+        self.assertIn('Download the Word copy', result['snapshots']['made']['buttons'])
+
     def test_a_sample_slide_that_could_not_be_drawn_is_a_note_on_the_direction_review(self):
         self.started()
         waiting = 'Waiting for you to review the direction.'
@@ -2909,7 +3023,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     def test_grouped_review_keeps_one_approval_in_the_toolbar_and_recovers_from_refusal(self):
         self.started()
         review = {'phase': 'direction', 'label': 'Review the direction', 'expected': 'v1',
-                  'commits': {'levels': 1, 'materials': ['document'], 'deck': False,
+                  'commits': {'levels': 1, 'materials': [], 'deck': False,
                               'dollars': None, 'minutes': None},
                   'items': [{'target': 'research', 'label': 'Research', 'text': '# Findings'}]}
         waiting = a_run('waiting', 'Review the direction.')
@@ -3060,13 +3174,14 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     def test_the_first_drafts_sheet_says_what_approving_writes(self):
         self.started()
         for materials, said in (
-                (['document', 'brief', 'scenario'],
+                (['brief'], 'Approving the first drafts writes the briefs for each of the 2 levels'),
+                (['scenario'],
                  'Approving the first drafts writes the practice scenarios for each of the 2 '
                  'levels, and the deck is then drawn: estimated at about $7.20 and 40 minutes of '
                  "agent time for a deck of this size (a fixed estimate, not this computer's "
                  'history). It spends from the same limit as the rest of the training.'),
-                # A saved review from before lists the guide and the brief; they are not said.
-                (['document', 'brief'],
+                # Existing runs have no unwritten guide or brief at this stop.
+                ([],
                  'Nothing more is written for the levels: approving carries on to the deck.')):
             with self.subTest(materials=materials):
                 waiting = a_run('waiting', 'Review the first drafts.')
@@ -3149,7 +3264,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         waiting = a_run('waiting', 'Review the direction.')
         waiting['body']['review'] = {
             'phase': 'direction', 'label': 'Review the direction', 'expected': 'v1',
-            'commits': {'levels': 2, 'materials': ['document', 'brief'], 'deck': True,
+            'commits': {'levels': 2, 'materials': ['brief'], 'deck': True,
                         'dollars': 3.5, 'minutes': 12},
             'items': [
                 {'target': 'research', 'label': 'the research report', 'text': '# Findings',
@@ -3186,8 +3301,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Send 2 requests', two['buttons'])
         confirm = result['snapshots']['confirm']['sheet']
         self.assertIn('2 items are marked for changes. Approving does not send them.', confirm)
-        self.assertIn('Nothing more is written for the levels: approving carries on to the deck. '
-                      'The deck is estimated at about $3.50 and 12 minutes of agent time for a '
+        self.assertIn('Approving the first drafts writes the briefs for each of the 2 levels, and '
+                      'the deck is then drawn: estimated at about $3.50 and 12 minutes of agent time for a '
                       "deck of this size (a fixed estimate, not this computer's history).",
                       confirm)
         self.assertEqual(self.posts(result), [('/api/review', {
