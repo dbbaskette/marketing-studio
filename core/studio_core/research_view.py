@@ -104,8 +104,8 @@ def _account(folder, questions):
     }
 
 
-def price(attempts_by_name, redone=(), drafted=True):
-    tried = research_contract.last_rounds(attempts_by_name or {})
+def price(attempts_by_name, redone=(), drafted=True, *, recorded=None):
+    tried = recorded if recorded is not None else research_contract.last_rounds(attempts_by_name or {})
     most = research_contract.ROUNDS
     words = ('Asking for changes runs the research again' + (' from its last report' if drafted else '')
              + f': up to {most} rounds of writing and checking.')

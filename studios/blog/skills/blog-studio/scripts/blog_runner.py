@@ -15,7 +15,7 @@ import uuid
 import studio
 import blog_worker
 import editorial
-from studio_core import model_profiles, review_policy, research_contract, stops
+from studio_core import model_profiles, review_policy, research_contract, research_view, stops
 from studio_core.preferences import ready as shared_ready
 
 STATE = 'derived/blog-run.json'
@@ -746,12 +746,45 @@ def style_name(root, record):
     return styles.name_of(root, record['style']['style_id'])
 
 
+def planning_questions(text):
+    """Read a bounded plan from the tool-less planning worker."""
+    questions, seen = [], set()
+    for line in text.splitlines():
+        match = re.fullmatch(r'- \*\*([a-z0-9][a-z0-9-]{0,39})\*\*:\s*(.+)', line.strip())
+        if match and match[1] not in seen:
+            seen.add(match[1])
+            questions.append({'id': match[1], 'question': ' '.join(match[2].split())})
+            if len(questions) == 8:
+                break
+    return questions
+
+
+def research_price(root, directory, run):
+    if not run.get('research_contract') or not run['stages'].get('research', {}).get('hash'):
+        return None
+    local = studio.inside(root, '.blog-runs', directory.name + '.json')
+    saved = studio.read_json(local) if local.is_file() else {}
+    jobs = (saved.get('research') or {}).get('jobs') or []
+    priced = all(job.get('dollars') is not None for job in jobs)
+    attempts = {}
+    for job in jobs:
+        if job.get('phase') in ('author', 'review'):
+            name = f"research:{job['phase']}-{job.get('round') or 1}"
+            attempts.setdefault(name, []).append({**job, 'dollars': job.get('dollars') if priced else None})
+    after = run['pipeline'][run['pipeline'].index('research') + 1:]
+    redone = ['the ' + STAGES[name][0].lower() for name in after if run['stages'].get(name, {}).get('hash')]
+    return research_view.price(attempts, redone, drafted=True, recorded=research_cost(jobs))
+
+
 def survey(root, ident, listing=False):
     """Stage states. A listing skips the version token and next document a decision needs."""
     directory, record, run = load(root, ident)
-    research = None
+    research, bundle_problem = None, False
     if run.get('research_contract') and run['stages'].get('research'):
-        _, research = research_contract.read_bundle(directory / 'research')
+        try:
+            _, research = research_contract.read_bundle(directory / 'research')
+        except (OSError, ValueError, KeyError, TypeError):
+            research, bundle_problem = {'digest': None}, True
     # Selected context is read and serialised once; every stage pin reuses it.
     payload = inputs(root, record, run)
     context = json.dumps(payload, sort_keys=True)
@@ -766,7 +799,8 @@ def survey(root, ident, listing=False):
     for name in run['pipeline']:
         saved = run['stages'].get(name, {})
         current = studio.artifact_fingerprint(directory, STAGES[name][1])
-        changed = bool(saved) and (saved.get('hash') != current or saved.get('basis') != pin(name))
+        changed = bool(saved) and (saved.get('hash') != current or saved.get('basis') != pin(name)
+                                   or name == 'research' and bundle_problem)
         status = (
             'pending'
             if saved.get('status') == 'pending'
@@ -880,6 +914,7 @@ def survey(root, ident, listing=False):
         ],
         # Reviewed research through the shared contract, rather than a plain writing job.
         'research_contract': bool(run.get('research_contract')),
+        'research_price': research_price(root, directory, run),
         # When and where the person continued without research, for chat and the page.
         'research_skipped': run.get('research_skipped'),
         # Whether Finish has a draft to keep in the team library (see keep_finished).
@@ -2422,7 +2457,11 @@ def document(root, ident, stage):
         if previous is not None
         else []
     )
+    plan_path = directory / STAGES['research-plan'][1]
+    questions = planning_questions(plan_path.read_text()) if plan_path.is_file() else []
     return {
+        **({'research': research_view.account(directory / 'research', questions) if run.get('research_contract') else None}
+           if stage == 'research' else {}),
         'name': path.name,
         'content': content,
         **fields(content),

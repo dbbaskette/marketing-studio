@@ -80,6 +80,7 @@ async function check(){
   await sharedPattern();
   await whereThisRunStops();
   await phase3ResearchDefaults();
+  await phase3ResearchAccount();
   await oneVocabulary();
   await honestBlogCopy();
   await finishAndDelete();
@@ -2381,4 +2382,19 @@ async function phase3ResearchDefaults(){
     f.set('draft',{mode:'write',research,sources,stop:'package'});
     assert.equal(f.run('sResearchWords(draft)'),want,'Ready to start says what research will run');
   }
+}
+
+async function phase3ResearchAccount(){
+  const f=fixture();f.loadRunner();
+  const account={brief:'# Prioritized handoff',report:'# Full report',evidence:'# Evidence',check:{said:'Independent check accepted.',note:'Honest coverage.',unread:[]},gaps:['Unknown range.'],sources:{partial:[{title:'Public page',note:'Pages 1 to 4 only.'}]},read:'3 sources: 2 of yours, 1 public.',questions:[{id:'q',question:'Minimum?',findings:['q--one']}],findings:[{id:'q--one',title:'Capacity condition',summary:'Bounded finding.'}],unplanned:[]};
+  const found={id:'synthetic',title:'Synthetic',status:'waiting-for-approval',next:'research',approval:'page',expected:'v1',enabled:true,mode:'write',review_level:'step_by_step',brief:{},notes:{},research_price:{words:'Asking for changes runs the whole research again.'},stages:[{stage:'research',label:'Research',path:'derived/blog-research.md',status:'draft'},{stage:'outline',label:'Outline',status:'pending'}]};
+  const shown={id:'synthetic',stage:'research',label:'Research',status:'draft',content:'# Full report',notes:'',expected:'v1',checks:[],bundle:[],previous:null,diff:[],research:account};
+  f.set('found',found);f.set('shown',shown);f.run("studio.screen='gate';studio.id=found.id;studio.found=found;sGate(found,shown)");
+  const texts=()=>descendants(f.get('studio-page')).map(e=>e.textContent).join(' ');
+  for(const words of ['Prioritized handoff','Independent check accepted.','Honest coverage.','Unknown range.','Pages 1 to 4 only.','3 sources: 2 of yours, 1 public.','Your questions','Minimum?','Capacity condition'])assert.ok(texts().includes(words),words+': '+texts());
+  assert.equal(texts().includes('No assistant note was submitted'),false);
+  f.run("sChanges(found,'research')");
+  assert.ok(descendants(f.get('sheet')).some(e=>e.textContent===found.research_price.words));
+  const select=descendants(f.get('sheet')).find(e=>e.id==='change-stage');select.value='outline';select.listeners.change();
+  assert.equal(descendants(f.get('sheet')).some(e=>e.textContent===found.research_price.words),false);
 }

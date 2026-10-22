@@ -7,7 +7,7 @@ import tempfile
 import time
 from urllib.parse import urlsplit
 
-from studio_core import model_profiles, research_contract
+from studio_core import model_profiles, research_contract, research_view
 
 
 def offered(source):
@@ -334,8 +334,9 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
             )
         research_contract.Workflow(runtime).run(directory, task, invoke, sources)
         research_contract.publish(directory / research_contract.CASE, directory / 'research')
+        account = research_view.account(directory / 'research')
+        check = account['check'] if account else {'said': research_view.UNCHECKED, 'note': ''}
         return {
             'content': (directory / 'research/report.md').read_text(),
-            'notes': 'Independent evidence and prose review completed for the saved research digest. '
-            'The authored brief, evidence, source limitations and digest are retained in research/.',
+            'notes': check['said'] + (' ' + check['note'] if check['note'] else ''),
         }

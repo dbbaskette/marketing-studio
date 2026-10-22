@@ -2984,3 +2984,59 @@ class WriteAsTests(RunnerCase):
 
         shutil.rmtree(self.root / 'profiles' / profile['id'])
         self.assertIsNone(runner.options(self.root)['default_voice'])
+
+
+class ResearchAccountTests(RunnerCase):
+    def research_run(self):
+        found = self.create(research='web-allowed')
+        found = self.submit(found, '- **instance-min**: Minimum?')
+        found = self.approve(found)
+        return self.submit(found, '# Synthetic research')
+
+    def test_the_research_stage_view_carries_the_account(self):
+        from synthesis_fixture import research_stop
+        found = self.research_run()
+        directory, record, run = runner.load(self.root, found['id'])
+        run['research_contract'] = {'schema': 2}
+        studio.write_json(directory / runner.STATE, run)
+        self.assertIsNone(runner.document(self.root, found['id'], 'research')['research'])
+        research_stop(directory / 'research')
+        shown = runner.document(self.root, found['id'], 'research')
+        self.assertEqual(shown['research']['brief'], '# Prioritized handoff\n')
+        self.assertEqual(shown['research']['questions'][0]['findings'], ['instance-min--capacity'])
+        self.assertNotIn('synthetic-digest', json.dumps(shown['research']))
+
+    def test_the_research_notes_say_what_the_check_said(self):
+        from synthesis_fixture import research_stop
+        from studio_core import research_contract, research_view
+        import synthesis_research
+        directory = self.base / 'synthetic-research'; directory.mkdir()
+        research_stop(directory / 'research')
+        def never(*args, **kwargs):
+            raise AssertionError('No provider job')
+        with patch.object(research_contract, 'runtime_for', return_value=directory), \
+                patch.object(research_contract.Workflow, 'run'), patch.object(research_contract, 'publish'):
+            found = synthesis_research.generate(directory, {'brief': {}, 'research_contract': {}},
+                {'title': 'Synthetic', 'sources': [], 'documents': {}, 'research_policy': 'supplied-only'},
+                never, seconds=60, stop=threading.Event())
+        self.assertEqual(found['notes'], research_view.CHECKED + ' An honest account.')
+        self.assertNotIn('retained in research/', found['notes'])
+
+    def test_a_research_change_is_priced(self):
+        found = self.research_run()
+        for _ in range(2):
+            found = self.approve(found); found = self.submit(found)
+        directory, record, run = runner.load(self.root, found['id'])
+        run['research_contract'] = {'schema': 2}; studio.write_json(directory / runner.STATE, run)
+        runner.engine(self.root).keep_local(found['id'], {'research': {'jobs': [
+            dict(phase='author', round=1, seconds=1800, dollars=6), dict(phase='review', round=1, seconds=1080, dollars=3.8)]}})
+        words = runner.survey(self.root, found['id'])['research_price']['words']
+        self.assertIn('48 minutes and $9.80', words)
+        self.assertTrue(words.endswith('Then it makes again: the outline and the draft.'))
+        runner.engine(self.root).keep_local(found['id'], {'research': {'jobs': [
+            dict(phase='discovery', round=0, seconds=60, dollars=1),
+            dict(phase='author', round=1, seconds=1800, dollars=6), dict(phase='review', round=1, seconds=1080, dollars=3.8)]}})
+        price = runner.survey(self.root, found['id'])['research_price']
+        self.assertEqual(price['jobs'], 3)
+        self.assertIn('49 minutes and $10.80', price['words'])
+
