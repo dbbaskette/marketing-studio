@@ -673,6 +673,54 @@ class ScreenTests(ScriptedPage, PageCase):
                                    [{'snapshot': 'first'}])
             self.assertIn(said, result['snapshots']['first']['text'])
 
+    def test_a_deck_says_only_what_it_does(self):
+        path = self.started()
+        self.to_gate(Path(path), 'gate:build')
+        shown = self.run_of(path)
+        progress = {'incomplete': False, 'slides': [
+            {'ref': 'r1', 'number': 1, 'revision': '3f2a1c9b0d4e5f6a', 'title': 'Cover'}]}
+        receipts = [{'purpose': 'outline', 'profile': 'main', 'model': None, 'effort': None,
+                     'reason': None, 'actual_model': None}]
+        view = {**shown, 'gate': None, 'state': 'working', 'build_progress': progress,
+                'model_jobs': receipts, 'build_timing': {'first_preview': '12 s'}}
+        result = self.deck_screen(path, [{'snapshot': 'deck'}], **{'GET /api/run': [ok(view)]})
+        deck = result['snapshots']['deck']
+        for gone in ('Rehearse with Yoodli', 'Coming later', 'Render 3f2a1c9b0d4e'):
+            self.assertNotIn(gone, deck['text'])
+        # What only troubleshooting needs is in a disclosure of its own, closed.
+        self.assertIn('Details for troubleshooting', deck['text'])
+        self.assertIn('Details for troubleshooting', deck['buttons'])
+
+    def test_a_refused_approval_is_said_beside_the_gate(self):
+        path = self.started()
+        refused = {'status': 409, 'body': {'error': 'The outline changed since you opened it.'}}
+        result = self.deck_screen(path, [{'click': 'Approve'}, {'snapshot': 'refused'}],
+                                  **{'POST /api/decide': [refused]})
+        shot = result['snapshots']['refused']
+        self.assertIn('The outline changed since you opened it. Nothing was decided.',
+                      shot['text'])
+        self.assertEqual(shot['focus'], 'gate-problem')
+
+    def test_google_slides_without_google_says_it_makes_a_powerpoint_file(self):
+        said = ('Google is not connected on this computer, so approving makes a PowerPoint '
+                'file. Sign in on Status and Deliver to Google Slides afterwards.')
+        path = self.started(output='google')
+        self.to_gate(Path(path), 'gate:build')
+        unsigned = self.setup_with(google=False)
+        result = self.deck_screen(path, [{'snapshot': 'deck'}],
+                                  **{'GET /api/setup': [unsigned]})
+        self.assertIn(said, result['snapshots']['deck']['text'])
+        result = self.run_page(self.answers(**{'GET /api/setup': [unsigned],
+                                               'GET /api/run': [{'status': 404, 'body': {
+                                                   'error': 'There is no deck there.'}}]}), [
+            {'click': 'New deck'}, {'click': 'Start from scratch'},
+            {'fill': 'A short title', 'value': 'Rolling restarts'},
+            {'click': 'Continue'}, {'click': 'Options'}, {'snapshot': 'options'}])
+        self.assertIn(said, result['snapshots']['options']['text'])
+        result = self.deck_screen(path, [{'snapshot': 'signed'}],
+                                  **{'GET /api/setup': [self.setup_with(google=True)]})
+        self.assertNotIn(said, result['snapshots']['signed']['text'])
+
     def test_a_phone_keeps_one_decision_in_the_toolbar(self):
         path = self.started()
         result = self.deck_screen(path, [{'snapshot': 'phone'}, {'click': 'More'},
@@ -712,8 +760,8 @@ class ScreenTests(ScriptedPage, PageCase):
             with self.subTest(gate=name):
                 self.assertEqual(shot['heading'], 'Rolling restarts')
                 self.assertIn('Where it is', shot['text'])
-                self.assertIn('Rehearse with Yoodli', shot['text'])
-                self.assertIn('Coming later', shot['text'])
+                self.assertNotIn('Rehearse with Yoodli', shot['text'])
+                self.assertNotIn('Coming later', shot['text'])
                 self.assertEqual(shot['filled'], ['Approve'])
                 self.assertIn('Choose another brand' if name == 'gate:look'
                               else 'Ask for changes', shot['buttons'])
@@ -1141,6 +1189,10 @@ class ScreenTests(ScriptedPage, PageCase):
                             uploads={'old.pptx': DECK})
         result = self.deck_screen(path, [{'snapshot': 'classify'}])
         shot = result['snapshots']['classify']
+        # Its slides are read by code that takes no note: there is nothing to ask it.
+        self.assertNotIn('Ask for changes', shot['buttons'])
+        self.assertIn('To read another deck, stop this one and start a new deck from it.',
+                      shot['text'])
         self.assertIn('Your deck has 3 slides.', shot['text'])
         self.assertIn('Slide 1 of 3', shot['text'])
         self.assertTrue(shot['pictures'])
@@ -1169,8 +1221,9 @@ class ScreenTests(ScriptedPage, PageCase):
             [{'click': 'Review Rolling restarts'}, {'snapshot': 'progress'}])
         shot = result['snapshots']['progress']
         for text in ('Slides taking shape', 'Unreviewed', 'render stopped',
-                     'Slide 3 · 1 preview available', 'Render ' + 'b' * 12):
+                     'Slide 3 · 1 preview available'):
             self.assertIn(text, shot['text'])
+        self.assertNotIn('Render ' + 'b' * 12, shot['text'], 'no render hash under a slide')
         self.assertTrue(any('kind=progress&name=' + 'a' * 32 in image['of']
                             for image in shot['pictures']))
         self.assertFalse(any(endpoint == '/api/decide' for endpoint, _ in self.posts(result)))
@@ -1305,8 +1358,13 @@ class ScreenTests(ScriptedPage, PageCase):
         gate = self.run_of(path)['gate']
         self.assertEqual((gate['name'], gate['verdict']), ('gate:classify', 'material'))
         result = self.deck_screen(path, [{'snapshot': 'gate'}, {'click': 'That’s wrong'},
-                                         {'snapshot': 'wrong'}, {'click': 'Approve'}],
+                                         {'snapshot': 'wrong'},
+                                         {'click': 'Take it as a finished script for the slides'}],
                                   **{'POST /api/decide': [ok(self.run_of(path))]})
+        # Approve says what it now does: it takes the document as the other kind.
+        self.assertEqual(result['snapshots']['gate']['filled'], ['Approve'])
+        self.assertEqual(result['snapshots']['wrong']['filled'],
+                         ['Take it as a finished script for the slides'])
         self.assertIn('It reads as material to build from.',
                       result['snapshots']['gate']['text'])
         self.assertIn('It will be taken as a finished script for the slides instead.',

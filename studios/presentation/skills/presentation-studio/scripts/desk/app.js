@@ -66,8 +66,7 @@ const STEP_WORDS = {
   later: ['out', 'Coming later'],
 };
 const STAGES = [['intake', 'Intake'], ['classify', 'Classify'], ['research', 'Research'],
-  ['outline', 'Outline'], ['look', 'Look'], ['build', 'Build'], ['deliver', 'Deliver'],
-  ['rehearse', 'Rehearse with Yoodli']];
+  ['outline', 'Outline'], ['look', 'Look'], ['build', 'Build'], ['deliver', 'Deliver']];
 const STEERED = {
   pause: 'Paused. Nothing more is started until you resume it.',
   resume: 'Carrying on.',
@@ -2996,7 +2995,9 @@ function startStep(draft) {
         + 'check and its repairs run when you ask.'))]),
     make('p', 'quiet', (limitsSays(limits) || 'No limits are set for this computer.')
       + ' A deck that reaches a limit stops and asks you. The limits are changed in '
-      + 'Settings.'));
+      + 'Settings.'),
+    OUTPUTS[draft.output][0] === 'google' && !googleReady() ? make('p', '', NOT_CONNECTED)
+      : null);
   return [add(card('How it looks'), brandFields(draft, 'new')), options, whereItStops(draft),
   add(callout('', make('h2', 'aside-title', 'What happens when you start')),
     make('p', '', 'It starts at once and works on its own. From the first decision on, you '
@@ -3442,17 +3443,16 @@ async function sendNote(run, box, problem, pressed) {
 
 // --- one deck: its stages ------------------------------------------------------------------
 
-// Each stage of the deck, as the steps it has say: done, the one it is at, still to come,
-// or, for rehearsing with Yoodli, coming later.
+// Each stage of the deck, as the steps it has say: done, the one it is at, still to come.
+// A saved deck's rehearse gate is never come to, so it is not shown.
 function stagesOf(run) {
   const rows = list(run.timeline);
   const found = [];
   for (const [stage, name] of STAGES) {
     const own = rows.filter((row) => row.stage === stage);
-    if (!own.length && stage !== 'rehearse') continue;
+    if (!own.length) continue;
     let at = 'upcoming';
-    if (stage === 'rehearse') at = 'later';
-    else if (own.every((row) => row.state === 'done')) at = 'done';
+    if (own.every((row) => row.state === 'done')) at = 'done';
     else if (own.some((row) => row.state === 'current')) at = 'current';
     const failed = own.some((row) => row.failed);
     found.push({ stage, name, at, failed,
@@ -3526,7 +3526,7 @@ function stepsCard(run) {
   const node = make('details', 'card shine steps');
   node.dataset.key = 'steps';
   const items = make('ol', 'rows');
-  for (const step of list(run.timeline)) items.append(stepItem(step));
+  for (const step of list(run.timeline)) if (step.name !== 'rehearse') items.append(stepItem(step));
   return add(node, make('summary', 'card-title', 'Every step'), items);
 }
 
@@ -3828,6 +3828,8 @@ function classifyPanel(gate, readonly) {
     add(node, add(make('div', 'field'), chip('That’s wrong', held.wrong, (on) => {
       held.wrong = on;
       tell();
+      // Approve, in the toolbar, says what it now does.
+      paintDeck(false);
     }, 'wrong'), make('p', 'quiet field-hint', 'Press it if this is really '
       + KINDS[other] + '. Your word is taken: it is not asked again.')), then);
   }
@@ -4490,7 +4492,6 @@ function buildProgressCard(progress) {
     mark: one.ref }));
   if (slides.length) add(node, pager(slides, (one) => [
     make('p', '', 'Rendered preview · Unreviewed'),
-    make('p', 'quiet', 'Render ' + String(one.revision).slice(0, 12)),
     one.part !== 'whole' && view.run?.mine ? progressFeedback(one) : null]));
   return node;
 }
@@ -4523,6 +4524,22 @@ function progressFeedback(one) {
   return form;
 }
 
+// What only someone putting a problem right needs: the model jobs and the preview timing,
+// in a disclosure of their own that starts closed.
+function troubleshootingDetails(run) {
+  const receipts = list(run.model_jobs);
+  const timing = run.build_timing && Object.keys(run.build_timing).length ? run.build_timing : null;
+  if (!receipts.length && !timing) return null;
+  const node = add(make('details', 'card'), make('summary', '', 'Details for troubleshooting'));
+  node.dataset.key = 'troubleshooting';
+  if (receipts.length) add(node, make('h3', 'row-title', 'Recent model jobs'), bullets(receipts.map(job =>
+    `${spoken(job.purpose)} · ${capital(job.profile)} · ${job.model || 'assistant default'}${job.effort ? ' · ' + job.effort : ''}`
+    + (job.reason ? ' · ' + job.reason : '') + '. Reported actual model: ' + (job.actual_model || 'not reported') + '.')));
+  if (timing) add(node, make('h3', 'row-title', 'Preview timing'),
+    bullets(Object.entries(timing).map(([name, at]) => spoken(name.replaceAll('_', ' ')) + ': ' + at)));
+  return node;
+}
+
 function savedDetails(run) {
   const node = add(make('details', 'card'), make('summary', '', 'Saved inputs, outline and run details'));
   const holder = make('div', 'card-part'), problem = problemLine();
@@ -4539,12 +4556,7 @@ function savedDetails(run) {
     }, 'read ' + name);
     add(node, go);
   }
-  const receipts = list(run.model_jobs);
-  if (receipts.length) add(node, make('h3', 'row-title', 'Recent model jobs'), bullets(receipts.map(job =>
-    `${spoken(job.purpose)} · ${capital(job.profile)} · ${job.model || 'assistant default'}${job.effort ? ' · ' + job.effort : ''}`
-    + (job.reason ? ' · ' + job.reason : '') + '. Reported actual model: ' + (job.actual_model || 'not reported') + '.')));
-  if (run.build_timing && Object.keys(run.build_timing).length) add(node, make('h3', 'row-title', 'Preview timing'),
-    bullets(Object.entries(run.build_timing).map(([name, at]) => spoken(name.replaceAll('_', ' ')) + ': ' + at)));
+
   if (list(run.build_feedback).length) add(node, make('h3', 'row-title', 'Saved slide feedback'),
     bullets(run.build_feedback.map(item => 'Slide ' + item.number + ': ' + item.note)));
   const used = list(run.note && run.note.used);
@@ -4694,9 +4706,21 @@ function gateLine(run) {
       + 'the computer that runs it.' : 'Nobody is running this deck, so it cannot be decided '
       + 'until someone takes it.') + ' Here you can read it.'));
   }
+  const deck = gate.name === 'gate:classify' && gate.kind === 'deck';
   return callout('yours', make('p', '', capital(gate.label) + '.'),
-    make('p', 'quiet', APPROVING[gate.name] || 'Approve it, or ask for changes and say what '
-      + 'should change.'));
+    make('p', 'quiet', deck ? 'Approve, and it carries on from these slides. To read '
+      + 'another deck, stop this one and start a new deck from it.'
+      : APPROVING[gate.name] || 'Approve it, or ask for changes and say what should change.'),
+    gate.name === 'gate:build' && run.output === 'google' && !googleReady()
+      ? make('p', '', NOT_CONNECTED) : null,
+    alertLine('gate-problem'));
+}
+
+// Google Slides asked for, and Google not connected here: approving makes PowerPoint.
+const NOT_CONNECTED = 'Google is not connected on this computer, so approving makes a '
+  + 'PowerPoint file. Sign in on Status and Deliver to Google Slides afterwards.';
+function googleReady() {
+  return !(view.setup && view.setup.google === false);
 }
 
 // --- one deck: delivered -------------------------------------------------------------------
@@ -5224,6 +5248,11 @@ async function decide(decision, note, problem, pressed, extra) {
     pressed.disabled = false;
     if (problem) {
       say(problem, failure.message + ' Nothing was decided.');
+      // The gate's own line is read where the decision is, and takes focus.
+      if (problem.id === 'gate-problem') {
+        problem.tabIndex = -1;
+        problem.focus();
+      }
       return;
     }
     // A decision pressed in the toolbar has no sheet, whether it approves or sends what was
@@ -5299,21 +5328,32 @@ function deckActions(run, lead) {
     // Approve acts at once: what it does is said beside the gate before it is pressed. At
     // a stop reviewed item by item it says what it will do with the marks. Pressed, it
     // acts on the gate as it is then, as `decide` does.
+    // A document said to be the other kind is taken as that kind: Approve says so.
+    const wrong = run.gate.name === 'gate:classify' && run.gate.kind === 'document'
+      && chosenFor(run.gate).wrong;
+    const other = run.gate.verdict === 'spec' ? 'material' : 'spec';
     const approve = capsule(REVIEWED.includes(run.gate.name) ? reviewOf(run.gate).label
-      : run.gate.unreviewed ? 'Use this first draft' : 'Approve', lead === 'approve' ? 'filled' : '', () => {
+      : run.gate.unreviewed ? 'Use this first draft' : wrong ? 'Take it as ' + KINDS[other]
+        : 'Approve', lead === 'approve' ? 'filled' : '', () => {
       const gate = view.run.gate;
-      if (gate && REVIEWED.includes(gate.name)) sendReview(gate, approve);
+      // A refusal is said beside the gate, in its own problem line, which takes focus.
+      const problem = byId('gate-problem');
+      if (gate && REVIEWED.includes(gate.name)) sendReview(gate, approve, problem);
       else if (gate && gate.name === 'gate:look' && gate.offered) {
-        decide('approve', (chosenFor(gate).lookWords || '').trim(), null, approve);
-      } else decide('approve', '', null, approve);
+        decide('approve', (chosenFor(gate).lookWords || '').trim(), problem, approve);
+      } else decide('approve', '', problem, approve);
     }, 'approve');
     const brand = run.gate.name === 'gate:look';
-    actions.push(approve, capsule(brand ? 'Choose another brand' : 'Ask for changes', '',
-      openSheet(brand ? 'rebrand' : 'changes', 'changes'), 'changes'));
+    // An existing deck's slides are read by code that takes no note: nothing to ask it.
+    const read = run.gate.name === 'gate:classify' && run.gate.kind === 'deck';
+    actions.push(approve, read ? null : capsule(brand ? 'Choose another brand'
+      : 'Ask for changes', '', openSheet(brand ? 'rebrand' : 'changes', 'changes'),
+    'changes'));
   }
   const offered = run.problem && run.problem.action;
   if (run.state === 'working') press('Pause', '', 'pause');
   if (['working', 'waiting', 'paused'].includes(run.state)) press('Stop', 'quiet', 'stop');
+  for (let at = actions.length - 1; at >= 0; at -= 1) if (!actions[at]) actions.splice(at, 1);
   if (['paused', 'stopped'].includes(run.state) && !offered) {
     press('Resume', lead === 'resume' ? 'filled' : '', 'resume');
   }
@@ -5341,7 +5381,8 @@ function paintDeck(fresh) {
   const published = view.issued && view.issued.path === view.path ? view.issued : null;
   const gate = run.gate;
   placeParts({ title, above, back: true, actions: foldActions(deckActions(run, lead)),
-    mark: [title, route, run.state, lead, gate && [gate.name, gate.round], read, driver,
+    mark: [title, route, run.state, lead, gate && [gate.name, gate.round, chosenFor(gate).wrong],
+      read, driver,
       Boolean(run.question), run.problem,
       gate && REVIEWED.includes(gate.name) && !read ? reviewOf(gate).label : ''] }, [
     ['intro', [run.state, run.sentence, run.queue, view.steered, read, Boolean(run.problem),
@@ -5358,7 +5399,8 @@ function paintDeck(fresh) {
     run.question && read ? ['asked', [run.question, driver], () => askedPart(run)] : null,
     run.question && !read ? ['question', [run.question, title],
       () => questionPart(run, title)] : null,
-    gate ? ['gate-line', [gate.name, gate.label, read, driver], () => gateLine(run)] : null,
+    gate ? ['gate-line', [gate.name, gate.label, read, driver, googleReady()],
+      () => gateLine(run)] : null,
     gate ? ['gate', [gate, read], () => gatePanel(run)] : null,
     run.deliver ? ['deliver', [run.deliver, run.contactSheet, read, view.downloading],
       () => deliverPart(run)] : null,
@@ -5371,8 +5413,8 @@ function paintDeck(fresh) {
     ['cost', [run.spent, run.agent, run.model, run.effort, view.setup && view.setup.limits],
       () => costCard(run)],
     ['steps', [run.timeline], () => stepsCard(run)],
-    ['saved-details', [run.path, run.model_jobs, run.build_feedback, run.note],
-      () => savedDetails(run)],
+    ['saved-details', [run.path, run.build_feedback, run.note], () => savedDetails(run)],
+    ['troubleshooting', [run.model_jobs, run.build_timing], () => troubleshootingDetails(run)],
     // What this computer runs for a team can be handed over, for anyone to take.
     !read && driver && driver.here ? ['mine', [driver, title, run.kept],
       () => minePart(driver, run.kept)] : null,

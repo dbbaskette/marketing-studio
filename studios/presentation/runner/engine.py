@@ -118,6 +118,7 @@ from studio_core import deck_flow, research_contract, review_policy, stops
 
 import contextvars
 import json
+import sys
 import os
 import re
 import secrets
@@ -734,7 +735,7 @@ class Engine(Jobs, Researching):
         if not ready.ready:
             raise WorkspaceError(ready.problem)
         source = checked.get('source') or {}
-        if checked['route'] == 'existing' and source.get('kind') == 'google' \
+        if checked['route'] in ('existing', 'document') and source.get('kind') == 'google' \
                 and not self._google_ready():
             raise WorkspaceError(existing.NOT_READY)
         if default:
@@ -1076,14 +1077,16 @@ class Engine(Jobs, Researching):
         """Stop a deck on something a step refused or the runner did not expect."""
         if isinstance(failure, (_Gone, _Halted)):
             return
-        said = (str(failure) if isinstance(failure, WorkspaceError)
-                else f'{type(failure).__name__}: {failure}')
+        said = str(failure).strip().rstrip('.') or 'it did not say why'
+        if not isinstance(failure, WorkspaceError):
+            # The kind of failure is for whoever reads the runner's log, not for the page.
+            print(f'{root.name}: {type(failure).__name__}: {failure}', file=sys.stderr)
         try:
             record = self._load(root)
             step = first(record)
             self._problem(root, step.name if step else None, 'failed',
-                          said if isinstance(failure, WorkspaceError)
-                          else f'The runner could not go on: {said}', KEPT_SO_FAR)
+                          str(failure) if isinstance(failure, WorkspaceError)
+                          else f'The runner could not go on: {said}.', KEPT_SO_FAR)
         except Exception:  # the record cannot be written either; the view still says why
             pass
 

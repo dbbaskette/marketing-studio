@@ -150,6 +150,27 @@ class RedoTests(StudioCase):
         self.assertIsNone(self.view(searched)['gate'].get('redo'))
 
 
+class HonestStopTests(StudioCase):
+    def test_a_google_doc_document_needs_google_before_the_deck_is_made(self):
+        from runner.steps import existing
+        before = self.engine.decks()
+        with mock.patch.object(type(self.engine), '_google_ready', lambda me: False):
+            with self.assertRaises(WorkspaceError) as caught:
+                self.start(route='document', source={
+                    'kind': 'google', 'link': 'https://docs.google.com/document/d/abc/edit'})
+        self.assertEqual(str(caught.exception), existing.NOT_READY)
+        self.assertEqual(existing.NOT_READY, 'Sign in to Google on Status, under Check this '
+                         'computer, or download the file and upload it.')
+        self.assertEqual(self.engine.decks(), before, 'nothing is made')
+
+    def test_an_unexpected_failure_says_its_message_without_its_class(self):
+        root = self.start()
+        self.engine._trouble(root, ValueError('boom'))
+        problem = self.view(root)['problem']
+        self.assertEqual(problem['why'], 'The runner could not go on: boom.')
+        self.assertNotIn('ValueError', json.dumps(self.view(root)))
+
+
 class ScratchTests(StudioCase):
     def test_a_scratch_deck_stops_at_each_gate_and_is_delivered(self):
         root = self.start()

@@ -15,6 +15,16 @@ def names(r):
     return [s.name for s in stages.steps(r)]
 
 
+class SavedRehearseTests(unittest.TestCase):
+    def test_a_saved_deck_with_the_rehearse_gate_still_surveys(self):
+        saved = run('scratch')
+        saved['gates']['rehearse'] = {'state': 'absent'}
+        self.assertIn('rehearse', names(saved), 'the gate stays in the pipeline')
+        found = stages.survey(saved)
+        self.assertEqual(found.next.name, 'intake-source')
+        self.assertIn('rehearse', [row['name'] for row in stages.timeline(saved)])
+
+
 class NameTests(unittest.TestCase):
     def test_the_look_stop_is_named_choose_the_look(self):
         self.assertEqual(stages.BY_NAME['gate:look'].label, 'Choose the look')

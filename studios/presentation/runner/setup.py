@@ -149,6 +149,9 @@ def describe(engine) -> dict:
             'limits': chosen.limits,
             # The shared review level, so the start form can say where a deck stops.
             'review_level': review_policy.capture()['level'],
+            # Whether Google is connected here: Google Slides asked for without it is made a
+            # PowerPoint file, which the form and the deck's stop say first. None: not asked here.
+            'google': needs['drive'],
             'previews': {'how': chosen.previews, 'pool': needs['pool'], 'drive': needs['drive'],
                          'local': needs['local']},
             'brand': {**needs['brand'], 'skills': engine.brand_skills(),
