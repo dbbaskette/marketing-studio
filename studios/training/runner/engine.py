@@ -200,7 +200,7 @@ from pathlib import Path, PurePosixPath
 import runner  # noqa: F401  puts the core on the import path
 import computer
 import home
-from studio_core import brand_guidance, deck_direction, deck_flow, model_profiles, review_policy, research_contract, stops
+from studio_core import brand_guidance, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_view, stops
 import hub
 import workspace
 from workspace import WorkspaceError
@@ -960,6 +960,7 @@ class Engine(Reviewing):
             raise WorkspaceError(ready.problem)
         with self.files:
             record = new_record(agent, model, chosen, form['source_scope'], effort)
+            record['research_questions'] = form.get('research_questions') or []
             if form.get('review_default'):
                 # Use this for new work in every studio: written under the studios config's
                 # lock, or refused, with nothing made, when another studio changed the level
@@ -3130,13 +3131,28 @@ class Engine(Reviewing):
         if designed is None:
             return self._problem(root, it.id, 'stopped', DESIGN_GONE, KEPT)
         record = self._load(root)
+        if (it.id == 'research-plan' and record.get('research_contract')
+                and found.scope == 'supplied-only' and not step.request):
+            with self.files:
+                workspace.write_atomic(root / pipeline.PLAN, pipeline.plan_from_form(
+                    root, found, record.get('research_questions') or []).encode('utf-8'))
+                workspace.save(root, 'research-plan', built=True)
+                self._tried(record, it.id, home.now(), 0, 'kept')['attempts'][-1]['runner'] = True
+                record['research'] = {**(record.get('research') or {}), 'plan_from': 'form'}
+                if review_policy.level(record) != 'step_by_step':
+                    workspace.accept_policy(root, 'research-plan', record['review_policy'])
+                self._store(root, record)
+                self._commit(root, 'write the research plan from the form')
+            return
         sources = (self.documents.sources(root)
                    if it.id == 'research-plan' and record.get('documents') else None)
         naming = (self._naming(root, found.session)
                   if it.stage in pipeline.NAMED and it.kind == 'agent' else None)
         work = pipeline.work(root, found, it, step.request, last_error(record, it.id),
                              record['answers'].get(it.id, []), sources, naming, designed,
-                             bool(designed) and self._has('design-icon-ids'))
+                             bool(designed) and self._has('design-icon-ids'),
+                             synthesis=bool(record.get('research_contract')),
+                             asked=record.get('research_questions') or ())
         outcome, handed, started_at, folder = self._job(root, run, it, work)
         if outcome.reason == 'stopped':
             return self._stopped(root, it, outcome, started_at)
@@ -3155,6 +3171,8 @@ class Engine(Reviewing):
                         asked=None, waiting=None)
                 else:
                     pipeline.keep_draft(root, it, handed, step.request, found)
+                if it.id == 'research-plan' and record.get('research_contract'):
+                    record['research'] = {**(record.get('research') or {}), 'plan_from': 'assistant'}
                 self._tried(record, it.id, started_at, outcome.seconds, 'kept',
                             **self._cost(outcome))
                 self._store(root, record)
@@ -3256,7 +3274,7 @@ class Engine(Reviewing):
                 return self._problem(root, step.id, 'stopped', str(refusal),
                                      'The research plan you approved is kept.')
             record = self._load(root)
-            record['research'] = {'run': status.get('run'),
+            record['research'] = {**(record.get('research') or {}), 'run': status.get('run'),
                                   'plan': workspace.sha256_file(root / pipeline.PLAN)}
             self._tried(record, step.id, home.now(), time.monotonic() - clock, 'kept')
             self._store(root, record)
@@ -3377,9 +3395,10 @@ class Engine(Reviewing):
                 facts, manifest = research_contract.publish(root / research_contract.CASE, root / 'research')
                 workspace.write_atomic(root / pipeline.REPORT, (root / 'research/report.md').read_bytes())
                 workspace.save(root, 'research', built=True)
+                account = research_view.account(root / 'research')
+                check = account['check'] if account else {'said': research_view.UNCHECKED, 'note': ''}
                 workspace.append_review(root, 'research', 'Independent research review',
-                                        'The report and authored brief were reviewed against saved evidence. '
-                                        'Keep all qualifications and gaps. Digest: ' + manifest['digest'])
+                                        check['said'] + (' ' + check['note'] if check['note'] else ''))
                 record['research']['digest'] = manifest['digest']
                 record['research']['reviewed_request'] = None  # save closed the covered request
                 self._tried(record, step.id, home.now(), time.monotonic() - clock, 'kept')
@@ -3862,6 +3881,19 @@ class Engine(Reviewing):
         return bool(root) and (Path(root) / research_contract.CASE / '.harness-research'
                                / 'synthesis.json').is_file()
 
+    def research_price(self, path):
+        root = self.driven(path)
+        if root is None:
+            return None
+        record = self._load(root)
+        if not record.get('research_contract'):
+            return None
+        session = workspace.load(root)
+        redone = [workspace.label(name) for name in workspace.downstream(root, session, 'research')]
+        return research_view.price({name: entry.get('attempts') or []
+                                    for name, entry in record['steps'].items() if isinstance(entry, dict)},
+                                   redone, drafted=self._drafted(root))
+
     def _research_tried(self, record: dict, problem: dict, root: Path | None = None) -> dict:
         """For a stop at research done as one report and one independent check, its
         'research': what its last try took, and how many rounds Try again may run."""
@@ -4055,7 +4087,8 @@ class Engine(Reviewing):
                 holding=pipeline.holding(root, found, step) if root is not None else ())
             listed.append({
                 'id': step.id, 'label': (step.label.replace('Your review of ', 'Continue ') + ' automatically'
-                                         if automatic else step.label),
+                                         if automatic else pipeline.FROM_FORM if step.id == 'research-plan'
+                                         and (record.get('research') or {}).get('plan_from') == 'form' else step.label),
                 'kind': 'code' if automatic else step.kind, 'status': status,
                 'attempts': len(tried),
                 'seconds': round(sum(attempt.get('seconds') or 0 for attempt in tried), 1)

@@ -243,6 +243,8 @@ by supporting URLs. With no evidence, say what is unknown. Do not claim that a r
 source or link was independently verified. The notes field describes limits and your own
 judgment. Follow the supplied response schema."""
 
+POLICY += "\nWhen documents['claims-map'] is supplied, it lists the claims the author's own material makes and where. State those claims as the material does, and add no claim it does not make."
+
 POLICY += """\nWhen a selected brand contract is supplied, follow its organisation and product naming
 rules. Use its design guide only for visual handoff suggestions. Keep brand identity separate
 from the selected author voice: preserve that voice and its provisional or confirmed status.

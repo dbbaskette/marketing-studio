@@ -131,3 +131,23 @@ When your decks are kept in a repository your team shares, several people work i
 - **Slides are made by harness-slides,** with your brand's exported contract. The studio never edits a slide file itself.
 - **Your original is never changed.** An existing deck is read, and you always get a new copy.
 - **Everything is recorded.** Each step, decision and request for changes is a commit in the workspace.
+
+## Research you can review
+
+The stop shows the authored brief first, the check's acceptance and note, gaps, partial
+sources, source counts and findings mapped to your planning questions. Report and evidence
+remain available in folds. An unreadable bundle leaves the saved report readable without
+claiming that its check accepted it.
+
+Document research defaults to Your documents only. Your documents and the public web is
+an explicit choice; a scratch deck uses the public web. Supplied-only synthesis writes
+its plan from at most eight optional form questions (300 characters each), without a
+planning job. Web synthesis asks at most eight questions together; legacy queues keep 30.
+An explicit plan revision uses the planning assistant with the saved questions and your
+request, retaining the selected source boundary and question limit.
+Existing decks retain their saved scope and pipeline.
+
+Ask about this finding adds a note to the whole research request, whose sheet says what
+rounds it may run, its last recorded cost and the made work it will redo. At the Balanced
+direction review, Leave out selects findings for a new outline and new looks without
+rerunning research. The full reviewed bundle stays intact.

@@ -114,7 +114,7 @@ What a caller needs to know
 """
 from __future__ import annotations
 
-from studio_core import deck_flow, research_contract, review_policy, stops
+from studio_core import deck_flow, research_contract, research_view, review_policy, stops
 
 import contextvars
 import json
@@ -144,7 +144,7 @@ from runner import slides as slides_tool
 from runner.jobs import (FED, KEPT_SO_FAR, NEXT_NOTE, Gone as _Gone, Halted as _Halted, Jobs,
                          Run as _Run, Slots as _Slots, attempts, first, gate_state,
                          last_error, spent, text_of, tries, sha256_of)
-from runner.research_steps import PLAN, PLAN_MD, REPORT, REVIEW, Researching
+from runner.research_steps import FROM_FORM, PLAN, PLAN_MD, REPORT, REVIEW, Researching
 from runner.steps import build, deliver as delivering, existing, intake
 from runner.steps import look as looks
 from runner.steps import outline as outlines
@@ -1860,6 +1860,9 @@ class Engine(Jobs, Researching):
         if not after and gate_state(record, gate) != 'waiting':
             raise WorkspaceError(NOT_WAITING.format(it=it))
         marked = marks.check(gate, decision, extra, self._marked_ids(root, gate, extra))
+        if combined and target == 'gate:research' and decision == 'changes' and not note and set(marked) == {'left_out'}:
+            self._leave_out(root, record, marked['left_out'], at, by)
+            return 'leave research findings out of the direction', ()
         if gate == 'gate:research' and 'left_out' not in marked:
             out = (record.get('research') or {}).get('left_out') or ()
             for ident in marked.get('again') or ():
@@ -1953,6 +1956,26 @@ class Engine(Jobs, Researching):
         self._store(root, record)
         return ('make it in ' + decks.brand_words(record['form']) if rebrand
                 else f'ask for changes to the {it}'), ()
+
+    def _leave_out(self, root: Path, record: dict, ids, at, by) -> None:
+        record['research'] = {**(record.get('research') or {}), 'left_out': list(ids)}
+        if not record.get('research_contract'):
+            write_atomic(root / REPORT, self._report_text(root, record))
+        record.update(stages.reopen(record, 'gate:outline'))
+        for step in self._reopened(record, 'gate:outline'):
+            self._fresh(record, step)
+        record['gates']['gate:research'] = {**(record['gates'].get('gate:research') or {}),
+                                            'state': 'approved', 'at': at, 'by': by}
+        self._store(root, record)
+
+    @staticmethod
+    def _leave_out_price(record):
+        tried = [own[-1] for name in ('outline', 'look-preview') if (own := attempts(record, name))]
+        dollars = [a['dollars'] for a in tried if a.get('dollars') is not None]
+        cost = research_contract.took(sum(a.get('seconds') or 0 for a in tried),
+                                      sum(dollars) if dollars else None)
+        return {'words': 'Leaving findings out redraws the outline and the look samples without researching again.'
+                         + (f' They last took {cost}.' if cost else '')}
 
     def _reclassify(self, root: Path, record: dict, extra: dict, note: str | None, at: str,
                     by) -> str:
@@ -2636,6 +2659,8 @@ class Engine(Jobs, Researching):
         """stages.timeline, with each step's tries, time, cost and last error."""
         rows, failed = stages.timeline(record), (record.get('halted') or {}).get('step')
         for row in rows:
+            if row['name'] == 'research-plan' and (record.get('research') or {}).get('plan_from') == 'form':
+                row['label'] = FROM_FORM
             if row['name'].startswith('gate:') and review_policy.automatic(
                     record, 'presentation', row['name'],
                     holding=self._holding(root, row['name']) if root else ()):
@@ -2671,6 +2696,7 @@ class Engine(Jobs, Researching):
             shown['redo'] = self._redo(record, nxt.name)
         if nxt.name == 'gate:outline' and review_policy.level(record) == 'balanced':
             shown['research'] = self._show_research(root, record)
+            shown['leave_out_price'] = self._leave_out_price(record)
             shown['look'] = self._show_look(root, record)
             shown['label'] = 'Review the direction'
             shown['expected'] = self._direction_signature(root, record)
@@ -2718,7 +2744,17 @@ class Engine(Jobs, Researching):
                               if isinstance(item, dict) and isinstance(item.get('id'), str)]}
 
     def _show_research(self, root: Path, record: dict) -> dict:
-        return {'text': text_of(root / REPORT) or '', 'items': self._findings_shown(root, record)}
+        contract = bool(record.get('research_contract'))
+        kept = record.get('steps') or {}
+        reopened = self._reopened(record, 'gate:research') if record.get('route') else []
+        labels = {'outline': 'the outline', 'look-preview': 'the look samples',
+                  'build-render': 'the deck', 'deliver': 'the delivered files'}
+        redone = [labels[name] for name in reopened if name in labels and kept.get(name, {}).get('done')]
+        price = research_view.price({name: entry.get('tries') or [] for name, entry in kept.items()
+                                     if isinstance(entry, dict)}, redone, drafted=self._drafted(root)) if contract else None
+        return {'text': text_of(root / REPORT) or '', 'items': self._findings_shown(root, record),
+                'contract': contract, 'research_price': price, 'research': research_view.account(root / 'research',
+                    [{'id': i, 'question': q} for i, q in self._questions(root).items()]) if contract else None}
 
     def storyboard(self, path, edited, expected: str) -> dict:
         """Preview the current or unsaved outline without saving or approving it."""

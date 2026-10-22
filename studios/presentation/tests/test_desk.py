@@ -314,6 +314,99 @@ class ScreenTests(ScriptedPage, PageCase):
     def setup_with(self, **more) -> dict:
         return ok({**self.get('setup'), **more})
 
+    def test_research_from_a_document_asks_where_it_may_look(self):
+        for both in (False, True):
+            answers = self.answers(**{'POST /api/decks': [ok({'path': '/nowhere', 'id': 'x'})],
+                                      'GET /api/run': [{'status': 404, 'body': {'error': 'There is no deck there.'}}]})
+            steps = [{'click': 'New deck'}, {'click': 'Start from a document'},
+                     {'click': 'Paste the text'}, {'fill': 'The text', 'value': 'Synthetic notes.'},
+                     {'click': 'Continue'}, {'fill': 'A short title', 'value': 'Synthetic deck'},
+                     {'click': 'Research the public web first'}, {'snapshot': 'boundary'},
+                     {'fill': 'What should the research answer? (optional)', 'value': 'Why?\nWhat next?'}]
+            if both:
+                steps += [{'click': 'Your documents and the public web'}]
+            steps += [{'click': 'Continue'}, {'click': 'Start the deck'}]
+            result = self.run_page(answers, steps)
+            self.assertIn('Where may research look?', result['snapshots']['boundary']['text'])
+            posted = [body for address, body in self.posts(result) if address == '/api/decks']
+            self.assertEqual(posted[0]['form']['research_sources'], 'both' if both else 'documents')
+            self.assertEqual(posted[0]['form']['research_questions'], ['Why?', 'What next?'])
+
+    def test_the_research_stop_leads_with_the_brief_and_the_check(self):
+        from synthesis_fixture import research_stop
+        from studio_core import research_view
+        path = self.started(research=True)
+        self.decided(path, 'gate:research-plan')
+        research_stop(Path(path) / 'research')
+        record = self.engine._load(Path(path))
+        record['research_contract'] = {'schema': 2}
+        self.engine._store(Path(path), record)
+        result = self.deck_screen(path, [{'snapshot': 'research'}, {'click': 'Leave out “Capacity condition”'}, {'snapshot': 'left'}])
+        text = result['snapshots']['research']['text']
+        positions = [text.index(words) for words in ('Prioritized handoff', research_view.CHECKED, 'An honest account.', 'What the research could not settle', 'Unknown range.', '3 sources: 2 of yours, 1 public.', 'Your questions', 'Capacity condition', 'Also found')]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn('2 findings', text)
+        self.assertIn('1 left out', result['snapshots']['left']['text'])
+        self.assertNotIn('answered by the sources', text)
+        self.assertNotIn('0 to look at', text)
+
+    def test_the_direction_review_triages_the_research(self):
+        from studio_core import review_policy
+        from synthesis_fixture import research_stop
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
+            path = self.started(research=True)
+        research_stop(Path(path) / 'research')
+        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
+        self.engine._store(Path(path), record)
+        result = self.deck_screen(path, [{'snapshot': 'direction'}, {'click': 'Leave out “Capacity condition”'},
+                                        {'snapshot': 'left'}, {'click': 'Redraw the direction'}],
+                                  **{'POST /api/decide': [ok(self.run_of(path))]})
+        self.assertIn('Prioritized handoff', result['snapshots']['direction']['text'])
+        self.assertNotIn('Research findings', result['snapshots']['direction']['text'])
+        self.assertNotIn('Ask about this finding', result['snapshots']['direction']['text'])
+        self.assertIn('Leaving findings out redraws the outline and the look samples without researching again.', result['snapshots']['left']['text'])
+        body = self.posts(result)[0][1]
+        self.assertEqual(body['decision'], 'changes')
+        self.assertEqual(body['extra'], {'direction_target': 'gate:research', 'left_out': ['instance-min--capacity']})
+
+    def test_asking_about_a_finding_says_the_whole_research_runs_again(self):
+        from synthesis_fixture import research_stop
+        path = self.started(research=True); self.decided(path, 'gate:research-plan')
+        research_stop(Path(path) / 'research')
+        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
+        self.engine._store(Path(path), record)
+        result = self.deck_screen(path, [{'click': 'Ask about this finding: “Capacity condition”'}, {'snapshot': 'finding'},
+                                        {'click': 'Ask for changes'}, {'snapshot': 'sheet'}])
+        self.assertIn('What is wrong with “Capacity condition”?', result['snapshots']['finding']['text'])
+        self.assertIn('Asking for changes runs the research again', result['snapshots']['sheet']['sheet'])
+        self.assertIn('up to 3 rounds of writing and checking.', result['snapshots']['sheet']['sheet'])
+
+    def test_sending_a_marked_finding_shows_the_research_price_before_it_posts(self):
+        from synthesis_fixture import research_stop
+        path = self.started(research=True); self.decided(path, 'gate:research-plan')
+        research_stop(Path(path) / 'research')
+        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
+        self.engine._store(Path(path), record)
+        result = self.deck_screen(path, [
+            {'click': 'Ask about this finding: “Capacity condition”'},
+            {'snapshot': 'before-sending'}, {'click': 'Send 1 change'}])
+        text = result['snapshots']['before-sending']['text']
+        self.assertIn('Asking for changes runs the research again', text)
+        self.assertIn('up to 3 rounds of writing and checking.', text)
+        posted = [r['body'] for r in result['requests'] if r['address'] == '/api/decide']
+        self.assertEqual(len(posted), 1)
+        self.assertEqual(posted[0]['decision'], 'changes')
+        self.assertIn('instance-min--capacity', posted[0]['extra']['again'])
+
+    def test_the_direction_review_prices_its_research_request(self):
+        from studio_core import review_policy
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
+            path = self.started(research=True)
+        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
+        self.engine._store(Path(path), record)
+        result = self.deck_screen(path, [{'click': 'Request changes to the research'}, {'snapshot': 'research'}])
+        self.assertIn('Asking for changes runs the research again', result['snapshots']['research']['text'])
+
     def test_the_start_step_says_where_it_stops_and_folds_the_options(self):
         from studio_core import review_policy
         self.assertIn(self.get('setup')['review_level'], review_policy.LEVELS)
@@ -1730,7 +1823,7 @@ class ScreenTests(ScriptedPage, PageCase):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.started(route='document', research=True,
+            path = self.started(route='document', research=True, research_sources='both',
                                 source={'kind': 'paste', 'text': 'Notes to build a talk from.'})
         gate = self.run_of(path)['gate']
         self.assertEqual((gate['name'], gate['classify']['verdict']), ('gate:outline', 'material'))

@@ -173,3 +173,13 @@ repair, or other problems, use the [setup help](docs/troubleshooting.md).
 | Understand where your content goes | [Privacy details](docs/privacy-review.md) |
 
 [What's new](CHANGELOG.md) · [Developer guide](docs/development.md)
+
+### When your own material is enough
+
+With Only what you supply, a new guided blog maps the claims and exact source passages
+in your selected facts/material, then writes from that map. It asks for one correction if
+a passage does not match. Balanced and Automatic continue to the outline; Step by step
+shows the map first. New blog from my files already reads the files at every stage and
+keeps that flow. Public-web research still investigates and independently checks its report;
+its review shows the brief, check, gaps and source limitations. Before you send a research
+change, the page names the full rerun, its last recorded cost and the saved stages it redoes.

@@ -1179,3 +1179,21 @@ class LiveWireTests(WireCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ResearchPriceTests(PageCase):
+    def test_the_research_gate_prices_a_change(self):
+        path = Path(self.started(research=True))
+        self.decided(str(path), 'gate:research-plan')
+        record = self.engine._load(path)
+        record['research_contract'] = {'schema': 2}
+        for name, seconds, dollars in [('research:author-1', 1800, 6), ('research:review-1', 1080, 3.8)]:
+            record['steps'][name] = {'tries': [dict(started_at='2026-10-22T10:00:00Z', seconds=seconds, dollars=dollars)]}
+        record['steps']['outline'] = {'done': True}
+        folder = path / '.studio-research/.harness-research'; folder.mkdir(parents=True, exist_ok=True)
+        (folder / 'synthesis.json').write_text('{}')
+        shown = self.engine._show_research(path, record)
+        self.assertIn('Its last try took 48 minutes and $9.80.', shown['research_price']['words'])
+        self.assertTrue(shown['research_price']['words'].endswith('Then it makes again: the outline.'))
+        record['steps']['look-preview'] = {'done': True}
+        self.assertTrue(self.engine._show_research(path, record)['research_price']['words'].endswith('Then it makes again: the outline and the look samples.'))

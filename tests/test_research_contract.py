@@ -654,3 +654,17 @@ class ResearchContractTests(unittest.TestCase):
         self.assertEqual(output['contract']['schema'], 2)
         self.assertEqual(output['status'], 'complete')
         contract.read_bundle(destination / 'research')
+
+class PlanningQuestionTests(WorkflowCase):
+    def test_the_author_is_told_to_name_findings_for_their_questions(self):
+        for questions in (None, [], [dict(id='q-one', question='Why?')]):
+            with self.subTest(questions=questions):
+                self.task['planning_questions'] = questions
+                seen = []
+                def invoke(phase, guidance, payload, sources, fetch):
+                    if phase == 'author':
+                        seen.append(payload['return'])
+                        return json.dumps(self.authored(payload)), self.captured()
+                    return json.dumps(review(payload['review_template'])), []
+                self.run_with(invoke)
+                self.assertEqual('Planning questions have IDs.' in seen[0], bool(questions))

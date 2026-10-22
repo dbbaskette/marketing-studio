@@ -78,11 +78,7 @@ Files: `blog_runner.py` (`create` pipeline, STAGES, `claims-map` stage), `synthe
 or a new `claims_map.py`, `references/modules/blog-deep-research.md` (or a new module),
 `assets/management/runner.js` (stops line, stage words), `tests/test_blog_runner.py`.
 
-- [ ] Tests: supplied-only research with only messaging/facts sources builds
-      `['claims-map', 'outline', …]`; the claims-map stage lists each claim with its
-      source id and passage and never a "not confirmed" finding; web-allowed research is
-      unchanged; Balanced does not stop at the claims map.
-- [ ] Commit: "Map the claims in supplied material instead of researching them".
+Done in `docs/superpowers/plans/2026-10-22-phase-3-research-stop.md`, Task 13.
 
 ## Task 6: Docs and the full check
 

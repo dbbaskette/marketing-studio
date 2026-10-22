@@ -7,7 +7,7 @@ import tempfile
 import time
 from urllib.parse import urlsplit
 
-from studio_core import model_profiles, research_contract
+from studio_core import model_profiles, research_contract, research_view
 
 
 def offered(source):
@@ -77,6 +77,12 @@ def refusal_groups(refusal, case):
     """The refusal's own grouping when the shared contract gives one, else the case's."""
     given = getattr(refusal, 'groups', None)
     if isinstance(given, list) and given:
+        # The shared formatter provides titles and counts, while this page needs the
+        # original kind and verdict. Recover those from the same saved check.
+        if any(isinstance(group, dict) and not group.get('kind') for group in given):
+            detailed = grouped(case)
+            if detailed:
+                return detailed
         groups = []
         for group in given:
             if not isinstance(group, dict) or type(group.get('count')) is not int:
@@ -201,6 +207,11 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
             'requested_changes': payload.get('changes'),
             'source_mode': ('mixed' if sources else 'public') if allowed else 'selected',
         }
+        from blog_runner import planning_questions
+
+        task['planning_questions'] = planning_questions(
+            payload['documents'].get('research-plan') or ''
+        )
         gaps = []
         if allowed:
             discovery = call(
@@ -334,8 +345,9 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
             )
         research_contract.Workflow(runtime).run(directory, task, invoke, sources)
         research_contract.publish(directory / research_contract.CASE, directory / 'research')
+        account = research_view.account(directory / 'research')
+        check = account['check'] if account else {'said': research_view.UNCHECKED, 'note': ''}
         return {
             'content': (directory / 'research/report.md').read_text(),
-            'notes': 'Independent evidence and prose review completed for the saved research digest. '
-            'The authored brief, evidence, source limitations and digest are retained in research/.',
+            'notes': check['said'] + (' ' + check['note'] if check['note'] else ''),
         }

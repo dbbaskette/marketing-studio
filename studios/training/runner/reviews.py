@@ -5,7 +5,7 @@ import shutil
 import home
 import workspace
 from workspace import WorkspaceError
-from studio_core import deck_direction, review_policy
+from studio_core import deck_direction, research_view, review_policy
 from runner import pipeline, deck, worker_tools
 
 PREPARED = ('research-plan', 'research', 'blueprint', 'document', 'brief')
@@ -265,8 +265,15 @@ class Reviewing:
             file = contained(root, spec['file'])
             if not file.is_file() or phase == 'direction' and spec['stage'] not in PREPARED:
                 continue
+            import desk
+            document = desk.document(root, found.session, name)
+            plan = desk.document(root, found.session, 'research-plan') if name == 'research' else {}
             items.append({'target': name, 'label': workspace.label(name),
                           'text': file.read_text(encoding='utf-8') if file.suffix == '.md' else '',
+                          **({'document': document} if name == 'research-plan' else {}),
+                          **({'research': research_view.account(root / 'research', plan.get('questions') or []),
+                              'research_price': self.research_price(root)}
+                             if name == 'research' else {}),
                           'deck': spec['stage'] == 'deck',
                           'notes': contained(root, workspace.review_file(name)).read_text()
                           if contained(root, workspace.review_file(name)).is_file() else ''})

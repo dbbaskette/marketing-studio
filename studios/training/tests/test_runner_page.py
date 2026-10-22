@@ -2483,3 +2483,13 @@ class SettingsTests(StudioCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ResearchFileTests(PageCase):
+    def test_research_objections_are_read_as_a_confined_saved_file(self):
+        root = self.start()
+        (root / 'reviews').mkdir(exist_ok=True)
+        (root / 'reviews/research.md').write_text('# Independent check\n\n- Too broad.\n')
+        found = self.get('file', path=str(root), artifact='reviews/research.md')
+        self.assertEqual(found['text'], '# Independent check\n\n- Too broad.\n')
+        self.get('file', path=str(root), artifact='reviews/../intake.md', expect=403)

@@ -12,9 +12,11 @@ Honor the requested review cadence. Show required checkpoints and wait; never in
 
 ## Research and outline
 
-Harness Research keeps `research/plan.md` and `research/report.md`. Keep a spec’s exact words; ground material outlines in the source. Retain claims, evidence, caveats and speaker notes. Check `outline.json` against the
-brand contract, then run the existing Harness Slides `outline draft` on that
-same file. Show gray wireframes before construction: structure only, no Google/LibreOffice. Refresh after edits or reordering.
+Presentation Studio writes the plan; Harness Research publishes the report. Synthesis
+plans ask at most eight questions; supplied-only plans come from the form without
+a worker. Document research defaults to supplied-only. Keep source words, evidence
+and caveats. Check `outline.json` against the brand contract, then run Harness Slides
+`outline draft` on that file. Show wireframes before construction; refresh after edits.
 
 ## Brand and build
 

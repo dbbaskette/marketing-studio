@@ -35,11 +35,12 @@ from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, documents, marks, stages, worker_tools
 from runner import research as research_cli
-from studio_core import research_contract, stops
+from studio_core import research_contract, research_view, stops
 from runner.jobs import KEPT, Halted, Run, given_up, last_error, sha256_of, text_of, tries
 from runner.steps import Work
 
 BUSY_TRIES = 20         # times a finding is offered while another save holds the lock
+FROM_FORM = 'Research plan: written from your form'
 PLAN = Path('research') / 'plan.json'
 PLAN_MD = Path('research') / 'plan.md'
 REPORT = Path('research') / 'report.md'
@@ -179,7 +180,11 @@ class Researching:
                 facts, _ = research_contract.read_bundle(root / 'research')
             except (OSError, ValueError):
                 return []
-            return [{'id': f['id'], 'title': f['title'], 'question': '', 'status': 'supported',
+            questions = self._questions(root)
+            return [{'id': f['id'], 'title': f['title'],
+                     'question_id': research_view.answered_by(f['id'], questions),
+                     'question': questions.get(research_view.answered_by(f['id'], questions), ''),
+                     'status': 'supported',
                      'headline': f['summary']['text'], 'summary': f['summary']['text'],
                      'limits': '\n'.join(b['text'] for b in f['conditions'] + f['gaps']),
                      'unknown': '\n'.join(b['text'] for b in f['gaps']),
@@ -480,10 +485,18 @@ class Researching:
                    'documents can answer as well as what the web can:\n'
                    + '\n'.join(f"- {source.get('title') or source.get('id')}"
                                for source in listed)) if listed else 'the public web.'
+        only = (record.get('form') or {}).get('research_sources') == 'documents'
+        if only:
+            allowed = ('only the documents the person supplied. Ask what these can answer, and give no question any search words:\n'
+                       + '\n'.join(f"- {source.get('title') or source.get('id')}" for source in listed))
         task = ('Draft the research questions for this presentation.\n\n'
                 f'{self._about(record)}\n'
                 f'Sources that may be used: {allowed}\n\n'
                 f'Hand the questions back with submit_artifact under the name "{name}".')
+        asked = (record.get('form') or {}).get('research_questions') or []
+        if asked and not request:
+            task += ('\n\nThe person asked these questions. Keep each in the plan, in their words:\n'
+                     + '\n'.join('- ' + q for q in asked))
         earlier = text_of(root / PLAN)
         if request and request.get('note'):
             task += ('\n\nYou are revising an earlier draft. What the person asked for:\n\n'
@@ -494,10 +507,13 @@ class Researching:
             task += (f'\n\nAn earlier try at this job did not work: {error}\nTake care not to '
                      'end the same way.')
         prepared = {'inputs': {'intake': text_of(root / 'intake.md') or ''},
-                    'artifacts': {name: {'kind': 'research-plan', 'scope': 'public-web',
+                    'artifacts': {name: {'kind': 'research-plan', 'scope': 'supplied-only' if only else 'public-web',
                                          'sources': listed}},
                     'ask': True}
-        return Work(briefs.guidance('research-plan'), task, 'write', prepared, name)
+        synthesis = bool(record.get('research_contract'))
+        if synthesis:
+            prepared['artifacts'][name]['most'] = worker_tools.PLAN_MOST
+        return Work(briefs.guidance('research-plan' if synthesis else 'research-plan-queue'), task, 'write', prepared, name)
 
     @staticmethod
     def _keep_plan(root: Path, record: dict, text: str) -> None:
@@ -533,8 +549,9 @@ class Researching:
         plan = home.read_json(root / PLAN, None)
         if not isinstance(plan, dict) or not isinstance(plan.get('items'), list):
             raise WorkspaceError('There is no research plan to add a question to.')
-        if len(plan['items']) + len(texts) > worker_tools.QUESTIONS:
-            raise WorkspaceError(f'A plan holds at most {worker_tools.QUESTIONS} '
+        most = worker_tools.PLAN_MOST if record.get('research_contract') else worker_tools.QUESTIONS
+        if len(plan['items']) + len(texts) > most:
+            raise WorkspaceError(f'A plan holds at most {most} '
                                  'questions.')
         taken = [item.get('id') for item in plan['items'] if isinstance(item, dict)]
         added = []
@@ -545,17 +562,48 @@ class Researching:
             plan['items'].append({'id': ident, 'question': text, 'public_query': None,
                                   'claim': None})
             added.append(ident)
-        checked = worker_tools.check_research_plan(plan)
+        checked = worker_tools.check_research_plan(plan, most=most)
         if checked['status'] == 'failed':
             raise WorkspaceError(' '.join(checked['problems']))
         self._keep_plan(root, record, json.dumps(plan, indent=2, ensure_ascii=False))
         return added
 
     def _research_plan(self, root: Path, run: Run, step: stages.Step) -> None:
+        record = self._load(root)
+        if (record.get('research_contract')
+                and (record.get('form') or {}).get('research_sources') == 'documents'
+                and not self._request(record, step.name)):
+            self._plan_from_form(root, run, step)
+            return
+
+        def keep(record, handed):
+            self._keep_plan(root, record, self._text(handed, 'research-plan'))
+            if record.get('research_contract'):
+                record['research'] = {**(record.get('research') or {}), 'plan_from': 'assistant'}
+                self._store(root, record)
+
         self._agent(root, run, step,
                     lambda record, request, error: self._plan_work(root, record, request,
                                                                    error),
-                    lambda record, handed: self._keep_plan(root, record,
-                                                           self._text(handed, 'research-plan')),
-                    'keep the research plan')
+                    keep, 'keep the research plan')
 
+
+    def _plan_from_form(self, root: Path, run: Run, step: stages.Step) -> None:
+        with self.files:
+            record = self._load(root)
+            form = record.get('form') or {}
+            asked = form.get('research_questions') or [
+                'What do the supplied documents say that serves this goal: '
+                + (form.get('goal') or record.get('title') or 'explain this topic') + '?']
+            items = []
+            for text in asked:
+                ident = marks.new_id(text, [item['id'] for item in items])
+                items.append(dict(id=ident, question=text, public_query=None, claim=None))
+            plan = dict(topic=record.get('title') or form.get('title'), purpose='planning',
+                        scope='supplied-only', sources=documents.sources(root)[0], items=items)
+            checked = worker_tools.check_research_plan(plan, most=worker_tools.PLAN_MOST)
+            if checked['problems']:
+                raise WorkspaceError(checked['problems'][0])
+            self._keep_plan(root, record, json.dumps(plan, indent=2, ensure_ascii=False))
+            record['research'] = {**(record.get('research') or {}), 'plan_from': 'form'}
+            self._done(root, step, time.monotonic(), 'write the research plan from the form', record)

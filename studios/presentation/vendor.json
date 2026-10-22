@@ -226,8 +226,8 @@
     {
       "path": "runner/briefs/research-plan.md",
       "from": "runner/briefs/research-plan.md",
-      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "adapted"
+      "revision": "e016be343fac13a3b249804271a1dce794276dbc",
+      "note": "Phase 3 synthesis brief ported with the legacy queue brief retained; see Marketing Studio phase implementation history."
     },
     {
       "path": "runner/briefs/research-question.md",
@@ -453,6 +453,12 @@
       "from": "skills/training-studio/scripts/desk/markdown.js",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
       "note": "Original port provenance retained. The implementation now comes from the suite shared core or UI kit."
+    },
+    {
+      "path": "runner/briefs/research-plan-queue.md",
+      "from": "runner/briefs/research-plan-queue.md",
+      "revision": "e016be343fac13a3b249804271a1dce794276dbc",
+      "note": "Unchanged legacy queue brief."
     }
   ]
 }

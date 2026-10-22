@@ -34,6 +34,22 @@ UPLOAD = {'kind': 'upload', 'name': 'a.pptx'}
 
 
 class FormTests(unittest.TestCase):
+    def test_the_research_questions_are_kept_as_written(self):
+        self.assertEqual(decks.check_form({**form(), 'research_questions': '  Why?  \n\nWhat next?'}, None)['research_questions'], ['Why?', 'What next?'])
+        for given, message in ((['Why?'] * 9, 'Ask research at most 8'), (['x' * 301], 'Keep each research question to 300'), ([7], 'one a line')):
+            with self.assertRaisesRegex(WorkspaceError, message):
+                decks.check_form({**form(), 'research_questions': given}, None)
+
+    def test_research_from_a_document_says_where_it_may_look(self):
+        sent = form(route='document', research=True, source={'kind': 'paste', 'text': 'Synthetic notes.'})
+        for value, words in ((None, 'your documents only'), ('both', 'your documents and the public web')):
+            checked = decks.check_form({**sent, **({'research_sources': value} if value else {})}, BRANDS)
+            self.assertEqual(checked['research_sources'], value or 'documents')
+            self.assertIn('yes (' + words + ')', decks.intake(checked))
+        with self.assertRaisesRegex(WorkspaceError, 'Choose where research may look'):
+            decks.check_form({**sent, 'research_sources': 'web'}, BRANDS)
+        self.assertNotIn('research_sources', decks.check_form(form(research=True), BRANDS))
+
     def test_scratch_form(self):
         checked = decks.check_form(form(), BRANDS)
         self.assertEqual(checked['route'], 'scratch')

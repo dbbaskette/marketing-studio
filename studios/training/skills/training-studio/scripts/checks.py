@@ -43,7 +43,7 @@ QUESTION_ID = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
 PLAN_SCOPES = ('public-web', 'supplied-only')
 
 
-def check_research_plan(plan) -> dict:
+def check_research_plan(plan, most=30) -> dict:
     """Check a research plan is one harness-research will accept. `plan` is the parsed JSON."""
     name = 'research-plan.items'
     if not isinstance(plan, dict):
@@ -57,8 +57,8 @@ def check_research_plan(plan) -> dict:
         problems.append('Leave out "input_files"; registering intake there makes '
                         'harness-research discard its findings when intake is edited.')
     items = plan.get('items')
-    if not isinstance(items, list) or not 1 <= len(items) <= 30:
-        problems.append('"items" must hold 1 to 30 questions.')
+    if not isinstance(items, list) or not 1 <= len(items) <= most:
+        problems.append(f'"items" must hold 1 to {most} questions.')
         return result(name, problems)
     seen = set()
     for position, item in enumerate(items, start=1):

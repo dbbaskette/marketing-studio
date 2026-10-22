@@ -14,6 +14,10 @@ import shutil
 import subprocess
 import tempfile
 
+IDS_FOR_QUESTIONS = ('Planning questions have IDs. A finding that answers one has an ID '
+                     "that begins with that question's ID and two hyphens, such as "
+                     'instance-min--capacity. Keep each ID within 64 characters.')
+
 OWNER = 'harness-research-synthesis'
 # Where the Harness Research installer keeps `current` and versions/<version>-<digest>.
 SHARED = (Path('Library/Application Support/Harness Research'), Path('.local/share/harness-research'))
@@ -306,6 +310,8 @@ class Workflow:
                                      'Dossier format: sources, facts, findings, sections and brief are arrays; '
                                      'sections and brief hold {id, title, blocks: [{text, kind, refs}]}. '
                                      'Set every fact author to this worker ID. Do not write finished studio content.'}
+                if any(isinstance(q, dict) and q.get('id') for q in task.get('planning_questions') or ()):
+                    payload['return'] += ' ' + IDS_FOR_QUESTIONS
                 previous = case / '.harness-research/synthesis.json'
                 if previous.is_file():
                     state = json.loads(previous.read_text())

@@ -54,6 +54,12 @@ class RunnerCase(Fixture):
         )
 
     def submit(self, found, content=None, page=False):
+        if content is None and found['next'] == 'claims-map':
+            directory, record, run = runner.load(self.root, found['id'])
+            source = runner.inputs(self.root, record, run)['sources'][0]
+            content = (
+                f'- **Synthetic claim** — {source["name"]} (`{source["id"]}`): "{source["text"]}"'
+            )
         return runner.submit(
             self.root,
             found['id'],
@@ -283,7 +289,7 @@ class BlogRunnerTests(RunnerCase):
 
     def test_research_questions_and_findings_each_wait_for_approval(self):
         source = self.source('A fictional gateway routes synthetic requests.')
-        found = self.create(research='supplied-only', stop='outline', sources=[source['id']])
+        found = self.create(research='web-allowed', stop='outline', sources=[source['id']])
         self.assertEqual(
             [row['stage'] for row in found['stages']], ['research-plan', 'research', 'outline']
         )
@@ -467,7 +473,7 @@ class BlogRunnerTests(RunnerCase):
         self.assertEqual(found['next'], 'outline')
         self.assertEqual(found['review_level'], 'balanced')
         shown = runner.document(self.root, ident, 'outline')
-        self.assertEqual([item['stage'] for item in shown['bundle']], ['research-plan', 'research'])
+        self.assertEqual([item['stage'] for item in shown['bundle']], ['claims-map'])
         found = self.approve(found, page=True)
         while found['next'] != 'package':
             found = self.submit(found, page=True)
@@ -2984,3 +2990,319 @@ class WriteAsTests(RunnerCase):
 
         shutil.rmtree(self.root / 'profiles' / profile['id'])
         self.assertIsNone(runner.options(self.root)['default_voice'])
+
+
+class ResearchAccountTests(RunnerCase):
+    def research_run(self):
+        found = self.create(research='web-allowed')
+        found = self.submit(found, '- **instance-min**: Minimum?')
+        found = self.approve(found)
+        return self.submit(found, '# Synthetic research')
+
+    def test_the_research_stage_view_carries_the_account(self):
+        from synthesis_fixture import research_stop
+
+        found = self.research_run()
+        directory, record, run = runner.load(self.root, found['id'])
+        run['research_contract'] = {'schema': 2}
+        studio.write_json(directory / runner.STATE, run)
+        self.assertIsNone(runner.document(self.root, found['id'], 'research')['research'])
+        research_stop(directory / 'research')
+        shown = runner.document(self.root, found['id'], 'research')
+        self.assertEqual(shown['research']['brief'], '# Prioritized handoff\n')
+        self.assertEqual(shown['research']['questions'][0]['findings'], ['instance-min--capacity'])
+        self.assertNotIn('synthetic-digest', json.dumps(shown['research']))
+
+    def test_the_research_notes_say_what_the_check_said(self):
+        from synthesis_fixture import research_stop
+        from studio_core import research_contract, research_view
+        import synthesis_research
+
+        directory = self.base / 'synthetic-research'
+        directory.mkdir()
+        research_stop(directory / 'research')
+
+        def never(*args, **kwargs):
+            raise AssertionError('No provider job')
+
+        with (
+            patch.object(research_contract, 'runtime_for', return_value=directory),
+            patch.object(research_contract.Workflow, 'run'),
+            patch.object(research_contract, 'publish'),
+        ):
+            found = synthesis_research.generate(
+                directory,
+                {'brief': {}, 'research_contract': {}},
+                {
+                    'title': 'Synthetic',
+                    'sources': [],
+                    'documents': {},
+                    'research_policy': 'supplied-only',
+                },
+                never,
+                seconds=60,
+                stop=threading.Event(),
+            )
+        self.assertEqual(found['notes'], research_view.CHECKED + ' An honest account.')
+        self.assertNotIn('retained in research/', found['notes'])
+
+    def test_a_research_change_is_priced(self):
+        found = self.research_run()
+        for _ in range(2):
+            found = self.approve(found)
+            found = self.submit(found)
+        directory, record, run = runner.load(self.root, found['id'])
+        run['research_contract'] = {'schema': 2}
+        studio.write_json(directory / runner.STATE, run)
+        runner.engine(self.root).keep_local(
+            found['id'],
+            {
+                'research': {
+                    'jobs': [
+                        dict(phase='author', round=1, seconds=1800, dollars=6),
+                        dict(phase='review', round=1, seconds=1080, dollars=3.8),
+                    ]
+                }
+            },
+        )
+        words = runner.survey(self.root, found['id'])['research_price']['words']
+        self.assertIn('48 minutes and $9.80', words)
+        self.assertTrue(words.endswith('Then it makes again: the outline and the draft.'))
+        runner.engine(self.root).keep_local(
+            found['id'],
+            {
+                'research': {
+                    'jobs': [
+                        dict(phase='discovery', round=0, seconds=60, dollars=1),
+                        dict(phase='author', round=1, seconds=1800, dollars=6),
+                        dict(phase='review', round=1, seconds=1080, dollars=3.8),
+                    ]
+                }
+            },
+        )
+        price = runner.survey(self.root, found['id'])['research_price']
+        self.assertEqual(price['jobs'], 3)
+        self.assertIn('49 minutes and $10.80', price['words'])
+
+
+class ResearchPlanningTests(RunnerCase):
+    def test_the_research_plan_job_uses_its_own_module(self):
+        found = self.create(research='web-allowed')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(runner.GUIDES['research-plan'], 'modules/blog-research-plan.md')
+        self.assertIn('You have no tools.', guidance)
+        self.assertIn('at most 8 questions', guidance)
+
+    def test_planning_questions_are_read_from_the_plan(self):
+        self.assertEqual(
+            runner.planning_questions(
+                '- **why-now**: Why now?\n- **Bad id**: x\n- **cost**: What does it cost?\n- **cost**: Duplicate?'
+            ),
+            [
+                {'id': 'why-now', 'question': 'Why now?'},
+                {'id': 'cost', 'question': 'What does it cost?'},
+            ],
+        )
+        self.assertEqual(
+            len(runner.planning_questions('\n'.join(f'- **q-{i}**: Why?' for i in range(9)))), 8
+        )
+
+    def test_the_research_module_documents_the_synthesis_path_only(self):
+        path = Path(runner.__file__).parents[1] / 'references/modules'
+        main = (path / 'blog-deep-research.md').read_text()
+        self.assertNotIn('deep_research.py research', main)
+        self.assertIn('modules/blog-legacy-research.md', main)
+        self.assertIn('research record', (path / 'blog-legacy-research.md').read_text())
+
+
+class ClaimsMapTests(RunnerCase):
+    PASSAGE = 'The gateway calls the service.'
+
+    def role_source(self, role, status='ready'):
+        source = self.source(self.PASSAGE + ' ' + role)
+        folder, record = studio.item(self.root, 'sources', source['id'])
+        record.update(purposes=[role], status=status)
+        studio.write_json(folder / 'record.json', record)
+        return source['id']
+
+    def test_no_claims_map_runs_without_readable_factual_material(self):
+        for role, status in [
+            ('inspiration', 'ready'),
+            ('voice-sample', 'ready'),
+            ('reference', 'pending'),
+        ]:
+            with self.subTest(role=role, status=status):
+                ident = self.role_source(role, status)
+                found = self.create(title=role + status, research='supplied-only', sources=[ident])
+                self.assertNotIn('claims-map', [row['stage'] for row in found['stages']])
+
+    def test_only_factual_material_reaches_the_map_and_direct_validation(self):
+        fact = self.role_source('reference')
+        voice = self.role_source('voice-sample')
+        example = self.role_source('inspiration')
+        found = self.create(research='supplied-only', sources=[fact, voice, example])
+        directory, record, run = runner.load(self.root, found['id'])
+        all_sources = runner.inputs(self.root, record, run)['sources']
+        sample = next(source for source in all_sources if source['purposes'] == ['voice-sample'])
+        _, payload, _ = runner.job(self.root, found['id'])
+        self.assertEqual([source['purposes'] for source in payload['sources']], [['reference']])
+        options = {source['id']: source for source in runner.options(self.root)['sources']}
+        self.assertEqual(options[voice]['purposes'], ['voice-sample'])
+        with self.assertRaisesRegex(ValueError, 'not in your material'):
+            self.submit(found, self.line(sample))
+        self.submit(found, self.line(payload['sources'][0]))
+
+    def test_a_worker_cannot_make_a_voice_sample_into_claims(self):
+        fact, voice = self.role_source('reference'), self.role_source('voice-sample')
+        found = self.create(page=True, research='supplied-only', sources=[fact, voice])
+        directory, record, run = runner.load(self.root, found['id'])
+        sample = next(
+            source
+            for source in runner.inputs(self.root, record, run)['sources']
+            if source['purposes'] == ['voice-sample']
+        )
+        calls = []
+
+        def worker(engine, payload, guidance, **options):
+            calls.append(payload)
+            return {'content': self.line(sample), 'notes': ''}
+
+        engine = runner.Engine(self.root, worker=worker)
+        self.addCleanup(engine.close)
+        engine.keep_local(found['id'], {'enabled': True})
+        engine.once(found['id'])
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(engine.describe(found['id'])['status'], 'failed')
+        self.assertTrue(
+            all(
+                [source['purposes'] for source in payload['sources']] == [['reference']]
+                for payload in calls
+            )
+        )
+
+    def mapped(self, page=False, **extra):
+        source = self.source(self.PASSAGE)
+        found = self.create(page=page, research='supplied-only', sources=[source['id']], **extra)
+        directory, record, run = runner.load(self.root, found['id'])
+        offered = runner.inputs(self.root, record, run)['sources'][0]
+        return found, {**offered, 'selected_id': source['id']}
+
+    def line(self, source, passage=None):
+        return (
+            '- **Gateway call** — Specification (`'
+            + source['id']
+            + '`): "'
+            + (passage or self.PASSAGE)
+            + '"'
+        )
+
+    def test_supplied_only_research_maps_claims_instead(self):
+        found, source = self.mapped()
+        self.assertEqual(
+            [s['stage'] for s in found['stages']],
+            ['claims-map', 'outline', 'draft', 'review', 'package'],
+        )
+        web = self.create(research='web-allowed', sources=[source['selected_id']])
+        self.assertEqual([s['stage'] for s in web['stages']][:2], ['research-plan', 'research'])
+        empty = self.create(research='supplied-only')
+        self.assertNotIn('claims-map', [s['stage'] for s in empty['stages']])
+
+    def test_a_claims_map_passage_must_be_in_its_source(self):
+        import claims_map
+
+        sources = [{'id': 's1', 'text': 'The gateway\n calls the service.'}]
+        valid = '- **Gateway call** — Notes (`s1`): "The gateway calls the service."'
+        self.assertEqual(claims_map.problems(valid, sources), [])
+        self.assertEqual(
+            claims_map.problems(valid.replace('calls', 'called'), sources),
+            ['The passage for "Gateway call" is not in s1.'],
+        )
+        self.assertEqual(
+            claims_map.problems(valid.replace('`s1`', '`s2`'), sources),
+            ['"s2" is not one of the sources this blog reads.'],
+        )
+        self.assertEqual(
+            claims_map.problems('No claims.', sources),
+            ['List at least one claim, one a line, as the guidance shows.'],
+        )
+        self.assertEqual(
+            claims_map.problems(valid.replace('gateway calls', 'gateway\n calls'), sources), []
+        )
+        self.assertTrue(
+            claims_map.problems(valid + '\n- **An unchecked claim** — missing passage', sources)
+        )
+
+    def test_unquoted_prose_cannot_add_claims_to_a_valid_map(self):
+        import claims_map
+
+        valid = '- **Gateway call** — Notes (`s1`): "The gateway calls the service."'
+        self.assertTrue(
+            claims_map.problems(
+                valid + '\nAn additional unsupported claim.', [{'id': 's1', 'text': self.PASSAGE}]
+            )
+        )
+
+    def test_a_claims_map_gets_one_correction(self):
+        for corrected in (True, False):
+            found, source = self.mapped(page=True, title='Correction ' + str(corrected))
+            calls = []
+
+            def worker(
+                engine,
+                payload,
+                guidance,
+                source=source,
+                corrected=corrected,
+                calls=calls,
+                **options,
+            ):
+                calls.append(payload)
+                self.assertFalse(options['web'])
+                return {
+                    'content': self.line(source)
+                    if corrected and len(calls) == 2
+                    else self.line(source, 'The gateway invents a service.'),
+                    'notes': '',
+                }
+
+            engine = runner.Engine(self.root, worker=worker)
+            self.addCleanup(engine.close)
+            engine.keep_local(found['id'], {'enabled': True})
+            engine.once(found['id'])
+            shown = engine.describe(found['id'])
+            self.assertEqual(len(calls), 2)
+            self.assertIn('validation_error', calls[1])
+            if corrected:
+                self.assertEqual(shown['status'], 'waiting-for-approval')
+            else:
+                self.assertEqual(shown['status'], 'failed')
+                self.assertIn(
+                    'The claims map quoted passages that are not in your material: ', shown['error']
+                )
+
+    def test_balanced_continues_past_the_claims_map(self):
+        found, source = self.mapped(review_level='balanced')
+        found = self.submit(found, self.line(source))
+        self.assertEqual(found['next'], 'outline')
+        self.assertEqual(found['stages'][0]['accepted_by'], 'review-policy')
+        strict, source = self.mapped(review_level='step_by_step')
+        self.assertEqual(self.submit(strict, self.line(source))['next'], 'claims-map')
+
+    def test_later_stages_receive_the_claims_map(self):
+        found, source = self.mapped()
+        found = self.approve(self.submit(found, self.line(source)))
+        _, payload, _ = runner.job(self.root, found['id'])
+        self.assertEqual(payload['documents']['claims-map'], self.line(source))
+        self.assertIn('claims-map', blog_worker.POLICY)
+
+    def test_direct_submissions_also_validate_exact_sources(self):
+        found, source = self.mapped()
+        with self.assertRaisesRegex(ValueError, 'not in your material'):
+            self.submit(found, self.line(source, 'A different claim.'))
+
+    def test_continue_without_research_drops_the_claims_map(self):
+        found, source = self.mapped(page=True)
+        shown = runner.dispatch(
+            self.root, 'skip-research', {'id': found['id'], 'expected': found['expected']}
+        )
+        self.assertNotIn('claims-map', [s['stage'] for s in shown['stages']])

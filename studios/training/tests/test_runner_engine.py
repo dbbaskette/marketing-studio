@@ -498,7 +498,7 @@ class WorkerTests(StudioCase):
             self.assertIn('Topic: Rolling restarts on the platform', job.task)
             self.assertIn('Audience: Solutions engineers who deploy apps', job.task)
             self.assertIn('Purpose: Field enablement', job.task)
-        self.assertEqual(plan.guidance, pipeline.briefs.guidance('research-plan'))
+        self.assertEqual(plan.guidance, pipeline.briefs.guidance('research-plan-queue'))
         self.assertIn('Hand the questions back with submit_artifact under the name '
                       '"research-plan".', plan.task)
         self.assertIn('Sources that may be used: the public web.', plan.task)
@@ -2061,3 +2061,79 @@ class ModelProfileTests(StudioCase):
         other = self.start(title='Work override', agent='codex', model='own-model', effort='high')
         self.assertEqual(self.record(other)['model_profiles']['mode'], 'single')
         self.assertEqual(self.workers.jobs[-1][1].model, 'own-model')
+
+
+class FormPlanTests(StudioCase):
+    def test_a_requested_revision_changes_a_plan_written_from_the_form(self):
+        from studio_core import research_contract
+        with mock.patch.object(research_contract, 'snapshot', return_value={'schema': 2}):
+            root = self.start(source_scope='supplied-only', research_questions=['Why?'])
+        self.send(root, 'synthetic.md')
+        self.engine.supply(root, 'done')
+        original = json.loads((root / pipeline.PLAN).read_text())
+        revised = json.loads(json.dumps(original))
+        revised['items'][0]['question'] = 'What does the source say about capacity?'
+        self.workers.plan = revised
+        self.decide(root, 'research-plan', 'revise',
+                    'Replace Why? with What does the source say about capacity?')
+        kept = json.loads((root / pipeline.PLAN).read_text())
+        self.assertEqual(kept['items'], revised['items'])
+        self.assertEqual(kept['scope'], 'supplied-only')
+        self.assertEqual(kept['sources'], self.engine.documents.sources(root)[0])
+        self.assertEqual(len(self.workers.of('research-plan')), 1)
+        task = self.workers.of('research-plan')[0].task
+        self.assertIn('Replace Why? with What does the source say about capacity?', task)
+        self.assertIn('only the documents the person supplied', task)
+        self.assertNotIn('Keep each in the plan, in their words', task)
+        self.assertEqual(self.record(root)['research']['plan_from'], 'assistant')
+        self.assertEqual(workspace.status(root)['gate'], 'research-plan')
+
+    def test_a_documents_only_training_writes_its_plan_from_the_form(self):
+        from studio_core import research_contract
+        with mock.patch.object(research_contract, 'snapshot', return_value={'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'}):
+            root = self.start(source_scope='supplied-only', research_questions=['Why?', 'What next?'])
+        self.send(root, 'synthetic.md')
+        shown = self.engine.supply(root, 'done')
+        plan = json.loads((root / pipeline.PLAN).read_text())
+        self.assertEqual([i['question'] for i in plan['items']], ['Why?', 'What next?'])
+        self.assertTrue(all(i['public_query'] is None for i in plan['items']))
+        self.assertEqual(workspace.statuses(root, workspace.load(root))['research-plan'], 'draft')
+        self.assertEqual(self.workers.of('research-plan'), [])
+        self.assertEqual(workspace.status(root)['gate'], 'research-plan')
+
+    def test_a_public_web_training_still_drafts_its_plan(self):
+        root = self.start(research_questions=['Why now?'])
+        self.assertEqual(len(self.workers.of('research-plan')), 1)
+        self.assertIn('Why now?', self.workers.of('research-plan')[0].task)
+
+
+class ResearchAccountTests(StudioCase):
+    def test_the_research_review_line_names_the_check_not_a_digest(self):
+        from synthesis_fixture import research_stop
+        from studio_core import research_contract, research_view
+        from types import SimpleNamespace
+        import desk
+        root = self.start(); self.to_gate(root, 'research')
+        research_stop(root / research_contract.CASE / 'research')
+        record = self.engine._load(root); record['research_contract'] = {'schema': 2}
+        self.engine._store(root, record)
+        tool = SimpleNamespace(_json=lambda *a: {'status': 'complete'})
+        with mock.patch.object(research_contract, 'matching', return_value=tool):
+            step = next(s for s in pipeline.steps([]) if s.id == 'research-report')
+            self.engine._report(root, step)
+        note = desk.latest_review(root, 'research')
+        self.assertIn(research_view.CHECKED + ' An honest account.', note)
+        self.assertNotIn('Digest', note)
+        self.assertNotIn('synthetic-digest', note)
+
+
+class ResearchPriceTests(StudioCase):
+    def test_a_research_change_is_priced_with_what_it_makes_again(self):
+        root = self.start(levels=['101', '201'])
+        record = self.engine._load(root); record['research_contract'] = {'schema': 2}
+        self.engine._store(root, record)
+        session = workspace.load(root)
+        for name in ['blueprint@101', 'document@101', 'blueprint@201', 'document@201']:
+            workspace.write_atomic(root / workspace.artifact(root, session, name)['file'], b'# Synthetic document\n')
+        found = self.engine.research_price(root)
+        self.assertTrue(found['words'].endswith('Then it makes again: the level 101 blueprint, the level 101 learner guide, the level 201 blueprint and the level 201 learner guide.'))

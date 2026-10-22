@@ -1345,7 +1345,9 @@ function noteSheet(kind) {
   });
   // What a change writes again, and what that took the last time, said before it is sent.
   const price = outlined() ? view.run.outline.redo : view.gate && view.gate.redo;
-  const redo = kind === 'revise' && price ? ' ' + price.says : '';
+  const researchPrice = !outlined() && view.gate && view.gate.artifact === 'research' && view.gate.research_price;
+  const redo = kind === 'revise' && researchPrice ? ' ' + researchPrice.words
+    : kind === 'revise' && price ? ' ' + price.says : '';
   const hint = make('p', 'quiet', (runOf(view.path) ? spec.hint.replace('Your assistant makes',
     'Training Studio makes') : spec.hint) + redo);
   hint.id = 'note-hint';
@@ -2102,8 +2104,32 @@ function comparison(changed) {
 
 // What is read at a gate: the document, with what changed in it one press away. A deck the
 // runner rendered is its slides first, and which of them address each objective.
+function researchReading(found) {
+  const node = make('article', 'paper doc');
+  add(node, window.TrainingStudioMarkdown.render(found.brief),
+    make('h2', 'doc-title', 'What the independent check said'), make('p', '', found.check.said),
+    found.check.note ? make('p', '', found.check.note) : null,
+    ...list(found.check.unread).map((one) => make('p', '', (one.title || one.source) + ': ' + one.access_error)),
+    make('h2', 'doc-title', 'What the research could not settle'),
+    list(found.gaps).length ? bullets(found.gaps) : make('p', 'quiet', 'No gaps were named.'),
+    ...list(found.sources.partial).map((one) => make('p', '', one.title + ': ' + one.note)),
+    make('p', 'quiet', found.read));
+  const finding = (id) => list(found.findings).find((one) => one.id === id);
+  const show = (ids) => ids.map(finding).filter(Boolean).map((one) =>
+    add(make('div', 'card-part'), make('h3', 'row-title', one.title), make('p', '', one.summary)));
+  if (list(found.questions).length) add(node, make('h2', 'doc-title', 'Your questions'));
+  for (const question of list(found.questions)) add(node, make('h3', 'row-title', question.question),
+    ...(list(question.findings).length ? show(question.findings) : [make('p', 'quiet', 'The research did not answer this.')]));
+  if (list(found.unplanned).length) add(node, make('h2', 'doc-title', 'Also found'), ...show(found.unplanned));
+  for (const [label, text] of [['Read the full report', found.report], ['The evidence and the check’s notes', found.evidence]]) {
+    add(node, add(make('details', 'card-part'), make('summary', '', label), window.TrainingStudioMarkdown.render(text)));
+  }
+  return node;
+}
+
 function reading(found) {
   const node = make('div', 'reading');
+  if (found.research) return add(node, researchReading(found.research));
   if (slidesOf(found).length) add(node, slidesPart(found), coveragePart(found));
   const changed = found.changes;
   if (!changed.available || changed.same || !changed.comparable) {
@@ -2301,7 +2327,7 @@ function gateSignature(found) {
   return JSON.stringify([found.status, found.sha256, found.checked, found.out_of_date,
     found.review, found.asked, found.decisions, found.first, found.approval, found.stages,
     found.waiting, found.question, found.changes.same, found.changes.available,
-    found.whose, found.beside, found.slides, found.audit, found.coverage]);
+    found.whose, found.beside, found.slides, found.audit, found.coverage, found.research, found.research_price]);
 }
 
 function callout(kind, ...children) {
@@ -2446,7 +2472,7 @@ function paintGate(fresh) {
     decked ? make('p', 'lede', 'These are the slides themselves. The pictures were made from '
       + 'the very file you are deciding on.') : null);
   const aside = add(make('aside', 'aside'), reviewOf(found) ? findingsNote(found) : null,
-    checkedNote(found), lookNote(found), changesNote(found.changes));
+    found.research ? null : checkedNote(found), lookNote(found), changesNote(found.changes));
   aside.setAttribute('aria-label', 'The review');
   const above = [button(found.title, 'link', () => show(homeOf(found.path),
     { path: found.path }), 'training'),
@@ -4432,7 +4458,7 @@ function startStep(draft) {
       : 'Research starts after you start the training.';
     // A drawn deck always comes to the person, whatever the level.
     const deck = Boolean(DECKS[draft.deck][0]);
-    const stops = policy === 'balanced' ? 'the research plan, the first drafts'
+    const stops = policy === 'balanced' ? (SOURCES[draft.sources][0] === 'supplied-only' ? 'the first drafts' : 'the research plan, the first drafts')
         + (deck ? ', each drawn deck' : '') + ' and the finished materials'
       : policy === 'automatic' ? (deck ? 'each drawn deck and ' : '') + 'the finished materials'
         : 'at least ' + gatesFor(draft) + ' decisions for research'
@@ -4460,7 +4486,9 @@ function startStep(draft) {
     SOURCES.map((source) => source[1]), SOURCE_SAYS, draft.sources, (index) => {
       draft.sources = index;
       tell();
-    }, 'sources')),
+    }, 'sources'),
+    field('research-questions', 'What should the research answer? (optional)', draft,
+      'researchQuestions', { long: true, rows: 4, hint: 'One question a line, at most 8.' })),
   trainingOptions('Assistant and limits', 'training-assistant',
     ...agentFields(draft, 'new', 'For this training', told), drafted,
     make('p', 'quiet', limitsSays(limits) || 'No limits are set for this computer.'),
@@ -4552,6 +4580,7 @@ async function startTraining(pressed) {
     brief_kind: draft.brief ? 'competitive' : 'product',
     time_limit: draft.time.trim() || null,
     source_scope: SOURCES[draft.sources][0],
+    research_questions: (draft.researchQuestions || '').split('\n'),
     deck_target: deck,
     brand: deck ? { brand: draft.brand, variant: draft.variant || null } : null,
     copies: COPIES.map((kind) => kind[0]).filter((kind) => draft.copies.includes(kind)),
@@ -4898,11 +4927,10 @@ function problemPart(run, lead) {
     read = capsule('Read every objection', 'quiet', async () => {
       read.disabled = true;
       try {
-        const gate = await ask('gate', { path: view.path, artifact: 'research' });
+        const file = await ask('file', { path: view.path, artifact: found.objections });
         shown.replaceChildren(make('h3', 'row-title', 'The research check'),
-          ...String(gate.review || '').split('\n')
-            .map((line) => line.replace(/^(#+|>)\s*/, '').replace(/^>\s*/, '').trim())
-            .filter(Boolean).map((line) => make('p', '', line)));
+          window.TrainingStudioMarkdown.render(file.text || ''));
+
       } catch (failure) {
         shown.replaceChildren(make('p', 'problem', failure.message));
       } finally {
@@ -5953,7 +5981,9 @@ function combinedReview(run) {
     // On a phone everything but the first material is folded away until it is opened.
     detail.open = small ? first || mark === 'changes'
       : Boolean(item.sample || item.sample_note || item.looks || item.deck_view || first);
-    if (item.text) add(part, window.TrainingStudioMarkdown.render(item.text));
+    if (item.research) add(part, researchReading(item.research));
+    else if (item.document) add(part, documentBody(item.document, {label: item.label}));
+    else if (item.text) add(part, window.TrainingStudioMarkdown.render(item.text));
     if (item.sample) add(part, pictureAt({path: view.path, ...item.sample},
       'Sample slide for ' + item.label, review.expected));
     // The draft and the look are approved together: the draft as the slides tool draws it,
@@ -6006,7 +6036,7 @@ function combinedReview(run) {
       request.addEventListener('input', () => { view.notes[key] = request.value; });
       const hint = make('p', 'quiet', (list(item.rewrites).length ? 'If it changes, these are '
         + 'written again from it: ' + series(item.rewrites) + '.' : 'Nothing else is built from it.')
-        + (item.redo ? ' ' + item.redo.says : ''));
+        + (item.research_price ? ' ' + item.research_price.words : item.redo ? ' ' + item.redo.says : ''));
       const asking = add(make('div', 'review-request'), label, request, hint);
       asking.hidden = mark !== 'changes';
       const marks = make('div', 'review-marks chips');

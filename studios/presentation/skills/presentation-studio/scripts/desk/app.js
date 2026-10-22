@@ -1266,7 +1266,8 @@ function noteSheet(kind) {
   // other stop, what is drawn again from it and what that took the last time.
   const whole = !marked.length && (!gate && view.run && view.run.deliver
     ? ' ' + wholeDeckSays(view.run.deliver.last_build)
-    : gate && gate.name === 'gate:build' ? ' ' + wholeDeckSays(gate.last_build)
+    : gate && gate.name === 'gate:research' && gate.research_price ? ' ' + gate.research_price.words
+      : gate && gate.name === 'gate:build' ? ' ' + wholeDeckSays(gate.last_build)
       : gate && gate.redo ? ' ' + gate.redo.says : '');
   const hint = make('p', 'quiet', spec.hint + (marked.length ? ' The parts of the deck '
     + 'that hold ' + slidesNamed(marked) + ', which you marked, are drawn again.' : '')
@@ -2932,6 +2933,7 @@ function aboutStep(draft) {
   const research = draft.route !== 'existing' ? chip('Research the public web first', draft.research,
     (on) => {
       draft.research = on;
+      paintNew(false);
     }, 'research') : null;
   return [add(card('About it'),
     field('new-title', 'A short title', draft, 'title',
@@ -2949,7 +2951,13 @@ function aboutStep(draft) {
       draft.route === 'document' ? 'Only where your document turns out to be material to '
         + 'build from. You approve the research plan, then the findings, before the outline '
         + 'is drafted.' : 'You approve the research plan, then the findings, before the '
-        + 'outline is drafted.')) : null)];
+        + 'outline is drafted. Research uses the public web.')) : null,
+    draft.route === 'document' && draft.research ? choice('Where may research look?',
+      ['Your documents only', 'Your documents and the public web'], draft.researchSources || 0,
+      (index) => { draft.researchSources = index; }, 'research-sources',
+      'With your documents only, nothing about them is searched for on the public web.') : null,
+    draft.research ? field('research-questions', 'What should the research answer? (optional)',
+      draft, 'researchQuestions', { long: true, rows: 4, hint: 'One question a line, at most 8.' }) : null)];
 }
 
 // The decisions a deck will ask for, in the order it asks.
@@ -3104,6 +3112,9 @@ function formOf(draft) {
     variant: draft.variant || null, output: OUTPUTS[draft.output][0],
     delivery: DELIVERIES[deliveryOf(draft)][0],
     research: draft.route !== 'existing' && draft.research,
+    research_questions: (draft.researchQuestions || '').split('\n'),
+    research_sources: draft.route === 'document' && draft.research
+      ? (draft.researchSources === 1 ? 'both' : 'documents') : undefined,
     agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null,
     review_level: levelOf(draft), review_seen: (view.setup && view.setup.review_level) || null,
     review_default: Boolean(draft.review_default) };
@@ -3914,9 +3925,28 @@ function planRow(gate, item, readonly) {
 // What the research found: the findings that need a look first, as cards, and the answered
 // ones a line each that opens into the same card. Each can be researched again or left out,
 // and a question added.
-function researchPanel(gate, readonly) {
+function researchPanel(gate, readonly, direction = false) {
   const node = card('What the research found');
   const items = list(gate.items);
+  if (gate.research) {
+    const found = gate.research;
+    add(node, documentPart('The research brief', found.brief),
+      make('h3', 'row-title', 'What the independent check said'),
+      make('p', '', found.check.said), found.check.note ? make('p', '', found.check.note) : null,
+      ...list(found.check.unread).map((one) => make('p', '', (one.title || one.source) + ': ' + one.access_error)),
+      make('h3', 'row-title', 'What the research could not settle'),
+      list(found.gaps).length ? bullets(found.gaps) : make('p', 'quiet', 'No gaps were named.'),
+      ...list(found.sources.partial).map((one) => make('p', '', one.title + ': ' + one.note)),
+      make('p', 'quiet', found.read),
+      reviewCounts([[items.length, items.length === 1 ? 'finding' : 'findings'], [leftOut(gate).length, 'left out']]));
+    const findings = make('div', '');
+    findings.id = 'findings';
+    add(node, findings);
+    paintFindings(gate, findings, readonly);
+    if (!readonly && !direction) add(node, reviewBar(gate));
+    return add(node, fullText('Read the full report', 'The research report', found.report, 'report-text'),
+      fullText('The evidence and the check’s notes', 'The evidence', found.evidence, 'evidence-text'), ...gateSaid(gate));
+  }
   // Without findings to show, as when the plan cannot be read, the report is all there is.
   if (!items.length) {
     return add(node, documentPart('The research report', gate.text), ...gateSaid(gate));
@@ -3938,6 +3968,23 @@ function researchPanel(gate, readonly) {
 // out. What was open stays open.
 function paintFindings(gate, holder, readonly) {
   if (!holder) return;
+  if (gate.research) {
+    const found = gate.research;
+    const cards = (ids) => ids.map((id) => list(gate.items).find((one) => one.id === id)).filter(Boolean)
+      .map((item) => findingCard(gate, item, readonly, false));
+    const parts = [];
+    if (list(found.questions).length) parts.push(make('h3', 'row-title', 'Your questions'));
+    for (const question of list(found.questions)) {
+      parts.push(make('h4', 'row-title', question.question));
+      parts.push(list(question.findings).length
+        ? add(make('ul', 'plain review-list'), ...cards(question.findings))
+        : make('p', 'quiet', 'The research did not answer this.'));
+    }
+    if (list(found.unplanned).length) parts.push(make('h3', 'row-title', 'Also found'),
+      add(make('ul', 'plain review-list'), ...cards(found.unplanned)));
+    holder.replaceChildren(...parts);
+    return;
+  }
   const opened = Array.from(holder.querySelectorAll('details')).filter((node) => node.open)
     .map((node) => node.dataset.key);
   const items = list(gate.items);
@@ -3978,14 +4025,16 @@ function findingCard(gate, item, readonly, folded) {
   const again = !readonly && !out && owns(held.again, item.id);
   const [shape, words] = FINDING_WORDS[item.status] || FINDING_WORDS.pending;
   const said = out ? 'Left out' : again ? 'To research again' : words;
-  const body = [make('p', 'quiet', item.question),
+  const body = [item.question ? make('p', 'quiet', item.question) : null,
     item.headline ? make('p', 'review-headline', item.headline) : null,
     item.unknown ? make('p', 'quiet', 'Not known: ' + item.unknown) : null,
     sourcesPart(item)];
   if (!readonly) {
     if (again) {
-      body.push(field('again-' + item.id, 'What was wrong with “' + title + '” (optional)',
-        held.again, item.id, { long: true, limit: LINE, typed: () => reviewChanged(gate) }));
+      body.push(field('again-' + item.id, gate.contract ? 'What is wrong with “' + title + '”?'
+        : 'What was wrong with “' + title + '” (optional)',
+        held.again, item.id, { long: true, limit: LINE, hint: gate.research_price?.words || '',
+          typed: () => reviewChanged(gate) }));
     }
     // The runner refuses every finding left out: the outline is drafted from them.
     const last = !out && list(gate.items).filter((one) => !outs.includes(one.id)).length < 2;
@@ -4002,7 +4051,8 @@ function findingCard(gate, item, readonly, folded) {
     leave.setAttribute('aria-label', (out ? 'Bring it back: “' : 'Leave out “') + title + '”');
     const why = last ? switchedOff(leave, 'leave-why-' + item.id, 'The last finding kept '
       + 'cannot be left out: the outline is drafted from the findings.') : null;
-    const redo = out ? null : capsule(again ? 'Don’t research it again' : 'Research again',
+    const redo = out || gate.direction ? null : capsule(again ? (gate.contract ? 'Keep this finding' : 'Don’t research it again')
+      : gate.contract ? 'Ask about this finding' : 'Research again',
       'quiet', () => {
         if (again) delete held.again[item.id];
         else held.again[item.id] = '';
@@ -4010,7 +4060,7 @@ function findingCard(gate, item, readonly, folded) {
       }, 'again ' + item.id);
     if (redo) {
       redo.setAttribute('aria-label', (again ? 'Don’t research it again: “'
-        : 'Research again: “') + title + '”');
+        : gate.contract ? 'Ask about this finding: “' : 'Research again: “') + title + '”');
     }
     body.push(why, add(make('div', 'bar'), redo, leave));
   }
@@ -4228,7 +4278,11 @@ function sayingLine(gate, readonly) {
 function outlinePanel(gate, readonly) {
   const node = card(gate.look ? 'Review the direction' : 'The outline');
   add(node, sayingLine(gate, readonly), classifyLine(gate, readonly));
-  if (gate.research?.text) add(node, documentPart('Research findings', gate.research.text));
+  if (gate.research?.text) {
+    const research = { ...gate.research, name: 'gate:research', round: gate.round, direction: true };
+    add(node, researchPanel(research, readonly, true),
+      gate.leave_out_price ? make('p', 'quiet', gate.leave_out_price.words) : null);
+  }
   if (gate.look) {
     add(node, lookPanel(gate.look, readonly || !gate.look.offered, chosenFor(gate),
       gate.look.offered ? gate : null));
@@ -4241,8 +4295,9 @@ function outlinePanel(gate, readonly) {
       request.setAttribute('aria-label', 'What should change in the research?');
       const problem = problemLine();
       const submit = submitButton('Research again', 'direction-research');
+      submit.className = 'button button-quiet';
       form.addEventListener('submit', event => { event.preventDefault(); decide('changes', request.value, problem, submit, {direction_target: 'gate:research'}); });
-      add(form, request, problem, submit);
+      add(form, request, gate.research.research_price ? make('p', 'quiet', gate.research.research_price.words) : null, problem, submit);
       const detail = add(make('details'), make('summary', '', 'Request changes to the research'), form);
       detail.dataset.key = 'direction-research-request';
       add(node, detail);
@@ -5034,6 +5089,13 @@ function reviewOf(gate) {
       approve: true, extra: { left_out: marks.left_out }, tally };
     }
     return { label: 'Approve', approve: true, extra: null, tally };
+  }
+  if (gate.name === 'gate:outline' && gate.look && gate.research) {
+    const research = { ...gate.research, name: 'gate:research', round: gate.round };
+    const ids = leftOut(research);
+    if (movedOut(research, ids)) return { label: 'Redraw the direction', approve: false,
+      extra: { direction_target: 'gate:research', left_out: ids.slice() },
+      tally: count(ids.length, 'finding left out', 'findings left out') };
   }
   const slides = sized(marks.slides);
   const edited = held.edited ? { edited: held.work } : null;

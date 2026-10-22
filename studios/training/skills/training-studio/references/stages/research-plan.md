@@ -4,6 +4,12 @@ Draft the questions `harness-research` will answer, and have the user approve th
 
 ## Draft
 
+A browser run with supplied-only synthesis writes this plan from the form without a
+planning job: at most eight optional questions, each up to 300 characters, or one about
+the goal. Step by step reviews it; Balanced and Automatic accept it under the saved policy.
+Web synthesis still drafts a plan and keeps the person's own questions in their words.
+
+
 Write `.training-studio/research-plan.json` in the format `harness-research` accepts. It is the one file under `.training-studio/` that you write.
 
 ```json
@@ -26,7 +32,7 @@ Write `.training-studio/research-plan.json` in the format `harness-research` acc
 - **`purpose`** is always `planning`. It is a `harness-research` field, not the training's purpose.
 - **`scope`** is `supplied-only` when intake allows supplied documents only, and `public-web` otherwise.
 - **`sources`** has one entry per selected document, as `harness-research` defines them, with paths relative to the training directory.
-- **`items`** holds 1 to 30 questions. Each `id` is lowercase letters, digits and hyphens. The blueprint and the brief cite these IDs, so name each for its subject: `instance-min`, not `q7`.
+- **`items`** holds 1 to 8 questions for synthesis; a saved legacy queue allows 30. Each `id` is lowercase letters, digits and hyphens. The blueprint and the brief cite these IDs, so name each for its subject: `instance-min`, not `q7`.
 - **`public_query`** uses non-confidential public terms only, and is `null` for supplied-only research.
 - **Leave out `input_files`.** If `intake.md` were registered there, `harness-research` would discard its findings whenever intake was edited.
 
@@ -47,7 +53,7 @@ Ask neutral questions. One that embeds a claim, such as "Do rolling restarts gua
 
 If the topic names a set, such as "all the X" or "every Y", ask the question that establishes its members. Never assume the list.
 
-If the topic needs more than 30 questions, it is too large for one training. Say so and propose a split, each part in its own directory.
+One investigation answers synthesis questions together and an independent check reviews it. Ask at most eight; cover what the training needs to teach. Legacy queues keep thirty.
 
 ## Gate 1
 

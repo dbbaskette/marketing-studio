@@ -5,6 +5,13 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- Research stops now show the authored brief, independent check, gaps, partial sources
+  and findings mapped to planning questions. Research requests describe the full rerun,
+  recorded cost and saved downstream work before sending. Home preserves research defaults.
+- Supplied-only guided blogs map claims to exact source passages with one correction
+  instead of researching their own material. Web research gets a tool-less plan of at most
+  eight questions. Saved legacy pipelines and from-files supplied-only runs retain their flow.
+
 - **Where this run stops, and one name for each thing.** The last step of a new blog has
   a **Where this run stops** card: the level for this blog, the stops it makes, and
   **Use this for new work in every studio**; Settings has **Where new work stops**, saved

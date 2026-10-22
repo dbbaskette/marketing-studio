@@ -419,6 +419,14 @@ def unpacked(data: bytes, encoding: str) -> bytes:
                       'not saved.')
 
 
+QUESTIONS = 30
+PLAN_MOST = 8
+
+
+def check_research_plan(plan, most=QUESTIONS):
+    return checks.check_research_plan(plan, most=most)
+
+
 # --- validators ------------------------------------------------------------------------
 
 def check_plan(text: str, spec: dict) -> tuple[list[str], list[dict], list[str], str]:
@@ -439,7 +447,7 @@ def check_plan(text: str, spec: dict) -> tuple[list[str], list[dict], list[str],
     topic = plan['topic']
     if not isinstance(topic, str) or not topic.strip() or len(topic) > 4000:
         problems.insert(0, '"topic" must say what the training is about, in a line or two.')
-    outcome = checks.check_research_plan(plan)
+    outcome = check_research_plan(plan, most=spec.get('most', QUESTIONS))
     return (outcome['problems'] + problems, [outcome], [],
             json.dumps(plan, indent=2, ensure_ascii=False) + '\n')
 

@@ -84,6 +84,23 @@ def _source(sent: dict, route: str) -> dict:
     return {'kind': 'paste'}
 
 
+RESEARCH_SOURCES = ('documents', 'both')
+
+
+def research_questions(sent) -> list[str]:
+    given = sent.get('research_questions') or []
+    if isinstance(given, str):
+        given = given.splitlines()
+    if not isinstance(given, list) or not all(isinstance(line, str) for line in given):
+        raise WorkspaceError('Write the research questions one a line.')
+    lines = [' '.join(line.split()) for line in given if line.strip()]
+    if len(lines) > 8:
+        raise WorkspaceError('Ask research at most 8 questions.')
+    if any(len(line) > 300 for line in lines):
+        raise WorkspaceError('Keep each research question to 300 characters.')
+    return lines
+
+
 def check_form(sent: dict, brands: list | None) -> dict:
     """The form, checked and trimmed. Raises WorkspaceError with one sentence otherwise.
     `brands` are those the brand skill lists, or None with no brand skill: a deck can then
@@ -138,6 +155,12 @@ def check_form(sent: dict, brands: list | None) -> dict:
     checked = {'route': route, 'title': title, 'audience': audience, 'goal': goal,
                'minutes': minutes, 'brand': brand, 'variant': variant, 'output': output,
                'research': research, 'delivery': delivery}
+    if research and route == 'document':
+        sources = sent.get('research_sources') or 'documents'
+        if sources not in RESEARCH_SOURCES:
+            raise WorkspaceError('Choose where research may look: your documents only, or your documents and the public web.')
+        checked['research_sources'] = sources
+    checked['research_questions'] = research_questions(sent)
     # Only the form's own choice shows the first draft before its review: nothing in the
     # goal's words flips it.
     mode = sent.get('initial_review')
@@ -308,7 +331,9 @@ def intake(form: dict) -> str:
     parts += ['', '## Brand', brand_words(form),
               '', '## Output', form['output']]
     if form['route'] != 'existing':
-        parts += ['', '## Research', 'yes' if form['research'] else 'no']
+        words = ('yes (your documents only)' if form.get('research_sources') == 'documents'
+                 else 'yes (your documents and the public web)' if form.get('research_sources') == 'both' else 'yes')
+        parts += ['', '## Research', words if form['research'] else 'no']
     if 'level' in form:
         parts += ['', '## Change level', form['level']]
     if 'selected' in form:

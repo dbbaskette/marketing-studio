@@ -127,6 +127,7 @@ HEADLINE = 25           # words in a finding's headline
 HEADLINE_UNITS = 300    # harness-research's limit on a headline, in UTF-16 code units
 NOTES = 4000
 QUESTION = 1000
+PLAN_MOST = 8
 QUESTIONS = 30          # questions harness-research takes in one plan
 PASSAGES = 20
 ADDRESS = 2000
@@ -402,7 +403,7 @@ def result(check: str, problems: list[str], unavailable: str | None = None) -> d
     return {'check': check, 'status': 'failed' if problems else 'passed', 'problems': problems}
 
 
-def check_research_plan(plan) -> dict:
+def check_research_plan(plan, most=QUESTIONS) -> dict:
     """Check a research plan is one harness-research will accept. `plan` is the parsed JSON."""
     name = 'research-plan.items'
     if not isinstance(plan, dict):
@@ -416,8 +417,8 @@ def check_research_plan(plan) -> dict:
         problems.append('Leave out "input_files"; registering intake there makes '
                         'harness-research discard its findings when intake is edited.')
     items = plan.get('items')
-    if not isinstance(items, list) or not 1 <= len(items) <= QUESTIONS:
-        problems.append(f'"items" must hold 1 to {QUESTIONS} questions.')
+    if not isinstance(items, list) or not 1 <= len(items) <= most:
+        problems.append(f'"items" must hold 1 to {most} questions.')
         return result(name, problems)
     seen = set()
     for position, item in enumerate(items, start=1):
@@ -453,7 +454,7 @@ def check_plan(text: str, spec: dict) -> tuple[list[str], list[dict], list[str],
     topic = plan['topic']
     if not isinstance(topic, str) or not topic.strip() or len(topic) > 4000:
         problems.insert(0, '"topic" must say what the deck is about, in a line or two.')
-    outcome = check_research_plan(plan)
+    outcome = check_research_plan(plan, most=spec.get('most', QUESTIONS))
     return (outcome['problems'] + problems, [outcome], [],
             json.dumps(plan, indent=2, ensure_ascii=False) + '\n')
 

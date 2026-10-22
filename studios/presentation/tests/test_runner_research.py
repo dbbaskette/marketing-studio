@@ -551,3 +551,105 @@ class StandInTests(DeckCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SynthesisBriefTests(DeckCase):
+    def test_a_documents_only_deck_writes_its_plan_from_the_form(self):
+        from runner.engine import Engine
+        from runner import stages
+        engine = Engine()
+        for asked in (['Why?', 'What next?'], []):
+            record = {'schema': 1, 'steps': {}, 'gates': {}, 'route': 'scratch', 'title': 'Synthetic deck',
+                      'research_contract': {'schema': 2}, 'form': {'research': True, 'research_sources': 'documents',
+                       'research_questions': asked, 'goal': 'Teach this'}}
+            self.write('run.json', json.dumps(record))
+            with mock.patch.object(engine, '_agent', side_effect=AssertionError('No planning worker')), \
+                    mock.patch.object(engine, '_commit'):
+                step = next(s for s in stages.steps(record) if s.name == 'research-plan')
+                engine._research_plan(self.root, None, step)
+            plan = json.loads((self.root / 'research/plan.json').read_text())
+            self.assertEqual(plan['scope'], 'supplied-only')
+            self.assertEqual([i['question'] for i in plan['items']], asked or ['What do the supplied documents say that serves this goal: Teach this?'])
+            self.assertTrue(all(i['public_query'] is None for i in plan['items']))
+            kept = engine._load(self.root)
+            self.assertTrue(kept['steps']['research-plan']['done'])
+            self.assertEqual(next(r for r in engine._timeline(kept, 'waiting') if r['name'] == 'research-plan')['label'], 'Research plan: written from your form')
+
+    def test_web_research_hands_the_person_s_questions_to_the_plan_job(self):
+        from runner.engine import Engine
+        work = Engine()._plan_work(self.root, {'form': {'research_sources': 'both', 'research_questions': ['Why?']}}, None, None)
+        self.assertIn('The person asked these questions. Keep each in the plan, in their words:\n- Why?', work.task)
+
+    def test_a_deck_without_research_sources_still_runs_its_plan_job(self):
+        from runner.engine import Engine
+        with mock.patch.object(Engine, '_load', return_value={'research_contract': {'schema': 2}, 'form': {}}), \
+                mock.patch.object(Engine, '_agent', side_effect=RuntimeError('planning worker used')):
+            with self.assertRaisesRegex(RuntimeError, 'planning worker used'):
+                Engine()._research_plan(self.root, None, None)
+
+    def test_documents_only_research_plans_with_no_search_words(self):
+        from runner.engine import Engine
+        for scope, expected in (('documents', 'supplied-only'), ('both', 'public-web'), (None, 'public-web')):
+            record = {'research_contract': {'schema': 2}, 'form': {'research_sources': scope}}
+            work = Engine()._plan_work(self.root, record, None, None)
+            self.assertEqual(work.prepared['artifacts']['research-plan']['scope'], expected)
+            self.assertIn('only the documents the person supplied' if scope == 'documents' else 'the public web', work.task)
+
+    def test_the_research_task_keeps_the_boundary(self):
+        from runner.engine import Engine
+        from studio_core import research_contract
+        self.write('run.json', json.dumps({'research_contract': {'schema': 2}, 'form': {}}))
+        self.write('research/plan.json', json.dumps({**PLAN, 'scope': 'supplied-only'}))
+        captured = []
+        def native(engine, root, run, task, sources, product):
+            captured.append(task)
+            raise RuntimeError('captured before workers')
+        with mock.patch.object(research_contract, 'native', side_effect=native), \
+                mock.patch.object(Engine, '_load', return_value={'research_contract': {'schema': 2}, 'form': {}}):
+            with self.assertRaisesRegex(RuntimeError, 'captured before workers'):
+                Engine()._research(self.root, None, None)
+        self.assertEqual(captured[0]['source_mode'], 'selected')
+
+    def test_a_contract_plan_job_uses_the_one_investigation_brief(self):
+        from runner.engine import Engine
+        from runner import briefs
+        engine = Engine()
+        for synthesis, brief in ((True, 'research-plan'), (False, 'research-plan-queue')):
+            record = {'form': {}, **({'research_contract': {'schema': 2}} if synthesis else {})}
+            work = engine._plan_work(self.root, record, None, None)
+            self.assertEqual(work.guidance, briefs.guidance(brief))
+            self.assertEqual(work.prepared['artifacts']['research-plan'].get('most'), 8 if synthesis else None)
+
+
+class ResearchAccountTests(DeckCase):
+    def test_contract_question_additions_keep_the_eight_question_limit(self):
+        from runner.engine import Engine
+        self.write('research/plan.json', json.dumps({**PLAN, 'items': [{'id': f'q-{n}', 'question': 'Why?'} for n in range(8)]}))
+        with self.assertRaisesRegex(WorkspaceError, 'at most 8'):
+            Engine()._add_questions(self.root, {'research_contract': {'schema': 2}}, ['What next?'])
+
+    def test_leave_out_price_uses_only_the_last_outline_and_look_tries(self):
+        from runner.engine import Engine
+        record = {'steps': {'outline': {'tries': [{'seconds': 1200}, {'seconds': 60}]},
+                            'look-preview': {'tries': [{'seconds': 1200}, {'seconds': 60}]}}}
+        self.assertEqual(Engine._leave_out_price(record)['words'], 'Leaving findings out redraws the outline and the look samples without researching again. They last took 2 minutes.')
+
+    def test_a_contract_research_gate_carries_the_account(self):
+        from runner.engine import Engine
+        from synthesis_fixture import research_stop
+        self.write('research/plan.json', json.dumps(PLAN))
+        _, manifest = research_stop(self.root / 'research')
+        shown = Engine()._show_research(self.root, {'research_contract': {'schema': 2}})
+        self.assertEqual(shown['research']['brief'], '# Prioritized handoff\n')
+        self.assertEqual(shown['research']['questions'][0]['findings'], ['instance-min--capacity'])
+        self.assertEqual(shown['items'][0]['question'], 'How many instances keep capacity?')
+        self.assertNotIn(manifest['digest'], json.dumps(shown))
+
+    def test_an_unreadable_bundle_leaves_the_report_alone(self):
+        from runner.engine import Engine
+        from synthesis_fixture import research_stop
+        research_stop(self.root / 'research')
+        (self.root / 'research/brief.md').write_text('Changed')
+        shown = Engine()._show_research(self.root, {'research_contract': {'schema': 2}})
+        self.assertIsNone(shown['research'])
+        self.assertEqual(shown['text'], '# Report\n')

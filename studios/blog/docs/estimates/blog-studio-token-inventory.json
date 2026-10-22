@@ -199,9 +199,9 @@
       "sha256": "6ead74e1bcaea3972e6a3be7967fa0ee72314814e092bc02cce78cfccd5e4b2e"
     },
     "references/guided-runs.md": {
-      "characters": 7500,
-      "estimated_tokens": 1875,
-      "sha256": "c8dffa0e012cd5f3060ebf23f8a125dcc1213b7e9f69637bf2ad0ec0e629f8d9"
+      "characters": 11311,
+      "estimated_tokens": 2828,
+      "sha256": "fc80bfa96fd305642b5a79adb9d47f82eb793e8bde2d32a15863043a6af96b18"
     },
     "references/headline-lab.md": {
       "characters": 574,
@@ -258,10 +258,15 @@
       "estimated_tokens": 415,
       "sha256": "a7fc75be17a70d3c06dea94dceada2e3858cdf8dac13efc3038eb39e267ea430"
     },
+    "references/modules/blog-claims-map.md": {
+      "characters": 764,
+      "estimated_tokens": 191,
+      "sha256": "bc13d988b29b274ca80c6f51a0714d28904c430a0085161df01d50588d72006c"
+    },
     "references/modules/blog-deep-research.md": {
-      "characters": 9985,
-      "estimated_tokens": 2497,
-      "sha256": "7c650800905559cfc1af6bc9ffd712c20e42e4e5d743375027e3a2d5ffdc3e56"
+      "characters": 1621,
+      "estimated_tokens": 406,
+      "sha256": "93ea455fa90cbbfc03598288301af4148bfe87f2e536e694d8c1e3b087fa51d4"
     },
     "references/modules/blog-fact-check.md": {
       "characters": 2457,
@@ -308,10 +313,20 @@
       "estimated_tokens": 435,
       "sha256": "c6488fbb6c2881b615e491ffeed661de96724c166e063f522c69ae3f8a39e677"
     },
+    "references/modules/blog-legacy-research.md": {
+      "characters": 8610,
+      "estimated_tokens": 2153,
+      "sha256": "72e0dc0d106e868be01644a85128cec1cde6bc44d65020964e3fb354f79c1707"
+    },
     "references/modules/blog-repurpose.md": {
       "characters": 1711,
       "estimated_tokens": 428,
       "sha256": "856b24f92ce573f6f715231ebe737136a009533ba1d86cd474eafc57501fe755"
+    },
+    "references/modules/blog-research-plan.md": {
+      "characters": 993,
+      "estimated_tokens": 249,
+      "sha256": "57b36c74fde53f493c9cf2286989ae20d35925ac308991387721425d1d52e65c"
     },
     "references/modules/blog-source-intake.md": {
       "characters": 1480,
@@ -359,9 +374,9 @@
       "sha256": "e3bcb2d1a5de00f6ee34987d7ec525382b99b87623c1a436edd9bd669834f7c7"
     },
     "references/page-tools.md": {
-      "characters": 2997,
-      "estimated_tokens": 750,
-      "sha256": "4917eb13b8f408e0e878626caabed360c95e3c57211bf9fdef5b7c02dbd8ec92"
+      "characters": 5219,
+      "estimated_tokens": 1305,
+      "sha256": "41b73c008112437ce36a502771aa1de75a0b38098780a9d37ddaabc7760fd021"
     },
     "references/privacy.md": {
       "characters": 4170,
@@ -779,7 +794,7 @@
       "sha256": "4c95901507d60239adadfec8ddd4001a409a52b5c5f7bf20b49bb10a79890142"
     }
   },
-  "library_tokens": 222528,
+  "library_tokens": 224538,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -1055,8 +1070,25 @@
         "references/workspace/sources.md",
         "references/review/evidence.md"
       ],
-      "estimated_tokens": 4485,
+      "estimated_tokens": 2394,
       "note": "Conditional research only; immutable upstream sources stay unloaded during ordinary use."
+    },
+    "research_plan": {
+      "files": [
+        "references/modules/blog-research-plan.md"
+      ],
+      "estimated_tokens": 249,
+      "note": "Tool-less plan for one synthesis investigation."
+    },
+    "legacy_research": {
+      "files": [
+        "references/modules/blog-legacy-research.md",
+        "references/privacy.md",
+        "references/workspace/sources.md",
+        "references/review/evidence.md"
+      ],
+      "estimated_tokens": 4141,
+      "note": "Only for research saved before synthesis."
     }
   },
   "google_operations": {
