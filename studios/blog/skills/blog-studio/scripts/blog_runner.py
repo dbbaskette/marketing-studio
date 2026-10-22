@@ -19,6 +19,10 @@ import claims_map
 from studio_core import model_profiles, review_policy, research_contract, research_view, stops
 from studio_core.preferences import ready as shared_ready
 
+APPLY_REQUEST = (
+    'Apply only the findings in the review below. Edit only the passages they name; '
+    "change nothing else. Keep the author's voice, qualifiers, numbers, links and quotations."
+)
 STATE = 'derived/blog-run.json'
 # A from-files run embeds the uploaded files; past this many JSON characters of source
 # text, each file is excerpted to its share and the run says which ones were.
@@ -1710,7 +1714,9 @@ def job(root, ident):
         request
         and payload['documents'].get(stage, '').strip()
         and not (stage == 'review' and run.get('editor_check'))
-        and (saved.get('hash') or (stage == 'draft' and run['existing']))
+        and (
+            saved.get('hash') or saved.get('apply_review') or (stage == 'draft' and run['existing'])
+        )
     )
     # A focused edit or a single editor check other than shape keeps to its own scope, so
     # it gets no style. The job payload is not hashed; stage pins come from inputs().
@@ -2627,6 +2633,29 @@ def dispatch(root, action, data):
     found = survey(root, ident)
     if not data.get('expected') or data['expected'] != found['expected']:
         raise ValueError('This blog changed. Reload before deciding.')
+    if action == 'apply-review':
+        guard(root, ident, data['expected'], page=True)
+        directory, record, run = load(root, ident)
+        review_file = studio.inside(directory, STAGES['review'][1])
+        if not review_file.is_file():
+            raise ValueError('There is no review to apply yet.')
+        if (
+            found['next'] not in ('review', 'package')
+            or next(row['status'] for row in found['stages'] if row['stage'] == found['next'])
+            != 'draft'
+        ):
+            raise ValueError('Apply findings while the review or handoff waits for you.')
+        if runner.current == ident:
+            raise ValueError('Wait for the current writing step to stop before applying findings.')
+        review = review_file.read_text(encoding='utf-8')
+        decide(root, ident, data['expected'], 'changes', APPLY_REQUEST, page=True, target='draft')
+        directory, record, run = load(root, ident)
+        run['stages']['draft'].update(request=APPLY_REQUEST + '\n\n' + review, apply_review=True)
+        if 'package' not in run['pipeline']:
+            run['pipeline'].append('package')
+        record['stop_point'] = 'package'
+        save(root, directory, record, run, 'Apply only the review’s findings')
+        return runner.control(ident, 'resume')
     if action == 'develop':
         guard(root, ident, data['expected'], page=True)
         directory, record, run = load(root, ident)

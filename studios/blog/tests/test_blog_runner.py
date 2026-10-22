@@ -3323,3 +3323,76 @@ class ClaimsMapTests(RunnerCase):
             self.root, 'skip-research', {'id': found['id'], 'expected': found['expected']}
         )
         self.assertNotIn('claims-map', [s['stage'] for s in shown['stages']])
+
+
+class ApplyReviewTests(RunnerCase):
+    def test_feedback_only_can_explicitly_apply_findings_and_finish_a_package(self):
+        found = self.submit(
+            self.create(page=True, mode='review', id=self.article(), stop='review'), page=True
+        )
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root, 'apply-review', {'id': found['id'], 'expected': found['expected']}
+            )
+        _, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(run['pipeline'], ['draft', 'review', 'package'])
+        self.assertEqual(record['stop_point'], 'package')
+        self.assertEqual(runner.survey(self.root, found['id'])['next'], 'draft')
+
+    def at_package(self):
+        found = self.create(page=True)
+        for stage in ('outline', 'draft', 'review'):
+            found = self.approve(self.submit(found, page=True), page=True)
+        return self.submit(found, page=True)
+
+    def test_apply_review_edits_only_for_the_findings_then_reviews_and_packages(self):
+        found = self.at_package()
+        directory, _, _ = runner.load(self.root, found['id'])
+        review = (directory / 'derived/blog-review.md').read_text()
+        before = (directory / 'DRAFT.md').read_text()
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root, 'apply-review', {'id': found['id'], 'expected': found['expected']}
+            )
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertTrue(
+            payload['changes'].startswith('Apply only the findings in the review below.')
+        )
+        self.assertIn(review, payload['changes'])
+        self.assertIn('change nothing else', payload['changes'])
+        self.assertIn('minimal edit, not a rewrite', guidance)
+        found = runner.survey(self.root, found['id'])
+        self.assertEqual(found['next'], 'draft')
+        found = self.approve(
+            self.submit(found, before + '\nRequested correction.', page=True), page=True
+        )
+        for stage in ('review', 'package'):
+            self.assertEqual(found['next'], stage)
+            found = self.approve(self.submit(found, page=True), page=True)
+        self.assertTrue(found['complete'])
+        self.assertTrue(
+            any(path.read_text() == before for path in (directory / 'history').glob('*.md'))
+        )
+
+    def test_apply_review_needs_a_review(self):
+        found = self.create(page=True)
+        with (
+            studio.locked(self.root),
+            self.assertRaisesRegex(ValueError, 'There is no review to apply yet'),
+        ):
+            runner.dispatch(
+                self.root, 'apply-review', {'id': found['id'], 'expected': found['expected']}
+            )
+
+    def test_apply_review_is_revision_bound_and_survives_recovery(self):
+        found = self.at_package()
+        with studio.locked(self.root):
+            with self.assertRaisesRegex(ValueError, 'changed'):
+                runner.dispatch(self.root, 'apply-review', {'id': found['id'], 'expected': 'old'})
+            with patch.object(runner.Engine, 'control', return_value={}):
+                runner.dispatch(
+                    self.root, 'apply-review', {'id': found['id'], 'expected': found['expected']}
+                )
+        _, _, run = runner.load(self.root, found['id'])
+        self.assertTrue(run['stages']['draft']['apply_review'])
+        self.assertIn('Keep the author', runner.job(self.root, found['id'])[1]['changes'])
