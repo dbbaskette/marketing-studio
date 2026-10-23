@@ -765,34 +765,220 @@ at 4,000 words per side (beyond that, show the two texts side by side).
 
 ## Phase 2: author and co-author starts
 
-Expand these tasks against the Phase 1 code before starting.
+Expanded on 2026-10-23 against the Phase 1 code on `claude/writing-desk` (`desk.py`,
+`desk_jobs.py`, `desk.js`). Phase 2 lands on the same branch as Phase 1, one commit per task.
 
-- **2.1 Start screens** (`desk.js`, `runner.js`, `blog.css`). Step 1 kind of post cards
-  (from `styles.catalog`); step 2 What do you have (topic, outline or notes, draft) with the
-  sub-choices from the spec; step 3 sources (reuse `sFilesCard` and the library picker from
-  `runner.js`, exported for `desk.js`), Search my sites, Search the web, Length, Tone. The
-  old wizard, files screen and three angles step are no longer reachable for new blogs.
-  Journeys: each of the three starts reaches Start with the right payload.
-- **2.2 `desk-angles`** (`desk_jobs.angles(root, data)`): runs before a blog exists, keyed
-  by an operation id in metadata; returns JSON `[{headline, point, audience}] * 3`; the page
-  shows cards to pick and edit, or the person types the point. Tests: payload carries the
-  chosen sources; a malformed result is refused readably.
-- **2.3 `desk-outline` and `desk-draft`** with `references/modules/desk-write.md` (sections
-  from briefs; length sentence; approved-messaging stance; evidence and gaps in notes, never
-  in prose, as `blog_runner` already instructs; reuse that text, do not copy it). Outline
-  returns `{title, opening_brief, sections: [{heading, brief}]}`; draft returns the whole
-  Markdown, split by `desk.split` keeping outline briefs by heading order. Tests per kind.
-- **2.4 Research before the draft**: when sites or web are ticked, queue the existing
-  research step first (reuse `synthesis_research`/`deep_research` as runs do, in the desk
-  blog's folder) and chain `desk-draft` when it is ready, with no gate. Documents only go
-  straight into the draft payload. Tests: chaining order; a failed research stops with its
-  readable problem and a Retry.
-- **2.5 Progress screen**: first line "Nothing needed from you. The draft opens here when it
-  is ready, in about N minutes"; current step in words; one clock. Journey.
-- **2.6 Outline tab** on the desk: rename, reorder, add, remove, edit briefs (saved through
-  `desk-outline-save` with the stale check; reordering keeps section ids); **Write the
-  draft** and **Write this section**. Tests and journey.
-- **2.7** Checks, CHANGELOG, PR, merge, restart.
+**What a start is.** A start is one desk blog made at **Start** whose draft does not exist
+yet. `desk.create` takes a `way`: `draft` (Phase 1, the default), `topic`, `outline` (write
+from my outline) or `shape` (shape an outline with me first). For the three new ways it
+writes `desk/draft.json` with the title, an empty opening and the sections known so far (none,
+or the parsed outline), plus `brief: {point, audience}` and `opening_brief`; DRAFT.md is
+written by the first `_write`. Beside it, `desk/start.json` keeps the start itself:
+
+```json
+{"schema": 1, "way": "topic", "steps": ["research", "outline", "draft"], "step": "outline",
+ "job": "<tool job id>", "started_at": "…", "ended_at": null, "problem": "",
+ "open": "draft", "minutes": 6, "notes": "<pasted outline or notes>",
+ "research_from": {"documents": true, "sites": [], "web": true}, "contract": {…} | null,
+ "phase": "Round 1 of 3, writing the report"}
+```
+
+Each step is one desk job on the tool queue, chained when the previous one settles, so the
+one-job-per-blog rule, Stop and the settle-under-lock path from Phase 1 hold unchanged.
+`open` is `outline` for **Shape an outline with me first** (no draft step), otherwise
+`draft`. `desk_jobs.view` returns `start` (the record with `busy`, `elapsed` and the step
+in words) so the page shows the progress screen until `ended_at` is set.
+
+Steps per way (`research` only when sites or the web are ticked):
+
+| Way | Steps |
+| --- | --- |
+| topic | research?, outline, draft |
+| outline, parsed into sections | research?, draft |
+| outline, notes without headings or list items | research?, outline, draft |
+| shape | research?, outline (then the desk opens on the Outline tab) |
+
+Documents only go straight into each job's payload: `_context` already reads the pinned
+sources with their stance, as a from-files run reads its files at every step with no claims
+map (`blog_runner.create`: "The files are read at every step; only the web adds research
+stages").
+
+### Task 2.1: The start record and the outline parser (server)
+
+**Files:** Modify `scripts/desk.py`; Test `tests/test_desk_start.py` (new).
+
+- [ ] **Step 1: Failing tests**
+  - `desk.outline_from('# T\n\nWhy.\n\n## One\n\nBrief one.\n\n## Two\n')` returns title `T`,
+    opening brief `Why.` and two sections with headings and briefs, empty text, 8-hex ids.
+  - Top-level list items become sections and their indented lines the brief
+    (`- One\n  - detail\n- Two`); a numbered list too.
+  - Plain notes (paragraphs only) return None; one heading only returns None.
+  - `desk.create(way='topic', title, point, audience)` writes `desk/draft.json` with no
+    sections, `brief`, and `desk/start.json` with `steps == ['outline', 'draft']`; no
+    `DRAFT.md` yet; `session.json` has `flow: desk` and the tone voice.
+  - `way='topic'` without a point is refused ("Say the point to make, or pick an angle.").
+  - `way='outline'` with a parsed outline keeps its sections and briefs and plans
+    `['draft']`; with notes it plans `['outline', 'draft']`; `way='shape'` plans
+    `['outline']` with `open == 'outline'`.
+  - `research_from={'sites': [...], 'web': True}` adds `research` first and keeps the
+    choice on the record (`record['research_from']`); sites alone without Harness Research
+    are refused with `blog_runner.NEEDS_HARNESS_RESEARCH`.
+  - A manuscript with `way='topic'` is refused; unknown ways are refused.
+- [ ] **Step 2: Run** `HOME=$TMPDIR/h python3 -m unittest test_desk_start -v`; expect failures.
+- [ ] **Step 3: Implement** `outline_from`, the `way` branch of `create` (record mode
+  `first-draft`), `start_path`, `read_start`, `write_start`. `CREATE` gains `way`, `point`,
+  `audience`, `outline`, `outline_source`, `research_from`.
+- [ ] **Step 4: Run; pass.** **Step 5: Commit** "Keep a desk start: its way, its steps and the outline it was given".
+
+### Task 2.2: `desk-angles` before a blog exists
+
+**Files:** Modify `scripts/desk_jobs.py`, `scripts/tool_jobs.py` (`KINDS`, `DESK`),
+`scripts/desk.py` (route), `scripts/management.py` (GET view); Test `tests/test_desk_start.py`.
+
+`desk_jobs.angles(root, data)` with `{operation, title, point, audience, style, tone,
+sources, library}` queues one `desk-angles` job keyed by the page operation in
+`.blog-runs/desk-angles/<operation>.json` (`{job, fingerprint}`); the same request again
+returns the same job, a changed one under the same operation is refused. Metadata
+`{'article': None, 'desk': {'operation': …}}`. Its payload is `_context` over the chosen
+sources (pinned as `_attach` pins them, nothing written to the library), the title, point
+and audience; its guidance is the angles rule, `blog-argument-outline.md` (the guide runs
+use for angles) and the shared guidance. The worker settles it (`ended`): content must be
+JSON, a list of exactly three `{headline, point, audience}` of non-empty strings; otherwise
+the job is settled with "The angles came back in a shape Blog Studio cannot read. Ask
+again." `angles_view(root, operation)` returns `{operation, status, busy, angles, error}`.
+`tool_jobs.once` skips the team guard for a job with no blog.
+
+- [ ] **Step 1: Failing tests**: the payload carries the chosen sources with their stance
+  and the point; the same operation returns the same job; a ready result settles into three
+  angles; a malformed result (two angles, missing headline, not JSON) is refused readably;
+  the route `desk-angles` and GET `desk-angles?operation=` through `management.dispatch` and
+  `management.view`; a fake worker runs it end to end through `tool_jobs.once`.
+- [ ] **Steps 2-5**: fail, implement, pass, commit "Suggest three angles before a blog exists".
+
+### Task 2.3: `desk-outline`, `desk-draft` and `references/modules/desk-write.md`
+
+**Files:** Create `references/modules/desk-write.md`; Modify `scripts/desk_jobs.py`,
+`scripts/blog_runner.py` (name the from-outline and open-gaps sentences as constants used
+by `job()` so run guidance stays byte-identical), `scripts/tool_jobs.py`; Test
+`tests/test_desk_start.py`.
+
+`desk-write.md` holds only what is new for the desk: write sections from their briefs, one
+`##` per outline section in order, keep the given headings, the opening from the opening
+brief, the title is given (no `#` line), and nothing editorial in the prose. The job
+guidance adds, by reference rather than copy: `blog-argument-outline.md` (outline) or
+`blog-write.md` (draft and a section written from its brief), `blog_runner.shared_guidance`
+with the length sentence, `RETURN` (evidence and gaps in notes, never in the prose) and the
+worker's own policy, which already carries the approved-messaging stance
+(`blog_worker.POLICY`).
+
+- `outline_job(root, ident)`: payload `{title, brief, notes, sources, examples, style, tone,
+  gaps, research_bundle | research}`; returns JSON `{title, opening_brief, sections:
+  [{heading, brief}]}`. Settled only while the draft has no written text: sections get new
+  ids, the title is kept when the person gave one.
+- `draft_job(root, ident, seen)`: payload adds `outline: [{heading, brief}]` and
+  `opening_brief`; returns the whole Markdown. Settled with `desk.split`; the result's
+  sections take the outline's ids and briefs by heading order; extra sections get new ids;
+  outline sections the result left out stay as they were. Each part with text before keeps
+  a `draft` version first. Its meta part is `sections`, so section cards are read-only while
+  it works. Refused when the outline has no sections.
+- `section()` with no note now reads `desk-write.md` and says the brief: "part.brief says
+  what this section must do".
+
+- [ ] **Step 1: Failing tests**: outline guidance has the outline guide, the length sentence
+  and RETURN; a ready outline lands as sections with briefs; an outline with no sections or a
+  heading over one line is refused readably; a draft lands with the outline's ids and briefs
+  by order and keeps `draft` versions of text it replaced; a draft that adds a section keeps
+  the extra one; the run's own `job()` guidance is unchanged for from-outline runs (an
+  existing test pins it).
+- [ ] **Steps 2-5**: commit "Write a desk outline and draft from briefs".
+
+### Task 2.4: The start chain and research before the draft
+
+**Files:** Modify `scripts/desk_jobs.py`, `scripts/tool_jobs.py` (`desk-research` runs
+through `desk_jobs.research_run` instead of one worker call), `scripts/desk.py` (routes
+`retry`); Test `tests/test_desk_start.py`.
+
+- `begin(root, ident)` queues the start's current step; `desk._create` calls it for the new
+  ways (a problem is kept on the start and shown, as the first pass's is).
+- When a start job settles applied, the next step is queued (`_advance`); after the last,
+  `ended_at` is set. A job that failed, was not applied or was stopped keeps the step and
+  says why in `problem`; `desk-retry {id}` queues that step again.
+- `desk-research` (one job, no gate): the research plan as a run writes it
+  (`STAGES['research-plan']` with its guide), then, with a pinned Harness Research
+  (`research_contract.snapshot()` at Start), `synthesis_research.generate` in a temporary
+  case published into the blog's `research/` under the lock; without it, one research job
+  with the assistant's web search (`STAGES['research']`, as a run without the contract),
+  saved as `derived/blog-research.md`. Each step gets the job's time limit. Outline and
+  draft jobs then read `research_bundle` as runs do, or `research` text.
+- [ ] **Step 1: Failing tests** (fake worker; Harness Research patched as
+  `test_blog_runner` does): a topic start chains outline then draft and ends with a draft
+  on the desk; with the web ticked research runs first and the outline payload reads its
+  findings; a failed research stops the start with its readable problem and Retry queues
+  research again; Stop ends the start with "Stopped."; documents-only starts have no
+  research step and the outline payload carries the sources.
+- [ ] **Steps 2-5**: commit "Chain a desk start: research, outline and draft with no stops".
+
+### Task 2.5: Outline saves, Write the draft, Add a source (server)
+
+**Files:** Modify `scripts/desk.py`, `scripts/desk_jobs.py`; Test `tests/test_desk_start.py`.
+
+- `desk-outline-save {id, seen, sections: [{id?, heading, brief}]}`: rename, reorder, add
+  (no id) and remove; ids kept; per-part stale check over the sections it changes plus
+  `outline` when order, additions or removals change; refused while an outline or draft
+  job works on the blog.
+- `desk-draft {id, seen}` queues `draft_job`.
+- `desk-sources {id, sources, library}` pins new sources (and library items with a role) on
+  the blog record and the desk record; later jobs read them.
+- [ ] **Step 1: Failing tests**: reorder keeps ids and text; a rename from an outdated form is
+  refused; an added section has an id and no text; removing a section keeps the others;
+  saving while a draft job works is refused; a later section rewrite payload carries a source
+  added on the desk.
+- [ ] **Steps 2-5**: commit "Edit the desk outline and add sources at any time".
+
+### Task 2.6: The start screens and the progress screen (page)
+
+**Files:** Modify `assets/management/desk.js`, `runner.js` (Home tasks, New blog, library
+"Write a blog from these" and a wizard without a draft go to the new start), `app.js`
+(board New blog), `blog.css`; Test `scripts/ci/check-management.cjs`.
+
+- Step 1 **What are you writing?**: a pick card per kind of post (`run-options` styles, from
+  `styles.catalog`) with its summary, and **Something else**.
+- Step 2 **What do you have?**: Just a topic (title, who it is for, the point, **Suggest
+  three angles** with three editable angle cards on the same screen), An outline or notes
+  (paste or upload; **Write from my outline** or **Shape an outline with me first**), A draft
+  (Phase 1's start fields and first pass).
+- Step 3 **Sources and settings**: `sFilesCard` (files, Google Docs, library, roles),
+  **Search my sites** (the saved site list, `sSitePicker`) and **Search the web too**, both
+  off, for new writing; Length (new writing); Tone; **Start** at the end.
+- The progress screen: "Nothing needed from you. The draft opens here when it is ready, in
+  about N minutes." (the outline for Shape), the steps with the current one in words, one
+  clock, Stop, and on a problem Retry; the desk opens on its own when it ends.
+- [ ] **Step 1: Journeys**: each of the three starts reaches Start with the right payload;
+  angles shows three cards and a picked, edited card fills the point; the progress screen's
+  first line, clock and Stop; the desk opens on its own; Home tasks open the new start.
+- [ ] **Steps 2-5**: commit "Start a blog from a topic, an outline or a draft".
+
+### Task 2.7: The Outline tab and Add a source (page)
+
+**Files:** Modify `assets/management/desk.js`, `blog.css`; Test `check-management.cjs`.
+
+- Draft and Outline tabs on the desk. The Outline tab: a card per section with heading and
+  brief (autosaved through `desk-outline-save`), Move up, Move down, Remove (confirmed when
+  it has text), **Write this section**, Add a section, and **Write the draft**.
+- The sources panel's **Add a source** opens a sheet with `sFilesCard` and adds through
+  `desk-sources`.
+- [ ] **Step 1: Journeys**: reorder posts ids in the new order with `seen`; Write this
+  section posts `desk-note` with no note; Write the draft posts `desk-draft`; Add a source
+  posts `desk-sources` with the file and the library pick with its role.
+- [ ] **Steps 2-5**: commit "Shape the outline on the desk and add sources there".
+
+### Task 2.8: Checks, docs touch-ups and CHANGELOG
+
+- [ ] Docs where the page's start flow is described (`docs/runner.md`, README start lines).
+- [ ] CHANGELOG (Unreleased): "New blogs start on the desk from a topic, an outline or a
+  draft, with optional angles, research and an Outline tab."
+- [ ] Full checks as in Task 1.11; screenshots with synthetic content in a disposable
+  workspace. No push or merge on this branch until the owner asks.
 
 ## Phase 3: Finishing
 
