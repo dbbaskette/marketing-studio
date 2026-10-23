@@ -3794,3 +3794,89 @@ class LengthAndQualificationTests(RunnerCase):
         self.assertIn('Read the point to make as the angle', plan)
         _, draft = self.guidance_at('draft', style='product-announcement', title='Styled')
         self.assertIn('the house guide still decides mechanics', draft)
+
+
+class ReviewFixTests(RunnerCase):
+    """Final review: notes survive edits, reach the review, and the handoff is checked."""
+
+    EVIDENCE, GAPS = ReaderFacingNotesTests.EVIDENCE, ReaderFacingNotesTests.GAPS
+    at_draft = ReaderFacingNotesTests.at_draft
+
+    def drafted(self, page=False, **extra):
+        found = self.create(page=page, **extra)
+        found = self.approve(self.submit(found, page=page), page=page)
+        return runner.submit(
+            self.root,
+            found['id'],
+            'draft',
+            {
+                'content': '# Draft\n\nGateway Prime retries twice.\n',
+                'notes': '',
+                'evidence': self.EVIDENCE,
+                'gaps': self.GAPS,
+            },
+            found['expected'],
+            page=page,
+        )
+
+    def test_an_edit_is_given_the_open_gaps_and_adopt_keeps_them(self):
+        found = self.drafted(page=True)
+        found = runner.decide(
+            self.root,
+            found['id'],
+            found['expected'],
+            'changes',
+            'Fix a typo.',
+            page=True,
+            target='draft',
+        )
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(payload['gaps'], self.GAPS)
+        self.assertIn('still open', guidance)
+        # Bringing the saved version back keeps its notes.
+        with studio.locked(self.root):
+            runner.dispatch(self.root, 'adopt', {'id': found['id'], 'expected': found['expected']})
+        self.assertEqual(runner.document(self.root, found['id'], 'draft')['gaps'], self.GAPS)
+
+    def test_the_review_reads_the_drafts_evidence(self):
+        found = self.approve(self.drafted(sources=[self.source()['id']]))
+        self.assertEqual(found['next'], 'review')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(payload['evidence'], self.EVIDENCE)
+        self.assertIn('evidence lists', guidance)
+
+    def test_the_handoff_is_checked_for_notes_outside_its_gaps(self):
+        found = self.approve(self.submit(self.approve(self.drafted())))
+        self.assertEqual(found['next'], 'package')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertIn('evidence stays empty', guidance)
+        found = self.submit(
+            found,
+            '# Handoff\n\nDescription: Retries twice [source-abc123].\n\n'
+            '## Needs you before publishing\n\n- [Editorial placeholder: the date]\n',
+        )
+        row = next(
+            c
+            for c in runner.document(self.root, found['id'], 'package')['checks']
+            if 'handoff' in c['label']
+        )
+        self.assertEqual(
+            (row['label'], row['passed'], row['detail']),
+            ('Source IDs or editorial notes in the handoff', False, ['line 3: [source-abc123]']),
+        )
+
+    def test_notes_that_cannot_be_read_or_are_blank_lose_nothing(self):
+        result = blog_worker.validate(
+            {'content': 'x', 'notes': '', 'evidence': [], 'gaps': ['  ', 'A date.']}
+        )
+        self.assertEqual(result['gaps'], ['A date.'])
+        self.assertEqual(blog_worker.WRITING_SCHEMA['properties']['gaps']['items']['minLength'], 1)
+        found = self.drafted()
+        directory, _, _ = runner.load(self.root, found['id'])
+        for broken in ('not json', '["a list"]', '{"gaps": [3, "Kept."]}'):
+            (directory / 'derived/blog-draft-notes.json').write_text(broken)
+            shown = runner.document(self.root, found['id'], 'draft')
+            self.assertEqual(shown['gaps'], ['Kept.'] if 'Kept' in broken else [])
+
+    def test_the_policy_keeps_source_ids_for_notes(self):
+        self.assertIn('Cite supplied sources by their IDs in notes or evidence', blog_worker.POLICY)

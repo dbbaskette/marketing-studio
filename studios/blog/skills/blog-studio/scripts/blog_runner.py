@@ -1436,6 +1436,8 @@ def submit(root, ident, stage, result, expected, page=False):
     pin = basis(root, directory, record, run, stage)
     filename = STAGES[stage][1]
     preservation = None
+    saved_path = studio.inside(directory, filename)
+    unchanged = saved_path.is_file() and saved_path.read_text() == result['content']
     if stage == 'draft' and (directory / 'DRAFT.md').is_file():
         from text_checks import preserve
 
@@ -1457,8 +1459,9 @@ def submit(root, ident, stage, result, expected, page=False):
         if result.get('evidence') or result.get('gaps'):
             kept = {'evidence': result.get('evidence', []), 'gaps': result.get('gaps', [])}
             studio.atomic(noted, (json.dumps(kept, indent=2) + '\n').encode())
-        else:
-            noted.unlink(missing_ok=True)  # A new version without notes keeps none.
+        elif not (unchanged and 'evidence' not in result and 'gaps' not in result):
+            # A new version without notes keeps none; the same version brought back keeps its.
+            noted.unlink(missing_ok=True)
     previous = run['stages'].get(stage, {})
     run['stages'][stage] = {
         'status': 'draft',
@@ -1495,9 +1498,23 @@ def notes_path(directory, stage):
 
 
 def stage_notes(directory, stage):
+    """The saved notes, or none when the file is missing or cannot be read as notes."""
     path = notes_path(directory, stage)
-    found = studio.read_json(path) if path.is_file() else {}
-    return {'evidence': found.get('evidence', []), 'gaps': found.get('gaps', [])}
+    try:
+        found = studio.read_json(path) if path.is_file() else {}
+    except (OSError, ValueError):
+        found = {}
+    if not isinstance(found, dict):
+        found = {}
+    evidence, gaps = found.get('evidence'), found.get('gaps')
+    return {
+        'evidence': [row for row in evidence if isinstance(row, dict)]
+        if isinstance(evidence, list)
+        else [],
+        'gaps': [gap for gap in gaps if isinstance(gap, str) and gap.strip()]
+        if isinstance(gaps, list)
+        else [],
+    }
 
 
 def gaps(directory, stage):
@@ -1895,13 +1912,27 @@ def job(root, ident):
             'must supply before publishing, such as a release date or a link. Source IDs and '
             'editorial placeholders go there, never in content.'
         )
+    if stage in NOTED:
+        payload['gaps'] = gaps(directory, stage)
+        if stage == 'draft':
+            guidance += (
+                '\nThe gaps already noted are in gaps: return those still open with any new ones.'
+            )
     if stage == 'package':
-        payload['gaps'] = gaps(directory, 'draft')
         guidance += (
-            "\nList the draft's gaps (in gaps) and any new ones under a "
+            '\nList the gaps (in gaps) and any new ones under a '
             '`## Needs you before publishing` heading. The titles, excerpt and description are '
-            'reader-facing: no source IDs or placeholders.'
+            'reader-facing: no source IDs or placeholders. With no sources here, evidence stays '
+            'empty at the handoff.'
         )
+    if stage == 'review' and payload['sources']:
+        found_evidence = stage_notes(directory, 'draft')['evidence']
+        if found_evidence:
+            payload['evidence'] = found_evidence
+            guidance += (
+                "\nevidence lists the draft's claims with the source ID and passage behind each; "
+                'check them against the sources.'
+            )
     if stage == 'review' and run.get('editor_check'):
         payload['response_kind'] = 'editing-review'
         guidance += (
@@ -2606,7 +2637,7 @@ def strip_preservation(notes):
     return before.rstrip(), check
 
 
-def gate_checks(stage, content, rules, copied, preservation):
+def gate_checks(stage, content, rules, copied, preservation, handoff=None):
     from text_checks import lint
 
     rows = []
@@ -2677,6 +2708,24 @@ def gate_checks(stage, content, rules, copied, preservation):
                     else 'No passage carried over from an example',
                     'passed': not copied,
                     'detail': [item['target'][:120] for item in copied],
+                }
+            )
+        if handoff is not None:
+            kept = re.sub(
+                r'(?ims)^##[^\n]*(?:needs you before publishing|finding)[^\n]*\n.*?(?=^## |\Z)',
+                lambda m: '\n' * m.group().count('\n'),
+                handoff,
+            )
+            noted = reader_facing_notes(kept)
+            rows.append(
+                {
+                    'label': 'Source IDs or editorial notes in the handoff'
+                    if noted
+                    else 'No source IDs or editorial notes in the handoff',
+                    'passed': not noted,
+                    'detail': [
+                        f'line {item["line"]}: ' + item['target'][:160] for item in noted[:5]
+                    ],
                 }
             )
         if preservation is not None:
@@ -2796,7 +2845,14 @@ def document(root, ident, stage):
         'status': row['status'],
         'notes': notes,
         'expected': found['expected'],
-        'checks': gate_checks(stage, checked_text, rules, copied, preservation),
+        'checks': gate_checks(
+            stage,
+            checked_text,
+            rules,
+            copied,
+            preservation,
+            content if stage == 'package' else None,
+        ),
         'gaps': gaps(directory, stage) if stage in NOTED else [],
         'id': ident,
         'title': found['title'],

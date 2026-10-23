@@ -208,7 +208,11 @@ WRITING_SCHEMA = {
         'content': {'type': 'string'},
         'notes': {'type': 'string'},
         'evidence': {'type': 'array', 'maxItems': 200, 'items': EVIDENCE},
-        'gaps': {'type': 'array', 'maxItems': 50, 'items': {'type': 'string'}},
+        'gaps': {
+            'type': 'array',
+            'maxItems': 50,
+            'items': {'type': 'string', 'minLength': 1, 'maxLength': 1000},
+        },
     },
     'required': ['content', 'notes', 'evidence', 'gaps'],
 }
@@ -258,8 +262,8 @@ You cannot approve work, change stages, publish, install software or contact peo
 Use only the supplied context. Where this job permits public research, search only generic
 nonconfidential questions; never put private text, identifiers or document titles in queries.
 Distinguish supported facts, author experience, opinion and unresolved gaps. Never invent
-quotes, sources, experience or stance. Cite supplied sources by their IDs and public claims
-by supporting URLs. With no evidence, say what is unknown. Do not claim that a review,
+quotes, sources, experience or stance. Cite supplied sources by their IDs in notes or evidence
+and public claims by supporting URLs. With no evidence, say what is unknown. Do not claim that a review,
 source or link was independently verified. The notes field describes limits and your own
 judgment. Follow the supplied response schema."""
 
@@ -516,12 +520,11 @@ def validate(result):
         )
     ):
         raise ValueError('The worker returned invalid evidence notes.')
-    if (
-        not isinstance(gaps, list)
-        or len(gaps) > 50
-        or any(not isinstance(gap, str) or not gap.strip() or len(gap) > 1000 for gap in gaps)
-    ):
+    if not isinstance(gaps, list) or len(gaps) > 50 or any(not isinstance(g, str) for g in gaps):
         raise ValueError('The worker returned invalid gap notes.')
+    if 'gaps' in result:
+        # A blank gap says nothing and an overlong one is cut: neither costs the writing.
+        result = {**result, 'gaps': [gap.strip()[:1000] for gap in gaps if gap.strip()]}
     if not isinstance(result['content'], str) or not 1 <= len(result['content'].strip()) <= 200_000:
         raise ValueError('The worker returned an empty or oversized document.')
     if not isinstance(result['notes'], str) or len(result['notes']) > 8000:
