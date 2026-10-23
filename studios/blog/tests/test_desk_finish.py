@@ -456,5 +456,90 @@ class HumanizeTests(ToolCase):
         self.assertTrue(kept['text'].startswith('We leverage'))
 
 
+class FactsTests(ToolCase):
+    def test_no_sources_and_no_research_is_refused(self):
+        with self.assertRaisesRegex(ValueError, 'Add a source first'):
+            self.queue('facts')
+
+    def sourced(self):
+        fact = self.source('The parser reads 12 files in 3 seconds.')
+        desk.add_sources(self.root, self.ident, {'sources': [fact]})
+        self.seen = desk.read(self.root, self.ident)['revision']
+
+    def test_the_payload_carries_the_desks_sources_and_the_fact_check_rules(self):
+        import manuscript_editor
+
+        self.sourced()
+        job = self.queue('facts')
+        self.assertEqual(job['kind'], 'finish-facts')
+        self.assertEqual(
+            [(s['name'], s['text']) for s in job['payload']['sources']],
+            [('Synthetic source', 'The parser reads 12 files in 3 seconds.')],
+        )
+        self.assertIn(manuscript_editor.CHECKS['factual-support'], job['guidance'])
+        self.assertIn('"verdict"', job['guidance'])
+        self.assertIn('not-in-sources', job['guidance'])
+
+    def test_research_counts_as_something_to_check_against(self):
+        report = self.folder(self.ident) / 'derived' / 'blog-research.md'
+        report.parent.mkdir(exist_ok=True)
+        report.write_text('Research: the parser is quick.')
+        job = self.queue('facts')
+        self.assertEqual(job['payload']['research'], 'Research: the parser is quick.')
+
+    def test_verdicts_passages_and_rewordings_land_and_odd_claims_are_dropped(self):
+        self.sourced()
+        self.ready(
+            self.queue('facts'),
+            {
+                'claims': [
+                    {
+                        'part': self.first,
+                        'before': 'It reads 12 files in 3 seconds at Acme Labs.',
+                        'verdict': 'supported',
+                        'passage': 'The parser reads 12 files in 3 seconds.',
+                        'source': 'Synthetic source',
+                        'after': 'Ignored for a supported claim.',
+                    },
+                    {
+                        'part': self.first,
+                        'before': 'We leverage a robust parser.',
+                        'verdict': 'not-in-sources',
+                        'passage': '',
+                        'after': 'We use a parser.',
+                        'why': 'No source says robust.',
+                    },
+                    {'part': self.second, 'before': 'Second text.', 'verdict': 'contradicted'},
+                    {'part': self.second, 'before': 'Second text.', 'verdict': 'probably'},
+                    {'part': self.first, 'before': 'Not there.', 'verdict': 'supported'},
+                ]
+            },
+        )
+        shown = self.shown('facts')
+        self.assertEqual(shown['dropped'], 2)
+        self.assertEqual(
+            [i['verdict'] for i in shown['items']], ['contradicted', 'not-in-sources', 'supported']
+        )
+        contradicted, missing, supported = shown['items']
+        self.assertNotIn('after', supported)
+        self.assertEqual(supported['passage'], 'The parser reads 12 files in 3 seconds.')
+        self.assertEqual(missing['after'], 'We use a parser.')
+        self.assertNotIn('after', contradicted)
+        job = shown['job']
+        with self.assertRaisesRegex(ValueError, 'Write the wording'):
+            self.act('apply', seen=self.seen, job=job, items=[{'id': contradicted['id']}])
+        self.act('apply', seen=self.seen, job=job, items=[{'id': missing['id']}])
+        self.assertTrue(self.draft()['sections'][0]['text'].startswith('We use a parser.'))
+        self.assertEqual(desk.versions(self.root, self.ident, self.first)[0]['source'], 'finishing')
+        # Fix the wording of a claim with no rewording: the person's own words.
+        self.act(
+            'apply',
+            seen=self.draft()['revision'],
+            job=job,
+            items=[{'id': contradicted['id'], 'after': 'Second text, as the source says.'}],
+        )
+        self.assertEqual(self.draft()['sections'][1]['text'], 'Second text, as the source says.')
+
+
 if __name__ == '__main__':
     unittest.main()
