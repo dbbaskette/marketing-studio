@@ -12,6 +12,11 @@ KINDS = {
     'repurpose',
     'interview-question',
     'interview-outline',
+    # The writing desk (desk_jobs.py): a section note, the whole draft, a selection, a first pass.
+    'desk-section',
+    'desk-revise-all',
+    'desk-selection',
+    'desk-first-pass',
 }
 
 

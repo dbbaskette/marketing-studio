@@ -1888,6 +1888,42 @@ def carried(directory, run, payload, writing):
     return carried_over(writing, payload['examples'], allowed)['findings']
 
 
+REFERENCES = Path(__file__).resolve().parents[1] / 'references'
+
+
+def house_guide():
+    """The house style guide every writing job reads."""
+    return (REFERENCES / 'style/house.md').read_text()
+
+
+def style_rule(name):
+    """How a selected kind of post sits beside the voice and the house guide."""
+    return (
+        'SELECTED STYLE: '
+        + name
+        + '. Its guide is in style.guide. The style says the shape of this kind of writing: '
+        'structure, moves, length, headings and register. The selected voice says how its '
+        'author sounds. Where they conflict on wording, the voice wins; where they conflict '
+        'on structure, the style wins. Neither invents facts, experience or sources. Where '
+        'the style’s register differs from the house guide’s tone defaults, the style wins; '
+        'the house guide still decides mechanics.'
+    )
+
+
+def shared_guidance(style=None, tone='', length=None):
+    """What every desk job shares with a run's writing steps: the tone, the house guide, the
+    kind of post and, where the job writes new text, the length. A desk blog writes with its
+    tone only; no voice guide is read here."""
+    tone = (tone or '').strip()
+    parts = ['No author voice is pinned; keep the draft’s own voice.' + tone_nudge({'tone': tone})]
+    parts.append(house_guide())
+    if style:
+        parts.append(style_rule(style['name']))
+    if LENGTHS.get(length):
+        parts.append(LENGTHS[length])
+    return '\n\n'.join(parts)
+
+
 def job(root, ident):
     found = survey(root, ident)
     stage = found['next']
@@ -1989,18 +2025,9 @@ def job(root, ident):
             'research findings. Work from the brief and the supplied sources; mark a claim that '
             'needs evidence they lack as unresolved.'
         )
-    guidance += '\n\n' + (references / 'style/house.md').read_text()
+    guidance += '\n\n' + house_guide()
     if payload['style'] and stage in ('outline', 'draft', 'review', 'package'):
-        guidance += (
-            '\n\nSELECTED STYLE: '
-            + payload['style']['name']
-            + '. Its guide is in style.guide. The style says the shape of this kind of writing: '
-            'structure, moves, length, headings and register. The selected voice says how its '
-            'author sounds. Where they conflict on wording, the voice wins; where they conflict '
-            'on structure, the style wins. Neither invents facts, experience or sources. Where '
-            'the style’s register differs from the house guide’s tone defaults, the style wins; '
-            'the house guide still decides mechanics.'
-        )
+        guidance += '\n\n' + style_rule(payload['style']['name'])
     if LENGTHS.get(run.get('length')) and stage in ('outline', 'draft') and not edit:
         guidance += '\n\n' + LENGTHS[run['length']]
     if stage in ('draft', 'review'):

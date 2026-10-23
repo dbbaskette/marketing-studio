@@ -4024,3 +4024,34 @@ class ReviewFixTests(RunnerCase):
 
     def test_the_policy_keeps_source_ids_for_notes(self):
         self.assertIn('Cite supplied sources by their IDs in notes or evidence', blog_worker.POLICY)
+
+
+class SharedGuidanceTests(RunnerCase):
+    """The writing desk reads the same house guide, style rule and length as a run's steps;
+    pulling them into helpers left a run's guidance exactly as it was."""
+
+    def test_a_styled_runs_outline_guidance_is_unchanged(self):
+        found = self.create(style='how-to', length='deep', tone='Warm and direct')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        references = Path(runner.__file__).resolve().parents[1] / 'references'
+        expected_tail = (
+            '\n\n'
+            + (references / 'style/house.md').read_text()
+            + '\n\nSELECTED STYLE: '
+            + payload['style']['name']
+            + '. Its guide is in style.guide. The style says the shape of this kind of writing: '
+            'structure, moves, length, headings and register. The selected voice says how its '
+            'author sounds. Where they conflict on wording, the voice wins; where they conflict '
+            'on structure, the style wins. Neither invents facts, experience or sources. Where '
+            'the style’s register differs from the house guide’s tone defaults, the style wins; '
+            'the house guide still decides mechanics.' + '\n\n' + runner.LENGTHS['deep']
+        )
+        self.assertEqual(guidance.count(expected_tail), 1)
+        self.assertEqual(
+            guidance.split(expected_tail)[0],
+            runner.brief_line(self.root, runner.load(self.root, found['id'])[1], payload)
+            + '\n\n'
+            + runner.STAGES['outline'][2]
+            + '\n\n'
+            + (references / runner.GUIDES['outline']).read_text(),
+        )

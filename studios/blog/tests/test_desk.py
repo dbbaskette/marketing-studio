@@ -93,7 +93,7 @@ class DeskCase(unittest.TestCase):
     def folder(self, ident):
         return studio.inside(self.root, 'articles', ident)
 
-    def source(self, text='Synthetic reference text.', purpose='reference'):
+    def source(self, text='Synthetic reference text.', *purposes):
         path = self.base / 'source.md'
         path.write_text(text)
         args = studio.parser().parse_args(
@@ -106,8 +106,11 @@ class DeskCase(unittest.TestCase):
                 'Synthetic source',
                 '--file',
                 str(path),
-                '--purpose',
-                purpose,
+                *[
+                    word
+                    for purpose in purposes or ('reference',)
+                    for word in ('--purpose', purpose)
+                ],
             ]
         )
         return studio.source_command(self.root, args)['id']
@@ -162,7 +165,7 @@ class DeskRecordTests(DeskCase):
         self.assertEqual(desk.read(self.root, made['id'])['sources'], record['sources'])
 
     def test_an_uploaded_draft_source_starts_the_desk(self):
-        source = self.source(DRAFT, purpose='manuscript')
+        source = self.source(DRAFT, 'manuscript')
         made = desk.create(self.root, {'source': source})
         self.assertEqual(desk.read(self.root, made['id'])['sections'][0]['text'], 'First text.')
 
