@@ -3808,6 +3808,37 @@ class ReaderFacingNotesTests(RunnerCase):
         self.assertEqual(runner.survey(self.root, found['id'])['next'], 'outline')
         self.assertFalse((runner.load(self.root, found['id'])[0] / 'OUTLINE.md').exists())
 
+    def test_the_gap_list_has_its_own_styles_on_opaque_paper(self):
+        import re
+
+        assets = Path(runner.__file__).resolve().parents[1] / 'assets/management'
+        script = (assets / 'runner.js').read_text()
+        # The list sits in the aside's opaque paper section, never on material.
+        self.assertIn(
+            "sAdd(sNode('section','paper aside-part'),sNode('h2','aside-title','Needs you before "
+            "publishing'),sAdd(sNode('ul','gap-items')",
+            script,
+        )
+        css = re.sub(r'/\*.*?\*/', '', (assets / 'blog.css').read_text(), flags=re.S)
+        rules = {
+            selector.strip(): body
+            for selector, body in re.findall(r'([^{}]+)\{([^{}]*)\}', css)
+            if 'gap-items' in selector
+        }
+        self.assertEqual(
+            sorted(rules),
+            ['.gap-items', '.gap-items>li', '.gap-items>li+li', '.gap-items>li::marker'],
+        )
+        self.assertIn('padding-left:', rules['.gap-items'])
+        # A long gap, such as a pasted link, wraps inside the pane at phone width.
+        self.assertIn('overflow-wrap:anywhere', rules['.gap-items>li'])
+        self.assertIn('min-width:0', rules['.gap-items>li'])
+        # Quiet separators and the "needs you" colour, both from tokens; no glass.
+        self.assertIn('border-top:1px solid var(--hair)', rules['.gap-items>li+li'])
+        self.assertIn('color:var(--yours)', rules['.gap-items>li::marker'])
+        self.assertNotIn('backdrop-filter', ''.join(rules.values()))
+        self.assertNotIn('background', ''.join(rules.values()))
+
     def test_a_workers_extra_field_is_refused_in_the_current_words(self):
         with self.assertRaisesRegex(
             ValueError,
