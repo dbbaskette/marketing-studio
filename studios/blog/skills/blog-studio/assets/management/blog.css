@@ -202,3 +202,7 @@ input.desk-text{min-height:44px}
 .desk-steps{margin-top:.6rem}
 .desk-clock{margin-top:.6rem}
 .desk-outline-part{display:grid;gap:.6rem}
+/* A file on the files card: its name and what it holds take a line of their own before its
+   role and buttons whenever the card is too narrow for all of them side by side. */
+.file-row{flex-wrap:wrap}
+.file-row>.row-text{flex:1 1 14rem}
