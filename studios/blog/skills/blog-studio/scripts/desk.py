@@ -4,6 +4,7 @@ DRAFT.md is rewritten on every save so Copy, Download, Google Docs, the team lib
 pre-publish check read the same text as before.
 """
 
+import json
 import re
 import secrets
 from types import SimpleNamespace
@@ -308,5 +309,81 @@ def save(root, ident, seen, part, text, source='save', session=None):
     return _write(root, ident, draft)
 
 
-def keep(*args):
-    pass
+PART = re.compile(r'[a-f0-9]{8}')
+SOURCES = ('save', 'rewrite', 'revise-all', 'selection', 'first-pass', 'finishing', 'restore')
+
+
+def _versions_path(root, ident, part):
+    if not isinstance(part, str) or (part not in PARTS and not PART.fullmatch(part)):
+        raise ValueError('Choose a part of this draft.')
+    directory, _ = _paths(root, ident)
+    target = studio.inside(directory, DESK, 'versions', part + '.jsonl')
+    for path in (target.parent.parent, target.parent, target):
+        if path.is_symlink() or (path.exists() and not (path.is_dir() or path.is_file())):
+            raise ValueError('A desk versions file is not a plain file. Nothing was changed.')
+    return target
+
+
+def _entries(target):
+    if not target.is_file():
+        return []
+    entries = []
+    for line in target.read_text(encoding='utf-8').splitlines():
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue  # A torn line never hides the others.
+        if isinstance(entry, dict) and isinstance(entry.get('text'), str):
+            entries.append(entry)
+    return entries
+
+
+def keep(root, ident, part, text, source, session=None):
+    """Keep a part's text before it changes, newest last, at most KEEP per part.
+
+    Saves from one editing session (the page's session token) keep only the text before
+    the first of them; every rewrite, revision, selection edit and restore keeps one."""
+    if source not in SOURCES:
+        raise ValueError('Choose a listed kind of change.')
+    target = _versions_path(root, ident, part)
+    entries = _entries(target)
+    if (
+        source == 'save'
+        and session
+        and entries
+        and entries[-1].get('source') == 'save'
+        and entries[-1].get('session') == session
+    ):
+        return
+    entry = {'at': studio.now(), 'source': source, 'text': text, 'words': len(text.split())}
+    if source == 'save' and session:
+        entry['session'] = session
+    lines = [json.dumps(item, ensure_ascii=False) for item in (entries + [entry])[-KEEP:]]
+    studio.atomic(target, ('\n'.join(lines) + '\n').encode())
+
+
+def versions(root, ident, part):
+    """The kept versions of one part, newest first."""
+    return list(reversed(_entries(_versions_path(root, ident, part))))
+
+
+def counts(root, ident):
+    """How many versions each part keeps, for parts that keep any."""
+    directory, _ = _paths(root, ident)
+    folder = studio.inside(directory, DESK, 'versions')
+    if not folder.is_dir() or folder.is_symlink():
+        return {}
+    found = {}
+    for path in sorted(folder.glob('*.jsonl')):
+        part = path.stem
+        if (part in PARTS or PART.fullmatch(part)) and path.is_file() and not path.is_symlink():
+            found[part] = len(_entries(path))
+    return {part: count for part, count in found.items() if count}
+
+
+def restore(root, ident, seen, part, index):
+    """Bring back a kept version; the text it replaces is kept as a version too."""
+    found = versions(root, ident, part)
+    if type(index) is not int or not 0 <= index < len(found):
+        raise ValueError('Choose a saved version.')
+    return save(root, ident, seen, part, found[index]['text'], source='restore')

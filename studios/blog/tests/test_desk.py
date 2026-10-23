@@ -230,5 +230,79 @@ class DeskRecordTests(DeskCase):
             desk.read(self.root, 'no-such-blog')
 
 
+class VersionTests(DeskCase):
+    def test_each_save_keeps_the_text_before_it(self):
+        made = self.make()
+        part = made['sections'][0]['id']
+        desk.save(self.root, made['id'], 1, part, 'Two.')
+        desk.save(self.root, made['id'], 2, part, 'Three.')
+        found = desk.versions(self.root, made['id'], part)
+        self.assertEqual([v['text'] for v in found], ['Two.', 'First text.'])  # newest first
+        self.assertEqual(found[0]['source'], 'save')
+        self.assertEqual(found[1]['words'], 2)
+
+    def test_one_editing_session_keeps_one_version(self):
+        made = self.make()
+        part = made['sections'][0]['id']
+        desk.save(self.root, made['id'], 1, part, 'Two.', session='a' * 16)
+        desk.save(self.root, made['id'], 2, part, 'Three.', session='a' * 16)
+        self.assertEqual(
+            [v['text'] for v in desk.versions(self.root, made['id'], part)], ['First text.']
+        )
+        desk.save(self.root, made['id'], 3, part, 'Four.', session='b' * 16)
+        self.assertEqual(
+            [v['text'] for v in desk.versions(self.root, made['id'], part)],
+            ['Three.', 'First text.'],
+        )
+
+    def test_only_twenty_are_kept(self):
+        made = self.make()
+        part = made['sections'][0]['id']
+        for n in range(25):
+            desk.save(self.root, made['id'], n + 1, part, 'Text %d.' % n)
+        self.assertEqual(len(desk.versions(self.root, made['id'], part)), 20)
+
+    def test_restore_is_itself_a_version(self):
+        made = self.make()
+        part = made['sections'][0]['id']
+        desk.save(self.root, made['id'], 1, part, 'Two.')
+        desk.restore(self.root, made['id'], 2, part, 0)  # index 0 = newest kept = 'First text.'
+        draft = desk.read(self.root, made['id'])
+        self.assertEqual(draft['sections'][0]['text'], 'First text.')
+        self.assertEqual(desk.versions(self.root, made['id'], part)[0]['text'], 'Two.')
+        self.assertEqual(desk.versions(self.root, made['id'], part)[0]['source'], 'restore')
+        with self.assertRaisesRegex(ValueError, 'saved version'):
+            desk.restore(self.root, made['id'], 3, part, 9)
+
+    def test_counts_per_part(self):
+        made = self.make()
+        desk.save(self.root, made['id'], 1, 'title', 'Better')
+        self.assertEqual(desk.counts(self.root, made['id']), {'title': 1})
+
+    def test_a_part_name_never_leaves_the_versions_folder(self):
+        made = self.make()
+        for part in ('../draft', 'TITLE', 'a' * 9, '', None, '0123456g'):
+            with self.assertRaisesRegex(ValueError, 'Choose a part'):
+                desk.versions(self.root, made['id'], part)
+
+    def test_a_linked_versions_file_is_refused(self):
+        made = self.make()
+        folder = self.folder(made['id']) / 'desk' / 'versions'
+        folder.mkdir(parents=True)
+        outside = self.base / 'outside.jsonl'
+        outside.write_text('')
+        (folder / 'title.jsonl').symlink_to(outside)
+        with self.assertRaisesRegex(ValueError, 'escapes'):
+            desk.save(self.root, made['id'], 1, 'title', 'Better')
+        self.assertEqual(outside.read_text(), '')
+        within = self.folder(made['id']) / 'within.jsonl'
+        within.write_text('')
+        (folder / 'opening.jsonl').symlink_to(within)
+        with self.assertRaisesRegex(ValueError, 'not a plain file'):
+            desk.save(self.root, made['id'], 1, 'opening', 'Changed')
+        self.assertEqual(within.read_text(), '')
+        self.assertEqual(desk.read(self.root, made['id'])['title'], 'A synthetic title')
+
+
 if __name__ == '__main__':
     unittest.main()
