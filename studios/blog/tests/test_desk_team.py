@@ -165,6 +165,22 @@ class DeskTeamTests(unittest.TestCase):
             support.git(self.remote, 'show', 'main:blogs/' + self.made['id'] + '/DRAFT.md'),
         )
 
+    def test_a_failed_local_commit_leaves_head_and_the_index_as_they_were(self):
+        seen = self.save(1, 'One')['revision']
+        head = support.git(self.found.repo, 'rev-parse', 'HEAD')
+        with patch.object(gitstate, 'commit', side_effect=support.GitError('synthetic failure')):
+            with self.assertRaises(support.GitError):
+                self.save(seen, 'Two')
+        self.assertEqual(support.git(self.found.repo, 'rev-parse', 'HEAD'), head)
+        self.assertTrue(support.passes(self.found.repo, 'diff', '--cached', '--quiet'))
+        # The edit is in the files; the next save commits it in the same session commit.
+        self.save(seen + 1, 'Three')
+        self.assertEqual(
+            support.git(self.found.repo, 'rev-parse', 'HEAD~1'),
+            support.git(self.found.repo, 'rev-parse', head + '~1'),
+        )
+        self.assertEqual(gitstate.changed(self.found), [])
+
 
 if __name__ == '__main__':
     unittest.main()

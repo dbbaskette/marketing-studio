@@ -2054,8 +2054,9 @@ def dispatch(root, route, data):
             result = save_memory(root, data)
             result['team_sync'] = saved(root)
             return result
-        if route.startswith('desk-') and route != 'desk-create':
-            # A desk result whose share failed after it settled is committed first.
+        if route.startswith('desk-') and route not in ('desk-create', 'desk-save'):
+            # A desk result whose share failed after it settled is committed first. A desk
+            # save commits everything under the blog after it anyway (kept_locally).
             from team_workspace import keep_desk
 
             keep_desk(root, data.get('id'))

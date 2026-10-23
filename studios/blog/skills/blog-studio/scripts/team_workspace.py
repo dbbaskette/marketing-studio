@@ -304,10 +304,16 @@ def kept_locally(root, ident, session):
             and support.git(found.repo, 'log', '-1', '--format=%s') == message
             and not support.git(found.repo, 'branch', '-r', '--contains', 'HEAD')
         )
-        if same:
-            # The same editing session, not yet shared: one commit, brought up to date.
-            support.git(found.repo, 'reset', '--soft', 'HEAD~1')
-        gitstate.commit(found, message, [ident])
+        before = support.git(found.repo, 'rev-parse', 'HEAD')
+        try:
+            if same:
+                # The same editing session, not yet shared: one commit, brought up to date.
+                support.git(found.repo, 'reset', '--soft', 'HEAD~1')
+            gitstate.commit(found, message, [ident])
+        except Exception:
+            # Put HEAD and the index back as they were; the edit stays in the files.
+            support.git(found.repo, 'reset', '--quiet', before)
+            raise
     return {
         'shared': False,
         'notice': 'Saved on this computer. It is shared when you leave the desk or make a change.',
