@@ -231,7 +231,7 @@ class PinnedFloorTests(unittest.TestCase):
         path = ROOT / 'pins/companions.json'
         pins = json.loads(path.read_text(encoding='utf-8'))
         floor = pins['brand_skill']
-        self.assertEqual((floor['requirement'], floor['tested']), ('>=0.14.0', '0.14.0'))
+        self.assertEqual((floor['requirement'], floor['tested']), ('>=0.14.0', '0.14.1'))
         self.assertTrue(floor['note'])
         self.assertNotIn('brand_skill', pins['companions'])
         self.assertEqual(sorted(companions.read_pins(path)), ['harness-research', 'harness-slides'])

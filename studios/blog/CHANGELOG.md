@@ -3,8 +3,11 @@
 Releases are published from `skills/blog-studio/VERSION`. Each entry says what
 changes for authors first, then what changes for maintainers.
 
-## Unreleased
+## 4.7.0 — 2026-10-23
 
+- **Released with Marketing Studio 4.5.0.** Installs pin Harness Research 1.0.1 and
+  Harness Slides 0.16.0; the brand skill needs 0.14.0 or newer and was tested with
+  Tanzu Brand 0.14.1. Blog Studio 4.7.0; guidance needs runtime 4.7.0.
 - **Research from your documents, your sites and/or the public web.** The start screens
   and the files screen read "Research from: your documents · your sites (3) · the public
   web", each a tick, in place of "Also research the public web" and the old research list.
