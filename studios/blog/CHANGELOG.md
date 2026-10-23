@@ -5,6 +5,9 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Voices and styles from Home and the sidebar.** Home has a "Set up before you write"
+  card with Voices and styles and the Team library, and the sidebar has Voices, so
+  learning a voice or a style no longer starts from a blog or from Tools.
 - **Delete a blog from Home.** Each blog under **Needs you**, **In progress**, **Finished
   drafts** and **Saved drafts** has **Delete** beside its way in, with the same typed-title
   confirmation as its card on **Blogs**. Home is drawn again without it, and it is kept for

@@ -437,6 +437,9 @@ async function taskJourneys(){
   });f.loadRunner();f.run('sHome()');
   const nodes=()=>descendants(f.get('studio-page')),field=id=>nodes().find(e=>e.id===id);
   for(const label of ['Polish a document','Write from a brief','Use my outline','Explore ideas'])assert.ok(nodes().some(e=>e.textContent===label));
+  // Setting up voices, styles and the library is on Home, without starting a blog.
+  assert.ok(nodes().some(e=>e.textContent==='Set up before you write'),'Home offers setting up before writing');
+  for(const label of ['Voices and styles','Team library'])assert.ok(nodes().some(e=>e.className==='pick-card'&&descendants(e).some(d=>d.textContent===label)||e.textContent===label),label);
   await nodes().find(e=>e.textContent==='Polish a document').listeners.click();
   assert.ok(nodes().some(e=>e.textContent==='Google Doc'));assert.ok(nodes().some(e=>e.textContent==='Upload a file'));
   await nodes().find(e=>e.textContent==='Paste text').listeners.click();

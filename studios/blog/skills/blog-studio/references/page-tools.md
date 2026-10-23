@@ -4,7 +4,7 @@ In a manuscript, choose **Tools**. From Blogs, use **Library and team tools
 → Tools** for global tasks. Normal writing and polishing require none of
 these options. Opening a tool starts no model, research or Google write.
 
-- **Voices and styles:** a voice is one author's; a style is a kind of writing.
+- **Voices and styles:** a voice is one author's; a style is a kind of writing. Open it from Home (Set up before you write), the sidebar's Voices, Settings or Tools.
   Add samples by upload, links, a LinkedIn export or an existing source, learn a
   provisional guide, edit, audition, explicitly confirm, export or retire.
   Choosing a revision for an article is separate from changing defaults. Existing
