@@ -464,7 +464,7 @@ ROUTES = {
     'restore': {'id', 'seen', 'part', 'index'},
     'note': {'id', 'seen', 'part', 'note'},
     'revise': {'id', 'seen', 'note'},
-    'selection': {'id', 'seen', 'part', 'text', 'action', 'instruction'},
+    'selection': {'id', 'seen', 'part', 'text', 'action', 'instruction', 'start'},
     'first-pass': {'id', 'seen', 'choice'},
     'stop': {'id', 'job'},
     'open': {'id'},
@@ -546,6 +546,7 @@ def dispatch(root, action, data):
             data.get('text'),
             data.get('action'),
             data.get('instruction', ''),
+            data.get('start'),
         )
     elif action == 'first-pass':
         desk_jobs.first_pass(root, ident, seen, data.get('choice'))

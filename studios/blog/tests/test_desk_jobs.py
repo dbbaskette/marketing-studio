@@ -241,6 +241,35 @@ class SettleTests(DeskJobCase):
         self.assertEqual(draft['sections'][0]['text'], 'Keep this. Changed. Keep that.')
         self.assertEqual(self.versions()[0]['source'], 'selection')
 
+    def test_a_selection_keeps_its_trailing_space(self):
+        job = desk_jobs.selection(self.root, self.ident, 1, self.part, 'First ', 'rephrase')
+        self.ready(job, 'Initial')
+        desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(desk.read(self.root, self.ident)['sections'][0]['text'], 'Initial text.')
+
+    def test_a_selection_ending_in_a_blank_line_keeps_it(self):
+        desk.save(self.root, self.ident, 1, self.part, 'One para.\n\nTwo para.')
+        job = desk_jobs.selection(self.root, self.ident, 2, self.part, 'One para.\n\n', 'fix')
+        self.ready(job, '\nOne paragraph.\n')
+        desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(
+            desk.read(self.root, self.ident)['sections'][0]['text'], 'One paragraph.\n\nTwo para.'
+        )
+
+    def test_a_repeated_word_is_the_one_selected(self):
+        desk.save(self.root, self.ident, 1, self.part, 'The cache keeps the data near the code.')
+        with self.assertRaisesRegex(ValueError, 'more than once'):
+            desk_jobs.selection(self.root, self.ident, 2, self.part, 'the', 'fix')
+        with self.assertRaisesRegex(ValueError, 'no longer in'):
+            desk_jobs.selection(self.root, self.ident, 2, self.part, 'the', 'fix', '', 0)
+        job = desk_jobs.selection(self.root, self.ident, 2, self.part, 'the', 'fix', '', 30)
+        self.ready(job, 'its')
+        desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(
+            desk.read(self.root, self.ident)['sections'][0]['text'],
+            'The cache keeps the data near its code.',
+        )
+
     def test_a_selection_whose_passage_now_occurs_twice_is_not_applied(self):
         job = desk_jobs.selection(self.root, self.ident, 1, self.part, 'First', 'fix')
         desk.save(self.root, self.ident, 1, self.part, 'First text. First again.')

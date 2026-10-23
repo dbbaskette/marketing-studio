@@ -229,14 +229,19 @@ function sDeskWatch(held){
 
 // A small bar for the selected passage: Rephrase, Shorten, Expand, Fix and Ask….
 function sDeskSelected(held,part,input){
-  const start=input.selectionStart,end=input.selectionEnd,text=typeof start==='number'&&end>start?input.value.slice(start,end):'';
-  if(!text.trim()||held.view.working||!access.actions.edit){if(held.bar&&!held.asking)held.bar.hidden=true;return;}
-  held.selection={part,text};held.asking=false;sDeskBarContent(held);held.bar.hidden=false;
+  // The selection without the spaces around it, and where it starts in the saved text (the
+  // server keeps a part without its leading spaces), so a repeated word is the one chosen.
+  const value=input.value;let start=input.selectionStart,end=input.selectionEnd;
+  if(typeof start!=='number'||typeof end!=='number')start=end=0;
+  while(start<end&&/\s/.test(value[start]))start++;while(end>start&&/\s/.test(value[end-1]))end--;
+  const text=value.slice(start,end),lead=value.length-value.replace(/^\s+/,'').length;
+  if(!text||held.view.working||!access.actions.edit){if(held.bar&&!held.asking)held.bar.hidden=true;return;}
+  held.selection={part,text,start:start-lead};held.asking=false;sDeskBarContent(held);held.bar.hidden=false;
 }
 function sDeskSelectionBar(held){const bar=sNode('div','desk-selection glass');bar.setAttribute('role','toolbar');bar.setAttribute('aria-label','Change the selected text');bar.hidden=true;held.bar=bar;sDeskBarContent(held);return bar;}
 function sDeskBarContent(held){
   const bar=held.bar;if(!bar)return;
-  const run=(action,instruction='')=>async button=>{const chosen=held.selection;if(!chosen)return;await sDeskJob(held,button,'desk-selection',{part:chosen.part,text:chosen.text,action,...(action==='ask'?{instruction}:{})},()=>{held.selection=null;held.asking=false;});};
+  const run=(action,instruction='')=>async button=>{const chosen=held.selection;if(!chosen)return;await sDeskJob(held,button,'desk-selection',{part:chosen.part,text:chosen.text,start:chosen.start,action,...(action==='ask'?{instruction}:{})},()=>{held.selection=null;held.asking=false;});};
   if(held.asking){
     const box=sNode('input','input');box.type='text';box.maxLength=2000;box.placeholder='What should change?';box.setAttribute('aria-label','What should change in the selected text?');
     bar.replaceChildren(box,sButton('Go',async button=>{const instruction=box.value.trim();if(!instruction){notice('Say what to do with the passage.',true);return;}await run('ask',instruction)(button);},'filled'),sButton('Cancel',()=>{held.asking=false;bar.hidden=true;}));

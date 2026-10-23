@@ -227,13 +227,21 @@ def section(root, ident, seen, part, note):
     )
 
 
-def selection(root, ident, seen, part, text, action, instruction=''):
-    """Rephrase, shorten, expand, fix or do as asked with one selected passage."""
+def selection(root, ident, seen, part, text, action, instruction='', start=None):
+    """Rephrase, shorten, expand, fix or do as asked with one selected passage.
+
+    `start` is where the selection begins in the part, so a word that occurs more than once
+    is still the one the person selected; without it the passage must occur once."""
     draft = desk.read(root, ident)
     whole = desk.text_of(draft, part)
-    if not isinstance(text, str) or not text.strip() or text not in whole:
+    if not isinstance(text, str) or not text.strip():
         raise ValueError('That passage is no longer in this part. Select it again.')
-    if whole.count(text) > 1:
+    if start is not None:
+        if type(start) is not int or whole[start : start + len(text)] != text:
+            raise ValueError('That passage is no longer in this part. Select it again.')
+    elif text not in whole:
+        raise ValueError('That passage is no longer in this part. Select it again.')
+    elif whole.count(text) > 1:
         raise ValueError('That passage appears more than once here. Select a longer passage.')
     if action == 'ask':
         if not isinstance(instruction, str) or len(instruction) > 2000:
@@ -271,6 +279,7 @@ def selection(root, ident, seen, part, text, action, instruction=''):
             'part': part,
             'action': action,
             'selection': text,
+            'start': start,
             'basis': fingerprint(whole),
         },
     )
@@ -429,19 +438,29 @@ def _apply(root, ident, draft, job):
         _merge_gaps(draft, result)
         return desk._write(root, ident, draft, [part])
     if kind == 'desk-selection':
-        part, passage = meta['part'], meta.get('selection') or ''
+        part, passage, start = meta['part'], meta.get('selection') or '', meta.get('start')
         try:
             whole = desk.text_of(draft, part)
         except ValueError:
             raise ValueError(STALE) from None
-        if not passage or whole.count(passage) != 1:
+        unchanged = fingerprint(whole) == meta.get('basis')
+        if not passage:
+            raise ValueError(STALE)
+        if unchanged and type(start) is int and whole[start : start + len(passage)] == passage:
+            at = start
+        elif whole.count(passage) == 1:
+            at = whole.index(passage)
+        else:
             raise ValueError(
                 'The selected passage changed while this was being written. Select it again.'
             )
+        # The passage's own spaces and line breaks stay around its replacement.
+        lead = passage[: len(passage) - len(passage.lstrip())]
+        trail = passage[len(passage.rstrip()) :]
         replacement = _clean(content)
         if part == 'title':
             replacement = ' '.join(replacement.split())
-        updated = whole.replace(passage, replacement, 1)
+        updated = whole[:at] + lead + replacement + trail + whole[at + len(passage) :]
         desk.checked_text(part, updated)
         desk.keep(root, ident, part, whole, 'selection')
         desk._set(draft, part, updated)

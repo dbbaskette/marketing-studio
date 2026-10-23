@@ -3070,7 +3070,8 @@ async function deskJourneys(){
   assert.equal(inside(card('bbbbbbbb'),n=>n.tagName==='textarea').value,'Second text, for example.');
   assert.ok(!descendants(card('bbbbbbbb')).some(n=>n.textContent==='Working on this section'));
   // 4. Selecting text shows the bar; Shorten sends the exact passage.
-  const first=inside(card('aaaaaaaa'),n=>n.tagName==='textarea');first.selectionStart=0;first.selectionEnd=10;first.listeners.select();
+  // A selection with spaces around it is sent without them, with where it starts.
+  const first=inside(card('aaaaaaaa'),n=>n.tagName==='textarea');first.selectionStart=0;first.selectionEnd=11;first.listeners.select();
   const bar=nodes().find(n=>/desk-selection/.test(n.className));assert.equal(bar.hidden,false);
   assert.deepEqual(bar.children.map(n=>n.textContent),['Rephrase','Shorten','Expand','Fix','Ask…']);
   await bar.children.find(n=>n.textContent==='Ask…').listeners.click();
@@ -3078,7 +3079,7 @@ async function deskJourneys(){
   await bar.children.find(n=>n.textContent==='Cancel').listeners.click();
   first.listeners.select();
   await bar.children.find(n=>n.textContent==='Shorten').listeners.click();
-  assert.deepEqual(requests.find(r=>r.url==='/api/desk-selection').data,{id:'desk-blog',seen:3,part:'aaaaaaaa',text:'First text',action:'shorten'});
+  assert.deepEqual(requests.find(r=>r.url==='/api/desk-selection').data,{id:'desk-blog',seen:3,part:'aaaaaaaa',text:'First text',start:0,action:'shorten'});
   await f.run('sDeskRender(studio.desk)');
   await descendants(f.get('actions')).find(n=>n.textContent==='Stop').listeners.click();
   assert.equal(requests.at(-1).url,'/api/desk-stop');
