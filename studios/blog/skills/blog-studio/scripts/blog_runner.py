@@ -3206,6 +3206,12 @@ def command(root, args):
                 data['library'] = library
             return create(root, data)
         if args.action == 'submit':
+            if args.gap and args.stage not in NOTED:
+                # Only a draft and a handoff keep gaps; elsewhere one would be dropped unsaid.
+                raise ValueError(
+                    'A gap goes with a draft or a handoff, where it is listed under Needs you '
+                    'before publishing. Put it in --notes for this step. Nothing was submitted.'
+                )
             return submit(
                 root,
                 args.id,

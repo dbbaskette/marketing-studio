@@ -13,7 +13,9 @@ changes for authors first, then what changes for maintainers.
   only for new writing (write, outline, from an outline, from your files), reads "The usual
   length", "Short (about half)" and "In depth (about twice)", and names no style or
   capability that may not apply; `run create --length` for a review, a revision or ideas is
-  refused.
+  refused. `run submit --gap` outside a draft or a handoff is refused in a sentence instead
+  of being dropped, and a worker's refused result names evidence and gaps beside content
+  and notes.
 
 - **Announcements that read like announcements.** A file can be **Approved messaging
   (the product's own claims)**, beside facts and examples: a messaging document, launch

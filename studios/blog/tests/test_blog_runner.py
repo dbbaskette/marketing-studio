@@ -3790,6 +3790,32 @@ class ReaderFacingNotesTests(RunnerCase):
         )
         self.assertEqual(runner.document(self.root, chat['id'], 'draft')['gaps'], [])
 
+    def test_a_gap_outside_a_draft_or_handoff_is_refused(self):
+        found = self.create()
+        self.assertEqual(found['next'], 'outline')
+        self.file.write_text('# Outline\n\nOne section.\n')
+        args = studio.parser().parse_args(
+            ['--root', str(self.root), 'run', 'submit', '--id', found['id']]
+            + ['--expected', found['expected'], '--stage', 'outline', '--file', str(self.file)]
+            + ['--gap', 'A launch link.']
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            r'^A gap goes with a draft or a handoff, where it is listed under Needs you before '
+            r'publishing\. Put it in --notes for this step\. Nothing was submitted\.$',
+        ):
+            runner.command(self.root, args)
+        self.assertEqual(runner.survey(self.root, found['id'])['next'], 'outline')
+        self.assertFalse((runner.load(self.root, found['id'])[0] / 'OUTLINE.md').exists())
+
+    def test_a_workers_extra_field_is_refused_in_the_current_words(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            r'^A worker returns content and notes, and with a draft or a handoff its evidence '
+            r'and gaps; nothing else\.$',
+        ):
+            blog_worker.validate({'content': 'A draft', 'notes': '', 'approve': True})
+
 
 class LengthAndQualificationTests(RunnerCase):
     """Qualify once, and write to the depth asked for."""

@@ -507,7 +507,10 @@ def validate(result):
         'evidence',
         'gaps',
     }:
-        raise ValueError('A worker must return content and notes only.')
+        raise ValueError(
+            'A worker returns content and notes, and with a draft or a handoff its evidence '
+            'and gaps; nothing else.'
+        )
     evidence, gaps = result.get('evidence', []), result.get('gaps', [])
     if (
         not isinstance(evidence, list)
