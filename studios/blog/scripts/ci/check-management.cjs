@@ -9,6 +9,8 @@ class Element {
   get parentElement(){return this.parent||null;}
   prepend(...children){this.children.unshift(...children);for(const child of children)child.parent=this;}
   remove(){if(this.parent)this.parent.children=this.parent.children.filter(child=>child!==this);}
+  replaceWith(node){if(!this.parent)return;const at=this.parent.children.indexOf(this);this.parent.children[at]=node;node.parent=this.parent;this.parent=null;}
+  contains(node){return node===this||descendants(this).includes(node);}
   replaceChildren(...children){this.children=[];this.append(...children);}
   setAttribute(key,value){this.attributes[key]=value;}
   removeAttribute(key){delete this.attributes[key];}
@@ -116,6 +118,7 @@ async function check(){
   await deskJourneys();
   await deskOpenFinished();
   await deskLeaveShares();
+  await deskReturnAndGoogle();
   pageDefinesEveryElement();
   const checks=['the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: Outline only, Revise or review a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
@@ -3068,7 +3071,10 @@ async function deskJourneys(){
   assert.equal(inside(card('aaaaaaaa'),n=>n.tagName==='textarea').readOnly,false);
   assert.match(f.get('above').textContent,/Rewriting “Second part”/);
   view={...view,revision:3,working:null,jobs:[{id:'j1',kind:'desk-section',status:'ready',applied:true,error:''}],sections:view.sections.map(s=>s.id==='bbbbbbbb'?{...s,text:'Second text, for example.'}:s),versions:{aaaaaaaa:1,bbbbbbbb:1}};
+  const untouched=card('cccccccc'),typing=card('aaaaaaaa'),rewritten=card('bbbbbbbb');
   await tick();
+  // Only the rewritten card is drawn again; the others, and whatever is typed in them, stay.
+  assert.equal(card('cccccccc'),untouched);assert.equal(card('aaaaaaaa'),typing);assert.notEqual(card('bbbbbbbb'),rewritten);
   assert.equal(inside(card('bbbbbbbb'),n=>n.tagName==='textarea').value,'Second text, for example.');
   assert.ok(!descendants(card('bbbbbbbb')).some(n=>n.textContent==='Working on this section'));
   // 4. Selecting text shows the bar; Shorten sends the exact passage.
@@ -3125,6 +3131,32 @@ async function deskLeaveShares(){
   f.loadRunner();await f.run("sRoute('desk','desk-blog')");
   await f.run("sRoute('blogs')");await new Promise(r=>setImmediate(r));
   assert.deepEqual(requests.find(r=>r.url==='/api/desk-share')?.data,{id:'desk-blog'});
+}
+async function deskReturnAndGoogle(){
+  const requests=[],timers=[];let view=deskView();
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
+    if(url==='/api/run-options')return {settings:{defaults:{tone:'Clear'}},sources:[],styles:[]};
+    if(url==='/api/google-preview')return {status:'already-linked',id:'desk-blog'};
+    if(url.startsWith('/api/desk?'))return view;if(url==='/api/desk-save'||url==='/api/desk-share')return view;return {items:[],total:0};});
+  f.loadRunner();f.set('setTimeout',fn=>{timers.push(fn);return timers.length;});f.set('clearTimeout',()=>{});
+  const nodes=()=>descendants(f.get('studio-page')),card=part=>nodes().find(n=>n.dataset?.part===part);
+  // Typing, leaving before it saves, and coming back: the desk shows what the server has.
+  await f.run("sRoute('desk','desk-blog')");
+  const text=descendants(card('cccccccc')).find(n=>n.tagName==='textarea');text.value='Typed, then left.';text.listeners.input();
+  timers.length=0;f.run("studio.desk.pending.cccccccc.timer=0");
+  await f.run("studio.screen='blogs';studio.desk.pending={cccccccc:{text:'Typed, then left.'}}");
+  await f.run("sRoute('desk','desk-blog')");
+  assert.equal(descendants(card('cccccccc')).find(n=>n.tagName==='textarea').value,'Third text.');
+  assert.deepEqual(JSON.parse(f.run('JSON.stringify(studio.desk.pending)')),{});
+  // A Google Doc already brought in as a desk blog opens that desk.
+  await f.run("sRoute('desk-start')");
+  await nodes().find(n=>n.textContent==='Google Doc').listeners.click();
+  const url=nodes().find(n=>n.id==='desk-google');url.value='https://docs.google.com/document/d/abc/edit';url.listeners.input();
+  await nodes().find(n=>n.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.equal(f.run('studio.screen'),'desk');assert.ok(!requests.some(r=>r.url==='/api/desk-create'));
+  // On a phone the sources fold under the draft.
+  f.run("window.matchMedia=()=>({matches:true})");await f.run("sDeskRender(studio.desk)");
+  assert.ok(nodes().some(n=>n.tagName==='details'&&/desk-aside/.test(n.className)));
 }
 async function deskOpenFinished(){
   const requests=[];const found={id:'finished',title:'Finished run',stages:[{stage:'draft'}],complete:true,desk_open:true,on_desk:false};
