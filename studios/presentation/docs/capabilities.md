@@ -30,7 +30,7 @@ uses companion commands and the same readable deck records.
 | Download PowerPoint or deliver to Google Slides | Finished deck | Exact native artifact; `Engine.download` / `deliver_again` |
 | Share, fetch, take or hand over | Sharing controls and deck ownership | Existing Git workspace operations |
 | Record numbered team revisions | Finished deck → Publish; Decks → Published | `Engine.publish` / `published`; no public CMS write |
-| Delete a deck with a preview of retained work | Current deck → Delete | `Engine.leaving` / `delete` |
+| Delete a deck with a preview of retained work | Current deck → Delete; Delete on each deck in Home and Decks | `Engine.leaving` / `delete` |
 | Setup, models, budgets, notifications and release checks | Settings and Status | Existing settings/upkeep APIs |
 | Read setup and deck status without serving | Status; terminal `studio status` | No provider jobs |
 

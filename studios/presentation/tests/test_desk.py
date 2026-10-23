@@ -13,6 +13,7 @@ import subprocess
 import unittest
 from pathlib import Path
 from unittest import mock
+from urllib.parse import urlencode
 
 import helpers
 import runner_support
@@ -1655,6 +1656,78 @@ class ScreenTests(ScriptedPage, PageCase):
         for shown in ('Workspace', 'What a new deck starts with', 'When this page is closed',
                       'Updates'):
             self.assertIn(shown, shots['settings']['text'])
+        self.assertEqual(self.posts(result), [])
+
+    def test_a_deck_is_deleted_from_the_decks_list_through_its_own_sheet(self):
+        path = self.started(title='Rolling restarts')
+        self.started(title='Capacity planning')
+        before = self.get('decks')
+        leaving = self.get('delete', path=path)
+        deleted = self.post('delete', {'path': path, 'title': 'Rolling restarts'})
+        after = self.get('decks')
+        answers = self.answers(**{'GET /api/decks': [ok(before), ok(after)],
+                                  'GET /api/delete': [ok(leaving)],
+                                  'POST /api/delete': [ok(deleted)]})
+        result = self.run_page(answers, [
+            {'click': 'Decks'}, {'snapshot': 'decks'},
+            {'click': 'Delete Rolling restarts'}, {'snapshot': 'asked'},
+            {'click': 'Delete Rolling restarts'}, {'snapshot': 'deleted'}])
+        shots = result['snapshots']
+        for title in ('Rolling restarts', 'Capacity planning'):
+            self.assertIn('Open ' + title, shots['decks']['buttons'])
+            self.assertIn('Delete ' + title, shots['decks']['buttons'])
+        # It is the deck screen's own sheet: what goes, what stays, and the button that
+        # names the deck, which is never the filled one.
+        asked = shots['asked']['sheet']
+        for shown in ('Delete Rolling restarts?', 'What goes', 'What stays',
+                      'Its folder in your workspace, with every file in it.',
+                      'This cannot be undone from this page.'):
+            self.assertIn(shown, asked)
+        self.assertEqual(shots['asked']['filled'], [])
+        # The list is drawn again without the card, and says so.
+        gone = shots['deleted']
+        self.assertEqual(gone['heading'], 'Decks')
+        self.assertEqual(gone['sheet'], '')
+        self.assertIn('Deleted Rolling restarts.', gone['text'])
+        self.assertIn('1 deck.', gone['text'])
+        self.assertNotIn('Open Rolling restarts', gone['buttons'])
+        self.assertIn('Open Capacity planning', gone['buttons'])
+        self.assertEqual(self.posts(result),
+                         [('/api/delete', {'path': path, 'title': 'Rolling restarts'})])
+        self.assertIn('GET /api/delete?' + urlencode({'path': path}),
+                      [request['method'] + ' ' + request['address']
+                       for request in result['requests']])
+
+    def test_a_list_offers_delete_only_where_the_runner_would_allow_it_and_says_its_refusal(
+            self):
+        path = self.started(title='Rolling restarts')
+        other = self.started(title='Capacity planning')
+        listed = self.get('decks')
+        theirs = next(brief for brief in listed['needs'] + listed['working']
+                      if brief['path'] == other)
+        for kind in ('needs', 'working'):
+            listed[kind] = [brief for brief in listed[kind] if brief['path'] != other]
+        listed['elsewhere'] = [{**theirs, 'mine': False, 'needs': False,
+                                'driver': {'name': 'Sam Lee', 'here': False}}]
+        refused = {'path': path, 'title': 'Rolling restarts', 'may': False,
+                   'why': 'Nobody is running this deck, so it cannot be deleted from here '
+                          'until someone takes it.'}
+        answers = self.answers(**{'GET /api/decks': [ok(listed)],
+                                  'GET /api/delete': [ok(refused)]})
+        result = self.run_page(answers, [
+            {'snapshot': 'home'}, {'click': 'Decks'}, {'snapshot': 'decks'},
+            {'click': 'Delete Rolling restarts'}, {'snapshot': 'refused'},
+            {'click': 'Cancel'}, {'snapshot': 'back'}])
+        shots = result['snapshots']
+        # Home's rows offer it too, beside the way in; a teammate's deck offers neither list it.
+        for name in ('home', 'decks'):
+            with self.subTest(name):
+                self.assertIn('Delete Rolling restarts', shots[name]['buttons'])
+                self.assertNotIn('Delete Capacity planning', shots[name]['buttons'])
+        self.assertIn(refused['why'] + ' Nothing was deleted.', shots['refused']['sheet'])
+        self.assertNotIn('What goes', shots['refused']['sheet'])
+        self.assertEqual(shots['back']['sheet'], '')
+        self.assertIn('Delete Rolling restarts', shots['back']['buttons'])
         self.assertEqual(self.posts(result), [])
 
     def test_status_says_what_the_shared_file_says_and_offers_to_join_its_team(self):

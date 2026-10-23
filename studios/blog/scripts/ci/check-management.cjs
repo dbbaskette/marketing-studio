@@ -1084,6 +1084,21 @@ async function guidedRuns(){
   assert.ok(!descendants(homeGroup('Needs you')).some(e=>e.textContent==='Working blog'),'work that is not waiting stays out of Needs you');
   assert.ok(descendants(homeGroup('In progress')).some(e=>e.textContent==='Working blog'));
   assert.equal(f.get('needs-count').textContent,'1');
+  // Every blog Home lists offers Delete beside the way in, through the same typed-title sheet.
+  {
+    for(const name of ['Needs you','In progress']){const remove=descendants(homeGroup(name)).find(e=>e.textContent==='Delete');assert.ok(remove,name+' offers Delete');assert.equal(remove.className,'button button-quiet','Delete is never the filled button');}
+    f.run("studio.listing=[found,working,{...working,id:'done',title:'Done blog',status:'complete',complete:true}];studio.ordinary=[{id:'plain',title:'A saved draft',mode:'existing'},{id:'shared',title:'Hub only',location:'hub'}];sHome()");
+    for(const name of ['Finished drafts','Saved drafts'])assert.ok(descendants(homeGroup(name)).some(e=>e.textContent==='Delete'),name+' offers Delete');
+    assert.equal(descendants(homeGroup('Saved drafts')).filter(e=>e.textContent==='Delete').length,1,'a blog with no local copy offers no Delete');
+    await descendants(homeGroup('In progress')).find(e=>e.textContent==='Delete').listeners.click();
+    const open=descendants(f.get('sheet')),said=open.map(e=>e.textContent);
+    for(const words of ['Delete Working blog?','Type the title to confirm','It is kept for 30 days under Recently deleted on the Blogs page, where Restore brings it back.'])assert.ok(said.includes(words),words+': '+said.join('|'));
+    assert.equal(open.find(e=>e.textContent==='Delete Working blog').disabled,true,'nothing is deleted until the title is typed');
+    f.run('sCloseSheet()');
+    f.run("studio.listing=[{...working,team:true,driver:{here:false}}];studio.ordinary=[];sHome()");
+    assert.equal(descendants(homeGroup('In progress')).find(e=>e.textContent==='Delete').disabled,true,'a team blog driven elsewhere cannot be deleted from Home');
+    f.run('studio.listing=[found];studio.ordinary=[];sHome()');
+  }
   f.run('studio.listing=[working];sHome()');
   assert.equal(f.get('actions').children[0].className,'button button-filled','nothing waits, so New blog leads');
   assert.ok(!f.get('actions').children.some(e=>e.textContent==='Review Working blog'));
@@ -1703,6 +1718,14 @@ async function finishAndDelete(){
   await confirm.listeners.click();
   assert.deepEqual(requests.find(r=>r.url==='/api/blog-delete').data,{id:'synthetic',expected:'version-3',title:'Synthetic blog'});
   assert.equal(f.get('sheet').hidden,true);
+  assert.equal(f.get('title').textContent,'Your blogs','from its own screens, a deleted blog goes to Blogs');
+  // Deleted from Home, Home is drawn again without it, and says so.
+  f.run("studio.screen='home';studio.listing=[found];sHome();sDeleteSheet(found)");
+  {const typedHome=sheet().find(e=>e.id==='delete-title');typedHome.value='Synthetic blog';typedHome.listeners.input();
+  await sheet().find(e=>e.textContent==='Delete Synthetic blog').listeners.click();}
+  assert.equal(f.get('sheet').hidden,true);assert.equal(f.get('title').textContent,'Home','a blog deleted from Home stays on Home');
+  assert.ok(!text().includes('Synthetic blog'),'Home is drawn again without it: '+text().join('|'));
+  assert.ok(descendants(f.get('toasts')).some(e=>e.textContent==='Deleted Synthetic blog.'),descendants(f.get('toasts')).map(e=>e.textContent).join('|'));
   // A stored title with curly quotes deletes when typed with plain ones.
   f.run("sDeleteSheet({...found,title:'The \u201cquoted\u201d blog'})");
   const quoted=sheet().find(e=>e.id==='delete-title'),quotedConfirm=sheet().find(e=>e.textContent==='Delete The \u201cquoted\u201d blog');

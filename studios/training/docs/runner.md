@@ -259,7 +259,7 @@ A training's run shows every step, how long each took and what it cost, and what
 
 ### Deleting a training
 
-"Delete this training", at the foot of its run and of its own screen, removes a training you no longer want, whatever state it is in. A confirmation says what goes and what stays, and nothing happens until you press the button that names the training.
+"Delete this training", at the foot of its run and of its own screen, removes a training you no longer want, whatever state it is in. "Delete", beside "Open" on each training that Home and Trainings list, opens the same confirmation; it is offered only for a training the runner drives that this computer may delete. A confirmation says what goes and what stays, and nothing happens until you press the button that names the training. Deleted from a list, the list is drawn again without it.
 
 - **A training that is working is stopped first.** Its agents and anything a step is running are ended, as Stop does, and nothing more of it is kept. One waiting for its turn leaves the queue.
 - **What goes:** its folder in the workspace, removed in one commit that says who deleted it and when, and shared as any change is; and what only this computer kept for it: the documents you supplied, the pages saved for its research, its previews and its run record. It goes from Home, Trainings and Status at once.

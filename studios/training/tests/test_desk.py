@@ -7864,6 +7864,68 @@ class DeleteScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('Delete Rolling restarts', asked['buttons'])
         self.assertEqual(self.posts(result), [])
 
+    def test_a_training_is_deleted_from_the_trainings_list_and_the_list_says_so(self):
+        self.started()
+        held = 'Paused. Nothing new starts until you resume.'
+        path = str(self.root)
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('paused', held), NOTHING_LISTED],
+            'GET /api/delete': [leaving(path, 'paused', documents=2)],
+            'POST /api/delete': [ok({'deleted': True, 'title': 'Rolling restarts',
+                                     'shared': None, 'notice': None})]})
+        result = self.run_page(answers, [
+            {'click': 'Trainings'}, {'snapshot': 'list'},
+            {'click': 'Delete Rolling restarts'}, {'snapshot': 'asked'},
+            {'click': 'Cancel'}, {'snapshot': 'cancelled'},
+            {'click': 'Delete Rolling restarts'},
+            {'click': 'Delete Rolling restarts'}, {'snapshot': 'deleted'},
+        ])
+        shots = result['snapshots']
+        listed = shots['list']
+        self.assertIn('Open Rolling restarts', listed['buttons'])
+        self.assertIn('Delete Rolling restarts', listed['buttons'])
+        self.assertNotIn('Delete Rolling restarts', listed['filled'])
+        # The training's own sheet: the same words, asked of the runner, and modal.
+        asked = shots['asked']
+        for said in ('Delete Rolling restarts?', 'What goes',
+                     'Its folder in your workspace, with every file in it.',
+                     'What only this computer kept for it: 2 documents you supplied, the pages '
+                     'saved for its research, its previews and its run record.', 'What stays',
+                     'This cannot be undone from this page.'):
+            self.assertIn(said, asked['sheet'])
+        self.assertEqual((asked['focus'], asked['inert'], asked['posts'], asked['filled']),
+                         ('sheet', ['sidebar', 'toolbar', 'main'], 0, []))
+        self.assertEqual((shots['cancelled']['sheet'], shots['cancelled']['focus'],
+                          shots['cancelled']['heading']),
+                         ('', 'Delete Rolling restarts', 'Trainings'))
+        self.assertEqual(self.posts(result), [('/api/delete', {'path': path,
+                                                               'title': 'Rolling restarts'})])
+        # The list stays, drawn again without the card, and says so.
+        done = shots['deleted']
+        self.assertEqual((done['heading'], done['sheet'], done['inert']), ('Trainings', '', []))
+        self.assertIn('Deleted Rolling restarts.', done['toasts'])
+        self.assertNotIn('Open Rolling restarts', done['buttons'])
+
+    def test_home_and_the_list_offer_delete_only_where_the_runner_may_delete(self):
+        self.started()
+        held = 'Paused. Nothing new starts until you resume.'
+        pat = a_driver('Pat', False, hours=3)
+        last = last_shared('Then, the next step was to do the research.', hours=1)
+        for name, listing, offered in (
+                ('paused here', self.listed('paused', held), True),
+                ('made in a conversation', self.listed(None), False),
+                ('run by a teammate', self.driven('elsewhere', their_says('Pat', last), pat,
+                                                  last=last), False)):
+            with self.subTest(name):
+                result = self.run_page(self.answers(**{'GET /api/trainings': [listing]}), [
+                    {'snapshot': 'home'}, {'click': 'Trainings'}, {'snapshot': 'list'}])
+                for screen in ('home', 'list'):
+                    shot = result['snapshots'][screen]
+                    self.assertIn('Rolling restarts', shot['text'], screen)
+                    self.assertEqual('Delete Rolling restarts' in shot['buttons'], offered,
+                                     screen)
+                self.assertEqual(self.posts(result), [])
+
 
 def row(name: str, installed, newest, state: str, says: str, **more) -> dict:
     """One row of the versions, in `upkeep.report`'s shape."""

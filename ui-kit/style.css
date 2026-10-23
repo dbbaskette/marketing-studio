@@ -947,6 +947,11 @@ summary {
   min-width: 0;
 }
 
+/* A row's way in, with the quiet way to delete it beside it. */
+.row-actions {
+  flex: none;
+}
+
 .row-text > * + * {
   margin-top: 0.3rem;
 }
@@ -2297,7 +2302,8 @@ p.fact > .bead {
     flex-wrap: wrap;
   }
 
-  .row > .button {
+  .row > .button,
+  .row > .row-actions {
     flex: 1 1 100%;
   }
 

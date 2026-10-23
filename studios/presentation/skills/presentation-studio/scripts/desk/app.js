@@ -273,8 +273,9 @@ const view = {
   // What a team adds: every run and who runs what, what is published, what publishing just
   // answered, and a look for teammates' work and what it brought.
   status: null, shelf: null, issued: null, noticed: {}, looked: false, found: null,
-  // What deleting the open deck would do, as the runner said when its sheet was opened.
-  leaving: null,
+  // The deck the delete sheet is about, the open one or one on a list, and what deleting it
+  // would do, as the runner said when its sheet was opened.
+  doomed: null, leaving: null,
   // Looking online for newer releases, while it is switched, and why switching it was refused.
   turningLook: false, lookRefused: '',
   // The brand skill's repository as it is typed in Settings, while it is saved, and why
@@ -1019,6 +1020,7 @@ function open(next) {
   view.form = null;
   view.steered = '';
   view.barred = '';
+  view.doomed = null;
   view.leaving = null;
   view.slide = 0;
   view.viewer = null;
@@ -1217,6 +1219,7 @@ function openSheet(kind, opener) {
 function closeSheet() {
   const opener = view.opener;
   view.sheet = '';
+  view.doomed = null;
   view.leaving = null;
   drawSheet();
   if (view.screen === 'deck' && view.run) paintDeck(false);
@@ -1313,7 +1316,7 @@ function noteSheet(kind) {
 function drawSheet() {
   const holder = byId('sheet');
   const shown = Boolean(view.sheet && (view.run || ['companions', 'upgrade', 'brand', 'bring']
-    .includes(view.sheet)));
+    .includes(view.sheet) || (view.sheet === 'delete' && view.doomed)));
   holder.hidden = !shown;
   // While a sheet is open it holds the one filled button, so the toolbar's are put away.
   byId('actions').hidden = Boolean(shown);
@@ -1414,7 +1417,9 @@ function deckRow(brief, kind) {
     + (brief.state === 'working' && !elsewhere(brief) ? ' working' : ''));
   const shape = kind === 'needs' ? (brief.state === 'failed' ? 'late' : 'review')
     : kind === 'finished' ? 'done' : null;
-  return add(row, shape ? bead(shape) : null, text, go);
+  const remove = deleteButton(brief);
+  return add(row, shape ? bead(shape) : null, text,
+    remove ? add(make('div', 'bar row-actions'), go, remove) : go);
 }
 
 // A card with a row for each deck, as a part of its screen. A row is built again only when
@@ -1503,7 +1508,7 @@ function deckCard(brief) {
     sheetThumb(brief));
   const go = capsule('Open', '', openDeck(brief), 'open ' + brief.path);
   go.setAttribute('aria-label', 'Open ' + title);
-  return add(node, add(make('div', 'bar'), go));
+  return add(node, add(make('div', 'bar'), go, deleteButton(brief)));
 }
 
 function matching() {
@@ -5915,8 +5920,8 @@ async function settleTeam(kind, problem, pressed) {
 // what stays is the runner's to say, so the sheet asks it first; nothing is sent until the
 // person presses the button that names the deck.
 
-// Whether the open deck may be offered for deletion here. The runner decides; this only
-// keeps the card off a deck someone else runs.
+// Whether a deck may be offered for deletion here, the open one or one on a list. The runner
+// decides; this only keeps the offer off a deck someone else runs.
 function deletable(run) {
   return Boolean(run && (run.mine !== false || (run.state === 'finished' && !run.driver)));
 }
@@ -5927,18 +5932,33 @@ function deleteCard() {
       'delete')));
 }
 
-function askDelete(opener) {
+// A deck on Home or on Decks offers the same sheet, beside the way into it. It is plain and
+// quiet, never the filled one.
+function deleteButton(brief) {
+  if (!deletable(brief)) return null;
+  const title = brief.title || 'Untitled';
+  const node = capsule('Delete', 'quiet', askDelete('delete ' + brief.path, brief),
+    'delete ' + brief.path);
+  node.setAttribute('aria-label', 'Delete ' + title);
+  return node;
+}
+
+// Open the sheet for the open deck, or for `brief`, a deck on a list.
+function askDelete(opener, brief) {
   return async () => {
     const turn = view.turn;
+    const doomed = brief ? { path: brief.path, title: brief.title || 'Untitled' }
+      : { path: view.path, title: (view.run || {}).title || 'Untitled' };
+    view.doomed = doomed;
     view.leaving = null;
     openSheet('delete', opener)();
     let found;
     try {
-      found = await ask('delete', { path: view.path });
+      found = await ask('delete', { path: doomed.path });
     } catch (failure) {
       found = { failed: failure.message };
     }
-    if (turn !== view.turn || view.sheet !== 'delete') return;
+    if (turn !== view.turn || view.sheet !== 'delete' || view.doomed !== doomed) return;
     view.leaving = found;
     drawSheet();
     byId('sheet').focus();
@@ -5952,7 +5972,7 @@ function driveItem(found) {
 }
 
 function deleteSheet() {
-  const title = (view.run || {}).title || 'Untitled';
+  const title = (view.doomed || view.run || {}).title || 'Untitled';
   const found = view.leaving;
   const head = sheetTitle('Delete ' + title + '?');
   const cancel = capsule('Cancel', 'quiet', closeSheet, 'cancel');
@@ -5988,15 +6008,17 @@ function deleteSheet() {
 }
 
 // Send the deletion. A refusal is said in the sheet, in the runner's own words. Once it is
-// done the deck is gone, so the page goes home, in place of the screen it was on.
+// done the deck is gone: from its own screen the page goes home, in place of that screen,
+// and a list is drawn again without it.
 async function settleDelete(title, problem, pressed) {
   if (view.busy) return;
   const turn = view.turn;
+  const path = (view.doomed || {}).path || view.path;
   view.busy = true;
   pressed.disabled = true;
   let found;
   try {
-    found = await send('delete', { path: view.path, title });
+    found = await send('delete', { path, title });
   } catch (failure) {
     view.busy = false;
     if (turn !== view.turn) return;
@@ -6009,9 +6031,19 @@ async function settleDelete(title, problem, pressed) {
   view.busy = false;
   if (turn !== view.turn) return;
   view.sheet = '';
+  view.doomed = null;
   view.leaving = null;
   toast('Deleted ' + title + '.' + (found && found.notice ? ' ' + found.notice : ''));
-  show('home', null, true);
+  if (view.screen === 'deck') {
+    show('home', null, true);
+  } else {
+    // The list loses the card at once; the runner's own list follows.
+    for (const kind of Object.keys(view.decks || {})) {
+      view.decks[kind] = list(view.decks[kind]).filter((brief) => brief.path !== path);
+    }
+    drawSheet();
+    draw(false);
+  }
   refresh();
 }
 

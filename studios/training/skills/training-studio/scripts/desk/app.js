@@ -377,9 +377,10 @@ const view = {
   // has each training, a look for teammates' work and what it brought, and the switch for
   // the computer's own notifications while it is being changed.
   status: null, shelf: null, issued: null, adopted: null, noticed: {},
-  // What deleting the open training would do, as the runner said when its sheet was opened,
-  // and the deck whose redesign the sheet asks about.
-  leaving: null, redesigning: null,
+  // The training the delete sheet is about, the open one or one on a list, what deleting it
+  // would do, as the runner said when its sheet was opened, and the deck whose redesign the
+  // sheet asks about.
+  doomed: null, leaving: null, redesigning: null,
   // Looking online for newer releases, while it is switched, and why switching it was refused.
   turningLook: false, lookRefused: '',
   // The brand skill's repository as it is typed in Settings, while it is saved, and why
@@ -1158,6 +1159,7 @@ function open(next) {
   view.steered = '';
   view.barred = '';
   view.deciding = null;
+  view.doomed = null;
   view.leaving = null;
   view.beside = null;
   view.unadded = '';
@@ -1308,6 +1310,7 @@ function closeSheet() {
   view.sheet = '';
   view.after = null;
   view.deciding = null;
+  view.doomed = null;
   view.leaving = null;
   view.redesigning = null;
   drawSheet();
@@ -1618,7 +1621,8 @@ function needsRow(training, index) {
       : review ? reviewAction(training) : openTraining(training), 'needs ' + training.path);
   go.setAttribute('aria-label', go.textContent + ': ' + title + '. '
     + (asked.question ? asked.question.text : says));
-  return add(make('li', 'row row-needs'), bead(asked.problem ? 'late' : 'review'), text, go);
+  return add(make('li', 'row row-needs'), bead(asked.problem ? 'late' : 'review'), text,
+    withDelete(go, training));
 }
 
 function quietRow(training, kind) {
@@ -1634,7 +1638,7 @@ function quietRow(training, kind) {
   const go = capsule('Open', 'quiet', openTraining(training), 'open ' + training.path);
   go.setAttribute('aria-label', 'Open ' + (training.title || 'Untitled'));
   const row = make('li', working(training) ? 'row working' : 'row');
-  return add(row, kind === 'finished' ? bead('done') : null, text, go);
+  return add(row, kind === 'finished' ? bead('done') : null, text, withDelete(go, training));
 }
 
 function brokenRow(training) {
@@ -1753,7 +1757,7 @@ function trainingCard(training) {
   return add(node, beads(training.stages, true), state(shape, words),
     lastOr(training, 'row-says'), whoLine(training), noticeLine(training),
     add(make('div', 'bar'), add(make('span', 'quiet'), 'Changed ', when(training.touched_at)),
-      go));
+      go, deleteButton(training)));
 }
 
 function drawTrainings(fresh) {
@@ -7074,19 +7078,42 @@ function deleteCard() {
       'delete')));
 }
 
-function askDelete(opener) {
+// A training on Home or on Trainings offers the same sheet, beside the way into it, where
+// the runner drives it and this computer may delete it. It is plain and quiet, never the
+// filled one. One a conversation made is never the runner's to delete, so it offers none.
+function deleteButton(training) {
+  if (training.error || !training.run || !deletable({ mine: training.mine,
+    driver: training.driver, finished: training.run.state === 'done' })) return null;
+  const node = capsule('Delete', 'quiet', askDelete('delete ' + training.path, training),
+    'delete ' + training.path);
+  node.setAttribute('aria-label', 'Delete ' + (training.title || 'Untitled'));
+  return node;
+}
+
+// A row's way in, with the way to delete it beside it where there is one.
+function withDelete(go, training) {
+  const remove = deleteButton(training);
+  return remove ? add(make('div', 'bar row-actions'), go, remove) : go;
+}
+
+// Open the sheet for the open training, or for `training`, one on a list.
+function askDelete(opener, training) {
   return async () => {
     const turn = view.turn;
+    const doomed = training ? { path: training.path, title: training.title || 'Untitled' }
+      : { path: view.path, title: (listed(view.path) || view.training || {}).title
+        || 'Untitled' };
+    view.doomed = doomed;
     view.leaving = null;
     openSheet('delete', opener)();
     if (view.screen === 'run' && view.run) paintRun(false);
     let found;
     try {
-      found = await ask('delete', { path: view.path });
+      found = await ask('delete', { path: doomed.path });
     } catch (failure) {
       found = { failed: failure.message };
     }
-    if (turn !== view.turn || view.sheet !== 'delete') return;
+    if (turn !== view.turn || view.sheet !== 'delete' || view.doomed !== doomed) return;
     view.leaving = found;
     drawSheet();
     byId('sheet').focus();
@@ -7106,7 +7133,7 @@ function driveItem(found) {
 }
 
 function deleteSheet() {
-  const title = (listed(view.path) || view.training || {}).title || 'Untitled';
+  const title = (view.doomed || listed(view.path) || view.training || {}).title || 'Untitled';
   const found = view.leaving;
   const head = sheetTitle('Delete ' + title + '?');
   const cancel = capsule('Cancel', 'quiet', closeSheet, 'cancel');
@@ -7142,15 +7169,17 @@ function deleteSheet() {
 }
 
 // Send the deletion. A refusal is said in the sheet, in the runner's own words. Once it is
-// done the training is gone, so the page goes home, in place of the screen it was on.
+// done the training is gone: from one of its own screens the page goes home, in place of
+// that screen, and a list is drawn again without it.
 async function settleDelete(title, problem, pressed) {
   if (view.busy) return;
   const turn = view.turn;
+  const path = (view.doomed || {}).path || view.path;
   view.busy = true;
   pressed.disabled = true;
   let found;
   try {
-    found = await send('delete', { path: view.path, title });
+    found = await send('delete', { path, title });
   } catch (failure) {
     view.busy = false;
     if (turn !== view.turn) return;
@@ -7163,9 +7192,17 @@ async function settleDelete(title, problem, pressed) {
   view.busy = false;
   if (turn !== view.turn) return;
   view.sheet = '';
+  view.doomed = null;
   view.leaving = null;
   toast('Deleted ' + title + '.' + (found && found.notice ? ' ' + found.notice : ''));
-  show('home', null, true);
+  if (['home', 'trainings'].includes(view.screen)) {
+    // The list loses the card at once; the runner's own list follows.
+    view.listing = list(view.listing).filter((training) => training.path !== path);
+    drawSheet();
+    draw(false);
+  } else {
+    show('home', null, true);
+  }
   refresh();
 }
 
