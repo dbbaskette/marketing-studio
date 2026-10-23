@@ -158,6 +158,7 @@ class FormTests(StudioCase):
             'audience': 'Operators', 'purpose': 'Technical upskilling', 'time_limit': None,
             'brand': None, 'levels': ['101', '301'], 'copies': ['google', 'word'],
             'brief_kind': 'product', 'deck_target': None, 'source_scope': 'public-web',
+            'research_from': {'documents': False, 'sites': [], 'web': True},
             'yoodli': False, 'materials': ['document', 'brief', 'scenario'],
             'agent': None, 'model': None, 'effort': None, 'research_questions': [],
             'delivery': 'live', 'walkthrough': False})

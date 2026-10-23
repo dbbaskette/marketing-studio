@@ -34,6 +34,7 @@ import desk
 import training
 import validate_package
 import workspace
+from studio_core import research_sites
 
 PAGE = helpers.SCRIPTS / 'desk'
 PAGE_FILES = ('index.html', 'app.js', 'markdown.js', 'style.css')
@@ -1961,6 +1962,22 @@ class PageScriptTests(ScriptedPage, PageCase):
         self.assertNotIn('No automatic checks apply here', text)
         self.assertNotIn(self.gate('research')['sha256'], text)
 
+    def test_row_130_the_research_stop_names_the_sites_a_refused_page_was_outside(self):
+        from synthesis_fixture import research_stop
+        self.research()
+        research_stop(self.root / 'research')
+        self.write('.harness-research/research-report.md', '# Updated synthetic report\n')
+        self.cli('save', 'research', '--built')
+        self.cli('checkpoint', '--approval', 'page', '--gate', 'research', '--stage', 'research', '--question', 'Ready?')
+        gate = self.read('gate', path=str(self.root), artifact='research')
+        # What the runner's page adds to the gate when its tools refused a page.
+        said = '2 pages were outside your sites (blogs.vmware.com/tanzu) and were not saved.'
+        gate['body']['research']['outside'] = gate['body']['outside'] = said
+        answers = {'GET /api/trainings': [self.read('trainings')], 'GET /api/computer': [self.read('computer')],
+                   'GET /api/gate': [gate]}
+        result = self.run_page(answers, [{'click': 'Review the research report'}, {'snapshot': 'research'}])
+        self.assertEqual(result['snapshots']['research']['text'].count(said), 1)
+
     def a_gate_with_history(self) -> None:
         """The learner guide at its gate on the page, changed since it was last approved."""
         self.research()
@@ -2718,13 +2735,16 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
             {'fill': 'Who is it for?', 'value': 'New operators'},
             {'click': 'Continue'}, {'click': 'No deck'}, {'click': 'Learner guide'},
-            {'click': 'Continue'}, {'click': 'Only what you supply'}, {'snapshot': 'ready'},
+            {'click': 'Continue'}, {'click': 'Your documents'}, {'click': 'The public web'},
+            {'snapshot': 'ready'},
             {'fill': 'What should the research answer? (optional)', 'value': 'Why?\nWhat next?'},
             {'click': 'Start the training'}, {'snapshot': 'kept'}])
         posted = self.posts(result)
         self.assertEqual(len(posted), 1)
         self.assertEqual(posted[0][1]['materials'], ['document'])
-        self.assertEqual(posted[0][1]['source_scope'], 'supplied-only')
+        self.assertEqual(posted[0][1]['research_from'],
+                         {'documents': True, 'sites': [], 'web': False})
+        self.assertNotIn('source_scope', posted[0][1])
         self.assertIsNone(posted[0][1]['deck_target'])
         self.assertEqual(posted[0][1]['research_questions'], ['Why?', 'What next?'])
         self.assertIn('Research waits', result['snapshots']['ready']['text'])
@@ -4291,7 +4311,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         # The way back comes before the way on, as it is read.
         self.assertIn('Back a step', three['buttons'])
         self.assertIn('Start the training', three['buttons'])
-        for shown in ('The public web only: it searches for pages anyone can read', 'Claude Code',
+        for shown in ('The public web: it searches for pages anyone can read', 'Claude Code',
+                      'Research from the public web.',
                       'A step may take up to 15 minutes.',
                       'at least 14 decisions for research, the selected teaching materials and '
                       'each deck', 'plus each practice scenario',
@@ -4301,7 +4322,10 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             self.assertIn(shown, three['text'])
         self.assertNotIn('not offered yet', three['text'])
         self.assertEqual((three['pressed'], three['posts']),
-                         (['Step by step', 'The public web only', 'Claude Code'], 0))
+                         (['Step by step', 'Claude Code'], 0))
+        # With no sites shared, research looks at the public web, as it always has.
+        self.assertEqual(three['chosen'], ['The public web'])
+        self.assertIn('Your sites (0)', three['buttons'])
         self.assertEqual((three['fields']['Its model'], three['fields']['Its reasoning level']),
                          ('', ''))
         self.assertEqual(self.asked(result, 'agents'), ['/api/agents'] * 2)
@@ -4322,7 +4346,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'title': 'Rolling restarts', 'topic': 'How a rolling restart works.',
             'audience': 'Platform engineers new to it.', 'purpose': 'Technical upskilling',
             'levels': ['101', '301'], 'brief_kind': 'competitive', 'time_limit': '30 minutes',
-            'source_scope': 'public-web', 'research_questions': [''], 'deck_target': 'google',
+            'research_from': {'documents': False, 'sites': [], 'web': True},
+            'research_questions': [''], 'deck_target': 'google',
             'brand': {'brand': 'example-co', 'variant': 'dark'}, 'delivery': 'live',
             'walkthrough': False,
             'copies': ['google'], 'yoodli': False, 'materials': ['document', 'brief', 'scenario'], 'agent': 'claude', 'model': None,
@@ -4907,23 +4932,21 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.started()
         waits, going = 'Waiting for your documents.', 'Drafting the research questions.'
         first = 'First, add your documents on the next screen'
-        meanings = (
-            'The public web only: it searches for pages anyone can read, and keeps every page '
-            'it quotes with the training.',
-            'Only what you supply: it reads the documents you give it and nothing else, and '
-            'never searches the web or opens a page. You add them right after starting, and '
-            'they stay on this computer.',
-            'What you supply and the public web: it reads your documents and researches the '
-            'public web as well. You add the documents right after starting, and they stay on '
-            'this computer.')
+        meanings = {
+            'documents': 'Your documents: it reads the documents you give it. You add them '
+                         'right after starting, and they stay on this computer.',
+            'web': 'The public web: it searches for pages anyone can read, and keeps every '
+                   'page it quotes with the training.'}
         plain = 'at least 5 decisions for research and the selected teaching materials'
         shaped = [{'click': 'Reference brief'}, {'click': 'Practice scenarios'}, {'click': '101'},
                   {'click': 'Extra copies and Yoodli'}, {'click': 'Make scenarios for Yoodli'}]
-        for choice, scope, shape in ((None, 'public-web', []),
-                                     ('Only what you supply', 'supplied-only', shaped),
-                                     ('What you supply and the public web', 'both', [])):
-            with self.subTest(scope):
-                web = scope == 'public-web'
+        for clicks, chosen, shape in (
+                ([], {'documents': False, 'sites': [], 'web': True}, []),
+                (['Your documents', 'The public web'],
+                 {'documents': True, 'sites': [], 'web': False}, shaped),
+                (['Your documents'], {'documents': True, 'sites': [], 'web': True}, [])):
+            with self.subTest(chosen):
+                web = not chosen['documents']
                 state, says = ('working', going) if web else ('waiting', waits)
                 run = a_run(state, says, steps=steps('done', 'working') if web else steps('done'),
                             documents=None if web else supplied())
@@ -4935,18 +4958,22 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                     'GET /api/run': [run], 'GET /api/training': [self.detail(state, says)]})
                 result = self.run_page(answers, [
                     *self.to_the_last_step(*shape),
-                    *([{'click': choice}] if choice else []), {'snapshot': 'three'},
+                    *[{'click': name} for name in clicks], {'snapshot': 'three'},
                     {'click': 'Start the training'}, {'snapshot': 'run'}])
                 three, landed = result['snapshots']['three'], result['snapshots']['run']
-                self.assertEqual(three['pressed'], ['Step by step', choice or 'The public web only'])
-                for said in meanings:
-                    self.assertIn(said, three['text'])
+                self.assertEqual(three['pressed'], ['Step by step'])
+                self.assertEqual(three['chosen'], [name for key, name in (
+                    ('documents', 'Your documents'), ('web', 'The public web')) if chosen[key]])
+                # Each choice that is on says what it means, and the line says them together.
+                for key, said in meanings.items():
+                    self.assertEqual(said in three['text'], chosen[key])
+                self.assertIn('Research ' + research_sites.summary(chosen) + '.', three['text'])
                 # With documents, the first thing it does is wait for them, and it says so.
                 self.assertEqual(first in three['text'], not web)
                 self.assertIn('Research starts after you start the training.' if web
                               else 'Research waits until you say they are all added.', three['text'])
                 (address, sent), = self.posts(result)
-                self.assertEqual((address, sent['source_scope']), ('/api/trainings', scope))
+                self.assertEqual((address, sent['research_from']), ('/api/trainings', chosen))
                 self.assertIn('Started. It is working on its own now.' if web
                               else 'Started. It waits for your documents first.',
                               landed['toasts'])
@@ -4960,6 +4987,79 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                     self.assertIn('plus each practice scenario and each Yoodli layout', three['text'])
                     self.assertIn('In all, it stops and asks for your decision at least 5 '
                                   'times.', landed['text'])
+
+    def test_your_sites_start_from_the_shared_list_and_one_added_is_for_this_training(self):
+        self.started()
+        tanzu, docs = 'https://blogs.vmware.com/tanzu', 'https://docs.example.com'
+        learn = 'https://learn.example.com/guides'
+        shared = {**SET_UP, 'shared': {'research': {'sites': [tanzu, docs]}},
+                  'shared_problem': None}
+        going = 'Drafting the research questions.'
+        refused = '"ftp://files.example.com": research sites use https only.'
+        answers = self.answers(shared, **{
+            'GET /api/trainings': [ok({'trainings': [], 'needs': 0}),
+                                   self.listed('working', going)],
+            # The runner checks each site added, the way every studio does.
+            'POST /api/research-site': [{'status': 400, 'body': {'error': refused}},
+                                        ok({'site': learn, 'shown': 'learn.example.com/guides'})],
+            'POST /api/trainings': [ok({'path': str(self.root), 'id': 'rolling-restarts',
+                                        'gates': 5})],
+            'GET /api/run': [a_run('working', going, steps=steps('done', 'working'))],
+            'GET /api/training': [self.detail('working', going)]})
+        result = self.run_page(answers, [
+            *self.to_the_last_step(), {'snapshot': 'default'},
+            {'click': 'Your sites (2)'}, {'snapshot': 'shared'},
+            {'click': 'The public web'}, {'snapshot': 'only'},
+            {'fill': 'Add a site for this training', 'value': 'ftp://files.example.com'},
+            {'click': 'Add the site'}, {'snapshot': 'wrong'},
+            {'fill': 'Add a site for this training', 'value': 'Learn.Example.com/guides/'},
+            {'click': 'Add the site'}, {'snapshot': 'added'},
+            {'click': 'docs.example.com'}, {'click': 'blogs.vmware.com/tanzu'},
+            {'click': 'learn.example.com/guides'}, {'snapshot': 'none'},
+            {'click': 'Start the training'}, {'snapshot': 'refused'},
+            {'click': 'Your sites (0)'}, {'click': 'Start the training'},
+            {'snapshot': 'nowhere'},
+            {'click': 'Your sites'}, {'click': 'learn.example.com/guides'},
+            {'click': 'blogs.vmware.com/tanzu'}, {'click': 'The public web'},
+            {'snapshot': 'ready'}, {'click': 'Start the training'}])
+        shots = result['snapshots']
+        # Your sites stay off until they are ticked: research looks at the public web.
+        self.assertEqual(shots['default']['chosen'], ['The public web'])
+        self.assertIn('Research from the public web.', shots['default']['text'])
+        self.assertNotIn('blogs.vmware.com/tanzu', shots['default']['buttons'])
+        # Ticked, every shared site is on; with the public web too, it only fills gaps.
+        self.assertEqual(shots['shared']['chosen'], ['Your sites (2)', 'The public web',
+                                                     'blogs.vmware.com/tanzu', 'docs.example.com'])
+        self.assertIn('Research from 2 of your sites (blogs.vmware.com/tanzu, '
+                      'docs.example.com) and the public web.', shots['shared']['text'])
+        self.assertIn('Your sites: they are searched first, through the assistant’s web search '
+                      'tool with site: searches. The public web fills what they leave open.',
+                      shots['shared']['text'])
+        self.assertNotIn('only pages from under your sites are saved', shots['shared']['text'])
+        self.assertIn('your shared list of sites stays as it is', shots['shared']['text'])
+        self.assertIn('Your sites: they are searched through the assistant’s web search tool, '
+                      'with site: searches, and only pages from under your sites are saved.',
+                      shots['only']['text'])
+        # The runner's own sentence, beside the box.
+        self.assertEqual(shots['wrong']['invalid'], ['Add a site for this training'])
+        self.assertIn(refused, shots['wrong']['text'])
+        self.assertEqual([body for address, body in self.posts(result)
+                          if address == '/api/research-site'],
+                         [{'site': 'ftp://files.example.com'},
+                          {'site': 'Learn.Example.com/guides/'}])
+        added = shots['added']
+        self.assertEqual(added['chosen'], ['Your sites (3)', 'blogs.vmware.com/tanzu',
+                                           'docs.example.com', 'learn.example.com/guides'])
+        self.assertEqual(added['fields']['Add a site for this training'], '')
+        # Sites on with none of them ticked, and then nothing on at all, do not start.
+        self.assertIn('Choose at least one of your sites, or turn your sites off.',
+                      shots['refused']['text'])
+        self.assertIn('Choose where research may look: your documents, your sites or the '
+                      'public web.', shots['nowhere']['text'])
+        chosen = {'documents': False, 'sites': [tanzu, learn], 'web': True}
+        self.assertIn('Research ' + research_sites.summary(chosen) + '.', shots['ready']['text'])
+        (address, sent), = [post for post in self.posts(result) if post[0] == '/api/trainings']
+        self.assertEqual(sent['research_from'], chosen)
 
     def test_documents_are_added_refused_removed_and_then_that_is_all_of_them(self):
         self.started()
@@ -5624,10 +5724,10 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     def test_each_research_choice_has_one_name(self):
         result = self.run_page(self.answers(), [*self.to_the_last_step(), {'snapshot': 'ready'}])
         ready = result['snapshots']['ready']
-        for name in ('The public web only', 'Only what you supply',
-                     'What you supply and the public web'):
+        for name in ('Your documents', 'Your sites (0)', 'The public web'):
             self.assertIn(name, ready['buttons'])
-        for old in ('Your documents only', 'Both'):
+        for old in ('The public web only', 'Only what you supply',
+                    'What you supply and the public web', 'Your documents only', 'Both'):
             self.assertNotIn(old, ready['buttons'])
 
     def test_how_previews_are_made_is_chosen_at_set_up_and_drive_files_are_listed(self):

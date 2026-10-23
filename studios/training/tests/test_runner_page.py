@@ -45,11 +45,11 @@ GETS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/r
 POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
          '/api/documents', '/api/copies', '/api/share', '/api/companions', '/api/asset',
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
-         '/api/note', '/api/review-level')
+         '/api/note', '/api/review-level', '/api/research-site')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
 RUN_KEYS = ['agent', 'ahead', 'clash', 'controls', 'copies', 'decided', 'deck', 'deck_left', 'documents', 'driver', 'effort',
             'finished', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
-            'question', 'queue', 'redesign', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
+            'question', 'queue', 'redesign', 'research_from', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
             'workers']
 STEP_KEYS = ['attempts', 'dollars', 'error', 'id', 'kind', 'label', 'seconds', 'status']
 DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -179,6 +179,25 @@ class CapabilityTests(PageCase):
         self.assertEqual(body, (desk.PAGE_DIR / 'index.html').read_bytes())
 
 
+class ResearchSiteTests(PageCase):
+    def test_a_site_added_on_the_form_is_checked_here_and_saved_nowhere(self):
+        studios_config.update({'research': {'sites': ['https://docs.example.com']}})
+        before = studios_config.read()[0]
+        self.assertEqual(self.post('research-site', {'site': ' Blogs.VMware.com/tanzu/ '}),
+                         {'site': 'https://blogs.vmware.com/tanzu',
+                          'shown': 'blogs.vmware.com/tanzu'})
+        for sent, said in (
+                ({'site': 'http://blogs.vmware.com/tanzu'},
+                 '"http://blogs.vmware.com/tanzu": research sites use https only.'),
+                ({'site': 'localhost/docs'}, '"localhost/docs" is not a public site. Research '
+                 'never reads this computer or a private network.'),
+                ({'site': 'docs.example.com', 'more': 1}, 'Give one site to check.'),
+                ({}, 'Give one site to check.')):
+            with self.subTest(sent):
+                self.assertEqual(self.post('research-site', sent, expect=400)['error'], said)
+        self.assertEqual(studios_config.read()[0], before)
+
+
 class RuleTests(PageCase):
     """Milestone 1's safety rules, on every address the runner adds."""
 
@@ -192,6 +211,7 @@ class RuleTests(PageCase):
                        '/api/answer': {'path': self.path, 'id': 'x', 'answer': 'Yes.'},
                        '/api/note': {'path': self.path, 'expected': '0', 'text': 'Keep it short.'},
                        '/api/review-level': {'level': 'balanced', 'seen': 'step_by_step'},
+                       '/api/research-site': {'site': 'docs.example.com'},
                        '/api/documents': {'path': self.path, 'action': 'add',
                                           'name': 'handbook.txt', 'content': 'V29yZHMu'},
                        '/api/copies': {'path': self.path},
@@ -2231,6 +2251,14 @@ class WireTests(WireCase):
         status, _, body = self.ask('/api/trainings', {**FORM, 'source_scope': 'the-moon'})
         self.assertEqual((status, json.loads(body)['error']), (400, 'The source scope is one '
                          'of: public-web, supplied-only, both'))
+        # Where research may look: something that applies, and sites that are sites.
+        for chosen, said in (({'documents': False, 'sites': [], 'web': False},
+                              'Choose where research may look: your documents, your sites or '
+                              'the public web.'),
+                             ({'sites': ['localhost/docs']}, '"localhost/docs" is not a public '
+                              'site. Research never reads this computer or a private network.')):
+            status, _, body = self.ask('/api/trainings', {**FORM, 'research_from': chosen})
+            self.assertEqual((status, json.loads(body)['error']), (400, said))
 
     def test_a_document_is_the_only_long_body_and_only_with_the_key(self):
         path = json.loads(self.ask('/api/trainings', {**FORM, 'source_scope': 'both'})[2])[

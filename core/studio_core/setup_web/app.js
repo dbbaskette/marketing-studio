@@ -197,9 +197,47 @@ function fill() {
     input.value = value;
   }
   form.elements.storage.value = shared.team?.repository ? 'remote' : 'local';
+  researchSites = [...(shared.research?.sites || [])]; renderSites();
   efforts(shared.assistant?.effort); storage(); fillProfiles();
   for (const picker of modelPickers.values()) renderModelPicker(picker);
 }
+// Research sites: canonical https://host[/path], shown as host/path. Each site is checked
+// by the server when it is added (core/studio_core/research_sites.py), and again on save:
+// one rule everywhere.
+let researchSites = [];
+const MOST_SITES = 50;
+function siteShown(site) { return site.replace(/^https:\/\//, ''); }
+function renderSites() {
+  const list = $('#research-site-list'); list.replaceChildren();
+  researchSites.forEach((site, index) => {
+    const row = element('li', '', 'site-row'), remove = element('button', 'Remove', 'button button-quiet');
+    remove.type = 'button'; remove.setAttribute('aria-label', `Remove ${siteShown(site)}`);
+    remove.addEventListener('click', () => {
+      researchSites.splice(index, 1); renderSites();
+      $('#research-site-hint').textContent = `${siteShown(site)} removed. Save settings to keep the list.`;
+      (list.querySelectorAll('.site-row .button')[Math.min(index, researchSites.length - 1)] || $('#research-site-input')).focus();
+    });
+    row.append(element('span', siteShown(site)), remove); list.append(row);
+  });
+  $('#research-site-empty').hidden = researchSites.length > 0;
+}
+async function addSite() {
+  const input = $('#research-site-input'), button = $('#research-site-add');
+  const typed = input.value.trim();
+  if (!typed) { $('#research-site-hint').textContent = 'Type a site first, such as docs.example.com/guide.'; input.focus(); return; }
+  button.disabled = true;
+  try {
+    const {site} = await api('research-site', {site: typed});
+    if (researchSites.includes(site)) throw new Error(`${siteShown(site)} is already in your list.`);
+    if (researchSites.length >= MOST_SITES) throw new Error(`Keep at most ${MOST_SITES} research sites.`);
+    researchSites.push(site); renderSites(); input.value = '';
+    $('#research-site-hint').textContent = `${siteShown(site)} added. Save settings to keep the list.`;
+  } catch (error) { $('#research-site-hint').textContent = error.message; }
+  finally { button.disabled = false; }
+  input.focus();
+}
+$('#research-site-add').addEventListener('click', addSite);
+$('#research-site-input').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); addSite(); } });
 const profileNames = ['quick', 'main', 'complex'];
 function profileLevels(select, selected, model = null) {
   const levels = catalogModel(model)?.levels || snapshot.efforts[form.elements['assistant.agent'].value];
@@ -386,11 +424,15 @@ function changesForStep() {
     wanted.output = value('output');
     wanted.render = {previews: value('render.previews')};
   }
+  // Research sites are kept in Shared settings, not in first-run setup.
+  if (!setup) wanted.research = {sites: [...researchSites]};
   // Send just the leaves changed from what this form was shown.
   function changed(wanted, seen) {
     const result = {};
     for (const [key, value] of Object.entries(wanted)) {
-      if (value !== null && typeof value === 'object') {
+      if (Array.isArray(value)) {
+        if (JSON.stringify(value) !== JSON.stringify(seen?.[key] ?? [])) result[key] = value;
+      } else if (value !== null && typeof value === 'object') {
         const inner = changed(value, seen?.[key]);
         if (Object.keys(inner).length) result[key] = inner;
       } else if (value !== (seen?.[key] ?? null)) result[key] = value;

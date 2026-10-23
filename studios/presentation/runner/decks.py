@@ -9,6 +9,7 @@ What a caller needs to know
     decks.deck_id(workspace, 'My talk')        # 'my-talk', or 'my-talk-2' when that is taken,
                                                # here or on the remote branch as last fetched
     decks.write_index(workspace)               # <root>/README.md: one row per deck
+    decks.research_from(form)                  # where its research may look, old forms too
 
 A deck is a folder holding `run.json` (decks.RUN, what marks it), `intake.md` (the form, in
 words), and `README.md`. The form keeps only a short reference to the source (its kind and
@@ -84,7 +85,50 @@ def _source(sent: dict, route: str) -> dict:
     return {'kind': 'paste'}
 
 
-RESEARCH_SOURCES = ('documents', 'both')
+RESEARCH_SOURCES = ('documents', 'both')    # what a form sent before research_from
+
+
+def research_from(form: dict, scope: str | None = None,
+                  documents_given: bool | None = None) -> dict | None:
+    """Where a deck's research may look, in studio_core.research_sites' shape
+    ({'documents', 'sites', 'web'}), or None for a deck with no research. A deck saved before
+    research_from is read from its research_sources, else from its research plan's `scope`,
+    else as research then looked: the public web, with a document's own documents. Your
+    documents count only where they were given (`documents_given`, by default a deck made
+    from a document). A choice that would look nowhere reads as the documents alone, so
+    nothing is fetched."""
+    from studio_core import research_sites
+    form = form if isinstance(form, dict) else {}
+    if form.get('route') == 'existing' or ('research' in form and not form['research']):
+        return None
+    if documents_given is None:
+        documents_given = form.get('route', 'document') == 'document'
+    given = form.get('research_from')
+    if not isinstance(given, dict):
+        given = research_sites.legacy(form.get('research_sources') or scope or 'public-web') \
+            or research_sites.legacy('public-web')
+    found = research_sites.effective(given, documents_given)
+    if not (found['documents'] or found['sites'] or found['web']):
+        return {'documents': True, 'sites': [], 'web': False}
+    return found
+
+
+def _research_from(sent: dict, route: str) -> dict:
+    """The form's research_from, checked: sites canonical, the list pinned as sent. A form
+    sent the old way, with research_sources or nothing, is taken in the new shape."""
+    from studio_core import research_sites
+    given = sent.get('research_from')
+    if given is None:
+        # research_sources was asked only for a document; elsewhere research used the web.
+        old = sent.get('research_sources') if route == 'document' else None
+        if old is not None and old not in RESEARCH_SOURCES:
+            raise WorkspaceError(research_sites.EMPTY)
+        given = research_sites.legacy(old) if old else (
+            {'documents': True} if route == 'document' else {'web': True})
+    try:
+        return research_sites.choice(given, documents_given=route == 'document')
+    except ValueError as error:
+        raise WorkspaceError(str(error)) from None
 
 
 def research_questions(sent) -> list[str]:
@@ -156,11 +200,11 @@ def check_form(sent: dict, brands: list | None) -> dict:
     checked = {'route': route, 'title': title, 'audience': audience, 'goal': goal,
                'minutes': minutes, 'brand': brand, 'variant': variant, 'output': output,
                'research': research, 'delivery': delivery, 'notes': notes}
-    if research and route == 'document':
-        sources = sent.get('research_sources') or 'documents'
-        if sources not in RESEARCH_SOURCES:
-            raise WorkspaceError('Choose where research may look: your documents only, or your documents and the public web.')
-        checked['research_sources'] = sources
+    if research and route != 'existing':
+        # Where research may look: your documents, your sites and/or the public web. The
+        # sites are the deck's own list, kept as sent: a later change to the shared list
+        # never changes a deck that has started.
+        checked['research_from'] = _research_from(sent, route)
     checked['research_questions'] = research_questions(sent)
     # Only the form's own choice shows the first draft before its review: nothing in the
     # goal's words flips it.
@@ -332,9 +376,9 @@ def intake(form: dict) -> str:
     parts += ['', '## Brand', brand_words(form),
               '', '## Output', form['output']]
     if form['route'] != 'existing':
-        words = ('yes (your documents only)' if form.get('research_sources') == 'documents'
-                 else 'yes (your documents and the public web)' if form.get('research_sources') == 'both' else 'yes')
-        parts += ['', '## Research', words if form['research'] else 'no']
+        from studio_core import research_sites
+        looks = research_from(form)
+        parts += ['', '## Research', 'yes, ' + research_sites.summary(looks) if looks else 'no']
     if 'level' in form:
         parts += ['', '## Change level', form['level']]
     if 'selected' in form:

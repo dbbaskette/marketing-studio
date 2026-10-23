@@ -303,6 +303,8 @@ def dispatch(root, action, data):
             )
             run['stages'] = {}
             record['research_policy'] = 'supplied-only' if research == 'none' else research
+            # The editor's research words replace the blog's choice; it reads them.
+            record.pop('research_from', None)
             if research != 'none':
                 from studio_core import research_contract
 

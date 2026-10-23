@@ -599,6 +599,44 @@ class NoteTests(StudioCase):
         self.assertEqual(len(self.record(root)['notes_used']), 1, 'history records it once')
         self.assertIsNone(self.record(root)['pending_note'])
 
+    def test_research_kept_to_the_deck_s_sites_refuses_a_page_off_them_and_says_so(self):
+        from runner_support import QUOTE, URL
+        from studio_core import research_sites
+        off = self.web.page('https://elsewhere.example.com/restarts', 'Somewhere else.')
+        told, refusals = [], []
+
+        def question(tools, job):
+            told.append((tools.job.get('research'), job.guidance))
+            refused = tools.save_source(off)
+            self.assertFalse(refused[0])
+            refusals.append(refused[1])
+            said = tools.save_source(URL)
+            self.assertTrue(said[0], said[1])
+            ident = tools.job['finding']
+            saved = said[1].split(' as ', 1)[1].split(':', 1)[0]
+            self.assertTrue(tools.submit_finding(
+                ident, 'supported', f'What the page says about {ident}.',
+                headline=f'The page answers {ident}.',
+                evidence=[{'source_id': saved, 'quote': QUOTE}])[0])
+        self.workers.queued['question'] = [question] * 8
+        chosen = {'documents': False, 'sites': ['https://docs.example.com'], 'web': False}
+        root = self.start(research=True, research_from={'sites': ['docs.example.com/']})
+        self.assertEqual(self.record(root)['form']['research_from'], chosen)
+        self.decide(root, 'gate:research-plan')
+        self.assertEqual(self.waiting(root), 'gate:research')
+        job, guidance = told[0]
+        self.assertEqual(job, chosen)
+        self.assertIn(research_sites.guidance(chosen), guidance)
+        self.assertEqual(refusals[0], research_sites.refused(off, chosen))
+        self.assertIn('Where research may look: Allowed sites: docs.example.com.',
+                      self.workers.of('question')[0].task)
+        self.assertEqual([entry['url'] for entry in self.record(root)['research']['outside']], [off])
+        shown = self.view(root)['gate']
+        self.assertEqual(shown['research_from'], 'Research from 1 of your sites (docs.example.com)')
+        self.assertEqual(shown['outside'],
+                         '1 page was outside your sites (docs.example.com) and was not saved.')
+        self.assertIn('yes, from 1 of your sites (docs.example.com)', (root / 'intake.md').read_text())
+
     def test_a_note_is_refused_when_empty_too_long_finished_or_stopped(self):
         root = self.start()
         with self.assertRaisesRegex(WorkspaceError, 'Write the note first'):

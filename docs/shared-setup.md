@@ -18,7 +18,7 @@ or every optional tool is available.
 
 Shared choices: person, assistant/model/reasoning, local work root or team
 repository/branch/sharing, brand repository/release/identity/variant/installed skill,
-delivery format, and slide preview method. Work already created retains its own
+delivery format, slide preview method, and research sites. Work already created retains its own
 choices. Native workspace migration never moves existing content.
 
 When no assistant is saved, setup uses the one Marketing Studio was installed for
@@ -91,6 +91,27 @@ mode `single` or `by_task`, assistant binding `agent`, and `profiles.quick`,
 `provider_default`, or `explicit`), and optional `model` and `effort`. Every studio
 reads this same file; nested saves use its adjacent lock, preserve unrelated
 settings, and reject conflicting stale edits.
+
+## Research sites
+
+Research in every studio may look in your documents, your sites and/or the public
+web. Your sites are a list of base URLs kept under `research.sites` in the studios
+config, edited on Shared settings' **Research sites** card (not in first-run setup):
+
+```json
+"research": {"sites": ["https://blogs.vmware.com/tanzu", "https://docs.example.com"]}
+```
+
+Each site is https only, a public host and an optional path, with no query, fragment,
+credentials or custom port; private, loopback and local names are refused. The list
+is deduplicated, holds at most 50 and is shown as `host/path`. Saves go through the
+adjacent lock, keep unrelated settings, and refuse a form that read an older list.
+Each studio's start form starts from this list, may untick sites or add one for that
+piece of work only, and the run pins the list it used. With your sites on and the
+public web off, every page a research job saves must be under a listed site (exact
+host, path at a segment boundary, every redirect checked); see
+[the design](superpowers/specs/2026-10-23-research-sites-design.md) and
+`core/studio_core/research_sites.py`.
 
 ## Review level
 

@@ -101,3 +101,12 @@
 .sample-row { flex-wrap: wrap; }
 .sample-row > .row-text { flex: 1 1 16rem; }
 .sample-row > .button { flex: 0 0 auto; }
+
+/* Research from: your documents, your sites and the public web, one row of ticks that wraps on
+   a phone; the sites open below on the form's own opaque paper. */
+.research-choices{border:0;margin:0;padding:0;min-width:0;display:flex;flex-wrap:wrap;gap:.5rem 1.25rem;align-items:center}
+.research-choices legend{padding:0;margin:0 0 .4rem}
+.research-choices[hidden],.site-choices[hidden]{display:none}
+.site-choices{display:grid;gap:.6rem;margin-top:.75rem;padding:.75rem;border:1px solid var(--hair);border-radius:12px;background:var(--paper)}
+.site-choices .check span{overflow-wrap:anywhere}
+.research-from .research-scope{margin-top:.6rem}

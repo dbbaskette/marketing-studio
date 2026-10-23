@@ -425,6 +425,9 @@ class Jobs:
         the next step goes with it, once."""
         work = self._noted(root, name, doing, work)
         record = self._load(root)
+        if hasattr(self, '_confined'):
+            # A job that saves pages keeps to where the deck's research may look.
+            work = self._confined(root, record, work)
         number = len(tries(record, name).get('tries') or []) + 1
         folder = self._folder(root, name, number)
         runtimes = {key: value for key, value in self._look()['runtimes'].items() if value} \
@@ -465,7 +468,10 @@ class Jobs:
             outcome = replace(outcome, seconds=round(time.monotonic() - clock, 1))
         if choice is not None:
             model_profiles.staged(self, choice, number, work.profile, started_at)
-        return outcome, worker_tools.collect(folder), started_at, folder
+        handed = worker_tools.collect(folder)
+        if handed.get('outside') and hasattr(self, '_keep_outside'):
+            self._keep_outside(root, handed['outside'])
+        return outcome, handed, started_at, folder
 
     @staticmethod
     def _cost(outcome: agents.Outcome) -> dict:

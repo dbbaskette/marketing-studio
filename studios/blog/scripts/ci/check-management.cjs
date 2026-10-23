@@ -85,6 +85,7 @@ async function check(){
   await sharedPattern();
   await whereThisRunStops();
   await phase3ResearchDefaults();
+  await researchFromJourney();
   await phase3ResearchAccount();
   await phase5BringResearchUpToDate();
   await phase3ClaimsMap();
@@ -110,7 +111,7 @@ async function check(){
   const checks=['keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: Outline only, Revise or review a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','one name for each thing','copy that says what the form and gates do','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','one name for each thing','copy that says what the form and gates do','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','research from your documents, your sites and/or the public web: the shared list prefilled, a site for one blog checked by the server, the shared sentences, and the sites named at the research gate','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -469,7 +470,7 @@ async function taskJourneys(){
   assert.ok(nodes().some(e=>e.textContent==='Ready to start'));
   await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   const creation=requests.find(r=>r.url==='/api/run-create').data;
-  assert.equal(creation.mode,'from-outline');assert.equal(creation.outline_text,'# First\n## Second');assert.equal(creation.research,'web-allowed');
+  assert.equal(creation.mode,'from-outline');assert.equal(creation.outline_text,'# First\n## Second');assert.equal(creation.research,undefined);assert.deepEqual(creation.research_from,{documents:true,sites:[],web:true},'an older default reads as your documents and the public web');
   assert.equal(creation.stop,'draft');
 }
 
@@ -955,7 +956,12 @@ async function sharedSettings(){
   const voices=[{id:'mine',name:'Synthetic Author',revision:3},{id:'guest',name:'Guest Writer',revision:1}];
   const f=fixture((url,options)=>{if(options?.method==='POST'){requests.push({url,data:JSON.parse(options.body)});return {defaults,shared_before:before,workspace:'/synthetic',voice:null,voices};}if(url==='/api/run-options')return {settings:{defaults},sources:[],profiles:[],agents:{}};if(url==='/api/team')return {};return empty();});
   f.loadRunner();f.set('defaults',defaults);f.set('before',before);f.set('voices',voices);f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic',voice:{profile_id:'mine',revision:3},voices};studio.screen='settings';sSettings()");
-  assert.equal(descendants(f.get('studio-page')).filter(e=>e.type==='checkbox').length,0,'shared saves have no second consent toggle');
+  assert.equal(descendants(f.get('studio-page')).filter(e=>e.type==='checkbox'&&!e.id.startsWith('settings-research-')).length,0,'shared saves have no second consent toggle');
+  // The research default: three ticks, an older 'none' read as none of them.
+  const tick=key=>descendants(f.get('studio-page')).find(e=>e.id==='settings-research-'+key);
+  assert.deepEqual(['documents','sites','web'].map(key=>tick(key).checked),[false,false,false]);
+  assert.ok(descendants(f.get('studio-page')).some(e=>e.textContent==='Research for new blogs from:'));
+  tick('sites').checked=true;tick('sites').listeners.change();
   // The default voice: None or a confirmed voice; saved as its exact pin, or null for none.
   const voice=descendants(f.get('studio-page')).find(e=>e.id==='settings-voice');
   assert.deepEqual(voice.children.map(o=>[o.value,o.textContent]),[['','None'],['mine','Synthetic Author'],['guest','Guest Writer']]);
@@ -966,6 +972,7 @@ async function sharedSettings(){
   assert.deepEqual(requests[0].data.shared_before,before);assert.equal('for_all_studios' in requests[0].data,false);
   assert.deepEqual(requests[0].data.voice,{profile_id:'mine',revision:3},'the default voice is saved with its revision');
   assert.deepEqual(requests[0].data.voice_before,{profile_id:'mine',revision:3},'against the voice the form showed');
+  assert.deepEqual(requests[0].data.research,{documents:false,sites:true,web:false},'the research default is saved as three ticks');assert.equal(defaults.research,'none','the shown defaults are not changed by the form');
   f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic',voice:null,voices};sSettings()");
   const none=descendants(f.get('studio-page')).find(e=>e.id==='settings-voice');assert.equal(none.value,'','no default: None');
   none.value='guest';none.listeners.change();
@@ -1258,17 +1265,19 @@ async function oneVocabulary(){
   f.set('found',{...working,status:'complete',complete:true,next:null,started_at:null,team:true,driver:{here:true},stages:stages.map(row=>({...row,status:'approved'}))});f.run('sRun(found)');
   const labels=f.get('actions').children.map(e=>e.textContent);
   assert.ok(labels.includes('Record in team repository'),labels.join('|'));assert.equal(labels.includes('Publish revision'),false);
-  // The research choice, one way in Settings, a new blog and from files.
+  // The research choice, one way in Settings, a new blog and from files: your documents, your
+  // sites and the public web.
   const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
-  f.run("studio.settings={defaults,workspace:'/synthetic',shared_before:{},review_level:'balanced'};studio.team={};studio.brand=null;studio.screen='settings';sSettings()");
-  assert.deepEqual(nodes().find(e=>e.id==='settings-research').children.map(o=>o.textContent),['No research','Only what you supply','What you supply and the public web']);
-  f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[],profiles:[],agents:{codex:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'package',minutes:'10',operation:'a'.repeat(32)};sWizard()");
-  assert.deepEqual(nodes().find(e=>e.id==='new-research').children.map(o=>o.textContent),['No research','Only what you supply','What you supply and the public web']);
+  const ticks=['your documents','your sites (3)','the public web'],shared=['https://a.example','https://b.example/docs','https://c.example'];f.set('shared',shared);
+  f.run("studio.settings={defaults,workspace:'/synthetic',shared_before:{},review_level:'balanced',research_sites:shared};studio.team={};studio.brand=null;studio.screen='settings';sSettings()");
+  assert.ok(text().includes('Research for new blogs from:'));for(const label of ticks)assert.ok(text().includes(label),label+': '+text().join('|'));
+  f.run("studio.options={settings:{defaults,review_level:'balanced',research_sites:shared},sources:[],profiles:[],agents:{codex:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'package',minutes:'10',operation:'a'.repeat(32)};sWizard()");
+  assert.ok(text().includes('Research it first')&&text().includes('Research from:'));for(const label of ticks)assert.ok(text().includes(label),label);
   f.run("studio.draft={...defaults,mode:'from-files',files:[],step:0,title:'',goal:'',audience:'',profile:'',sources:[],stop:'package',minutes:'10',operation:'b'.repeat(32)};sWizard()");
-  assert.ok(text().includes('Also research the public web'),text().join('|'));
-  assert.ok(text().includes('Off: only what you supply. On: what you supply and the public web, before the outline.'));
+  assert.ok(text().includes('Research from:'),text().join('|'));for(const label of ticks)assert.ok(text().includes(label),label);
+  assert.ok(text().includes('Your files are read at every step. Your sites or the public web add research before the outline.'));
   assert.ok(text().some(t=>t==='Example of the kind of post'),'one example label: '+text().join('|'));
-  for(const old of ['Examples of the kind of post','examples of a kind of writing','Selected sources only','Sources plus public research','Also research the web to fill gaps'])assert.equal(text().some(t=>t.includes(old)),false,old);
+  for(const old of ['Examples of the kind of post','examples of a kind of writing','Selected sources only','Sources plus public research','Also research the web to fill gaps','Also research the public web','Only what you supply','What you supply and the public web','Off: only what you supply.'])assert.equal(text().some(t=>t.includes(old)),false,old);
 }
 
 // The form and the gates say only what they do: what research reads, what the tone does with
@@ -1281,28 +1290,28 @@ async function honestBlogCopy(){
   f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[{id:'one',name:'One',status:'ready',purposes:['reference']},{id:'two',name:'Two',status:'ready',purposes:['reference']}],profiles:[],agents:{codex:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'package',minutes:'10',operation:'a'.repeat(32)};sWizard()");
   assert.ok(all().includes('No research.'),all());
   // Use the real listeners: refreshing the explanation must preserve these controls.
-  const research=nodes().find(e=>e.id==='new-research');
-  const sources=nodes().find(e=>e.className==='source-choices').querySelectorAll('input');
-  const chooseResearch=value=>{research.focus();research.value=value;research.listeners.change();assert.equal(nodes().find(e=>e.id==='new-research'),research);assert.equal(research.focused,true);};
-  const chooseSource=(index,checked)=>{sources[index].focus();sources[index].checked=checked;sources[index].listeners.change();assert.equal(nodes().find(e=>e.className==='source-choices').querySelectorAll('input')[index],sources[index]);assert.equal(sources[index].focused,true);};
-  chooseResearch('supplied-only');
+  const tick=key=>nodes().find(e=>e.id==='new-research-'+key);
+  const sources=nodes().find(e=>e.className==='source-choices'&&e.parent?.className!=='site-choices').querySelectorAll('input');
+  const chooseResearch=(key,checked)=>{const box=tick(key);box.focus();box.checked=checked;box.listeners.change();assert.equal(tick(key),box);assert.equal(box.focused,true);};
+  const chooseSource=(index,checked)=>{sources[index].focus();sources[index].checked=checked;sources[index].listeners.change();assert.equal(nodes().find(e=>e.className==='source-choices'&&e.parent?.className!=='site-choices').querySelectorAll('input')[index],sources[index]);assert.equal(sources[index].focused,true);};
+  chooseResearch('on',true);
   assert.ok(all().includes('No research: no source is ticked.'),all());
   assert.equal(all().includes('No research.'),false);
   chooseSource(0,true);
-  assert.ok(all().includes('Research reads only the 1 source you ticked.'),all());
+  assert.ok(all().includes('Research from your documents.'),all());
   chooseSource(1,true);
-  assert.ok(all().includes('Research reads only the 2 sources you ticked.'),all());
-  chooseResearch('web-allowed');
-  assert.ok(all().includes('Research reads the sources you ticked and the public web.'),all());
-  assert.equal(all().includes('Research reads only the 2 sources you ticked.'),false);
+  assert.ok(all().includes('Research from your documents.'),all());
+  chooseResearch('web',true);
+  assert.ok(all().includes('Research from your documents and the public web.'),all());
+  assert.equal(all().includes('Research from your documents.'),false);
   assert.deepEqual(Array.from(f.run('studio.draft.sources')),['one','two']);
   assert.ok(sources.every(source=>source.checked),'changing research preserves the sources');
-  chooseResearch('supplied-only');
+  chooseResearch('web',false);
   chooseSource(0,false);
-  assert.ok(all().includes('Research reads only the 1 source you ticked.'),all());
+  assert.ok(all().includes('Research from your documents.'),all());
   chooseSource(1,false);
   assert.ok(all().includes('No research: no source is ticked.'),all());
-  chooseResearch('none');
+  chooseResearch('on',false);
   assert.ok(all().includes('No research.'),all());
   assert.equal(all().includes('No research: no source is ticked.'),false);
   assert.equal(all().includes('Research uses only the sources you allow'),false);
@@ -1375,16 +1384,16 @@ async function sharedPattern(){
    assert.ok(byId('files-role-m1')&&byId('files-role-m2'),'each with its role');
    assert.equal(f.run('studio.busy'),false,'the screen is free again after the upload');
    assert.ok(text().some(t=>t==='Balanced: it stops for the outline and the draft'),'with no research chosen the stops are unchanged: '+text().join('|'));
-   f.run("studio.options.settings.review_level='step_by_step';studio.draft.research='supplied-only';sWizard()");
+   f.run("studio.options.settings.review_level='step_by_step';studio.draft.from=sFromDefault('supplied-only');sWizard()");
    assert.ok(text().some(t=>t==='Step by step: it stops for the claims in your material, the outline and the draft'),'selected sources research counts the files: '+text().join('|'));
-   f.run("studio.options.settings.review_level='balanced';studio.draft.research='none';sWizard()");
+   f.run("studio.options.settings.review_level='balanced';studio.draft.from=sFromDefault('none');sWizard()");
    await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
    const created=requests.find(r=>r.url==='/api/run-create');assert.ok(created,'Start writing creates the run');assert.deepEqual(created.data.sources,['m1','m2'],'the files are the run\'s sources');
    f.run("studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'draft',minutes:'10',operation:'a'.repeat(32)};sWizard()");}
   assert.equal(descendants(f.get('studio-page')).some(e=>['new-engine','new-minutes'].includes(e.id)),false,'the assistant and time limit are defaults, not per-blog decisions');
   f.run("studio.options.settings.review_level='automatic';studio.draft.mode='ideas';sWizard()");
   assert.ok(text().some(t=>t==='Automatic draft: it stops for the ideas'),text().join('|'));
-  f.run("studio.options.settings.review_level='step_by_step';studio.draft.mode='write';studio.draft.research='supplied-only';studio.draft.stop='package';sWizard()");
+  f.run("studio.options.settings.review_level='step_by_step';studio.draft.mode='write';studio.draft.from=sFromDefault('supplied-only');studio.draft.stop='package';sWizard()");
   assert.ok(text().some(t=>t==='Step by step: it stops for the outline, the draft, the review and the handoff'),'selected sources with none selected is no research: '+text().join('|'));
   f.run("studio.options.sources=[{id:'one',name:'One',status:'ready',purposes:['reference']}];studio.draft.sources=['one'];sWizard()");
   assert.ok(text().some(t=>t==='Step by step: it stops for the claims in your material, the outline, the draft, the review and the handoff'),text().join('|'));
@@ -1477,7 +1486,7 @@ async function filesJourney(){
   const picker=byId('files-input');
   assert.equal(picker.type,'file');assert.equal(picker.multiple,true);assert.match(picker.accept,/\.pdf/);
   assert.ok(byId('files-goal'),'one optional line: what is this for');
-  assert.equal(byId('files-web').checked,false,'web research is off by default');
+  assert.equal(byId('files-research-web').checked,false,'web research is off by default');assert.equal(byId('files-research-documents').checked,true,'your files are your documents');
   assert.equal(byId('files-keep').checked,true,'files land in the team library by default');
   assert.equal(byId('files-keep').parent.children[1].textContent,'Keep in the team library');
   assert.match(byId('files-keep-hint').textContent,/^Applies to files you add next\./);assert.match(byId('files-keep-hint').textContent,/just this blog/);
@@ -1590,11 +1599,11 @@ async function filesJourney(){
   assert.equal(start().disabled,false,'a Doc with text can start the blog: the screen is not left busy');
   assert.equal(docAdd().disabled,false,'and another Doc can be added');
   byId('files-goal').value='A team post';byId('files-goal').listeners.input();
-  byId('files-web').checked=true;byId('files-web').listeners.change();
+  byId('files-research-web').checked=true;byId('files-research-web').listeners.change();
   assert.ok(text().some(t=>/stops for the angles/.test(t)));
   await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   const creation=requests.find(r=>r.url==='/api/run-create').data;
-  assert.equal(creation.mode,'from-files');assert.equal(creation.research,'web-allowed');assert.equal(creation.goal,'A team post');
+  assert.equal(creation.mode,'from-files');assert.deepEqual(creation.research_from,{documents:true,sites:[],web:true});assert.equal(creation.goal,'A team post');
   assert.deepEqual(creation.sources,['s1','s9'],'only files with text are pinned, once, the Google Doc among them');
   assert.equal(creation.title,'');assert.equal(creation.stop,'package');
   assert.equal(creation.point,false);assert.equal(creation.profile,'p1','Write as reaches the run');assert.equal(creation.revision,3,'My voice writes with the default voice\'s pinned revision');
@@ -2524,18 +2533,129 @@ async function failureRecovery(){
 }
 
 async function phase3ResearchDefaults(){
-  const defaults={engine:'codex',seconds:600,research:'web-allowed',stop:'package',tone:'Clear',author:''};
-  const f=fixture(url=>url==='/api/run-options'?{settings:{defaults,review_level:'balanced'},sources:[],profiles:[],agents:{codex:true}}:{items:[],total:0});
+  const sites=['https://blogs.vmware.com/tanzu','https://docs.example.com'],words={empty:'Choose where research may look: your documents, your sites or the public web.',no_documents:'No documents were given, so choose your sites or the public web for research, or add documents.',no_sites:'Choose at least one of your sites, or turn your sites off.'};
+  const defaults={engine:'codex',seconds:600,research:{documents:true,sites:true,web:false},stop:'package',tone:'Clear',author:''};
+  const f=fixture(url=>url==='/api/run-options'?{settings:{defaults,review_level:'balanced',research_sites:sites,research_words:words},sources:[],profiles:[],agents:{codex:true}}:{items:[],total:0});
   f.loadRunner();
-  for(const [entry,want]of [['write','web-allowed'],['outline','web-allowed'],['ideas','none'],['revise','none'],['review','none'],['from-files','supplied-only']]){
+  const mine={research_from:{documents:true,sites,web:false}};
+  for(const [entry,want]of [['write',mine],['outline',mine],['ideas',{research:'none'}],['revise',{research:'none'}],['review',{research:'none'}],['from-files',{research_from:{documents:true,sites:[],web:false}}]]){
     await f.run(`newBlog('',null,'${entry}')`);
-    assert.equal(f.run('studio.draft.research'),want,'Home card takes the research default: '+entry);
+    assert.deepEqual(JSON.parse(f.run('JSON.stringify(sResearchPayload(studio.draft))')),want,'Home card takes the research default: '+entry);
   }
   f.run("studio.options.sources=[{id:'s1',status:'ready',purposes:['reference']},{id:'s2',status:'ready',purposes:['reference']}]");
-  for(const [research,sources,want]of [['none',[],'No research.'],['supplied-only',['s1','s2'],'Research reads only the 2 sources you ticked.'],['web-allowed',[],'Research reads the sources you ticked and the public web.'],['supplied-only',[],'No research: no source is ticked.']]){
+  for(const [research,sources,want]of [['none',[],'No research.'],['supplied-only',['s1','s2'],'Research from your documents.'],['web-allowed',[],'Research from the public web.'],['web-allowed',['s1'],'Research from your documents and the public web.'],['supplied-only',[],'No research: no source is ticked.'],[{documents:true,sites:true,web:false},['s1'],'Research from your documents and 2 of your sites (blogs.vmware.com/tanzu, docs.example.com).'],[{documents:true,sites:true,web:true},[],'Research from 2 of your sites (blogs.vmware.com/tanzu, docs.example.com) and the public web.']]){
     f.set('draft',{mode:'write',research,sources,stop:'package'});
     assert.equal(f.run('sResearchWords(draft)'),want,'Ready to start says what research will run');
   }
+  // Blog Studio's own default: your sites stay off until ticked, even with a shared list, on
+  // the start screens, the files screen and Settings.
+  const usual=fixture(url=>url==='/api/run-options'?{settings:{defaults:{...defaults,research:{documents:true,sites:false,web:false}},review_level:'balanced',research_sites:sites,research_words:words},sources:[],profiles:[],agents:{codex:true}}:{items:[],total:0});
+  usual.loadRunner();
+  for(const entry of ['write','outline','from-outline','from-files']){
+    await usual.run(`newBlog('',null,'${entry}')`);
+    assert.deepEqual(JSON.parse(usual.run('JSON.stringify(sResearchPayload(studio.draft))')),{research_from:{documents:true,sites:[],web:false}},'your sites are off by default: '+entry);
+  }
+  usual.run("studio.settings={defaults:{...studio.options.settings.defaults},workspace:'/synthetic',shared_before:{},review_level:'balanced',research_sites:studio.options.settings.research_sites};studio.team={};studio.brand=null;studio.screen='settings';sSettings()");
+  assert.equal(descendants(usual.get('studio-page')).find(e=>e.id==='settings-research-sites').checked,false,'Settings keeps your sites off by default');
+  assert.ok(descendants(usual.get('studio-page')).some(e=>/only pages under them are saved/.test(e.textContent)),'Settings says how your sites are searched');
+  // More than five sites are named five at a time, as research_sites.summary() names them.
+  assert.equal(f.run("sResearchSummary({documents:false,sites:['https://a.example/1','https://b.example','https://c.example','https://d.example','https://e.example','https://f.example','https://g.example'],web:false})"),'from 7 of your sites (a.example/1, b.example, c.example, d.example, e.example and 2 more)');
+}
+
+// Research from: your documents, your sites and/or the public web. The shared list is
+// prefilled with a tick per site; a site added for this blog is checked by the server and
+// sent with this blog only; an incomplete choice says the shared sentence and starts nothing.
+async function researchFromJourney(){
+  const sites=['https://blogs.vmware.com/tanzu','https://docs.example.com'],words={empty:'Choose where research may look: your documents, your sites or the public web.',no_documents:'No documents were given, so choose your sites or the public web for research, or add documents.',no_sites:'Choose at least one of your sites, or turn your sites off.'};
+  const defaults={engine:'codex',seconds:600,research:{documents:true,sites:true,web:false},stop:'package',tone:'Clear',author:''},requests=[];
+  const found={id:'written',title:'A synthetic blog',status:'queued',next:'research-plan',approval:'page',expected:'r1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',decisions:[],brief:{goal:'Explain',audience:'Authors'},stages:[]};
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
+    if(url==='/api/run-options')return {settings:{defaults,review_level:'balanced',research_sites:sites,research_words:words},sources:[{id:'s1',name:'Specification',status:'ready',purposes:['reference']}],profiles:[],agents:{codex:true},styles:[]};
+    if(url==='/api/research-site'){if(data.site.startsWith('http://'))return {__http:400,error:'"http://intranet.example": research sites use https only.'};return {site:'https://extra.example.org/guide',shown:'extra.example.org/guide'};}
+    if(url==='/api/run-create'||url.startsWith('/api/run?'))return found;
+    return {items:[],total:0};});
+  f.loadRunner();
+  const nodes=()=>descendants(f.get('studio-page')),byId=id=>nodes().find(e=>e.id===id),text=()=>nodes().map(e=>e.textContent),said=()=>nodes().filter(e=>e.className.split(' ').includes('research-scope')).map(e=>e.textContent);
+  await f.run("newBlog('',null,'write')");
+  for(const [id,value] of [['new-title','A synthetic blog'],['new-goal','Explain'],['new-audience','Authors']]){byId(id).value=value;byId(id).listeners.input();}
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  // Research from: ☑ your documents ☑ your sites (2) ☐ the public web, with Research it first on.
+  assert.equal(byId('new-research-on').checked,true);
+  assert.ok(text().includes('Research from:'),text().join('|'));
+  assert.deepEqual(['documents','sites','web'].map(key=>byId('new-research-'+key).checked),[true,true,false]);
+  assert.ok(text().includes('your sites (2)'),text().join('|'));
+  assert.deepEqual([0,1].map(at=>byId('new-research-site-'+at).checked),[true,true],'the shared list is prefilled');
+  const searching=()=>nodes().find(e=>e.className==='quiet site-search');
+  assert.equal(searching().textContent,'Your sites are searched with the assistant’s web search; only pages under them are saved.');
+  assert.equal(searching().parent.hidden,false,'said while your sites are ticked');
+  assert.ok(text().includes('blogs.vmware.com/tanzu')&&text().includes('docs.example.com'));
+  assert.ok(said().length>=2&&said().every(line=>line==='Research from 2 of your sites (blogs.vmware.com/tanzu, docs.example.com).'),said().join('|'));
+  // Ticking a reference brings your documents in.
+  const reference=nodes().find(e=>e.type==='checkbox'&&e.parent?.className==='source-choice');reference.checked=true;reference.listeners.change();
+  assert.ok(said().every(line=>line==='Research from your documents and 2 of your sites (blogs.vmware.com/tanzu, docs.example.com).'),said().join('|'));
+  // One site unticked, one added for this blog only.
+  byId('new-research-site-1').checked=false;byId('new-research-site-1').listeners.change();
+  assert.ok(text().includes('your sites (1)'),text().join('|'));
+  const add=byId('new-research-add');add.value='http://intranet.example';add.listeners.input();
+  await nodes().find(e=>e.textContent==='Add the site').listeners.click();
+  assert.ok(text().includes('"http://intranet.example": research sites use https only.'),'the server refuses a bad site: '+text().join('|'));
+  add.value='extra.example.org/guide/';add.listeners.input();
+  await nodes().find(e=>e.textContent==='Add the site').listeners.click();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/research-site').at(-1).data,{site:'extra.example.org/guide/'});
+  assert.equal(byId('new-research-site-2').checked,true,'an added site is ticked');
+  assert.ok(text().includes(' · this piece of work only'));
+  assert.ok(text().includes('your sites (2)'),text().join('|'));
+  assert.ok(said().every(line=>line==='Research from your documents and 2 of your sites (blogs.vmware.com/tanzu, extra.example.org/guide).'),said().join('|'));
+  // Return in the add field adds the site and never starts the blog.
+  let prevented=false;byId('new-research-add').listeners.keydown({key:'Enter',preventDefault(){prevented=true;}});assert.equal(prevented,true);
+  assert.equal(requests.some(r=>r.url==='/api/run-create'),false);
+  // Nothing ticked, or your sites with none ticked: the shared sentences, and nothing starts.
+  for(const key of ['documents','sites']){byId('new-research-'+key).checked=false;byId('new-research-'+key).listeners.change();}
+  assert.ok(said().every(line=>line===words.empty),said().join('|'));
+  assert.equal(searching().parent.hidden,true,'folded away with your sites off');
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.ok(text().includes(words.empty));assert.equal(requests.some(r=>r.url==='/api/run-create'),false,'nothing chosen starts nothing');
+  byId('new-research-sites').checked=true;byId('new-research-sites').listeners.change();
+  for(const at of [0,2]){byId('new-research-site-'+at).checked=false;byId('new-research-site-'+at).listeners.change();}
+  assert.ok(said().every(line=>line===words.no_sites),said().join('|'));
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.equal(requests.some(r=>r.url==='/api/run-create'),false,'your sites with none ticked starts nothing');
+  // The added site and the public web go to the server.
+  byId('new-research-site-2').checked=true;byId('new-research-site-2').listeners.change();
+  byId('new-research-web').checked=true;byId('new-research-web').listeners.change();
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const created=requests.find(r=>r.url==='/api/run-create').data;
+  assert.deepEqual(created.research_from,{documents:false,sites:['https://extra.example.org/guide'],web:true});assert.equal('research' in created,false);
+  assert.deepEqual(requests.filter(r=>r.data).map(r=>r.url),['/api/research-site','/api/research-site','/api/run-create'],'the shared list is not changed');
+  // Research it first off: no research, and the choices fold away.
+  await f.run("newBlog('',null,'write')");
+  f.run("studio.draft.step=1;studio.draft.title='A synthetic blog';studio.draft.goal='Explain';studio.draft.audience='Authors';sWizard()");
+  byId('new-research-on').checked=false;byId('new-research-on').listeners.change();
+  assert.equal(nodes().find(e=>e.tagName==='fieldset'&&e.className==='research-choices').hidden,true);
+  assert.ok(said().every(line=>line==='No research.'),said().join('|'));
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.equal(requests.filter(r=>r.url==='/api/run-create').at(-1).data.research,'none');
+  // The files screen: the files are your documents; your sites or the web add research steps.
+  await f.run("newBlog('',null,'from-files')");
+  f.run("studio.draft.files=[{id:'m1',filename:'notes.md',state:'ready',chars:1200,note:'',link:'',role:'material'}];sWizard()");
+  assert.deepEqual(['documents','sites','web'].map(key=>byId('files-research-'+key).checked),[true,false,false]);
+  assert.equal(byId('files-research-on'),undefined,'the files screen has no off switch: the files are always read');
+  assert.ok(text().includes('Your files are read at every step. Your sites or the public web add research before the outline.'));
+  assert.ok(said().every(line=>line==='Research from your documents.'),said().join('|'));
+  byId('files-research-sites').checked=true;byId('files-research-sites').listeners.change();
+  assert.ok(said().every(line=>line==='Research from your documents and 2 of your sites (blogs.vmware.com/tanzu, docs.example.com).'),said().join('|'));
+  assert.ok(f.run("sPipeline(studio.draft).includes('research')"),'your sites add research before the outline');
+  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.deepEqual(requests.filter(r=>r.url==='/api/run-create').at(-1).data.research_from,{documents:true,sites,web:false});
+  // The run and its research gate name the sites that kept pages out.
+  const gate={...found,status:'waiting-for-approval',next:'research',research_says:'Research from 1 of your sites (blogs.vmware.com/tanzu).',research:{contract:true,kept:false,rounds:3,refusal:null,outside:'2 pages were outside your sites (blogs.vmware.com/tanzu) and were not saved.'},stages:[{stage:'research',label:'Research findings',path:'derived/blog-research.md',status:'draft'}]};
+  f.set('found',gate);f.run('sRun(found)');
+  assert.ok(text().includes('Research from 1 of your sites (blogs.vmware.com/tanzu).'),'About this blog says where research looked');
+  f.set('shown',{stage:'research',label:'Research findings',content:'# Research',checks:[],bundle:[],notes:'',expected:'r1',research:{brief:'# Brief',check:{said:'Checked.',note:''},gaps:['A synthetic gap.'],sources:{partial:[]},read:'',findings:[],questions:[],report:'',evidence:''}});
+  f.run("studio.found=found;studio.shown=shown;sGate(found,shown)");
+  assert.ok(text().includes('2 pages were outside your sites (blogs.vmware.com/tanzu) and were not saved.'),text().join('|'));
+  f.set('found',{...gate,status:'failed',error:'Research could not produce valid evidence.',research:{...gate.research,refusal:{rounds:3,count:1,cause:null,groups:[]}}});f.run('sRun(found)');
+  assert.ok(text().includes('2 pages were outside your sites (blogs.vmware.com/tanzu) and were not saved.'),'the refusal names the sites: '+text().join('|'));
 }
 
 async function phase5BringResearchUpToDate(){
@@ -2597,7 +2717,7 @@ async function phase3ClaimsMap(){const f=fixture();f.loadRunner();
     assert.equal(f.run("sPipeline(draft).includes('claims-map')"),false,'voice/example is not factual material');
   }
   f.set('draft',{mode:'write',research:'supplied-only',sources:['s1','voice'],files:[{id:'example',state:'ready',role:'inspiration'}],stop:'package'});
-  assert.equal(f.run('sResearchWords(draft)'),'Research reads only the 1 source you ticked.');
+  assert.equal(f.run('sResearchWords(draft)'),'Research from your documents.','a voice sample or an example is not one of your documents');
   f.set('draft',{mode:'write',research:'supplied-only',sources:[],files:[{id:'owned',filename:'notes.md',state:'ready',role:'material',chars:40}],stop:'package'});
   f.run("document.getElementById('studio-page').replaceChildren(sNode('p','stops-line',sStops(draft)),sFilesCard(draft,sNode('p'),()=>{},()=>{}))");
   const stops=f.get('studio-page').querySelector('.stops-line');

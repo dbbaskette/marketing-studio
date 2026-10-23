@@ -13,7 +13,8 @@ checked here before anything is kept. Each job has a folder that only the runner
     state.json    how often each thing was handed back, and why the last one was refused
     tools.log     every call, one JSON object a line
 
-    prepare(folder, inputs=, artifacts=, finding=, sources=, fetch=, ask=, ...)   set a job up
+    prepare(folder, inputs=, artifacts=, finding=, sources=, fetch=, ask=, research=, ...)
+                           set a job up
     command(folder)        the command an agent starts the server with
     WorkerTools(folder)    the same tools in this process; every tool answers (ok, text)
     collect(folder)        what was handed back, for the engine to keep
@@ -21,7 +22,9 @@ checked here before anything is kept. Each job has a folder that only the runner
 - `artifacts` maps each draft the job hands back to {'kind': ...}. The kind chooses the
   validator (VALIDATORS). A 'research-plan' takes 'scope' and 'sources': the worker supplies
   the topic and the questions, and the runner fills in the rest, so what is kept is the
-  whole plan.
+  whole plan. The scope is harness-research's: 'supplied-only', or 'public-web' for any
+  research that saves pages, your sites among them; each question keeps its public_query
+  only under 'public-web'.
 - A later part of the runner adds a kind with `register(kind, check)`: `check(text, spec)`
   returns (problems, the checks that ran, warnings, the text to keep), and the draft is
   handed back with `submit_artifact`. The check must be a function a module under runner
@@ -43,6 +46,14 @@ checked here before anything is kept. Each job has a folder that only the runner
   goes to the address that was checked. Where a computer reaches the web through a proxy,
   the proxy connects instead; if that computer cannot look names up itself, nothing is
   fetched.
+- `research` is where the deck's research may look, as studio_core.research_sites keeps it:
+  {'documents', 'sites', 'web'}, checked by prepare and kept in job.json. With your sites on
+  and the public web off, every hop of a page, redirects included, must be https and under a
+  listed site (`research_sites.refused`), or it is refused, before its name is looked up,
+  with a sentence that names the sites; with the public web on any public page is saved.
+  The private-address refusals stand either way. Each page refused for being outside the
+  sites is kept in state.json, and `collect(folder)['outside']` lists them for the research
+  stop. A job set up without `research`, as every older one was, fetches as before.
 - A draft or a finding can be handed back SUBMISSIONS times. After that, treat the job as
   failed: `collect(folder)['problems']` says why the last one was refused.
 - A question (`ask_person`) ends the job: every later call is refused. Pass `ask=False`
@@ -112,6 +123,7 @@ import home  # noqa: E402
 from workspace import WorkspaceError  # noqa: E402
 
 from runner.steps import build  # noqa: E402
+from studio_core import research_sites  # noqa: E402
 
 SCHEMA = 1
 PART = 20_000           # characters of an input in one read
@@ -860,12 +872,17 @@ def the_brand(runtime: str | None = None):
 def prepare(folder: Path, inputs: dict[str, str] | None = None,
             artifacts: dict[str, dict] | None = None, finding: str | None = None,
             sources=(), fetch: bool = False, ask: bool = True, review: dict | None = None,
-            look=None, runtimes: dict | None = None) -> Path:
+            look=None, runtimes: dict | None = None, research: dict | None = None) -> Path:
     """Set a job's folder up: what the worker may read, and what it must hand back."""
     folder = Path(folder)
     if (folder / 'job.json').exists():
         raise WorkspaceError(f'{folder} already holds a job. Give each job, and each new '
                              'attempt at one, a folder of its own.')
+    if research is not None:
+        try:
+            research = research_sites.choice(research)
+        except ValueError as error:
+            raise WorkspaceError(str(error)) from None
     artifacts = {name: dict(spec) if isinstance(spec, dict) else spec
                  for name, spec in (artifacts or {}).items()}
     for name, spec in artifacts.items():
@@ -898,7 +915,8 @@ def prepare(folder: Path, inputs: dict[str, str] | None = None,
                    if spec['kind'] in REGISTERED},
         'fetch': bool(fetch), 'ask': bool(ask), 'review': review,
         'look': list(look or (review or {}).get('slides') or ()),
-        'runtimes': dict(runtimes or {}), 'prepared_at': home.now()})
+        'runtimes': dict(runtimes or {}), 'prepared_at': home.now(),
+        **({'research': research} if research is not None else {})})
     return folder
 
 
@@ -978,6 +996,7 @@ def collect(folder: Path) -> dict:
             'finding': home.read_json(kept / 'finding.json', None),
             'question': asked.get('question') if isinstance(asked, dict) else None,
             'sources': sources,
+            'outside': list(state.get('outside') or []),
             'problems': {name: found for name, found
                          in state.get('problems', {}).items() if found}}
 
@@ -1598,8 +1617,10 @@ class WorkerTools:
                 + (f"\n\nCapture file: {entry['file']}. Origin: {entry['url']}."
                    if any(spec.get('kind') == 'research-json' for spec in self.job['artifacts'].values()) else ''))
 
-    def _checked(self, url: str) -> list[str]:
-        """The public addresses a web address leads to. Refuses any other kind."""
+    def _checked(self, url: str, redirected_from: str | None = None) -> list[str]:
+        """The public addresses a web address leads to. Refuses any other kind, and, for a
+        job whose research keeps to your sites, any address that is not under one of them:
+        `redirected_from` is the hop that led here."""
         try:
             target = urllib.parse.urlsplit(url)
             host, signed = target.hostname, target.username or target.password
@@ -1612,6 +1633,13 @@ class WorkerTools:
             raise Refusal('Only http and https addresses can be saved.')
         if signed:
             raise Refusal('That address carries a name or password. Give it without them.')
+        # Where research may look, checked before the name is even looked up. A job set up
+        # before research_from has no choice, and fetches any public page as it did.
+        if self.job.get('research') is not None:
+            said = research_sites.refused(url, self.job['research'], redirected_from)
+            if said:
+                self._outside(url, redirected_from)
+                raise Refusal(said)
         try:
             addresses = self.resolver(host)
         except (OSError, UnicodeError) as failure:
@@ -1621,12 +1649,28 @@ class WorkerTools:
                           'fetched.')
         return addresses
 
+    def _outside(self, url: str, redirected_from: str | None) -> None:
+        """Note a page refused for being outside the sites, for the research stop."""
+        state = self._state()
+        kept = list(state.get('outside') or [])
+        if url not in (entry.get('url') for entry in kept) and len(kept) < MAX_SOURCES:
+            kept.append({'url': clip(url, ADDRESS), 'redirected_from': redirected_from})
+            home.write_json(self.folder / 'state.json', {**state, 'outside': kept})
+
     def _fetch(self, url: str) -> tuple[str, dict, bytes]:
         """A page's final address, headers and body, with every hop on the way checked."""
+        came_from = None
         for _ in range(MAX_HOPS + 1):
-            status, headers, data = self._ask(url, self._checked(url))
+            # Each hop is checked and asked for without its fragment, which is never sent:
+            # parsers split at the first '#' and urllib at the last, so a fragment left in
+            # could carry a path the check never saw.
+            try:
+                url = research_sites.fetchable(url)
+            except ValueError:
+                raise Refusal('That is not a web address.') from None
+            status, headers, data = self._ask(url, self._checked(url, came_from))
             if status in REDIRECTS and headers.get('location'):
-                url = urllib.parse.urljoin(url, headers['location'])
+                came_from, url = url, urllib.parse.urljoin(url, headers['location'])
                 continue
             if not 200 <= status < 300:
                 said = http.client.responses.get(status, '')
@@ -1904,7 +1948,8 @@ TOOLS = [
                    'required': ['slide', 'question', 'severity', 'note']}},
                 'weakest': {'type': 'array', 'items': TEXT}}, ['findings']),
     _described('save_source', 'Fetch a public web page or PDF, keep it, and return the '
-               'start of its text. Only sources saved this way count as evidence.',
+               'start of its text. Only sources saved this way count as evidence. Where your '
+               'task names allowed sites, only a page under one of them is saved.',
                {'url': TEXT}, ['url']),
     _described('read_source', 'Read part of a saved source, from a character offset. With '
                'original true, read the document a supplied source was taken from '

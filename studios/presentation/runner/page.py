@@ -116,7 +116,8 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/deci
           '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
           '/api/versions', '/api/brand', '/api/brand/install', '/api/shared',
           '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
-          '/api/note', '/api/review-level', '/api/picture', '/api/picture-remove')
+          '/api/note', '/api/review-level', '/api/research-site', '/api/picture',
+          '/api/picture-remove')
 PNG = 'image/png'
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
@@ -365,6 +366,9 @@ class RunnerPage(server.Page):
             return server.as_json(HTTPStatus.OK, self.engine.note(
                 self.deck(server.text(sent, 'path')), server.text(sent, 'text'),
                 server.text(sent, 'expected')))
+        if path == '/api/research-site':
+            # A site for one deck's research, checked here as the deck's form will be.
+            return server.as_json(HTTPStatus.OK, shaped(setup.research_site, sent))
         if path == '/api/review-level':
             level, seen = shaped(setup.review_choice, sent)
             return server.as_json(HTTPStatus.OK, setup.save_review_level(self.engine, level,

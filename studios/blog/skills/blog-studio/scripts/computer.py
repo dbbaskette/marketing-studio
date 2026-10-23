@@ -14,6 +14,24 @@ BUNDLED_CODEX = Path(
 )
 
 
+def harness_research():
+    """Whether Harness Research, with its checked research, is installed here. Research
+    from your sites needs it: it is what saves pages only from under them."""
+    try:
+        from studio_core import research_contract
+    except ImportError:
+        # Setup loads this module by path, before the skill scripts are on sys.path.
+        here = str(Path(__file__).resolve().parent)
+        sys.path.insert(0, here)
+        try:
+            from studio_core import research_contract
+        except ImportError:
+            return False
+        finally:
+            sys.path.remove(here)
+    return research_contract.snapshot() is not None
+
+
 def cli_path(name):
     return shutil.which(name) or (
         str(BUNDLED_CODEX) if name == 'codex' and BUNDLED_CODEX.is_file() else None
@@ -158,6 +176,21 @@ def report(home=None, sign_in=True):
         ''
         if known_identity
         else 'Install Git if needed, then set user.name and user.email in your terminal. Repository access uses your existing Git credentials.',
+        True,
+    )
+    researching = harness_research()
+    add(
+        'research',
+        'Harness Research (optional)',
+        'ready' if researching else 'optional',
+        'Harness Research is installed: research is checked independently and keeps to your sites.'
+        if researching
+        else 'Harness Research is not installed. Research from your sites needs it; research '
+        'from your documents or the public web does not.',
+        ''
+        if researching
+        else 'Install Blog Studio or Marketing Studio again from its download, which includes '
+        'Harness Research, then check again.',
         True,
     )
     # Setup loads this module by path before the skill scripts are on sys.path.

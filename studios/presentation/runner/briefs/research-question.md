@@ -10,6 +10,7 @@ Call `list_inputs` first. It lists anything provided for this job, and any sourc
 
 ## Finding and reading sources
 
+- Your task says where research may look. When it names allowed sites, search those first, with `site:` queries or a site's own search page when your tools offer one, and save pages only from under them. Use the wider public web only when the task allows it, and then only for what the listed sites leave open. A page outside them is refused when you try to save it, and the refusal names the sites.
 - If you have a web search tool, use it to find pages. Prefer official and primary sources: the maker's own documentation, a standard, a release note. Use well-regarded independent sources next.
 - You cannot open a page yourself. Call `save_source` with its address. The page or PDF is fetched and kept, and the start of its text comes back with an ID such as `s1`. Only saved sources count as evidence.
 - `search_source` finds a word or phrase in a saved source and gives the offset of each match. `read_source` reads from an offset. Long pages begin with menus, so search for the words you need instead of reading from the top.

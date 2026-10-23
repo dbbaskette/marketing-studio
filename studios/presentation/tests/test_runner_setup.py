@@ -270,6 +270,20 @@ class CheckTests(FirstTimeCase):
 class SharedConfigTests(FirstTimeCase):
     """The studios config is the only place the values every studio shares are kept."""
 
+    def test_a_site_added_for_one_deck_is_checked_by_the_runner_and_saved_nowhere(self):
+        self.write_config('{"schema": 1, "research": {"sites": ["https://docs.example.com"]}}')
+        before = self.config.read_text()
+        self.assertEqual(self.post('research-site', {'site': ' Learn.Example.org/guide/ '}),
+                         {'site': 'learn.example.org/guide'})
+        for typed, said in (('http://docs.example.com', 'research sites use https only'),
+                            ('localhost/x', 'is not a public site'),
+                            ('https://docs.example.com/a?b=c', 'leave out the part after ?'),
+                            ('', 'is not a web address')):
+            with self.subTest(typed):
+                self.assertIn(said, self.post('research-site', {'site': typed}, 400)['error'])
+        self.assertIn('Send the site', self.post('research-site', {'sites': []}, 400)['error'])
+        self.assertEqual(self.config.read_text(), before)
+
     def test_review_level_route_saves_and_refuses_a_stale_level(self):
         from studio_core import review_policy
         self.review_capture.stop()    # the test's own studios config is read for real

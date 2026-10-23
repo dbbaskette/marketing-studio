@@ -173,6 +173,7 @@ import desk
 import home
 import workspace
 from workspace import WorkspaceError
+from studio_core import research_sites
 
 from runner import engine as engines
 from runner import gitstate, pipeline, setup
@@ -184,7 +185,7 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
           '/api/brand', '/api/brand/install', '/api/shared', '/api/note', '/api/look',
-          '/api/review-level')
+          '/api/review-level', '/api/research-site')
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -209,6 +210,17 @@ def shaped(action, *args):
         return action(*args)
     except WorkspaceError as refusal:
         raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(refusal))
+
+
+def research_site(sent: dict) -> dict:
+    """One site as research keeps it, {'site', 'shown'}, or a sentence naming it."""
+    if not isinstance(sent, dict) or set(sent) != {'site'}:
+        raise WorkspaceError('Give one site to check.')
+    try:
+        found = research_sites.site(sent['site'])
+    except ValueError as error:
+        raise WorkspaceError(str(error)) from None
+    return {'site': found, 'shown': research_sites.shown(found)}
 
 
 class RunnerPage(desk.Page):
@@ -312,6 +324,11 @@ class RunnerPage(desk.Page):
         shown['redo'] = self.engine.redo(path, name)
         if name == 'research':
             shown['research_price'] = self.engine.research_price(path)
+            # Pages refused for being outside your sites, said with the sites named.
+            looks = self.engine.research_from(path)
+            shown['outside'] = looks['outside'] if looks else None
+            if shown.get('research') and shown['outside']:
+                shown['research'] = {**shown['research'], 'outside': shown['outside']}
         kind = workspace.split(name)[0].partition(':')[0]
         if kind == 'scenario':
             shown['whose'] = self.engine.whose(path, name)
@@ -525,6 +542,11 @@ class RunnerPage(desk.Page):
             level, seen = shaped(setup.review_choice, sent)
             return desk.as_json(HTTPStatus.OK, setup.save_review_level(self.engine, level,
                                                                        seen))
+        if path == '/api/research-site':
+            # A site added on the start form for one training only: checked here, the one
+            # check every studio uses, and saved nowhere. The shared list is changed in
+            # Shared settings.
+            return desk.as_json(HTTPStatus.OK, shaped(research_site, sent))
         if path == '/api/shared':
             if sent.get('seen') is not True:
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Send {"seen": true} once the '

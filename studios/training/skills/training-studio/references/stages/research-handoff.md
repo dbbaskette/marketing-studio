@@ -2,7 +2,9 @@
 
 Harness Research owns investigation, synthesis and independent review. If it is
 missing, stop and point to https://github.com/dbbaskette/harness-research-skill.
-Intake is settled: preserve audience, purpose, scope and source permission.
+Intake is settled: preserve audience, purpose, scope and source permission. With
+sites under Source scope, search them first; save pages only from under them
+unless the public web is chosen too, and then use it only for gaps.
 
 ## Fresh synthesis research
 

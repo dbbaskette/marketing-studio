@@ -813,6 +813,7 @@ def article_command(root, args):
         record['title'] = args.title.strip()
     elif args.action == 'research-policy':
         record['research_policy'] = args.policy
+        record.pop('research_from', None)  # The guided run reads the policy now.
     elif args.action == 'author':
         record['author'] = checked_author(args.name)
     elif args.action == 'attach':

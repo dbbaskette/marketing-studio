@@ -11,6 +11,7 @@ Call `list_inputs` first. It lists anything provided for this job, and any sourc
 ## Finding and reading sources
 
 - If you have a web search tool, use it to find pages. Prefer official and primary sources: the maker's own documentation, a standard, a release note. Use well-regarded independent sources next.
+- If your task names allowed sites, search those first, and save pages only from under them unless it says the wider web may fill gaps. `save_source` refuses any other page and names the sites.
 - You cannot open a page yourself. Call `save_source` with its address. The page or PDF is fetched and kept, and the start of its text comes back with an ID such as `s1`. Only saved sources count as evidence.
 - `search_source` finds a word or phrase in a saved source and gives the offset of each match. `read_source` reads from an offset. Long pages begin with menus, so search for the words you need instead of reading from the top.
 - If you have no web search tool, or `save_source` says this job cannot fetch pages, the training uses supplied documents only. Work from the saved sources alone.

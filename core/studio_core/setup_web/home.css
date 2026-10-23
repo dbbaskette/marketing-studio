@@ -295,3 +295,29 @@
     margin-top: 0.6rem;
   }
 }
+
+/* --- research sites: one row a site, its Remove button at the end ---------------------- */
+
+.site-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.site-list:empty {
+  display: none;
+}
+
+.site-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--hair);
+}
+
+.site-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

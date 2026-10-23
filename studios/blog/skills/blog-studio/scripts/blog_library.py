@@ -26,6 +26,7 @@ import zlib
 
 import studio
 from hub_store import HubError, MAX_TEXT, MAX_BINARY, encoded, sha, record_path, validate_files
+from studio_core.research_sites import fetchable
 
 MAX_POSTS = 500
 MAX_BATCH = 25
@@ -240,15 +241,33 @@ def read_within(response, raw, deadline):
         chunks.append(chunk)
 
 
-def fetch(url, scope, redirects=3, deadline=None):
+class Outside(ValueError):
+    """A research page outside the sites its run may use; the sentence names them."""
+
+
+def fetch(url, scope, redirects=3, deadline=None, redirected_from=None):
     """Reject private addresses and pin the actual socket, including every redirect.
 
+    `scope` is a collection's https base (a string), or a research run's
+    `research_sites.Scope`, which is asked about the first address and every redirect
+    before any lookup: with your sites only, a page off them raises Outside naming them.
+    The address is asked as given and as it is fetched, without its fragment, which is
+    never sent: a '#' cannot hide a path from the check.
     One deadline covers the whole exchange, so a slow or stalled server cannot hold the
     workspace longer than FETCH_DEADLINE seconds. Network failures become plain messages.
     """
     deadline = deadline or time.monotonic() + FETCH_DEADLINE
-    if not in_scope(url, scope):
-        raise ValueError(OUT_OF_SCOPE)
+    target = fetchable(url)
+    if isinstance(scope, str):
+        if not in_scope(target, scope):
+            raise ValueError(OUT_OF_SCOPE)
+    else:
+        refused = scope.refuse(url, redirected_from=redirected_from) or scope.refuse(
+            target, redirected_from=redirected_from
+        )
+        if refused:
+            raise Outside(refused)
+    url = target
     parsed = urlsplit(canonical(url))
     try:
         found = socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM)
@@ -273,9 +292,10 @@ def fetch(url, scope, redirects=3, deadline=None):
         if response.status in (301, 302, 303, 307, 308):
             if redirects <= 0:
                 raise ValueError('Too many collection redirects.')
-            destination = canonical(urljoin(url, response.getheader('Location', '')))
+            # Checked as the server sent it, and again as it is fetched, on the next hop.
+            destination = urljoin(url, response.getheader('Location', ''))
             connection.close()
-            return fetch(destination, scope, redirects - 1, deadline)
+            return fetch(destination, scope, redirects - 1, deadline, redirected_from=url)
         if response.status != 200:
             raise ValueError(
                 'Source returned HTTP '

@@ -2716,6 +2716,7 @@ function routeStep() {
       view.draft.route = route;
       view.draft.step = 0;
       view.draft.research = false;
+      view.draft.looks = null;
       paintNew(true);
     }, 'route ' + route));
   }
@@ -2915,6 +2916,9 @@ const LEVELS_SHOWN = Object.keys(REVIEW_WORDS);
 // form.
 function whereItStops(draft) {
   const line = make('p', 'quiet stops-line', stopsFor(draft));
+  // Where its research may look, with the sites named.
+  const looks = draft.research && draft.route !== 'existing'
+    ? researchSummary(researchFromOf(draft)) : '';
   return add(card('Where this deck stops'),
     choice('Review level', LEVELS_SHOWN.map((one) => REVIEW_WORDS[one]),
       LEVELS_SHOWN.indexOf(levelOf(draft)), (index) => {
@@ -2922,6 +2926,7 @@ function whereItStops(draft) {
         line.textContent = stopsFor(draft);
       }, 'review-level'),
     line,
+    looks ? make('p', 'quiet research-line', looks + '.') : null,
     add(make('div', 'field'), chip('Use this for new work in every studio',
       draft.review_default, (on) => { draft.review_default = on; }, 'review-default'),
     make('p', 'quiet field-hint', 'Saved when the deck starts.')));
@@ -2951,11 +2956,157 @@ function reviewLevelCard() {
     problem);
 }
 
+// --- where research may look -------------------------------------------------------------
+// Your documents (a deck made from a document), your sites (the shared list, which a deck
+// may narrow or add to for itself without changing the list) and the public web, in any
+// combination: at least one that applies is on. The runner checks the choice again with
+// research_sites, whose sentences these are, and keeps pages to the sites as they are saved.
+
+const RESEARCH_EMPTY = 'Choose where research may look: your documents, your sites or the '
+  + 'public web.';
+const RESEARCH_NO_SITES = 'Choose at least one of your sites, or turn your sites off.';
+const SITES_SHOWN = 5;    // sites a summary names before "and N more"
+
+function sharedSites() {
+  const listed = view.setup && view.setup.research_sites;
+  return Array.isArray(listed) ? listed.filter((one) => typeof one === 'string') : [];
+}
+
+// A site as the page shows it and sends it: host/path, which the runner reads as https. No
+// whole address is written into the page.
+function siteShown(site) {
+  return String(site);
+}
+
+// The draft's choice, made the first time research is switched on: your documents for a
+// deck from a document, the public web for one from an idea. Your sites stay off until they
+// are ticked, with the shared list ready under them.
+function looksOf(draft) {
+  if (!draft.looks) {
+    draft.looks = { documents: draft.route === 'document', sitesOn: false,
+      sites: sharedSites().map((url) => ({ url, on: true })),
+      web: draft.route !== 'document', adding: '', checking: false };
+  }
+  return draft.looks;
+}
+
+// The choice as the runner takes it: research_from.
+function researchFromOf(draft) {
+  const looks = looksOf(draft);
+  return { documents: draft.route === 'document' && looks.documents,
+    sites: looks.sitesOn ? looks.sites.filter((one) => one.on).map((one) => one.url) : [],
+    web: Boolean(looks.web) };
+}
+
+// 'Research from your documents and 3 of your sites (a, b, c)', as research_sites.summary
+// words it. Empty when nothing is chosen.
+function researchSummary(from) {
+  const found = [];
+  if (from.documents) found.push('your documents');
+  if (from.sites.length) {
+    const names = from.sites.map(siteShown);
+    found.push(from.sites.length + ' of your sites (' + (names.length > SITES_SHOWN
+      ? names.slice(0, SITES_SHOWN).join(', ') + ' and ' + (names.length - SITES_SHOWN) + ' more'
+      : names.join(', ')) + ')');
+  }
+  if (from.web) found.push('the public web');
+  if (!found.length) return '';
+  return 'Research from ' + (found.length === 1 ? found[0]
+    : found.slice(0, -1).join(', ') + ' and ' + found[found.length - 1]);
+}
+
+// Why the choice cannot be used, or nothing when it can.
+function researchProblem(draft) {
+  const looks = looksOf(draft);
+  const from = researchFromOf(draft);
+  if (looks.sitesOn && !from.sites.length) return RESEARCH_NO_SITES;
+  return from.documents || from.sites.length || from.web ? '' : RESEARCH_EMPTY;
+}
+
+// A site typed for this deck is checked by the runner, as every site is (research_sites),
+// and comes back as the page keeps it: host/path. Nothing is saved; the shared list is
+// changed in Shared settings, and the deck keeps its own list when it starts.
+async function addSite(draft) {
+  const looks = looksOf(draft);
+  if (looks.checking) return;
+  if (!String(looks.adding || '').trim()) {
+    refuse('research-site', 'Type the site first, such as docs.example.com/guide.');
+    return;
+  }
+  looks.checking = true;
+  let found;
+  try {
+    found = await send('research-site', { site: looks.adding });
+  } catch (failure) {
+    looks.checking = false;
+    if (view.draft === draft) refuse('research-site', failure.message);
+    return;
+  }
+  looks.checking = false;
+  if (view.draft !== draft) return;
+  const known = looks.sites.find((one) => one.url === found.site);
+  if (known) known.on = true;
+  else looks.sites.push({ url: found.site, on: true });
+  looks.adding = '';
+  paintNew(false);
+  focusKey('research-site');
+}
+
+// Research from: ☑ your documents ☑ your sites (3) ☐ the public web. With your sites on,
+// a tick for each site and a box to add one for this deck.
+function researchFromField(draft) {
+  const looks = looksOf(draft);
+  const flip = (key) => (on) => {
+    looks[key] = on;
+    paintNew(false);
+  };
+  const chosen = looks.sites.filter((one) => one.on).length;
+  const row = add(make('div', 'chips'),
+    draft.route === 'document' ? chip('your documents', looks.documents, flip('documents'),
+      'research-documents') : null,
+    chip('your sites' + (looks.sites.length ? ' (' + chosen + ')' : ''), looks.sitesOn,
+      flip('sitesOn'), 'research-sites'),
+    chip('the public web', looks.web, flip('web'), 'research-web'));
+  row.setAttribute('role', 'group');
+  row.setAttribute('aria-label', 'Research from');
+  let sites = null;
+  if (looks.sitesOn) {
+    const list = add(make('div', 'chips'), ...looks.sites.map((one, index) => chip(
+      siteShown(one.url), one.on, (on) => {
+        one.on = on;
+        paintNew(false);
+      }, 'research-site ' + index)));
+    list.setAttribute('role', 'group');
+    list.setAttribute('aria-label', 'Your sites for this deck');
+    const adding = field('research-site', 'Add a site for this piece of work', looks, 'adding',
+      { hint: 'An https address, such as docs.example.com/guide: pages are saved only from '
+        + 'under it. It is for this deck only; your shared list is changed in Shared '
+        + 'settings.' });
+    adding.querySelector('input').addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      addSite(draft);
+    });
+    sites = add(make('div', 'fields'), looks.sites.length ? list : make('p', 'quiet',
+      'Your shared list has no sites yet. Add one for this deck, or add them in Shared '
+      + 'settings for every studio.'), adding,
+    add(make('div', 'bar'), capsule('Add the site', 'quiet', () => addSite(draft),
+      'research-site-add')));
+  }
+  const from = researchFromOf(draft);
+  const summary = researchSummary(from);
+  return add(make('div', 'field'), make('p', 'field-label', 'Research from'), row, sites,
+    alertLine('research-from-problem'),
+    make('p', 'quiet field-hint', summary ? summary + '.' : RESEARCH_EMPTY),
+    from.documents && !from.sites.length && !from.web ? make('p', 'quiet field-hint',
+      'With your documents only, nothing about them is searched for on the public web.')
+      : null,
+    looks.sitesOn ? make('p', 'quiet field-hint', 'Your sites are searched with your '
+      + 'assistant’s own web search tool, and only pages from under them are saved.') : null);
+}
+
 function aboutStep(draft) {
-  const researchLabel = draft.route === 'document'
-    ? (draft.researchSources === 1 ? 'Research your documents and the public web first'
-      : 'Research your documents first') : 'Research the public web first';
-  const research = draft.route !== 'existing' ? chip(researchLabel, draft.research,
+  const research = draft.route !== 'existing' ? chip('Research first', draft.research,
     (on) => {
       draft.research = on;
       paintNew(false);
@@ -2978,12 +3129,9 @@ function aboutStep(draft) {
       draft.route === 'document' ? 'Only where your document turns out to be material to '
         + 'build from. You approve the research plan, then the findings, before the outline '
         + 'is drafted.' : 'You approve the research plan, then the findings, before the '
-        + 'outline is drafted. Research uses the public web.')) : null,
-    draft.route === 'document' && draft.research ? choice('Where may research look?',
-      ['Your documents only', 'Your documents and the public web'], draft.researchSources || 0,
-      (index) => { draft.researchSources = index; paintNew(false); }, 'research-sources',
-      'With your documents only, nothing about them is searched for on the public web.') : null,
-    draft.research ? field('research-questions', 'What should the research answer? (optional)',
+        + 'outline is drafted.')) : null,
+    research && draft.research ? researchFromField(draft) : null,
+    research && draft.research ? field('research-questions', 'What should the research answer? (optional)',
       draft, 'researchQuestions', { long: true, rows: 4, hint: 'One question a line, at most 8.' }) : null)];
 }
 
@@ -3113,6 +3261,11 @@ function stepReady(draft) {
     const number = Number(minutes);
     need('new-minutes', !minutes || (Number.isInteger(number) && number >= 1 && number <= 240),
       'Give a whole number of minutes, from 1 to 240, or leave it empty.');
+    if (draft.research && draft.route !== 'existing') {
+      const why = researchProblem(draft);
+      say(byId('research-from-problem'), why);
+      if (why) missing.push(draft.route === 'document' ? 'research-documents' : 'research-sites');
+    }
   }
   say(byId('new-problem'), missing.length ? 'Something above is missing.' : '');
   if (missing.length && !focusKey(missing[0])) byId(missing[0]).focus();
@@ -3141,8 +3294,8 @@ function formOf(draft) {
     delivery: DELIVERIES[deliveryOf(draft)][0],
     research: draft.route !== 'existing' && draft.research,
     research_questions: (draft.researchQuestions || '').split('\n'),
-    research_sources: draft.route === 'document' && draft.research
-      ? (draft.researchSources === 1 ? 'both' : 'documents') : undefined,
+    research_from: draft.route !== 'existing' && draft.research ? researchFromOf(draft)
+      : undefined,
     agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null,
     review_level: levelOf(draft), review_seen: (view.setup && view.setup.review_level) || null,
     review_default: Boolean(draft.review_default) };
@@ -3955,6 +4108,10 @@ function planRow(gate, item, readonly) {
 // and a question added.
 function researchPanel(gate, readonly, direction = false) {
   const node = card('What the research found');
+  // Where it looked, with your sites named, and the pages it could not save from outside
+  // them.
+  add(node, gate.research_from ? make('p', 'quiet', gate.research_from + '.') : null,
+    gate.outside ? callout('', make('p', '', gate.outside)) : null);
   const items = list(gate.items);
   if (gate.research) {
     const found = gate.research;

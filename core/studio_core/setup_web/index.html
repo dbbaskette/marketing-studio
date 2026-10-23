@@ -98,6 +98,13 @@
               </div>
             </div>
           </section>
+          <section id="research-sites" class="card" data-step="settings" aria-labelledby="research-sites-heading"><h3 id="research-sites-heading" class="card-title">Research sites</h3><p class="quiet">Research in every studio can look in your documents, these sites and the public web. Each blog, presentation or training chooses, starting from this list, and can add a site of its own.</p>
+            <ul id="research-site-list" class="site-list" aria-label="Your research sites"></ul>
+            <p id="research-site-empty" class="field-hint quiet">No sites yet. Each blog, presentation or training still chooses where its research looks; sites you add here are offered there.</p>
+            <div class="field"><label class="field-label" for="research-site-input">Add a site</label>
+              <div class="copy-row"><input id="research-site-input" class="input" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="docs.example.com/guide" aria-describedby="research-site-hint"><button type="button" id="research-site-add" class="button">Add site</button></div>
+              <p id="research-site-hint" class="field-hint quiet" role="status">An https address: a host and an optional path. Pages are saved only from under it, so docs.example.com/guide covers docs.example.com/guide/install but not docs.example.com/blog. At most 50 sites. Save settings to keep the list.</p></div>
+          </section>
           <p id="prepare-note" class="field-hint quiet" hidden>Finish setup will prepare installed studios with these choices. Your existing workspaces stay in place. For a shared repository, this creates a separate clone for each studio.</p>
           <div class="bar form-actions"><button type="button" id="back" class="button" hidden>Back</button><button type="submit" id="save" class="button button-filled">Save settings</button></div>
         </form>

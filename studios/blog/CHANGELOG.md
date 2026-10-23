@@ -5,6 +5,33 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Research from your documents, your sites and/or the public web.** The start screens
+  and the files screen read "Research from: your documents · your sites (3) · the public
+  web", each a tick, in place of "Also research the public web" and the old research list.
+  Your sites are the list in Marketing Studio's Shared settings, each with its own tick;
+  **Add a site for this piece of work** checks an https address and uses it for this blog
+  only, leaving the shared list as it is. The line under the choice names the sites
+  ("Research from your documents and 2 of your sites (…)"), and a blog keeps the exact
+  sites it started with. With your sites and not the public web, research saves a page only
+  from under a listed site, redirects included; pages elsewhere become source limits that
+  name the sites, and the research review and a refusal say how many were kept out.
+  Discovery searches your sites first with `site:` queries. Settings → Writing
+  preferences has the same three ticks for new blogs; none ticked is no research. Saved
+  blogs and settings keep their meaning: supplied sources read as your documents, public
+  research as your documents and the public web. Your sites stay unticked until you tick
+  them, and the form says how they are searched: "Your sites are searched with the
+  assistant's web search; only pages under them are saved." Research from your sites
+  alone needs Harness Research, which does that check; without it the blog is not
+  started, and Status says whether Harness Research is installed. No research job is
+  given web search unless the public web is ticked.
+- **For maintainers:** `run create --research-from documents,sites,web` and a repeatable
+  `--site`, with `--research none|supplied-only|web-allowed` still read. A run saves
+  `research_from` (`{"documents", "sites", "web"}`) on its record; `research_policy`
+  is derived from it for saved runs and pins, and a run without it reads its policy
+  through `studio_core.research_sites.legacy`. `blog_library.fetch` also takes a
+  `research_sites.Scope`, asked about the first address and every redirect, raising
+  `blog_library.Outside`; collection imports keep their string scope. The page checks a
+  per-blog site with the new `research-site` route.
 - **Voices and styles from Home and the sidebar.** Home has a "Set up before you write"
   card with Voices and styles and the Team library, and the sidebar has Voices, so
   learning a voice or a style no longer starts from a blog or from Tools.

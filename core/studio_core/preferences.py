@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from studio_core import model_profiles, review_policy, runtime
+from studio_core import model_profiles, research_sites, review_policy, runtime
 
 WorkspaceError = ValueError
 
@@ -42,15 +42,18 @@ def branch(value):
 
 
 def check(changes, current):
-    if not isinstance(changes, dict) or set(changes) - {*FIELDS, 'output', 'share', 'models', 'review'}:
+    if not isinstance(changes, dict) or set(changes) - {*FIELDS, 'output', 'share', 'models', 'review', 'research'}:
         raise WorkspaceError('Choose only the shared settings shown on this page.')
-    if any(key in current and not isinstance(current[key], dict) for key in FIELDS):
+    if any(key in current and not isinstance(current[key], dict) for key in (*FIELDS, 'research')):
         raise WorkspaceError('A shared settings section is not an object. Restore a valid settings file.')
     merged = dict(current)
     for group, value in changes.items():
         if group == 'review':
             review_policy.check(value)
             merged[group] = value
+            continue
+        if group == 'research':
+            merged[group] = {**(current.get(group) or {}), **research_sites.check_shared(value)}
             continue
         if group == 'models':
             model_profiles.check_changes(value)
@@ -147,12 +150,16 @@ def visible(values):
                for group, names in FIELDS.items()},
             **{name: values.get(name) for name in ('output', 'share')},
             'models': model_profiles.visible(values),
-            'review': values.get('review', {'level': None})}
+            'review': values.get('review', {'level': None}),
+            'research': {'sites': list((values.get('research') or {}).get('sites') or [])}}
 
 
 def save(config, changes, seen):
     if not isinstance(seen, dict):
         raise ValueError('Reload shared settings before saving changes.')
+    if isinstance(changes, dict) and 'research' in changes:
+        # Saved as the studios read them: canonical, deduplicated, at most fifty.
+        changes = {**changes, 'research': research_sites.check_shared(changes['research'])}
     check(changes, config.read()[0])
 
     def guard(current):
@@ -166,8 +173,13 @@ def save(config, changes, seen):
             held = review_policy.effective(current)
             if held != before and held != changes['review']['level']:
                 raise ValueError(review_policy.STALE)
+        if 'research' in changes and 'sites' in changes['research']:
+            held = (current.get('research') or {}).get('sites') or []
+            before = (seen.get('research') or {}).get('sites') or []
+            if held != before and held != changes['research']['sites']:
+                raise ValueError(research_sites.STALE)
         for path, wanted in model_profiles.leaves(
-                {key: value for key, value in changes.items() if key != 'review'}):
+                {key: value for key, value in changes.items() if key not in ('review', 'research')}):
             held, before = model_profiles.get(current, path), model_profiles.get(seen, path)
             if held != before and held != wanted:
                 raise ValueError('Another studio changed this setting. Reload the page and try again.')

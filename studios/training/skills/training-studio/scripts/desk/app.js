@@ -175,18 +175,27 @@ const REVIEW_SAYS = {
     + 'anything, and the spending limit still holds.',
   step_by_step: 'Stops at every stage of every level.',
 };
-const SOURCES = [['public-web', 'The public web only'], ['supplied-only', 'Only what you supply'],
-  ['both', 'What you supply and the public web']];
-const SOURCE_SAYS = [
-  'The public web only: it searches for pages anyone can read, and keeps every page it quotes '
+// Where research may look: your documents, your sites and/or the public web, any of them
+// together. Your sites start as the list every studio shares; a site added on the form is
+// for that training only. The words are the ones every studio uses
+// (studio_core.research_sites), and the runner refuses the same choices again.
+const RESEARCH_FROM = [['documents', 'Your documents'], ['sites', 'Your sites'],
+  ['web', 'The public web']];
+const RESEARCH_SAYS = {
+  documents: 'Your documents: it reads the documents you give it. You add them right after '
+    + 'starting, and they stay on this computer.',
+  // Said one way with the public web off, another with it on.
+  sites: 'Your sites: they are searched through the assistant’s web search tool, with site: '
+    + 'searches, and only pages from under your sites are saved.',
+  sitesAndWeb: 'Your sites: they are searched first, through the assistant’s web search tool '
+    + 'with site: searches. The public web fills what they leave open.',
+  web: 'The public web: it searches for pages anyone can read, and keeps every page it quotes '
     + 'with the training.',
-  'Only what you supply: it reads the documents you give it and nothing else, and never '
-    + 'searches the web or opens a page. You add them right after starting, and they stay on '
-    + 'this computer.',
-  'What you supply and the public web: it reads your documents and researches the public '
-    + 'web as well. You add the '
-    + 'documents right after starting, and they stay on this computer.',
-];
+};
+const RESEARCH_EMPTY = 'Choose where research may look: your documents, your sites or the '
+  + 'public web.';
+const RESEARCH_NO_SITES = 'Choose at least one of your sites, or turn your sites off.';
+const SITES_NAMED = 5;   // sites a summary names before "and N more"
 // A training where the run has made everything it can, and the deck is all that is left.
 const DECK_LEFT = 'Everything but the slide deck is made: make the deck with your assistant, '
   + 'or leave it out.';
@@ -2161,6 +2170,8 @@ function researchReading(found) {
     make('h2', 'doc-title', 'What the research could not settle'),
     list(found.gaps).length ? bullets(found.gaps) : make('p', 'quiet', 'No gaps were named.'),
     ...list(found.sources.partial).map((one) => make('p', '', one.title + ': ' + one.note)),
+    // Pages refused for being outside your sites, with the sites named.
+    found.outside ? make('p', '', found.outside) : null,
     make('p', 'quiet', found.read));
   const finding = (id) => list(found.findings).find((one) => one.id === id);
   const show = (ids) => ids.map(finding).filter(Boolean).map((one) =>
@@ -2178,6 +2189,7 @@ function researchReading(found) {
 function reading(found) {
   const node = make('div', 'reading');
   if (found.research) return add(node, researchReading(found.research));
+  if (found.outside) add(node, make('p', 'quiet', found.outside));
   if (slidesOf(found).length) add(node, slidesPart(found), coveragePart(found));
   const changed = found.changes;
   if (!changed.available || changed.same || !changed.comparable) {
@@ -4258,8 +4270,137 @@ function newDraft() {
     deck: brand.brand ? (shared.output === 'google' ? 1 : 0) : DECKS.length - 1,
     brand: brand.brand || '', variant: brand.variant || '', copies: [], delivery: 0,
     walkthrough: false,
-    yoodli: false, materials: [], sources: 0, agent: agent.default === 'codex' ? 'codex' : 'claude',
+    yoodli: false, materials: [], research: newResearch(),
+    agent: agent.default === 'codex' ? 'codex' : 'claude',
     model: agent.model || '', other: false, effort: agent.effort || '', starting: false });
+}
+
+// --- where research may look ----------------------------------------------------------
+
+// Your sites as every studio shares them, from the studios config.
+function sharedSites() {
+  return list((sharedOf().research || {}).sites).filter((site) => typeof site === 'string');
+}
+
+// A new form's choice: the public web, as it always was. Your sites are off until they are
+// ticked, and then every shared one is ticked. Documents are a choice: they are added after
+// the start.
+function newResearch() {
+  const sites = sharedSites();
+  return { documents: false, sites: false, web: true,
+    listed: sites.slice(), picked: sites.slice(), adding: '' };
+}
+
+function shownSite(site) {
+  return site.replace(/^[a-z]+:\/\//, '');
+}
+
+// The choice as the form sends it: the sites ticked, in their order, none with your sites off.
+function researchChoice(draft) {
+  const research = draft.research;
+  return { documents: research.documents, web: research.web,
+    sites: research.sites ? research.listed.filter((site) => research.picked.includes(site)) : [] };
+}
+
+// Where research looks, in the words every studio uses: "from your documents and 3 of your
+// sites (a, b, c)". The runner says the same with studio_core.research_sites.summary.
+function researchSummary(chosen) {
+  const named = chosen.sites.map(shownSite);
+  const sites = named.length > SITES_NAMED
+    ? named.slice(0, SITES_NAMED).join(', ') + ' and ' + (named.length - SITES_NAMED) + ' more'
+    : named.join(', ');
+  const parts = [chosen.documents ? 'your documents' : null,
+    named.length ? named.length + ' of your sites (' + sites + ')' : null,
+    chosen.web ? 'the public web' : null].filter(Boolean);
+  return parts.length ? 'from ' + series(parts) : 'from nothing';
+}
+
+// Why this choice cannot start, or nothing when it can.
+function researchProblem(draft) {
+  const research = draft.research;
+  if (research.sites && !researchChoice(draft).sites.length) return RESEARCH_NO_SITES;
+  const chosen = researchChoice(draft);
+  return chosen.documents || chosen.sites.length || chosen.web ? '' : RESEARCH_EMPTY;
+}
+
+// Research from: your documents, your sites and the public web, each on or off. Your sites
+// open into the list, a chip a site, and a box to add one for this training only.
+function researchFields(draft, changed) {
+  const research = draft.research;
+  const node = make('div', 'fields');
+  const fill = () => {
+    const ticked = research.listed.filter((site) => research.picked.includes(site)).length;
+    const row = make('div', 'chips');
+    row.setAttribute('role', 'group');
+    row.setAttribute('aria-label', 'Research from');
+    for (const [id, label] of RESEARCH_FROM) {
+      const words = id === 'sites' ? label + ' (' + ticked + ')' : label;
+      row.append(chip(words, research[id], (on) => {
+        research[id] = on;
+        say(byId('new-problem'), '');
+        fill();
+        focusKey('research ' + id);
+        changed();
+      }, 'research ' + id));
+    }
+    const means = bullets(RESEARCH_FROM.filter(([id]) => research[id])
+      .map(([id]) => RESEARCH_SAYS[id === 'sites' && research.web ? 'sitesAndWeb' : id]),
+    'reasons meanings');
+    node.replaceChildren();
+    add(node, add(make('div', 'field'), make('p', 'field-label', 'Research from'), row), means);
+    if (!research.sites) return;
+    const listed = make('div', 'chips');
+    listed.setAttribute('role', 'group');
+    listed.setAttribute('aria-label', 'Your sites');
+    for (const site of research.listed) {
+      listed.append(chip(shownSite(site), research.picked.includes(site), (on) => {
+        research.picked = research.listed.filter((one) => (one === site ? on
+          : research.picked.includes(one)));
+        say(byId('new-problem'), '');
+        fill();
+        focusKey('site ' + site);
+        changed();
+      }, 'site ' + site));
+    }
+    // The runner checks a site the way every studio does, and keeps it nowhere: it is
+    // sent with this training's choice when the training starts.
+    const added = async () => {
+      const typed = (research.adding || '').trim();
+      if (!typed || research.checking) return;
+      research.checking = true;
+      let found;
+      try {
+        found = await send('research-site', { site: typed });
+      } catch (failure) {
+        research.checking = false;
+        refuse('new-site', failure.message);
+        return;
+      }
+      research.checking = false;
+      if (!research.listed.includes(found.site)) research.listed.push(found.site);
+      if (!research.picked.includes(found.site)) research.picked.push(found.site);
+      research.adding = '';
+      fill();
+      focusKey('new-site');
+      changed();
+    };
+    const box = field('new-site', 'Add a site for this training', research, 'adding',
+      { hint: 'For this training only: your shared list of sites stays as it is. It is '
+        + 'changed in Shared settings.' });
+    // Enter in the box adds the site, and does not start the training.
+    box.querySelector('input').addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      added();
+    });
+    add(node, research.listed.length ? add(make('div', 'field'),
+      make('p', 'field-label', 'Your sites'), listed)
+      : make('p', 'quiet', 'No sites are shared yet. Add one for this training, or add your '
+        + 'sites in Shared settings.'),
+    box, add(make('div', 'bar'), capsule('Add the site', 'quiet', added, 'add-site')));
+  };
+  fill();
+  return node;
 }
 
 // The brands a deck can be made in, as the brand skill on this computer lists them. A deck
@@ -4515,13 +4656,18 @@ function startStep(draft) {
   const selected = MATERIALS.filter(([id]) => draft.materials.includes(id)).map(([, label]) => label);
   if (DECKS[draft.deck][0]) selected.push(DECKS[draft.deck][1] + ' deck');
   if (draft.yoodli) selected.push('Yoodli field layouts');
+  const looks = make('p', 'quiet research-line');
   const tell = () => {
-    const supplied = SOURCES[draft.sources][0] !== 'public-web';
+    const chosen = researchChoice(draft);
+    const supplied = chosen.documents;
     first.textContent = supplied ? 'First, add your documents on the next screen. Research waits until you say they are all added.'
       : 'Research starts after you start the training.';
+    looks.textContent = researchProblem(draft) || 'Research ' + researchSummary(chosen) + '.';
+    // Documents alone are planned from the form, so there is no research plan to read.
+    const planned = !supplied || chosen.web || chosen.sites.length > 0;
     // A drawn deck always comes to the person, whatever the level.
     const deck = Boolean(DECKS[draft.deck][0]);
-    const stops = policy === 'balanced' ? (SOURCES[draft.sources][0] === 'supplied-only' ? 'the first drafts' : 'the research plan, the first drafts')
+    const stops = policy === 'balanced' ? (planned ? 'the research plan, the first drafts' : 'the first drafts')
         + (deck ? ', each drawn deck' : '') + ' and the finished materials'
       : policy === 'automatic' ? (deck ? 'each drawn deck and ' : '') + 'the finished materials'
         : 'at least ' + gatesFor(draft) + ' decisions for research'
@@ -4543,13 +4689,9 @@ function startStep(draft) {
   return [add(card('Ready to start'), make('p', 'lede', series(selected)),
     make('p', 'quiet', (draft.levels.length ? 'Levels: ' + draft.levels.join(', ') : 'One training without levels')
       + (draft.time ? ' · ' + draft.time : ' · Sized from the teaching plan')),
-    first, comes, make('p', 'quiet', 'You can close this page while it works. Saved materials stay available.')),
+    first, looks, comes, make('p', 'quiet', 'You can close this page while it works. Saved materials stay available.')),
   reviewLevelCard(draft, then),
-  add(card('Sources'), ...explained('Where the research looks',
-    SOURCES.map((source) => source[1]), SOURCE_SAYS, draft.sources, (index) => {
-      draft.sources = index;
-      tell();
-    }, 'sources'),
+  add(card('Sources'), researchFields(draft, tell),
     field('research-questions', 'What should the research answer? (optional)', draft,
       'researchQuestions', { long: true, rows: 4, hint: 'One question a line, at most 8.' })),
   trainingOptions('Assistant and limits', 'training-assistant',
@@ -4635,6 +4777,13 @@ async function startTraining(pressed) {
   if (draft.starting) return;
   const turn = view.turn;
   const problem = byId('new-problem');
+  // Somewhere research may look, or it does not start; the runner refuses the same.
+  const nowhere = researchProblem(draft);
+  if (nowhere) {
+    say(problem, nowhere);
+    focusKey(draft.research.sites ? 'research sites' : 'research web');
+    return;
+  }
   const deck = DECKS[settleDeck(draft).deck][0];
   const body = {
     title: draft.title.trim(), topic: draft.topic.trim(), audience: draft.audience.trim(),
@@ -4642,7 +4791,7 @@ async function startTraining(pressed) {
     levels: LEVELS.filter((level) => draft.levels.includes(level)),
     brief_kind: draft.brief ? 'competitive' : 'product',
     time_limit: draft.time.trim() || null,
-    source_scope: SOURCES[draft.sources][0],
+    research_from: researchChoice(draft),
     research_questions: (draft.researchQuestions || '').split('\n'),
     deck_target: deck,
     brand: deck ? { brand: draft.brand, variant: draft.variant || null } : null,
@@ -4680,7 +4829,7 @@ async function startTraining(pressed) {
   if (view.draft === draft) view.draft = null;
   if (turn !== view.turn) { refresh(); return; }
   view.promised = { path: started.path, gates: Number(started.gates) || 0 };
-  toast(body.source_scope === 'public-web' ? 'Started. It is working on its own now.'
+  toast(!body.research_from.documents ? 'Started. It is working on its own now.'
     : 'Started. It waits for your documents first.');
   show('run', { path: started.path }, true);
   refresh();
