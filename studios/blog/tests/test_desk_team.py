@@ -97,6 +97,47 @@ class DeskTeamTests(unittest.TestCase):
             management.view(self.root, 'desk', {'id': [self.made['id']]})['title'], 'After settle'
         )
 
+    def save(self, seen, text, session='c' * 16):
+        return management.dispatch(
+            self.root,
+            'desk-save',
+            {
+                'id': self.made['id'],
+                'seen': seen,
+                'part': 'title',
+                'text': text,
+                'session': session,
+            },
+        )
+
+    def test_typing_is_kept_locally_once_per_session_and_shared_on_leaving(self):
+        remote, local = self.remote_commits(), self.local_commits()
+        seen = 1
+        for n in range(3):
+            seen = self.save(seen, 'Title %d' % n)['revision']
+        self.assertEqual(self.remote_commits(), remote)
+        self.assertEqual(self.local_commits(), local + 1)
+        self.assertEqual(gitstate.changed(self.found), [])
+        # Another editing session is its own commit.
+        seen = self.save(seen, 'Title again', session='d' * 16)['revision']
+        self.assertEqual(self.local_commits(), local + 2)
+        shared = management.dispatch(self.root, 'desk-share', {'id': self.made['id']})
+        self.assertTrue(shared['team_sync']['shared'])
+        self.assertEqual(self.remote_commits(), self.local_commits())
+
+    def test_a_decision_after_typing_shares_the_typing_too(self):
+        seen = self.save(1, 'Typed title')['revision']
+        management.dispatch(
+            self.root,
+            'desk-note',
+            {'id': self.made['id'], 'seen': seen, 'part': self.part, 'note': 'More.'},
+        )
+        self.assertEqual(self.remote_commits(), self.local_commits())
+        self.assertIn(
+            'Typed title',
+            support.git(self.remote, 'show', 'main:blogs/' + self.made['id'] + '/DRAFT.md'),
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -268,6 +268,34 @@ def saved(root, ident=None, message='Keep Blog Studio decision'):
     )
 
 
+def kept_locally(root, ident, session):
+    """A desk autosave: an edit, not a decision. It is committed on this computer only, one
+    commit per editing session (the page's session token), and shared with the next decision
+    or when the person leaves the desk (`saved`). Nothing is fetched or pushed."""
+    found = space(root)
+    if not found:
+        return None
+    if not (root / studio.identifier(ident) / 'run.json').is_file():
+        return saved(root, ident, 'Keep desk edits')  # Not claimed yet: claim it once.
+    message = 'Edit ' + ident + ' on the desk (editing session ' + str(session or '')[:16] + ')'
+    with support.locked(found.repo / '.git/blog-studio.lock'):
+        guard(root, ident)
+        same = (
+            session
+            and support.passes(found.repo, 'rev-parse', '--verify', '--quiet', 'HEAD~1')
+            and support.git(found.repo, 'log', '-1', '--format=%s') == message
+            and not support.git(found.repo, 'branch', '-r', '--contains', 'HEAD')
+        )
+        if same:
+            # The same editing session, not yet shared: one commit, brought up to date.
+            support.git(found.repo, 'reset', '--soft', 'HEAD~1')
+        gitstate.commit(found, message, [ident])
+    return {
+        'shared': False,
+        'notice': 'Saved on this computer. It is shared when you leave the desk or make a change.',
+    }
+
+
 def _take(root, ident, found):
     prior = record(root, ident)
     claim = team.claim(found)

@@ -115,6 +115,7 @@ async function check(){
   await failureRecovery();
   await deskJourneys();
   await deskOpenFinished();
+  await deskLeaveShares();
   pageDefinesEveryElement();
   const checks=['the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: Outline only, Revise or review a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
@@ -3030,6 +3031,7 @@ async function deskJourneys(){
     if(url==='/api/desk-selection'){view={...view,working:{id:'j2',kind:'desk-selection',status:'queued',part:data.part}};return view;}
     if(url==='/api/desk-revise'){view={...view,working:{id:'j3',kind:'desk-revise-all',status:'queued',busy:true,part:'aaaaaaaa',chain:'c1',index:0,total:3}};return view;}
     if(url==='/api/desk-stop'){view={...view,working:null};return view;}
+    if(url==='/api/desk-share')return {id:data.id,shared:true};
     if(url.startsWith('/api/desk-versions?'))return {id:'desk-blog',part:'aaaaaaaa',versions:[{at:new Date().toISOString(),source:'rewrite',text:'First old text here.',words:4}]};
     if(url==='/api/desk-restore'){view={...view,revision:view.revision+1,sections:view.sections.map(s=>s.id===data.part?{...s,text:'First old text here.'}:s)};return view;}
     return {items:[],total:0};
@@ -3117,6 +3119,12 @@ async function deskJourneys(){
   // Word comparison: a long text falls back to the two texts side by side.
   assert.equal(f.run("diffWords('a '.repeat(5000),'b')"),null);
   assert.deepEqual(JSON.parse(f.run("JSON.stringify(diffWords('one two three','one 2 three'))")).map(p=>p.op),['same','removed','added','same']);
+}
+async function deskLeaveShares(){
+  const requests=[];const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});if(url.startsWith('/api/desk?'))return deskView();return {items:[],total:0,settings:{defaults:{}},sources:[]};});
+  f.loadRunner();await f.run("sRoute('desk','desk-blog')");
+  await f.run("sRoute('blogs')");await new Promise(r=>setImmediate(r));
+  assert.deepEqual(requests.find(r=>r.url==='/api/desk-share')?.data,{id:'desk-blog'});
 }
 async function deskOpenFinished(){
   const requests=[];const found={id:'finished',title:'Finished run',stages:[{stage:'draft'}],complete:true,desk_open:true,on_desk:false};

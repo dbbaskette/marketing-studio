@@ -208,6 +208,9 @@ function sDeskStale(held){
   if(!held.status)return;held.status.className='desk-save-state decision-notice desk-stale';held.status.replaceChildren(sNode('span','','This draft changed in another window or job. Reload to see the latest; your unsaved text is shown until you do. '),sButton('Reload',async()=>{held.pending={};held.stale=false;held.saved='';await sDesk(held.id);},'filled'));
 }
 
+// Leaving the desk, or hiding its tab, shares the edits typing kept on this computer.
+async function sDeskShare(held){if(!held)return;try{await sDeskFlush(held);await api('desk-share',{id:held.id});}catch(_){/* Shared with the next change instead. */}}
+
 // Notes and selection edits start a job; the desk follows it until it ends.
 async function sDeskJob(held,button,route,data,done){
   await busy(button,'Starting…',async()=>{try{

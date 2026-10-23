@@ -2032,6 +2032,14 @@ def dispatch(root, route, data):
             studios_config.update({'share': data['share']}, expected={'share': before['share']})
             return status(root)
         return refresh(root, push=True)
+    if route == 'desk-share':
+        # Leaving the desk: share its edits, kept on this computer while typing, with the team.
+        if set(data) != {'id'} or not isinstance(data['id'], str):
+            raise ValueError('Choose a blog on the desk.')
+        studio.item(root, 'articles', data['id'])
+        if not space(root):
+            return {'id': data['id'], 'shared': False}
+        return {'id': data['id'], 'team_sync': saved(root, data['id'], 'Keep desk edits')}
     if route.startswith('team-'):
         if data.get('confirmed') is not True or not isinstance(data.get('expected'), str):
             raise ValueError('Confirm the current blog before changing its driver or publishing.')
@@ -2046,16 +2054,26 @@ def dispatch(root, route, data):
             result = save_memory(root, data)
             result['team_sync'] = saved(root)
             return result
-        before(
-            root,
-            data.get('id')
-            if route.startswith(('run-', 'editor-', 'desk-'))
-            and route not in ('run-create', 'desk-create')
-            or route in ('schedule', 'tool-action', 'blog-delete', 'google-open')
-            else None,
-        )
+        if route == 'desk-save':
+            # Typing is an edit, not a decision: no fetch, only the driver check.
+            from team_workspace import guard
+
+            guard(root, data.get('id'))
+        else:
+            before(
+                root,
+                data.get('id')
+                if route.startswith(('run-', 'editor-', 'desk-'))
+                and route not in ('run-create', 'desk-create')
+                or route in ('schedule', 'tool-action', 'blog-delete', 'google-open')
+                else None,
+            )
     result = _dispatch(root, route, data)
-    if space(root) and route not in ('run-settings', 'review-level'):
+    if space(root) and route == 'desk-save':
+        from team_workspace import kept_locally
+
+        result['team_sync'] = kept_locally(root, result['id'], data.get('session'))
+    elif space(root) and route not in ('run-settings', 'review-level'):
         if route == 'tool-action':
             # A tool result may be a job or a profile, whose IDs are not blogs: the blog
             # a tool worked on is the one the request named.
