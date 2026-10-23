@@ -788,6 +788,7 @@ ROUTES = {
     'first-pass': {'id', 'seen', 'choice'},
     'stop': {'id', 'job'},
     'open': {'id'},
+    'angles': {'operation', 'title', 'point', 'audience', 'style', 'tone', 'sources', 'library'},
 }
 SESSION = re.compile(r'[a-f0-9]{16,64}')
 
@@ -834,6 +835,8 @@ def dispatch(root, action, data):
         raise ValueError('This request has fields the desk does not take.')
     if action == 'create':
         return _create(root, data)
+    if action == 'angles':
+        return desk_jobs.angles(root, data)  # Before a blog exists: nothing to guard.
     ident = data.get('id')
     if not isinstance(ident, str):
         raise ValueError('Choose a blog on the desk.')

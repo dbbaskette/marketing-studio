@@ -2079,7 +2079,7 @@ def dispatch(root, route, data):
         from team_workspace import kept_locally
 
         result['team_sync'] = kept_locally(root, result['id'], data.get('session'))
-    elif space(root) and route not in ('run-settings', 'review-level'):
+    elif space(root) and route not in ('run-settings', 'review-level', 'desk-angles'):
         if route == 'tool-action':
             # A tool result may be a job or a profile, whose IDs are not blogs: the blog
             # a tool worked on is the one the request named.
@@ -2243,11 +2243,13 @@ def view(root, name, query):
 
                 return prepublish.report(root, arg('id'), whole(arg('title_limit', 80)))
             return advanced_tools.overview(root, arg('id'), whole(arg('offset', 0)))
-    if name in ('desk', 'desk-versions'):
+    if name in ('desk', 'desk-versions', 'desk-angles'):
         import desk
         import desk_jobs
 
         with studio.locked(root):
+            if name == 'desk-angles':
+                return desk_jobs.angles_view(root, arg('operation'))
             if name == 'desk-versions':
                 ident = arg('id')
                 desk.read(root, ident)

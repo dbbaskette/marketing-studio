@@ -17,7 +17,15 @@ import desk
 import studio
 import tool_jobs
 
-KINDS = ('desk-section', 'desk-revise-all', 'desk-selection', 'desk-first-pass')
+KINDS = (
+    'desk-section',
+    'desk-revise-all',
+    'desk-selection',
+    'desk-first-pass',
+    'desk-research',
+    'desk-outline',
+    'desk-draft',
+)  # A blog's own desk jobs; desk-angles runs before there is a blog.
 ACTIVE = ('queued', 'working')
 ACTIONS = {
     'rephrase': 'Rewrite the passage in fresh words with the same meaning.',
@@ -471,6 +479,138 @@ def _queue_next(root, job):
     return False
 
 
+# Angles: three ways into a topic, suggested before the blog exists, keyed by the page's
+# operation so the same request returns the same job.
+ANGLES = (
+    'Propose three distinct angles for this blog that the supplied sources can support. Each '
+    'angle is a headline, the point it makes (what the reader should understand or do '
+    'afterward) and who it is for. Where brief gives a point or an audience, stay close to '
+    'it; the three still differ. Return JSON in content: a list of exactly three objects, each '
+    '{"headline": ..., "point": ..., "audience": ...}, in plain words, with no source IDs. '
+    'Do not outline or draft the blog.'
+)
+UNREADABLE_ANGLES = 'The angles came back in a shape Blog Studio cannot read. Ask again.'
+ANGLE_FIELDS = (('headline', 300), ('point', 2000), ('audience', 500))
+OPERATION = re.compile(r'[a-f0-9]{32}')
+
+
+def _angles_path(root, operation):
+    if not isinstance(operation, str) or not OPERATION.fullmatch(operation):
+        raise ValueError('Angles need their page operation ID. Reload and ask again.')
+    return studio.inside(root, '.blog-runs', 'desk-angles', operation + '.json')
+
+
+def _words(data, key, limit, label):
+    value = data.get(key) or ''
+    if not isinstance(value, str) or len(value) > limit:
+        raise ValueError('Keep ' + label + ' to ' + format(limit, ',') + ' characters.')
+    return value.strip()
+
+
+def angles(root, data):
+    """Queue three angles for a blog not yet made, from its title, point, audience, kind of
+    post, tone and the sources chosen so far. Nothing is written to the library."""
+    target = _angles_path(root, data.get('operation'))
+    title = _words(data, 'title', 500, 'the title')
+    brief = {
+        'point': _words(data, 'point', 2000, 'the point'),
+        'audience': _words(data, 'audience', 500, 'who it is for'),
+    }
+    tone = _words(data, 'tone', 2000, 'the tone')
+    style = data.get('style') or None
+    if style is not None and not isinstance(style, str):
+        raise ValueError('Choose a listed kind of post.')
+    record = {'sources': []}
+    desk._attach(root, data, record)
+    chosen = {
+        'title': title or 'A new blog',
+        'sources': desk._citable(record['sources']),
+        'style': studio.style_check(root, style) if style else None,
+        'tone': tone,
+        'gaps': [],
+    }
+    extra, shared = _context(root, chosen)
+    extra.pop('gaps', None)
+    extra.pop('response_kind', None)  # Content and notes: the angles are JSON in content.
+    payload = {'title': title, 'brief': brief, **extra}
+    guidance = ANGLES + '\n\n' + _guide('blog-argument-outline.md') + '\n\n' + shared
+    if extra['sources']:
+        guidance += '\nThe sources are in sources, with their names and stance.'
+    asked = fingerprint([payload, guidance])
+    if target.exists():
+        prior = studio.read_json(target)
+        if prior.get('fingerprint') != asked:
+            raise ValueError('This request changed. Ask for angles again.')
+        return angles_view(root, data['operation'])
+    job = tool_jobs.create(
+        root,
+        secrets.token_hex(16),
+        'desk-angles',
+        payload,
+        guidance,
+        basis=None,
+        metadata={'article': None, 'desk': {'operation': data['operation']}},
+    )
+    studio.write_json(target, {'job': job['id'], 'fingerprint': asked})
+    blog_runner.engine(root).wake.set()
+    return angles_view(root, data['operation'])
+
+
+def _unfenced(content):
+    text = content.strip()
+    fenced = re.fullmatch(r'```(?:json)?\s*\n(.*)\n```', text, re.S)
+    return fenced.group(1) if fenced else text
+
+
+def _read_angles(content):
+    try:
+        found = json.loads(_unfenced(content))
+    except ValueError:
+        raise ValueError(UNREADABLE_ANGLES) from None
+    if not isinstance(found, list) or len(found) != 3:
+        raise ValueError(UNREADABLE_ANGLES)
+    angles = []
+    for item in found:
+        if not isinstance(item, dict):
+            raise ValueError(UNREADABLE_ANGLES)
+        angle = {}
+        for key, limit in ANGLE_FIELDS:
+            value = item.get(key)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(UNREADABLE_ANGLES)
+            angle[key] = ' '.join(value.split())[:limit]
+        angles.append(angle)
+    return angles
+
+
+def _settle_angles(root, job):
+    try:
+        job['angles'] = _read_angles((job.get('result') or {}).get('content') or '')
+        job.update(applied=True, error='')
+    except ValueError as error:
+        job.update(angles=[], applied=False, error=str(error))
+    job['settled_at'] = studio.now()
+    tool_jobs.write(root, job)
+    return None  # No blog yet: nothing to record for the team.
+
+
+def angles_view(root, operation):
+    """Three angles as the page shows them, once the job has them."""
+    target = _angles_path(root, operation)
+    try:
+        job = tool_jobs.read(root, studio.read_json(target)['job'])
+    except (ValueError, OSError, KeyError, TypeError):
+        raise ValueError('These angles are no longer here. Ask for angles again.') from None
+    return {
+        'operation': operation,
+        'job': job['id'],
+        'status': job['status'],
+        'busy': busy(job),
+        'angles': job.get('angles') or [],
+        'error': job.get('error') or '',
+    }
+
+
 FIRST_PASSES = ('tighten', 'reshape', 'leave')
 
 
@@ -686,6 +826,8 @@ def _settle(root, job):
 def ended(root, job):
     """The worker's hook when a desk job ends, under the studio lock: settle a ready one.
     Returns the blog to record as a team decision once the lock is released, or None."""
+    if job['kind'] == 'desk-angles':
+        return _settle_angles(root, job) if unsettled(job) else None
     if unsettled(job):
         return _settle(root, job)
     if job.get('status') == 'failed' and job['kind'] == 'desk-revise-all':

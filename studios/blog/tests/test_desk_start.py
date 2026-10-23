@@ -2,12 +2,15 @@
 and a draft written with no stops, then shaped on the desk."""
 
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
+import json
 import unittest
 
 import blog_runner
 import desk
+import desk_jobs
 import studio
-from test_desk import DeskCase
+import tool_jobs
+from test_desk import DeskCase, RouteCase
 
 OUTLINE = """# A synthetic outline
 
@@ -161,6 +164,84 @@ class StartRecordTests(StartCase):
         )
         self.assertTrue(desk.read_start(self.root, made['id'])['research_from']['documents'])
         self.assertEqual(desk.read(self.root, made['id'])['sources'][0]['source_id'], source)
+
+
+THREE = [
+    {'headline': 'Retries that keep work', 'point': 'Retry saves work.', 'audience': 'Operators'},
+    {'headline': 'Why jobs stop', 'point': 'Stops are normal.', 'audience': 'Developers'},
+    {'headline': 'A checkpoint primer', 'point': 'Checkpoints help.', 'audience': 'Newcomers'},
+]
+
+
+class AnglesTests(RouteCase):
+    OPERATION = 'b' * 32
+
+    def ask(self, **extra):
+        return self.post(
+            'desk-angles',
+            {'operation': self.OPERATION, 'title': 'Retries', 'point': 'Keep work.', **extra},
+        )
+
+    def job(self, shown):
+        return tool_jobs.read(self.root, shown['job'])
+
+    def finish(self, shown, content):
+        job = self.job(shown)
+        job.update(status='ready', result={'content': content, 'notes': ''}, finished_at='x')
+        tool_jobs.write(self.root, job)
+        desk_jobs.ended(self.root, job)
+
+    def test_angles_read_the_chosen_sources_and_the_point_before_a_blog_exists(self):
+        fact = self.source('A synthetic fact.')
+        shown = self.ask(sources=[fact], audience='Operators')
+        self.assertEqual(shown['status'], 'queued')
+        self.assertTrue(shown['busy'])
+        job = self.job(shown)
+        self.assertEqual(job['kind'], 'desk-angles')
+        self.assertIsNone(job['metadata']['article'])
+        self.assertEqual(job['metadata']['desk']['operation'], self.OPERATION)
+        self.assertEqual(job['payload']['sources'][0]['text'], 'A synthetic fact.')
+        self.assertEqual(job['payload']['brief'], {'point': 'Keep work.', 'audience': 'Operators'})
+        self.assertIn('three distinct angles', job['guidance'])
+        self.assertIn(blog_runner.house_guide(), job['guidance'])
+        self.assertEqual(list(studio.inside(self.root, 'articles').glob('*')), [])
+
+    def test_the_same_request_is_the_same_job_and_a_changed_one_is_refused(self):
+        first, again = self.ask(), self.ask()
+        self.assertEqual(first['job'], again['job'])
+        with self.assertRaisesRegex(ValueError, 'Ask for angles again'):
+            self.ask(point='Something else.')
+
+    def test_a_ready_result_is_three_angles_to_pick(self):
+        shown = self.ask()
+        self.finish(shown, '```json\n' + json.dumps(THREE) + '\n```')
+        found = self.get('desk-angles', operation=self.OPERATION)
+        self.assertEqual(found['angles'], THREE)
+        self.assertFalse(found['busy'])
+        self.assertEqual(found['error'], '')
+
+    def test_a_malformed_result_is_refused_readably(self):
+        for content in (json.dumps(THREE[:2]), 'Three angles.', json.dumps([*THREE[:2], {}])):
+            with self.subTest(content=content):
+                shown = self.post(
+                    'desk-angles', {'operation': desk_jobs.secrets.token_hex(16), 'point': 'P.'}
+                )
+                self.finish(shown, content)
+                found = self.get('desk-angles', operation=shown['operation'])
+                self.assertEqual(found['angles'], [])
+                self.assertRegex(found['error'], 'cannot read. Ask again')
+
+    def test_a_fake_worker_suggests_them_end_to_end(self):
+        def worker(engine, payload, guidance, **options):
+            return {'content': json.dumps(THREE), 'notes': ''}
+
+        self.ask()
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        self.assertEqual(self.get('desk-angles', operation=self.OPERATION)['angles'], THREE)
+
+    def test_an_unknown_operation_is_said(self):
+        with self.assertRaisesRegex(ValueError, 'Ask for angles again'):
+            self.get('desk-angles', operation='c' * 32)
 
 
 if __name__ == '__main__':

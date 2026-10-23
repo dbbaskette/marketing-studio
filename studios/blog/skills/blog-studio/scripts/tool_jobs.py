@@ -12,13 +12,27 @@ KINDS = {
     'repurpose',
     'interview-question',
     'interview-outline',
-    # The writing desk (desk_jobs.py): a section note, the whole draft, a selection, a first pass.
+    # The writing desk (desk_jobs.py): a section note, the whole draft, a selection, a first
+    # pass; and a start's angles (before a blog exists), research, outline and draft.
     'desk-section',
     'desk-revise-all',
     'desk-selection',
     'desk-first-pass',
+    'desk-angles',
+    'desk-research',
+    'desk-outline',
+    'desk-draft',
 }
-DESK = ('desk-section', 'desk-revise-all', 'desk-selection', 'desk-first-pass')
+DESK = (
+    'desk-section',
+    'desk-revise-all',
+    'desk-selection',
+    'desk-first-pass',
+    'desk-angles',
+    'desk-research',
+    'desk-outline',
+    'desk-draft',
+)
 
 
 def path(root, ident):
@@ -172,7 +186,7 @@ def once(engine):
             return
         saved = min(values, key=lambda value: value['created_at'])
         ident = saved['id']
-        if saved['kind'] in DESK:
+        if saved['kind'] in DESK and saved['metadata'].get('article'):
             import team_workspace
 
             try:
