@@ -69,17 +69,19 @@ Once the page is open, use its controls to drive the work:
    **Settings**. Under **Brand skill**, enter its repository and release or choose
    an installed skill, just as in Training Studio. See [brand setup](docs/runner.md#your-brand-skill).
 2. **Choose New blog.** A new blog starts on the writing desk in three steps. **What
-   are you writing?** picks the kind of post. **What do you have?** is **Just a topic**
-   (the title, who it is for and the point; **Suggest three angles** offers three editable
-   cards on the same screen), **An outline or notes** (**Write from my outline**, or
-   **Shape an outline with me first**, which opens the outline on the desk) or **A draft**
-   (pasted, uploaded or a Google Doc, with an optional first pass). **Sources and
-   settings** adds files, links, Google Docs and team library posts, each with what it is
-   for: facts that may be quoted, approved messaging (a messaging document, launch brief or
-   release notes, written as the product's own claims), or an example of the kind of post
-   you want (its shape, never its facts). **Search my sites** and **Search the web too**
-   (both off) research before the writing; **Length** asks for the usual length, short or
-   in depth; **Tone** says how it sounds. After **Start** nothing is needed from you: the
+   are you writing?** picks the kind of post. **Sources and settings** adds files, links,
+   Google Docs and team library posts, each with what it is for: facts that may be
+   quoted, approved messaging (a messaging document, launch brief or release notes,
+   written as the product's own claims), or an example of the kind of post you want (its
+   shape, never its facts). They stay with this blog unless you tick **Keep in the team
+   library**, and a ticked one goes to the library only when you start. **Search my
+   sites** and **Search the web too** (both off) research before the writing; **Length**
+   asks for the usual length, short or in depth; **Tone** says how it sounds. **What do
+   you have?** is **Just a topic** (the title, who it is for and the point; **Suggest
+   three angles** offers three editable cards from your sources), **An outline or notes**
+   (**Write from my outline**, or **Shape an outline with me first**, which opens the
+   outline on the desk) or **A draft** (pasted, uploaded or a Google Doc, with an optional
+   first pass). After **Start** nothing is needed from you: the
    page shows each step and opens the draft on the desk when it is ready. The desk's
    **Outline** tab renames, reorders, adds and removes sections and writes the draft or
    one section from it; **Add a source** takes more sources at any time.

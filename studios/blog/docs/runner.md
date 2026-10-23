@@ -43,10 +43,10 @@ future blogs; existing runs keep their choices. **Status → Check this
 computer** shares setup’s read-only checks and next steps. You can run the same
 report with `sh ~/.local/share/blog-studio/studio check`.
 
-Choose **New blog** for a blog on the writing desk: the kind of post, then what you
+Choose **New blog** for a blog on the writing desk: the kind of post, then sources
+(kept with the blog unless you tick Keep), research ticks, length and tone, then what you
 have (just a topic, with three suggested angles if you like; an outline or notes, written
-from or shaped with you first; or a draft), then sources, research ticks, length and
-tone. **Start** runs research (when ticked), the outline and the draft with no stops,
+from or shaped with you first; or a draft). **Start** runs research (when ticked), the outline and the draft with no stops,
 and the draft opens on the desk. The rest of this section describes the step-by-step
 wizard that blogs started before the desk keep. **Your brief** asks for
 the topic and reader, **Write as** (your default voice, another saved voice, no

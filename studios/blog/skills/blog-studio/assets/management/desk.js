@@ -41,16 +41,16 @@ function deskAge(at){const then=Date.parse(at||'');if(!then)return '';const minu
 function deskPartName(view,part){if(part==='title')return 'the title';if(part==='opening')return 'the opening';if(part==='sections')return 'every section';const found=(view.sections||[]).find(section=>section.id===part);return found?'“'+found.heading+'”':'a section';}
 function deskTextOf(view,part){if(part==='title'||part==='opening')return view[part]||'';return (view.sections||[]).find(section=>section.id===part)?.text||'';}
 
-// A new blog: 1. the kind of post, 2. what the person brings (a topic, an outline or notes,
-// or a draft), 3. sources and settings, then Start. Nothing stops for the person after it.
+// A new blog: 1. the kind of post, 2. sources and settings, 3. what the person brings (a
+// topic, an outline or notes, or a draft), then Start. Nothing stops for the person after it.
 const DESK_HAVE=[['topic','Just a topic'],['outline','An outline or notes'],['draft','A draft']];
 const DESK_OUTLINE_WAYS=[['outline','Write from my outline'],['shape','Shape an outline with me first']];
-const DESK_START_STEPS=['Kind of post','What you have','Sources and settings'];
-const DESK_START_LEDES=['Choose the kind of post. It sets the usual shape and length.','Say what you bring: a topic, an outline or notes, or a draft.','Add sources if you have them, then start. Nothing stops for you on the way.'];
+const DESK_START_STEPS=['Kind of post','Sources and settings','What you have'];
+const DESK_START_LEDES=['Choose the kind of post. It sets the usual shape and length.','Add sources if you have them. They stay with this blog unless you keep them in the team library.','Say what you bring, then start. Nothing stops for you on the way.'];
 function sDeskHeld(){
   if(studio.deskStart)return studio.deskStart;
   const defaults=studio.options?.settings?.defaults||{},preset=studio.deskPreset||{};studio.deskPreset=null;
-  return studio.deskStart={step:0,kind:null,style:'',have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',manuscript:'',url:'',file:null,preview:null,first_pass:'leave',files:[],role:'material',keep:true,link:'',from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},searchSites:false,searchWeb:false,length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
+  return studio.deskStart={step:0,kind:null,style:'',have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',manuscript:'',url:'',file:null,preview:null,first_pass:'leave',files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},searchSites:false,searchWeb:false,length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
 }
 // Home's tasks, New blog and the library's "Write a blog from these" all start here.
 function sDeskBegin(preset={}){studio.deskStart=null;studio.deskPreset=preset;return sRoute('desk-start');}
@@ -59,7 +59,7 @@ async function sDeskStart(){
   const held=sDeskHeld();
   sFrame('New blog',[],'New writing',()=>sRoute('home'));
   const steps=sWorkflowSteps(DESK_START_STEPS,held.step,index=>{if(index&&held.kind===null)return notice('Choose a kind of post first, or Something else.',true);held.step=index;sTop();sDeskStart();});
-  sPage(sNode('p','lede',DESK_START_LEDES[held.step]),steps,held.step===0?sDeskKinds(held):held.step===1?sDeskHave(held):sDeskSettings(held));
+  sPage(sNode('p','lede',DESK_START_LEDES[held.step]),steps,held.step===0?sDeskKinds(held):held.step===1?sDeskSettings(held):sDeskHave(held));
 }
 function sDeskStartAgain(held){if(studio.screen==='desk-start'&&studio.deskStart===held)sDeskStart();}
 function sDeskWriting(held){return held.have!=='draft';}
@@ -72,18 +72,31 @@ function sDeskKinds(held){
   return sCard('What are you writing?',list);
 }
 
-// 2. What do you have?
+// 2. Sources and settings, for every way of working; research and length for new writing.
+function sDeskSettings(held){
+  const form=sNode('form','narrow desk-start'),problem=sNode('p','problem');problem.setAttribute('role','alert');
+  const again=()=>sDeskStartAgain(held);
+  const go=sNode('button','button button-filled','Continue');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
+  form.append(sFilesCard(held,problem,again,locked=>{go.disabled=locked||!access.actions.edit;},{desk:true}));
+  if(sDeskWriting(held))form.append(sCard('Research before the writing',sCheck('desk-sites','Search my sites',held,'searchSites',null,()=>again()),held.searchSites?sSitePicker(held.from,'desk-research',()=>{}):null,sCheck('desk-web','Search the web too',held,'searchWeb'),sNode('p','quiet','Off unless ticked. It runs before the outline, with no stop for you.')));
+  const length={mode:'write',get length(){return held.length;},set length(value){held.length=value;}};
+  form.append(sCard(sDeskWriting(held)?'Length and tone':'Tone',sDeskWriting(held)?sLengthSelect(length,'desk-length'):null,sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational.'})));
+  form.append(sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)));
+  form.addEventListener('submit',event=>{event.preventDefault();if(studio.busy)return;if(sDeskWriting(held)&&held.searchSites&&!sChosenSites(held.from).length){problem.textContent=sResearchWord('no_sites')||'Choose at least one of your sites, or untick Search my sites.';return;}held.step=2;sTop();sDeskStart();});
+  return form;
+}
+
+// 3. What do you have? Then Start.
 function sDeskHave(held){
   const form=sNode('form','narrow desk-start'),problem=sNode('p','problem');problem.setAttribute('role','alert');
   const parts=[sCard('What do you have?',sChoice('What you bring',DESK_HAVE,held,'have',()=>sDeskStart()))];
   if(held.have==='topic')parts.push(...sDeskTopic(held));else if(held.have==='outline')parts.push(sDeskOutlineIn(held));else parts.push(...sDeskDraftIn(held));
   const reading=held.have==='draft'&&held.source==='google'&&!held.preview;
-  const go=sNode('button','button button-filled',reading?'Read Google Doc':'Continue');go.type='submit';go.disabled=!access.actions.edit;
+  const go=sNode('button','button button-filled',reading?'Read Google Doc':'Start');go.type='submit';go.disabled=!access.actions.edit;
   form.append(...parts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)));
   form.addEventListener('submit',async event=>{
-    event.preventDefault();if(!access.actions.edit)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}
-    if(reading)return busy(go,'Reading…',async()=>{try{await sDeskReadGoogle(held);}catch(error){problem.textContent=error.message+' Your choices are kept here.';}});
-    held.step=2;sTop();sDeskStart();
+    event.preventDefault();if(!access.actions.edit||studio.busy)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}
+    await busy(go,reading?'Reading…':'Starting…',async()=>{try{if(reading)await sDeskReadGoogle(held);else await sDeskGo(held);}catch(error){problem.textContent=error.message+' Your choices are kept here.';}});
   });
   return form;
 }
@@ -102,14 +115,13 @@ function sDeskHaveProblem(held){
   }
   return '';
 }
-// Just a topic: the point typed, or three angles suggested on this screen to pick and edit.
+// Just a topic: the point typed, or three angles from the sources chosen, to pick and edit.
 function sDeskTopic(held){
-  const card=sCard('Your topic',sField('desk-title','Working title',held,'title',{required:true,max:500}),sField('desk-audience','Who is it for?',held,'audience',{max:500,hint:'For example: platform engineers new to the product.'}),sField('desk-point','The point to make',held,'point',{long:true,max:2000,hint:'What the reader should understand or do afterward. Type it, or suggest three angles and pick one.'}));
+  const card=sCard('Your topic',sField('desk-title','Working title',held,'title',{required:true,max:500}),sField('desk-audience','Who is it for?',held,'audience',{max:500}),sField('desk-point','The point to make',held,'point',{long:true,max:2000,hint:'What the reader should understand or do afterward.'}));
   const ready=held.files.filter(file=>file.state==='ready').length;
   const ask=sButton(held.angles.length?'Suggest three more':'Suggest three angles',button=>sDeskAskAngles(held,button));ask.disabled=!access.actions.edit||held.anglesBusy;
-  const sources=sButton(ready?'Add more sources':'Add sources first',()=>sDeskSourcesSheet(held,'start'));sources.disabled=!access.actions.edit;
-  card.append(sAdd(sNode('div','bar'),ask,sources),sNode('p','quiet field-hint',ready?'Angles read your '+ready+(ready===1?' source.':' sources.'):'Angles read the sources you add; with none, they work from the title and point.'));
-  if(held.anglesBusy){const working=sNode('p','desk-working-note','Finding three angles… Keep typing if you like; they appear here.');working.setAttribute('role','status');card.append(working);}
+  card.append(sAdd(sNode('div','bar'),ask),sNode('p','quiet field-hint',ready?'Angles read your '+ready+(ready===1?' source.':' sources.'):'With no sources, angles work from the title and point.'));
+  if(held.anglesBusy){const working=sNode('p','desk-working-note','Finding three angles…');working.setAttribute('role','status');card.append(working);}
   if(held.anglesProblem)card.append(sNode('p','problem',held.anglesProblem));
   if(!held.angles.length)return [card];
   const cards=sNode('div','desk-angles');cards.setAttribute('aria-label','Three angles');
@@ -124,10 +136,12 @@ function sDeskTopic(held){
 }
 function sDeskLibraryPicks(files){return files.filter(file=>file.library&&file.state==='ready').map(file=>({id:file.id,role:FILE_ROLES[file.role]||'facts',...(file.location==='hub'?{location:'hub'}:{})}));}
 function sDeskUploads(files){return [...new Set(files.filter(file=>!file.library&&file.state==='ready').map(file=>file.id))];}
+// Files with Keep ticked go to the team library only now, at Start or Add.
+async function sDeskKeep(files){for(const file of files.filter(file=>!file.library&&file.kept&&file.state==='ready'&&!file.inLibrary)){await api('source-keep',{id:file.id,keep:true});file.inLibrary=true;}}
 async function sDeskAskAngles(held,button){
-  const operation=operationId();held.angleOp=operation;held.anglesProblem='';
+  const operation=operationId(),replaces=held.angleOp;held.angleOp=operation;held.anglesProblem='';
   await busy(button,'Asking…',async()=>{try{
-    const shown=await api('desk-angles',{operation,title:held.title.trim(),point:held.point.trim(),audience:held.audience.trim(),style:held.kind||'',tone:held.tone,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files)});
+    const shown=await api('desk-angles',{operation,title:held.title.trim(),point:held.point.trim(),audience:held.audience.trim(),style:held.kind||'',tone:held.tone,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...(replaces?{replaces}:{})});
     sDeskAnglesShown(held,shown);
   }catch(error){held.anglesProblem=error.message;sDeskStartAgain(held);}});
 }
@@ -141,64 +155,43 @@ function sDeskAnglesShown(held,shown){
 // An outline or notes: pasted or uploaded, then written from, or shaped together first.
 function sDeskOutlineIn(held){
   const card=sCard('Your outline or notes',sChoice('Where is it?',[['paste','Paste'],['file','Upload a file']],held,'outlineFrom',()=>sDeskStart()));
-  if(held.outlineFrom==='paste')card.append(sField('desk-outline','Paste your outline or notes',held,'outline',{long:true,max:200000,required:true,hint:'Headings or a list make sections, with what is under each as its brief. Notes without them are outlined first.'}));
-  else{const file=sNode('input','input');file.type='file';file.accept='.txt,.md,.docx,.pdf,.html,.htm';file.setAttribute('aria-label','Upload an outline');const note=sNode('p','quiet field-hint',held.outlineFile?'Selected: '+held.outlineFile.name:'Text, Markdown, Word or PDF. Up to 10 MiB.');file.addEventListener('change',()=>{held.outlineFile=file.files?.[0]||null;note.textContent=held.outlineFile?'Selected: '+held.outlineFile.name:'Choose an outline.';});card.append(file,note);}
-  card.append(sField('desk-title','Title (optional)',held,'title',{max:500,hint:'Leave blank to use the outline’s # heading.'}),sChoice('Then',DESK_OUTLINE_WAYS,held,'outlineWay',()=>sDeskStart()),sNode('p','quiet field-hint',held.outlineWay==='shape'?'An outline is proposed from your notes and opens on the desk, where you shape it and write the draft when you are ready.':'Your outline becomes the desk’s outline and the draft is written from it.'));
+  if(held.outlineFrom==='paste')card.append(sField('desk-outline','Paste your outline or notes',held,'outline',{long:true,max:200000,required:true,hint:'Headings or a list make the sections.'}));
+  else{const file=sNode('input','input');file.type='file';file.accept='.txt,.md,.docx,.pdf,.html,.htm';file.setAttribute('aria-label','Upload an outline');const note=sNode('p','quiet field-hint',held.outlineFile?'Selected: '+held.outlineFile.name:'Text, Markdown, Word or PDF.');file.addEventListener('change',()=>{held.outlineFile=file.files?.[0]||null;note.textContent=held.outlineFile?'Selected: '+held.outlineFile.name:'Choose an outline.';});card.append(file,note);}
+  card.append(sField('desk-title','Title (optional)',held,'title',{max:500,hint:'Blank uses the outline’s # heading.'}),sChoice('Then',DESK_OUTLINE_WAYS,held,'outlineWay',()=>sDeskStart()),sNode('p','quiet field-hint',held.outlineWay==='shape'?'The outline opens on the desk for you to shape first.':'The draft is written from your outline.'));
   return card;
 }
 // A draft: paste, upload or a Google Doc (every tab), with an optional first pass.
 function sDeskDraftIn(held){
   const card=sCard('Your draft',sChoice('Where is your draft?',[['paste','Paste text'],['file','Upload a file'],['google','Google Doc']],held,'source',()=>{held.preview=null;sDeskStart();}));
-  if(held.source==='paste')card.append(sField('desk-manuscript','Paste your draft',held,'manuscript',{long:true,max:1000000,required:true,hint:'Markdown or plain text. Each ## heading starts a section; text before the first one is the opening.'}));
+  if(held.source==='paste')card.append(sField('desk-manuscript','Paste your draft',held,'manuscript',{long:true,max:1000000,required:true,hint:'Each ## heading starts a section.'}));
   else if(held.source==='file'){
     const file=sNode('input','input');file.type='file';file.accept='.txt,.md,.docx,.pdf,.html,.htm';file.setAttribute('aria-label','Upload a draft');
-    const note=sNode('p','quiet field-hint',held.file?'Selected: '+held.file.name:'Text, Markdown, Word or PDF. Up to 10 MiB.');
+    const note=sNode('p','quiet field-hint',held.file?'Selected: '+held.file.name:'Text, Markdown, Word or PDF.');
     file.addEventListener('change',()=>{held.file=file.files?.[0]||null;note.textContent=held.file?'Selected: '+held.file.name:'Choose a draft.';});
     card.append(file,note);
   }else{
-    card.append(sField('desk-google','Google Doc link or document ID',held,'url',{required:true,max:2000,hint:'Every tab is read. The Doc is not changed or shared.',changed:()=>{held.preview=null;}}));
-    if(held.preview){const paper=sNode('article','paper doc');paper.setAttribute('aria-label','Google Doc preview');paper.append(window.TrainingStudioMarkdown?window.TrainingStudioMarkdown.render(held.preview.content):sNode('p','',held.preview.content));card.append(sNode('p','','Check the text below, then continue.'),paper);}
+    card.append(sField('desk-google','Google Doc link or document ID',held,'url',{required:true,max:2000,hint:'Every tab is read; the Doc is not changed.',changed:()=>{held.preview=null;}}));
+    if(held.preview){const paper=sNode('article','paper doc');paper.setAttribute('aria-label','Google Doc preview');paper.append(window.TrainingStudioMarkdown?window.TrainingStudioMarkdown.render(held.preview.content):sNode('p','',held.preview.content));card.append(sNode('p','','Check the text below, then start.'),paper);}
   }
-  card.append(sField('desk-title','Title (optional)',held,'title',{max:500,hint:'Leave blank to use the draft’s # heading or the Doc’s name.'}));
-  return [card,sCard('A first pass',sChoice('Before you edit',DESK_FIRST_PASSES,held,'first_pass'),sNode('p','quiet','Optional. It runs once on the desk and keeps your text as a version first.'))];
+  card.append(sField('desk-title','Title (optional)',held,'title',{max:500,hint:'Blank uses the draft’s # heading or the Doc’s name.'}));
+  if(held.searchSites||held.searchWeb)card.append(sNode('p','quiet','A draft you bring is edited as it is, without research.'));
+  return [card,sCard('A first pass',sChoice('Before you edit',DESK_FIRST_PASSES,held,'first_pass'),sNode('p','quiet','Optional. Your text is kept as a version first.'))];
 }
 async function sDeskReadGoogle(held){
   const turn=studio.turn,found=await api('google-preview',{url:held.url.trim()});if(turn!==studio.turn)return;
   if(found?.status==='already-linked'&&found.id){
     // The Doc is already a blog here: open it on the desk, or bring it there.
     let made=null;try{made=await api('desk?id='+encodeURIComponent(found.id));}catch(_){made=null;}
-    made=made||await api('desk-create',{operation:held.operation,style:held.kind||'',tone:held.tone,first_pass:held.first_pass,article:found.id});
+    if(!made){await sDeskKeep(held.files);made=await api('desk-create',{operation:held.operation,style:held.kind||'',tone:held.tone,first_pass:held.first_pass,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),article:found.id});}
     if(turn!==studio.turn)return;studio.deskStart=null;studio.desk={id:made.id,view:made,session:operationId()};return sRoute('desk',made.id);
   }
   held.preview=sGooglePreview(found);if(!held.title.trim())held.title=found.title;sDeskStart();
 }
-
-// 3. Sources and settings, for every way of working; research and length for new writing.
-function sDeskSettings(held){
-  const form=sNode('form','narrow desk-start'),problem=sNode('p','problem');problem.setAttribute('role','alert');
-  const again=()=>sDeskStartAgain(held);
-  const go=sNode('button','button button-filled','Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
-  const files=sFilesCard(held,problem,again,locked=>{go.disabled=locked||!access.actions.edit;});
-  sDeskWithLink(files,held,problem,again);
-  form.append(files);
-  if(sDeskWriting(held)){
-    form.append(sCard('Research before the writing',
-      sCheck('desk-sites','Search my sites',held,'searchSites','The sites in Shared settings; tick the ones to search.',()=>again()),
-      held.searchSites?sSitePicker(held.from,'desk-research',()=>{}):null,
-      sCheck('desk-web','Search the web too',held,'searchWeb','Public pages found with the assistant’s web search.'),
-      sNode('p','quiet','Both are off unless you tick them. With either, research runs before the outline, with no stop for you; your sources are read either way.')));
-  }
-  const length={mode:'write',get length(){return held.length;},set length(value){held.length=value;}};
-  form.append(sCard(sDeskWriting(held)?'Length and tone':'Tone',sDeskWriting(held)?sLengthSelect(length,'desk-length'):null,sField('desk-tone','Tone',held,'tone',{max:2000,hint:'How it should sound, such as clear and conversational.'})));
-  form.append(sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)));
-  form.addEventListener('submit',async event=>{event.preventDefault();if(!access.actions.edit||studio.busy)return;await busy(go,'Starting…',async()=>{try{await sDeskGo(held);}catch(error){problem.textContent=error.message+' Your choices are kept here.';}});});
-  return form;
-}
 async function sDeskGo(held){
   if(held.kind===null){held.step=0;sDeskStart();throw new Error('Choose a kind of post first.');}
-  const unfinished=sDeskHaveProblem(held);if(unfinished){held.step=1;sDeskStart();throw new Error(unfinished);}
-  if(held.searchSites&&!sChosenSites(held.from).length)throw new Error(sResearchWord('no_sites')||'Choose at least one of your sites, or untick Search my sites.');
-  const turn=studio.turn,common={operation:held.operation,style:held.kind||'',tone:held.tone,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...(held.title.trim()?{title:held.title.trim()}:{})};
+  const turn=studio.turn;
+  await sDeskKeep(held.files);
+  const common={operation:held.operation,style:held.kind||'',tone:held.tone,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...(held.title.trim()?{title:held.title.trim()}:{})};
   let made;
   if(held.have==='draft'){
     const settings={...common,first_pass:held.first_pass};
@@ -209,13 +202,13 @@ async function sDeskGo(held){
       if(uploaded.state&&uploaded.state!=='ready')throw new Error('This file needs its text extracted before it can be edited. Paste the text instead.');
       made=await api('desk-create',{...settings,source:uploaded.source.id});
     }else{
-      if(!held.preview){held.step=1;sDeskStart();throw new Error('Read the Google Doc first, on step 2.');}
+      if(!held.preview)throw new Error('Read the Google Doc first.');
       const started=await api('google-start',{preview:held.preview.preview,expected:held.preview.expected,title:held.title.trim()||held.preview.title,confirmed:true});
       made=await api('desk-create',{...settings,title:undefined,article:started.id});
     }
   }else{
     const research=held.searchSites||held.searchWeb?{research_from:{sites:held.searchSites?sChosenSites(held.from):[],web:!!held.searchWeb}}:{};
-    const writing={...common,way:held.have==='topic'?'topic':held.outlineWay,length:held.length||'style',...research};
+    const writing={...common,way:held.have==='topic'?'topic':held.outlineWay,length:held.length||'style',...research,...(held.have==='topic'&&held.angleOp?{angles:held.angleOp}:{})};
     if(held.have==='topic')made=await api('desk-create',{...writing,point:held.point.trim(),...(held.audience.trim()?{audience:held.audience.trim()}:{})});
     else if(held.outlineFrom==='paste')made=await api('desk-create',{...writing,outline:held.outline});
     else{
@@ -230,39 +223,19 @@ async function sDeskGo(held){
   studio.desk={id:made.id,view:made,session:operationId()};await sRoute('desk',made.id);
 }
 
-// Sources: the files card (files, Google Docs, the library, each with its role), and a link
-// read into the team library through its own intake, then picked like a library post.
-function sDeskWithLink(card,held,problem,again){const kids=[...card.children],at=Math.min(5,kids.length);card.replaceChildren(...kids.slice(0,at),sDeskLinkField(held,problem,again),...kids.slice(at));return card;}
-function sDeskLinkField(held,problem,again){
-  const box=sNode('div','field'),label=sNode('label','field-label','Or add a link'),input=sNode('input','input');input.id='desk-link';input.type='url';input.inputMode='url';input.autocomplete='off';input.placeholder='https://…';input.value=held.link||'';label.htmlFor=input.id;input.addEventListener('input',()=>{held.link=input.value;});
-  const add=sButton('Add the link',async button=>{const url=(held.link||'').trim();if(!/^https:\/\/\S+$/.test(url)){problem.textContent='Paste a public https link first.';return;}await busy(button,'Reading the page…',async()=>{try{const item=await sDeskAddLink(held,url);held.link='';problem.textContent='';sToast('Added '+(item.title||url)+'.');again();}catch(error){problem.textContent=error.message;}});});
-  add.disabled=!access.actions.edit;
-  return sAdd(box,label,sAdd(sNode('div','bar'),input,add),sNode('p','quiet field-hint','The page is read and kept in the team library with the role above, like a kept file.'));
-}
-async function sDeskAddLink(held,url){
-  const payload={files:[],links:url,role:FILE_ROLES[held.role]||'facts',author:'*each',kind:held.style||''},operation=operationId();
-  const shown=await api('library-add-preview',payload);
-  let result=await api('library-add',{...payload,operation,expected:shown.expected});
-  for(let turns=0;result.remaining>0&&turns<10;turns++)result=await api('library-add',{...payload,operation,expected:shown.expected});
-  const item=(result.items||[]).find(row=>row.id);
-  if(!item)throw new Error((result.items||[])[0]?.reason||'This page could not be read. Try another link, or upload it as a file.');
-  if(!held.files.some(file=>file.id===item.id))held.files.push({id:item.id,location:'local',filename:item.title||url,state:item.text?'ready':'pending',chars:0,note:'',link:url,role:held.role||'material',library:true,kept:true});
-  return item;
-}
-// A sheet of sources: on the start (added to the start's files) or on the desk (Add a source).
-function sDeskSourcesSheet(held,where){
-  const desk=where==='desk',adding=desk?(held.adding||(held.adding={files:[],role:'material',keep:true,link:'',style:held.view.style?.style_id||''})):held;
+// Add a source on the desk: the same files card, saved with this blog; a kept one goes to
+// the team library when it is added.
+function sDeskSourcesSheet(held){
+  const adding=held.adding||(held.adding={files:[],role:'material',keep:false,style:held.view.style?.style_id||''});
   const problem=sNode('p','sheet-error');problem.setAttribute('role','alert');
-  const again=()=>sDeskSourcesSheet(held,where);
   let done;
-  const files=sDeskWithLink(sFilesCard(adding,problem,again,locked=>{if(done)done.disabled=locked||!access.actions.edit;}),adding,problem,again);
-  if(desk)done=sButton('Add to this draft',async button=>{
+  const files=sFilesCard(adding,problem,()=>sDeskSourcesSheet(held),locked=>{if(done)done.disabled=locked||!access.actions.edit;},{desk:true,keepWhen:'Ticked ones go to the team library when you add them.'});
+  done=sButton('Add to this draft',async button=>{
     const ready=adding.files.filter(file=>file.state==='ready');if(!ready.length){problem.textContent='Add a file, a link, a Google Doc or a library post with text first.';return;}
-    await busy(button,'Adding…',async()=>{try{await sDeskFlush(held);const before=held.view;held.view=await api('desk-sources',{id:held.id,sources:sDeskUploads(ready),library:sDeskLibraryPicks(ready)});held.adding=null;sCloseSheet();sToast(ready.length===1?'Added. Later rewrites read it.':'Added. Later rewrites read them.');sDeskRefresh(held,before);}catch(error){problem.textContent=error.message;}});
+    await busy(button,'Adding…',async()=>{try{await sDeskFlush(held);await sDeskKeep(ready);const before=held.view;held.view=await api('desk-sources',{id:held.id,sources:sDeskUploads(ready),library:sDeskLibraryPicks(ready)});held.adding=null;sCloseSheet();sToast(ready.length===1?'Added. Later rewrites read it.':'Added. Later rewrites read them.');sDeskRefresh(held,before);}catch(error){problem.textContent=error.message;}});
   },'filled');
-  else done=sButton('Done',()=>{sCloseSheet();sDeskStartAgain(held);},'filled');
   done.disabled=!access.actions.edit;
-  sOpenSheet(desk?'Add a source':'Sources',sNode('p','quiet',desk?'Files, links, Google Docs and team library posts, each with its role. Later rewrites read them; nothing already written changes.':'Files, links, Google Docs and team library posts, each with its role. The angles read them, and so does the writing.'),files,problem,sAdd(sNode('div','bar'),done,sButton('Cancel',sCloseSheet)));
+  sOpenSheet('Add a source',sNode('p','quiet','Later rewrites read it; nothing already written changes.'),files,problem,sAdd(sNode('div','bar'),done,sButton('Cancel',sCloseSheet)));
 }
 
 // The desk.
@@ -283,14 +256,16 @@ function sDeskHasText(view){return !!view.opening||(view.sections||[]).some(sect
 
 // A start under way: nothing is needed from the person; the draft opens on its own.
 function sDeskElapsed(start){const then=Date.parse(start.started_at||'');return then?Math.max(0,(Date.now()-then)/60000):0;}
-function sDeskMinutesLeft(start){const left=Math.max(1,Math.round((start.minutes||1)-sDeskElapsed(start)));return left+(left===1?' minute':' minutes');}
-function sDeskClock(start){const minutes=Math.floor(sDeskElapsed(start));return (minutes<1?'Under a minute':minutes+' min')+' so far, for the whole start.';}
+function sDeskSpent(start){const minutes=Math.floor(sDeskElapsed(start));return minutes<1?'under a minute':minutes+(minutes===1?' minute':' minutes');}
+function sDeskClock(start){const spent=sDeskSpent(start);return spent.charAt(0).toUpperCase()+spent.slice(1)+' so far, for the whole start.';}
+// About how long is left, from recent runs of each step here; an overrun step says so.
+function sDeskEstimate(start,what){if(start.over)return 'Nothing needed from you. Taking longer than usual; still working, '+sDeskSpent(start)+' so far. '+what+' opens here when it is ready.';const left=Math.max(1,start.minutes_left||start.minutes||1);return 'Nothing needed from you. '+what+' opens here when it is ready, in about '+left+(left===1?' minute.':' minutes.');}
 function sDeskProgress(held){
   const view=held.view,start=view.start,problem=start.problem,what=start.open==='outline'?'The outline':'The draft';
   const stop=start.busy?sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{try{held.view=await api('desk-stop',{id:held.id,job:start.job});sDeskProgress(held);}catch(error){notice(error.message,true);}});}):null;
   if(stop)stop.disabled=!access.actions.edit;
   sFrame(view.title,[stop],problem?'Stopped':'Writing on its own',()=>sRoute('blogs'));
-  const first=sNode('p','lede',problem?'This start stopped before '+what.toLowerCase()+' was ready. Retry the step when you are ready.':'Nothing needed from you. '+what+' opens here when it is ready, in about '+sDeskMinutesLeft(start)+'.');
+  const first=sNode('p','lede',problem?'This start stopped before '+what.toLowerCase()+' was ready. Retry the step when you are ready.':sDeskEstimate(start,what));
   first.setAttribute('role','status');
   const steps=sNode('ol','rows desk-steps'),at=start.steps.indexOf(start.step);steps.setAttribute('aria-label','Steps of this start');
   start.steps.forEach((step,index)=>{
@@ -414,7 +389,7 @@ function sDeskAside(held){
   const sources=sCard('Sources');
   if((view.source_names||[]).length){const list=sNode('ul','rows');for(const source of view.source_names)list.append(sAdd(sNode('li','row'),sNode('span','row-title',source.name)));sources.append(list);}
   else sources.append(sNode('p','quiet','No sources were given for this draft. Rewrites keep to what the draft already says.'));
-  const add=sButton('Add a source',()=>sDeskSourcesSheet(held,'desk'));add.disabled=!access.actions.edit;sources.append(sAdd(sNode('div','bar'),add));
+  const add=sButton('Add a source',()=>sDeskSourcesSheet(held));add.disabled=!access.actions.edit;sources.append(sAdd(sNode('div','bar'),add));
   if(view.style_name)sources.append(sNode('p','quiet','Kind of post: '+view.style_name));
   if(view.tone)sources.append(sNode('p','quiet','Tone: '+view.tone));
   aside.append(sources);
@@ -549,6 +524,8 @@ function sDeskOutline(held){
   const head=sCard('Outline',sNode('p','','Each brief says what its section must do. The draft is written from the outline, section by section, with your sources.'),sAdd(sNode('div','bar'),write,add));
   const cards=rows.map((row,index)=>sDeskOutlineCard(held,row,index,rows.length));
   if(!rows.length)cards.push(sCard('No sections yet',sNode('p','','Add a section to start the outline.')));
+  // Sections taken out, with their text and History, to bring back.
+  if((view.removed||[]).length){const list=sNode('ul','rows');view.removed.forEach((item,index)=>{const back=sButton('Bring back',async button=>{await busy(button,'Bringing back…',async()=>{try{await sDeskOutlineFlush(held);held.view=await api('desk-unremove',{id:held.id,seen:held.view.revision,index});held.outline=null;sDeskRender(held);}catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}});});back.setAttribute('aria-label','Bring back '+item.heading);back.disabled=!editable;list.append(sAdd(sNode('li','row'),sAdd(sNode('div','row-text'),sNode('span','row-title',item.heading),sNode('span','row-says',(item.words?item.words+(item.words===1?' word':' words'):'No text')+(item.at?' · removed '+deskAge(item.at):''))),back));});cards.push(sCard('Removed sections',list));}
   return [head,...cards];
 }
 function sDeskOutlineCard(held,row,index,count){
@@ -561,7 +538,7 @@ function sDeskOutlineCard(held,row,index,count){
   card.append(heading,brief);
   if(working){const note=sNode('p','desk-working-note','Working on this section');note.setAttribute('role','status');card.append(note);}
   const name=row.heading||'this section',move=(by,label)=>{const button=sButton(label,()=>sDeskOutlineChange(held,rows=>{const [moved]=rows.splice(index,1);rows.splice(index+by,0,moved);}));button.setAttribute('aria-label',label+' · '+name);button.disabled=!access.actions.edit||index+by<0||index+by>=count;return button;};
-  const remove=sButton('Remove',()=>{const gone=rows=>rows.splice(index,1);if(!words)return sDeskOutlineChange(held,gone);const confirm=sButton('Remove the section',async button=>{await busy(button,'Removing…',async()=>{sCloseSheet();await sDeskOutlineChange(held,gone);});},'danger');sOpenSheet('Remove “'+name+'”?',sNode('p','','Its '+words+(words===1?' word goes':' words go')+' with it, and its History.'),sAdd(sNode('div','bar'),confirm,sButton('Cancel',sCloseSheet)));});
+  const remove=sButton('Remove',()=>{const gone=rows=>rows.splice(index,1);if(!words)return sDeskOutlineChange(held,gone);const confirm=sButton('Remove the section',async button=>{await busy(button,'Removing…',async()=>{sCloseSheet();await sDeskOutlineChange(held,gone);});},'danger');sOpenSheet('Remove “'+name+'”?',sNode('p','','Its '+words+(words===1?' word goes':' words go')+' with it. Bring it back from Removed sections under the outline.'),sAdd(sNode('div','bar'),confirm,sButton('Cancel',sCloseSheet)));});
   remove.setAttribute('aria-label','Remove '+name);remove.disabled=!access.actions.edit||working;
   const write=sButton(words?'Write it again':'Write this section',async button=>{await sDeskJob(held,button,'desk-note',{part:row.id,note:''});});
   write.disabled=!access.actions.edit||!!view.working||!row.id;
