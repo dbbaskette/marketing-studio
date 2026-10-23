@@ -5,6 +5,7 @@ What a caller needs to know
     kept = brand_guidance.recorded(answer)        # what a studio keeps of `guidance start`
     texts = brand_guidance.snapshot(answer)       # {name: text} from the returned snapshot
     texts.update(brand_guidance.brand_texts(contract_path))   # the brand's own handoff
+    brand_guidance.review_texts(answer)           # the brand's review checklist, for the reviewer
     brand_guidance.worker(answer)                 # what every composer is handed unchanged
 
 - A brand skill that has a `guidance start|resume --skill slides --project DIR` command
@@ -16,6 +17,8 @@ What a caller needs to know
 - `snapshot` reads the guidance a worker is handed from that snapshot, by the names the
   studios already use for them, and one drawn example for each relation. Only regular
   files inside the snapshot are read, each up to READ_MOST characters.
+- `review_texts` reads the brand's review checklist, the `review` its `brand` block names,
+  for the deck's reviewer, under the same rules, and never through a link.
 - `brand_texts` reads the brand's own handoff beside its exported contract: DESIGN.md, and
   the slide-design recipes and icon catalog the contract points to, when it does. A path
   the contract names is read only when it is an absolute path to a Markdown file.
@@ -42,6 +45,7 @@ RELATIONS = ('order', 'dependency', 'hierarchy', 'membership', 'contrast', 'para
              'overlap', 'quantity', 'none')
 KEPT = ('task', 'revision', 'runtime', 'runtimeVersion', 'freshness', 'notice')
 RECIPES = ('recipes', 'slideRecipes', 'slideDesignRecipes', 'designRecipes')
+REVIEW_CHECKLIST = 'brand review checklist'
 
 
 def example(relation: str) -> str:
@@ -114,6 +118,19 @@ def brand_texts(contract_path) -> dict:
     if isinstance(icons, str) and icons.strip():
         texts['brand icons'] = _markdown(icons) or icons.strip()
     return texts
+
+
+def review_texts(answer) -> dict:
+    """The brand's review checklist, from the path its `guidance start` answer gives in its
+    `brand` block as `review`, as {'brand review checklist': text}. It is read only when it
+    is an absolute path to a regular Markdown file, not a link, up to READ_MOST characters;
+    otherwise there is none."""
+    block = (answer or {}).get('brand') if isinstance(answer, dict) else None
+    value = block.get('review') if isinstance(block, dict) else None
+    if not isinstance(value, str) or Path(value).is_symlink():
+        return {}
+    text = _markdown(value)
+    return {REVIEW_CHECKLIST: text} if text and text.strip() else {}
 
 
 def worker(answer) -> str | None:

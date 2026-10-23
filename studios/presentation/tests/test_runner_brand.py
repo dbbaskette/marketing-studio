@@ -406,6 +406,22 @@ class CommandTests(unittest.TestCase):
             self.brand.audit('/d/deck.pptx', 'acme', 'light')
         self.assertEqual(refused.exception.problems, ['Invalid argument: --file'])
 
+    def test_fonts(self):
+        def doctor(status):
+            return (1 if status != 'available' else 0, json.dumps({
+                'profile': 'presentation', 'capabilities': [
+                    {'name': 'assets', 'status': 'available'},
+                    {'name': 'arial', 'status': status}]}), '')
+        self.answers = [doctor('unverified'), doctor('available'),
+                        (1, '', 'Unknown option --format.\n'), (0, '{"profile": "web"}', '')]
+        self.assertEqual(self.brand.fonts(), 'Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.')
+        asked = self.ran[-1][2:]
+        self.assertEqual(asked, ['doctor', '--profile', 'presentation', '--format', 'pptx',
+                                 '--json'], 'Arial is resolved on this computer')
+        self.assertIsNone(self.brand.fonts())
+        self.assertIsNone(self.brand.fonts(), 'a brand skill that cannot say says nothing')
+        self.assertIsNone(self.brand.fonts(), 'nor one that names no font')
+
     def test_a_readiness_check_that_found_something_is_an_answer_too(self):
         report = {'profile': 'presentation', 'ok': False, 'checks': [
             {'name': 'python3', 'ok': False, 'detail': 'Install Python 3.9+.'}],
@@ -424,6 +440,24 @@ class CommandTests(unittest.TestCase):
                 brand.run_command([sys.executable, '-c', 'import time; time.sleep(30)'])
         with self.assertRaisesRegex(WorkspaceError, 'could not be started'):
             brand.run_command(['no-such-program-anywhere'])
+
+
+class FloorTests(unittest.TestCase):
+    """The oldest brand skill a deck takes, read from the pins it was installed with."""
+
+    def test_too_old(self):
+        self.assertEqual(brand.FLOOR, '0.14.0')
+        self.assertEqual(brand.too_old('0.13.2'), 'Your brand skill is 0.13.2. Decks need '
+                         '0.14.0 or newer, for its look samples and talk-or-handout export. '
+                         'Update it in Settings.')
+        self.assertIsNone(brand.too_old('0.14.0'))
+        self.assertIsNone(brand.too_old('1.2.0'))
+        self.assertIsNone(brand.too_old(None), 'a skill that says no version is not judged')
+        self.assertIsNotNone(brand.too_old('2026.6.0'), 'a year-numbered release came first')
+
+    def test_the_floor_without_the_pins_is_the_tested_release(self):
+        with mock.patch.object(brand, 'PINS', Path('/nowhere/companions.json')):
+            self.assertEqual(brand.floor(), '0.14.0')
 
 
 class CompanionsTests(unittest.TestCase):

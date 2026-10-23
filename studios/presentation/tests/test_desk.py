@@ -394,6 +394,33 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('Asking for changes runs the research again', result['snapshots']['sheet']['sheet'])
         self.assertIn('up to 3 rounds of writing and checking.', result['snapshots']['sheet']['sheet'])
 
+    def test_the_research_sheet_offers_to_bring_the_evidence_up_to_date(self):
+        from synthesis_fixture import research_stop
+        path = self.started(research=True); self.decided(path, 'gate:research-plan')
+        research_stop(Path(path) / 'research')
+        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
+        self.engine._store(Path(path), record)
+        result = self.deck_screen(path, [
+            {'click': 'Ask for changes'}, {'snapshot': 'sheet'},
+            {'click': 'Bring the evidence up to date'}, {'click': 'Send for changes'}],
+            **{'POST /api/decide': [ok(self.run_of(path))]})
+        sheet = result['snapshots']['sheet']
+        self.assertIn('Bring the evidence up to date', sheet['sheet'])
+        self.assertIn('Re-reads the sources and checks the report again: about as long and as '
+                      'costly as the research was.', sheet['sheet'])
+        self.assertNotIn('Bring the evidence up to date', sheet['pressed'], 'off unless asked')
+        posted = [r['body'] for r in result['requests'] if r['address'] == '/api/decide']
+        self.assertEqual(posted[-1]['decision'], 'changes')
+        self.assertIs(posted[-1]['extra']['refresh'], True)
+        # What the page sent is taken by the runner, with no note of its own.
+        from studio_core import research_contract
+        from workspace import WorkspaceError
+        with mock.patch.object(research_contract, 'native', side_effect=WorkspaceError(
+                'Stopped by the test before any job.')) as native:
+            self.post('decide', posted[-1])
+        self.assertIs(self.engine._load(Path(path))['gates']['gate:research']['refresh'], True)
+        self.assertIs(native.call_args[0][3]['refresh'], True)
+
     def test_sending_a_marked_finding_shows_the_research_price_before_it_posts(self):
         from synthesis_fixture import research_stop
         path = self.started(research=True); self.decided(path, 'gate:research-plan')
@@ -1106,6 +1133,39 @@ class ScreenTests(ScriptedPage, PageCase):
                          ('changes', {'again': {'health-checks': ''}, 'add': []}))
         self.post('decide', body)
         self.assertEqual(self.run_of(path)['gate']['round'], 2)
+
+    def test_a_picture_is_given_to_a_slide_at_the_outline(self):
+        path = self.started()
+        gate = self.run_of(path)['gate']
+        content = next(one for one in gate['slides'] if one.get('kind') == 'content')
+        closing = next(one for one in gate['slides'] if one.get('kind') == 'closing')
+        title = content['title']
+        picture = b'synthetic picture, as the browser read it'
+        result = self.deck_screen(path, [
+            {'snapshot': 'gate'},
+            {'click': f'Add a picture to “{title}”'}, {'snapshot': 'form'},
+            {'attach': 'The picture, a PNG or JPEG file',
+             'files': [{'name': 'rack.png', 'type': 'image/png',
+                        'bytes': picture.decode('latin-1')}]},
+            {'fill': 'What it shows', 'value': 'A rack of servers in our lab.'},
+            {'fill': 'Where it came from', 'value': 'Our own photograph.'},
+            {'click': 'Add the picture'}],
+            **{'POST /api/picture': [ok({'asset': f"pic-{content['id']}",
+                                         'slide': content['id']})]})
+        shots = result['snapshots']
+        self.assertIn(f'Add a picture to “{title}”', shots['gate']['buttons'])
+        self.assertNotIn(f"Add a picture to “{closing['title']}”", shots['gate']['buttons'])
+        for words in ('The picture, a PNG or JPEG file', 'What it shows', 'Where it came from'):
+            self.assertIn(words, shots['form']['text'])
+        (address, body), = [(address, body) for address, body in self.posts(result)
+                            if address == '/api/picture']
+        self.assertEqual({key: body[key] for key in ('path', 'slide', 'name', 'alt', 'source',
+                                                     'expected')},
+                         {'path': path, 'slide': content['id'], 'name': 'rack.png',
+                          'alt': 'A rack of servers in our lab.', 'source': 'Our own photograph.',
+                          'expected': gate.get('expected')})
+        self.assertEqual(base64.b64decode(body['content']), picture)
+        self.assertIn('Pictures you give a slide stay on this computer', shots['form']['text'])
 
     def test_a_slide_added_and_moved_on_the_page_is_an_outline_the_slides_tool_takes(self):
         path = self.started(delivery='reading')   # a handout: an added slide needs no notes

@@ -39,6 +39,7 @@ An outline is one JSON object: `version` 1, a `title`, optionally `audience`, `d
 - **Say only what you were given.** Take every claim, name and number from the brief and the findings, and give `request` as the sources of what the brief itself says. Add nothing of your own, and say so in your notes where you had to leave a gap.
 - **Equals read as equals.** Give the points of a list the same weight.
 - **Fewer words.** A slide whose words do not fit its drawing cannot be put right by whoever draws it. Where a slide is near its word budget, make it two.
+- **Names as code.** Write a configuration field, command, API or file name as a code span in backticks, such as `highAvailability`, with plain English first the time it appears. A title names things in words and takes no code span.
 - **Tell a story.** Open with why it matters to this audience, build to the point, and close on what the audience should do or remember.
 
 ## Hand back

@@ -104,6 +104,18 @@ def _account(folder, questions):
     }
 
 
+REFRESH = 'Bring the evidence up to date'
+
+
+def refresh_words(tried) -> str:
+    """What bringing the research up to date costs, as its control says it: what its last try
+    took, where that was recorded."""
+    cost = research_contract.took(tried['seconds'], tried['dollars']) if tried else ''
+    return ('Re-reads the sources and checks the report again: '
+            + (f'its last try took {cost}.' if cost
+               else 'about as long and as costly as the research was.'))
+
+
 def price(attempts_by_name, redone=(), drafted=True, *, recorded=None):
     tried = recorded if recorded is not None else research_contract.last_rounds(attempts_by_name or {})
     most = research_contract.ROUNDS
@@ -114,4 +126,5 @@ def price(attempts_by_name, redone=(), drafted=True, *, recorded=None):
     if redone:
         words += ' Then it makes again: ' + series(redone) + '.'
     return {**(tried or {'rounds': 0, 'jobs': 0, 'seconds': 0, 'dollars': None}),
-            'most': most, 'drafted': drafted, 'redone': list(redone), 'words': words}
+            'most': most, 'drafted': drafted, 'redone': list(redone), 'words': words,
+            'refresh': refresh_words(tried)}

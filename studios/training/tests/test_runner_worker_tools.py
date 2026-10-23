@@ -6,12 +6,15 @@ import gzip
 import hashlib
 import io
 import json
+import time
+import tempfile
 import re
 import shutil
 import socket
 import subprocess
 import threading
 import unittest
+from pathlib import Path
 import zipfile
 from unittest import mock
 
@@ -21,6 +24,7 @@ from runner_support import (BLUEPRINT, BRIEF, DOCUMENT, PAGE, PLAN, PUBLIC, SCEN
 
 import checks
 from runner import worker_tools
+from runner import slides as slides_module
 from workspace import WorkspaceError
 
 DOCS = 'https://docs.example.com/restarts'
@@ -1382,6 +1386,77 @@ class OriginalTests(JobCase):
         index[0]['original'] = 'linked/secret.md'
         (self.job / 'sources' / 'index.json').write_text(json.dumps(index))
         self.assertNotIn('Not for the worker', self.refused(tools.read_source('s1', original=True)))
+
+
+class TurnTests(unittest.TestCase):
+    """A computer's turns at the renderer: one for LibreOffice, a few for a Google preview
+    pool, each a file a process holds, and one left by a process that ended is taken."""
+
+    def setUp(self):
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        self.lock = Path(holder.name) / 'render.lock'
+
+    def test_turn_slots(self):
+        entered, release, guard = [], threading.Event(), threading.Lock()
+
+        def hold(number):
+            with worker_tools.turn(self.lock, slots=2, wait=10):
+                with guard:
+                    entered.append(number)
+                release.wait(10)
+
+        first = [threading.Thread(target=hold, args=(number,)) for number in (1, 2)]
+        for thread in first:
+            thread.start()
+        for _ in range(200):
+            if len(entered) == 2:
+                break
+            time.sleep(0.01)
+        self.assertEqual(sorted(entered), [1, 2], 'two holders proceed')
+        third = threading.Thread(target=hold, args=(3,))
+        third.start()
+        time.sleep(0.3)
+        self.assertEqual(len(entered), 2, 'a third waits until one leaves')
+        release.set()
+        for thread in (*first, third):
+            thread.join(10)
+        self.assertEqual(sorted(entered), [1, 2, 3])
+        self.assertEqual(list(self.lock.parent.glob('render.lock*')), [], 'every turn given back')
+
+    def test_a_slot_left_by_a_process_that_ended_is_taken(self):
+        for name in ('render.lock', 'render.lock.1'):
+            (self.lock.parent / name).write_text('999999999')
+        with worker_tools.turn(self.lock, slots=2, wait=1):
+            pass
+        with worker_tools.one_at_a_time(self.lock, wait=1):
+            self.assertTrue(self.lock.is_file())
+
+    def test_google_turns_are_kept_apart_from_the_local_one(self):
+        class Pooled:
+            def has(self, name):
+                return name == 'google-preview-pool'
+
+        local = worker_tools.turn_file({'renderer': 'local', 'lock': str(self.lock)}, Pooled())
+        google = worker_tools.turn_file({'renderer': 'drive', 'lock': str(self.lock)}, Pooled())
+        self.assertEqual(local, self.lock)
+        self.assertNotEqual(google, self.lock)
+        self.assertEqual(google.parent, self.lock.parent)
+        with worker_tools.turn(local, 1, wait=1):   # a local render holds its turn
+            with worker_tools.turn(google, 4, wait=1):   # and a Google one still takes its own
+                pass
+
+    def test_slots(self):
+        class Tool:
+            def __init__(self, pooled):
+                self.pooled = pooled
+
+            def has(self, name):
+                return self.pooled and name == 'google-preview-pool'
+
+        self.assertEqual(worker_tools.slots({'renderer': 'drive'}, Tool(True)), slides_module.POOL)
+        self.assertEqual(worker_tools.slots({'renderer': 'local'}, Tool(True)), 1)
+        self.assertEqual(worker_tools.slots({'renderer': 'drive'}, Tool(False)), 1)
 
 
 if __name__ == '__main__':

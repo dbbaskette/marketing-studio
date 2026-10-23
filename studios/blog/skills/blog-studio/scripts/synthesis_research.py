@@ -196,15 +196,18 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
         task = {
             'topic': payload['title'],
             'audience': brief.get('audience') or 'Blog readers',
-            'purpose': 'Inform a blog: '
-            + (brief.get('goal') or 'explain the topic')
-            + '. Prioritize the central argument, mechanisms and strongest objections.',
+            'purpose': research_contract.purpose(
+                'a blog',
+                brief.get('goal') or 'explain the topic',
+                'Prioritize the central argument, mechanisms and strongest objections.',
+            ),
             'scope': 'Evidence, objections and qualifications for the blog goal: '
             + (brief.get('goal') or 'explain the topic'),
             'brief': brief,
             'manuscript': payload['documents'].get('manuscript'),
             'planning_document': payload['documents'].get('research-plan'),
             'requested_changes': payload.get('changes'),
+            'refresh': payload.get('refresh') is True,
             'source_mode': ('mixed' if sources else 'public') if allowed else 'selected',
         }
         from blog_runner import planning_questions

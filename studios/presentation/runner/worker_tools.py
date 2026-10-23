@@ -578,8 +578,10 @@ def check_section(text: str, spec: dict, slides,
 
 def outlined(spec: dict) -> dict:
     """What compile is given of the approved outline a section is drawn from, so that a
-    tool that can finds a point's sentence split across shapes: nothing without one."""
-    return {'outline': Path(spec['outline'])} if spec.get('outline') else {}
+    tool that can finds a point's sentence split across shapes: nothing without one. A deck
+    with pictures the person gave adds its asset project, which resolves them."""
+    return {**({'outline': Path(spec['outline'])} if spec.get('outline') else {}),
+            **({'assets': Path(spec['asset_project'])} if spec.get('asset_project') else {})}
 
 
 # --- the rules an outline is held to, kept by name ----------------------------------------
@@ -700,34 +702,69 @@ def picture(path: Path) -> bytes:
 
 
 @contextmanager
-def one_at_a_time(lock: Path, wait: float = RENDER_WAIT):
-    """Hold a computer's one turn at the renderer. Whoever else wants it waits here,
-    in this process or another. A turn left behind by a process that has ended is taken."""
+def turn(lock: Path, slots: int = 1, wait: float = RENDER_WAIT):
+    """Hold one of a computer's `slots` turns at the renderer: the file `lock` for the first,
+    and `lock.1`, `lock.2`... beside it for the others, the first free taken. Whoever else
+    wants one waits here, in this process or another. A turn left behind by a process that
+    has ended is taken."""
     lock, until = Path(lock), time.monotonic() + wait
     lock.parent.mkdir(parents=True, exist_ok=True)
-    while True:
-        try:
-            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
+    names = [lock, *(lock.with_name(f'{lock.name}.{number}') for number in range(1, slots))]
+    taken = None
+    while taken is None:
+        for name in names:
             try:
-                holder = lock.read_text(encoding='utf-8').strip()
-            except OSError:
-                continue  # let go of between the two looks
-            if holder.isdigit() and not home.alive(int(holder)):
-                lock.unlink(missing_ok=True)
-            elif time.monotonic() > until:
+                handle = os.open(name, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except FileExistsError:
+                try:
+                    holder = name.read_text(encoding='utf-8').strip()
+                except OSError:
+                    continue  # let go of between the two looks
+                if holder.isdigit() and not home.alive(int(holder)):
+                    name.unlink(missing_ok=True)
+                continue
+            os.write(handle, f'{os.getpid()}'.encode())
+            os.close(handle)
+            taken = name
+            break
+        else:
+            if time.monotonic() > until:
                 raise Refusal('Another preview has been rendering for a long time, so this '
                               'one was not taken. Try it again.')
-            else:
-                time.sleep(0.05)
-            continue
-        os.write(handle, f'{os.getpid()}'.encode())
-        os.close(handle)
-        break
+            time.sleep(0.05)
     try:
         yield
     finally:
-        lock.unlink(missing_ok=True)
+        taken.unlink(missing_ok=True)
+
+
+def one_at_a_time(lock: Path, wait: float = RENDER_WAIT):
+    """Hold a computer's one turn at the renderer: `turn` with one slot."""
+    return turn(lock, 1, wait)
+
+
+def turn_file(how: dict, slides) -> Path:
+    """The file a render's turns are taken from: `how['lock']` for LibreOffice and an unpooled
+    Drive, and one beside it for the Google preview pool, so that neither waits on the
+    other's turns."""
+    lock = Path(how['lock'])
+    return lock.with_name(lock.stem + '-google' + lock.suffix) if slots(how, slides) > 1 \
+        else lock
+
+
+def slots(how: dict, slides) -> int:
+    """The turns a render may take side by side on this computer: the slides tool's Google
+    preview pool for a render through Google Drive on a tool that has one, else one."""
+    from runner import slides as slides_tool
+    pooled = how.get('renderer') == 'drive' and getattr(slides, 'has', lambda name: False)(
+        'google-preview-pool')
+    return slides_tool.pool_size() if pooled else 1
+
+
+def review_questions(review: dict) -> tuple[str, ...]:
+    """The questions a review job was asked: the slides tool's own, kept with its round."""
+    from studio_core import critic
+    return critic.of_round(review)
 
 
 def render(slides, compiled: Path, folder: Path, how: dict) -> dict:
@@ -738,7 +775,7 @@ def render(slides, compiled: Path, folder: Path, how: dict) -> dict:
     file says so in its refusal's `left`, as {'fileId', 'url'}, and the file is remembered
     all the same. Returns what the slides tool returned."""
     kept = Path(how['kept']) if how.get('kept') else None
-    with one_at_a_time(Path(how['lock'])):
+    with turn(turn_file(how, slides), slots(how, slides)):
         known = home.read_json(kept, {}) if kept else {}
         known = known if isinstance(known, dict) else {}
         def remember(ident, url, receipt=None) -> None:
@@ -746,14 +783,10 @@ def render(slides, compiled: Path, folder: Path, how: dict) -> dict:
                 home.write_json(kept, {**(how.get('named') or {}), 'id': ident, 'url': url,
                                        **({'pool': receipt} if receipt else {})})
 
-        from contextlib import nullcontext
         from runner import build_progress
         progress = build_progress.Preview(how['progress'], folder) if how.get('progress') else None
-        observing = slides.progress(progress.event) if progress and hasattr(slides, 'progress') else nullcontext()
         try:
-            with observing:
-                found = slides.preview(compiled, folder, how['renderer'],
-                                       file_id=known.get('id'))
+            found = slides.preview(compiled, folder, how['renderer'], file_id=known.get('id'))
             if progress:
                 progress.finish(found)
         except WorkspaceError as refusal:  # a preview that failed may have made its file
@@ -1466,7 +1499,7 @@ class WorkerTools:
             raise Refusal('findings and weakest are each a list.')
         problems, kept = [], []
         for finding in given:
-            found, why = build.checked(finding, review['slides'])
+            found, why = build.checked(finding, review['slides'], review_questions(review))
             kept += [found] if found else []
             problems += [why] if why else []
         ids = [slide['id'] for slide in review['slides']]
@@ -1513,7 +1546,7 @@ class WorkerTools:
             reused = (review.get('reused') or {}).get(slide['id'])
             note = ('Reused verified native inspection from deck ' + reused['from_deck'] + '; checked current whole-deck consistency. ' if reused else 'Inspected native pixels and all review questions. ') + f"Slide {slide['number']}: {slide['title']}"
             coverage.append({'id': slide['id'], 'number': slide['number'],
-                'answers': [not any(f['slide'] == slide['id'] and f['question'] == n for f in kept) for n in range(1, len(build.QUESTIONS) + 1)],
+                'answers': [not any(f['slide'] == slide['id'] and f['question'] == n for f in kept) for n in range(1, len(review_questions(review)) + 1)],
                 'note': note, 'image_sha256': hashlib.sha256(picture(slide['image'])).hexdigest(),
                 **({'reused_from': reused['from_deck']} if reused else {})})
         assessment = {'slides': [{key: value[key] for key in ('id', 'answers', 'note')} for value in coverage], 'deckSha256': review['deck'], 'reviewer': 'independent',
@@ -1533,7 +1566,7 @@ class WorkerTools:
         except WorkspaceError as refusal:
             return [self._plainly(line) for line in said_no(refusal)]
         home.write_json(recorded, {'findings': kept, 'weakest': named,
-            'coverage': {'questions': list(build.QUESTIONS), 'slides': coverage}})
+            'coverage': {'questions': list(review_questions(review)), 'slides': coverage}})
         return []
 
     # --- sources ---

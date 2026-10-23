@@ -316,7 +316,9 @@ FORM = {'title': 'Rolling restarts', 'topic': 'Rolling restarts on the platform'
         'audience': 'Solutions engineers who deploy apps', 'purpose': 'Field enablement',
         'levels': [], 'brief_kind': 'product', 'time_limit': '25 minutes',
         'source_scope': 'public-web', 'deck_target': None, 'brand': None, 'copies': [],
-        'yoodli': False, 'agent': None, 'model': None, 'effort': None}
+        'yoodli': False, 'agent': None, 'model': None, 'effort': None,
+        # The decks these tests draw were written for reading, as OUTLINE says.
+        'delivery': 'reading'}
 
 
 def fails(detail: str = 'It stopped without finishing: the model gave up.',
@@ -460,7 +462,16 @@ class Slides:
     file does, and a real PNG for each slide. `refuse` maps a call to the lines it says
     no with. It takes no turn of its own at previewing, so `most` says how many previews
     were ever under way at once."""
-    VERSION = '0.13.1'
+    VERSION = '0.16.0'   # the floor, slides.MINIMUM
+    # What a whole preview's critic.json asks of every slide, as the slides tool writes it.
+    QUESTIONS = ('After three seconds, is the main point clear, and is it the claim in the title?',
+                 'Does the eye land first on the element that carries the point?',
+                 'Is there exactly one emphasis?', 'Does every element support the title?',
+                 'Is each label inside or right beside what it names?',
+                 'Is the space balanced, with nothing stranded or crowded?',
+                 'Is the slide consistent with its neighbours in style, and different from '
+                 'them in layout unless they are meant to be compared?',
+                 'Does every image and icon explain something?')
     runtime = Path('/opt/slides-tool/versions/0.13.1')
     READING = {'design guidance': 'Design from the claim in the title.\n',
                'composition guidance': 'A canvas holds stacks, boxes and text.\n',
@@ -528,8 +539,9 @@ class Slides:
         return frozenset(known for capability, known in deck.KNOWS.items()
                          if self.has(capability))
 
-    def lacks(self) -> list[str]:
-        return list(self.lacking)
+    def lacks(self, design: bool = False) -> list[str]:
+        from runner import slides
+        return [name for name in self.lacking if design or name in slides.NEEDED]
 
     def reading(self, brand=None) -> dict:
         self._asked('reading')
@@ -772,6 +784,8 @@ class Slides:
                 shown.append({'id': made['id'], 'number': number, 'title': made['title'],
                               'image': str(image),
                               'findings': list(self.findings.get(made['id'], ()))})
+            (folder / 'critic.json').write_text(json.dumps(
+                {'schema': 2, 'questions': list(self.QUESTIONS)}), encoding='utf-8')
             mine = file_id or (self.files[-1] if renderer == 'drive' else None)
             return {'deck': str(folder / 'deck.pptx'), 'renderer': renderer, 'fileId': mine,
                     'deckSha256': hashlib.sha256((folder / 'deck.pptx').read_bytes())
@@ -1032,6 +1046,7 @@ class Brand:
 
     def __init__(self):
         self.revision, self.refuse, self.exports, self.audited = 1, {}, [], []
+        self.blockers = []
         # What a test gives the contract to say of how decks look, and what the skill writes
         # beside it: {file name: text}.
         self.design, self.beside = None, {}
@@ -1104,11 +1119,15 @@ class Brand:
         (snap / 'SKILL.md').write_text('# Harness Slides\n')
         (snap / 'references' / 'compositions.md').write_text('Pinned composition guidance.\n')
         (snap / 'references' / 'draft.md').write_text('Pinned drafting guidance.\n')
+        (snap / 'references' / 'review.md').write_text('Pinned review guidance.\n')
+        checklist = snap.parent / 'brand' / 'slide-review.md'   # the brand's own, as a path
+        checklist.parent.mkdir(parents=True, exist_ok=True)
+        checklist.write_text('# Slide review\n\nUse the Brand checklist.\n')
         return {'task': task, 'revision': 'abc123', 'guidance': str(snap / 'SKILL.md'),
                 'runtime': '/opt/slides-tool/versions/0.13.1', 'freshness': 'current-at-start',
-                **({'brand': {'worker': self.WORKER, 'checkpoints': ['Draft approval.',
-                                                                     'Look.',
-                                                                     'Final acceptance.']}}
+                **({'brand': {'worker': self.WORKER, 'review': str(checklist),
+                              'checkpoints': ['Draft approval.', 'Look.',
+                                              'Final acceptance.']}}
                    if branded else {})}
 
     def looks(self) -> bool:
@@ -1198,11 +1217,18 @@ class Brand:
     def audit(self, deck, brand_id, variant) -> dict:
         self._asked('audit')
         self.audited.append((Path(deck).read_bytes(), brand_id, variant))
-        return {'status': 'WARN' if self.warnings else 'PASS', 'blockers': [],
+        # `blockers` holds what each audit in turn blocks: the first is taken by the next.
+        blocked = self.blockers.pop(0) if self.blockers else []
+        return {'status': 'BLOCKED' if blocked else 'WARN' if self.warnings else 'PASS',
+                'blockers': [dict(blocker) for blocker in blocked],
                 'warnings': [dict(warning) for warning in self.warnings]}
 
     def ready(self) -> dict:
         return {'ready': True}
+
+    def fonts(self) -> str | None:
+        self.doctored = getattr(self, 'doctored', 0) + 1
+        return getattr(self, 'font_problem', None)
 
 
 class Documents:

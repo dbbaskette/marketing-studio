@@ -200,13 +200,14 @@ from pathlib import Path, PurePosixPath
 import runner  # noqa: F401  puts the core on the import path
 import computer
 import home
-from studio_core import brand_guidance, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_view, stops
+from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_view, stops
 import hub
 import workspace
 from workspace import WorkspaceError
 
 from runner import agents, companion, deck, gitstate, pipeline, settings, team, worker_tools
 from runner import brand as brand_skill
+from runner import brand_source
 from runner import copies as copies_made
 from runner.copies import BOTH, KEPT_OURS, PULLED
 from runner import documents as documents_kept
@@ -332,11 +333,15 @@ REDESIGN_NOTHING = ('That deck is not one drawn without a design, so there is no
                     'draw again from one.')
 DESIGN_DIFFERS = ('The design you approved is not what the slides tool holds as approved, so '
                   'the deck cannot be started. {said}')
-UPDATE_SLIDES = ('A new deck is proposed with how each slide is drawn, and the slides tool on '
-                 'this computer, version {version}, lacks what that needs: {lacks}. Update '
-                 'Harness Slides to {release} or newer from Versions on the Status screen, '
-                 'then check this computer again. A deck already begun carries on as it '
-                 'began.')
+UPDATE_SLIDES = ('A deck whose slides you walk through is proposed with how each slide is '
+                 'drawn, and the slides tool on this computer, version {version}, lacks what '
+                 'that needs: {lacks}. Update Harness Slides to {release} or newer from '
+                 'Versions on the Status screen, then check this computer again. A deck '
+                 'already begun carries on as it began.')
+UPDATE_NEW = ('The slides tool on this computer, version {version}, lacks what a new deck '
+              'needs: {lacks}. Update Harness Slides to {release} or newer from Versions on '
+              'the Status screen, then check this computer again. A deck already begun '
+              'carries on as it began.')
 NO_CONTRACTS = ('The brand skill on this computer, {name}, cannot export a brand for a deck '
                 'and check it again: it has no `contract export` and `contract check`. Update '
                 'it, then check this computer again.')
@@ -679,8 +684,11 @@ class Engine(Reviewing):
             return None
         needs = self.deck_needs()
         missing = list(needs['missing'])
-        if needs['update'] and not pipeline.begun(session, record):
-            missing.append(needs['update'])
+        update = needs['design_update'] if pipeline.walkthrough_of(session) else needs['update']
+        # A deck not begun waits for a slides tool and a brand skill new enough; one begun
+        # carries on with what it began with.
+        if not pipeline.begun(session, record):
+            missing += [said for said in (update, needs['old_brand']) if said]
         return {'missing': missing, 'brands': needs['brands']}
 
     @staticmethod
@@ -1022,7 +1030,8 @@ class Engine(Reviewing):
         self.wake(root)
         needs = self.deck_needs()
         drawn = bool(form['deck_target'] and form['brand']) and not needs['missing'] \
-            and not needs['update']
+            and not needs['design_update' if form.get('walkthrough') else 'update'] \
+            and not needs['old_brand']
         # Balanced stops three times: the research plan, the direction, the finished materials;
         # Automatic draft once, at the finished materials. Each deck drawn here stops too.
         chosen = review_policy.level(record)
@@ -1430,7 +1439,7 @@ class Engine(Reviewing):
             if not fresh and seen and time.monotonic() - seen[0] < LOOKED_FOR:
                 return seen[1]
             found = {'tool': None, 'version': None, 'local': False, 'drive': False,
-                     'pictures': False, 'lacks': [], 'needs': [],
+                     'pictures': False, 'lacks': [], 'needs': [], 'design_needs': [],
                      'runtimes': {'slides': None, 'brand': None},
                      'brand': {'found': False, 'name': None, 'brands': [], 'problem': None},
                      'contracts': None, 'skills': []}
@@ -1444,16 +1453,24 @@ class Engine(Reviewing):
                 found['pool'] = bool(tool.has('google-preview-pool'))
                 if ready['tool']:   # read from what it lists; asked only when it lists none
                     found['needs'] = list(tool.lacks())
+                    found['design_needs'] = list(tool.lacks(design=True))
             except (WorkspaceError, OSError) as refusal:
                 found['tool'] = str(refusal)
+                found['version'] = getattr(refusal, 'version', None)
             try:
                 skill = self._skill()
                 found['runtimes']['brand'] = str(skill.runtime)
+                found['brings'] = brand_source.bootstraps(Path(skill.runtime)).get(
+                    'harness-slides')
                 found['brand'] = {
                     'found': True, 'name': str(skill.name), 'problem': None, 'brands': [
                         {'brand': str(entry.get('brand')), 'name': str(entry.get('name')),
                          'variants': [str(variant) for variant in entry.get('variants') or ()]}
                         for entry in skill.brands() if isinstance(entry, dict)]}
+                found['brand']['old'] = brand_skill.too_old(getattr(skill, 'version', None))
+                # Arial, as the brand's own check finds it on this computer: a Status line.
+                fonts = getattr(skill, 'fonts', None)
+                found['fonts'] = fonts() if fonts else None
                 found['contracts'] = bool(skill.contracts())
             except (WorkspaceError, OSError) as refusal:
                 found['brand']['problem'] = str(refusal)
@@ -1464,6 +1481,25 @@ class Engine(Reviewing):
                 pass
             self._looked = (time.monotonic(), found)
             return found
+
+    def brought_by(self, version: str | None) -> str | None:
+        """The brand skill's name when its own installer brings this very version of the
+        slides tool, else None: an installer that pins an older one keeps it here."""
+        seen = self._look()
+        if not version or not seen['brand']['found'] or seen.get('brings') != version:
+            return None
+        return seen['brand']['name']
+
+    def _with_installer(self, said: str | None, seen: dict) -> str | None:
+        """A sentence about a slides tool too old for a deck, saying where it came from
+        when the brand skill's own installer brings it."""
+        version = seen.get('version')
+        if not said or not version or not older(version, slides_tool.MINIMUM):
+            return said
+        name = self.brought_by(version)
+        before, cut, after = said.rpartition('Update it')
+        return f"{before}{name}'s own installer brings {version}. {cut}{after}" \
+            if name and cut else said
 
     def deck_needs(self, fresh: bool = False) -> dict:
         """What a deck needs on this computer: `missing`, a sentence for each thing it
@@ -1479,10 +1515,18 @@ class Engine(Reviewing):
         dated = None if seen['tool'] or not older(seen['version'], slides_tool.MINIMUM) else (
             f"The slides tool on this computer is version {seen['version']}, and a deck "
             f'needs {slides_tool.MINIMUM} or newer. Update it.')
+        dated = self._with_installer(dated, seen)
+        seen = {**seen, 'tool': self._with_installer(seen['tool'], seen)}
         lacks = [] if seen['tool'] or dated else [slides_tool.NAMES.get(name, name)
                                                    for name in seen['needs']]
-        update = UPDATE_SLIDES.format(version=seen['version'], lacks='; '.join(lacks),
-                                      release=slides_tool.RELEASE) if lacks else None
+        update = UPDATE_NEW.format(version=seen['version'], lacks='; '.join(lacks),
+                                   release=slides_tool.RELEASE) if lacks else None
+        # A deck whose slides' designs are walked through needs the design session too.
+        designing = [] if seen['tool'] or dated else [
+            slides_tool.NAMES.get(name, name) for name in seen.get('design_needs') or ()]
+        design_update = UPDATE_SLIDES.format(
+            version=seen['version'], lacks='; '.join(designing),
+            release=slides_tool.RELEASE) if designing else None
         unwritten = NO_CONTRACTS.format(name=brand['name']) \
             if brand['found'] and seen['contracts'] is False else None
         missing = [said for said in (seen['tool'], dated, brand['problem'], unwritten) if said]
@@ -1507,10 +1551,10 @@ class Engine(Reviewing):
                      *needed], seen['tool'] or dated or update or ''),
              'versions': bool(lacks or dated)},
             item('deck-brand', 'A brand skill',
-                 'ok' if brand['found'] and not unwritten else
+                 'ok' if brand['found'] and not unwritten and not brand.get('old') else
                  'problem' if brand['found'] else 'missing',
                  [fact('Installed', can[brand['found']], brand['name'] or 'not found'),
-                  *written], brand['problem'] or unwritten or ''),
+                  *written], brand['problem'] or brand.get('old') or unwritten or ''),
             item('deck-previews', 'A way to render previews of slides',
                  'problem' if renders or seen['tool'] else 'ok',
                  [fact('LibreOffice on this computer', can[seen['local']]),
@@ -1522,11 +1566,16 @@ class Engine(Reviewing):
             item('deck-pictures', 'The programs that turn a render into pictures',
                  'ok' if seen['pictures'] else 'missing',
                  [fact('Installed', can[seen['pictures']])],
-                 ' '.join([NO_PICTURES, *seen['lacks']]) if not seen['pictures'] else '')]
+                 ' '.join([NO_PICTURES, *seen['lacks']]) if not seen['pictures'] else ''),
+            *([item('deck-fonts', 'Arial, the font a deck is drawn in', 'problem',
+                    [fact('Found', 'problem', 'not on this computer')], seen['fonts'])]
+              if seen.get('fonts') else [])]
         return {'missing': missing, 'how': how, 'drive': seen['drive'], 'local': seen['local'],
                 'pool': bool(seen.get('pool')),
                 'brand': dict(brand), 'brands': list(brand['brands']), 'items': items,
-                'lacks': lacks, 'update': update}
+                'fonts': seen.get('fonts'), 'old_brand': brand.get('old'),
+                'lacks': lacks, 'update': update, 'design_lacks': designing,
+                'design_update': design_update}
 
     def _skill(self):
         """The brand skill to use: the one the person named at set-up, else the first
@@ -1600,7 +1649,8 @@ class Engine(Reviewing):
         folder = agents.staging() / f'{root.name}--names-{secrets.token_hex(3)}'
         folder.parent.mkdir(parents=True, exist_ok=True)
         try:
-            made = self._skill().export(folder, *chosen, delivery=deck.DELIVERY)
+            made = self._skill().export(folder, *chosen,
+                                        delivery=pipeline.delivery_of(session))
             return Path(made['voice']).read_text(encoding='utf-8')
         except (WorkspaceError, OSError, KeyError, TypeError):
             return None
@@ -1660,7 +1710,7 @@ class Engine(Reviewing):
 
     def _export(self, root: Path, run: _Run, found: pipeline.Survey,
                 step: pipeline.Next) -> None:
-        """Export the brand for one deck, for reading delivery, into a folder of its own,
+        """Export the brand for one deck, for the training's delivery, into a folder of its own,
         and read what the slides tool tells a deck's workers for that brand."""
         it, clock, token = step.step, time.monotonic(), secrets.token_hex(3)
         level = self._level(it)
@@ -1669,7 +1719,8 @@ class Engine(Reviewing):
         work.mkdir(parents=True, exist_ok=True)
         try:
             chosen, tool = pipeline.brand_of(found.session), self.slides()
-            made = self._skill().export(folder, *chosen, delivery=deck.DELIVERY)
+            made = self._skill().export(folder, *chosen,
+                                        delivery=pipeline.delivery_of(found.session))
             contract = Path(made['contract']).resolve()
             told.mkdir()
             (told / 'outline-contract.txt').write_text(tool.outline_contract(contract),
@@ -1739,7 +1790,8 @@ class Engine(Reviewing):
             folder.mkdir(parents=True)
             with worker_tools.one_at_a_time(Path(how['lock'])):
                 made = skill.look_samples(outline, folder / 'samples', *pipeline.brand_of(session),
-                                          preview=rendered['preview'], delivery=deck.DELIVERY)
+                                          preview=rendered['preview'],
+                                          delivery=pipeline.delivery_of(session))
             manifest = home.read_json(folder / 'samples' / 'looks.json', {})
             looks = deck_flow.sampled(manifest, folder / 'samples')
             for look in looks:
@@ -1759,7 +1811,7 @@ class Engine(Reviewing):
             try:
                 folder.mkdir(parents=True)
                 skill.look_samples(outline, folder / 'samples', *pipeline.brand_of(session),
-                                   delivery=deck.DELIVERY)
+                                   delivery=pipeline.delivery_of(session))
                 manifest = home.read_json(folder / 'samples' / 'looks.json', {})
                 unseen = {'looks': [{key: value for key, value in look.items()
                                      if key != 'image'}
@@ -1969,7 +2021,10 @@ class Engine(Reviewing):
                 answer = skill.guidance(work, chosen[0], chosen[1], branded=kind == 'brand')
             except WorkspaceError as again:
                 return {'problem': str(again)}
-        for name, text in brand_guidance.snapshot(answer).items():
+        # The reviewer's reading is kept with the composers': the slides tool's review
+        # guidance in the snapshot, and the brand's own review checklist.
+        for name, text in {**brand_guidance.snapshot(answer),
+                           **brand_guidance.review_texts(answer)}.items():
             worker_tools._write(told / pipeline.reading_file(name), text)
         said = brand_guidance.worker(answer)
         if said:
@@ -1977,11 +2032,17 @@ class Engine(Reviewing):
         return {**brand_guidance.recorded(answer), 'brand': list(chosen),
                 'checkpoints': brand_guidance.checkpoints(answer)}
 
-    def _designed(self, mine: pipeline.Deck) -> bool | None:
+    def _designed(self, mine: pipeline.Deck, session: dict | None = None) -> bool | None:
         """Whether what a deck says is written with its design. A deck keeps what it was
-        first written with; a new one has a design when the slides tool can keep one. None
-        when it was written with a design and the tool here can no longer keep one."""
+        first written with. A new one is approved on its words and its look, as the brand's
+        checkpoints say, and has a design only when the person asked to walk through each
+        slide's design (or to draw a deck again from one), and the slides tool can keep
+        one. None when it was written with a design and the tool here can no longer keep
+        one."""
         if mine.designed is False:
+            return False
+        if mine.designed is None and not (pipeline.walkthrough_of(session or {})
+                                          or mine.kept.get('redesign')):
             return False
         try:
             can = self.slides().designs()
@@ -2238,7 +2299,8 @@ class Engine(Reviewing):
             known = self.slides().knows()
             whole = deck.complete(mine.outline, (listed or {}).get('layouts'), words,
                                   designed=plan is not None,
-                                  look=pipeline.look_of(root, mine), knows=known)
+                                  look=pipeline.look_of(root, mine), knows=known,
+                                  delivery=pipeline.delivery_of(found.session))
             home.write_json(source, deck.for_tool(whole, known))
             self.slides().outline_start(source, pipeline.contract(root, mine), folder)
             # Kept, so that every compile of this start can name the outline it was
@@ -2427,14 +2489,21 @@ class Engine(Reviewing):
             if (folder / seen).resolve() not in file.parents \
                     or file.read_bytes()[:4] != workspace.PPTX_SIGNATURE:
                 raise WorkspaceError('The renderer did not leave a deck that can be opened.')
+            # The reviewer is asked the slides tool's own questions, as this preview has them.
+            asked_now = None if judged else critic.questions(folder / seen)
             slides = worker_tools.pictures(shown, folder / seen, shots)
             home.write_json(shots / pipeline.ABOUT, {'deck': shown['deckSha256'], 'slides': [
                 {key: slide[key] for key in ('number', 'id', 'title')} for slide in slides]})
+            # The brand's check before the review, so that its blockers are drawn again.
+            audit, audit_note = self._audit_round(file, found.session)
             screens = deck.screened(self._screened(folder, slides) if judged else slides,
-                                    shown.get('repair'), self._audit_now(file, found.session))
+                                    shown.get('repair'), audit)
+            blocked, noticed = deck.audit_findings(audit, slides)
         except (WorkspaceError, OSError, KeyError, ValueError, TypeError) as refusal:
             shutil.rmtree(folder, ignore_errors=True)
             shutil.rmtree(shots, ignore_errors=True)
+            if str(refusal) == critic.MISSING:
+                return self._problem(root, it.id, 'failed', critic.MISSING, DECK_KEPT)
             if 'renderer-unavailable' in getattr(refusal, 'codes', ()):
                 return self._problem(root, it.id, 'stopped', NO_REVIEWER.format(
                     said=' '.join(refusal.problems)), DECK_KEPT)
@@ -2460,11 +2529,14 @@ class Engine(Reviewing):
                 **({'assets': {ident: fingerprint for made in drawn.values()
                                for ident, fingerprint in (made.get('assets') or {}).items()}}
                    if mine.start.get('assets') is not None else {}),
-                **({'judged': shown['judged']} if judged else {}),
-                'deck': shown['deckSha256'], 'slides': slides, 'screens': screens})
-            # What the screens send back is drawn again before anyone reviews it, within the
-            # rounds a deck has: the last round is always reviewed.
-            back = deck.sent_back(screens)
+                **({'judged': shown['judged']} if judged else
+                   {'questions': list(asked_now)}),
+                'deck': shown['deckSha256'], 'slides': slides, 'screens': screens,
+                'audit_findings': blocked, 'audit_warnings': noticed,
+                **({'auditNote': audit_note} if audit_note else {})})
+            # What the screens and the brand's check send back is drawn again before anyone
+            # reviews it, within the rounds a deck has: the last round is always reviewed.
+            back = deck.sent_back(screens) + blocked
             if back and len(rounds) <= deck.REPAIRS:
                 rounds[-1]['review'] = {'findings': back, 'weakest': None, 'coverage': {},
                                         'by': 'screen', 'at': home.now()}
@@ -2472,13 +2544,13 @@ class Engine(Reviewing):
             self._done(root, it, clock, f'put {workspace.label(it.artifact)} together: '
                        f"{len(slides)} slide{'' if len(slides) == 1 else 's'}")
 
-    def _audit_now(self, file: Path, session: dict) -> dict | None:
-        """The brand's audit of a deck as it was just rendered, for the screens a review
-        is given; None when it cannot be run, which stops nothing."""
+    def _audit_round(self, file: Path, session: dict) -> tuple[dict | None, str | None]:
+        """The brand's audit of a deck as it was just rendered, before its review, and
+        None with a note when it cannot be run, which stops nothing."""
         try:
-            return self._skill().audit(file, *pipeline.brand_of(session))
-        except (WorkspaceError, OSError, ValueError, TypeError):
-            return None
+            return self._skill().audit(file, *pipeline.brand_of(session)), None
+        except (WorkspaceError, OSError, ValueError, TypeError) as refusal:
+            return None, f"The brand's check of this deck could not be run. {refusal}"
 
     @staticmethod
     def _screened(folder: Path, slides: list[dict]) -> list[dict]:
@@ -2763,9 +2835,10 @@ class Engine(Reviewing):
         if (self.brief(root) or {}).get('state') == 'working':
             raise WorkspaceError(REDESIGN_WORKING)
         needs = self.deck_needs()
-        if needs['missing'] or needs['update']:
+        if needs['missing'] or needs['design_update']:
             raise WorkspaceError(REDESIGN_CANNOT.format(said=' '.join(
-                [*needs['missing'], *([needs['update']] if needs['update'] else [])])))
+                [*needs['missing'], *([needs['design_update']] if needs['design_update']
+                                      else [])])))
         with self.files:
             record = self._load(root)
             found = self._survey(root, record)
@@ -3146,7 +3219,7 @@ class Engine(Reviewing):
         it, says = step.step, pipeline.bare(step.step.id) == 'deck-outline'
         if (says and not self._brand_holds(root, found, it)) or not self._may_go(root):
             return
-        designed = says and self._designed(found.decks[self._level(it)])
+        designed = says and self._designed(found.decks[self._level(it)], found.session)
         if designed is None:
             return self._problem(root, it.id, 'stopped', DESIGN_GONE, KEPT)
         record = self._load(root)
@@ -3311,14 +3384,16 @@ class Engine(Reviewing):
             depth = (' at levels ' + ', '.join(found.session['levels'])) if found.session['levels'] else ''
             task = {'topic': intake.get('topic') or found.session['title'],
                     'audience': intake.get('audience') or 'Learners',
-                    'purpose': 'Inform training' + depth + ': '
-                               + (intake.get('purpose') or 'teach the topic')
-                               + '. Prioritize learner tasks, prerequisites, misconceptions, '
-                                 'grounded worked examples and limits. Research supplies evidence; '
-                                 'the teaching plan and materials are authored afterward.',
+                    'purpose': research_contract.purpose(
+                        'training' + depth, intake.get('purpose') or 'teach the topic',
+                        'Prioritize learner tasks, prerequisites, misconceptions, grounded '
+                        'worked examples and limits. Research supplies evidence; the teaching '
+                        'plan and materials are authored afterward.'),
                     'scope': pipeline._about(root, found.session),
                     'planning_questions': found.research.questions,
                     'requested_changes': step.request,
+                    # Asked for at the research stop: the sources read again.
+                    'refresh': (step.request or {}).get('refresh') is True,
                     'source_mode': {'supplied-only': 'selected', 'both': 'mixed'}.get(scope, 'public')}
             try:
                 research_contract.native(self, root, run, task, offered, 'training')
@@ -4487,7 +4562,8 @@ class Engine(Reviewing):
         if not older:
             return []
         needs = self.deck_needs()
-        why = ' '.join([*needs['missing'], *([needs['update']] if needs['update'] else [])])
+        why = ' '.join([*needs['missing'], *([needs['design_update']] if needs['design_update']
+                                            else [])])
         return [{'level': mine.level, 'artifact': mine.name,
                  'label': workspace.label(mine.name), 'may': not why, 'why': why or None}
                 for mine in older]

@@ -21,8 +21,10 @@ and visual explanation, blog research the argument and objections, and training
 research the concept sequence, misconceptions and grounded examples. Planning
 questions are investigation aids, not a required report outline or answer quota.
 
-The confined author invocation reads the helper's investigation, synthesis and
-studio-handoff guidance. Its dossier includes an authored brief, typed findings,
+The confined author invocation reads the helper's investigation and synthesis
+guidance, its own stage references; the studio-handoff guidance is the studio's to read.
+It is told that the studio's tools saved every capture, and to cite each by the path they
+gave. Its dossier includes an authored brief, typed findings,
 supporting facts, counterfacts, conditions and gaps. The parent validates captured
 source identities and permissions, then asks the helper to save it. Another
 invocation independently checks the exact digest's evidence, findings, report and
@@ -110,6 +112,23 @@ conversation workflows can explicitly import a complete synthesis case:
 
 Imports preserve the actual review state and source captures. They refuse legacy
 research conversion and do not grant approval or publication authority.
+
+## What writers are told, comparisons and refresh
+
+Every writer that receives reviewed research is told what it is, once, in
+`research_contract.HANDOFF`: read its brief first, use the facts and findings to check
+what is written, and never put an ID, digest or verdict in the words a reader reads.
+`research_contract.purpose` builds each studio's purpose line; when the goal compares
+options (compare, versus, vs, alternatives, choose between, which is better, or two named
+options joined by "or"), it asks for a comparison with one criterion per row, saying where
+something is unknown rather than absent. A word list can be wrong both ways, and then
+costs one sentence.
+
+A request to bring the research up to date sets `task['refresh']`, never a dossier field.
+The author is then also handed the "Refresh selected evidence" section of Harness
+Research's `synthesis-reuse.md` and asked to re-read each source, save new captures with
+the date it read them, and update what changed. The review that follows is the whole
+review, as Harness Research requires.
 
 ## Research stops and source boundaries
 

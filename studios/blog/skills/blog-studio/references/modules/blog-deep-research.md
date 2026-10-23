@@ -7,6 +7,9 @@ Blog Studio's wrapper supplies the working instructions; upstream files are
 provenance, not another process to execute. Harness Research owns source investigation
 and independent review.
 
+The page researches with Harness Research. `studio.py research` is the chat workflow's
+command.
+
 ## New synthesis research
 
 New browser runs with the shared synthesis-capable helper perform purpose-led

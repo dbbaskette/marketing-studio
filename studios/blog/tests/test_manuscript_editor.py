@@ -701,6 +701,14 @@ class ResearchMetadataTests(Fixture):
 
         def workflow(root, task, invoke, sources):
             self.assertEqual(task['manuscript'], 'A claim to check.')
+            self.assertEqual(
+                task['purpose'],
+                synthesis_research.research_contract.purpose(
+                    'a blog',
+                    'Check a claim',
+                    'Prioritize the central argument, mechanisms and strongest objections.',
+                ),
+            )
             text, _ = invoke(
                 'author', 'Synthetic guidance', {'worker': 'author-test'}, sources, False
             )

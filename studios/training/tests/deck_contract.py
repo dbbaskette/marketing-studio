@@ -26,6 +26,10 @@ def shared(names) -> list[str]:
 
 @unittest.skipUnless(OUT, 'Run by the root suite, with DECK_CONTRACT_OUT set.')
 class DeckContract(DeckCase):
+    # Its decks walk through each slide's design, the session Training Studio keeps and
+    # Presentation Studio has not, which deck_flow.DESIGN_SESSION records.
+    WALKTHROUGH = True
+
     def setUp(self):
         super().setUp()
         self.brand.entry, self.brand.offers_looks = 'brand', True

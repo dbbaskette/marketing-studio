@@ -146,10 +146,10 @@ class FindingTheRuntimeTests(unittest.TestCase):
         self.assertEqual(found, tool.reading(self.home / 'brand-contract.json'),
                          'it is the same for every brand')
         self.assertEqual(list(found), ['design guidance', 'composition guidance',
-                                       'drafting guidance', 'example order',
+                                       'drafting guidance', 'review guidance', 'example order',
                                        'example contrast'],
-                         'only what a writer or a composer needs, a link out of the folder is '
-                         'not followed, and what the tool does not have is left out')
+                         'only what a writer, a composer or a reviewer needs, a link out of the '
+                         'folder is not followed, and what the tool does not have is left out')
         self.assertEqual((found['design guidance'], found['example order']),
                          ('# Design\n', '{"brief": {"relation": "order"}}\n'))
         self.assertEqual(len(found['drafting guidance']), slides.READ_MOST)
@@ -178,7 +178,7 @@ class FindingTheRuntimeTests(unittest.TestCase):
 
     def test_a_tool_that_is_too_old_is_refused_when_it_is_found(self):
         os.environ[slides.VARIABLE] = str(installed(self.home / 'runtime'))
-        for version in (slides.MINIMUM, '0.14.0-beta.2', '1.0.0'):
+        for version in (slides.MINIMUM, '0.16.1-beta.2', '1.0.0'):
             self.assertEqual(slides.Slides(run=says(version)).version(), version)
         for version in ('0.12.9', '0.9.0'):
             with self.assertRaisesRegex(WorkspaceError, f'harness-slides {version} is '
@@ -187,6 +187,33 @@ class FindingTheRuntimeTests(unittest.TestCase):
                 slides.Slides(run=says(version))
         with self.assertRaisesRegex(WorkspaceError, 'did not say which version it is'):
             slides.Slides(run=lambda command, cwd=None: (0, 'Usage: ...\n', ''))
+
+    def test_preview_never_asks_for_events(self):
+        ran, base = [], self.home
+
+        def run(command, cwd=None):
+            ran.append(command)
+            if command[2:] == ['--version']:
+                return 0, f'Harness Slides {slides.MINIMUM}\n', ''
+            if command[2:] == ['version']:
+                return 0, json.dumps({'capabilities': ['progress-events', 'json-refusals']}), ''
+            output = Path(command[command.index('--output') + 1])
+            output.mkdir()
+            return 0, json.dumps({'deck': str(output / 'deck.pptx'), 'slides': []}), ''
+
+        tool = slides.Slides(runtime=Path('/opt/harness-slides'), run=run)
+        tool.preview(base / 'compiled', base / 'preview', 'local')
+        self.assertTrue(any('preview' in command for command in ran))
+        self.assertFalse(any('--events' in command for command in ran))
+        self.assertFalse(hasattr(tool, 'progress'), 'nothing waits for preview events')
+
+    def test_older_tool_is_refused(self):
+        os.environ[slides.VARIABLE] = str(installed(self.home / 'runtime'))
+        with self.assertRaises(WorkspaceError) as refused:
+            slides.Slides(run=says('0.15.1'))
+        self.assertEqual(str(refused.exception), 'harness-slides 0.15.1 is installed, and a '
+                         'deck needs 0.16.0 or newer. Update it, then try again.')
+        self.assertEqual(refused.exception.version, '0.15.1')
 
 
 class CommandTests(unittest.TestCase):
@@ -198,6 +225,8 @@ class CommandTests(unittest.TestCase):
         self.ran.clear()
 
     def pretend(self, command, cwd=None):
+        if command[2:] == ['version']:   # what it can do: nothing listed, and not counted
+            return 0, '{}', ''
         self.ran.append(command)
         if command[2:] == ['--version']:
             return 0, f'Harness Slides {slides.MINIMUM}\n', ''
@@ -209,6 +238,14 @@ class CommandTests(unittest.TestCase):
                       run=lambda command, cwd=None: ran.append(command) or says()(command))
         self.assertEqual(ran, [['node', '/opt/harness-slides/scripts/harness-slides.mjs',
                                 '--version']])
+
+    def test_compile_names_the_asset_project_only_when_given_one(self):
+        self.slides.compile(Path('/d/composition.json'), Path('/d/brand.json'))
+        self.assertNotIn('--asset-project', self.ran[-1])
+        self.slides.compile(Path('/d/composition.json'), Path('/d/brand.json'),
+                            assets=Path('/d/work/assets'))
+        self.assertEqual(self.ran[-1][self.ran[-1].index('--asset-project') + 1],
+                         '/d/work/assets')
 
     def test_each_command_is_run_as_the_command_line_takes_it(self):
         deck = self.slides
@@ -280,9 +317,10 @@ class CommandTests(unittest.TestCase):
 
     def test_a_tool_with_a_preview_pool_is_never_told_which_drive_file_to_reuse(self):
         shown = {'deck': '/d/p/deck.pptx', 'deckSha256': 'abc', 'slides': []}
-        self.answers = [(0, json.dumps({'version': '0.17.0',
-                                        'capabilities': ['google-preview-pool']}), ''),
-                        (0, json.dumps(shown), '')]
+        self.answers = [(0, json.dumps(shown), '')]
+        # What its `version` listed: the preview pool.
+        self.slides._capabilities = frozenset({'google-preview-pool'})
+        self.slides._asked_capabilities = True
         self.slides.preview('/d/c', '/d/p', 'drive', file_id='file-1')
         self.assertEqual(self.ran[-1][2:], ['compose', 'preview', '--file', '/d/c', '--output',
                                             '/d/p', '--renderer', 'google'])
@@ -552,6 +590,74 @@ class PreviewsOneAtATimeTests(Deck):
         for thread in threads:
             thread.join()
         return failures
+
+    def pooled(self):
+        """The slides tool lists its Google preview pool."""
+        self.tool.extra = {'google-preview-pool'}
+        self.slides._capabilities, self.slides._asked_capabilities = None, False
+        self.assertTrue(self.slides.has('google-preview-pool'))
+
+    def by_renderer(self) -> dict:
+        """The most renders in progress together, for each renderer, as the tool saw them."""
+        busy, most, guard, run = {}, {}, threading.Lock(), self.slides.run
+
+        def counted(command, cwd=None):
+            renderer = command[command.index('--renderer') + 1] \
+                if '--renderer' in command else None
+            with guard:
+                busy[renderer] = busy.get(renderer, 0) + 1
+                most[renderer] = max(most.get(renderer, 0), busy[renderer])
+            try:
+                return run(command, cwd)
+            finally:
+                with guard:
+                    busy[renderer] -= 1
+        self.slides.run = counted
+        return most
+
+    def test_google_previews_overlap_on_a_pool(self):
+        self.pooled()
+        self.tool.pause = 0.2
+
+        def pooled_preview(compiled, folder):
+            return self.slides.preview(compiled, folder, 'drive')
+
+        self.assertEqual(self.side_by_side(pooled_preview), [])
+        self.assertEqual(self.tool.at_once, 4)
+        self.tool.at_once = 0
+
+        def smaller_pool(compiled, folder):
+            return self.slides.preview(compiled, folder, 'drive')
+
+        with mock.patch.dict(os.environ, {'HARNESS_PREVIEW_POOL_SIZE': '2'}):
+            self.assertEqual(self.side_by_side(smaller_pool), [])
+        self.assertEqual(self.tool.at_once, 2)
+        for wrong in ('0', '-3', 'many', ''):
+            with mock.patch.dict(os.environ, {'HARNESS_PREVIEW_POOL_SIZE': wrong}):
+                self.assertEqual(slides.pool_size(), slides.POOL, wrong)
+        self.assertEqual(slides.POOL, 4)
+
+    def test_local_renders_never_overlap(self):
+        self.pooled()
+        self.tool.pause = 0.15
+        most = self.by_renderer()
+
+        def mixed(compiled, folder):
+            number = int(str(folder).rpartition('-')[2])
+            return self.slides.preview(compiled, folder, 'local' if number % 2 else 'drive')
+
+        self.assertEqual(self.side_by_side(mixed), [])
+        self.assertEqual(most.get('local'), 1, most)
+        self.assertEqual(most.get('google'), 2, most)
+
+    def test_without_a_pool_drive_is_one_at_a_time(self):
+        self.tool.pause = 0.05
+
+        def unpooled(compiled, folder):
+            return self.slides.preview(compiled, folder, 'drive')
+
+        self.assertEqual(self.side_by_side(unpooled), [])
+        self.assertEqual(self.tool.at_once, 1)
 
     def test_two_previews_at_once_never_overlap(self):
         self.tool.pause = 0.05

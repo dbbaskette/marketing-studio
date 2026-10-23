@@ -139,6 +139,7 @@ from workspace import WorkspaceError, write_atomic
 from runner import agents, companion, decks, documents, gitstate, marks, settings, stages
 from runner import build_progress, team, worker_tools
 from runner import brand as brand_skill
+from runner import brand_source
 from runner import research as research_cli
 from runner import slides as slides_tool
 from runner.jobs import (FED, KEPT_SO_FAR, NEXT_NOTE, Gone as _Gone, Halted as _Halted, Jobs,
@@ -165,6 +166,9 @@ STOP_WAIT = 30          # seconds a run that is being deleted may take to end
 IN_HAND = 'work/step.lock'      # written when a step starts, removed when it ends
 INCOMING = 'sources/incoming'   # what the form brought, until intake-source takes it
 PICTURE_KINDS = ('build', 'look', 'original', 'progress')
+PICTURE_STARTS = (b'\x89PNG\r\n\x1a\n', b'\xff\xd8\xff')   # a PNG, a JPEG, by their first bytes
+PICTURE_MOST = 20_000_000   # bytes of one picture a person gives a slide
+PICTURE_WORDS = 300         # characters of what a picture shows, and of where it came from
 SHEET = 'contact-sheet'
 
 # What the engine does for each step of the pipeline: the name of its method. Every gate is
@@ -1203,14 +1207,21 @@ class Engine(Jobs, Researching):
                 found['pool'] = bool(tool.has('google-preview-pool'))
             except (WorkspaceError, OSError) as refusal:
                 found['tool'] = str(refusal)
+                found['version'] = getattr(refusal, 'version', None)
             try:
                 skill = self._skill()
                 found['runtimes']['brand'] = str(skill.runtime)
+                found['brings'] = brand_source.bootstraps(Path(skill.runtime)).get(
+                    'harness-slides')
                 found['brand'] = {
                     'found': True, 'name': str(skill.name), 'problem': None, 'brands': [
                         {'brand': str(entry.get('brand')), 'name': str(entry.get('name')),
                          'variants': [str(variant) for variant in entry.get('variants') or ()]}
                         for entry in skill.brands() if isinstance(entry, dict)]}
+                found['brand']['old'] = brand_skill.too_old(getattr(skill, 'version', None))
+                # Arial, as the brand's own check finds it on this computer: a Status line.
+                fonts = getattr(skill, 'fonts', None)
+                found['fonts'] = fonts() if fonts else None
             except (WorkspaceError, OSError) as refusal:
                 found['brand']['problem'] = str(refusal)
             try:
@@ -1224,6 +1235,26 @@ class Engine(Jobs, Researching):
                 found['research_problem'] = str(refusal)
             self._looked = (time.monotonic(), found)
             return found
+
+    def brought_by(self, version: str | None) -> str | None:
+        """The brand skill's name, as it reports it, when its own installer brings this
+        very version of the slides tool, else None: an installer that pins an older one
+        keeps it here."""
+        seen = self._look()
+        if not version or not seen['brand']['found'] or seen.get('brings') != version:
+            return None
+        return seen['brand']['name']
+
+    def _with_installer(self, said: str | None, seen: dict) -> str | None:
+        """A sentence about a slides tool too old for a deck, saying where it came from
+        when the brand skill's own installer brings it."""
+        version = seen.get('version')
+        if not said or not version or not self._older(version, slides_tool.MINIMUM):
+            return said
+        name = self.brought_by(version)
+        before, cut, after = said.rpartition('Update it')
+        return f"{before}{name}'s own installer brings {version}. {cut}{after}" \
+            if name and cut else said
 
     def deck_needs(self, fresh: bool = False) -> dict:
         """What a deck needs on this computer: `missing`, a sentence for each thing it
@@ -1239,6 +1270,8 @@ class Engine(Jobs, Researching):
             or not self._older(seen['version'], slides_tool.MINIMUM) else (
             f"The slides tool on this computer is version {seen['version']}, and a deck needs "
             f'{slides_tool.MINIMUM} or newer. Update it.')
+        dated = self._with_installer(dated, seen)
+        seen = {**seen, 'tool': self._with_installer(seen['tool'], seen)}
         # The brand skill is not a need of drawing: a deck without one stops at its brand.
         missing = [said for said in (seen['tool'], dated) if said]
         if not seen['tool']:
@@ -1255,9 +1288,10 @@ class Engine(Jobs, Researching):
                  'missing' if seen['tool'] else 'problem' if dated else 'ok',
                  [fact('Installed', can[not seen['tool']], seen['version'] or 'not found')],
                  seen['tool'] or dated or ''),
-            item('deck-brand', 'A brand skill', 'ok' if brand['found'] else 'missing',
+            item('deck-brand', 'A brand skill',
+                 'problem' if brand.get('old') else 'ok' if brand['found'] else 'missing',
                  [fact('Installed', can[brand['found']], brand['name'] or 'not found')],
-                 brand['problem'] or ''),
+                 brand['problem'] or brand.get('old') or ''),
             item('deck-previews', 'A way to render previews of slides',
                  'problem' if renders or seen['tool'] else 'ok',
                  [fact('LibreOffice on this computer', can[seen['local']]),
@@ -1273,14 +1307,17 @@ class Engine(Jobs, Researching):
             item('deck-research', 'The research tool',
                  'ok' if seen['research'] else 'missing',
                  [fact('Installed', can[bool(seen['research'])])],
-                 seen['research_problem'] or '')]
+                 seen['research_problem'] or ''),
+            *([item('deck-fonts', 'Arial, the font a deck is drawn in', 'problem',
+                    [fact('Found', 'problem', 'not on this computer')], seen['fonts'])]
+              if seen.get('fonts') else [])]
         return {'missing': missing, 'how': how, 'drive': seen['drive'],
                 'pool': bool(seen.get('pool')),
                 'local': seen['local'], 'google': bool(seen['drive']),
                 'tool': not seen['tool'], 'version': seen['version'],
                 'brand': dict(brand), 'brands': list(brand['brands']),
                 'research': seen['research'], 'research_problem': seen['research_problem'],
-                'items': items}
+                'fonts': seen.get('fonts'), 'items': items}
 
     @staticmethod
     def _older(version: str, needed: str) -> bool:
@@ -1350,6 +1387,12 @@ class Engine(Jobs, Researching):
                 step = first(self._load(root))
             self._problem(root, step.name if step else 'brand', 'stopped', NO_BRAND,
                           KEPT_SO_FAR)
+            raise _Halted()
+        old = brand_skill.too_old(getattr(skill, 'version', None))
+        if old and not (root / build.CONTRACT).is_file():
+            with self.files:
+                step = first(self._load(root))
+            self._problem(root, step.name if step else 'brand', 'stopped', old, KEPT_SO_FAR)
             raise _Halted()
         with self.files:
             record = self._load(root)
@@ -1482,6 +1525,12 @@ class Engine(Jobs, Researching):
         then share its contact sheet and commit."""
         made = build.draw_whole(root, self._load(root), self.slides(), how)
         count = len(made['slides'])
+        # The brand's check before the review, so that its blockers are drawn again.
+        try:
+            skill = self._skill()
+        except WorkspaceError:
+            skill = None
+        build.audit_round(root, self._load(root), skill)
         with self.files:
             build.share_sheet(root)
             self._commit(root, f"put the deck together: {count} slide"
@@ -1923,7 +1972,7 @@ class Engine(Jobs, Researching):
             record = self._approve(root, record, gate, note, extra, marked)
             gated = record['gates'].get(gate) or {}
             # What the last request for changes marked is not kept past the approval.
-            cleared = {'again': None, 'added': None, 'free': None} \
+            cleared = {'again': None, 'added': None, 'free': None, 'refresh': None} \
                 if gate == 'gate:research' else {'saying': None} \
                 if gate == 'gate:outline' else {}
             record['gates'][gate] = {**gated, 'state': 'approved', 'note': note,
@@ -1932,7 +1981,7 @@ class Engine(Jobs, Researching):
             self._store(root, record)
             return f'approve the {it}', ()
         gated = record['gates'].get(gate) or {}
-        more = {'again': None, 'added': None, 'free': None} \
+        more = {'again': None, 'added': None, 'free': None, 'refresh': None} \
             if gate == 'gate:research' else {'saying': None} \
             if gate == 'gate:outline' else {}
         # An outline that came back from the deck is redrafted in the brand the deck was
@@ -2258,7 +2307,8 @@ class Engine(Jobs, Researching):
                                       'left_out': marked['left_out']}
             added = self._add_questions(root, record, marked.get('add') or [])
             again = {**(marked.get('again') or {}), **{ident: '' for ident in added}}
-            more = {'again': again, 'added': added, 'free': note}
+            more = {'again': again, 'added': added, 'free': note,
+                    'refresh': True if marked.get('refresh') else None}
         return record, marks.note(gate, marked, note), more
 
     def act(self, path, action: str) -> dict:
@@ -2864,7 +2914,68 @@ class Engine(Jobs, Researching):
                 'saying': ((record.get('gates') or {}).get('gate:outline') or {}).get('saying')
                 or None,
                 'delivery': (found.get('delivery') if isinstance(found, dict) else None)
-                or build.DELIVERY}
+                or build.DELIVERY,
+                # The pictures the person gave its slides, by slide ID.
+                'pictures': {ident: {key: entry.get(key) for key in ('asset', 'alt', 'source',
+                                                                     'name')}
+                             for ident, entry in build.pictures(root).items()}}
+
+    def add_picture(self, path, slide: str, filename: str, data: bytes, alt: str,
+                    source: str, expected: str | None) -> dict:
+        """Give a cover, section or content slide a picture of the person's own, while the
+        outline waits for them: a PNG or JPEG file up to PICTURE_MOST bytes, what it shows,
+        and where it came from. It is recorded in the deck's asset project with the slides
+        tool's `assets add-supplied`, and drawn by its asset ID when the deck is built.
+        `expected` is the outline gate's `expected`, as the page read it. Returns {'asset',
+        'slide'}; nothing is generated."""
+        root = self._held(path)
+        if not isinstance(data, (bytes, bytearray)) or not data.startswith(PICTURE_STARTS):
+            raise WorkspaceError('A picture is a PNG or a JPEG file.')
+        if len(data) > PICTURE_MOST:
+            raise WorkspaceError('A picture is at most 20 MB.')
+        alt, source = ' '.join(str(alt or '').split()), ' '.join(str(source or '').split())
+        if not alt:
+            raise WorkspaceError('Say what the picture shows, for someone who cannot see it.')
+        if not source:
+            raise WorkspaceError('Say where the picture came from.')
+        if len(alt) > PICTURE_WORDS or len(source) > PICTURE_WORDS:
+            raise WorkspaceError(f'Say what it shows and where it came from in {PICTURE_WORDS} '
+                                 'characters or fewer each.')
+        with self.files:
+            record = self._load(root)
+            gate = self._gate_view(root, record)
+            if not gate or gate.get('name') != 'gate:outline':
+                raise WorkspaceError('Add a picture while the outline is waiting for you.')
+            if gate.get('expected') != expected:
+                raise WorkspaceError('The outline changed. Reload it before adding a picture.')
+            kinds = {one.get('id'): one.get('kind') for one in gate.get('slides') or ()
+                     if isinstance(one, dict)}
+            titles = {one.get('id'): one.get('title') for one in gate.get('slides') or ()
+                      if isinstance(one, dict)}
+            if slide not in kinds:
+                raise WorkspaceError(f'{slide} is not a slide of this outline.')
+            if kinds[slide] not in build.PICTURE_KINDS:
+                raise WorkspaceError('A picture goes on a cover, section or content slide.')
+            tool = self.slides()
+            if not tool.assets():
+                raise WorkspaceError('The slides tool on this computer keeps no asset manifest, '
+                                     'so a picture cannot be added. Update Harness Slides from '
+                                     'Versions on the Status screen.')
+            if kinds[slide] != 'content':
+                listed = tool.layouts(root / build.CONTRACT).get('layouts')
+                if build.picture_layout(listed, kinds[slide]) is None:
+                    raise WorkspaceError("The brand's template has no layout with a place for "
+                                         f'a picture on a {kinds[slide]} slide. Give the '
+                                         'picture to a content slide instead.')
+            suffix = '.png' if data.startswith(b'\x89PNG') else '.jpg'
+            with tempfile.TemporaryDirectory(prefix='presentation-picture-') as temporary:
+                file = Path(temporary) / f'picture{suffix}'
+                file.write_bytes(bytes(data))
+                made = build.record_picture(root, tool, slide, file, alt, source,
+                                            Path(str(filename or '')).name[:120] or None,
+                                            kind=kinds[slide], title=titles.get(slide))
+            self._commit(root, f'give slide {slide} a picture')
+        return made
 
     def _show_look(self, root: Path, record: dict) -> dict:
         """What the look gate shows, and the direction review with it: the brand's looks as

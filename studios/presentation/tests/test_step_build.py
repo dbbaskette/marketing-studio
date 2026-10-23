@@ -18,11 +18,15 @@ from workspace import WorkspaceError
 
 from runner import decks, worker_tools
 from runner.steps import build, existing
-from studio_core import deck_direction
+from studio_core import critic, deck_direction
 from runner import brand as brand_skill
 from stand_ins.slides import sketch
 
 BY_ID = {slide['id']: slide for slide in OUTLINE['slides']}
+PNG_ONE = (b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01'
+           b'\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\xcf'
+           b'\xc0\xf0\x1f\x00\x05\x00\x01\xff\x89\x99=\x1d\x00\x00\x00\x00IEND\xaeB`'
+           b'\x82')
 
 
 def drawn(spec: dict, extra=None) -> str:
@@ -44,6 +48,9 @@ def drawn(spec: dict, extra=None) -> str:
                            if wanted.get('image') else shape})
             continue
         slide = sketch(BY_ID[wanted['id']], spec['prefix'])
+        if wanted.get('image'):   # a picture the person gave, placed as it is given
+            slide['canvas'] = {'type': 'stack', 'direction': 'column',
+                               'children': [slide['canvas'], wanted['image']]}
         # The approved notes and provenance are copied as the brief gives them.
         if wanted.get('notes') is not None:
             slide['notes'] = wanted['notes']
@@ -230,6 +237,20 @@ class GuidanceTests(Deck):
         self.assertEqual(written.prepared['inputs']['brand worker guidance'],
                          brand_stand_in.WORKER)
         self.assertIn('drafting guidance', written.prepared['inputs'])
+
+    def test_reviewer_reads_the_review_guidance(self):
+        self.entered()
+        self.built()
+        inputs = build.review_work(self.root, self.run_).prepared['inputs']
+        self.assertEqual(list(inputs), ['the review', 'review guidance',
+                                        'brand review checklist'])
+        self.assertEqual(inputs['review guidance'], 'Review every slide.\n')
+        self.assertIn('Use the Brand checklist.', inputs['brand review checklist'])
+
+    def test_without_them_the_reviewer_has_only_the_review(self):
+        self.built()
+        inputs = build.review_work(self.root, self.run_).prepared['inputs']
+        self.assertEqual(list(inputs), ['the review'])
 
     def test_a_brand_whose_entry_fails_is_noted_and_the_deck_carries_on(self):
         self.brand.run.guides = True
@@ -1016,6 +1037,208 @@ if __name__ == '__main__':
     unittest.main()
 
 
+class CriticQuestionsTests(Deck):
+    """The reviewer is asked the slides tool's own questions, as its preview wrote them."""
+    THREE = ('Is the point plain at a glance?', 'Is the space balanced?',
+             'Does every icon explain something?')
+
+    def built_with(self, questions):
+        from stand_ins import slides as slides_stand_in
+        with mock.patch.object(slides_stand_in, 'QUESTIONS', questions):
+            return self.built()
+
+    def test_reviewer_is_asked_the_rounds_questions(self):
+        made = self.built_with(self.THREE)
+        self.assertEqual(made['questions'], list(self.THREE))
+        work = build.review_work(self.root, self.run_)
+        asked = work.prepared['inputs']['the review']
+        self.assertIn('1. Is the point plain at a glance?\n2. Is the space balanced?\n'
+                      '3. Does every icon explain something?\n', asked)
+        self.assertNotIn('\n4. ', asked.split('## How grave')[0])
+        self.assertEqual(work.prepared['review']['questions'], list(self.THREE))
+        slides = work.prepared['review']['slides']
+        found, why = build.checked({'slide': slides[1]['id'], 'question': 4,
+                                    'severity': 'major', 'note': 'The boxes crowd the left.'},
+                                   slides, self.THREE)
+        self.assertIsNone(found)
+        self.assertEqual(why, f"{slides[1]['id']}: `question` is a number from 1 to 3.")
+        tools = self.job(work)
+        if work.prepared['review'].get('sheet'):
+            tools.look_at_deck()
+        for slide in slides:
+            tools.look_at_slide(slide['number'])
+        said = tools.submit_assessment(json.dumps([{
+            'slide': slides[1]['id'], 'question': 4, 'severity': 'major',
+            'note': 'The boxes crowd the left.'}]), '[]')
+        self.assertFalse(said[0])
+        self.assertIn('`question` is a number from 1 to 3', said[1])
+
+    def test_a_preview_without_the_tools_questions_is_refused_and_kept_nowhere(self):
+        build.start(self.root, self.run_, self.slides, self.contract)
+        for section in build.to_draw(self.root):
+            self.draw(section)
+        from stand_ins import slides as slides_stand_in
+        with mock.patch.object(slides_stand_in, 'QUESTIONS', ()), \
+                self.assertRaises(WorkspaceError) as refused:
+            build.whole(self.root, self.run_, self.slides, 'local')
+        self.assertIn(critic.MISSING, str(refused.exception))
+        self.assertEqual(build.read_state(self.root)['rounds'], [])
+        self.assertEqual(list((self.root / build.BUILD).glob('whole-*')), [])
+
+    def test_a_round_saved_before_questions_were_kept_reads_the_legacy_ones(self):
+        self.built()
+        state = build.read_state(self.root)
+        state['rounds'][-1].pop('questions')
+        build.write_state(self.root, state)
+        self.assertEqual(build.round_questions(state['rounds'][-1]), critic.LEGACY)
+        found = self.review(grave)
+        self.assertEqual(found[0]['verification'], critic.LEGACY[5])
+        self.assertIn(f'6. {critic.LEGACY[5]}', build.asked(
+            build.read_state(self.root)['rounds'][-1]['slides'], None, critic.LEGACY))
+
+
+class BrandAuditTests(Deck):
+    """The brand's check runs over each round's previewed deck, before its review."""
+    BLOCKED = {'status': 'BLOCKED',
+               'blockers': [{'code': 'OFF_PALETTE', 'slide': 3,
+                             'says': 'A colour outside the palette.'}],
+               'warnings': []}
+    WARNED = {'status': 'WARN', 'blockers': [],
+              'warnings': [{'code': 'SMALL_TEXT', 'slide': 2, 'says': 'Text under 18 points.'},
+                           {'code': 'HIGH_TEXT_DENSITY', 'slide': 4,
+                            'says': 'Many words for one slide.'}]}
+
+    def audited(self, report=None, refusal=None) -> dict:
+        self.built()
+        answer = mock.patch.object(self.brand, 'audit', side_effect=refusal) if refusal \
+            else mock.patch.object(self.brand, 'audit', return_value=report)
+        with answer as audit:
+            build.audit_round(self.root, self.run_, self.brand)
+        self.assertEqual(audit.call_args[0][0],
+                         self.root / build.read_state(self.root)['rounds'][-1]['file'])
+        return build.read_state(self.root)
+
+    def test_a_brand_blocker_sends_its_section_back(self):
+        state = self.audited(self.BLOCKED)
+        last = state['rounds'][-1]
+        third = last['slides'][2]['id']
+        finding = last['audit_findings'][0]
+        self.assertEqual((finding['slide'], finding['severity'], finding['about'],
+                          finding['question'], finding['source']),
+                         (third, 'critical', 'drawing', None, 'brand'))
+        self.assertEqual(finding['note'], "The brand's check: A colour outside the palette.")
+        section = next(entry['id'] for entry in state['start']['sections']
+                       if third in entry['slides'])
+        self.assertEqual(build.to_draw(self.root), [section])
+        self.assertEqual(state['repaired'], 1, 'a brand repair counts against REPAIRS')
+        work = build.section_work(self.root, self.run_, section, None, None)
+        told = work.prepared['inputs']['what the review found']
+        self.assertIn("- **critical**, The brand's check: A colour outside the palette.", told)
+
+    def test_brand_warnings_reach_the_reviewer(self):
+        self.audited(self.WARNED)
+        self.assertEqual(build.to_draw(self.root), [])
+        asked = build.review_work(self.root, self.run_).prepared['inputs']['the review']
+        self.assertIn("## What the brand's check noticed", asked)
+        self.assertIn('- Slide 2: Text under 18 points.', asked)
+        self.assertIn('- Slide 4: Many words for one slide.', asked)
+
+    def test_an_audit_that_cannot_run_changes_nothing(self):
+        state = self.audited(refusal=WorkspaceError('The deck could not be opened.'))
+        last = state['rounds'][-1]
+        self.assertEqual(build.to_draw(self.root), [])
+        self.assertEqual(last['auditNote'], "The brand's check of this deck could not be run. "
+                                            'The deck could not be opened.')
+        self.assertEqual(last.get('audit_findings') or [], [])
+        asked = build.review_work(self.root, self.run_).prepared['inputs']['the review']
+        self.assertNotIn("brand's check noticed", asked)
+
+    def test_audit_refusal_spends_no_repair_round(self):
+        state = self.audited(refusal=WorkspaceError('The deck could not be opened.'))
+        self.assertEqual(state.get('repaired', 0), 0)
+        self.assertEqual(state.get('repair'), [])
+
+    def test_render_still_audits_the_delivered_deck(self):
+        self.audited(self.WARNED)
+        self.review(lambda slides: [])
+        with mock.patch.object(self.brand, 'audit', return_value=self.BLOCKED) as audit:
+            deck = build.render(self.root, self.run_, self.slides, brand=self.brand)
+        self.assertEqual(audit.call_args[0][0], deck)
+        self.assertEqual(build.read_state(self.root)['audit']['errors'], 1)
+
+
+class CodeSpanWordTests(unittest.TestCase):
+    """A name set as a code span is kept and counted as the same words without backticks."""
+
+    def test_code_spans_are_kept_and_counted_as_words(self):
+        spanned = 'High availability (`highAvailability`) is off'
+        bare = 'High availability (highAvailability) is off'
+        self.assertEqual(len(build.WORD.findall(spanned)), len(build.WORD.findall(bare)))
+        self.assertEqual(build.plain(spanned), build.plain(bare))
+
+
+class SuppliedPictureBuildTests(Deck):
+    """A picture the person gave a slide is drawn by its asset, from the deck's asset
+    project, and the project is checked before the deck stop."""
+
+    def setUp(self):
+        super().setUp()
+        from stand_ins import slides as slides_stand_in
+        self.slides = slides_stand_in.stand_in(assets=True)
+        self.content = next(slide['id'] for slide in OUTLINE['slides']
+                            if slide['kind'] == 'content')
+
+    def picture(self, slide):
+        file = self.base / 'rack.png'
+        file.write_bytes(PNG_ONE)
+        kind = next((one['kind'] for one in OUTLINE['slides'] if one['id'] == slide), None)
+        return build.record_picture(self.root, self.slides, slide, file,
+                                    'A rack of servers in our lab.', 'Our own photograph.',
+                                    kind=kind)
+
+    def compiles(self):
+        return [call for call in self.slides.run.calls if call[:2] == ['compose', 'compile']]
+
+    def test_compile_uses_the_asset_project(self):
+        made = self.picture(self.content)
+        self.assertEqual(made['asset'], f'pic-{self.content}')
+        self.built()
+        project = str(self.root / build.ASSETS)
+        whole = [call for call in self.compiles() if '--output' in call][-1]
+        self.assertEqual(whole[whole.index('--asset-project') + 1], project)
+        section = build.section_work(self.root, self.run_, build.to_draw(self.root)[0]
+                                     if build.to_draw(self.root) else 'section-1', None, None)
+        spec = section.prepared['artifacts']['section']
+        self.assertEqual(spec['asset_project'], project)
+        image = next(slide['image'] for slide in spec['slides'] if slide['id'] == self.content)
+        self.assertEqual((image['type'], image['asset']), ('image', f'pic-{self.content}'))
+        self.assertIn('picture', ' '.join(section.prepared['inputs']).lower()
+                      + section.task.lower())
+
+    def test_a_picture_whose_slide_is_gone_or_changed_kind_is_left_out(self):
+        self.picture('no-such-slide')
+        closing = next(slide['id'] for slide in OUTLINE['slides'] if slide['kind'] == 'closing')
+        self.picture(closing)
+        self.assertEqual(build.pictures(self.root)[closing]['kind'], 'closing')
+        self.built()
+        self.assertEqual(build.read_state(self.root)['start']['pictures'], {})
+        self.assertFalse(any('--asset-project' in call for call in self.compiles()))
+
+    def test_a_deck_without_a_picture_never_names_the_project(self):
+        self.built()
+        self.assertFalse(any('--asset-project' in call for call in self.compiles()))
+
+    def test_asset_check_problems_stop_before_the_deck(self):
+        self.picture(self.content)
+        self.built()
+        self.review(lambda slides: [])
+        self.slides.run.fails = {'assets check': 'pic-x: the recorded file changed.'}
+        with self.assertRaises(WorkspaceError) as refused:
+            build.render(self.root, self.run_, self.slides, brand=self.brand)
+        self.assertIn('pic-x: the recorded file changed.', str(refused.exception))
+        self.assertFalse((self.root / build.DECK).exists())
+
+
 class ReviewReuseTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -1024,7 +1247,7 @@ class ReviewReuseTests(unittest.TestCase):
         (self.root / 'sheet.png').write_bytes(b'synthetic contact sheet')
         slides = [{'id': 'slide-' + str(i), 'number': i, 'sha256': 'c' * 64} for i in range(1, 7)]
         evidence = [{'id': s['id'], 'number': s['number'], 'imageSha256': s['sha256'], 'fingerprint': str(s['number']) * 64} for s in slides]
-        coverage = {'questions': list(build.QUESTIONS), 'slides': [{'id': s['id'], 'image_sha256': s['sha256'], 'answers': [True] * 8} for s in slides]}
+        coverage = {'questions': list(critic.LEGACY), 'slides': [{'id': s['id'], 'image_sha256': s['sha256'], 'answers': [True] * 8} for s in slides]}
         self.state = {'rounds': [{'deck': 'a' * 64, 'render_evidence': {'schema': 1, 'shared': 'd' * 64, 'deckSha256': 'a' * 64, 'slides': evidence}, 'review': {'findings': [], 'coverage': coverage}},
             {'deck': 'b' * 64, 'render_evidence': {'schema': 1, 'shared': 'd' * 64, 'deckSha256': 'b' * 64, 'slides': copy.deepcopy(evidence)}, 'slides': slides, 'sheet': 'sheet.png'}]}
 
@@ -1049,6 +1272,12 @@ class ReviewReuseTests(unittest.TestCase):
         self.assertEqual(set(build.reusable_review(self.root, self.state)), {'slide-1', 'slide-5', 'slide-6'})
         self.state['rounds'][-1]['render_evidence']['slides'][5]['imageSha256'] = 'f' * 64
         self.assertNotIn('slide-6', build.reusable_review(self.root, self.state))
+
+    def test_reuse_needs_the_same_questions(self):
+        self.state['rounds'][-1]['render_evidence']['slides'][2]['fingerprint'] = 'e' * 64
+        self.assertTrue(build.reusable_review(self.root, self.state))
+        self.state['rounds'][-1]['questions'] = ['A?', 'B?']
+        self.assertEqual(build.reusable_review(self.root, self.state), {})
 
 
 class StartAgainTests(Deck):

@@ -617,7 +617,8 @@ def check_outline(text: str, spec: dict, slides,
                  for finding in report.get('findings') or ()]
     outcomes = [checks.result('outline.tool', found),
                 checks.result('outline.rules', deck.rules(outline, spec.get('blueprint') or '',
-                                                          budget, spec.get('known') or ()))]
+                                                          budget, spec.get('known') or (),
+                                                          spec.get('delivery') or deck.DELIVERY))]
     if not spec.get('design'):
         return held(outcomes), outcomes, [], kept
     problems, proposed = check_design(outline, design, slides, scratch,
@@ -741,34 +742,63 @@ def picture(path: Path) -> bytes:
 
 
 @contextmanager
-def one_at_a_time(lock: Path, wait: float = RENDER_WAIT):
-    """Hold a computer's one turn at the renderer. Whoever else wants it waits here,
-    in this process or another. A turn left behind by a process that has ended is taken."""
+def turn(lock: Path, slots: int = 1, wait: float = RENDER_WAIT):
+    """Hold one of a computer's `slots` turns at the renderer: the file `lock` for the first,
+    and `lock.1`, `lock.2`... beside it for the others, the first free taken. Whoever else
+    wants one waits here, in this process or another. A turn left behind by a process that
+    has ended is taken."""
     lock, until = Path(lock), time.monotonic() + wait
     lock.parent.mkdir(parents=True, exist_ok=True)
-    while True:
-        try:
-            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
+    names = [lock, *(lock.with_name(f'{lock.name}.{number}') for number in range(1, slots))]
+    taken = None
+    while taken is None:
+        for name in names:
             try:
-                holder = lock.read_text(encoding='utf-8').strip()
-            except OSError:
-                continue  # let go of between the two looks
-            if holder.isdigit() and not home.alive(int(holder)):
-                lock.unlink(missing_ok=True)
-            elif time.monotonic() > until:
+                handle = os.open(name, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except FileExistsError:
+                try:
+                    holder = name.read_text(encoding='utf-8').strip()
+                except OSError:
+                    continue  # let go of between the two looks
+                if holder.isdigit() and not home.alive(int(holder)):
+                    name.unlink(missing_ok=True)
+                continue
+            os.write(handle, f'{os.getpid()}'.encode())
+            os.close(handle)
+            taken = name
+            break
+        else:
+            if time.monotonic() > until:
                 raise Refusal('Another preview has been rendering for a long time, so this '
                               'one was not taken. Try it again.')
-            else:
-                time.sleep(0.05)
-            continue
-        os.write(handle, f'{os.getpid()}'.encode())
-        os.close(handle)
-        break
+            time.sleep(0.05)
     try:
         yield
     finally:
-        lock.unlink(missing_ok=True)
+        taken.unlink(missing_ok=True)
+
+
+def one_at_a_time(lock: Path, wait: float = RENDER_WAIT):
+    """Hold a computer's one turn at the renderer: `turn` with one slot."""
+    return turn(lock, 1, wait)
+
+
+def turn_file(how: dict, slides) -> Path:
+    """The file a render's turns are taken from: `how['lock']` for LibreOffice and an unpooled
+    Drive, and one beside it for the Google preview pool, so that neither waits on the
+    other's turns."""
+    lock = Path(how['lock'])
+    return lock.with_name(lock.stem + '-google' + lock.suffix) if slots(how, slides) > 1 \
+        else lock
+
+
+def slots(how: dict, slides) -> int:
+    """The turns a render may take side by side on this computer: the slides tool's Google
+    preview pool for a render through Google Drive on a tool that has one, else one."""
+    from runner import slides as slides_tool
+    pooled = how.get('renderer') == 'drive' and getattr(slides, 'has', lambda name: False)(
+        'google-preview-pool')
+    return slides_tool.pool_size() if pooled else 1
 
 
 def render(slides, compiled: Path, folder: Path, how: dict) -> dict:
@@ -778,7 +808,7 @@ def render(slides, compiled: Path, folder: Path, how: dict) -> dict:
     remember of it beside its ID and address. A preview that fails after it made that
     file says so in its refusal's `left`, as {'fileId', 'url'}, and the file is remembered
     all the same. Returns what the slides tool returned."""
-    with one_at_a_time(Path(how['lock'])):
+    with turn(turn_file(how, slides), slots(how, slides)):
         return _in_drive(how, lambda known: slides.preview(
             compiled, folder, how['renderer'], file_id=known, **against(how)))
 
@@ -1654,7 +1684,8 @@ class WorkerTools:
             raise Refusal('findings and weakest are each a list.')
         problems, kept = [], []
         for finding in given:
-            found, why = deck.checked(finding, review['slides'])
+            found, why = deck.checked(finding, review['slides'],
+                                      deck.round_questions(review))
             kept += [found] if found else []
             problems += [why] if why else []
         ids = [slide['id'] for slide in review['slides']]

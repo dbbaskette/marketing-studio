@@ -154,12 +154,11 @@ The deck page shows **Slides taking shape** as preview images become available.
 These pictures are marked **Unreviewed**. Inspecting them does not approve the deck;
 the whole-deck review and your final decision still apply. Available images remain
 on this computer after an interrupted render or reconnect. A new attempt replaces
-its earlier preview, and old worker events cannot overwrite that attempt.
+its earlier preview, and an older attempt cannot overwrite that one.
 
-With a Harness Slides runtime advertising `progress-events`, each ready slide appears
-while rendering continues. The pinned 0.16.0 runtime does not advertise it, so completed
-sections show before the final review. Updating or installing a companion
-remains an explicit action. Comments during construction are tracked separately in
+Each section shows once its preview is finished, before the final review. Updating or
+installing a companion remains an explicit action. Comments during construction are
+tracked separately in
 [the live-preview issue](https://github.com/dbbaskette/marketing-studio/issues/15).
 
 The Balanced direction review requires a look from the samples shown. Editing the outline redraws those samples and asks you to choose again before the build. Delivered team decks stay their maker's to request changes; teammates still take them explicitly. A PowerPoint delivery can later be sent to Google Slides as a new revision from the page, without rebuilding.

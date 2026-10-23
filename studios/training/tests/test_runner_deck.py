@@ -8,6 +8,7 @@ stand-ins. Nothing starts an agent, the slides tool, a brand skill or Google, an
 touches the network.
 """
 import json
+import unittest
 import threading
 from dataclasses import replace
 from email.message import Message
@@ -110,7 +111,7 @@ class RuleTests(JobCase):
         self.assertEqual(found, [
             'Leave out `direction`: it is added after you hand the outline in.',
             'Leave out `house`: it is added after you hand the outline in.',
-            'This deck is read alone as well as presented: set `delivery` to "reading".'])
+            'This deck is read on its own: set `delivery` to "reading".'])
 
     def test_lead_slides_get_a_layout_that_shows_their_title(self):
         chosen = deck.layouts(Slides.LAYOUTS, OUTLINE['slides'])
@@ -545,6 +546,37 @@ class RuleTests(JobCase):
         for objective, assessment in checks.parse_blueprint(BLUEPRINT)['assessment'].items():
             self.assertIn(f'- {objective}: {assessment}', text)
         self.assertIn('practice and debrief', text)
+
+
+class CodeSpanWordTests(unittest.TestCase):
+    """A name set as a code span is kept and counted as the same words without backticks."""
+
+    def test_code_spans_are_kept_and_counted_as_words(self):
+        spanned = 'High availability (`highAvailability`) is off'
+        bare = 'High availability (highAvailability) is off'
+        self.assertEqual(deck.count(spanned), deck.count(bare))
+        self.assertEqual(deck.plain(spanned), deck.plain(bare))
+        point = {'label': 'Off by default', 'text': spanned, 'parts': []}
+        drawn = {'type': 'box', 'id': 'one', 'text': f"{point['label']}: {spanned}"}
+        self.assertEqual(deck.whole_points(drawn, [point]), [])
+
+
+class DeliveryRuleTests(unittest.TestCase):
+    """An outline's delivery follows its training's."""
+
+    def test_outline_delivery_follows_the_training(self):
+        live = deck.rules({**OUTLINE, 'delivery': 'reading'}, BLUEPRINT, delivery='live')
+        self.assertIn('This deck is presented in a session: set `delivery` to "live".', live)
+        reading = deck.rules({**OUTLINE, 'delivery': 'live'}, BLUEPRINT, delivery='reading')
+        self.assertIn('This deck is read on its own: set `delivery` to "reading".', reading)
+        for problems in (live, reading, deck.rules(OUTLINE, BLUEPRINT)):
+            self.assertFalse(any('read alone as well as presented' in line
+                                 for line in problems))
+        self.assertFalse(any('delivery' in line for line in deck.rules(
+            {**OUTLINE, 'delivery': 'live'}, BLUEPRINT, delivery='live')))
+        self.assertEqual(deck.complete(OUTLINE, Slides.LAYOUTS, [], delivery='live')['delivery'],
+                         'live')
+        self.assertEqual(deck.complete(OUTLINE, Slides.LAYOUTS, [])['delivery'], 'reading')
 
 
 class ToolCase(JobCase):
@@ -1214,6 +1246,7 @@ class DeckCase(StudioCase):
     """A computer that can make a deck: the two stand-ins, and previews through Drive."""
 
     HOW = 'drive'
+    WALKTHROUGH = False   # whether its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()
@@ -1221,7 +1254,8 @@ class DeckCase(StudioCase):
         settings.save(replace(settings.load(), previews=self.HOW))
 
     def begin(self, **changes) -> Path:
-        return self.start(**{'deck_target': 'pptx', 'brand': CHOSEN, **changes})
+        return self.start(**{'deck_target': 'pptx', 'brand': CHOSEN,
+                             'walkthrough': self.WALKTHROUGH, **changes})
 
     def to_outline(self, root: Path, level: str | None = None) -> dict:
         """Approve what is waiting until what a deck says is put to the person."""
@@ -1595,7 +1629,7 @@ class FlowTests(DeckCase):
         jobs = {kind: (job, spec) for kind, job, spec in self.workers.jobs}
         job, spec = jobs['outline']
         self.assertEqual([entry['name'] for entry in spec['inputs']], [
-            'handoff', 'outline contract', 'drafting guidance', 'blueprint',
+            'handoff', 'outline contract', 'drafting guidance', 'brand design', 'blueprint',
             'learner guide', 'research findings', 'naming rules'])
         self.assertEqual(job.guidance, briefs.guidance('deck-outline'))
         job, spec = jobs['section']
@@ -1655,7 +1689,7 @@ class BrandEntryTests(DeckCase):
     def test_the_decks_slide_task_starts_through_the_brand_and_its_guidance_reaches_workers(self):
         self.brand.entry = 'brand'
         self.slides.design = True
-        root = self.begin()
+        root = self.begin(walkthrough=True)
         self.drawn(root)
         self.assertEqual(self.brand.guided[0][:1], ('start',))
         guided = self.built(root)['brand']['guidance']
@@ -1686,6 +1720,36 @@ class BrandEntryTests(DeckCase):
         self.assertEqual((self.brand.guided[-1][:2], made['task']), (('resume', 'task9'), 'task9'))
         self.engine._guide(work, ('example-co', 'dark'), told, kept)
         self.assertEqual(self.brand.guided[-1][:2], ('start', None), 'another brand starts anew')
+
+    def test_the_outline_writer_gets_the_brands_worker_guidance_without_a_walkthrough(self):
+        self.brand.entry = 'brand'
+        root = self.begin()
+        self.to_outline(root)
+        spec = [spec for kind, _, spec in self.workers.jobs if kind == 'outline'][-1]
+        names = [entry['name'] for entry in spec['inputs']]
+        self.assertIn(pipeline.BRAND_WORKER, names)
+        self.assertNotIn('design guidance', names)
+
+    def test_reviewer_reads_the_review_guidance(self):
+        self.brand.entry = 'brand'
+        self.workers.found = [[]]
+        root = self.begin()
+        self.drawn(root)
+        work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
+                                    pipeline.gate_for('deck'), None)
+        inputs = work.prepared['inputs']
+        self.assertEqual(list(inputs), ['the review', 'review guidance',
+                                        'brand review checklist'])
+        self.assertEqual(inputs['review guidance'], 'Pinned review guidance.\n')
+        self.assertIn('Use the Brand checklist.', inputs['brand review checklist'])
+
+    def test_without_them_the_reviewer_has_only_the_review(self):
+        self.workers.found = [[]]
+        root = self.begin()
+        self.drawn(root)
+        work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
+                                    pipeline.gate_for('deck'), None)
+        self.assertEqual(list(work.prepared['inputs']), ['the review'])
 
     def test_a_brand_without_the_entry_keeps_the_installed_tools_guidance(self):
         root = self.begin()
@@ -1946,6 +2010,86 @@ class RepairTests(DeckCase):
         self.assertEqual(self.log()[-5].partition(': ')[2],
                          'keep section 1 of the slide deck, drawn again')
 
+    BLOCKER = {'code': 'OFF_PALETTE', 'slide': 2, 'says': 'A colour outside the palette.'}
+
+    def test_a_brand_blocker_sends_its_section_back(self):
+        self.workers.found = [[]]
+        self.brand.blockers = [[self.BLOCKER]]
+        told = []
+
+        def composer(tools, job):
+            told.append(tools.read_input('what the review found'))
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', *[self.workers.section] * 2, composer)
+        root = self.begin()
+        self.drawn(root)
+        rounds = self.built(root)['rounds']
+        first = rounds[0]
+        self.assertEqual(first['audit_findings'], [{
+            'slide': 'what-it-does', 'number': 2, 'severity': 'critical', 'about': 'drawing',
+            'question': None, 'note': "The brand's check: A colour outside the palette.",
+            'fix': None, 'source': 'brand'}])
+        self.assertEqual(first['review']['by'], 'screen')
+        self.assertEqual(len(rounds), 2, 'the section was drawn again, then reviewed')
+        self.assertEqual(self.kinds().count('review'), 1)
+        self.assertTrue(told and "The brand's check: A colour outside the palette." in
+                        told[0][1], told)
+
+    def test_brand_warnings_reach_the_reviewer(self):
+        self.workers.found = [[]]
+        root = self.begin()
+        self.drawn(root)
+        work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
+                                    pipeline.gate_for('deck'), None)
+        asked = work.prepared['inputs']['the review']
+        self.assertIn("## What the brand's check noticed", asked)
+        self.assertIn('- Slide 2: Text under 18 points.', asked)
+
+    def test_an_audit_that_cannot_run_changes_nothing(self):
+        self.workers.found = [[]]
+        self.brand.refuse['audit'] = ['The deck could not be opened.']
+        root = self.begin()
+        self.drawn(root)
+        rounds = self.built(root)['rounds']
+        self.assertEqual(len(rounds), 1, 'no repair round is spent on it')
+        self.assertTrue(rounds[0]['auditNote'].startswith(
+            "The brand's check of this deck could not be run."), rounds[0])
+        self.assertEqual(rounds[0].get('audit_findings') or [], [])
+        self.assertEqual(self.kinds().count('review'), 1)
+
+    def test_reviewer_is_asked_the_rounds_questions(self):
+        three = ('Is the point plain at a glance?', 'Is the space balanced?',
+                 'Is there exactly one emphasis?')
+        self.workers.found = [[]]
+        root = self.begin()
+        with mock.patch.object(Slides, 'QUESTIONS', three):
+            self.drawn(root)
+        rounds = self.built(root)['rounds']
+        self.assertEqual(rounds[-1]['questions'], list(three))
+        work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
+                                    pipeline.gate_for('deck'), None)
+        asked = work.prepared['inputs']['the review']
+        self.assertIn('1. Is the point plain at a glance?\n2. Is the space balanced?\n'
+                      '3. Is there exactly one emphasis?\n', asked)
+        self.assertNotIn('\n4. ', asked.split('## How grave')[0])
+        self.assertEqual(work.prepared['review']['questions'], list(three))
+        slides = work.prepared['review']['slides']
+        found, why = deck.checked({'slide': slides[1]['id'], 'question': 4, 'severity': 'major',
+                                   'note': 'The boxes crowd the left half.'}, slides, three)
+        self.assertEqual((found, why), (None, f"{slides[1]['id']}: `question` is a number "
+                                              'from 1 to 3.'))
+
+    def test_a_round_saved_before_questions_were_kept_reads_the_legacy_ones(self):
+        from studio_core import critic
+        self.assertEqual(deck.round_questions({'deck': 'a' * 64}), critic.LEGACY)
+        slides = [{'id': 'what-it-does', 'number': 2, 'title': 'What it does'}]
+        found, why = deck.checked({'slide': 'what-it-does', 'question': 8, 'severity': 'minor',
+                                   'note': 'The icon explains nothing here.'}, slides)
+        self.assertIsNone(why)
+        self.assertIn(f'8. {critic.LEGACY[7]}', deck.asked({'O1': 'Explain it.'}, slides))
+        self.assertIn(critic.LEGACY[7], deck.told([found], slides))
+
     def test_a_later_review_is_told_what_was_found_before(self):
         self.workers.found = [[MAJOR], []]
         root = self.begin()
@@ -2037,11 +2181,45 @@ class RepairTests(DeckCase):
                       self.workers.of('outline')[-1].task)
 
 
+class WalkthroughTests(DeckCase):
+    """A new deck is approved on what it says and on its look, as the brand says. Each
+    slide's design is walked through only when the person asks for it on the form."""
+
+    def setUp(self):
+        super().setUp()
+        self.slides.design = True   # a slides tool that keeps a design session
+
+    def test_new_deck_is_built_without_a_design_session(self):
+        root = self.begin()
+        self.to_outline(root)
+        job, spec = [(job, spec) for kind, job, spec in self.workers.jobs
+                     if kind == 'outline'][-1]
+        self.assertFalse(spec['artifacts']['outline']['design'])
+        self.assertEqual(job.guidance, briefs.guidance('deck-outline'))
+        self.assertNotIn('design_propose', [call[0] for call in self.slides.calls])
+
+    def test_walkthrough_runs_the_design_session(self):
+        root = self.begin(walkthrough=True)
+        self.assertIs(workspace.load(root)['settings']['walkthrough'], True)
+        self.to_outline(root)
+        job, spec = [(job, spec) for kind, job, spec in self.workers.jobs
+                     if kind == 'outline'][-1]
+        self.assertTrue(spec['artifacts']['outline']['design'])
+        self.assertEqual(job.guidance, briefs.guidance('deck-outline', design=True))
+        self.assertIn('design_propose', [call[0] for call in self.slides.calls])
+
+    def test_a_tool_without_the_design_session_holds_only_a_walkthrough(self):
+        self.slides.lacking = ['design-schema-2', 'compose-review']
+        self.assertEqual(self.engine.deck_needs(fresh=True)['update'], None)
+        self.assertIsNotNone(self.engine.deck_needs()['design_update'])
+
+
 class DesignTests(DeckCase):
     """A slides tool with a design session: what a deck says is proposed with how each slide
     is drawn, the person's one decision is the tool's answer, and the sections are drawn
     from and built against what was approved. Rows V01, V02, V03, V04, V13 and V14 of the
     state-transition matrix in docs/superpowers/plans/2026-10-14-visual-teaching-in-decks.md."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()
@@ -2358,6 +2536,7 @@ class JudgedTests(DeckCase):
     and one that needs other words or another concept takes what the deck says back to the
     person. Rows V04, V08 and V09 of the state-transition matrix in
     docs/superpowers/plans/2026-10-14-visual-teaching-in-decks.md."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()
@@ -2629,6 +2808,7 @@ class AssetTests(DeckCase):
     and recorded before any section is drawn, a picture is the person's to supply on the page,
     and what is drawn is made from what each asset is now. Rows V05, V06 and V07 of the
     state-transition matrix in docs/superpowers/plans/2026-10-14-visual-teaching-in-decks.md."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()
@@ -2787,6 +2967,7 @@ class AdoptionTests(DeckCase):
     """What Harness Slides 0.14.1 lists beyond 0.14.0, used where the slides tool lists it,
     and the way before it where it does not. Each is tried both ways: `listed` is what the
     tool says it has, and a name taken out of it plays a build without that one."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()
@@ -3003,6 +3184,7 @@ class CompatibleTests(DeckCase):
     matrix in docs/superpowers/plans/2026-10-14-visual-teaching-in-decks.md: a deck begun
     without a design carries on as it began, is drawn again from one only when the person
     asks, and a new deck waits for a tool that has what it needs."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def test_a_tool_without_a_design_session_puts_the_words_alone_to_the_person(self):
         root = self.begin()
@@ -3179,20 +3361,24 @@ class CompatibleTests(DeckCase):
                                'compose-review']
         needs = self.engine.deck_needs(fresh=True)
         names = [slides_tool.NAMES[name] for name in self.slides.lacking]
-        self.assertEqual(needs['lacks'], names)
+        plain = [slides_tool.NAMES['json-refusals']]
+        # Every deck needs refusals it can read; one walked through needs the design too.
+        self.assertEqual((needs['lacks'], needs['design_lacks']), (plain, names))
         for words in (*names, f'Update Harness Slides to {slides_tool.RELEASE} or newer from '
                       'Versions on the Status screen', 'A deck already begun carries on'):
-            self.assertIn(words, needs['update'])
+            self.assertIn(words, needs['design_update'])
+        self.assertIn(plain[0], needs['update'])
         self.assertEqual(needs['missing'], [], 'a deck already begun has all it needs')
         [item] = [item for item in needs['items'] if item['id'] == 'deck-slides']
         self.assertEqual((item['state'], item['fix'], item['versions'], item['facts'][1]),
                          ('problem', needs['update'], True,
                           {'label': 'What a new deck needs', 'state': 'problem',
-                           'detail': 'missing ' + ', '.join(names)}))
+                           'detail': 'missing ' + ', '.join(plain)}))
         root = self.begin()
         self.to_end(root)
         view = self.view(root)
-        self.assertEqual(view['deck_left']['says'], left(pipeline.DECK_LEFT, needs['update']))
+        self.assertEqual(view['deck_left']['says'],
+                         left(pipeline.DECK_LEFT, needs['design_update']))
         self.assertEqual(self.kinds().count('outline'), 0, 'no new deck is begun without it')
         # A tool with what a new deck needs is installed, and the person checks again.
         self.slides.lacking, self.slides.design = [], True
@@ -3276,6 +3462,123 @@ class TroubleTests(DeckCase):
         self.assertEqual(len(self.brand.exports), 4, 'two writers, the deck, and the deck '
                          'again')
         self.assertEqual(len(list((root / 'work' / 'deck').glob('brand-*'))), 1)
+
+    def acme_brand(self, brings: str) -> None:
+        """The brand stand-in, named as a made-up skill whose own installer brings a
+        given Harness Slides."""
+        folder = self.base / 'acme-brand'
+        (folder / 'scripts' / 'lib').mkdir(parents=True, exist_ok=True)
+        (folder / 'scripts' / 'lib' / 'harness-install-sources.json').write_text(
+            json.dumps({'slides': {'version': brings}}), encoding='utf-8')
+        self.brand.runtime, self.brand.name = folder, 'Acme Brand'
+
+    def test_a_begun_deck_carries_on_with_an_old_brand_skill(self):
+        root = self.begin()
+        self.to_outline(root)
+        self.brand.version = '0.13.2'
+        self.engine.look_again()
+        self.assertEqual(self.engine.deck_needs(fresh=True)['missing'], [],
+                         'an old brand skill holds up only a deck not begun')
+        self.assertIn(brand_skill.too_old('0.13.2'), self.engine.deck_needs()['old_brand'])
+        view = self.engine.outline(root, None, 'approve')
+        self.assertNotEqual(view['state'], 'failed', view.get('problem'))
+        self.assertIsNone(view['deck_left'])
+
+    def test_status_names_the_brand_installer_that_kept_an_old_tool(self):
+        self.acme_brand('0.15.1')
+        with mock.patch.object(Slides, 'VERSION', '0.15.1'):
+            missing = self.engine.deck_needs(fresh=True)['missing']
+        self.assertIn('The slides tool on this computer is version 0.15.1, and a deck needs '
+                      "0.16.0 or newer. Acme Brand's own installer brings 0.15.1. Update it.",
+                      missing)
+        self.acme_brand('0.16.0')
+        with mock.patch.object(Slides, 'VERSION', '0.15.1'):
+            missing = self.engine.deck_needs(fresh=True)['missing']
+        self.assertIn('The slides tool on this computer is version 0.15.1, and a deck needs '
+                      '0.16.0 or newer. Update it.', missing)
+        self.acme_brand('0.15.1')
+        refusal = slides_tool.TooOld('0.15.1')
+        with mock.patch.object(self.engine, 'slides',
+                               mock.Mock(side_effect=refusal)):
+            missing = self.engine.deck_needs(fresh=True)['missing']
+        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
+                      "Acme Brand's own installer brings 0.15.1. Update it, then try again.",
+                      missing)
+
+    def test_a_deck_begun_on_an_older_tool_stops_at_its_next_step_and_keeps_its_files(self):
+        root = self.begin()
+        self.to_outline(root)
+        before = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
+        with mock.patch.object(self.engine, 'slides',
+                               mock.Mock(side_effect=slides_tool.TooOld('0.15.1'))):
+            self.engine.look_again()
+            self.to_end(root)
+            view = self.view(root)
+        self.assertEqual(view['state'], 'done')
+        self.assertEqual(view['deck_left']['says'], left(
+            pipeline.DECK_LEFT, 'harness-slides 0.15.1 is installed, and a deck needs 0.16.0 '
+            'or newer. Update it, then try again.'))
+        after = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
+        self.assertLessEqual(set(before), set(after), 'nothing it had is lost')
+
+    def test_brand_is_exported_for_the_trainings_delivery(self):
+        self.workers.outline_said = {**OUTLINE, 'delivery': 'live'}
+        self.brand.offers_looks = True
+        asked = []
+        samples = self.brand.look_samples
+
+        def look_samples(*given, **named):
+            asked.append(named.get('delivery'))
+            return samples(*given, **named)
+        self.brand.look_samples = look_samples
+        root = self.begin(delivery='live')
+        self.assertEqual(workspace.load(root)['settings']['delivery'], 'live')
+        self.drawn(root)
+        mine = self.engine._survey(root, self.record(root)).decks[None]
+        contract = json.loads(pipeline.contract(root, mine).read_text())
+        self.assertEqual(contract['delivery'], 'live')
+        self.assertTrue(asked and set(asked) == {'live'}, asked)
+        spec = [spec for kind, _, spec in self.workers.jobs if kind == 'outline'][-1]
+        self.assertEqual(spec['artifacts']['outline']['delivery'], 'live')
+
+    def test_old_training_mid_deck_stays_reading(self):
+        root = self.begin()
+        self.to_outline(root)
+        path = workspace.session_path(root)
+        saved = json.loads(path.read_text())
+        saved['settings'].pop('delivery', None)
+        path.write_text(json.dumps(saved))
+        self.assertEqual(pipeline.delivery_of(workspace.load(root)), 'reading')
+        view = self.engine.outline(root, None, 'approve')
+        self.assertNotEqual(view['state'], 'failed', view.get('problem'))
+        self.assertEqual(deck.rules(OUTLINE, BLUEPRINT,
+                                    delivery=pipeline.delivery_of(workspace.load(root))), [])
+
+    def test_a_brand_skill_older_than_the_floor_is_said_and_holds_a_new_deck(self):
+        said = brand_skill.too_old('0.13.2')
+        self.brand.version = '0.13.2'
+        self.assertEqual(self.engine.deck_needs(fresh=True)['old_brand'], said)
+        root = self.begin()
+        self.to_end(root)
+        self.assertEqual(self.view(root)['deck_left']['says'], left(pipeline.DECK_LEFT, said))
+        self.brand.version = '0.14.0'
+        self.assertIsNone(self.engine.deck_needs(fresh=True)['old_brand'])
+        self.assertEqual(self.engine.deck_needs()['missing'], [])
+
+    def test_status_says_when_arial_is_missing(self):
+        self.brand.font_problem = 'Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.'
+        needs = self.engine.deck_needs(fresh=True)
+        self.assertEqual(needs['fonts'], 'Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.')
+        [item] = [item for item in needs['items'] if item['id'] == 'deck-fonts']
+        self.assertEqual((item['state'], item['fix']), ('problem', 'Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.'))
+        self.assertNotIn('Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.', needs['missing'], 'another font holds no deck up')
+        self.engine.deck_needs()
+        self.engine.deck_needs()
+        self.assertEqual(self.brand.doctored, 1, 'asked once within a look')
+        self.brand.font_problem = None
+        needs = self.engine.deck_needs(fresh=True)
+        self.assertIsNone(needs['fonts'])
+        self.assertEqual([item for item in needs['items'] if item['id'] == 'deck-fonts'], [])
 
     def test_a_computer_with_nothing_for_a_deck_says_what_is_missing(self):
         self.slides = self.brand = None
@@ -3418,7 +3721,7 @@ class PageTests(PageCase):
         self.assertEqual(found['previews'], {'how': 'drive', 'pool': False, 'drive': True, 'local': False,
                                              'left': []})
         self.assertEqual(found['brand'], {
-            'found': True, 'name': 'Example Co brand kit', 'problem': None,
+            'found': True, 'name': 'Example Co brand kit', 'problem': None, 'old': None,
             'brands': [{'brand': 'example-co', 'name': 'Example Co',
                         'variants': ['light', 'dark']}],
             'skills': [{'name': 'Example Co brand kit', 'path': '/opt/brand-kit',
@@ -3684,6 +3987,7 @@ class PageTests(PageCase):
 
 class DesignPageTests(PageCase):
     """The outline gate on the page, with a design proposed beside the words."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()
@@ -3744,6 +4048,7 @@ class DesignPageTests(PageCase):
 class AssetPageTests(PageCase):
     """A deck waiting for a picture: the run lists what its design uses, and the person
     supplies the picture on the page."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()

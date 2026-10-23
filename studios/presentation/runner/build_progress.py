@@ -57,8 +57,6 @@ class Preview:
     def __init__(self, spec, output):
         self.spec, self.output = spec, Path(output).resolve()
         self.render = secrets.token_hex(16)
-        self.run = None
-        self.sequence = 0
         self.revision = self.build_revision = None
         self._update(lambda entry: entry.update(render=self.render, images={}, status='rendering'), activate=True)
 
@@ -72,7 +70,7 @@ class Preview:
             if index.get('basis') != spec['basis'] or not entry or entry.get('owner') != spec['owner']:
                 return False
             if entry.get('render') and entry['render'] != self.render and not activate:
-                # Activation is handled once below, before callbacks can arrive.
+                # Activation is handled once, when the preview starts.
                 return False
             if change is not None:
                 change(entry)
@@ -114,38 +112,8 @@ class Preview:
             home.write_json(folder / 'index.json', index)
             return True
 
-    def event(self, event):
-        """Ignore malformed, reordered and obsolete events; no producer path reaches the API."""
-        if not isinstance(event, dict) or type(event.get('schema')) is not int or event['schema'] != 1 \
-                or not isinstance(event.get('runId'), str) or not 0 < len(event['runId']) <= 128 \
-                or type(event.get('sequence')) is not int or event['sequence'] <= self.sequence \
-                or self.run is not None and event['runId'] != self.run:
-            return False
-        kind = event.get('type')
-        if kind not in ('slide-ready', 'preview-ready', 'failed'):
-            return False
-        if kind != 'failed':
-            revision, binding = event.get('revision'), event.get('buildRevision')
-            if not isinstance(revision, str) or not HEX.fullmatch(revision) \
-                    or not isinstance(binding, str) or not HEX.fullmatch(binding) \
-                    or event.get('status') != 'rendered-unreviewed' \
-                    or self.revision is not None and revision != self.revision \
-                    or self.build_revision is not None and binding != self.build_revision:
-                return False
-            if kind == 'slide-ready' and (not isinstance(event.get('slide'), str)
-                                          or not isinstance(event.get('path'), str)):
-                return False
-            self.revision, self.build_revision = revision, binding
-        self.run, self.sequence = event['runId'], event['sequence']
-        try:
-            if kind == 'slide-ready':
-                return self._image(event)
-            return self._update(lambda entry: entry.update(status='incomplete' if kind == 'failed' else 'rendered'))
-        except (OSError, ValueError, WorkspaceError):
-            return False
-
     def finish(self, found):
-        """Older companions publish their completed section before whole-deck review."""
+        """A finished preview publishes each slide's picture before whole-deck review."""
         revision = found.get('deckSha256')
         if not isinstance(revision, str) or not HEX.fullmatch(revision):
             return

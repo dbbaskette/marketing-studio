@@ -1276,11 +1276,25 @@ function noteSheet(kind) {
       && view.run.mine && !view.run.driver
       ? ' It runs from this computer again, and your team sees that.' : ''));
   hint.id = 'note-hint';
+  // At the research stop, the sources may be read again: the whole research, brought up to
+  // date. It is off unless asked for, and says what it costs.
+  const refreshing = kind === 'changes' && gate && gate.name === 'gate:research'
+    && gate.research_price ? { on: false } : null;
+  const refresh = refreshing ? add(make('div', 'field'),
+    chip('Bring the evidence up to date', false, (on) => { refreshing.on = on; }, 'refresh'),
+    make('p', 'quiet field-hint', gate.research_price.refresh
+      || 'Re-reads the sources and checks the report again: about as long and as costly as '
+        + 'the research was.')) : null;
   const problem = problemLine();
   const submit = submitButton(spec.send, 'send');
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const text = box.value.trim();
+    if (refreshing && refreshing.on) {
+      decide('changes', text, problem, submit,
+        { ...(extraFor(gate, 'changes') || {}), refresh: true });
+      return;
+    }
     if (spec.needed && !text) {
       // Refused here, beside the control, before anything is sent.
       problem.textContent = spec.needed;
@@ -1291,7 +1305,7 @@ function noteSheet(kind) {
     }
     decide('changes', text, problem, submit);
   });
-  add(form, label, box, hint, problem,
+  add(form, label, box, hint, refresh, problem,
     add(make('div', 'bar'), submit, capsule('Cancel', 'quiet', closeSheet, 'cancel')));
   return [sheetTitle(spec.title), form];
 }
@@ -4207,8 +4221,75 @@ function outlineRow(gate, slides, index, readonly) {
   down.disabled = index === slides.length - 1;
   remove.disabled = slides.length < 2;
   for (const one of [up, down, remove]) one.className = 'menu-item';
-  return add(node, add(make('div', 'bar'), ask,
-    moreMenu('More for “' + title + '”', [up, down, remove], 'slide-more-menu ' + one.id)));
+  const pictured = pictureParts(gate, one, title);
+  return add(node, ...pictured.shown, add(make('div', 'bar'), ask, ...pictured.buttons,
+    moreMenu('More for “' + title + '”', [up, down, remove], 'slide-more-menu ' + one.id)),
+  ...pictured.form);
+}
+
+// A picture of the person's own for a cover, section or content slide the deck holds: the
+// file, what it shows and where it came from, recorded by the slides tool when it is sent.
+const PICTURED_KINDS = ['cover', 'section', 'content'];
+const PICTURE_BYTES = 20000000;
+
+function pictureParts(gate, one, title) {
+  const found = { shown: [], buttons: [], form: [] };
+  const given = (gate.pictures || {})[one.id];
+  if (given) found.shown.push(make('p', 'quiet', 'Picture: ' + given.alt));
+  const saved = list(gate.slides).some((slide) => slide && slide.id === one.id);
+  if (!saved || !PICTURED_KINDS.includes(one.kind)) return found;
+  const held = chosenFor(gate);
+  const open = held.picturing === one.id;
+  const toggle = capsule(open ? 'Keep it without a picture' : (given ? 'Change the picture'
+    : 'Add a picture'), 'quiet', () => {
+    held.picturing = open ? null : one.id;
+    held.picture = { alt: '', source: '', file: null };
+    paintOutline(gate, byId('outline-list'), byId('outline-said'));
+    focusKey(open ? 'slide-picture ' + one.id : 'picture-file-' + one.id);
+  }, 'slide-picture ' + one.id);
+  toggle.setAttribute('aria-label', (open ? 'Keep it without a picture: “' : 'Add a picture to “')
+    + title + '”');
+  found.buttons.push(toggle);
+  if (!open) return found;
+  const fill = held.picture || (held.picture = { alt: '', source: '', file: null });
+  const problem = make('p', 'problem');
+  problem.hidden = true;
+  const send_ = capsule('Add the picture', '', async () => {
+    say(problem, '');
+    const file = fill.file;
+    if (!file) return say(problem, 'Choose the picture first.');
+    if (!/^image\/(png|jpeg)$/.test(file.type || '') && !/\.(png|jpe?g)$/i.test(file.name || '')) {
+      return say(problem, 'A picture is a PNG or a JPEG file.');
+    }
+    if (file.size > PICTURE_BYTES) return say(problem, 'A picture is at most 20 MB.');
+    if (!fill.alt.trim()) return say(problem, 'Say what the picture shows, for someone who cannot see it.');
+    if (!fill.source.trim()) return say(problem, 'Say where the picture came from.');
+    send_.disabled = true;
+    const path = view.path;
+    try {
+      await send('picture', { path, slide: one.id, name: file.name, content: await base64Of(file),
+        alt: fill.alt.trim(), source: fill.source.trim(), expected: gate.expected });
+      if (path !== view.path) return;
+      held.picturing = null;
+      held.picture = null;
+      toast('The picture is kept for “' + title + '”. The deck is drawn with it.');
+      await refresh();
+    } catch (failure) {
+      say(problem, failure.message);
+      send_.disabled = false;
+    }
+  }, 'picture-send ' + one.id);
+  found.form.push(add(make('div', 'fields picture-fields'),
+    field('picture-file-' + one.id, 'The picture, a PNG or JPEG file', fill, 'file',
+      { picked: (input) => { fill.file = Array.from(input.files || [])[0] || null; },
+        accept: 'image/png,image/jpeg' }),
+    field('picture-alt-' + one.id, 'What it shows', fill, 'alt', { limit: 300 }),
+    field('picture-source-' + one.id, 'Where it came from', fill, 'source',
+      { limit: 300, hint: 'Your own photograph, or who it belongs to and that you may use it.' }),
+    make('p', 'quiet', 'Pictures you give a slide stay on this computer, with the deck’s other '
+      + 'build files: teammates get the finished deck.'),
+    problem, add(make('div', 'bar'), send_)));
+  return found;
 }
 
 // Whether the outline here differs from the one the deck holds, in a line.

@@ -735,6 +735,100 @@ class HaltTests(StudioCase):
         self.assertEqual(self.log()[-1], 'Rolling restarts: keep the outline')
 
 
+class OlderSlidesToolTests(StudioCase):
+    """A slides tool older than the floor, kept by a brand skill's own installer."""
+
+    def brand_bringing(self, version: str) -> None:
+        folder = self.base / 'acme-brand'
+        (folder / 'scripts' / 'lib').mkdir(parents=True, exist_ok=True)
+        (folder / 'scripts' / 'lib' / 'harness-install-sources.json').write_text(
+            json.dumps({'slides': {'version': version}}), encoding='utf-8')
+        self.brand.runtime, self.brand.name = folder, 'Acme Brand'
+
+    def too_old(self):
+        from runner import slides as slides_tool
+        return mock.patch.object(self.engine, 'slides',
+                                 mock.Mock(side_effect=slides_tool.TooOld('0.15.1')))
+
+    def test_status_says_when_arial_is_missing(self):
+        asked = []
+
+        def fonts():
+            asked.append(1)
+            return 'Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.'
+        self.brand.fonts = fonts
+        needs = self.engine.deck_needs(fresh=True)
+        self.assertEqual(needs['fonts'], 'Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.')
+        [item] = [item for item in needs['items'] if item['id'] == 'deck-fonts']
+        self.assertEqual((item['state'], item['fix']), ('problem', 'Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.'))
+        self.assertNotIn('Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.', needs['missing'], 'another font holds no deck up')
+        self.engine.deck_needs()
+        self.assertEqual(len(asked), 1, 'asked once within a look')
+        self.brand.fonts = lambda: None
+        needs = self.engine.deck_needs(fresh=True)
+        self.assertIsNone(needs['fonts'])
+        self.assertEqual([item for item in needs['items'] if item['id'] == 'deck-fonts'], [])
+
+    def test_status_names_the_brand_installer_that_kept_an_old_tool(self):
+        self.brand_bringing('0.15.1')
+        with self.too_old():
+            missing = self.engine.deck_needs(fresh=True)['missing']
+        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
+                      "Acme Brand's own installer brings 0.15.1. Update it, then try again.",
+                      missing)
+        self.assertEqual(self.engine.brought_by('0.15.1'), 'Acme Brand')
+        self.brand_bringing('0.16.0')
+        with self.too_old():
+            missing = self.engine.deck_needs(fresh=True)['missing']
+        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
+                      'Update it, then try again.', missing)
+        self.assertIsNone(self.engine.brought_by('0.15.1'))
+
+    def test_a_brand_skill_older_than_the_floor_is_said_and_holds_a_new_deck(self):
+        from runner import brand as brand_skill
+        said = brand_skill.too_old('0.13.2')
+        self.brand.version = '0.13.2'
+        needs = self.engine.deck_needs(fresh=True)
+        self.assertNotIn(said, needs['missing'], 'it holds up no deck already exported')
+        [item] = [item for item in needs['items'] if item['id'] == 'deck-brand']
+        self.assertEqual((item['state'], item['fix']), ('problem', said))
+        root = self.start()
+        for _ in range(10):
+            view = self.view(root)
+            if view['state'] != 'waiting':
+                break
+            self.decide(root, view['gate'])
+        self.assertEqual(view['state'], 'stopped')
+        self.assertIn(said, view['sentence'])
+        self.assertEqual(self.workers.of('outline'), [], 'nothing that needs the brand ran')
+        self.brand.version = '0.14.0'
+        self.assertNotIn(said, json.dumps(self.engine.deck_needs(fresh=True)['items']))
+
+    def test_a_begun_deck_carries_on_with_an_old_brand_skill(self):
+        root = self.start()
+        self.to_gate(root, 'gate:outline')
+        self.brand.version = '0.13.2'
+        self.engine.deck_needs(fresh=True)
+        self.decide(root, 'gate:outline')
+        view = self.view(root)
+        self.assertNotEqual(view['state'], 'stopped', view.get('problem'))
+        self.assertNotEqual(view['state'], 'failed', view.get('problem'))
+
+    def test_a_deck_begun_on_an_older_tool_stops_at_its_next_step_and_keeps_its_files(self):
+        root = self.start()
+        self.to_gate(root, 'gate:outline')
+        before = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
+        with self.too_old():
+            self.engine.deck_needs(fresh=True)
+            self.decide(root, 'gate:outline')
+            view = self.view(root)
+        self.assertIn(view['state'], ('stopped', 'failed'))
+        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
+                      'Update it, then try again.', json.dumps(view))
+        after = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
+        self.assertLessEqual(set(before), set(after), 'nothing it had is lost')
+
+
 class BrandTests(StudioCase):
     def test_a_brand_that_changed_stops_the_deck_before_the_next_step_that_uses_it(self):
         root = self.start()
@@ -1319,6 +1413,80 @@ class OutlineMarkTests(StudioCase):
                                {'slides': {'no-such-slide': 'Split it.'}})
         self.assertEqual(str(caught.exception), 'There is no slide no-such-slide here.')
         self.assertEqual(len(self.workers.of('outline')), 1)
+
+
+PNG_BYTES = (b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01'
+             b'\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\xcf'
+             b'\xc0\xf0\x1f\x00\x05\x00\x01\xff\x89\x99=\x1d\x00\x00\x00\x00IEND\xaeB`'
+             b'\x82')
+
+
+class SuppliedPictureTests(StudioCase):
+    """A picture the person gives a slide at the outline stop, recorded in the deck's asset
+    project with the slides tool's own `assets add-supplied`."""
+
+    def setUp(self):
+        super().setUp()
+        from stand_ins import slides as slides_stand_in
+        with mock.patch.object(self.engines.slides_tool, 'Slides', self.real[0]):
+            self.slides = slides_stand_in.stand_in(assets=True)   # with its asset manifest
+
+    def at_outline(self):
+        root = self.start()
+        self.to_gate(root, 'gate:outline')
+        gate = self.view(root)['gate']
+        return root, gate, gate['slides']
+
+    def add(self, root, gate, slide, data=PNG_BYTES, alt='A rack of servers in our lab.',
+            source='Our own photograph.', name='rack.png', expected='seen'):
+        return self.engine.add_picture(root, slide, name, data, alt, source,
+                                       gate.get('expected') if expected == 'seen' else expected)
+
+    def test_add_picture(self):
+        from runner.steps import build
+        root, gate, slides = self.at_outline()
+        content = next(slide for slide in slides if slide.get('kind') == 'content')
+        made = self.add(root, gate, content['id'])
+        self.assertEqual(made, {'asset': f"pic-{content['id']}", 'slide': content['id']})
+        added = [call for call in self.slides.run.calls if call[:2] == ['assets', 'add-supplied']]
+        self.assertEqual(len(added), 1)
+        call = added[0]
+        self.assertEqual((call[call.index('--alt') + 1], call[call.index('--source') + 1],
+                          call[call.index('--project') + 1], call[call.index('--id') + 1]),
+                         ('A rack of servers in our lab.', 'Our own photograph.',
+                          str(root / build.ASSETS), f"pic-{content['id']}"))
+        self.assertEqual(build.pictures(root)[content['id']]['asset'], f"pic-{content['id']}")
+        self.assertEqual((build.pictures(root)[content['id']]['kind'],
+                          build.pictures(root)[content['id']]['title']),
+                         ('content', content['title']))
+        shown = self.view(root)['gate']['pictures']
+        self.assertEqual(shown[content['id']]['alt'], 'A rack of servers in our lab.')
+        self.assertFalse(any(call[:2] == ['images', 'generate'] for call in self.slides.run.calls),
+                         'a picture is never generated')
+
+    def test_each_refusal_says_what_to_do(self):
+        root, gate, slides = self.at_outline()
+        content = next(slide for slide in slides if slide.get('kind') == 'content')
+        closing = next(slide for slide in slides if slide.get('kind') == 'closing')
+        for changes, said in (
+                ({'data': b'GIF89a not a picture'}, 'A picture is a PNG or a JPEG file.'),
+                ({'data': PNG_BYTES + b'0' * 20_000_001}, 'A picture is at most 20 MB.'),
+                ({'alt': '  '}, 'Say what the picture shows, for someone who cannot see it.'),
+                ({'source': ''}, 'Say where the picture came from.'),
+                ({'slide': 'no-such-slide'}, 'no-such-slide is not a slide of this outline.'),
+                ({'slide': closing['id']}, 'A picture goes on a cover, section or content slide.'),
+                ({'expected': 'an older outline'},
+                 'The outline changed. Reload it before adding a picture.')):
+            with self.subTest(said=said):
+                given = {'slide': content['id'], **changes}
+                with self.assertRaises(WorkspaceError) as refused:
+                    self.add(root, gate, given.pop('slide'), **given)
+                self.assertEqual(str(refused.exception), said)
+        self.decide(root, 'gate:outline')
+        with self.assertRaises(WorkspaceError) as refused:
+            self.add(root, gate, content['id'])
+        self.assertEqual(str(refused.exception),
+                         'Add a picture while the outline is waiting for you.')
 
 
 class DocumentTests(StudioCase):

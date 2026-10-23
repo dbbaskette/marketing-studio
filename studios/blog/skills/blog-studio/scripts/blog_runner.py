@@ -1133,7 +1133,8 @@ def create(root, data, approval='conversation'):
     }
     import brand_skill
 
-    selected_brand = brand_skill.snapshot(data.get('brand', ''), data.get('variant', ''))
+    if not isinstance(data.get('brand', ''), str) or not isinstance(data.get('variant', ''), str):
+        raise ValueError('Choose a listed brand and variant.')
     title = text(
         data.get('title', ''), 'title', 500, required=not data.get('id') and not angles_first
     )
@@ -1311,6 +1312,15 @@ def create(root, data, approval='conversation'):
         assistant.get('model') if same_agent else None,
         assistant.get('effort') if same_agent else None,
     )
+    # The brand writes the run's author voice beside its own naming rules: the voice the form
+    # chose or the default one, once it is settled. A tone-only or preserved voice gives none.
+    pinned = record.get('voice') or {}
+    handoff = (
+        studio.voice_handoff(root, pinned['profile_id'], pinned.get('revision'))
+        if pinned.get('mode') == 'profile' and pinned.get('profile_id')
+        else None
+    )
+    selected_brand = brand_skill.snapshot(data.get('brand', ''), data.get('variant', ''), handoff)
     if selected_brand:
         run['brand'] = selected_brand
     inputs(root, record, run)  # Refuse unusable context before creating a partial blog.
@@ -1456,11 +1466,13 @@ def _accept(directory, run, stage, by):
     run.setdefault('approved', {})[stage] = approved_hash
 
 
-def decide(root, ident, expected, action, request='', page=False, target=None):
+def decide(root, ident, expected, action, request='', page=False, target=None, refresh=False):
     found = guard(root, ident, expected, page)
     directory, record, run = load(root, ident)
     kept = None  # What Finish did with the library, said in the decision.
     stage = target if action == 'changes' and target else found['next']
+    if refresh and (action != 'changes' or stage != 'research'):
+        raise ValueError('Only the research is brought up to date.')
     if (
         action == 'changes'
         and target == 'draft'
@@ -1495,9 +1507,16 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
     elif action == 'changes':
         if not stage:
             raise ValueError('This run is complete. Start a new revision in chat.')
-        request = text(request, 'change request', 8000, required=True)
+        # Bringing the research up to date reads its sources again: it needs no words.
+        request = text(
+            request or ('Bring the evidence up to date.' if refresh else ''),
+            'change request',
+            8000,
+            required=True,
+        )
         run['stages'].setdefault(stage, {})['status'] = 'pending'
         run['stages'][stage]['request'] = request
+        run['stages'][stage]['refresh'] = bool(refresh)
         run['stages'][stage]['model_purpose'] = (
             'repair' if stage == 'draft' and found['next'] == 'review' else stage
         )
@@ -1710,6 +1729,8 @@ def job(root, ident):
     # one never changes the version a worker is checked against.
     note = (engine(root).local(ident).get('notes') or {}).get(stage, '')
     payload['changes'] = '\n'.join(part for part in (request, note) if part)
+    # The research, asked for again with its sources read again.
+    payload['refresh'] = stage == 'research' and saved.get('refresh') is True
     if len(json.dumps(payload)) > 600_000:
         raise ValueError('This job needs smaller source excerpts. Continue it in chat.')
     # A request against a version the author has already seen, or their own manuscript,
@@ -2838,6 +2859,8 @@ def dispatch(root, action, data):
             page=True,
         )
         return runner.describe(ident)
+    if data.get('refresh', False) not in (True, False):
+        raise ValueError('Say whether to bring the evidence up to date with true or false.')
     result = decide(
         root,
         ident,
@@ -2846,6 +2869,7 @@ def dispatch(root, action, data):
         data.get('request', ''),
         page=True,
         target=data.get('stage'),
+        refresh=data.get('refresh') is True,
     )
     if action == 'handoff':
         state = runner.local(ident)

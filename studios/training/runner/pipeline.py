@@ -59,7 +59,7 @@ What a caller needs to know
 from __future__ import annotations
 
 import json
-from studio_core import deck_direction, deck_flow, review_policy, research_contract
+from studio_core import brand_guidance, deck_direction, deck_flow, review_policy, research_contract
 import re
 import shutil
 from dataclasses import dataclass, field, replace
@@ -142,6 +142,9 @@ SECTION = re.compile(r'^section-[1-9]\d{0,2}$')
 DRAFTING = deck_flow.OUTLINE_READING
 DESIGNING = deck_flow.DESIGN_READING    # the outline's writer, when it proposes a design too
 COMPOSING = deck_flow.COMPOSER_READING
+# What a deck's reviewer reads beside "the review": the slides tool's review guidance and the
+# brand's review checklist, each when the deck's reading has it.
+REVIEW_READING = ('review guidance', brand_guidance.REVIEW_CHECKLIST)
 OUTLINE_CHECKED = (
     'The slides tool checked its shape and its own limits.',
     'Every content slide names the objectives it serves, and every objective is served by '
@@ -430,6 +433,23 @@ def _brand(sent: dict, brands, wanted: bool) -> str | None:
     return '/'.join(names)
 
 
+DELIVERED = {'live': 'It is presented in a session: set `delivery` to "live".',
+             'reading': 'It is read on its own: set `delivery` to "reading".'}
+
+
+def walkthrough_of(session: dict) -> bool:
+    """Whether a training's new decks walk through each slide's design before they are
+    built, as the person asked on the form. Off unless asked."""
+    return (session.get('settings') or {}).get('walkthrough') is True
+
+
+def delivery_of(session: dict) -> str:
+    """How a training's deck is used: 'live', presented in a session, or 'reading', read
+    on its own. A training saved before this was asked keeps 'reading'."""
+    found = (session.get('settings') or {}).get('delivery')
+    return found if found in workspace.DELIVERIES else deck.DELIVERY
+
+
 def brand_of(session: dict) -> tuple[str, str | None] | None:
     """The brand and variant a training's deck is made with, or None when none was chosen
     from a brand skill's own. A brand that has no variants has None for its variant."""
@@ -466,6 +486,13 @@ def check_form(sent: dict, brands=None) -> dict:
     form['deck_target'] = sent.get('deck_target')
     workspace.check_choice(form['deck_target'], workspace.DECK_TARGETS, 'The deck target')
     form['brand'] = _brand(sent, brands, form['deck_target'] is not None)
+    form['delivery'] = sent.get('delivery') or 'live'
+    if form['delivery'] not in workspace.DELIVERIES:
+        raise WorkspaceError(workspace.NO_DELIVERY)
+    form['walkthrough'] = sent.get('walkthrough', False)
+    if form['walkthrough'] not in (True, False):
+        raise WorkspaceError('Say whether to walk through each slide\'s design with true or '
+                             'false.')
     form['source_scope'] = sent.get('source_scope') or SCOPE
     workspace.check_choice(form['source_scope'], SCOPES, 'The source scope')
     if not isinstance(sent.get('yoodli', False), bool):
@@ -557,6 +584,8 @@ def create(space: gitstate.Workspace, form: dict) -> Path:
     try:
         workspace.init(root, form['title'], form['levels'], form['brief_kind'],
                        form['deck_target'], form['brand'], form['yoodli'], form['copies'],
+                       delivery=form.get('delivery') or 'live',
+                       walkthrough=bool(form.get('walkthrough')),
                        approval='page')
         sync_guidance.adopt(root)
         if form['deck_target'] is None:
@@ -856,7 +885,7 @@ def handoff_text(root: Path, session: dict, level: str | None) -> str:
         session['title'], level,
         _text(root, session, workspace.qualify('blueprint', level)) or '', answers(root),
         session['settings']['deck_target'], brand_of(session), 'document' in wanted(session),
-        scenarios)
+        scenarios, delivery_of(session))
 
 
 def scenario_title(root: Path, session: dict, name: str) -> str:
@@ -1385,8 +1414,9 @@ def findings_text(root: Path) -> str:
     """The research as a worker reads it: each question's ID, verdict, summary and quotes."""
     record = workspace.research_record(root) or {'items': [], 'results': {}}
     if record.get('schema') == 2:
-        return ('# Reviewed research handoff\n\nCite stable finding IDs and retain conditions, '
-                'counterevidence and gaps. Facts, interpretations and recommendations differ.\n\n'
+        return ('# Reviewed research handoff\n\n' + research_contract.HANDOFF
+                + ' Keep its conditions, counterevidence and gaps. Facts, interpretations and '
+                'recommendations differ.\n\n'
                 + (root / 'research/brief.md').read_text() + '\n\n'
                 + json.dumps({'digest': record['digest'], 'findings': record['findings'],
                               'facts': record['facts'], 'sources': record['sources']}))
@@ -1796,7 +1826,7 @@ def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
     inputs = {'handoff': _read(place(root, level, HANDOFF)) or '',
               'outline contract': _told(root, mine, 'outline-contract.txt')}
     _read_also(root, mine, inputs, [*DRAFTING, *(DESIGNING if designed else ()),
-                                    *(_brand_for_workers(root, mine) if designed else ())])
+                                    *_brand_for_workers(root, mine)])
     inputs['blueprint'] = blueprint
     guide = (_text(root, session, workspace.qualify('document', level))
              if 'document' in wanted(session) else None)
@@ -1822,6 +1852,7 @@ def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
             + (', and how each slide is drawn: its design' if designed else '') + '.\n\n'
             f'{_about(root, session)}\n'
             + (f'This deck is for level {level}.\n' if level else '')
+            + DELIVERED[delivery_of(session)] + '\n'
             + f'\nYour inputs are {_inputs(inputs)}.\n'
             + ('Hand the outline in with its design, together, with submit_outline.'
                if designed else 'Hand the outline in with submit_outline.')
@@ -1835,6 +1866,7 @@ def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
     prepared = {'inputs': inputs,
                 'artifacts': {name: {'kind': 'outline', 'brand': str(contract(root, mine)),
                                      'blueprint': blueprint, 'design': designed,
+                                     'delivery': delivery_of(session),
                                      'known': research_ids(root),
                                      **({'icons': True} if designed and icons else {})}},
                 'ask': _can_ask(answered)}
@@ -1886,7 +1918,8 @@ def section_work(root: Path, found: Survey, step: Step, section: str, error: str
     if again:
         drawn = (mine.built.get('sections') or {}).get(section) or {}
         slides = [slide for slide in mine.last['slides'] if slide['id'] in ids]
-        inputs['what the review found'] = deck.told(mine.last['review']['findings'], slides)
+        inputs['what the review found'] = deck.told(mine.last['review']['findings'], slides,
+                                                    deck.round_questions(mine.last))
         inputs['your earlier section'] = _read(work / str(drawn.get('file'))) or ''
         look = [{**{key: slide[key] for key in ('number', 'id', 'title')},
                  'image': str(place(root, level, SHOTS) / f"{slide['number']}.png")}
@@ -1943,12 +1976,16 @@ def review_work(root: Path, found: Survey, step: Step, error: str | None) -> Wor
             'and the objectives. Hand in what you find with submit_assessment, then say '
             'which slides address each objective with submit_coverage.'
             + _again(None, None, error, [], 'the review'))
+    questions = deck.round_questions(last)
     prepared = {'inputs': {'the review': deck.asked(objectives, slides, earlier,
-                                                    last.get('screens'))},
+                                                    last.get('screens'), questions,
+                                                    last.get('audit_warnings'))},
                 'ask': False,
                 'review': {'preview': str(work / last['preview']), 'deck': last['deck'],
                            'slides': slides, 'objectives': list(objectives),
+                           'questions': list(questions),
                            'recorded': str(work / last['folder'] / 'assessment.json')}}
+    _read_also(root, mine, prepared['inputs'], REVIEW_READING)
     return Work(briefs.guidance('deck-review'), task, 'write', prepared)
 
 
@@ -1974,6 +2011,7 @@ def _judging_work(root: Path, step: Step, mine: Deck, slides: list[dict], object
                                       'revision': last['judged']['revision'],
                                       'binding': last['judged']['binding'],
                                       'packets': packets}}}
+    _read_also(root, mine, prepared['inputs'], REVIEW_READING)
     return Work(briefs.guidance('deck-review', design=True), task, 'write', prepared)
 
 

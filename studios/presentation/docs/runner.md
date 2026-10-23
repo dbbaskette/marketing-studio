@@ -152,6 +152,39 @@ rounds it may run, its last recorded cost and the made work it will redo. At the
 direction review, Leave out selects findings for a new outline and new looks without
 rerunning research. The full reviewed bundle stays intact.
 
+## The companions, as the runner uses them
+
+- **Versions.** A deck needs Harness Slides 0.16.0 or newer, the version the installer pins,
+  and a brand skill of 0.14.0 or newer, for its look samples and talk-or-handout export. An
+  older Harness Slides is refused when a deck needs it, in the same words on Status and at
+  the step; when the brand skill's own installer brings that very version, Status says so.
+  An older brand skill is a Status line, and a new deck waits at its brand step.
+- **The review.** The reviewer answers the slides tool's own questions, as each whole-deck
+  preview writes them in `critic.json`; a round keeps the questions it was asked, and a
+  review is reused only for a round asked the same ones. The reviewer also reads the slides
+  tool's review guidance and the brand's review checklist, when the brand gives one.
+- **The brand's check before the review.** After each round's preview the brand checks the
+  deck. A blocker on a slide sends that slide's section back to be drawn again, within the
+  two repair rounds, as a reviewer's finding does; a warning goes to the reviewer. A check
+  that cannot run leaves the round as it is, with a note. The delivered deck is checked
+  again, as before, and the deck's stop shows that result.
+- **Code spans.** Outline writers and composers write a configuration field, command, API
+  or file name as a code span, with plain English first; a title takes none.
+- **Pictures.** At the outline stop a cover, section or content slide can be given a
+  picture of your own: a PNG or JPEG of up to 20 MB, what it shows and where it came from.
+  It is recorded in the deck's asset project with the slides tool's `assets add-supplied`,
+  drawn by its asset ID, and checked again before the deck stop. No picture is generated.
+- **Previews.** Previews through Google Drive, on a slides tool with a preview pool, run side
+  by side, up to `HARNESS_PREVIEW_POOL_SIZE` (4 when unset); LibreOffice renders one at a
+  time.
+- **Fonts.** Status says when the brand's own check finds no Arial on this computer. It holds
+  no deck up.
+- **Redesign, keep content.** "Redesign, keep content" has no design session. The extracted outline is approved at the outline stop, the look is chosen from rendered samples, and per-slide changes are asked for at the deck stop by marking slides. The brand's "content-preserving redesigns use a per-slide walkthrough" is not followed: Presentation Studio has no design gate, and porting Training Studio's is its own project.
+- **Research.** Writers are told what the reviewed research is, and that its IDs and digests
+  are never words a reader reads. A goal that compares options asks the research for a
+  comparison. **Bring the evidence up to date**, at the research stop, reads the sources
+  again. The legacy question queue is kept for a deck begun before the synthesis research contract, so that it finishes as it began. It can go once no workspace holds such a run.
+
 ## Finish from the page
 
 A deck from scratch has an optional brief for points, examples or a rough order, limited to 4000 characters. It goes to the research plan and outline. A document's research switch names its chosen scope: your documents only, or your documents and the public web.

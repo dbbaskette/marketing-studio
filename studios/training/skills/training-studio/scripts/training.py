@@ -100,6 +100,10 @@ def parser() -> argparse.ArgumentParser:
         command.add_argument('--deck-target', choices=workspace.DECK_TARGETS,
                              help='build the deck as a PowerPoint file or in Google Slides')
         command.add_argument('--brand', help='the brand the deck is built in; empty for none')
+        command.add_argument('--delivery', choices=workspace.DELIVERIES,
+                             default='live' if at_init else None,
+                             help='how the deck is used: live, presented in a session, or '
+                                  'reading, read on its own (default at init: live)')
         command.add_argument('--copies', action=ListOf, options=workspace.COPIES, nargs='*',
                              default=[] if at_init else None,
                              help='copies to keep of each document and brief, separated by '
@@ -205,7 +209,7 @@ def dispatch(args: argparse.Namespace, root: Path) -> dict:
         return {'trainings': home.trainings()}
     if args.command == 'init':
         workspace.init(root, args.title, args.levels, args.brief_kind, args.deck_target,
-                       args.brand, args.yoodli, args.copies, args.approval)
+                       args.brand, args.yoodli, args.copies, args.approval, args.delivery)
         sync_guidance.adopt(root)
         return summarise(root)
     if args.command == 'status':
@@ -240,7 +244,8 @@ def dispatch(args: argparse.Namespace, root: Path) -> dict:
         return workspace.checkpoint(root, args.stage, args.next_step, args.question,
                                     args.no_question, args.deck_target, args.brand,
                                     args.brief_kind, args.level, args.levels, args.copies,
-                                    args.approval, args.gate, add_levels=args.add_levels)
+                                    args.approval, args.gate, add_levels=args.add_levels,
+                                    delivery=args.delivery)
     if args.command == 'pin':
         return workspace.pin(root, args.skill, args.task, args.runtime, args.run,
                              args.level)

@@ -522,6 +522,20 @@ class WorkerTests(StudioCase):
                       '(https://docs.example.com/restarts): "Capacity holds only when more '
                       'than one instance is running."', findings)
 
+    def test_findings_text_leads_with_the_handoff(self):
+        from studio_core import research_contract
+        from synthesis_fixture import research_stop
+        root = self.start()
+        research_stop(root / 'research')
+        record = {'schema': 2, 'digest': 'synthetic-digest', 'findings': [], 'facts': [],
+                  'sources': []}
+        with mock.patch.object(pipeline.workspace, 'research_record', return_value=record):
+            text = pipeline.findings_text(root)
+        self.assertTrue(text.startswith('# Reviewed research handoff\n\n'
+                                        + research_contract.HANDOFF), text[:200])
+        self.assertNotIn('Cite stable finding IDs', text)
+        self.assertIn('# Prioritized handoff', text)
+
     def test_the_review_at_a_gate_carries_the_checks_and_the_workers_own_notes(self):
         root = self.start()
         review = (root / 'reviews' / 'research-plan.md').read_text()
@@ -978,6 +992,48 @@ class ResearchTests(StudioCase):
         self.assertIsNone(workspace.status(root)['gate'])
         self.assertEqual(self.engine.act(root, 'retry')['state'], 'waiting')
         self.assertEqual(workspace.status(root)['gate'], 'research')
+
+    def test_the_research_purpose_is_the_shared_one(self):
+        from runner import engine as engine_module
+        from studio_core import research_contract
+        root = self.start()
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        self.engine._store(root, record)
+        captured = []
+
+        def native(engine, root, run, task, sources, product):
+            captured.append(task)
+            raise WorkspaceError('Stopped here by the test.')
+        with mock.patch.object(engine_module.research_contract, 'native', side_effect=native), \
+                mock.patch.object(engine_module.research_contract, 'purpose',
+                                  wraps=research_contract.purpose) as built:
+            self.decide(root, 'research-plan')
+        kind, goal, priorities = built.call_args[0]
+        self.assertTrue(kind.startswith('training'), kind)
+        self.assertIn('Prioritize learner tasks', priorities)
+        self.assertEqual(captured[0]['purpose'], research_contract.purpose(kind, goal, priorities))
+
+    def test_bringing_the_research_up_to_date_reaches_the_author(self):
+        from types import SimpleNamespace
+        from runner import engine as engine_module
+        root = self.start()
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        self.engine._store(root, record)
+        found = self.engine._survey(root, self.engine._load(root))
+        captured = []
+
+        def native(engine, root_, run, task, sources, product):
+            captured.append(task)
+            raise WorkspaceError('Stopped here by the test.')
+        for request in (None, {'artifact': 'research', 'kind': 'revise', 'note': 'Newer.',
+                               'refresh': True, 'at': 'now'}):
+            step = SimpleNamespace(id='research', request=request, questions=[])
+            with mock.patch.object(engine_module.research_contract, 'native',
+                                   side_effect=native), self.assertRaises(WorkspaceError):
+                self.engine._research(root, None, found, step)
+        self.assertEqual([task['refresh'] for task in captured], [False, True])
 
     def test_a_check_that_still_objects_stops_at_research_and_says_what_it_objected_to(self):
         from runner import engine as engine_module

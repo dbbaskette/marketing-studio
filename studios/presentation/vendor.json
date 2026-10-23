@@ -239,19 +239,19 @@
       "path": "runner/briefs/section.md",
       "from": "runner/briefs/deck-section.md",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "adapted"
+      "note": "adapted; Phase 5 code-span, focal and studio-duty lines made in both studios alike"
     },
     {
       "path": "runner/briefs/section-repair.md",
       "from": "runner/briefs/deck-repair.md",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "adapted"
+      "note": "adapted; Phase 5 code-span line made in both studios alike"
     },
     {
       "path": "runner/briefs/review.md",
       "from": "runner/briefs/deck-review.md",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "adapted"
+      "note": "adapted; Phase 5 review guidance and brand checklist lines made in both studios alike"
     },
     {
       "path": "runner/engine.py",

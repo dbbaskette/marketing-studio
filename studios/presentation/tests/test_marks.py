@@ -153,5 +153,19 @@ class WordsTests(unittest.TestCase):
         self.assertEqual(marks.first_sentence(None), '')
 
 
+
+class RefreshMarkTests(unittest.TestCase):
+    def test_bringing_the_research_up_to_date_is_a_change_of_its_own(self):
+        marked = marks.check('gate:research', 'changes', {'refresh': True}, QUESTIONS)
+        self.assertEqual(marked, {'refresh': True})
+        self.assertTrue(marks.asks(marked), 'it needs no note of its own')
+        with self.assertRaises(WorkspaceError):
+            marks.check('gate:research', 'approve', {'refresh': True}, QUESTIONS)
+        with self.assertRaises(WorkspaceError):
+            marks.check('gate:research', 'changes', {'refresh': 'yes'}, QUESTIONS)
+        self.assertEqual(marks.check('gate:research', 'changes', {'refresh': False}, QUESTIONS),
+                         {})
+
+
 if __name__ == '__main__':
     unittest.main()

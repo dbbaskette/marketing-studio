@@ -4,6 +4,7 @@ Nothing here runs a worker: each test puts files in place through the core, as t
 would, and asks what comes next.
 """
 import json
+import unittest
 from pathlib import Path
 from unittest import mock
 
@@ -158,7 +159,8 @@ class FormTests(StudioCase):
             'brand': None, 'levels': ['101', '301'], 'copies': ['google', 'word'],
             'brief_kind': 'product', 'deck_target': None, 'source_scope': 'public-web',
             'yoodli': False, 'materials': ['document', 'brief', 'scenario'],
-            'agent': None, 'model': None, 'effort': None, 'research_questions': []})
+            'agent': None, 'model': None, 'effort': None, 'research_questions': [],
+            'delivery': 'live', 'walkthrough': False})
 
     def test_selected_materials_use_existing_skip_decisions_and_manual_gate_counts(self):
         form = pipeline.check_form({**FORM, 'materials': ['document', 'document']})
@@ -698,6 +700,32 @@ class WorkTests(StudioCase):
         self.assertIs(type(self.research), research.Research)
         self.assertEqual(Path(pipeline.PLAN), Path('.training-studio/research-plan.json'))
         self.assertEqual(Path(pipeline.REPORT), Path('.harness-research/research-report.md'))
+
+
+
+class WalkthroughFormTests(unittest.TestCase):
+    def test_form_walkthrough_is_off_unless_asked(self):
+        from runner_support import FORM
+        form = {key: value for key, value in FORM.items() if key != 'walkthrough'}
+        self.assertIs(pipeline.check_form(form)['walkthrough'], False)
+        self.assertIs(pipeline.check_form({**form, 'walkthrough': True})['walkthrough'], True)
+        with self.assertRaisesRegex(WorkspaceError, 'walk through'):
+            pipeline.check_form({**form, 'walkthrough': 'yes'})
+        self.assertIs(pipeline.walkthrough_of({'settings': {}}), False)
+        self.assertIs(pipeline.walkthrough_of({'settings': {'walkthrough': True}}), True)
+
+
+class DeliveryFormTests(unittest.TestCase):
+    def test_form_delivery_defaults_to_live(self):
+        from runner_support import FORM
+        form = {key: value for key, value in FORM.items() if key != 'delivery'}
+        self.assertEqual(pipeline.check_form(form)['delivery'], 'live')
+        self.assertEqual(pipeline.check_form({**form, 'delivery': 'reading'})['delivery'],
+                         'reading')
+        with self.assertRaisesRegex(WorkspaceError, 'Choose live or reading for the deck.'):
+            pipeline.check_form({**form, 'delivery': 'spoken'})
+        self.assertEqual(pipeline.delivery_of({'settings': {}}), 'reading')
+        self.assertEqual(pipeline.delivery_of({'settings': {'delivery': 'live'}}), 'live')
 
 
 if __name__ == '__main__':

@@ -655,6 +655,112 @@ class ResearchContractTests(unittest.TestCase):
         self.assertEqual(output['status'], 'complete')
         contract.read_bundle(destination / 'research')
 
+class AuthorGuideTests(WorkflowCase):
+    """The author is handed its own stage references, and told what the tools did for it."""
+
+    def authored_once(self):
+        seen = []
+
+        def invoke(phase, guidance, payload, sources, fetch):
+            if phase == 'author':
+                seen.append((guidance, payload['return']))
+                return json.dumps(self.authored(payload)), self.captured()
+            return json.dumps(review(payload['review_template'])), []
+        self.run_with(invoke)
+        return seen[0]
+
+    def test_author_is_handed_its_stage_references_only(self):
+        guide, _ = self.authored_once()
+        self.assertIn('Synthetic guidance: investigate.md', guide)
+        self.assertIn('Synthetic guidance: synthesize.md', guide)
+        self.assertNotIn('studio-handoff.md', guide)
+
+    def test_author_return_line_names_the_tools_captures(self):
+        _, said = self.authored_once()
+        self.assertIn("The studio's tools have saved every capture for you: that is the capture "
+                      '`investigate.md` asks for. Cite each source by the file path the tools '
+                      'gave it, exactly. Write no files yourself.', said)
+        self.assertNotIn('research/sources/', said)
+
+
+class RefreshTests(AuthorGuideTests):
+    """Bringing the research up to date hands the author Harness Research's own refresh
+    section, and asks it to read its sources again."""
+
+    def setUp(self):
+        super().setUp()
+        (self.runtime / 'references' / 'synthesis-reuse.md').write_text(
+            '# Resume, reuse and refresh synthesis\n\nIntro.\n\n'
+            '## Resume the saved work\n\nResume words.\n\n'
+            '## Use the report as source material\n\nReuse words.\n\n'
+            '## Refresh selected evidence\n\nSave new captures with access dates.\n\n'
+            'Not a heading: ## inside a line.\n')
+
+    def test_refresh_hands_the_refresh_section(self):
+        self.task['refresh'] = True
+        guide, said = self.authored_once()
+        self.assertIn('## Refresh selected evidence\n\nSave new captures with access dates.',
+                      guide)
+        self.assertNotIn('Resume words.', guide)
+        self.assertNotIn('Reuse words.', guide)
+        self.assertIn("Bring the evidence up to date: re-read each source with the studio's "
+                      'capture tool, so that each new capture is saved with the date it was '
+                      'read; then update what changed. The studio saves the dossier you hand '
+                      'back and arranges its independent review.', said)
+        self.assertNotIn('Bring the evidence up to date: re-read each source, save', said)
+        self.assertIn("The studio's tools save every capture and the studio arranges the "
+                      'review: write no files yourself.', guide)
+
+    def test_without_refresh_no_reuse_section_is_handed(self):
+        guide, said = self.authored_once()
+        self.assertNotIn('Refresh selected evidence', guide)
+        self.assertNotIn('Bring the evidence up to date', said)
+
+    def test_refresh_is_never_a_dossier_field(self):
+        self.assertNotIn('refresh', contract.TASK_FIELDS)
+
+    def test_refresh_words(self):
+        from studio_core import research_view
+        self.assertEqual(research_view.refresh_words(None), 'Re-reads the sources and checks '
+                         'the report again: about as long and as costly as the research was.')
+        self.assertEqual(research_view.refresh_words({'seconds': 2880, 'dollars': 9.8}),
+                         'Re-reads the sources and checks the report again: its last try took '
+                         '48 minutes and $9.80.')
+        self.assertEqual(research_view.price({})['refresh'], research_view.refresh_words(None))
+
+
+class HandoffAndPurposeTests(unittest.TestCase):
+    """What every writer is told of the research, and the purpose every studio asks for."""
+
+    def test_the_handoff_sentence(self):
+        self.assertEqual(contract.HANDOFF, (
+            'The research is reviewed. Read its brief first: it says what matters for this '
+            'piece. Use the facts and findings to check what you write. Their IDs, digests and '
+            'verdicts are for checking and for provenance, notes and source lines: never put '
+            'one in the words a reader reads.'))
+
+    def test_compares(self):
+        for goal in ('Compare Redis and Valkey', 'Redis versus Valkey', 'Redis vs Valkey',
+                     'Redis vs. Valkey for caching', 'Choose between two caches',
+                     'Redis or Valkey for sessions', 'Which is better for sessions?',
+                     'A comparison of three queues', 'Alternatives to a message bus'):
+            self.assertTrue(contract.compares(goal), goal)
+        for goal in ('Explain how caching works', 'cache reads or writes', 'Teach Kubernetes',
+                     '', None, 'Survey the options'):
+            self.assertFalse(contract.compares(goal), goal)
+
+    def test_purpose(self):
+        self.assertTrue(contract.purpose('a presentation', 'Redis or Valkey',
+                                         'Prioritize X.').endswith(contract.COMPARISON))
+        self.assertEqual(contract.purpose('a presentation', 'Explain caching', 'Prioritize X.'),
+                         'Inform a presentation: Explain caching. Prioritize X.')
+        self.assertEqual(contract.purpose('a blog', '', 'Prioritize Y.'),
+                         'Inform a blog: explain the topic. Prioritize Y.')
+        self.assertEqual(contract.COMPARISON, 'The goal compares options: include a comparison '
+                         'with one criterion per row, and say where something is unknown rather '
+                         'than absent.')
+
+
 class PlanningQuestionTests(WorkflowCase):
     def test_the_author_is_told_to_name_findings_for_their_questions(self):
         for questions in (None, [], [dict(id='q-one', question='Why?')]):

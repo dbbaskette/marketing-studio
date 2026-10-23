@@ -79,7 +79,8 @@ What a caller needs to know
 
 Added to the above
 ------------------
-- `Slides()` asks the tool for its version and refuses one older than MINIMUM.
+- `Slides()` asks the tool for its version and refuses one older than MINIMUM with
+  TooOld, a WorkspaceError that keeps the `version` it found.
 - Paths in what a call returns are text, as the tool printed them. Where the tool leaves
   something out, `preview` gives None: `contactSheet` for one slide, `fileId` and `url` for
   a local render. What else the tool said is still there, `critic` among them.
@@ -169,7 +170,6 @@ Added to the above
 from __future__ import annotations
 
 import contextlib
-import contextvars
 import json
 import os
 import re
@@ -181,10 +181,10 @@ from pathlib import Path
 import runner  # noqa: F401  puts the core on the import path
 from workspace import WorkspaceError
 
-from runner import companion, slide_events
+from runner import companion
 
 VARIABLE = 'HARNESS_SLIDES_RUNTIME'
-MINIMUM = '0.13.1'
+MINIMUM = '0.16.0'      # the oldest runtime taken: the one the installer pins
 RENDERERS = ('drive', 'local')
 DRAWERS = ('local', 'google')   # how `review --file` draws a deck's pictures
 SCRIPT = Path('scripts') / 'harness-slides.mjs'
@@ -195,15 +195,44 @@ PROGRAMS = {'soffice': 'HARNESS_SOFFICE', 'pdftoppm': 'HARNESS_PDFTOPPM',
 COUNTED = re.compile(r'^\d+ problems to fix:$')
 NOISE = re.compile(r'^\((?:node:\d+\)|Use `node )')   # Node's own warnings, not the tool's
 LEFT = re.compile(r'The preview deck is in Drive \((\S+)\); retry with --file-id (\S+?)\.$')
-PREVIEWING = threading.Lock()   # one preview at a time, whoever asks
-PROGRESS = contextvars.ContextVar('slide_progress', default=None)
+PREVIEWING = threading.Lock()   # one LibreOffice render at a time, whoever asks
 GUIDES = {'design guidance': 'design.md', 'composition guidance': 'compositions.md',
-          'drafting guidance': 'draft.md', 'gallery': 'gallery.md'}   # under REFERENCES
+          'drafting guidance': 'draft.md', 'gallery': 'gallery.md',
+          'review guidance': 'review.md'}   # under REFERENCES
 REFERENCES = Path('references')
 GALLERY = REFERENCES / 'gallery'    # one drawn slide for each relation, as JSON
 READ_MOST = 60_000      # characters of one guidance file that are handed on
 RELATIONS = ('order', 'dependency', 'hierarchy', 'membership', 'contrast', 'parallel',
              'overlap', 'quantity', 'none')   # what a slide can show, as the tool names them
+
+
+POOL = 4   # the Google preview decks Harness Slides keeps, unless HARNESS_PREVIEW_POOL_SIZE says
+_POOLS: dict = {}
+_POOLS_HELD = threading.Lock()
+
+
+def pool_size() -> int:
+    """How many Google previews the slides tool's pool takes at once: its own
+    HARNESS_PREVIEW_POOL_SIZE when that is a whole number of 1 or more, else POOL."""
+    try:
+        size = int(os.environ.get('HARNESS_PREVIEW_POOL_SIZE') or POOL)
+    except ValueError:
+        return POOL
+    return size if size >= 1 else POOL
+
+
+def _pooled(size: int) -> threading.BoundedSemaphore:
+    with _POOLS_HELD:
+        return _POOLS.setdefault(size, threading.BoundedSemaphore(size))
+
+
+class TooOld(WorkspaceError):
+    """The slides tool here is older than MINIMUM. `version` is the version it said."""
+
+    def __init__(self, version: str):
+        super().__init__(f'harness-slides {version} is installed, and a deck needs '
+                         f'{MINIMUM} or newer. Update it, then try again.')
+        self.version = version
 
 
 class Refused(WorkspaceError):
@@ -357,8 +386,7 @@ class Slides:
             raise WorkspaceError('harness-slides did not say which version it is. Check '
                                  'that it is installed whole.')
         if _numbers(found) < _numbers(MINIMUM):
-            raise WorkspaceError(f'harness-slides {found} is installed, and a deck needs '
-                                 f'{MINIMUM} or newer. Update it, then try again.')
+            raise TooOld(found)
 
     def _call(self, *args: str) -> str:
         code, out, err = self.run([self.node, str(self.runtime / SCRIPT), *args])
@@ -380,18 +408,20 @@ class Slides:
                                  'JSON it should. Check that it is installed whole.')
         return found
 
+    @contextlib.contextmanager
+    def turn(self, renderer: str):
+        """This process's turn at a renderer: LibreOffice renders one at a time under one
+        profile, and so does Google Drive for a tool without a preview pool; one with
+        `google-preview-pool` renders up to `pool_size()` at once, each in a deck of its
+        pool."""
+        held = _pooled(pool_size()) if renderer == 'drive' \
+            and self.has('google-preview-pool') else PREVIEWING
+        with held:
+            yield
+
     def version(self) -> str:
         """The runtime's version, as it states it."""
         return self._call('--version').strip().rpartition(' ')[2]
-
-    @contextlib.contextmanager
-    def progress(self, each):
-        """Observe unreviewed preview events in this thread, when the runtime supports them."""
-        token = PROGRESS.set(each)
-        try:
-            yield
-        finally:
-            PROGRESS.reset(token)
 
     # --- the outline ---
 
@@ -424,14 +454,16 @@ class Slides:
 
     def compile(self, composition: Path, brand: Path, folder: Path | None = None,
                 design: Path | None = None, section: bool = False,
-                outline: Path | None = None) -> dict:
+                outline: Path | None = None, assets: Path | None = None) -> dict:
         """Check a composition, a whole deck or one section. With a new folder, write what
         a preview and a render are made from. With `design`, it is checked against the
         design approved in that project: as the whole deck, or as one `section`. With the
         approved `outline`, on a tool that can (compose-split-point), its preview finds a
-        point's sentence split across shapes."""
+        point's sentence split across shapes. With `assets`, the deck's asset project, an
+        image named by its asset ID is resolved from that project's manifest."""
         args = ['compose', 'compile', '--file', str(composition), '--brand', str(brand),
                 *_bound(design, section),
+                *(['--asset-project', str(assets)] if assets else []),
                 *(['--outline', str(outline)] if outline and self.has('compose-split-point')
                   else [])]
         if folder is None:
@@ -460,12 +492,7 @@ class Slides:
         # A tool with a preview pool reuses its own few preview decks: no file is named.
         named = bool(file_id) and renderer == 'drive' and not self.has('google-preview-pool')
         rest = [*(['--slide', slide] if slide else []), *_bound(design, section)]
-        each = PROGRESS.get()
-        events = each is not None and 'progress-events' in (self.capabilities() or ())
-        if events:
-            rest += ['--events']
-        observing = slide_events.watching(folder, each) if events else contextlib.nullcontext()
-        with PREVIEWING, _new(folder), observing:
+        with self.turn(renderer), _new(folder):
             try:
                 shown = self._json(*args, *(['--file-id', file_id] if named else []), *rest)
             except Refused as refusal:
@@ -688,8 +715,8 @@ class Slides:
     def review_prepare(self, compiled: Path, output: Path, design: Path) -> dict:
         """Render a whole deck compiled against the design approved in `design` into
         `output/deck.pptx`, picture each slide, and prepare its creative review. An unchanged
-        build keeps its deck and its receipts. Renders are taken one at a time."""
-        with PREVIEWING:
+        build keeps its deck and its receipts. It renders with LibreOffice, one at a time."""
+        with self.turn('local'):
             return self._json('review', '--compiled', str(compiled), '--output', str(output),
                               '--design-project', str(design), '--json')
 
@@ -786,7 +813,7 @@ class Slides:
                                  f'not {renderer}.')
         args = ['review', '--file', str(deck), '--output', str(folder), '--renderer', renderer]
         args += ['--file-id', file_id] if file_id and renderer == 'google' else []
-        with PREVIEWING, _new(folder):
+        with self.turn('drive' if renderer == 'google' else 'local'), _new(folder):
             made = self._json(*args)
             try:
                 record = json.loads((Path(folder) / 'review.json').read_text(encoding='utf-8'))

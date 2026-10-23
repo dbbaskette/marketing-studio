@@ -70,10 +70,11 @@ What a caller needs to know
   the outline's, and looks for each point's words among the text the slide draws. At brand
   only and polish (STRICT) it also refuses drawn text that says anything the slide was not
   approved with. What is drawn, and how, is
-  the composer's. A finding is about `drawing` or about `content`. QUESTIONS are the eight
-  the slides tool asks of every slide, numbered as it numbers them, in the runner's words.
-  The tool's own are not handed to a caller, so a change to them there has to be made here
-  too.
+  the composer's. A finding is about `drawing` or about `content`. Its `question` is a
+  number into the questions its round was reviewed with: the slides tool's own, as the
+  round's whole preview wrote them in critic.json (studio_core.critic), kept as the round's
+  `questions`. `round_questions` reads them; a round saved before they were kept reads the
+  eight Harness Slides 0.16.0 asks.
 """
 from __future__ import annotations
 
@@ -86,7 +87,7 @@ from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import home
-from studio_core import brand_guidance, deck_copy, deck_direction, deck_flow
+from studio_core import brand_guidance, critic, deck_copy, deck_direction, deck_flow
 from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, build_progress, decks, slides as slides_tool
@@ -94,23 +95,15 @@ from runner.steps import Work
 
 PREVIEWS = 4            # times one composer may render its section
 REPAIRS = 2             # rounds of drawing again after a review
-DELIVERY = 'reading'    # a deck is read alone as well as presented
+# What a deck's reviewer reads beside "the review": the slides tool's review guidance and the
+# brand's review checklist, each when the deck's reading has it.
+REVIEW_READING = ('review guidance', brand_guidance.REVIEW_CHECKLIST)
+DELIVERY = 'reading'    # a deck whose form did not say how it is used
 DIRECTION = deck_direction.FALLBACK   # only until the brand gives one
 SEVERITIES = ('critical', 'major', 'minor')
 ABOUT = ('drawing', 'content')
 STRICT = ('brand-only', 'polish')    # levels whose slides draw only the approved words
 NOTE = 12               # the shortest note the slides tool takes for a finding
-QUESTIONS = (
-    'After three seconds, is the main point clear, and is it the claim in the title?',
-    'Does the eye land first on what carries the point?',
-    'Is there exactly one emphasis?',
-    'Does everything on the slide support the title?',
-    'Is each label inside or right beside what it names?',
-    'Is the space balanced, with nothing stranded or crowded?',
-    'Is the slide consistent with its neighbours in style, and different from them in '
-    'layout unless they are meant to be compared?',
-    'Does every picture and icon explain something?',
-)
 WORD = re.compile(r"[^\W_]+(?:['’.-][^\W_]+)*")
 PARTS = 8               # short labels one point may give the parts of a diagram
 PART_WORDS = 6          # words one of them may hold, as the slides tool allows
@@ -399,17 +392,19 @@ def kept(section, spec: dict) -> list[str]:
 
 # --- what a review finds -----------------------------------------------------------------
 
-def checked(finding, slides: list[dict]) -> tuple[dict | None, str | None]:
+def checked(finding, slides: list[dict],
+            questions=critic.LEGACY) -> tuple[dict | None, str | None]:
     """One finding of a review as it is kept, or why it cannot be. `slides` are the
-    slides that were looked at, each with its `id` and `number`."""
+    slides that were looked at, each with its `id` and `number`; `questions` those the
+    review was asked."""
     if not isinstance(finding, dict):
         return None, 'A finding is an object with slide, question, severity and note.'
     numbers = {slide['id']: slide['number'] for slide in slides}
     ident, question = finding.get('slide'), finding.get('question')
     if ident not in numbers:
         return None, f'{ident!r} is not a slide of this deck. Name a slide by its ID.'
-    if type(question) is not int or not 1 <= question <= len(QUESTIONS):
-        return None, f'{ident}: `question` is a number from 1 to {len(QUESTIONS)}.'
+    if type(question) is not int or not 1 <= question <= len(questions):
+        return None, f'{ident}: `question` is a number from 1 to {len(questions)}.'
     if finding.get('severity') not in SEVERITIES:
         return None, f'{ident}: `severity` is one of: ' + ', '.join(SEVERITIES) + '.'
     note = finding.get('note')
@@ -516,7 +511,10 @@ def guide(root, run: dict, brand_skill) -> dict:
                 f"The brand's slide guidance could not be {'resumed' if same else 'started'}: "
                 f'{refusal} The installed slides tool\'s own guidance is used instead.')
         if answer is not None:
-            home.write_json(root / READING, brand_guidance.snapshot(answer))
+            # The reviewer's reading is kept with the composers': the slides tool's review
+            # guidance in the snapshot, and the brand's own review checklist.
+            home.write_json(root / READING, {**brand_guidance.snapshot(answer),
+                                             **brand_guidance.review_texts(answer)})
             worker = brand_guidance.worker(answer)
             if worker:
                 write_atomic(root / WORKER, worker)
@@ -550,6 +548,81 @@ def brand_for_workers(root, brand: Path) -> dict:
     texts = {deck_flow.BRAND_WORKER: worker} if worker.strip() \
         else brand_guidance.brand_texts(brand)
     return {name: texts[name] for name in names if texts.get(name)}
+
+
+# --- the pictures a person gives ---------------------------------------------------------
+
+ASSETS = Path('work') / 'assets'            # the deck's asset project, for pictures given
+PICTURED = ASSETS / 'pictures.json'         # {slide id: {'asset', 'alt', 'source', ...}}
+PICTURE_KINDS = ('cover', 'section', 'content')
+
+
+def pictures(root) -> dict:
+    """The pictures the person gave the deck's slides, by slide ID: {'asset', 'alt',
+    'source', 'name', 'at', 'n'}."""
+    found = home.read_json(Path(root) / PICTURED, {})
+    return {ident: entry for ident, entry in found.items() if isinstance(ident, str)
+            and isinstance(entry, dict) and isinstance(entry.get('asset'), str)} \
+        if isinstance(found, dict) else {}
+
+
+def record_picture(root, slides, slide: str, file: Path, alt: str, source: str,
+                   name: str | None = None, kind: str | None = None,
+                   title: str | None = None) -> dict:
+    """Record a picture the person gave one slide in the deck's asset project, with the
+    slides tool's `assets add-supplied`, and keep which slide shows it. A slide given
+    another picture records it under a new asset ID, since a recorded asset is never
+    rewritten. Returns {'asset', 'slide'}."""
+    root = Path(root)
+    project = root / ASSETS
+    project.mkdir(parents=True, exist_ok=True)
+    kept = pictures(root)
+    count = int((kept.get(slide) or {}).get('n') or 0) + 1
+    ident = f'pic-{slide}' if count == 1 else f'pic-{slide}-{count}'
+    slides.asset_supplied(project, Path(file), ident, alt, source)
+    kept[slide] = {'asset': ident, 'alt': alt, 'source': source, 'name': name,
+                   'kind': kind, 'title': title, 'at': home.now(), 'n': count}
+    home.write_json(root / PICTURED, kept)
+    return {'asset': ident, 'slide': slide}
+
+
+def pictures_for(root, outline: dict) -> dict:
+    """The asset of each picture given to a slide the outline still has, of a kind that takes
+    one, as {slide id: asset}. A picture whose slide was removed, or became a closing slide,
+    is left out of the deck; it stays recorded, and a slide of that ID given back has it."""
+    kinds = {slide.get('id'): slide.get('kind') for slide in slides_of(outline)}
+    return {ident: entry['asset'] for ident, entry in pictures(root).items()
+            if kinds.get(ident) in PICTURE_KINDS}
+
+
+def picture_layout(listed, kind: str, subtitle: bool = False) -> str | None:
+    """A template layout for a lead slide of `kind` that shows its title, has room for its
+    subtitle where it has one, and has a slot for a picture, or None."""
+    fits = [layout for layout in listed or () if isinstance(layout, dict)
+            and isinstance(layout.get('name'), str) and layout.get('title')
+            and (layout.get('pictures') or 0) >= 1
+            and (layout.get('subtitles') or 0) >= (1 if subtitle else 0)]
+    named = [layout for layout in fits
+             if any(word in layout['name'].lower() for word in NAMED_LAYOUTS.get(kind, ()))]
+    return (named or fits)[0]['name'] if (named or fits) else None
+
+
+def _picture_lead(part: dict, given: dict, listed) -> dict:
+    """A lead slide's file with the pictures given to its slides, each in the slot of a
+    layout that has one."""
+    slides = []
+    for slide in part.get('slides') or ():
+        entry = given.get(slide.get('id')) if isinstance(slide, dict) else None
+        if entry:
+            layout = picture_layout(listed, slide.get('kind') or 'cover',
+                                    bool(slide.get('subtitle')))
+            if layout is None:
+                raise WorkspaceError("The brand's template has no layout with a place for a "
+                                     f"picture on “{slide.get('title')}”. Give the picture to "
+                                     'a content slide instead.')
+            slide = {**slide, 'layout': layout, 'picture': {'asset': entry}}
+        slides.append(slide)
+    return {**part, 'slides': slides}
 
 
 # --- where a build is kept -----------------------------------------------------------------
@@ -890,11 +963,13 @@ def start(root, run: dict, slides, brand) -> dict:
         # as, and a tool that can finds a point's sentence split across shapes.
         shutil.copyfile(source, folder / TOOL_OUTLINE)
         sections = []
+        # The pictures the person gave, as they are when the deck starts.
+        given = pictures_for(root, outline)
         for part in home.read_json(folder / 'parts.json', {})['parts']:
             ident = Path(part).stem
             if not SECTION.match(ident):
                 made = json.loads((folder / part).read_text(encoding='utf-8'))
-                home.write_json(folder / part, lead(made))
+                home.write_json(folder / part, _picture_lead(lead(made), given, listed))
                 continue
             written = (folder / 'briefs' / f'{ident}.md').read_text(encoding='utf-8')
             ids = named_in(written, whole)
@@ -927,7 +1002,7 @@ def start(root, run: dict, slides, brand) -> dict:
         source.unlink(missing_ok=True)
     began = {'folder': START.as_posix(), 'brand': str(brand), 'contract': _digest(brand),
              'drawn': secrets.token_hex(3), 'sections': sections, 'wordless': placed,
-             'titled': titled, 'at': home.now()}
+             'titled': titled, 'pictures': given, 'at': home.now()}
     kept = _kept(root, earlier, began, whole)
     for old in (root / DRAWN).glob('*.json'):
         if old.relative_to(root).as_posix() not in {entry['file'] for entry in kept.values()}:
@@ -1072,6 +1147,10 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
     last = state['rounds'][-1] if state['rounds'] else None
     found = [finding for finding in ((last or {}).get('review') or {}).get('findings') or ()
              if finding['slide'] in ids] if drawn else []
+    # The brand's check of this round, before its review, never of an earlier one.
+    found += [finding for finding in (last or {}).get('audit_findings') or ()
+              if finding['slide'] in ids] if drawn and section in (
+        state.get('repair') or ()) else []
     # Sent back by the screen of the whole deck's preview, before any review.
     previewed = [entry for entry in (last or {}).get('preview_repair') or ()
                  if entry.get('slide') in ids] if drawn and section in (
@@ -1096,7 +1175,7 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
                  'and look_at_slide shows each of its slides as it was rendered. Put right '
                  'what is asked and leave alone what works.']
         if found:
-            inputs['what the review found'] = told_findings(found, mine)
+            inputs['what the review found'] = told_findings(found, mine, round_questions(last))
             lines.append('Your input "what the review found" lists what a reviewer found '
                          'wrong with how some of its slides are drawn.')
         if previewed:
@@ -1143,6 +1222,22 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
                      'no words:\n\n' + '\n'.join(
                          f"{slide['id']}: {json.dumps(slide['image'], ensure_ascii=False)}"
                          for slide in pictured))
+    # A picture the person gave a content slide: an image node by its asset ID, placed as
+    # it is given, with the slide's words drawn as text as always.
+    supplied = []
+    for slide in fixed_spec['slides']:
+        asset = (began.get('pictures') or {}).get(slide['id'])
+        if asset and not slide.get('image') and not slide.get('layout'):
+            stem = re.sub(r'[^A-Za-z0-9]', '', slide['id'])[:20] or 'slide'
+            slide['image'] = {'type': 'image', 'id': f"{fixed_spec['prefix']}{stem}_given",
+                              'asset': asset, 'fit': 'contain'}
+            supplied.append(slide)
+    if supplied:
+        lines.append('The person gave these slides a picture. Place its image node in the '
+                     'slide\'s canvas exactly as it is given here, by its `asset`, and keep '
+                     'every word of the slide as text:\n\n' + '\n'.join(
+                         f"{slide['id']}: {json.dumps(slide['image'], ensure_ascii=False)}"
+                         for slide in supplied))
     set_bare = [slide for slide in fixed_spec['slides'] if slide.get('layout')]
     if set_bare:
         lines.append(
@@ -1158,6 +1253,8 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
             **({'outline': str(told_outline.resolve())} if told_outline.is_file() else {}),
             **({'pictures': str((root / began['folder'] / PICTURES).resolve())}
                if (root / began['folder'] / PICTURES).is_dir() else {}),
+            **({'asset_project': str((root / ASSETS).resolve())}
+               if began.get('pictures') else {}),
             'previews': PREVIEWS, **how(root, run, renderer)}
     first_draft = decks.user_first(run)
     if first_draft:
@@ -1296,6 +1393,15 @@ def told_preview(found: list[dict], slides: list[dict]) -> str:
     return '\n'.join(lines) + '\n'
 
 
+class _Unasked(Exception):
+    """A whole preview that came without the slides tool's review questions."""
+
+
+def round_questions(round_: dict | None) -> tuple[str, ...]:
+    """The questions a round was reviewed with: the slides tool's own, from its preview."""
+    return critic.of_round(round_)
+
+
 def draw_whole(root, run: dict, slides, renderer) -> dict:
     """`whole`, writing nothing outside work/: the contact sheet waits in the round's
     folder, as its `sheet`, for `share_sheet`."""
@@ -1322,7 +1428,8 @@ def draw_whole(root, run: dict, slides, renderer) -> dict:
         told = start_folder / TOOL_OUTLINE
         slides.compile(folder / 'composition.json', Path(began['brand']),
                        folder=folder / 'compiled',
-                       **({'outline': told} if told.is_file() else {}))
+                       **({'outline': told} if told.is_file() else {}),
+                       **({'assets': root / ASSETS} if began.get('pictures') else {}))
         previewing = how(root, run, renderer)
         outline = home.read_json(start_folder / 'given/outline.json', {})
         previewing['progress'] = build_progress.begin(root, began['folder'], 'whole',
@@ -1337,11 +1444,19 @@ def draw_whole(root, run: dict, slides, renderer) -> dict:
         if _digest(file) != digest:
             raise WorkspaceError('The deck the renderer left is not the one it pictured.')
         pictured = _tools().pictures(shown, folder / 'preview', pictures)
+        try:
+            asked_now = critic.questions(folder / 'preview')
+        except ValueError as missing:
+            raise _Unasked(str(missing)) from None
         sheet = shown.get('contactSheet')
         sheet = Path(str(sheet)).resolve() if sheet else None
         if sheet is not None and ((folder / 'preview').resolve() not in sheet.parents
                                   or sheet.read_bytes()[:8] != PNG):
             sheet = None
+    except _Unasked as missing:
+        shutil.rmtree(folder, ignore_errors=True)
+        shutil.rmtree(pictures, ignore_errors=True)
+        raise WorkspaceError(str(missing)) from None
     except (WorkspaceError, OSError, KeyError, ValueError, TypeError) as refusal:
         shutil.rmtree(folder, ignore_errors=True)
         shutil.rmtree(pictures, ignore_errors=True)
@@ -1363,7 +1478,7 @@ def draw_whole(root, run: dict, slides, renderer) -> dict:
             'preview': (folder / 'preview').relative_to(root).as_posix(),
             'compiled': (folder / 'compiled').relative_to(root).as_posix(),
             'file': file.relative_to(root.resolve()).as_posix(), 'deck': digest,
-            'review': None,
+            'review': None, 'questions': list(asked_now),
             'render_evidence': shown.get('renderEvidence'),
             'sheet': sheet.relative_to(root.resolve()).as_posix() if sheet else None,
             'made_from': {ident: entry['file'] for ident, entry in drawn.items()},
@@ -1422,8 +1537,9 @@ def remains(findings) -> str:
             + f" thing{'' if len(left) == 1 else 's'} wrong.")
 
 
-def told_findings(findings, slides: list[dict]) -> str:
-    """What a review found on some slides, as their composer is told it."""
+def told_findings(findings, slides: list[dict], questions=critic.LEGACY) -> str:
+    """What a review found on some slides, as their composer is told it. `questions` are
+    those the review was asked."""
     lines = ['# What the review found in your section', '',
              'Someone who drew none of these slides looked at each one as it was rendered '
              'and answered the same questions about it. Each "no" is below.', '']
@@ -1435,28 +1551,98 @@ def told_findings(findings, slides: list[dict]) -> str:
         for finding in mine:
             what = ('This is about what the slide says, which is not yours to change: '
                     'leave the words as they are. ' if finding['about'] == ABOUT[1] else '')
+            quoted = asked_text(finding, questions)
             lines.append(f"- **{finding['severity']}**, "
-                         f"\"{QUESTIONS[finding['question'] - 1]}\" {what}{finding['note']}"
+                         f"{quoted + ' ' if quoted else ''}{what}{finding['note']}"
                          + (f" Suggested: {finding['fix']}" if finding.get('fix') else ''))
         lines.append('')
     return '\n'.join(lines)
 
 
-def asked(slides: list[dict], earlier=None) -> str:
-    """What a reviewer is asked: the questions, how grave a "no" is, the slides, and on a
-    later round what was found before."""
+def asked_text(finding: dict, questions) -> str:
+    """The question a finding answers "no" to, quoted, as a composer or a person reads it.
+    A finding of the brand's check answers none: its note says so."""
+    number = finding.get('question')
+    if type(number) is int and 1 <= number <= len(questions):
+        return f'"{questions[number - 1]}"'
+    return ''
+
+
+def audit_findings(report: dict, slides: list[dict]) -> tuple[list[dict], list[str]]:
+    """What the brand's check of a round's deck found: each blocker on a slide it numbers
+    as a critical finding about how that slide is drawn, in the check's own words, and each
+    warning as a line for the reviewer to look at."""
+    ids = {slide['number']: slide['id'] for slide in slides}
+    findings, lines = [], []
+    for blocker in (report or {}).get('blockers') or ():
+        if isinstance(blocker, dict) and blocker.get('slide') in ids:
+            findings.append({'slide': ids[blocker['slide']], 'number': blocker['slide'],
+                             'severity': 'critical', 'about': ABOUT[0], 'question': None,
+                             'note': "The brand's check: "
+                                     + str(blocker.get('says') or blocker.get('code')),
+                             'fix': None, 'source': 'brand'})
+    for warning in (report or {}).get('warnings') or ():
+        if isinstance(warning, dict) and (warning.get('says') or warning.get('code')):
+            slide = f"Slide {warning['slide']}: " if warning.get('slide') is not None else ''
+            lines.append(f"{slide}{warning.get('says') or warning.get('code')}")
+    return findings, lines
+
+
+def audit_round(root, run: dict, brand) -> dict:
+    """Run the brand's check over the deck the last round previewed, before it is reviewed.
+    A blocker on a slide sends that slide's section back to be drawn again, within REPAIRS
+    rounds, as a reviewer's finding does; a warning goes to the reviewer. A check that
+    cannot be run leaves the round as it is, with a note. Returns the round."""
+    root = Path(root)
+    state = read_state(root)
+    last, began = _last(state), _started(state)
+    form = run.get('form') or {}
+    if brand is None:
+        last['auditNote'] = 'The brand skill was not there to check this deck.'
+        write_state(root, state)
+        return last
+    try:
+        report = brand.audit(root / last['file'], form.get('brand'), form.get('variant'))
+    except WorkspaceError as refusal:
+        last['auditNote'] = f"The brand's check of this deck could not be run. {refusal}"
+        write_state(root, state)
+        return last
+    findings, lines = audit_findings(report, last['slides'])
+    where = {ident: entry['id'] for entry in began['sections'] for ident in entry['slides']}
+    for finding in findings:
+        finding['section'] = where.get(finding['slide'])
+    last.update(audit=audited(report), audit_findings=findings, audit_warnings=lines)
+    sections = {finding['section'] for finding in findings if finding['section']}
+    already = set(state.get('repair') or ())
+    if sections - already and (already or state.get('repaired', 0) < REPAIRS):
+        if not already:
+            state['repaired'] = state.get('repaired', 0) + 1
+        state['repair'] = sorted(already | sections, key=numbered)
+    write_state(root, state)
+    return last
+
+
+def asked(slides: list[dict], earlier=None, questions=critic.LEGACY, noticed=None) -> str:
+    """What a reviewer is asked: the slides tool's questions, how grave a "no" is, the
+    slides, what the brand's check noticed, and on a later round what was found before."""
     lines = ['# The review', '', '## The questions, asked of every slide', '']
-    lines += [f'{number}. {question}' for number, question in enumerate(QUESTIONS, start=1)]
+    lines += [f'{number}. {question}' for number, question in enumerate(questions, start=1)]
     lines += ['', '## How grave a "no" is', '']
     lines += [f'- `{severity}`: {words}' for severity, words in SEVERITY_WORDS.items()]
     lines += ['', '## The slides', '']
     lines += [f"- {slide['number']}. `{slide['id']}`: \"{slide['title']}\"" for slide in slides]
+    if noticed:
+        lines += ['', "## What the brand's check noticed", '',
+                  'Look at each of these, and record it where it makes a slide weaker.', '']
+        lines += [f'- {line}' for line in noticed]
     if earlier:
         lines += ['', '## What an earlier review found', '',
                   'These slides were drawn again since. Look for each of these, and where '
                   'one is not put right, record it again.', '']
-        lines += [f"- Slide `{finding['slide']}`, {finding['severity']}, question "
-                  f"{finding['question']}: {finding['note']}" for finding in ordered(earlier)]
+        lines += [f"- Slide `{finding['slide']}`, {finding['severity']}, "
+                  + (f"question {finding['question']}" if finding.get('question')
+                     else "the brand's check")
+                  + f": {finding['note']}" for finding in ordered(earlier)]
     return '\n'.join(lines) + '\n'
 
 
@@ -1476,7 +1662,8 @@ def reusable_review(root, state):
     coverage = (previous.get('review') or {}).get('coverage') or {}
     if old.get('schema') != 1 or new.get('schema') != 1 or old.get('shared') != new.get('shared') \
             or not isinstance(old.get('shared'), str) or not re.fullmatch(r'[a-f0-9]{64}', old['shared']) or old.get('deckSha256') != previous['deck'] \
-            or new.get('deckSha256') != current['deck'] or coverage.get('questions') != list(QUESTIONS):
+            or new.get('deckSha256') != current['deck'] \
+            or coverage.get('questions') != list(round_questions(current)):
         return {}
     if not current.get('sheet') or not (Path(root) / current['sheet']).is_file():
         return {}
@@ -1496,7 +1683,8 @@ def reusable_review(root, state):
                 or receipt.get('image_sha256') != prior.get('imageSha256') \
                 or prior.get('imageSha256') != now.get('imageSha256') \
                 or prior.get('fingerprint') != now.get('fingerprint') \
-                or not now.get('fingerprint') or receipt.get('answers') != [True] * len(QUESTIONS):
+                or not now.get('fingerprint') \
+                or receipt.get('answers') != [True] * len(coverage['questions']):
             needs.add(ident)
         else:
             candidates[ident] = {**receipt, 'from_deck': previous['deck']}
@@ -1522,12 +1710,20 @@ def review_work(root, run: dict) -> Work:
             + '. Hand in every negative finding with submit_assessment. '
             + ('Other clear slides retain verified inspection evidence, not user approval. '
                'You may inspect or flag any of them if the whole-deck view suggests a regression. ' if reused else ''))
+    questions = round_questions(last)
     review = {'preview': str(root / last['preview']), 'deck': last['deck'], 'slides': slides,
+              'questions': list(questions),
               'recorded': str(root / last['folder'] / 'assessment.json'), 'inspect': inspect,
               'reused': reused, 'sheet': str(root / last['sheet']) if last.get('sheet') else None}
+    inputs = {'the review': asked(slides, earlier, questions, last.get('audit_warnings'))}
+    for name in REVIEW_READING:   # as the deck's start kept them, when it did
+        text = _read(root / TOLD / reading_file(name))
+        if text.strip():
+            inputs[name] = text
     return Work(guidance=briefs.guidance('review'), task=task, profile='write',
                 guard=('whole', (run.get('build_feedback_revisions') or {}).get('whole', 0)),
-                prepared={'inputs': {'the review': asked(slides, earlier)}, 'ask': False,
+                prepared={'inputs': inputs,
+                          'ask': False,
                           'review': review})
 
 
@@ -1580,7 +1776,8 @@ def keep_review(root, run: dict, handed) -> list[dict]:
         identity['defect'] = ' '.join(str(finding.get('note') or '').lower().split())
         finding['id'] = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:16]
         finding['persistent'] = finding['id'] in previous
-        finding['verification'] = finding.get('fix') or QUESTIONS[finding['question'] - 1]
+        finding['verification'] = finding.get('fix') or asked_text(
+            finding, round_questions(last)).strip('"')
     last['review'] = {'findings': findings, 'weakest': list(assessed.get('weakest') or ()),
                       'at': home.now(), 'coverage': assessed.get('coverage')}
     back = repair_sections(findings)
@@ -1685,6 +1882,13 @@ def render(root, run: dict, slides, brand=None, renderer='local') -> Path:
         last = _last(state)
         seen, deck = root / str(last.get('file')), root / DECK
         deck.unlink(missing_ok=True)
+        began = state.get('start') or {}
+        if began.get('pictures'):   # every picture given is still what was recorded
+            try:
+                slides.asset_check(root / ASSETS, Path(began['brand']))
+            except WorkspaceError as refusal:
+                raise WorkspaceError('A picture given to this deck cannot be used, so the '
+                                     f'deck is not delivered. {refusal}') from None
         if not last.get('file') or not seen.is_file() or _digest(seen) != last['deck']:
             raise WorkspaceError('The deck that was previewed and reviewed is not here as it '
                                  'was, so it is not delivered. Put the deck together again.')

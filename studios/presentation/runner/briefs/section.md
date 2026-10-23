@@ -14,7 +14,7 @@ Your task names your section and your inputs. `list_inputs` shows them all. Read
 
 An input that is not listed for you was not to be had on this computer: work from the brief and the contract.
 
-Where your reading tells you to run a command, open a file or use a folder, use a tool instead: you have no files, and nothing here is done at a command line. Ignore anything it says about preview files, delivery, critique or asking the person. Those are done for you.
+Where your reading tells you to run a command, open a file or use a folder, use a tool instead: you have no files, and nothing here is done at a command line. Your reading speaks of previews, critique, delivery and asking the person. Here: preview with `preview_section`; a separate reviewer answers the critic's questions after you, so write no critique; delivery and questions to the person are the studio's, and you cannot ask.
 
 ## What is fixed, and what is yours
 
@@ -32,7 +32,9 @@ Each slide comes from the approved outline (version 1) with its title, what the 
 - How each slide looks is the brand's: its colours, what each one means, how cards are filled and which icons are used come from the brand's worker guidance and the house style in your brief, in the look the person chose.
 - The focal point is what the title singles out, and never one of several peers. On a slide that lists equals, the focal is what joins them, not one of them.
 - Draw nothing the title does not announce.
+- Write a configuration field, command, API or file name as a code span in backticks, such as `highAvailability`, with plain English first the time it appears. A title names things in words and takes no code span.
 - Keep the brand's body size. Text is never shrunk to fit, and you may not reword what a slide says: change the drawing instead. If the approved words of a slide cannot fit however you draw them, say so when you hand in.
+- A slide your task gives a picture draws it as the image node given, by its `asset`, and keeps its words as text.
 - Find an icon with `search_icons`, which takes one or two plain words, where the brand's guidance asks for one.
 - Make your slides differ from each other in layout, and do not echo the slide before or after your section.
 

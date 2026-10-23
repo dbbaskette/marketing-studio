@@ -375,7 +375,8 @@ def outline_work(root, run: dict, request: dict | None, error: str | None, brand
         excluded = set((run.get('research') or {}).get('left_out') or [])
         inputs['Research evidence relationships'] = json.dumps({'digest': manifest['digest'],
             'findings': [f for f in facts['findings'] if f['id'] not in excluded], 'facts': facts['facts']})
-        inputs['Research selection'] = ('Use only retained findings to shape this presentation. '
+        from studio_core.research_contract import HANDOFF
+        inputs['Research selection'] = (HANDOFF + ' Use only retained findings to shape this presentation. '
             'The report and brief preserve the full reviewed research; do not reintroduce excluded '
             'finding claims through paraphrase. Excluded finding IDs: ' + ', '.join(sorted(excluded)))
     from runner.steps import build

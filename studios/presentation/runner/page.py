@@ -57,6 +57,10 @@ What a caller needs to know
   - `/api/run` {"path", "action"}: pause, resume, stop, retry or undo; answers the view.
   - `/api/decide` {"path", "gate", "decision", "note"?, "extra"?}: the only way a gate
     moves; answers the view. `/api/answer` {"path", "id", "answer"}: a worker's question.
+  - `/api/picture` {"path", "slide", "name", "content", "alt", "source", "expected"}: a
+    picture of the person's own (PNG or JPEG, `content` in base64) for a cover, section or
+    content slide while the outline waits; answers {"asset", "slide"}. It may carry up to
+    PICTURE_LIMIT bytes, and only with the key.
   - `/api/note` {"path", "expected", "text"}: a note for the next step, which goes with
     the next job that starts and stops nothing; `expected` is the view's `note.expected`.
   - `/api/share` {}, `/api/fetch` {}, `/api/drive` {"path", "action": take|hand-over},
@@ -110,12 +114,14 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/deci
           '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
           '/api/versions', '/api/brand', '/api/brand/install', '/api/shared',
           '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
-          '/api/note', '/api/review-level')
+          '/api/note', '/api/review-level', '/api/picture')
 PNG = 'image/png'
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
 DRAFT = '/api/deck-draft'   # a deck's storyboard, framed by the page and opened with a ticket
 DECKS_LIMIT = 120_000_000    # bytes: a deck's form with its uploads, in base64
+PICTURE = '/api/picture'
+PICTURE_LIMIT = 28_000_000   # bytes: a picture of up to 20 MB for a slide, in base64
 FILES = ('README.md', 'intake.md', 'classify.md', 'outline.md', 'look.md',
          'research/plan.md', 'research/report.md', 'research/review.md')
 PREVIEW_LIMIT = 1_000_000    # bytes of a file sent to the page
@@ -304,12 +310,12 @@ class RunnerPage(server.Page):
         """A deck's form may carry its uploads whole, to its own address, from whoever holds
         the key. Anyone else's request there is held to the usual limit, so it is refused
         unread."""
-        if target.partition('?')[0] == DECKS:
+        if target.partition('?')[0] in (DECKS, PICTURE):
             try:
                 self.check_token(headers)
             except server.Refusal:
                 return super().body_limit(target, headers)
-            return DECKS_LIMIT
+            return DECKS_LIMIT if target.partition('?')[0] == DECKS else PICTURE_LIMIT
         return super().body_limit(target, headers)
 
     # --- changes -------------------------------------------------------------------------
@@ -345,6 +351,8 @@ class RunnerPage(server.Page):
                 server.text(sent, 'note'), number))
         if path == '/api/decide':
             return server.as_json(HTTPStatus.OK, self.decide(sent))
+        if path == PICTURE:
+            return server.as_json(HTTPStatus.OK, self.picture_given(sent))
         if path == '/api/answer':
             return server.as_json(HTTPStatus.OK, self.answered(sent))
         if path == '/api/note':
@@ -432,6 +440,24 @@ class RunnerPage(server.Page):
         if brands is not None:   # what makes no sense is said as such; the rest is the engine's
             shaped(decks.check_form, form, brands)
         return self.engine.start(form, uploads)
+
+    def picture_given(self, sent: dict) -> dict:
+        """A picture the person gives one slide at the outline stop: {"path", "slide",
+        "name", "content" (the file in base64), "alt", "source", "expected"}."""
+        data = sent.get('content')
+        try:
+            if not isinstance(data, str) or not data:
+                raise ValueError
+            picture = base64.b64decode(data, validate=True)
+        except (binascii.Error, ValueError):
+            raise server.Refusal(HTTPStatus.BAD_REQUEST, 'The picture did not arrive whole. '
+                                 'Choose the file again.')
+        return self.engine.add_picture(
+            self.deck(server.text(sent, 'path')), server.text(sent, 'slide'),
+            server.text(sent, 'name', needed=False) or '', picture,
+            server.text(sent, 'alt', needed=False) or '',
+            server.text(sent, 'source', needed=False) or '',
+            server.text(sent, 'expected', needed=False))
 
     def act(self, sent: dict) -> dict:
         path, action = server.text(sent, 'path'), server.text(sent, 'action')

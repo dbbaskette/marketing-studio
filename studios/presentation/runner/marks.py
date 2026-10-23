@@ -27,7 +27,7 @@ import runner  # noqa: F401  puts the core on the import path
 from workspace import WorkspaceError
 
 REVIEWED = ('gate:research-plan', 'gate:research', 'gate:outline')
-ASKING = ('dropped', 'reword', 'add', 'again', 'slides')   # marks a worker acts on
+ASKING = ('dropped', 'reword', 'add', 'again', 'slides', 'refresh')   # marks a worker acts on
 LINE = 1000             # characters in one line a person writes against an item
 ADDED = 10              # questions added at once
 WORDS = 5               # words of a question a new ID is made from
@@ -106,6 +106,12 @@ def check(gate: str, decision: str, extra: dict | None, ids) -> dict:
     elif gate == 'gate:research':
         marked = {'again': _lines(extra.get('again'), ids, 'question', False),
                   'add': _texts(extra.get('add'))}
+        # Bring the evidence up to date: the sources read again, for the whole research.
+        if extra.get('refresh') not in (None, True, False):
+            raise WorkspaceError('Say whether to bring the evidence up to date with true or '
+                                 'false.')
+        if extra.get('refresh') is True:
+            marked['refresh'] = True
         if extra.get('left_out') is not None:
             marked['left_out'] = _ids(extra.get('left_out'), ids, 'question')
             if ids and set(marked['left_out']) >= set(ids):
@@ -114,7 +120,7 @@ def check(gate: str, decision: str, extra: dict | None, ids) -> dict:
             if both:
                 raise WorkspaceError(f'{both[0]} is both left out and researched again: '
                                      'choose one.')
-        working = marked['again'] or marked['add']
+        working = marked['again'] or marked['add'] or marked.get('refresh')
     else:
         marked = {'slides': _lines(extra.get('slides'), ids, 'slide', True)}
         working = marked['slides']
@@ -141,6 +147,7 @@ def note(gate: str, marked: dict, free: str | None) -> str | None:
                   for ident, line in (marked.get('again') or {}).items()]
         lines += [f'Add a question: {text}' for text in marked.get('add') or ()]
         lines += [f'Leave out `{ident}`.' for ident in marked.get('left_out') or ()]
+        lines += ['Bring the evidence up to date.'] if marked.get('refresh') else []
     elif gate == 'gate:outline':
         lines += [f'Slide `{ident}`: {line}'
                   for ident, line in (marked.get('slides') or {}).items()]

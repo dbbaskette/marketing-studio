@@ -9,3 +9,5 @@ This section was drawn, rendered with the rest of the deck and reviewed by someo
 Put right every major and critical finding about how a slide is drawn. Put right a small one where that costs nothing. Leave alone a slide that had no finding, and what works on a slide that had one: a slide drawn again from nothing gets new faults. A finding about what a slide says is not yours to act on. The words stay as they were approved.
 
 If a slide can be put right only with another concept or other words, do not change either: draw the nearest you can, and say in a sentence, when you hand in, which slide it is and why. The person decides that, not you.
+
+Write a configuration field, command, API or file name as a code span in backticks, such as `highAvailability`, with plain English first the time it appears. A title names things in words and takes no code span.

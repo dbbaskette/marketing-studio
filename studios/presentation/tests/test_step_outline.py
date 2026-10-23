@@ -63,6 +63,16 @@ class BriefTests(Case):
         work = outline.outline_work(root, run, None, None, self.brand, slides=self.slides)
         self.assertIn('Notes: Cover rollback first.', work.prepared['inputs']['The brief'])
 
+    def test_the_research_selection_leads_with_the_handoff(self):
+        from studio_core import research_contract
+        from synthesis_fixture import research_stop
+        root, run = self.deck()
+        research_stop(root / 'research')
+        run['research_contract'] = {'schema': 2}
+        work = outline.outline_work(root, run, None, None, self.brand, slides=self.slides)
+        self.assertTrue(work.prepared['inputs']['Research selection'].startswith(
+            research_contract.HANDOFF + ' '))
+
     def work(self, **kind):
         root, run = self.deck(**kind)
         return outline.outline_work(root, run, None, None, self.brand, slides=self.slides)

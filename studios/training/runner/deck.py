@@ -65,9 +65,10 @@ What a caller needs to know
 - A finding is about `drawing` or about `content`. Only a major or critical finding about
   drawing sends a section back to its composer. One about what a slide says is the
   person's to settle, at the outline.
-- QUESTIONS are the eight the slides tool asks of every slide, numbered as it numbers
-  them, in the runner's words. The tool's own are not handed to a caller, so a change to
-  them there has to be made here too.
+- A finding's `question` is a number into the questions its round was reviewed with: the
+  slides tool's own, as the round's whole preview wrote them in critic.json
+  (studio_core.critic), kept as the round's `questions`. `round_questions` reads them; a
+  round saved before they were kept reads the eight Harness Slides 0.16.0 asks.
 - A deck drawn from its approved design, on a slides tool that reviews a build against it,
   is reviewed by that tool's own assessment instead: `packets` are what it gives of each
   slide (`review --slide`), its criteria, the objects a judgement may cite and what its own
@@ -86,12 +87,14 @@ import re
 
 import runner  # noqa: F401  puts the core on the import path
 import checks
-from studio_core import deck_copy, deck_direction
+from studio_core import critic, deck_copy, deck_direction
 from workspace import WorkspaceError
 
 PREVIEWS = 4            # times one composer may render its section
 REPAIRS = 2             # rounds of drawing again after a review
-DELIVERY = 'reading'    # a deck is read alone as well as presented
+DELIVERY = 'reading'    # a training saved before its deck's delivery was asked
+REFUSED_DELIVERY = {'live': 'This deck is presented in a session: set `delivery` to "live".',
+                    'reading': 'This deck is read on its own: set `delivery` to "reading".'}
 DIRECTION = deck_direction.FALLBACK   # only until the brand or a chosen look gives one
 RATE = {'dollars': 0.40, 'minutes': 1.25}   # a slide, as the first decks cost
 KINDS = ('cover', 'section', 'content', 'closing')
@@ -145,17 +148,6 @@ def house(designed: bool = False, look: dict | None = None) -> tuple[str, ...]:
     return (*styled, *(DESIGNED_HOUSE if designed else HOUSE))
 
 
-QUESTIONS = (
-    'After three seconds, is the main point clear, and is it the claim in the title?',
-    'Does the eye land first on what carries the point?',
-    'Is there exactly one emphasis?',
-    'Does everything on the slide support the title?',
-    'Is each label inside or right beside what it names?',
-    'Is the space balanced, with nothing stranded or crowded?',
-    'Is the slide consistent with its neighbours in style, and different from them in '
-    'layout unless they are meant to be compared?',
-    'Does every picture and icon explain something?',
-)
 LOOKS_UNFINISHED = (
     'Does the slide look finished, or like a wireframe: outline boxes on white, no colour '
     "from the deck's direction where a product, an actor or a state is named, no icon where "
@@ -176,7 +168,12 @@ PLACED = ("A picture the design selected is recorded in the deck's asset manifes
           '`generated-art` is made with `request_asset`, from a brief you write.', '')
 USE = ('The deck is both presented and handed out. Every slide must make sense to someone '
        'reading it alone, so no slide may depend on its speaker notes for meaning. The notes '
-       'carry the talk track and timing for a presenter.')
+       'carry the talk track and timing for a presenter.')   # as a deck for reading has it
+USES = {'reading': USE,
+        'live': ('The deck is presented in a session. Every slide must still make sense '
+                 'without its speaker notes, so no slide may depend on them for meaning. The '
+                 'notes carry what the presenter says, the source behind each claim, and the '
+                 'timing.')}
 
 
 # --- the handoff -------------------------------------------------------------------------
@@ -194,7 +191,8 @@ def frame(blueprint: str) -> dict:
 
 
 def handoff(title: str, level: str | None, blueprint: str, said: dict, target: str | None,
-            brand: tuple[str, str] | None, guide: bool, scenarios=None) -> str:
+            brand: tuple[str, str] | None, guide: bool, scenarios=None,
+            delivery: str = DELIVERY) -> str:
     """deck-handoff.md: one page, written from the record, under the headings the skill's
     own deck stage gives it. `said` is what intake says, `guide` whether the training has
     a learner guide, and `scenarios` the titles of the practice scenarios its closing slide
@@ -217,7 +215,7 @@ def handoff(title: str, level: str | None, blueprint: str, said: dict, target: s
               f"Audience: {framed.get('audience') or said.get('audience') or 'not given'}",
               f"Duration: {framed.get('time') or said.get('time limit') or 'not given'}"]
     lines += [f'Level: {level}'] if level else []
-    lines += ['', '## Use', '', USE, '', '## Required elements', '',
+    lines += ['', '## Use', '', USES.get(delivery, USE), '', '## Required elements', '',
               '- The objectives near the start.',
               '- A check for understanding in each module' + (f': {modules}.' if modules
                                                               else '.'),
@@ -360,7 +358,8 @@ def slides_of(outline) -> list[dict]:
     return [slide for slide in found or () if isinstance(slide, dict)]
 
 
-def rules(outline, blueprint: str, budget: int | None = None, known=()) -> list[str]:
+def rules(outline, blueprint: str, budget: int | None = None, known=(),
+          delivery: str = DELIVERY) -> list[str]:
     """What the runner holds an outline to, beyond the slides tool's own check. Each
     problem is a sentence the worker can act on. `budget` is the most words one slide may
     show, when the tool has said. `known` are the IDs the training's research defines,
@@ -369,9 +368,8 @@ def rules(outline, blueprint: str, budget: int | None = None, known=()) -> list[
         return ['The outline is one JSON object with its slides under "slides".']
     problems = [f'Leave out `{key}`: it is added after you hand the outline in.'
                 for key in LATER if key in outline]
-    if outline.get('delivery') not in (None, DELIVERY):
-        problems.append(f'This deck is read alone as well as presented: set `delivery` to '
-                        f'"{DELIVERY}".')
+    if outline.get('delivery') not in (None, delivery):
+        problems.append(REFUSED_DELIVERY.get(delivery, REFUSED_DELIVERY[DELIVERY]))
     objectives = list(checks.parse_blueprint(blueprint)['objectives'])
     left_out, served = gaps(blueprint), set()
     for slide in slides_of(outline):
@@ -639,7 +637,7 @@ def layouts(listed, slides: list[dict], preferred: dict | None = None) -> dict:
 
 
 def complete(outline: dict, listed, words: list[str], designed: bool = False,
-             look: dict | None = None, knows=frozenset()) -> dict:
+             look: dict | None = None, knows=frozenset(), delivery: str = DELIVERY) -> dict:
     """An approved outline as the slides tool starts a deck from: with the direction, a
     layout for each kind of lead slide, the house rules, and the person's own words of
     approval. A deck `designed` is drawn from its approved design. `look` is what the
@@ -648,7 +646,7 @@ def complete(outline: dict, listed, words: list[str], designed: bool = False,
     `provenance` joins its notes unless the slides tool `knows` it."""
     look = look or {}
     outline = with_provenance(outline, knows)
-    return {**outline, 'delivery': DELIVERY,
+    return {**outline, 'delivery': delivery,
             'direction': dict(look.get('direction') or DIRECTION),
             'layouts': layouts(listed, slides_of(outline), look.get('layouts')),
             'house': list(house(designed, look)), 'approval': list(words)}
@@ -1118,17 +1116,24 @@ def as_approved(section, spec: dict):
 
 # --- what a review finds -----------------------------------------------------------------
 
-def checked(finding, slides: list[dict]) -> tuple[dict | None, str | None]:
+def round_questions(round_: dict | None) -> tuple[str, ...]:
+    """The questions a round was reviewed with: the slides tool's own, from its preview."""
+    return critic.of_round(round_)
+
+
+def checked(finding, slides: list[dict],
+            questions=critic.LEGACY) -> tuple[dict | None, str | None]:
     """One finding of a review as it is kept, or why it cannot be. `slides` are the
-    slides that were looked at, each with its `id` and `number`."""
+    slides that were looked at, each with its `id` and `number`; `questions` those the
+    review was asked."""
     if not isinstance(finding, dict):
         return None, 'A finding is an object with slide, question, severity and note.'
     numbers = {slide['id']: slide['number'] for slide in slides}
     ident, question = finding.get('slide'), finding.get('question')
     if ident not in numbers:
         return None, f'{ident!r} is not a slide of this deck. Name a slide by its ID.'
-    if type(question) is not int or not 1 <= question <= len(QUESTIONS):
-        return None, f'{ident}: `question` is a number from 1 to {len(QUESTIONS)}.'
+    if type(question) is not int or not 1 <= question <= len(questions):
+        return None, f'{ident}: `question` is a number from 1 to {len(questions)}.'
     if finding.get('severity') not in SEVERITIES:
         return None, f'{ident}: `severity` is one of: ' + ', '.join(SEVERITIES) + '.'
     note = finding.get('note')
@@ -1239,8 +1244,38 @@ def sent_back(screens: list[dict]) -> list[dict]:
     return made
 
 
-def told(findings, slides: list[dict]) -> str:
-    """What a review found on some slides, as their composer is told it."""
+def asked_text(finding: dict, questions) -> str:
+    """The question a finding answers "no" to, quoted, as a composer or a person reads it.
+    A finding of the brand's check answers none: its note says so."""
+    number = finding.get('question')
+    if type(number) is int and 1 <= number <= len(questions):
+        return f'"{questions[number - 1]}"'
+    return ''
+
+
+def audit_findings(report: dict | None, slides: list[dict]) -> tuple[list[dict], list[str]]:
+    """What the brand's check of a round's deck found: each blocker on a slide it numbers
+    as a critical finding about how that slide is drawn, in the check's own words, and each
+    warning as a line for the reviewer to look at."""
+    ids = {slide['number']: slide['id'] for slide in slides}
+    findings, lines = [], []
+    for blocker in (report or {}).get('blockers') or ():
+        if isinstance(blocker, dict) and blocker.get('slide') in ids:
+            findings.append({'slide': ids[blocker['slide']], 'number': blocker['slide'],
+                             'severity': 'critical', 'about': ABOUT[0], 'question': None,
+                             'note': "The brand's check: "
+                                     + str(blocker.get('says') or blocker.get('code')),
+                             'fix': None, 'source': 'brand'})
+    for warning in (report or {}).get('warnings') or ():
+        if isinstance(warning, dict) and (warning.get('says') or warning.get('code')):
+            slide = f"Slide {warning['slide']}: " if warning.get('slide') is not None else ''
+            lines.append(f"{slide}{warning.get('says') or warning.get('code')}")
+    return findings, lines
+
+
+def told(findings, slides: list[dict], questions=critic.LEGACY) -> str:
+    """What a review found on some slides, as their composer is told it. `questions` are
+    those the review was asked."""
     lines = ['# What the review found in your section', '',
              'Someone who drew none of these slides looked at each one as it was rendered '
              'and answered the same questions about it. Each "no" is below.', '']
@@ -1257,8 +1292,9 @@ def told(findings, slides: list[dict]) -> str:
                     if finding['about'] == JUDGED[2] else '')
             asked_as = (f"{CATEGORIES.get(finding.get('category'), 'Found')}, "
                         f"`{finding['criterion']}`:" if 'criterion' in finding else
-                        f"\"{QUESTIONS[finding['question'] - 1]}\"")
-            lines.append(f"- **{finding['severity']}**, {asked_as} {what}{finding['note']}"
+                        asked_text(finding, questions))
+            lead = f'{asked_as} ' if asked_as else ''
+            lines.append(f"- **{finding['severity']}**, {lead}{what}{finding['note']}"
                          + (f" Suggested: {finding['fix']}" if finding['fix'] else ''))
         lines.append('')
     return '\n'.join(lines)
@@ -1281,12 +1317,13 @@ def _looked(screens) -> list[str]:
     return lines
 
 
-def asked(objectives: dict, slides: list[dict], earlier=None, screens=None) -> str:
-    """What a reviewer is asked: the questions, how grave a "no" is, the slides, the
-    objectives, what to look for beyond the questions with what the screens found, and on
-    a later round what was found before."""
+def asked(objectives: dict, slides: list[dict], earlier=None, screens=None,
+          questions=critic.LEGACY, noticed=None) -> str:
+    """What a reviewer is asked: the slides tool's questions, how grave a "no" is, the
+    slides, the objectives, what to look for beyond the questions with what the screens
+    found, and on a later round what was found before."""
     lines = ['# The review', '', '## The questions, asked of every slide', '']
-    lines += [f'{number}. {question}' for number, question in enumerate(QUESTIONS, start=1)]
+    lines += [f'{number}. {question}' for number, question in enumerate(questions, start=1)]
     lines += ['', '## How grave a "no" is', '',
               '- `critical`: the slide misleads, cannot be read, or its point cannot be '
               'found.',
@@ -1296,6 +1333,10 @@ def asked(objectives: dict, slides: list[dict], earlier=None, screens=None) -> s
     lines += ['', '## The objectives', '']
     lines += [f'- {ident}: {text}' for ident, text in objectives.items()]
     lines += _looked(screens)
+    if noticed:
+        lines += ['', "## What the brand's check noticed", '',
+                  'Look at each of these, and record it where it makes a slide weaker.', '']
+        lines += [f'- {line}' for line in noticed]
     if earlier:
         lines += ['', '## What an earlier review found', '',
                   'These slides were drawn again since. Look for each of these, and where '
@@ -1307,8 +1348,10 @@ def asked(objectives: dict, slides: list[dict], earlier=None, screens=None) -> s
 
 def _named(finding: dict) -> str:
     """Which question or criterion a finding answered, as an earlier review is listed."""
-    return f"`{finding['criterion']}`" if 'criterion' in finding \
-        else f"question {finding['question']}"
+    if 'criterion' in finding:
+        return f"`{finding['criterion']}`"
+    return f"question {finding['question']}" if finding.get('question') \
+        else "the brand's check"
 
 
 def to_outline(findings) -> list[dict]:

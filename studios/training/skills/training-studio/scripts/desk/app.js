@@ -160,6 +160,7 @@ const SHARE_SAYS = [
 const PURPOSES = ['Field enablement', 'Technical upskilling', 'General knowledge'];
 const LEVELS = ['101', '201', '301', '401'];
 const DECKS = [['pptx', 'PowerPoint'], ['google', 'Google Slides'], [null, 'No deck']];
+const DELIVERIES = [['live', 'Presented in a session'], ['reading', 'Read on its own']];
 const COPIES = [['google', 'Google Docs'], ['word', 'Word']];
 const STEPS = ['Learning goal', 'Materials', 'Review and start'];
 const MATERIALS = [['document', 'Learner guide'], ['brief', 'Reference brief'],
@@ -1378,11 +1379,22 @@ function noteSheet(kind) {
   const hint = make('p', 'quiet', (runOf(view.path) ? spec.hint.replace('Your assistant makes',
     'Training Studio makes') : spec.hint) + redo);
   hint.id = 'note-hint';
+  // At the research stop, the sources may be read again: the whole research, brought up to
+  // date. It is off unless asked for, and says what it costs.
+  const refreshing = kind === 'revise' && researchPrice ? { on: false } : null;
+  const refresh = refreshing ? add(make('div', 'field'),
+    chip('Bring the evidence up to date', false, (on) => { refreshing.on = on; }, 'refresh'),
+    make('p', 'quiet field-hint', researchPrice.refresh || 'Re-reads the sources and checks '
+      + 'the report again: about as long and as costly as the research was.')) : null;
   const problem = problemLine();
   const submit = submitButton(spec.send, 'send');
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const text = field.value.trim();
+    if (refreshing && refreshing.on) {
+      decide(kind, text, problem, submit, { refresh: true });
+      return;
+    }
     if (spec.needed && !text) {
       // Refused here, beside the control, before anything is sent.
       problem.textContent = spec.needed;
@@ -1393,7 +1405,7 @@ function noteSheet(kind) {
     }
     decider()(kind, text, problem, submit);
   });
-  add(form, label, field, hint, problem,
+  add(form, label, field, hint, refresh, problem,
     add(make('div', 'bar'), submit, capsule('Cancel', 'quiet', closeSheet, 'cancel')));
   return [sheetTitle(spec.title), form];
 }
@@ -1454,14 +1466,15 @@ function drawSheet() {
   holder.replaceChildren(...body);
 }
 
-async function decide(decision, note, problem, pressed) {
+async function decide(decision, note, problem, pressed, more) {
   if (view.busy) return;
   const turn = view.turn;
   const noted = noteKey(decision);
   view.busy = true;
   pressed.disabled = true;
   // At a gate, what is decided is what is being read. A sheet opened from a run names it.
-  const body = { path: view.path, artifact: view.deciding || view.artifact, decision };
+  const body = { path: view.path, artifact: view.deciding || view.artifact, decision,
+    ...(more || {}) };
   if (note) body.note = note;
   if (view.gate && view.gate.sha256) body.seen = view.gate.sha256;
   let done;
@@ -4239,7 +4252,8 @@ function newDraft() {
     levels: ['101'], brief: 0, time: '',
     // A deck needs a brand; without one shared, no deck is the default.
     deck: brand.brand ? (shared.output === 'google' ? 1 : 0) : DECKS.length - 1,
-    brand: brand.brand || '', variant: brand.variant || '', copies: [],
+    brand: brand.brand || '', variant: brand.variant || '', copies: [], delivery: 0,
+    walkthrough: false,
     yoodli: false, materials: [], sources: 0, agent: agent.default === 'codex' ? 'codex' : 'claude',
     model: agent.model || '', other: false, effort: agent.effort || '', starting: false });
 }
@@ -4376,9 +4390,24 @@ function shapeStep(draft) {
     : make('p', 'quiet', 'A deck needs a brand skill. You can make the other materials now; '
       + 'Status explains what this computer needs for slides.');
   brand.hidden = able && DECKS[draft.deck][0] === null;
+  // Asked once a training: a talk is presented live, a handout is read on its own.
+  const used = choice('How is this deck used?', DELIVERIES.map((kind) => kind[1]),
+    draft.delivery || 0, (index) => { draft.delivery = index; }, 'delivery',
+    'A spoken session is presented live; choose Read on its own for self-study.');
+  used.hidden = !able || DECKS[draft.deck][0] === null;
+  // A deck is approved on what it says and on its look, as the brand's checkpoints are. Its
+  // slides' designs are walked through one at a time only when asked for here.
+  const walk = add(make('div', 'field'),
+    chip('Walk through each slide’s design before it is built', draft.walkthrough,
+      (on) => { draft.walkthrough = on; }, 'walkthrough'),
+    make('p', 'quiet field-hint', 'Usually the deck is approved on what it says and on its '
+      + 'look. Choose this to approve how each slide is drawn, one at a time.'));
+  walk.hidden = used.hidden;
   const deck = choice('The slide deck', DECKS.map((kind) => kind[1]), draft.deck, (index) => {
     draft.deck = index;
     brand.hidden = DECKS[index][0] === null;
+    used.hidden = !able || DECKS[index][0] === null;
+    walk.hidden = used.hidden;
   }, 'deck');
   for (const option of able ? [] : deck.querySelectorAll('.seg-option[aria-pressed="false"]')) {
     option.disabled = true;
@@ -4391,7 +4420,7 @@ function shapeStep(draft) {
       (level) => draft.levels.includes(level), toggle('levels'), 'level',
       '101 introduces the subject; 201 applies it; 301 handles trade-offs; 401 explores advanced cases. '
         + 'Each selected level gets its own materials, and its own cost. Choose none for one training without levels.'),
-    deck, brand,
+    deck, used, walk, brand,
     field('new-time', 'How long it should take (optional)', draft, 'time',
       { hint: 'The learner’s time, including examples and practice: “30 minutes” or “a half-day workshop”.' }),
     trainingOptions('Depth and reference brief', 'training-depth',
@@ -4613,6 +4642,8 @@ async function startTraining(pressed) {
     research_questions: (draft.researchQuestions || '').split('\n'),
     deck_target: deck,
     brand: deck ? { brand: draft.brand, variant: draft.variant || null } : null,
+    ...(deck ? { delivery: DELIVERIES[draft.delivery || 0][0],
+      walkthrough: Boolean(draft.walkthrough) } : {}),
     copies: COPIES.map((kind) => kind[0]).filter((kind) => draft.copies.includes(kind)),
     yoodli: draft.yoodli, materials: draft.materials,
     agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null,

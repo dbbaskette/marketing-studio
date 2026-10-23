@@ -86,6 +86,7 @@ async function check(){
   await whereThisRunStops();
   await phase3ResearchDefaults();
   await phase3ResearchAccount();
+  await phase5BringResearchUpToDate();
   await phase3ClaimsMap();
   await oneVocabulary();
   await honestBlogCopy();
@@ -2483,6 +2484,27 @@ async function phase3ResearchDefaults(){
     f.set('draft',{mode:'write',research,sources,stop:'package'});
     assert.equal(f.run('sResearchWords(draft)'),want,'Ready to start says what research will run');
   }
+}
+
+async function phase5BringResearchUpToDate(){
+  const calls=[];
+  const found={id:'synthetic',title:'Synthetic',status:'waiting-for-approval',next:'research',approval:'page',expected:'v1',enabled:true,mode:'write',review_level:'step_by_step',brief:{},notes:{},research_price:{words:'Asking for changes runs the whole research again.',refresh:'Re-reads the sources and checks the report again: its last try took 48 minutes and $9.80.'},stages:[{stage:'research',label:'Research',path:'derived/blog-research.md',status:'draft'},{stage:'outline',label:'Outline',status:'pending'}]};
+  const f=fixture((route,options)=>{calls.push({route,data:options?.body?JSON.parse(options.body):null});return {...found,status:'queued'};});f.loadRunner();
+  f.set('found',found);f.run("studio.screen='gate';studio.id=found.id;studio.found=found;sChanges(found,'research')");
+  const sheet=()=>descendants(f.get('sheet'));
+  const box=sheet().find(e=>e.id==='change-refresh');
+  assert.ok(box,'the research sheet offers to bring the evidence up to date');
+  assert.equal(box.checked,false,'off unless asked');
+  assert.ok(sheet().some(e=>e.textContent==='Bring the evidence up to date'));
+  assert.ok(sheet().some(e=>e.textContent===found.research_price.refresh));
+  box.checked=true;box.listeners.change();
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const sent=calls.find(r=>r.route==='/api/run-changes');
+  assert.ok(sent,'the change is sent');assert.equal(sent.data.stage,'research');assert.equal(sent.data.refresh,true);
+  f.run('sCloseSheet()');
+  f.run("sChanges(found,'outline')");
+  const field=sheet().find(e=>e.className==='field'&&descendants(e).some(c=>c.id==='change-refresh'));
+  assert.equal(field.hidden,true,'only the research is brought up to date');
 }
 
 async function phase3ResearchAccount(){

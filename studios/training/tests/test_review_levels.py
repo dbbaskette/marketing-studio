@@ -446,7 +446,7 @@ class ReviewLevelsTests(DeckCase):
 
     def test_design_tool_continues_under_explicit_policy(self):
         self.slides.design = True
-        root, shown = self.choose('automatic')
+        root, shown = self.choose('automatic', walkthrough=True)
         self.assertEqual(shown['review']['phase'], 'final')
         self.assertTrue(self.slides.design_status(pipeline.place(root, None, pipeline.DESIGNS))['buildAllowed'])
         shown = self.approve_review(root, shown)

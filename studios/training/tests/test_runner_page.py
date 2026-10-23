@@ -1246,7 +1246,7 @@ class StartTests(PageCase):
                          (['101', '201'], 'page', 'research-plan'))
         self.assertEqual(status['settings'], {
             'approval': 'page', 'brand': 'example-co/light', 'brief_kind': 'competitive',
-            'copies': ['google'], 'deck_target': 'google',
+            'copies': ['google'], 'deck_target': 'google', 'delivery': 'reading', 'walkthrough': False,
             'stages': ['document', 'brief', 'deck', 'scenario', 'yoodli']})
         self.assertEqual(self.post('trainings', {'title': 'Health checks', 'topic': 'Health '
                                                  'checks', 'audience': 'Operators',

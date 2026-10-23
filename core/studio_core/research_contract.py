@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import subprocess
@@ -17,6 +18,65 @@ import tempfile
 IDS_FOR_QUESTIONS = ('Planning questions have IDs. A finding that answers one has an ID '
                      "that begins with that question's ID and two hyphens, such as "
                      'instance-min--capacity. Keep each ID within 64 characters.')
+
+# What every writer that receives research is told of it, once.
+HANDOFF = ('The research is reviewed. Read its brief first: it says what matters for this piece. '
+           'Use the facts and findings to check what you write. Their IDs, digests and verdicts '
+           'are for checking and for provenance, notes and source lines: never put one in the '
+           'words a reader reads.')
+# Added to a research task's purpose when its goal compares options.
+COMPARISON = ('The goal compares options: include a comparison with one criterion per row, and '
+              'say where something is unknown rather than absent.')
+COMPARING = re.compile(r'\b(?:compare|compares|comparing|comparison|versus|vs|alternatives)\b'
+                       r'|\bchoose between\b|\bwhich is better\b')
+NAMED_OR = re.compile(r'\b[A-Z][\w.+-]* or [A-Z][\w.+-]*')
+# What the author is handed of Harness Research's references: its own stage references, not
+# the one addressed to a studio.
+AUTHOR_GUIDES = ('investigate.md', 'synthesize.md')
+# Bringing research up to date: Harness Research's own section of synthesis-reuse.md, and
+# what the author is asked to do.
+REUSE = 'synthesis-reuse.md'
+REFRESH_SECTION = '## Refresh selected evidence'
+REFRESHED = ("Bring the evidence up to date: re-read each source with the studio's capture "
+             'tool, so that each new capture is saved with the date it was read; then update '
+             'what changed. The studio saves the dossier you hand back and arranges its '
+             'independent review.')
+# Said after the refresh section, which speaks of saving and arranging a review itself.
+REFRESH_HERE = ("The studio's tools save every capture and the studio arranges the review: "
+                'write no files yourself.')
+CAPTURED = ("The studio's tools have saved every capture for you: that is the capture "
+            '`investigate.md` asks for. Cite each source by the file path the tools gave it, '
+            'exactly. Write no files yourself.')
+
+
+def compares(goal) -> bool:
+    """Whether a goal compares options, by its words: compare, versus, vs, alternatives,
+    choose between, which is better, or two named options joined by "or" ("Redis or
+    Valkey"). A word list is predictable; it can be wrong both ways, and then costs one
+    sentence."""
+    if not isinstance(goal, str) or not goal.strip():
+        return False
+    return bool(COMPARING.search(goal.lower()) or NAMED_OR.search(goal))
+
+
+def refresh_section(text: str) -> str:
+    """The "Refresh selected evidence" section of synthesis-reuse.md, from its heading to the
+    next of the same level, or nothing."""
+    heading = re.search(r'^' + re.escape(REFRESH_SECTION) + r'\s*$', text, re.MULTILINE)
+    at = heading.start() if heading else -1
+    if at < 0:
+        return ''
+    found = re.search(r'^## ', text[at + len(REFRESH_SECTION):], re.MULTILINE)
+    end = at + len(REFRESH_SECTION) + found.start() if found else -1
+    return text[at:end if end >= 0 else len(text)].strip()
+
+
+def purpose(kind: str, goal, priorities: str) -> str:
+    """A research task's purpose, as every studio words it: what it informs, the goal, the
+    studio's own priorities, and a comparison when the goal compares options."""
+    said = f"Inform {kind}: {goal or 'explain the topic'}. {priorities}"
+    return f'{said} {COMPARISON}' if compares(goal) else said
+
 
 OWNER = 'harness-research-synthesis'
 # Where the Harness Research installer keeps `current` and versions/<version>-<digest>.
@@ -301,17 +361,22 @@ class Workflow:
                 rounds += 1
                 worker = 'author-' + secrets.token_hex(12)
                 guide = '\n\n'.join((self.runtime / 'references' / name).read_text()
-                                      for name in ('investigate.md', 'synthesize.md', 'studio-handoff.md'))
+                                      for name in AUTHOR_GUIDES)
+                refreshing = task.get('refresh') is True
+                if refreshing:   # its stage references, and the refresh section of reuse
+                    reuse = self.runtime / 'references' / REUSE
+                    section = refresh_section(reuse.read_text()) if reuse.is_file() else ''
+                    guide += '\n\n' + section + '\n\n' + REFRESH_HERE if section else ''
                 payload = {'task': task, 'worker': worker,
                            'return': 'A complete schema-2 dossier as JSON, including authored brief sections. '
-                                     'Use only saved source file paths supplied by the tools: copy each '
-                                     "source's file and origin exactly from the capture the tools showed, "
-                                     'and never invent paths such as research/sources/. '
+                                     + CAPTURED + ' Copy each source\'s origin exactly as the capture showed it. '
                                      'Dossier format: sources, facts, findings, sections and brief are arrays; '
                                      'sections and brief hold {id, title, blocks: [{text, kind, refs}]}. '
                                      'Set every fact author to this worker ID. Do not write finished studio content.'}
                 if any(isinstance(q, dict) and q.get('id') for q in task.get('planning_questions') or ()):
                     payload['return'] += ' ' + IDS_FOR_QUESTIONS
+                if refreshing:
+                    payload['return'] += ' ' + REFRESHED
                 previous = case / '.harness-research/synthesis.json'
                 if previous.is_file():
                     state = json.loads(previous.read_text())

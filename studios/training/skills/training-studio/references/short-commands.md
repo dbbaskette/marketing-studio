@@ -11,6 +11,7 @@
 | "add Yoodli", "make it work in Yoodli" | `training.py skip yoodli --clear`, then read the Yoodli stage reference |
 | "no Yoodli" | `training.py skip yoodli --reason "<their reason>"` |
 | "use Google Slides", "use PowerPoint" | `training.py checkpoint --deck-target google`, or `pptx` |
+| "it's a talk", "it's a handout" | `training.py checkpoint --delivery live`, or `reading`; refused once the deck is written |
 | "make it a competitive brief" | `training.py checkpoint --brief-kind competitive`, then rebuild the brief |
 | "add level 301" | `training.py checkpoint --add-level 301`, then read the levels reference |
 | "add a scenario" | Read the scenario stage reference |

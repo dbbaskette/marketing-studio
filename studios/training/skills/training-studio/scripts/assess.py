@@ -143,12 +143,12 @@ def describe(root: Path) -> dict:
 
 
 def decide(root: Path, target: str, decision: str, note: str | None = None,
-           by: str = 'chat', seen: str | None = None) -> dict:
+           by: str = 'chat', seen: str | None = None, refresh: bool = False) -> dict:
     """Record a decision and say which checks are failing once it is made.
 
     The command line and the page both decide through here; only `by` tells them apart.
     """
-    outcome = workspace.decide(root, target, decision, note, by, seen)
+    outcome = workspace.decide(root, target, decision, note, by, seen, refresh=refresh)
     outcome['failing_checks'] = [item['check'] for item in run_checks(root)['checks']
                                  if item['status'] == 'failed']
     return outcome

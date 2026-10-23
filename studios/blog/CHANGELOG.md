@@ -5,6 +5,15 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **The companions, fully used.** A blog's brand export now carries the chosen author
+  voice (`--voice-profile`), so the brand's `VOICE.md` names it; a tone-only run passes
+  none, and a brand that refuses the voice is shown in its own words before anything is
+  made. The writer is told what `research_bundle` is and that its IDs and digests are never
+  words a reader reads. A goal that compares options asks the research for a comparison.
+  **Bring the evidence up to date**, when asking for changes to the research, reads the
+  sources again. For maintainers: `studio.voice_handoff`, `brand_skill.snapshot(...,
+  voice)`, `Brand.export(voice_profile=)`, and the run's research stage keeps `refresh`.
+
 - Finish authoring on the page: outline/revise/review start cards, complete idea development, Done checks and repurposing, and a revision-checked private Google Doc handoff that reconciles uncertain uploads.
 - Apply review findings with the prior draft and history kept. Review notes open beside the text and show real voice, repetition, example and preservation checks. Uploaded files have individual team-library choices before sharing or use.
 

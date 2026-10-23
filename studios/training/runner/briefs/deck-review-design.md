@@ -3,7 +3,10 @@
 Your task says which deck this is. `list_inputs` shows your inputs; read each with `read_input`.
 
 - **The review** was prepared by the slides tool against the design the person approved for every slide: what each slide claims, the relationship it teaches and how it was approved to be drawn. It lists the criteria to answer, each slide with the criteria that apply to it, the objects on it you may cite with their words, and what the tool's own screens point at. It ends with the objectives of the lesson, and after the slides have been drawn again with what an earlier review found.
+- **Review guidance** and **brand review checklist**, when you are given them: the slides tool's own guidance for a review, and the brand's.
 - `look_at_slide` shows one slide at full size, by its number. Look at every slide, in order, before you hand anything in.
+
+Read the review guidance and the brand's review checklist, when you are given them, before you look. Judge each slide by the criteria in "the review".
 
 ## The assessment
 
