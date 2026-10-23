@@ -1341,7 +1341,11 @@ def create(root, data, approval='conversation'):
     return survey(root, record['id'])
 
 
-LIBRARY_ROLES = {'facts': ['reference'], 'example': ['reference', 'inspiration']}
+LIBRARY_ROLES = {
+    'facts': ['reference'],
+    'example': ['reference', 'inspiration'],
+    'messaging': ['reference', 'messaging'],
+}
 
 
 def library_picks(root, chosen, sources):
@@ -1361,7 +1365,9 @@ def library_picks(root, chosen, sources):
             or not isinstance(entry['id'], str)
             or entry['role'] not in LIBRARY_ROLES
         ):
-            raise ValueError('Each library item needs its id and a role: facts or example.')
+            raise ValueError(
+                'Each library item needs its id and a role: facts, messaging or example.'
+            )
         ident = blog_library.local_item(root, entry['id'], entry.get('location', 'local'))
         if ident in picked or ident in sources:
             raise ValueError('Pick each library item once.')
@@ -2991,6 +2997,12 @@ def add_parser(groups):
         default=[],
         help='A library item read as an example of the kind of post for this blog only',
     )
+    create_cmd.add_argument(
+        '--messaging',
+        action='append',
+        default=[],
+        help='A library item read as the product’s approved messaging for this blog only',
+    )
     create_cmd.add_argument('--mode', choices=MODES, default='write')
     create_cmd.add_argument('--manuscript')
     create_cmd.add_argument('--outline-text')
@@ -3027,12 +3039,14 @@ def command(root, args):
             data = {
                 k: v
                 for k, v in vars(args).items()
-                if k not in ('root', 'group', 'action', 'source', 'example', 'compact')
+                if k not in ('root', 'group', 'action', 'source', 'example', 'messaging', 'compact')
                 and v is not None
             }
             data['sources'] = args.source
-            if args.example:
-                data['library'] = [{'id': ident, 'role': 'example'} for ident in args.example]
+            library = [{'id': ident, 'role': 'example'} for ident in args.example]
+            library += [{'id': ident, 'role': 'messaging'} for ident in args.messaging]
+            if library:
+                data['library'] = library
             return create(root, data)
         if args.action == 'submit':
             return submit(

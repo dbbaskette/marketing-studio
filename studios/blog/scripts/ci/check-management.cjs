@@ -1471,10 +1471,10 @@ async function filesJourney(){
   assert.ok(text().some(t=>/^Add at least one file with text, from your computer, a Google Doc or the library, and this lights up\.$/.test(t)),'and the screen says why Start is grey: '+text().join('|'));
   assert.equal(start().textContent,'Find three angles');
   assert.ok(text().some(t=>/stops for the angles/.test(t)),'the stops line names the angles: '+text().join('|'));
-  // Each upload says what the files are for: facts by default, or an example of the kind of post.
+  // Each upload says what the files are for: facts by default, approved messaging, or an example of the kind of post.
   const role=()=>byId('files-role');
   assert.equal(role().tagName,'select');assert.equal(role().value,'material');
-  assert.deepEqual(role().children.map(o=>[o.value,o.textContent]),[['material','Facts (may be quoted)'],['inspiration','Example of the kind of post']]);
+  assert.deepEqual(role().children.map(o=>[o.value,o.textContent]),[['material','Facts (may be quoted)'],['messaging','Approved messaging (the product’s own claims)'],['inspiration','Example of the kind of post']]);
   // Write as: the same choice as the wizard's first step. My voice is the default voice, a
   // provisional profile says so, and no particular voice shows the tone.
   const voice=()=>byId('files-voice');
@@ -1508,6 +1508,8 @@ async function filesJourney(){
   rowRole().value='inspiration';await rowRole().listeners.change();
   assert.deepEqual(requests.find(r=>r.url==='/api/source-role').data,{id:'s1',role:'example'});
   assert.equal(byId('files-role-s1').value,'inspiration','the row keeps the new role');
+  byId('files-role-s1').value='messaging';await byId('files-role-s1').listeners.change();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/source-role').at(-1).data,{id:'s1',role:'messaging'},'approved messaging is its own role');
   byId('files-role-s1').value='material';await byId('files-role-s1').listeners.change();
   assert.deepEqual(requests.filter(r=>r.url==='/api/source-role').at(-1).data,{id:'s1',role:'facts'});
   assert.equal(f.run('studio.busy'),false,'the screen is free again after a role change');assert.equal(start().disabled,false);

@@ -463,13 +463,15 @@ def upload_files(root, data, staging, ledger, fingerprint):
         raise ValueError(
             'Upload a LinkedIn export as writing samples: voice samples or author background.'
         )
-    # Each file says what it is for: facts the writing may quote, or an example of the
-    # kind of post, which keeps the upload's purpose and adds inspiration.
+    # Each file says what it is for: facts the writing may quote, an example of the kind
+    # of post (adds inspiration), or the product's approved messaging (adds messaging).
     checked = []
     for entry in entries:
         role = entry.pop('purpose', 'material')
-        if role not in ('material', 'inspiration'):
-            raise ValueError('Facts or an example of the kind of post: choose one for each file.')
+        if role not in ('material', 'inspiration', 'messaging'):
+            raise ValueError(
+                'Facts, approved messaging or an example of the kind of post: choose one for each file.'
+            )
         if 'linkedin' in entry:
             if role != 'material':
                 raise ValueError('A LinkedIn export is writing samples, not an example of a post.')
@@ -479,7 +481,7 @@ def upload_files(root, data, staging, ledger, fingerprint):
                 checked.append(found)
         else:
             found = (checked_google if 'google' in entry else checked_upload)(root, entry)
-            found['purposes'] = [purpose] + (['inspiration'] if role == 'inspiration' else [])
+            found['purposes'] = [purpose] + ([role] if role != 'material' else [])
             checked.append(found)
     if len({entry['filename'] for entry in checked}) != len(checked):
         raise ValueError('Upload each file once.')
@@ -545,20 +547,28 @@ def upload_files(root, data, staging, ledger, fingerprint):
     return result
 
 
-ROLES = {'facts': ['material'], 'example': ['material', 'inspiration']}
+ROLES = {
+    'facts': ['material'],
+    'example': ['material', 'inspiration'],
+    'messaging': ['material', 'messaging'],
+}
+MARKS = {'example': 'inspiration', 'messaging': 'messaging'}
 
 
 def source_role(root, data):
-    """What a file is for: facts the writing may quote, or an example of the kind of post.
+    """What a file is for: facts the writing may quote, the product's approved messaging, or
+    an example of the kind of post.
     A file uploaded for one blog changes in place; a library item changes in a new
     revision, shared as a reference is. A file a started blog pinned keeps the role that
     blog read it with."""
     if set(data) - {'id', 'role'} or data.get('role') not in ROLES:
-        raise ValueError('Choose facts or example for the file.')
+        raise ValueError('Choose facts, messaging or example for the file.')
     directory, record = studio.item(root, 'sources', str(data.get('id', '')))
     material = studio.is_material(root, directory, record)
     if not material and 'reference' not in record.get('purposes', []):
-        raise ValueError('Only a file or a library reference changes between facts and example.')
+        raise ValueError(
+            'Only a file or a library reference changes between facts, messaging and example.'
+        )
     for path in studio.inside(root, 'articles').glob('*/session.json'):
         article = studio.read_json(path)
         if record['id'] in article.get('material', []) or any(
@@ -566,16 +576,23 @@ def source_role(root, data):
         ):
             raise ValueError(
                 'A started blog read this file as '
-                + ('an example' if 'inspiration' in record['purposes'] else 'facts')
+                + (
+                    'an example'
+                    if 'inspiration' in record['purposes']
+                    else 'approved messaging'
+                    if 'messaging' in record['purposes']
+                    else 'facts'
+                )
                 + '; its role stays. Upload it again for a new role.'
             )
     if material:
         purposes = ROLES[data['role']]
     else:
-        # A library item keeps its other purposes (a sample stays a sample); only the example mark moves.
-        purposes = [p for p in record['purposes'] if p != 'inspiration']
-        if data['role'] == 'example':
-            purposes.append('inspiration')
+        # A library item keeps its other purposes (a sample stays a sample); only the
+        # example or messaging mark moves.
+        purposes = [p for p in record['purposes'] if p not in MARKS.values()]
+        if data['role'] in MARKS:
+            purposes.append(MARKS[data['role']])
     changed = record['purposes'] != purposes
     if changed and not material:
         blog_library.save_revision(directory, record)
@@ -763,12 +780,13 @@ def upload(root, data):
     )
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
     # An unchecked "Summarize and tag" keeps this file's text away from the analysis CLI.
-    # An example of the kind of post is a kept reference with inspiration, as on the files screen.
+    # An example of the kind of post, or approved messaging, is a kept reference with its
+    # mark, as on the files screen.
     source = save_upload(
         root,
         staging,
         checked,
-        ['reference', 'inspiration'] if purpose == 'inspiration' else purpose,
+        ['reference', purpose] if purpose in ('inspiration', 'messaging') else purpose,
         data.get('author'),
         data.get('analyze', True),
         library=fields,

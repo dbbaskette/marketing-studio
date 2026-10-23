@@ -357,7 +357,7 @@ class AddTests(RunnerCase):
         self.assertEqual(len(reader.calls), 2)
         # Refusals, before anything is saved.
         refused = lambda pattern, **changes: self.assertRaisesRegex(ValueError, pattern)  # noqa: E731
-        with refused('facts or an example'):
+        with refused('facts, approved messaging or an example'):
             self.add('library-add-preview', {**request, 'role': ''})
         with refused('changed since the check'):
             self.add('library-add', {**request, 'operation': 'c' * 32, 'expected': 'stale'})
@@ -874,6 +874,29 @@ class LibraryPickTests(RunnerCase):
         )['files'][0]['source']['id']
         with self.assertRaisesRegex(ValueError, 'not a library item'):
             self.create(library=[{'id': material, 'role': 'facts'}])
+
+    def test_a_library_item_can_be_read_as_approved_messaging(self):
+        example, facts = self.items()
+        found = self.create(library=[{'id': facts, 'role': 'messaging'}])
+        _, record, _ = runner.load(self.root, found['id'])
+        self.assertEqual(record['sources'][0]['purposes'], ['reference', 'messaging'])
+        management.dispatch(self.root, 'source-role', {'id': example, 'role': 'messaging'})
+        self.assertEqual(library.catalog(self.root, role='messaging')['total'], 1)
+        self.assertEqual(library.catalog(self.root, role='facts')['total'], 1)
+        self.assertEqual(library.catalog(self.root, role='example')['total'], 0)
+        import library_add
+
+        found = library_add.checked(
+            self.root, {'role': 'messaging', 'files': [encoded_file('brief.md', b'The brief.')]}
+        )
+        self.assertEqual(found['purposes'], ['reference', 'messaging'])
+        args = studio.parser().parse_args(
+            ['--root', str(self.root), 'run', 'create', '--audience', 'A', '--goal', 'G']
+            + ['--title', 'T', '--research', 'none', '--messaging', facts]
+        )
+        chat = runner.command(self.root, args)
+        _, record, _ = runner.load(self.root, chat['id'])
+        self.assertEqual(record['sources'][0]['purposes'], ['reference', 'messaging'])
 
 
 class DefaultVoiceTests(RunnerCase):
