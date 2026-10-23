@@ -3544,6 +3544,21 @@ class TroubleTests(DeckCase):
         self.assertNotIn(said, self.engine.deck_needs(fresh=True)['missing'])
         self.assertEqual(self.engine.deck_needs()['missing'], [])
 
+    def test_status_says_when_arial_is_missing(self):
+        self.brand.font_problem = 'Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.'
+        needs = self.engine.deck_needs(fresh=True)
+        self.assertEqual(needs['fonts'], 'Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.')
+        [item] = [item for item in needs['items'] if item['id'] == 'deck-fonts']
+        self.assertEqual((item['state'], item['fix']), ('problem', 'Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.'))
+        self.assertNotIn('Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.', needs['missing'], 'another font holds no deck up')
+        self.engine.deck_needs()
+        self.engine.deck_needs()
+        self.assertEqual(self.brand.doctored, 1, 'asked once within a look')
+        self.brand.font_problem = None
+        needs = self.engine.deck_needs(fresh=True)
+        self.assertIsNone(needs['fonts'])
+        self.assertEqual([item for item in needs['items'] if item['id'] == 'deck-fonts'], [])
+
     def test_a_computer_with_nothing_for_a_deck_says_what_is_missing(self):
         self.slides = self.brand = None
         root = self.begin(brand=None)

@@ -55,6 +55,8 @@ Added to the above
   `status` is the skill's own word: PASS, WARN or BLOCKED.
 - `too_old(version)` is the Status sentence for a brand skill older than FLOOR, the
   `brand_skill` requirement in the installed pins, or None.
+- `fonts()` is NO_ARIAL when the readiness check finds no Arial on this computer, else
+  None.
 - `ready()` returns the readiness check's own JSON, whatever it found: `ok`, and its
   `checks` and `capabilities`, each with a name and how it stands.
 - A brand that is the entry to slide building (`guides()`) starts a deck's slide task with
@@ -84,6 +86,7 @@ NAMED = re.compile(r'^[\w.-]{1,80}$')
 NUMBER = re.compile(r'^\d+\.\d+\.\d+$')   # a version, as a version line ends with it
 PINS = Path(__file__).resolve().parents[1] / 'installer' / 'companions.json'
 TESTED = '0.14.0'   # the oldest brand skill a deck takes, when the pins do not say
+NO_ARIAL = 'Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.'
 TOO_OLD = ('Your brand skill is {version}. Decks need {floor} or newer, for its look samples '
            'and talk-or-handout export. Update it in Settings.')
 NOISE = re.compile(r'^\((?:node:\d+\)|Use `node )')   # Node's own warnings, not the skill's
@@ -425,3 +428,16 @@ class Brand:
         """What the skill's own readiness check finds on this computer. It asks Google
         nothing."""
         return self._answer('doctor', '--profile', 'presentation', '--json', report=True)
+
+    def fonts(self) -> str | None:
+        """NO_ARIAL when the skill's own readiness check, resolving fonts on this computer
+        as a PowerPoint deck is drawn here, finds no Arial; None when it finds it, or when
+        the check cannot be run or says nothing of it."""
+        try:
+            found = self._answer('doctor', '--profile', 'presentation', '--format', 'pptx',
+                                 '--json', report=True)
+        except WorkspaceError:
+            return None
+        arial = next((entry for entry in found.get('capabilities') or ()
+                      if isinstance(entry, dict) and entry.get('name') == 'arial'), None)
+        return None if arial is None or arial.get('status') == 'available' else NO_ARIAL

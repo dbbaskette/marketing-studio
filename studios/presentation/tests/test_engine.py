@@ -750,6 +750,25 @@ class OlderSlidesToolTests(StudioCase):
         return mock.patch.object(self.engine, 'slides',
                                  mock.Mock(side_effect=slides_tool.TooOld('0.15.1')))
 
+    def test_status_says_when_arial_is_missing(self):
+        asked = []
+
+        def fonts():
+            asked.append(1)
+            return 'Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.'
+        self.brand.fonts = fonts
+        needs = self.engine.deck_needs(fresh=True)
+        self.assertEqual(needs['fonts'], 'Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.')
+        [item] = [item for item in needs['items'] if item['id'] == 'deck-fonts']
+        self.assertEqual((item['state'], item['fix']), ('problem', 'Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.'))
+        self.assertNotIn('Arial was not found on this computer, so slides may be drawn in another font. Install licensed Arial.', needs['missing'], 'another font holds no deck up')
+        self.engine.deck_needs()
+        self.assertEqual(len(asked), 1, 'asked once within a look')
+        self.brand.fonts = lambda: None
+        needs = self.engine.deck_needs(fresh=True)
+        self.assertIsNone(needs['fonts'])
+        self.assertEqual([item for item in needs['items'] if item['id'] == 'deck-fonts'], [])
+
     def test_status_names_the_brand_installer_that_kept_an_old_tool(self):
         self.brand_bringing('0.15.1')
         with self.too_old():

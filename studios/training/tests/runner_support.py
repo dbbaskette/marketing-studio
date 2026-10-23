@@ -1226,6 +1226,10 @@ class Brand:
     def ready(self) -> dict:
         return {'ready': True}
 
+    def fonts(self) -> str | None:
+        self.doctored = getattr(self, 'doctored', 0) + 1
+        return getattr(self, 'font_problem', None)
+
 
 class Documents:
     """Stands in for `runner.documents`, by its docstring. It reads only plain text: any

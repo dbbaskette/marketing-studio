@@ -1219,6 +1219,9 @@ class Engine(Jobs, Researching):
                          'variants': [str(variant) for variant in entry.get('variants') or ()]}
                         for entry in skill.brands() if isinstance(entry, dict)]}
                 found['brand']['old'] = brand_skill.too_old(getattr(skill, 'version', None))
+                # Arial, as the brand's own check finds it on this computer: a Status line.
+                fonts = getattr(skill, 'fonts', None)
+                found['fonts'] = fonts() if fonts else None
             except (WorkspaceError, OSError) as refusal:
                 found['brand']['problem'] = str(refusal)
             try:
@@ -1304,14 +1307,17 @@ class Engine(Jobs, Researching):
             item('deck-research', 'The research tool',
                  'ok' if seen['research'] else 'missing',
                  [fact('Installed', can[bool(seen['research'])])],
-                 seen['research_problem'] or '')]
+                 seen['research_problem'] or ''),
+            *([item('deck-fonts', 'Arial, the font a deck is drawn in', 'problem',
+                    [fact('Found', 'problem', 'not on this computer')], seen['fonts'])]
+              if seen.get('fonts') else [])]
         return {'missing': missing, 'how': how, 'drive': seen['drive'],
                 'pool': bool(seen.get('pool')),
                 'local': seen['local'], 'google': bool(seen['drive']),
                 'tool': not seen['tool'], 'version': seen['version'],
                 'brand': dict(brand), 'brands': list(brand['brands']),
                 'research': seen['research'], 'research_problem': seen['research_problem'],
-                'items': items}
+                'fonts': seen.get('fonts'), 'items': items}
 
     @staticmethod
     def _older(version: str, needed: str) -> bool:

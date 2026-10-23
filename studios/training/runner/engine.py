@@ -1465,6 +1465,9 @@ class Engine(Reviewing):
                          'variants': [str(variant) for variant in entry.get('variants') or ()]}
                         for entry in skill.brands() if isinstance(entry, dict)]}
                 found['brand']['old'] = brand_skill.too_old(getattr(skill, 'version', None))
+                # Arial, as the brand's own check finds it on this computer: a Status line.
+                fonts = getattr(skill, 'fonts', None)
+                found['fonts'] = fonts() if fonts else None
                 found['contracts'] = bool(skill.contracts())
             except (WorkspaceError, OSError) as refusal:
                 found['brand']['problem'] = str(refusal)
@@ -1561,10 +1564,14 @@ class Engine(Reviewing):
             item('deck-pictures', 'The programs that turn a render into pictures',
                  'ok' if seen['pictures'] else 'missing',
                  [fact('Installed', can[seen['pictures']])],
-                 ' '.join([NO_PICTURES, *seen['lacks']]) if not seen['pictures'] else '')]
+                 ' '.join([NO_PICTURES, *seen['lacks']]) if not seen['pictures'] else ''),
+            *([item('deck-fonts', 'Arial, the font a deck is drawn in', 'problem',
+                    [fact('Found', 'problem', 'not on this computer')], seen['fonts'])]
+              if seen.get('fonts') else [])]
         return {'missing': missing, 'how': how, 'drive': seen['drive'], 'local': seen['local'],
                 'pool': bool(seen.get('pool')),
                 'brand': dict(brand), 'brands': list(brand['brands']), 'items': items,
+                'fonts': seen.get('fonts'),
                 'lacks': lacks, 'update': update, 'design_lacks': designing,
                 'design_update': design_update}
 
