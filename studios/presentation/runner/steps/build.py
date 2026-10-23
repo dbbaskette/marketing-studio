@@ -550,6 +550,71 @@ def brand_for_workers(root, brand: Path) -> dict:
     return {name: texts[name] for name in names if texts.get(name)}
 
 
+# --- the pictures a person gives ---------------------------------------------------------
+
+ASSETS = Path('work') / 'assets'            # the deck's asset project, for pictures given
+PICTURED = ASSETS / 'pictures.json'         # {slide id: {'asset', 'alt', 'source', ...}}
+PICTURE_KINDS = ('cover', 'section', 'content')
+
+
+def pictures(root) -> dict:
+    """The pictures the person gave the deck's slides, by slide ID: {'asset', 'alt',
+    'source', 'name', 'at', 'n'}."""
+    found = home.read_json(Path(root) / PICTURED, {})
+    return {ident: entry for ident, entry in found.items() if isinstance(ident, str)
+            and isinstance(entry, dict) and isinstance(entry.get('asset'), str)} \
+        if isinstance(found, dict) else {}
+
+
+def record_picture(root, slides, slide: str, file: Path, alt: str, source: str,
+                   name: str | None = None) -> dict:
+    """Record a picture the person gave one slide in the deck's asset project, with the
+    slides tool's `assets add-supplied`, and keep which slide shows it. A slide given
+    another picture records it under a new asset ID, since a recorded asset is never
+    rewritten. Returns {'asset', 'slide'}."""
+    root = Path(root)
+    project = root / ASSETS
+    project.mkdir(parents=True, exist_ok=True)
+    kept = pictures(root)
+    count = int((kept.get(slide) or {}).get('n') or 0) + 1
+    ident = f'pic-{slide}' if count == 1 else f'pic-{slide}-{count}'
+    slides.asset_supplied(project, Path(file), ident, alt, source)
+    kept[slide] = {'asset': ident, 'alt': alt, 'source': source, 'name': name,
+                   'at': home.now(), 'n': count}
+    home.write_json(root / PICTURED, kept)
+    return {'asset': ident, 'slide': slide}
+
+
+def picture_layout(listed, kind: str, subtitle: bool = False) -> str | None:
+    """A template layout for a lead slide of `kind` that shows its title, has room for its
+    subtitle where it has one, and has a slot for a picture, or None."""
+    fits = [layout for layout in listed or () if isinstance(layout, dict)
+            and isinstance(layout.get('name'), str) and layout.get('title')
+            and (layout.get('pictures') or 0) >= 1
+            and (layout.get('subtitles') or 0) >= (1 if subtitle else 0)]
+    named = [layout for layout in fits
+             if any(word in layout['name'].lower() for word in NAMED_LAYOUTS.get(kind, ()))]
+    return (named or fits)[0]['name'] if (named or fits) else None
+
+
+def _picture_lead(part: dict, given: dict, listed) -> dict:
+    """A lead slide's file with the pictures given to its slides, each in the slot of a
+    layout that has one."""
+    slides = []
+    for slide in part.get('slides') or ():
+        entry = given.get(slide.get('id')) if isinstance(slide, dict) else None
+        if entry:
+            layout = picture_layout(listed, slide.get('kind') or 'cover',
+                                    bool(slide.get('subtitle')))
+            if layout is None:
+                raise WorkspaceError("The brand's template has no layout with a place for a "
+                                     f"picture on “{slide.get('title')}”. Give the picture to "
+                                     'a content slide instead.')
+            slide = {**slide, 'layout': layout, 'picture': {'asset': entry}}
+        slides.append(slide)
+    return {**part, 'slides': slides}
+
+
 # --- where a build is kept -----------------------------------------------------------------
 
 BUILD = Path('work') / 'build'
@@ -888,11 +953,13 @@ def start(root, run: dict, slides, brand) -> dict:
         # as, and a tool that can finds a point's sentence split across shapes.
         shutil.copyfile(source, folder / TOOL_OUTLINE)
         sections = []
+        # The pictures the person gave, as they are when the deck starts.
+        given = {ident: entry['asset'] for ident, entry in pictures(root).items()}
         for part in home.read_json(folder / 'parts.json', {})['parts']:
             ident = Path(part).stem
             if not SECTION.match(ident):
                 made = json.loads((folder / part).read_text(encoding='utf-8'))
-                home.write_json(folder / part, lead(made))
+                home.write_json(folder / part, _picture_lead(lead(made), given, listed))
                 continue
             written = (folder / 'briefs' / f'{ident}.md').read_text(encoding='utf-8')
             ids = named_in(written, whole)
@@ -925,7 +992,7 @@ def start(root, run: dict, slides, brand) -> dict:
         source.unlink(missing_ok=True)
     began = {'folder': START.as_posix(), 'brand': str(brand), 'contract': _digest(brand),
              'drawn': secrets.token_hex(3), 'sections': sections, 'wordless': placed,
-             'titled': titled, 'at': home.now()}
+             'titled': titled, 'pictures': given, 'at': home.now()}
     kept = _kept(root, earlier, began, whole)
     for old in (root / DRAWN).glob('*.json'):
         if old.relative_to(root).as_posix() not in {entry['file'] for entry in kept.values()}:
@@ -1145,6 +1212,22 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
                      'no words:\n\n' + '\n'.join(
                          f"{slide['id']}: {json.dumps(slide['image'], ensure_ascii=False)}"
                          for slide in pictured))
+    # A picture the person gave a content slide: an image node by its asset ID, placed as
+    # it is given, with the slide's words drawn as text as always.
+    supplied = []
+    for slide in fixed_spec['slides']:
+        asset = (began.get('pictures') or {}).get(slide['id'])
+        if asset and not slide.get('image') and not slide.get('layout'):
+            stem = re.sub(r'[^A-Za-z0-9]', '', slide['id'])[:20] or 'slide'
+            slide['image'] = {'type': 'image', 'id': f"{fixed_spec['prefix']}{stem}_given",
+                              'asset': asset, 'fit': 'contain'}
+            supplied.append(slide)
+    if supplied:
+        lines.append('The person gave these slides a picture. Place its image node in the '
+                     'slide\'s canvas exactly as it is given here, by its `asset`, and keep '
+                     'every word of the slide as text:\n\n' + '\n'.join(
+                         f"{slide['id']}: {json.dumps(slide['image'], ensure_ascii=False)}"
+                         for slide in supplied))
     set_bare = [slide for slide in fixed_spec['slides'] if slide.get('layout')]
     if set_bare:
         lines.append(
@@ -1160,6 +1243,8 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
             **({'outline': str(told_outline.resolve())} if told_outline.is_file() else {}),
             **({'pictures': str((root / began['folder'] / PICTURES).resolve())}
                if (root / began['folder'] / PICTURES).is_dir() else {}),
+            **({'asset_project': str((root / ASSETS).resolve())}
+               if began.get('pictures') else {}),
             'previews': PREVIEWS, **how(root, run, renderer)}
     first_draft = decks.user_first(run)
     if first_draft:
@@ -1333,7 +1418,8 @@ def draw_whole(root, run: dict, slides, renderer) -> dict:
         told = start_folder / TOOL_OUTLINE
         slides.compile(folder / 'composition.json', Path(began['brand']),
                        folder=folder / 'compiled',
-                       **({'outline': told} if told.is_file() else {}))
+                       **({'outline': told} if told.is_file() else {}),
+                       **({'assets': root / ASSETS} if began.get('pictures') else {}))
         previewing = how(root, run, renderer)
         outline = home.read_json(start_folder / 'given/outline.json', {})
         previewing['progress'] = build_progress.begin(root, began['folder'], 'whole',
@@ -1786,6 +1872,13 @@ def render(root, run: dict, slides, brand=None, renderer='local') -> Path:
         last = _last(state)
         seen, deck = root / str(last.get('file')), root / DECK
         deck.unlink(missing_ok=True)
+        began = state.get('start') or {}
+        if began.get('pictures'):   # every picture given is still what was recorded
+            try:
+                slides.asset_check(root / ASSETS, Path(began['brand']))
+            except WorkspaceError as refusal:
+                raise WorkspaceError('A picture given to this deck cannot be used, so the '
+                                     f'deck is not delivered. {refusal}') from None
         if not last.get('file') or not seen.is_file() or _digest(seen) != last['deck']:
             raise WorkspaceError('The deck that was previewed and reviewed is not here as it '
                                  'was, so it is not delivered. Put the deck together again.')

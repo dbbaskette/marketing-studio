@@ -44,7 +44,7 @@ POSTS = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decid
          '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
          '/api/versions', '/api/computer', '/api/brand', '/api/brand/install',
          '/api/shared', '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
-         '/api/note', '/api/review-level')
+         '/api/note', '/api/review-level', '/api/picture')
 BOTH = ('/api/setup', '/api/decks', '/api/run', '/api/delete', '/api/computer', '/api/storyboard')
 LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None,
            'about': 'Previous generation workhorse model.', 'default_level': 'medium',
@@ -267,8 +267,21 @@ class RuleTests(PageCase):
         self.assertEqual(page.DECKS_LIMIT, 120_000_000)
         self.assertEqual(self.page.body_limit('/api/decks', without), server.BODY_LIMIT)
         self.assertEqual(self.page.body_limit('/api/decks?x=1', with_key), page.DECKS_LIMIT)
-        for target in set(POSTS) - {'/api/decks'}:
+        for target in set(POSTS) - {'/api/decks', '/api/picture'}:
             self.assertEqual(self.page.body_limit(target, with_key), server.BODY_LIMIT, target)
+
+    def test_a_picture_may_be_large_only_with_the_key(self):
+        with_key, without = self.headers(), self.headers(token=False)
+        self.assertEqual(self.page.body_limit('/api/picture', with_key), page.PICTURE_LIMIT)
+        self.assertGreater(page.PICTURE_LIMIT, 20_000_000 * 4 // 3)
+        self.assertEqual(self.page.body_limit('/api/picture', without), server.BODY_LIMIT)
+
+    def test_a_picture_that_did_not_arrive_whole_is_refused(self):
+        said = self.post('picture', {'path': 'nowhere', 'slide': 'a-slide', 'name': 'a.png',
+                                     'content': 'not base64!', 'alt': 'A rack.',
+                                     'source': 'Our photo.'}, 400)
+        self.assertEqual(said['error'], 'The picture did not arrive whole. Choose the file '
+                                        'again.')
 
 
 class AgentTests(PageCase):

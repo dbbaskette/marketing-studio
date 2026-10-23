@@ -578,8 +578,10 @@ def check_section(text: str, spec: dict, slides,
 
 def outlined(spec: dict) -> dict:
     """What compile is given of the approved outline a section is drawn from, so that a
-    tool that can finds a point's sentence split across shapes: nothing without one."""
-    return {'outline': Path(spec['outline'])} if spec.get('outline') else {}
+    tool that can finds a point's sentence split across shapes: nothing without one. A deck
+    with pictures the person gave adds its asset project, which resolves them."""
+    return {**({'outline': Path(spec['outline'])} if spec.get('outline') else {}),
+            **({'assets': Path(spec['asset_project'])} if spec.get('asset_project') else {})}
 
 
 # --- the rules an outline is held to, kept by name ----------------------------------------

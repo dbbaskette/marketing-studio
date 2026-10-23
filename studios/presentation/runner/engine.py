@@ -166,6 +166,9 @@ STOP_WAIT = 30          # seconds a run that is being deleted may take to end
 IN_HAND = 'work/step.lock'      # written when a step starts, removed when it ends
 INCOMING = 'sources/incoming'   # what the form brought, until intake-source takes it
 PICTURE_KINDS = ('build', 'look', 'original', 'progress')
+PICTURE_STARTS = (b'\x89PNG\r\n\x1a\n', b'\xff\xd8\xff')   # a PNG, a JPEG, by their first bytes
+PICTURE_MOST = 20_000_000   # bytes of one picture a person gives a slide
+PICTURE_WORDS = 300         # characters of what a picture shows, and of where it came from
 SHEET = 'contact-sheet'
 
 # What the engine does for each step of the pipeline: the name of its method. Every gate is
@@ -2904,7 +2907,65 @@ class Engine(Jobs, Researching):
                 'saying': ((record.get('gates') or {}).get('gate:outline') or {}).get('saying')
                 or None,
                 'delivery': (found.get('delivery') if isinstance(found, dict) else None)
-                or build.DELIVERY}
+                or build.DELIVERY,
+                # The pictures the person gave its slides, by slide ID.
+                'pictures': {ident: {key: entry.get(key) for key in ('asset', 'alt', 'source',
+                                                                     'name')}
+                             for ident, entry in build.pictures(root).items()}}
+
+    def add_picture(self, path, slide: str, filename: str, data: bytes, alt: str,
+                    source: str, expected: str | None) -> dict:
+        """Give a cover, section or content slide a picture of the person's own, while the
+        outline waits for them: a PNG or JPEG file up to PICTURE_MOST bytes, what it shows,
+        and where it came from. It is recorded in the deck's asset project with the slides
+        tool's `assets add-supplied`, and drawn by its asset ID when the deck is built.
+        `expected` is the outline gate's `expected`, as the page read it. Returns {'asset',
+        'slide'}; nothing is generated."""
+        root = self._held(path)
+        if not isinstance(data, (bytes, bytearray)) or not data.startswith(PICTURE_STARTS):
+            raise WorkspaceError('A picture is a PNG or a JPEG file.')
+        if len(data) > PICTURE_MOST:
+            raise WorkspaceError('A picture is at most 20 MB.')
+        alt, source = ' '.join(str(alt or '').split()), ' '.join(str(source or '').split())
+        if not alt:
+            raise WorkspaceError('Say what the picture shows, for someone who cannot see it.')
+        if not source:
+            raise WorkspaceError('Say where the picture came from.')
+        if len(alt) > PICTURE_WORDS or len(source) > PICTURE_WORDS:
+            raise WorkspaceError(f'Say what it shows and where it came from in {PICTURE_WORDS} '
+                                 'characters or fewer each.')
+        with self.files:
+            record = self._load(root)
+            gate = self._gate_view(root, record)
+            if not gate or gate.get('name') != 'gate:outline':
+                raise WorkspaceError('Add a picture while the outline is waiting for you.')
+            if gate.get('expected') != expected:
+                raise WorkspaceError('The outline changed. Reload it before adding a picture.')
+            kinds = {one.get('id'): one.get('kind') for one in gate.get('slides') or ()
+                     if isinstance(one, dict)}
+            if slide not in kinds:
+                raise WorkspaceError(f'{slide} is not a slide of this outline.')
+            if kinds[slide] not in build.PICTURE_KINDS:
+                raise WorkspaceError('A picture goes on a cover, section or content slide.')
+            tool = self.slides()
+            if not tool.assets():
+                raise WorkspaceError('The slides tool on this computer keeps no asset manifest, '
+                                     'so a picture cannot be added. Update Harness Slides from '
+                                     'Versions on the Status screen.')
+            if kinds[slide] != 'content':
+                listed = tool.layouts(root / build.CONTRACT).get('layouts')
+                if build.picture_layout(listed, kinds[slide]) is None:
+                    raise WorkspaceError("The brand's template has no layout with a place for "
+                                         f'a picture on a {kinds[slide]} slide. Give the '
+                                         'picture to a content slide instead.')
+            suffix = '.png' if data.startswith(b'\x89PNG') else '.jpg'
+            with tempfile.TemporaryDirectory(prefix='presentation-picture-') as temporary:
+                file = Path(temporary) / f'picture{suffix}'
+                file.write_bytes(bytes(data))
+                made = build.record_picture(root, tool, slide, file, alt, source,
+                                            Path(str(filename or '')).name[:120] or None)
+            self._commit(root, f'give slide {slide} a picture')
+        return made
 
     def _show_look(self, root: Path, record: dict) -> dict:
         """What the look gate shows, and the direction review with it: the brand's looks as

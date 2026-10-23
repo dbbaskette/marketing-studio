@@ -423,14 +423,16 @@ class Slides:
 
     def compile(self, composition: Path, brand: Path, folder: Path | None = None,
                 design: Path | None = None, section: bool = False,
-                outline: Path | None = None) -> dict:
+                outline: Path | None = None, assets: Path | None = None) -> dict:
         """Check a composition, a whole deck or one section. With a new folder, write what
         a preview and a render are made from. With `design`, it is checked against the
         design approved in that project: as the whole deck, or as one `section`. With the
         approved `outline`, on a tool that can (compose-split-point), its preview finds a
-        point's sentence split across shapes."""
+        point's sentence split across shapes. With `assets`, the deck's asset project, an
+        image named by its asset ID is resolved from that project's manifest."""
         args = ['compose', 'compile', '--file', str(composition), '--brand', str(brand),
                 *_bound(design, section),
+                *(['--asset-project', str(assets)] if assets else []),
                 *(['--outline', str(outline)] if outline and self.has('compose-split-point')
                   else [])]
         if folder is None:

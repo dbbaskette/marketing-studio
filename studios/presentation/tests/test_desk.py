@@ -1107,6 +1107,38 @@ class ScreenTests(ScriptedPage, PageCase):
         self.post('decide', body)
         self.assertEqual(self.run_of(path)['gate']['round'], 2)
 
+    def test_a_picture_is_given_to_a_slide_at_the_outline(self):
+        path = self.started()
+        gate = self.run_of(path)['gate']
+        content = next(one for one in gate['slides'] if one.get('kind') == 'content')
+        closing = next(one for one in gate['slides'] if one.get('kind') == 'closing')
+        title = content['title']
+        picture = b'synthetic picture, as the browser read it'
+        result = self.deck_screen(path, [
+            {'snapshot': 'gate'},
+            {'click': f'Add a picture to “{title}”'}, {'snapshot': 'form'},
+            {'attach': 'The picture, a PNG or JPEG file',
+             'files': [{'name': 'rack.png', 'type': 'image/png',
+                        'bytes': picture.decode('latin-1')}]},
+            {'fill': 'What it shows', 'value': 'A rack of servers in our lab.'},
+            {'fill': 'Where it came from', 'value': 'Our own photograph.'},
+            {'click': 'Add the picture'}],
+            **{'POST /api/picture': [ok({'asset': f"pic-{content['id']}",
+                                         'slide': content['id']})]})
+        shots = result['snapshots']
+        self.assertIn(f'Add a picture to “{title}”', shots['gate']['buttons'])
+        self.assertNotIn(f"Add a picture to “{closing['title']}”", shots['gate']['buttons'])
+        for words in ('The picture, a PNG or JPEG file', 'What it shows', 'Where it came from'):
+            self.assertIn(words, shots['form']['text'])
+        (address, body), = [(address, body) for address, body in self.posts(result)
+                            if address == '/api/picture']
+        self.assertEqual({key: body[key] for key in ('path', 'slide', 'name', 'alt', 'source',
+                                                     'expected')},
+                         {'path': path, 'slide': content['id'], 'name': 'rack.png',
+                          'alt': 'A rack of servers in our lab.', 'source': 'Our own photograph.',
+                          'expected': gate.get('expected')})
+        self.assertEqual(base64.b64decode(body['content']), picture)
+
     def test_a_slide_added_and_moved_on_the_page_is_an_outline_the_slides_tool_takes(self):
         path = self.started(delivery='reading')   # a handout: an added slide needs no notes
         drafted = self.run_of(path)['gate']['slides']

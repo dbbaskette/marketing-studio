@@ -34,6 +34,7 @@ Each slide comes from the approved outline (version 1) with its title, what the 
 - Draw nothing the title does not announce.
 - Write a configuration field, command, API or file name as a code span in backticks, such as `highAvailability`, with plain English first the time it appears. A title names things in words and takes no code span.
 - Keep the brand's body size. Text is never shrunk to fit, and you may not reword what a slide says: change the drawing instead. If the approved words of a slide cannot fit however you draw them, say so when you hand in.
+- A slide your task gives a picture draws it as the image node given, by its `asset`, and keeps its words as text.
 - Find an icon with `search_icons`, which takes one or two plain words, where the brand's guidance asks for one.
 - Make your slides differ from each other in layout, and do not echo the slide before or after your section.
 

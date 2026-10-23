@@ -23,6 +23,10 @@ from runner import brand as brand_skill
 from stand_ins.slides import sketch
 
 BY_ID = {slide['id']: slide for slide in OUTLINE['slides']}
+PNG_ONE = (b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01'
+           b'\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\xcf'
+           b'\xc0\xf0\x1f\x00\x05\x00\x01\xff\x89\x99=\x1d\x00\x00\x00\x00IEND\xaeB`'
+           b'\x82')
 
 
 def drawn(spec: dict, extra=None) -> str:
@@ -44,6 +48,9 @@ def drawn(spec: dict, extra=None) -> str:
                            if wanted.get('image') else shape})
             continue
         slide = sketch(BY_ID[wanted['id']], spec['prefix'])
+        if wanted.get('image'):   # a picture the person gave, placed as it is given
+            slide['canvas'] = {'type': 'stack', 'direction': 'column',
+                               'children': [slide['canvas'], wanted['image']]}
         # The approved notes and provenance are copied as the brief gives them.
         if wanted.get('notes') is not None:
             slide['notes'] = wanted['notes']
@@ -1168,6 +1175,57 @@ class CodeSpanWordTests(unittest.TestCase):
         bare = 'High availability (highAvailability) is off'
         self.assertEqual(len(build.WORD.findall(spanned)), len(build.WORD.findall(bare)))
         self.assertEqual(build.plain(spanned), build.plain(bare))
+
+
+class SuppliedPictureBuildTests(Deck):
+    """A picture the person gave a slide is drawn by its asset, from the deck's asset
+    project, and the project is checked before the deck stop."""
+
+    def setUp(self):
+        super().setUp()
+        from stand_ins import slides as slides_stand_in
+        self.slides = slides_stand_in.stand_in(assets=True)
+        self.content = next(slide['id'] for slide in OUTLINE['slides']
+                            if slide['kind'] == 'content')
+
+    def picture(self, slide):
+        file = self.base / 'rack.png'
+        file.write_bytes(PNG_ONE)
+        return build.record_picture(self.root, self.slides, slide, file,
+                                    'A rack of servers in our lab.', 'Our own photograph.')
+
+    def compiles(self):
+        return [call for call in self.slides.run.calls if call[:2] == ['compose', 'compile']]
+
+    def test_compile_uses_the_asset_project(self):
+        made = self.picture(self.content)
+        self.assertEqual(made['asset'], f'pic-{self.content}')
+        self.built()
+        project = str(self.root / build.ASSETS)
+        whole = [call for call in self.compiles() if '--output' in call][-1]
+        self.assertEqual(whole[whole.index('--asset-project') + 1], project)
+        section = build.section_work(self.root, self.run_, build.to_draw(self.root)[0]
+                                     if build.to_draw(self.root) else 'section-1', None, None)
+        spec = section.prepared['artifacts']['section']
+        self.assertEqual(spec['asset_project'], project)
+        image = next(slide['image'] for slide in spec['slides'] if slide['id'] == self.content)
+        self.assertEqual((image['type'], image['asset']), ('image', f'pic-{self.content}'))
+        self.assertIn('picture', ' '.join(section.prepared['inputs']).lower()
+                      + section.task.lower())
+
+    def test_a_deck_without_a_picture_never_names_the_project(self):
+        self.built()
+        self.assertFalse(any('--asset-project' in call for call in self.compiles()))
+
+    def test_asset_check_problems_stop_before_the_deck(self):
+        self.picture(self.content)
+        self.built()
+        self.review(lambda slides: [])
+        self.slides.run.fails = {'assets check': 'pic-x: the recorded file changed.'}
+        with self.assertRaises(WorkspaceError) as refused:
+            build.render(self.root, self.run_, self.slides, brand=self.brand)
+        self.assertIn('pic-x: the recorded file changed.', str(refused.exception))
+        self.assertFalse((self.root / build.DECK).exists())
 
 
 class ReviewReuseTests(unittest.TestCase):

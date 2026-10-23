@@ -1383,6 +1383,77 @@ class OutlineMarkTests(StudioCase):
         self.assertEqual(len(self.workers.of('outline')), 1)
 
 
+PNG_BYTES = (b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01'
+             b'\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\xcf'
+             b'\xc0\xf0\x1f\x00\x05\x00\x01\xff\x89\x99=\x1d\x00\x00\x00\x00IEND\xaeB`'
+             b'\x82')
+
+
+class SuppliedPictureTests(StudioCase):
+    """A picture the person gives a slide at the outline stop, recorded in the deck's asset
+    project with the slides tool's own `assets add-supplied`."""
+
+    def setUp(self):
+        super().setUp()
+        from stand_ins import slides as slides_stand_in
+        with mock.patch.object(self.engines.slides_tool, 'Slides', self.real[0]):
+            self.slides = slides_stand_in.stand_in(assets=True)   # with its asset manifest
+
+    def at_outline(self):
+        root = self.start()
+        self.to_gate(root, 'gate:outline')
+        gate = self.view(root)['gate']
+        return root, gate, gate['slides']
+
+    def add(self, root, gate, slide, data=PNG_BYTES, alt='A rack of servers in our lab.',
+            source='Our own photograph.', name='rack.png', expected='seen'):
+        return self.engine.add_picture(root, slide, name, data, alt, source,
+                                       gate.get('expected') if expected == 'seen' else expected)
+
+    def test_add_picture(self):
+        from runner.steps import build
+        root, gate, slides = self.at_outline()
+        content = next(slide for slide in slides if slide.get('kind') == 'content')
+        made = self.add(root, gate, content['id'])
+        self.assertEqual(made, {'asset': f"pic-{content['id']}", 'slide': content['id']})
+        added = [call for call in self.slides.run.calls if call[:2] == ['assets', 'add-supplied']]
+        self.assertEqual(len(added), 1)
+        call = added[0]
+        self.assertEqual((call[call.index('--alt') + 1], call[call.index('--source') + 1],
+                          call[call.index('--project') + 1], call[call.index('--id') + 1]),
+                         ('A rack of servers in our lab.', 'Our own photograph.',
+                          str(root / build.ASSETS), f"pic-{content['id']}"))
+        self.assertEqual(build.pictures(root)[content['id']]['asset'], f"pic-{content['id']}")
+        shown = self.view(root)['gate']['pictures']
+        self.assertEqual(shown[content['id']]['alt'], 'A rack of servers in our lab.')
+        self.assertFalse(any(call[:2] == ['images', 'generate'] for call in self.slides.run.calls),
+                         'a picture is never generated')
+
+    def test_each_refusal_says_what_to_do(self):
+        root, gate, slides = self.at_outline()
+        content = next(slide for slide in slides if slide.get('kind') == 'content')
+        closing = next(slide for slide in slides if slide.get('kind') == 'closing')
+        for changes, said in (
+                ({'data': b'GIF89a not a picture'}, 'A picture is a PNG or a JPEG file.'),
+                ({'data': PNG_BYTES + b'0' * 20_000_001}, 'A picture is at most 20 MB.'),
+                ({'alt': '  '}, 'Say what the picture shows, for someone who cannot see it.'),
+                ({'source': ''}, 'Say where the picture came from.'),
+                ({'slide': 'no-such-slide'}, 'no-such-slide is not a slide of this outline.'),
+                ({'slide': closing['id']}, 'A picture goes on a cover, section or content slide.'),
+                ({'expected': 'an older outline'},
+                 'The outline changed. Reload it before adding a picture.')):
+            with self.subTest(said=said):
+                given = {'slide': content['id'], **changes}
+                with self.assertRaises(WorkspaceError) as refused:
+                    self.add(root, gate, given.pop('slide'), **given)
+                self.assertEqual(str(refused.exception), said)
+        self.decide(root, 'gate:outline')
+        with self.assertRaises(WorkspaceError) as refused:
+            self.add(root, gate, content['id'])
+        self.assertEqual(str(refused.exception),
+                         'Add a picture while the outline is waiting for you.')
+
+
 class DocumentTests(StudioCase):
     def test_a_pasted_document_is_classified_and_a_correction_switches_the_branch(self):
         root = self.start(route='document', research=True,
