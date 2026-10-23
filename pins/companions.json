@@ -3,9 +3,9 @@
   "companions": {
     "harness-research": {
       "repository": "https://github.com/dbbaskette/harness-research-skill.git",
-      "version": "1.0.0",
-      "commit": "0d7092db423329939c59c565060758bff3fb9b1b",
-      "sha256": "c39e556b0ba1f8df6bf4904840c9600ad89a093a522dc94ddf86dbebb1a41099",
+      "version": "1.0.1",
+      "commit": "bc78e1213a89c6bd7804c1b7db7dc2809cd34a4d",
+      "sha256": "9034e2e80d5366a846185d15243c968e5f8ddbac5c2c65f9658a9031d3466aa4",
       "stub": "bootstrap/SKILL.md",
       "installer": "scripts/install.mjs",
       "note": "Stable synthesis research with schema-2 studio integration. Installs use this exact commit and source checksum; newer releases arrive only through an explicit lock refresh.",
@@ -24,7 +24,7 @@
   },
   "brand_skill": {
     "requirement": ">=0.14.0",
-    "tested": "0.14.0",
+    "tested": "0.14.1",
     "note": "The brand skill is the person's own; Marketing Studio never installs it. Decks need this version or newer."
   }
 }

@@ -5,7 +5,7 @@ helper supports it. Blog Studio, Presentation Studio and Training Studio share
 `studio_core.research_contract`; they keep their own source permissions, worker
 confinement, model profiles, stop controls and review levels.
 
-The companion lock selects the stable **1.0.0** release at an exact commit and
+The companion lock selects the stable **1.0.1** release at an exact commit and
 checksum. Harness Research accepts newer stable releases through `>=1.0.0`;
 Harness Slides also retains stable `>=` selection. Prerelease tags are excluded,
 and each resolved release is locked to its commit and source checksum.
