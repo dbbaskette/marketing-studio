@@ -3650,6 +3650,49 @@ class ReaderFacingNotesTests(RunnerCase):
         )
         self.assertEqual(reader_facing_notes('A clean paragraph about sources.'), [])
 
+    def test_reader_facing_notes_finds_todo_tbd_and_placeholder_in_any_case(self):
+        from text_checks import reader_facing_notes
+
+        text = (
+            'Ships in [TODO].\n'
+            'Priced at [tbd].\n'
+            '[Placeholder: the launch quote]\n'
+            '[todo: confirm the region list]\n'
+            'An unclosed [PLACEHOLDER: the date\n'
+        )
+        self.assertEqual(
+            [f['target'] for f in reader_facing_notes(text)],
+            [
+                '[TODO]',
+                '[tbd]',
+                '[Placeholder: the launch quote]',
+                '[todo: confirm the region list]',
+                '[PLACEHOLDER: the date',
+            ],
+        )
+        self.assertEqual([f['line'] for f in reader_facing_notes(text)], [1, 2, 3, 4, 5])
+
+    def test_reader_facing_notes_leaves_markdown_link_text_alone(self):
+        from text_checks import reader_facing_notes
+
+        text = (
+            'The core is [source-available](https://example.com/license) under a '
+            'community licence, see [source-code][1] and [TODO list](https://example.com/todo).\n'
+            'A todo, a TBD and a placeholder named in prose are fine.\n\n'
+            '[1]: https://example.com/code\n'
+        )
+        self.assertEqual(reader_facing_notes(text), [])
+        # A note still counts beside a link on the same line.
+        self.assertEqual(
+            [
+                f['target']
+                for f in reader_facing_notes(
+                    'See [source-available](https://example.com) [source-abc123].'
+                )
+            ],
+            ['[source-abc123]'],
+        )
+
     def test_the_gate_check_fails_on_a_note_in_the_draft(self):
         found = self.at_draft()
         found = self.submit(found, '# Draft\n\nIt retries twice [source-abc123].\n')

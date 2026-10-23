@@ -5,6 +5,10 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Small things put right.** **Checked for you** now also catches `[TODO]`, `[TBD]` and
+  `[Placeholder: …]` in any case, and no longer mistakes a link's own text, such as
+  `[source-available](https://…)`, for a source ID.
+
 - **Announcements that read like announcements.** A file can be **Approved messaging
   (the product's own claims)**, beside facts and examples: a messaging document, launch
   brief or release notes is written in the product's voice and the present tense, with

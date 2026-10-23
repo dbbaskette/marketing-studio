@@ -228,8 +228,15 @@ def carried_over(text, examples, allowed):
     }
 
 
-# A source ID or an editorial placeholder is a note for the author, never reader-facing text.
-READER_FACING_NOTE = re.compile(r'\[(?:source-|editorial placeholder)[^\]\n]{0,300}\]?', re.I)
+# A source ID or an editorial placeholder is a note for the author, never reader-facing text:
+# [source-…], [Editorial placeholder…], [Placeholder…], [TODO…] and [TBD…], in any case, closed
+# or left open at the end of a line. Bracketed text that is a Markdown link's own text, as in
+# [source-available](https://…) or [source-code][1], is the reader's and is left alone.
+READER_FACING_NOTE = re.compile(
+    r'\[(?:source-|editorial placeholder|placeholder\b|todo\b|tbd\b)[^\]\n]{0,300}+'
+    r'(?:\](?![(\[])|(?!\]))',
+    re.I,
+)
 
 
 def reader_facing_notes(text):
