@@ -627,7 +627,7 @@ function sSampleCandidates(found,held,purpose,reopen){
   upload.addEventListener('change',async()=>{const file=upload.files?.[0];if(!file)return;if(file.size>10*1024*1024){problem.textContent='Choose a file up to 10 MiB.';return;}const author=voice?held.name.trim():'';if(voice&&!author){problem.textContent='Say whose voice this is first, so the sample is saved as their writing.';return;}upload.disabled=true;problem.textContent='Saving the file…';try{const result=await api('upload',{filename:file.name,title:file.name,content:await encodeImportFile(file),purpose,as_blog:false,analyze:false,operation:operationId(),...(author?{author}:{})});if(result.state==='ready'&&held.samples.length<10&&!held.samples.includes(result.source.id))held.samples=[...held.samples,result.source.id];problem.textContent='';await reopen();sToast(result.state==='ready'?'Saved as a sample.':'Saved. It needs text before it can be a sample.');}catch(error){problem.textContent=error.message;}finally{upload.disabled=false;}});
   return sAdd(box,sAdd(field,label,upload,hint),problem);
 }
-function sSampleRow(title,says,...actions){return sAdd(sNode('li','row'),sAdd(sNode('div','row-text'),sNode('h3','row-title',title),sNode('p','quiet',says)),...actions);}
+function sSampleRow(title,says,...actions){for(const action of actions)if(action.textContent.startsWith('Read and manage ')){action.setAttribute('aria-label',action.textContent);action.textContent='Read and manage';}return sAdd(sNode('li','row sample-row'),sAdd(sNode('div','row-text'),sNode('h3','row-title',title),sNode('p','quiet',says)),...actions);}
 function sUploadDialog(purpose){sCloseSheet();$('upload-purpose').value=purpose;$('upload-blog').checked=false;$('upload-analyze').checked=false;$('upload-dialog').showModal();}
 async function sVoiceTools(article=null){
   const found=await sTaskRead('Voices and styles','voices');if(!found)return;const owner=studio.sheet;
@@ -645,7 +645,7 @@ function sWithLibraryItems(found,held){const extra=held.extra||[];if(!extra.leng
 function sMarks(held){const ids=new Set((held.extra||[]).map(source=>source.id));return held.samples.some(id=>ids.has(id))?{mark:true}:{};}
 function sLearnVoice(found,profile=null,preselected=[],background=null,author='',extra=null,note=''){
   studio.voiceLearning||={};const held=studio.voiceLearning[profile?.id||'new']||={name:profile?.name||'',samples:[...(profile?.sample_ids||[])],background:null,operation:operationId()},form=sNode('form'),problem=sNode('p','problem');problem.setAttribute('role','alert');
-  if(preselected.length){held.samples=[...preselected].slice(0,10);held.background=background;held.extra=extra||[];held.note=note;}
+  if(preselected.length){held.samples=[...preselected].slice(0,20);held.background=background;held.extra=extra||[];held.note=note;}
   if(author)held.name=author;found=sWithLibraryItems(found,held);
   const reopen=async()=>sLearnVoice(await api('voices'),profile);
   form.append(sField('learn-voice-name','Whose voice is this?',held,'name',{required:true,max:200,hint:'The author’s name: yours, or the person you write for.'}),held.note?sNode('p','quiet',held.note):sNode('span',''),sToolSamples(found,held),sSampleCandidates(found,held,'voice-sample',reopen),sButton('Add links to posts',()=>sVoiceLinks(found,profile,null)),problem);
@@ -655,7 +655,7 @@ function sLearnVoice(found,profile=null,preselected=[],background=null,author=''
 }
 function sLearnStyle(kinds,style=null,preselected=[],name='',extra=null,note=''){
   studio.styleLearning||={};const held=studio.styleLearning[style?.id||'new']||={name:style?.name||'',samples:[...(style?.sample_ids||[])],operation:operationId()},form=sNode('form'),problem=sNode('p','problem');problem.setAttribute('role','alert');
-  if(preselected.length){held.samples=[...preselected].slice(0,10);held.extra=extra||[];held.note=note;}
+  if(preselected.length){held.samples=[...preselected].slice(0,20);held.extra=extra||[];held.note=note;}
   if(name&&!held.name.trim())held.name=name;kinds=sWithLibraryItems(kinds,held);
   const reopen=async()=>sLearnStyle(await api('styles'),style);
   form.append(sField('learn-style-name','Style name',held,'name',{required:true,max:200,hint:'The kind of writing, such as Product announcement, not a person.'}),held.note?sNode('p','quiet',held.note):sNode('span',''),sToolSamples(kinds,held,'Style samples'),sSampleCandidates(kinds,held,'style-sample',reopen),sButton('Add links to examples',()=>sVoiceLinks(kinds,null,null,'style-sample')),problem);
@@ -746,12 +746,12 @@ function sVoiceLinksResult(found,profile,article,held){
   const result=held.result,style=held.purpose==='style-sample',problem=sNode('p','problem');problem.setAttribute('role','alert');const keep=new Set(held.keep);
   const list=sNode('ul','rows');for(const row of result.results){const text=sAdd(sNode('div','row-text'),link(row.url,row.title||row.url),sNode('p','row-says',sVoiceLinksWords(row,style)));const item=sAdd(sNode('li','row'),text);if(!style&&row.mismatch&&!row.sample){const label=sNode('label','check'),box=sNode('input','');box.type='checkbox';box.checked=keep.has(row.url);box.addEventListener('change',()=>{if(box.checked)keep.add(row.url);else keep.delete(row.url);});label.append(box,sNode('span','','Keep as '+result.author+'’s sample'));text.append(label);}list.append(item);}
   const again=extra=>async button=>{Object.assign(held,extra());await sVoiceLinksImport(found,profile,article,held,button,problem);};
-  const learn=!result.samples.length?null:style?sButton('Learn a style from these',async()=>sLearnStyle(await api('styles'),null,result.samples.slice(0,10),result.author),'filled'):sButton(profile?'Update '+profile.name+' from these samples':'Learn '+result.author+'’s voice',async()=>{const voices=await api('voices');studio.voiceLearning||={};studio.voiceLearning[profile?.id||'new']={name:profile?.name||result.author,samples:[...new Set([...(profile?.sample_ids||[]),...result.samples])].slice(0,10),background:null,operation:operationId()};sLearnVoice(voices,profile);},'filled');
+  const learn=!result.samples.length?null:style?sButton('Learn a style from these',async()=>sLearnStyle(await api('styles'),null,result.samples.slice(0,20),result.author),'filled'):sButton(profile?'Update '+profile.name+' from these samples':'Learn '+result.author+'’s voice',async()=>{const voices=await api('voices');studio.voiceLearning||={};studio.voiceLearning[profile?.id||'new']={name:profile?.name||result.author,samples:[...new Set([...(profile?.sample_ids||[]),...result.samples])].slice(0,20),background:null,operation:operationId()};sLearnVoice(voices,profile);},'filled');
   sOpenSheet(style?'Examples imported':'Published posts imported',sCard(result.counts.samples+' of '+result.links+(style?' posts are examples of '+result.author:' posts are '+result.author+'’s voice samples'),sNode('p','quiet',result.counts.imported+' imported · '+result.counts['in-library']+' already in your library · '+result.counts.failed+' failed'+(style?'':' · '+result.counts.mismatch+' by someone else')),result.sharing_message?sNode('p','quiet',result.sharing_message):null),list,
     !style&&result.counts.mismatch?sButton('Keep the ticked posts as samples',again(()=>({keep:[...keep]}))):null,
     !style&&result.counts.mismatch>1?sButton('Keep all '+result.counts.mismatch+' posts by someone else',again(()=>({keep:result.results.filter(r=>r.mismatch&&!r.sample).map(r=>r.url)}))):null,
     result.counts.failed?sButton('Try the failed links again',again(()=>({retry:true}))):null,
-    sNode('p','',result.next_step),result.samples.length?sNode('p','quiet',style?'Style learning reads up to ten examples; the first ten are ticked for you. You confirm they may be analyzed, then review the provisional style before confirming it.':'Voice learning reads up to ten samples; the first ten are ticked for you. You confirm they may be analyzed, then audition the provisional voice before confirming it.'):null,
+    sNode('p','',result.next_step),result.samples.length?sNode('p','quiet',style?'Style learning reads up to twenty examples; the first twenty are ticked for you. You confirm they may be analyzed, then review the provisional style before confirming it.':'Voice learning reads up to twenty samples; the first twenty are ticked for you. You confirm they may be analyzed, then audition the provisional voice before confirming it.'):null,
     problem,learn,sButton('All voices and styles',()=>sVoiceTools(article)));
 }
 async function sVoiceProfile(id,article){
@@ -1010,7 +1010,7 @@ async function sLibrarySelection(action,ids,author=null){
     sOpenSheet('Learn a voice from these',form,sButton('Cancel',sCloseSheet));return;}
   if(action==='blog'){librarySelection.clear();await newBlog('',null,'from-files');if(!studio.draft)return;studio.draft.files=result.files.map(file=>({...file,note:'',link:'',kept:true}));sWizard();return;}
   // Nothing is marked yet: the learn sheet shows the items ticked, and marks them when confirmed.
-  const words=[result.left_out?.length?sSeries(result.left_out.map(item=>item.name))+(result.left_out.length===1?' is':' are')+' left out: a learning reads up to ten.':'',result.skipped?.length?sSeries(result.skipped.map(item=>item.name))+(result.skipped.length===1?' has':' have')+' no readable text yet, so '+(result.skipped.length===1?'it is':'they are')+' skipped.':''].filter(Boolean).join(' '),ids_=result.candidates.map(item=>item.id);
+  const words=[result.left_out?.length?sSeries(result.left_out.map(item=>item.name))+(result.left_out.length===1?' is':' are')+' left out: a learning reads up to twenty.':'',result.skipped?.length?sSeries(result.skipped.map(item=>item.name))+(result.skipped.length===1?' has':' have')+' no readable text yet, so '+(result.skipped.length===1?'it is':'they are')+' skipped.':''].filter(Boolean).join(' '),ids_=result.candidates.map(item=>item.id);
   if(action==='style-learn'){sLearnStyle(await api('styles'),null,ids_,'',result.candidates,words);return;}
   sLearnVoice(await api('voices'),null,ids_,null,result.author,result.candidates,words);
 }

@@ -1780,7 +1780,7 @@ async function voiceLinksJourney(){
   await find('Keep the ticked posts as samples').listeners.click();
   const last=requests.filter(r=>r.url==='/api/voice-links-import').at(-1).data;
   assert.deepEqual(last.keep,['https://blog.example/team/two/']);assert.equal(last.operation,sent[0].data.operation);assert.equal(last.retry,false);
-  assert.ok(has(/kept as a sample/));assert.ok(has(/Voice learning reads up to ten samples/));
+  assert.ok(has(/kept as a sample/));assert.ok(has(/Voice learning reads up to twenty samples/));
   await find('Learn Avery Quinn’s voice').listeners.click();
   assert.equal(byId('learn-voice-name').value,'Avery Quinn');
   assert.deepEqual(JSON.parse(f.run('JSON.stringify(studio.voiceLearning.new.samples)')),['s1','s2']);

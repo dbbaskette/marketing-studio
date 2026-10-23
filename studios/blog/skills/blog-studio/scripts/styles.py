@@ -330,8 +330,8 @@ def save(root, data):
     if not isinstance(name, str) or not name.strip() or len(name) > 200:
         raise ValueError('Give a style name up to 200 characters.')
     chosen = data.get('samples', (current or {}).get('sample_ids', []))
-    if not isinstance(chosen, list) or len(chosen) > 10:
-        raise ValueError('Choose up to ten examples.')
+    if not isinstance(chosen, list) or len(chosen) > 20:
+        raise ValueError('Choose up to twenty examples.')
     with tempfile.TemporaryDirectory(prefix='blog-style-') as scratch:
         file = Path(scratch) / 'STYLE.md'
         file.write_text(guide, encoding='utf-8')

@@ -47,7 +47,7 @@ def create(root, ident, kind, payload, guidance, basis, metadata):
         if saved['fingerprint'] != fingerprint:
             raise ValueError('This operation belongs to another request. Start a new task.')
         return public(saved)
-    if len(json.dumps(payload)) > 400_000:
+    if len(json.dumps(payload)) > 1_000_000:
         raise ValueError('Use smaller selected excerpts for this task.')
     from blog_runner import settings
     from studio_core import model_profiles

@@ -554,12 +554,12 @@ def next_step(counts, samples, author, purpose='voice-sample'):
         words.append('Failed links can be tried again; nothing else is fetched twice.')
     if samples and purpose == 'style-sample':
         words.append(
-            'Next, learn or update a style from these examples: choose up to ten, then confirm '
+            'Next, learn or update a style from these examples: choose up to twenty, then confirm '
             'they may be analyzed. The style stays provisional until you confirm it.'
         )
     elif samples:
         words.append(
-            'Next, learn or update the voice from these samples: choose up to ten, then confirm '
+            'Next, learn or update the voice from these samples: choose up to twenty, then confirm '
             'they may be analyzed. The voice stays provisional until you audition and confirm it.'
         )
     kind = 'a style sample' if purpose == 'style-sample' else 'a voice sample'

@@ -296,7 +296,7 @@ class ImportTests(Fixture):
         listed = {s['id'] for s in article_tools.voices(self.root)['samples']}
         self.assertEqual(listed, {rows['mine']['id'], rows['unsigned']['id']})
         studio.validate_samples(self.root, sorted(listed))
-        self.assertIn('choose up to ten', result['next_step'])
+        self.assertIn('choose up to twenty', result['next_step'])
         self.assertIn(
             'Published posts by ' + AUTHOR,
             [c['name'] for c in library.collections(self.root).values()],

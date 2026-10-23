@@ -47,7 +47,7 @@ which one, then add `--site <host>`. With `--import`, the library's `urls` impor
 fetches the new pages (25 per call; repeat the same command to continue) and
 classifies each as a voice sample for that author. A post whose page names
 another author stays out; add `--keep <url>` only if the author wrote it, and
-`--retry` to fetch failed links again. Then learn from up to ten samples.
+`--retry` to fetch failed links again. Then learn from up to twenty samples.
 
 A few representative samples help; even one can support a provisional guide.
 Ask for favorites when prioritization matters. Extract observed style separately
