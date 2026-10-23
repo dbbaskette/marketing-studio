@@ -610,6 +610,85 @@ class SynthesisBriefTests(DeckCase):
                 Engine()._research(self.root, None, None)
         self.assertEqual(captured[0]['source_mode'], 'selected')
 
+    def test_the_research_task_names_the_sites_and_chooses_the_source_mode(self):
+        from runner.engine import Engine
+        from studio_core import research_contract, research_sites
+        sites = ['https://blog.example.com/platform', 'https://docs.example.com']
+        self.write('research/plan.json', json.dumps({**PLAN, 'scope': 'public-web'}))
+        for chosen, mode in (({'documents': True, 'sites': sites, 'web': False}, 'mixed'),
+                             ({'documents': False, 'sites': sites, 'web': False}, 'public'),
+                             ({'documents': False, 'sites': sites, 'web': True}, 'public'),
+                             ({'documents': False, 'sites': [], 'web': True}, 'public'),
+                             ({'documents': True, 'sites': [], 'web': False}, 'selected')):
+            with self.subTest(chosen):
+                captured = []
+
+                def native(engine, root, run, task, sources, product):
+                    captured.append(task)
+                    raise RuntimeError('captured before workers')
+                record = {'research_contract': {'schema': 2}, 'form': {
+                    'route': 'document', 'research': True, 'research_from': chosen}}
+                with mock.patch.object(research_contract, 'native', side_effect=native), \
+                        mock.patch.object(Engine, '_load', return_value=record):
+                    with self.assertRaisesRegex(RuntimeError, 'captured before workers'):
+                        Engine()._research(self.root, None, None)
+                self.assertEqual(captured[0]['source_mode'], mode)
+                self.assertIn(research_sites.scope_text(chosen), captured[0]['scope'])
+                if chosen['sites']:
+                    self.assertIn('Allowed sites: blog.example.com/platform, docs.example.com.',
+                                  captured[0]['scope'])
+
+    def test_a_job_that_saves_pages_is_kept_to_the_sites_and_told_how_to_search(self):
+        from runner.engine import Engine
+        from runner.steps import Work
+        from studio_core import research_sites
+        sites = ['https://blog.example.com/platform']
+        chosen = {'documents': False, 'sites': sites, 'web': False}
+        record = {'form': {'route': 'scratch', 'research': True, 'research_from': chosen}}
+        work = Work('Research it.', 'The task.', 'research', {'fetch': True, 'ask': False})
+        kept = Engine()._confined(self.root, record, work)
+        self.assertEqual(kept.prepared['research'], chosen)
+        self.assertEqual(kept.guidance, 'Research it.\n\n' + research_sites.guidance(chosen))
+        self.assertIn('site:blog.example.com/platform', kept.guidance)
+        # A job that saves no page, or a deck whose research looks at the public web alone,
+        # is set up as before.
+        writing = Work('Write it.', 'The task.', 'write', {'fetch': False})
+        self.assertIs(Engine()._confined(self.root, record, writing), writing)
+        web = {'form': {'route': 'scratch', 'research': True}}
+        opened = Engine()._confined(self.root, web, work)
+        self.assertEqual(opened.prepared['research'], {'documents': False, 'sites': [], 'web': True})
+        self.assertEqual(opened.guidance, 'Research it.')
+
+    def test_the_plan_job_is_told_the_sites(self):
+        from runner.engine import Engine
+        sites = ['https://blog.example.com/platform']
+        for web, scope in ((False, 'public-web'), (True, 'public-web')):
+            record = {'research_contract': {'schema': 2}, 'form': {
+                'route': 'scratch', 'research': True,
+                'research_from': {'documents': False, 'sites': sites, 'web': web}}}
+            work = Engine()._plan_work(self.root, record, None, None)
+            self.assertEqual(work.prepared['artifacts']['research-plan']['scope'], scope)
+            self.assertIn('blog.example.com/platform', work.task)
+            self.assertEqual('the public web' in work.task, web)
+
+    def test_the_research_stop_names_the_sites_when_a_page_was_refused(self):
+        from runner.engine import Engine
+        sites = ['https://blog.example.com/platform']
+        record = {'route': 'scratch', 'steps': {}, 'gates': {}, 'form': {
+            'route': 'scratch', 'research': True,
+            'research_from': {'documents': False, 'sites': sites, 'web': False}},
+            'research': {'outside': [{'url': 'https://elsewhere.example.com/a', 'redirected_from': None},
+                                     {'url': 'https://elsewhere.example.com/b', 'redirected_from': None}]}}
+        shown = Engine()._show_research(self.root, record)
+        self.assertEqual(shown['research_from'], 'Research from 1 of your sites (blog.example.com/platform)')
+        self.assertEqual(shown['outside'], '2 pages were outside your sites '
+                                           '(blog.example.com/platform) and were not saved.')
+        record['research']['outside'] = record['research']['outside'][:1]
+        self.assertEqual(Engine()._show_research(self.root, record)['outside'],
+                         '1 page was outside your sites (blog.example.com/platform) and was not saved.')
+        record.pop('research')
+        self.assertIsNone(Engine()._show_research(self.root, record)['outside'])
+
     def test_the_research_purpose_asks_for_a_comparison_when_the_goal_compares(self):
         from runner.engine import Engine
         from studio_core import research_contract

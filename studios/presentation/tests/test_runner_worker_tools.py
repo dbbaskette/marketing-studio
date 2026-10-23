@@ -465,6 +465,104 @@ class FetchRuleTests(JobCase):
         self.assertIn('Accept-Language', worker_tools.HEADERS)
 
 
+BLOG = 'https://blog.example.com/platform'
+SITES_ONLY = {'documents': False, 'sites': [BLOG, 'https://docs.example.com/guide'], 'web': False}
+
+
+class ResearchSiteTests(JobCase):
+    """With your sites on and the public web off, a page is saved only from under them."""
+
+    def research(self, choice=SITES_ONLY):
+        return self.tools(finding='instance-min', fetch=True, ask=False, research=choice)
+
+    def test_the_choice_is_written_into_the_job_and_checked(self):
+        from studio_core import research_sites
+        worker_tools.prepare(self.job, fetch=True, research={
+            'sites': ['blog.example.com/platform/'], 'web': False})
+        job = json.loads((self.job / 'job.json').read_text())
+        self.assertEqual(job['research'], {'documents': False, 'sites': [BLOG], 'web': False})
+        for number, (given, said) in enumerate((
+                ({'sites': ['http://blog.example.com']}, 'https only'),
+                ({}, research_sites.EMPTY), ('web', research_sites.EMPTY))):
+            with self.subTest(given):
+                with self.assertRaisesRegex(WorkspaceError, re.escape(said)):
+                    worker_tools.prepare(self.base / f'other-{number}', fetch=True, research=given)
+        # A job set up with no choice, as every older job was, keeps no choice.
+        worker_tools.prepare(self.base / 'older', fetch=True)
+        self.assertNotIn('research', json.loads((self.base / 'older' / 'job.json').read_text()))
+
+    def test_a_page_under_one_of_the_sites_is_saved(self):
+        tools = self.research()
+        for url in (BLOG, BLOG + '/', BLOG + '/2026/10/rolling-restarts',
+                    'https://BLOG.example.com/platform/x', 'https://docs.example.com/guide/start'):
+            with self.subTest(url):
+                self.web.page(url, PAGE + url)
+                self.assertTrue(self.ok(tools.save_source(url)).startswith('Saved as'))
+
+    def test_a_page_off_the_sites_is_refused_with_the_sites_named(self):
+        from studio_core import research_sites
+        tools = self.research()
+        for url in ('https://docs.example.com/restarts',
+                    'https://blog.example.com.evil.example/platform/post',
+                    'https://news.blog.example.com/platform/post',
+                    'https://blog.example.com/platform-other/post',
+                    'https://blog.example.com/platform/../other/post',
+                    'https://blog.example.com/platform%2Fx/post',
+                    'https://docs.example.com/guidebook',
+                    'http://blog.example.com/platform/post',
+                    'https://blog.example.com:8443/platform/post'):
+            with self.subTest(url):
+                self.web.page(url, PAGE)
+                said = self.refused(tools.save_source(url))
+                self.assertEqual(said, research_sites.refused(url, SITES_ONLY))
+                self.assertIn('Save pages from under: blog.example.com/platform, '
+                              'docs.example.com/guide.', said)
+        self.assertEqual(self.web.asked, [], 'nothing off the sites is even asked for')
+        self.assertEqual(worker_tools.collect(self.job)['sources'], [])
+        outside = worker_tools.collect(self.job)['outside']
+        self.assertEqual([entry['url'] for entry in outside][:2],
+                         ['https://docs.example.com/restarts',
+                          'https://blog.example.com.evil.example/platform/post'])
+
+    def test_a_redirect_off_the_sites_is_refused_and_says_where_it_led(self):
+        from studio_core import research_sites
+        self.web.page('https://elsewhere.example.com/landing', PAGE)
+        url = self.web.page(BLOG + '/moved', '', status=302,
+                            headers={'location': 'https://elsewhere.example.com/landing'})
+        said = self.refused(self.research().save_source(url))
+        self.assertEqual(said, research_sites.refused(
+            'https://elsewhere.example.com/landing', SITES_ONLY, redirected_from=url))
+        self.assertIn('redirected to elsewhere.example.com/landing', said)
+        self.assertIn('blog.example.com/platform', said)
+        self.assertEqual(self.web.asked, [(url, PUBLIC)])
+        self.assertEqual(worker_tools.collect(self.job)['sources'], [])
+        self.assertEqual(worker_tools.collect(self.job)['outside'], [
+            {'url': 'https://elsewhere.example.com/landing', 'redirected_from': url}])
+
+    def test_a_redirect_that_stays_on_the_sites_is_followed(self):
+        self.web.page(BLOG + '/new', PAGE)
+        url = self.web.page(BLOG + '/old', '', status=301, headers={'location': '/platform/new'})
+        self.assertTrue(self.ok(self.research().save_source(url)).startswith('Saved as s1'))
+        self.assertEqual(worker_tools.collect(self.job)['sources'][0]['url'], BLOG + '/new')
+
+    def test_with_the_public_web_on_any_public_page_is_saved(self):
+        tools = self.research({**SITES_ONLY, 'web': True})
+        url = self.web.page('https://elsewhere.example.com/page', PAGE)
+        self.assertTrue(self.ok(tools.save_source(url)).startswith('Saved as s1'))
+        private = self.web.page('https://inside.example.com/', PAGE, addresses=['10.0.0.5'])
+        self.assertIn('not on the public internet', self.refused(tools.save_source(private)))
+        self.assertEqual(worker_tools.collect(self.job)['outside'], [])
+
+    def test_on_the_sites_a_private_address_is_still_refused(self):
+        url = self.web.page(BLOG + '/x', PAGE, addresses=['10.0.0.5'])
+        self.assertIn('not on the public internet', self.refused(self.research().save_source(url)))
+
+    def test_an_older_job_with_no_choice_fetches_as_it_did(self):
+        tools = self.tools(finding='instance-min', fetch=True, ask=False)
+        url = self.web.page('https://elsewhere.example.com/page', PAGE)
+        self.assertTrue(self.ok(tools.save_source(url)).startswith('Saved as s1'))
+
+
 class SourceTests(JobCase):
     def saved(self, body=PAGE, **page):
         tools = self.tools(finding='instance-min', fetch=True)

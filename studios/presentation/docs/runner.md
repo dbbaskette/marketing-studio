@@ -139,8 +139,31 @@ sources, source counts and findings mapped to your planning questions. Report an
 remain available in folds. An unreadable bundle leaves the saved report readable without
 claiming that its check accepted it.
 
-Document research defaults to Your documents only. Your documents and the public web is
-an explicit choice; a scratch deck uses the public web. Supplied-only synthesis writes
+**Where research may look.** Research from your documents, your sites and/or the public
+web: the form's **Research from** offers *your documents* (a deck from a document, on by
+default), *your sites* (the shared list from Shared settings, prefilled, a tick for each site
+and **Add a site for this piece of work**, which does not change the shared list) and *the
+public web*. At least one that applies must be on. With no sites in the shared list a deck
+from an idea starts with the public web; with sites, with your sites. The deck keeps the
+choice as `research_from` (`{"documents", "sites", "web"}`) in its form, with the exact list
+it started with, and its stops line says it: "Research from your documents and 2 of your
+sites (…)". A deck saved before this reads its `research_sources` as before: `documents` is
+your documents, `both` your documents and the public web, and research with neither, the
+public web (with a document's own documents).
+
+Every page a research job saves is checked on every hop, redirects included. With your
+sites on and the public web off, a page is saved only when it is https on a listed site's
+own host (no subdomain or lookalike) and under its path at a segment boundary; any other
+page is refused with a sentence naming the sites, and the research stop says how many were
+("2 pages were outside your sites (docs.example.com) and were not saved."). With the
+public web on, any public page may be saved. Private and local addresses are refused in
+every case. The worker is told to search the listed sites first, with `site:` queries or a
+site's own search page, and the research task's scope names the allowed sites. Harness
+Research's source mode is `selected` for your documents alone, `mixed` for your documents
+with your sites or the web, and `public` otherwise; the plan's scope is `supplied-only`
+unless research saves pages, when it is `public-web`.
+
+Supplied-only synthesis writes
 its plan from at most eight optional form questions (300 characters each), without a
 planning job. Web synthesis asks at most eight questions together; legacy queues keep 30.
 An explicit plan revision uses the planning assistant with the saved questions and your
@@ -191,7 +214,7 @@ rerunning research. The full reviewed bundle stays intact.
 
 ## Finish from the page
 
-A deck from scratch has an optional brief for points, examples or a rough order, limited to 4000 characters. It goes to the research plan and outline. A document's research switch names its chosen scope: your documents only, or your documents and the public web.
+A deck from scratch has an optional brief for points, examples or a rough order, limited to 4000 characters. It goes to the research plan and outline. Research first, when on, asks where research may look: your documents, your sites and/or the public web.
 
 Balanced direction approval needs a look picked from the samples shown. If you edit the outline, its looks are drawn again and you choose from the new samples before building. A previous pick is marked for you, never applied to unseen samples.
 

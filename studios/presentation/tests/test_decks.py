@@ -1,4 +1,5 @@
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -31,6 +32,7 @@ def form(**over):
 
 
 UPLOAD = {'kind': 'upload', 'name': 'a.pptx'}
+SITES = ['https://blog.example.com/platform', 'https://docs.example.com']
 
 
 class FormTests(unittest.TestCase):
@@ -48,13 +50,94 @@ class FormTests(unittest.TestCase):
 
     def test_research_from_a_document_says_where_it_may_look(self):
         sent = form(route='document', research=True, source={'kind': 'paste', 'text': 'Synthetic notes.'})
-        for value, words in ((None, 'your documents only'), ('both', 'your documents and the public web')):
-            checked = decks.check_form({**sent, **({'research_sources': value} if value else {})}, BRANDS)
-            self.assertEqual(checked['research_sources'], value or 'documents')
-            self.assertIn('yes (' + words + ')', decks.intake(checked))
+        for given, expected, words in (
+                ({'documents': True, 'sites': [], 'web': False},
+                 {'documents': True, 'sites': [], 'web': False}, 'from your documents'),
+                ({'documents': True, 'sites': ['blog.example.com/platform/', 'https://docs.example.com'],
+                  'web': False},
+                 {'documents': True, 'sites': SITES, 'web': False},
+                 'from your documents and 2 of your sites (blog.example.com/platform, docs.example.com)'),
+                ({'documents': False, 'sites': SITES[:1], 'web': True},
+                 {'documents': False, 'sites': SITES[:1], 'web': True},
+                 'from 1 of your sites (blog.example.com/platform) and the public web'),
+                ({'documents': True, 'web': True},
+                 {'documents': True, 'sites': [], 'web': True},
+                 'from your documents and the public web')):
+            with self.subTest(given):
+                checked = decks.check_form({**sent, 'research_from': given}, BRANDS)
+                self.assertEqual(checked['research_from'], expected)
+                self.assertNotIn('research_sources', checked)
+                self.assertEqual(decks.research_from(checked), expected)
+                self.assertIn('## Research\nyes, ' + words + '\n', decks.intake(checked))
+        self.assertNotIn('research_from', decks.check_form(form(), BRANDS))
+        self.assertIn('## Research\nno\n', decks.intake(decks.check_form(form(), BRANDS)))
+
+    def test_research_must_look_somewhere_that_applies(self):
+        from studio_core import research_sites
+        sent = form(route='document', research=True, source={'kind': 'paste', 'text': 'Notes.'})
+        for given, said in (({'documents': False, 'sites': [], 'web': False}, research_sites.EMPTY),
+                            ({}, research_sites.EMPTY), ('web', research_sites.EMPTY),
+                            ({'documents': True, 'other': True}, research_sites.EMPTY),
+                            ({'sites': ['http://docs.example.com']}, 'research sites use https only'),
+                            ({'sites': ['https://localhost/x']}, 'is not a public site')):
+            with self.subTest(given):
+                with self.assertRaisesRegex(WorkspaceError, re.escape(said)):
+                    decks.check_form({**sent, 'research_from': given}, BRANDS)
+        # A deck from an idea has no documents of its own: they never count.
+        with self.assertRaisesRegex(WorkspaceError, re.escape(research_sites.NO_DOCUMENTS)):
+            decks.check_form(form(research=True, research_from={'documents': True}), BRANDS)
+        checked = decks.check_form(form(research=True, research_from={
+            'documents': True, 'sites': SITES, 'web': False}), BRANDS)
+        self.assertEqual(checked['research_from'], {'documents': False, 'sites': SITES, 'web': False})
+
+    def test_a_site_added_for_one_deck_leaves_the_shared_list_alone(self):
+        import os
+        from studio_core import research_sites, studios_config
+        config = Path(os.environ['STUDIOS_CONFIG'])
+        before = config.read_bytes() if config.exists() else None
+        self.addCleanup(lambda: config.write_bytes(before) if before is not None
+                        else config.unlink(missing_ok=True))
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(json.dumps({'research': {'sites': SITES[:1]}, 'output': 'pptx'}))
+        held = config.read_bytes()
+        shared = research_sites.defaults(studios_config.read()[0])
+        checked = decks.check_form(form(research=True, research_from={
+            'sites': [*shared, 'https://extra.example.org/guide']}), BRANDS)
+        self.assertEqual(checked['research_from']['sites'],
+                         [SITES[0], 'https://extra.example.org/guide'])
+        self.assertEqual(config.read_bytes(), held)
+        self.assertEqual(research_sites.defaults(studios_config.read()[0]), SITES[:1])
+
+    def test_old_saved_forms_stay_readable(self):
+        documents_only = {'documents': True, 'sites': [], 'web': False}
+        both = {'documents': True, 'sites': [], 'web': True}
+        web = {'documents': False, 'sites': [], 'web': True}
+        for saved, expected in (
+                ({'route': 'document', 'research': True, 'research_sources': 'documents'}, documents_only),
+                ({'route': 'document', 'research': True, 'research_sources': 'both'}, both),
+                ({'route': 'document', 'research': True}, both),
+                ({'route': 'scratch', 'research': True}, web),
+                ({'route': 'scratch', 'research': True, 'research_sources': 'both'}, web)):
+            with self.subTest(saved):
+                self.assertEqual(decks.research_from(saved), expected)
+        self.assertIsNone(decks.research_from({'route': 'scratch', 'research': False}))
+        self.assertIsNone(decks.research_from({'route': 'existing', 'research': True}))
+        # A plan's own scope speaks for a deck that kept no choice; one that would look
+        # nowhere looks only at the documents, and fetches nothing.
+        self.assertEqual(decks.research_from({}, 'supplied-only'), documents_only)
+        self.assertEqual(decks.research_from({}, 'supplied-only', documents_given=False),
+                         documents_only)
+        self.assertEqual(decks.research_from({}, 'public-web', documents_given=False), web)
+        # A form sent the old way is still taken, in the new shape.
+        sent = form(route='document', research=True, source={'kind': 'paste', 'text': 'Notes.'})
+        for value, expected in ((None, documents_only), ('documents', documents_only), ('both', both)):
+            with self.subTest(value):
+                checked = decks.check_form({**sent, **({'research_sources': value} if value else {})}, BRANDS)
+                self.assertEqual(checked['research_from'], expected)
+                self.assertNotIn('research_sources', checked)
+        self.assertEqual(decks.check_form(form(research=True), BRANDS)['research_from'], web)
         with self.assertRaisesRegex(WorkspaceError, 'Choose where research may look'):
             decks.check_form({**sent, 'research_sources': 'web'}, BRANDS)
-        self.assertNotIn('research_sources', decks.check_form(form(research=True), BRANDS))
 
     def test_scratch_form(self):
         checked = decks.check_form(form(), BRANDS)

@@ -107,7 +107,7 @@ import studios_config
 import workspace
 from workspace import WorkspaceError
 
-from studio_core import review_policy
+from studio_core import research_sites, review_policy
 from runner import brand_source, decks, gitstate, settings
 
 WHEN = {'decision': 'each-decision', 'asked': 'when-asked'}
@@ -149,6 +149,11 @@ def describe(engine) -> dict:
             'limits': chosen.limits,
             # The shared review level, so the start form can say where a deck stops.
             'review_level': review_policy.capture()['level'],
+            # Your sites, the shared list the start form offers for research, each as the
+            # page shows it (host/path, read as https). A deck keeps its own copy; the list
+            # is changed in Shared settings.
+            'research_sites': [research_sites.shown(site) for site in
+                               research_sites.defaults(studios_config.read()[0])],
             # Whether Google is connected here: Google Slides asked for without it is made a
             # PowerPoint file, which the form and the deck's stop say first. None: not asked here.
             'google': needs['drive'],

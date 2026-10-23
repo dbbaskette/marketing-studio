@@ -326,25 +326,124 @@ class ScreenTests(ScriptedPage, PageCase):
         (_, body), = self.posts(result)
         self.assertEqual(body['form']['notes'], 'Cover rollback first.')
 
-    def test_research_from_a_document_asks_where_it_may_look(self):
-        for both in (False, True):
-            answers = self.answers(**{'POST /api/decks': [ok({'path': '/nowhere', 'id': 'x'})],
-                                      'GET /api/run': [{'status': 404, 'body': {'error': 'There is no deck there.'}}]})
-            steps = [{'click': 'New deck'}, {'click': 'Start from a document'},
-                     {'click': 'Paste the text'}, {'fill': 'The text', 'value': 'Synthetic notes.'},
-                     {'click': 'Continue'}, {'fill': 'A short title', 'value': 'Synthetic deck'},
-                     {'click': 'Research your documents first'}, {'snapshot': 'boundary'},
-                     {'fill': 'What should the research answer? (optional)', 'value': 'Why?\nWhat next?'}]
-            if both:
-                steps += [{'click': 'Your documents and the public web'}]
-            steps += [{'snapshot': 'scope'}, {'click': 'Continue'}, {'click': 'Start the deck'}]
-            result = self.run_page(answers, steps)
-            self.assertIn('Where may research look?', result['snapshots']['boundary']['text'])
-            self.assertIn('Research your documents and the public web first' if both else 'Research your documents first', result['snapshots']['scope']['text'])
-            self.assertNotIn('What should it cover? (optional)', result['snapshots']['boundary']['text'])
-            posted = [body for address, body in self.posts(result) if address == '/api/decks']
-            self.assertEqual(posted[0]['form']['research_sources'], 'both' if both else 'documents')
-            self.assertEqual(posted[0]['form']['research_questions'], ['Why?', 'What next?'])
+    SITES = ['blog.example.com/platform', 'docs.example.com']   # as the setup sends them
+
+    def test_research_from_a_document_offers_your_documents_your_sites_and_the_web(self):
+        from runner import decks
+        answers = self.answers(**{'GET /api/setup': [self.setup_with(research_sites=self.SITES)],
+                                  'POST /api/decks': [ok({'path': '/nowhere', 'id': 'x'})],
+                                  'GET /api/run': [{'status': 404, 'body': {'error': 'There is no deck there.'}}]})
+        result = self.run_page(answers, [
+            {'click': 'New deck'}, {'click': 'Start from a document'},
+            {'click': 'Paste the text'}, {'fill': 'The text', 'value': 'Synthetic notes.'},
+            {'click': 'Continue'}, {'fill': 'A short title', 'value': 'Synthetic deck'},
+            {'snapshot': 'off'}, {'click': 'Research first'}, {'snapshot': 'offered'},
+            {'click': 'the public web'}, {'click': 'docs.example.com'},
+            {'fill': 'Add a site for this piece of work', 'value': 'learn.example.org/guide/'},
+            {'click': 'Add the site'}, {'snapshot': 'chosen'},
+            {'fill': 'What should the research answer? (optional)', 'value': 'Why?\nWhat next?'},
+            {'click': 'Continue'}, {'snapshot': 'last'}, {'click': 'Start the deck'}])
+        self.assertEqual(result['errors'], [])
+        off, offered, chosen, last = (result['snapshots'][name]
+                                      for name in ('off', 'offered', 'chosen', 'last'))
+        self.assertNotIn('Research from', off['text'])
+        self.assertNotIn('Research uses the public web', offered['text'])
+        for shot in (offered, chosen, last):
+            self.assertEqual(shot['unnamed'], [])
+            self.assertIsNone(FORBIDDEN_WORDS.search(shot['text']))
+        self.assertIn('Research from', offered['text'])
+        self.assertEqual(offered['chosen'], ['Research first', 'your documents', 'your sites (2)',
+                                             'blog.example.com/platform', 'docs.example.com'])
+        self.assertIn('the public web', offered['buttons'])
+        self.assertIn('Add a site for this piece of work', offered['fields'])
+        self.assertIn('It is for this deck only; your shared list is changed in Shared settings.',
+                      offered['text'])
+        self.assertIn('Research from your documents and 2 of your sites '
+                      '(blog.example.com/platform, docs.example.com).', offered['text'])
+        self.assertEqual(chosen['chosen'], ['Research first', 'your documents', 'your sites (2)',
+                                            'the public web', 'blog.example.com/platform',
+                                            'learn.example.org/guide'])
+        self.assertEqual(chosen['fields']['Add a site for this piece of work'], '')
+        said = ('Research from your documents, 2 of your sites (blog.example.com/platform, '
+                'learn.example.org/guide) and the public web.')
+        self.assertIn(said, chosen['text'])
+        # The stops line says it again, sites named, where the deck is started.
+        self.assertIn(said, last['text'])
+        self.assertIn('Where this deck stops', last['text'])
+        posted = [body for address, body in self.posts(result) if address == '/api/decks']
+        form = posted[0]['form']
+        self.assertEqual(form['research_from'], {
+            'documents': True, 'sites': ['blog.example.com/platform', 'learn.example.org/guide'],
+            'web': True})
+        self.assertNotIn('research_sources', form)
+        self.assertEqual(form['research_questions'], ['Why?', 'What next?'])
+        # Only the deck is sent: the shared list is not changed from here.
+        self.assertEqual([address for address, _ in self.posts(result)], ['/api/decks'])
+        # What the page sends is what the runner takes.
+        checked = decks.check_form({**form, 'source': {'kind': 'paste', 'text': 'Notes.'}}, None)
+        self.assertEqual(checked['research_from'], {
+            'documents': True, 'sites': ['https://blog.example.com/platform',
+                                         'https://learn.example.org/guide'], 'web': True})
+
+    def test_research_must_look_somewhere_before_the_form_goes_on(self):
+        from studio_core import research_sites
+        answers = self.answers(**{'GET /api/setup': [self.setup_with(research_sites=[])]})
+        result = self.run_page(answers, [
+            {'click': 'New deck'}, {'click': 'Start from scratch'},
+            {'fill': 'A short title', 'value': 'Synthetic deck'},
+            {'click': 'Research first'}, {'snapshot': 'web'},
+            {'click': 'the public web'}, {'click': 'Continue'}, {'snapshot': 'nowhere'},
+            {'click': 'your sites'}, {'snapshot': 'none'}, {'click': 'Continue'},
+            {'snapshot': 'no-site'},
+            {'fill': 'Add a site for this piece of work', 'value': 'http://docs.example.com'},
+            {'click': 'Add the site'}, {'snapshot': 'http'},
+            {'fill': 'Add a site for this piece of work', 'value': 'docs.example.com/guide'},
+            {'click': 'Add the site'}, {'click': 'Continue'}, {'snapshot': 'went-on'}])
+        self.assertEqual(result['errors'], [])
+        shots = result['snapshots']
+        # A deck from an idea has no documents to offer; with no shared sites it reads the web.
+        self.assertNotIn('your documents', shots['web']['buttons'])
+        self.assertEqual(shots['web']['chosen'], ['Research first', 'the public web'])
+        self.assertIn('Research from the public web.', shots['web']['text'])
+        self.assertIn(research_sites.EMPTY, shots['nowhere']['text'])
+        self.assertEqual(shots['nowhere']['heading'], 'What it is about')
+        self.assertIn('Your shared list has no sites yet.', shots['none']['text'])
+        self.assertIn(research_sites.NO_SITES, shots['no-site']['text'])
+        self.assertEqual(shots['no-site']['heading'], 'What it is about')
+        self.assertIn('“http://docs.example.com”: research sites use https only.',
+                      shots['http']['text'])
+        self.assertIn('Add a site for this piece of work', shots['http']['invalid'])
+        self.assertEqual(shots['went-on']['heading'], 'How it looks, and starting it')
+        self.assertIn('Research from 1 of your sites (docs.example.com/guide).',
+                      shots['went-on']['text'])
+
+    def test_the_start_form_is_sent_your_shared_sites(self):
+        import os
+        config = Path(os.environ['STUDIOS_CONFIG'])
+        before = config.read_bytes() if config.exists() else None
+        self.addCleanup(lambda: config.write_bytes(before) if before is not None
+                        else config.unlink(missing_ok=True))
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(json.dumps({'research': {'sites': ['blog.example.com/platform/',
+                                                             'http://not-https.example.com']}}))
+        self.assertEqual(self.get('setup')['research_sites'], ['blog.example.com/platform'])
+
+    def test_the_research_stop_names_the_sites_a_page_was_refused_from(self):
+        from synthesis_fixture import research_stop
+        # The stand-in worker saves a page from docs.example.com, which is under the site.
+        path = self.started(research=True, research_from={'sites': ['docs.example.com']})
+        self.decided(path, 'gate:research-plan')
+        research_stop(Path(path) / 'research')
+        record = self.engine._load(Path(path))
+        record['research_contract'] = {'schema': 2}
+        record['research'] = {**(record.get('research') or {}), 'outside': [
+            {'url': 'https://elsewhere.example.com/a', 'redirected_from': None},
+            {'url': 'https://elsewhere.example.com/b', 'redirected_from': None}]}
+        self.engine._store(Path(path), record)
+        text = self.deck_screen(path, [{'snapshot': 'research'}])['snapshots']['research']['text']
+        self.assertIn('Research from 1 of your sites (docs.example.com).', text)
+        self.assertIn('2 pages were outside your sites (docs.example.com) and were not saved.',
+                      text)
 
     def test_the_research_stop_leads_with_the_brief_and_the_check(self):
         from synthesis_fixture import research_stop
@@ -474,7 +573,7 @@ class ScreenTests(ScriptedPage, PageCase):
                       'ask.', opened['text'])
         for old in ('AI review', 'AI critique', 'Research it first'):
             self.assertNotIn(old, opened['text'])
-        self.assertIn('Research the public web first', result['snapshots']['about']['buttons'])
+        self.assertIn('Research first', result['snapshots']['about']['buttons'])
         # The goal's words never flip the first draft silently: only the chip does.
         self.assertEqual(result['errors'], [])
         posted = [body for address, body in self.posts(result) if address == '/api/decks']
@@ -488,7 +587,7 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.run_page(answers, [
             {'click': 'New deck'}, {'click': 'Start from scratch'},
             {'fill': 'A short title', 'value': 'Rolling restarts'},
-            {'click': 'Research the public web first'},
+            {'click': 'Research first'},
             {'click': 'Continue'}, {'snapshot': 'balanced'},
             {'click': 'Step by step'}, {'snapshot': 'step'},
             {'click': 'Start the deck'}])

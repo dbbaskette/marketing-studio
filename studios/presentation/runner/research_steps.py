@@ -17,6 +17,12 @@ What a caller needs to know
   that the person added it, and their own words. A note alone researches again the
   questions it names by their IDs, and those not yet settled. A question the person left
   out is never researched again; a finding a changed plan lost always is.
+- Where research may look is the form's research_from (`decks.research_from`): your
+  documents, your sites and/or the public web. It sets the plan's scope, Harness Research's
+  source mode and the task's scope, which names the allowed sites. Every job that saves
+  pages is set up with it (`_confined`), so its tools refuse a page outside your sites while
+  the public web is off and the worker is told to search your sites first; the pages refused
+  are kept in the run's research.outside, and the research stop says how many.
 - `Researching` is a part of the engine and is not used alone.
 """
 from __future__ import annotations
@@ -27,15 +33,16 @@ import re
 import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import home
 from workspace import WorkspaceError, write_atomic
 
-from runner import briefs, documents, marks, stages, worker_tools
+from runner import briefs, decks, documents, marks, stages, worker_tools
 from runner import research as research_cli
-from studio_core import research_contract, research_view, stops
+from studio_core import research_contract, research_sites, research_view, stops
 from runner.jobs import KEPT, Halted, Run, given_up, last_error, sha256_of, text_of, tries
 from runner.steps import Work
 
@@ -261,23 +268,27 @@ class Researching:
         if record.get('research_contract'):
             plan = home.read_json(root / PLAN, {})
             form = record.get('form') or {}
-            offered = documents.sources(root)[1] if documents.listed(root) else []
+            looks = self._research_from(root, record)
+            offered = self._offered(root, looks)
             task = {'topic': record.get('title') or form.get('title') or plan['topic'],
                     'audience': form.get('audience') or 'Presentation audience',
                     'purpose': research_contract.purpose(
                         'a presentation', form.get('goal') or 'explain this topic',
                         'Prioritize key messages, evidence worth explaining visually, and '
                         'counterarguments.'),
+                    # Where research may look, sites named: the run's research_from.
                     'scope': 'Evidence, limitations and alternatives for the presentation goal: '
-                             + (form.get('goal') or record.get('title') or 'explain the topic'),
+                             + (form.get('goal') or record.get('title') or 'explain the topic')
+                             + '. ' + research_sites.scope_text(looks),
                     'planning_questions': plan.get('items', []),
                     'notes': form.get('notes') or '',
                     'requested_changes': record.get('gates', {}).get('gate:research', {}),
                     # Asked for at the research stop: the sources read again.
                     'refresh': ((record.get('gates') or {}).get('gate:research') or {})
                     .get('refresh') is True,
-                    'source_mode': ('selected' if plan.get('scope') == 'supplied-only'
-                                    else 'mixed' if offered else 'public')}
+                    # Pages from your sites are public captures: documents and sites is
+                    # mixed, sites alone public.
+                    'source_mode': research_sites.source_mode(looks)}
             try:
                 research_contract.native(self, root, run, task, offered, 'presentation')
             except WorkspaceError as refusal:
@@ -398,12 +409,15 @@ class Researching:
         plan = home.read_json(root / PLAN, {}) or {}
         query = next((item.get('public_query') for item in plan.get('items') or ()
                       if isinstance(item, dict) and item.get('id') == ident), None)
-        offered = documents.sources(root)[1] if documents.listed(root) else []
+        looks = self._research_from(root, record)
+        offered = self._offered(root, looks)
+        fetch = research_sites.fetches(looks)
         task = ('Research this question for a presentation.\n\n'
                 f'Question ID: {ident}\nQuestion: {question}\n'
                 + (f'Search words to start from: {query}\n' if query else '')
-                + ('The documents the person supplied are saved for you already. Read them '
-                   'as well as the web.\n' if offered else '')
+                + ('The documents the person supplied are saved for you already. Read them'
+                   + (' as well as the web.\n' if fetch else '.\n') if offered else '')
+                + f'Where research may look: {research_sites.scope_text(looks)}\n'
                 + f'\nThe presentation:\n{self._about(record)}')
         if told:
             task += f'\n\n{told}'
@@ -412,7 +426,7 @@ class Researching:
             task += (f'\n\nAn earlier try at this job did not work: {error}\nTake care not to '
                      'end the same way.')
         work = Work(briefs.guidance('research-question'), task, 'research',
-                    {'finding': ident, 'fetch': True, 'ask': False, 'sources': offered})
+                    {'finding': ident, 'fetch': fetch, 'ask': False, 'sources': offered})
         outcome, handed, started_at, folder = self._job(root, run, name,
                                                         f'Researching the question {ident}',
                                                         work, deck=False)
@@ -473,6 +487,74 @@ class Researching:
                     raise
                 time.sleep(0.25)
 
+    # --- where research may look: your documents, your sites and/or the public web ---------
+
+    def _research_from(self, root: Path, record: dict) -> dict:
+        """Where this deck's research may look, in studio_core.research_sites' shape: its
+        form's research_from, or for a deck begun before it, what its research_sources or its
+        plan's scope said (decks.research_from)."""
+        form = record.get('form') or {}
+        plan = home.read_json(root / PLAN, None)
+        given = form.get('route') == 'document' or bool(documents.listed(root))
+        return decks.research_from(form, plan.get('scope') if isinstance(plan, dict) else None,
+                                   given) or {'documents': True, 'sites': [], 'web': False}
+
+    @staticmethod
+    def _offered(root: Path, looks: dict) -> list:
+        """The person's documents, offered to research only when it may use them."""
+        return documents.sources(root)[1] if looks['documents'] and documents.listed(root) else []
+
+    @staticmethod
+    def _web_words(looks: dict) -> str:
+        """Where on the web the plan's questions may be looked up, in a few words."""
+        named = ', '.join(research_sites.shown(site) for site in looks['sites'])
+        if looks['sites'] and looks['web']:
+            return (f'pages from under these sites first: {named}; then the public web, only for '
+                    'what those sites leave open')
+        if looks['sites']:
+            return f'pages from under these sites only: {named}'
+        return 'the public web'
+
+    def _confined(self, root: Path, record: dict, work):
+        """A job that saves pages, kept to where this deck's research may look: the choice
+        goes into its job.json, where save_source checks every hop, redirects included, and
+        the worker is told to search your sites first. Any other job is as it was."""
+        if not work.prepared.get('fetch'):
+            return work
+        looks = self._research_from(root, record)
+        told = research_sites.guidance(looks)
+        return replace(work, guidance=work.guidance + ('\n\n' + told if told else ''),
+                       prepared={**work.prepared, 'research': looks})
+
+    def _keep_outside(self, root: Path, refused: list) -> None:
+        """Keep, for the research stop, the pages a job could not save because they were
+        outside your sites."""
+        if not refused:
+            return
+        with self.files:
+            record = self._load(root)
+            research = dict(record.get('research') or {})
+            kept = list(research.get('outside') or [])
+            known = {entry.get('url') for entry in kept}
+            kept += [entry for entry in refused if entry.get('url') not in known][:100 - len(kept)]
+            if len(kept) == len(research.get('outside') or []):
+                return
+            record['research'] = {**research, 'outside': kept}
+            self._store(root, record)
+            self._commit(root, 'note the pages research could not save from outside your sites')
+
+    @staticmethod
+    def _outside_words(record: dict, looks: dict) -> str | None:
+        """'2 pages were outside your sites (a, b) and were not saved.', or None."""
+        count = len((record.get('research') or {}).get('outside') or [])
+        if not count or not looks['sites']:
+            return None
+        names = [research_sites.shown(site) for site in looks['sites']]
+        named = ', '.join(names[:research_sites.SHOWN]) + (
+            f' and {len(names) - research_sites.SHOWN} more' if len(names) > research_sites.SHOWN else '')
+        return (f"{count} page{'s were' if count > 1 else ' was'} outside your sites ({named}) "
+                f"and {'were' if count > 1 else 'was'} not saved.")
+
     @staticmethod
     def _about(record: dict) -> str:
         form = record.get('form') or {}
@@ -485,12 +567,14 @@ class Researching:
     def _plan_work(self, root: Path, record: dict, request: dict | None,
                    error: str | None) -> Work:
         name = 'research-plan'
-        listed = documents.sources(root)[0] if documents.listed(root) else []
-        allowed = ('the public web, and these documents the person supplied. Ask what the '
+        looks = self._research_from(root, record)
+        listed = documents.sources(root)[0] if looks['documents'] and documents.listed(root) else []
+        web = self._web_words(looks)
+        allowed = (f'{web}, and these documents the person supplied. Ask what the '
                    'documents can answer as well as what the web can:\n'
                    + '\n'.join(f"- {source.get('title') or source.get('id')}"
-                               for source in listed)) if listed else 'the public web.'
-        only = (record.get('form') or {}).get('research_sources') == 'documents'
+                               for source in listed)) if listed else f'{web}.'
+        only = not research_sites.fetches(looks)
         if only:
             allowed = ('only the documents the person supplied. Ask what these can answer, and give no question any search words:\n'
                        + '\n'.join(f"- {source.get('title') or source.get('id')}" for source in listed))
@@ -512,7 +596,7 @@ class Researching:
             task += (f'\n\nAn earlier try at this job did not work: {error}\nTake care not to '
                      'end the same way.')
         prepared = {'inputs': {'intake': text_of(root / 'intake.md') or ''},
-                    'artifacts': {name: {'kind': 'research-plan', 'scope': 'supplied-only' if only else 'public-web',
+                    'artifacts': {name: {'kind': 'research-plan', 'scope': research_sites.plan_scope(looks),
                                          'sources': listed}},
                     'ask': True}
         synthesis = bool(record.get('research_contract'))
@@ -576,7 +660,7 @@ class Researching:
     def _research_plan(self, root: Path, run: Run, step: stages.Step) -> None:
         record = self._load(root)
         if (record.get('research_contract')
-                and (record.get('form') or {}).get('research_sources') == 'documents'
+                and not research_sites.fetches(self._research_from(root, record))
                 and not self._request(record, step.name)):
             self._plan_from_form(root, run, step)
             return

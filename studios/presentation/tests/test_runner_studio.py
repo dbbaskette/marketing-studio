@@ -356,7 +356,7 @@ class StatusTests(StudioCase):
         found = self.status()
         self.assertEqual(sorted(found), ['agent', 'brand', 'configured', 'decks', 'google', 'limits',
                                          'notify', 'output', 'person', 'previews', 'problem',
-                                     'review_level',
+                                     'research_sites', 'review_level',
                                          'shared',
                                          'shared_notice', 'shared_problem', 'suggested',
                                          'team_moved', 'updates', 'upkeep', 'version',
