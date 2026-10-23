@@ -1,6 +1,7 @@
 """Finishing on the desk: proposals previewed, then applied, edited or skipped."""
 
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
+import json
 import secrets
 import unittest
 
@@ -9,6 +10,7 @@ import desk
 import desk_finish
 import desk_jobs
 import studio
+import tool_jobs
 from test_desk import DRAFT, DeskCase
 
 
@@ -296,6 +298,162 @@ class ProofreadTests(FinishCase):
 
     def test_a_plain_draft_has_nothing_to_find(self):
         self.assertEqual(desk_finish.proofread(self.root, self.made['id'])['findings'], [])
+
+
+class ToolCase(FinishCase):
+    def setUp(self):
+        super().setUp()
+        desk.save(
+            self.root,
+            self.ident,
+            1,
+            self.first,
+            'We leverage a robust parser. It reads 12 files in 3 seconds at Acme Labs.',
+        )
+        self.seen = 2
+
+    def queue(self, tool, **extra):
+        shown = desk.dispatch(
+            self.root, 'finish', {'id': self.ident, 'seen': self.seen, 'tool': tool, **extra}
+        )
+        return tool_jobs.read(self.root, shown['working']['id'])
+
+    def ready(self, job, value):
+        content = value if isinstance(value, str) else json.dumps(value)
+        job.update(status='ready', result={'content': content, 'notes': ''}, finished_at='x')
+        tool_jobs.write(self.root, job)
+        desk_jobs.settle(self.root, self.ident)
+        return tool_jobs.read(self.root, job['id'])
+
+    def shown(self, tool):
+        return desk_jobs.view(self.root, self.ident)['finishing'][tool]
+
+
+class HumanizeTests(ToolCase):
+    def test_guidance_holds_the_humanize_guide_and_the_level(self):
+        job = self.queue('humanize', level='medium')
+        self.assertEqual(job['kind'], 'finish-humanize')
+        self.assertIn('Humanization capability', job['guidance'])
+        self.assertIn(desk_finish.LEVELS['medium'], job['guidance'])
+        self.assertIn('"suggestions"', job['guidance'])
+        self.assertIn(blog_runner.house_guide(), job['guidance'])
+        self.assertEqual(job['payload']['level'], 'medium')
+        self.assertEqual([s['id'] for s in job['payload']['sections']], [self.first, self.second])
+        self.assertNotIn('response_kind', job['payload'])
+        self.assertEqual(job['metadata']['desk']['part'], 'finishing')
+        with self.assertRaisesRegex(ValueError, 'light, medium or strong'):
+            desk_jobs.stop(self.root, self.ident, job['id'])
+            self.queue('humanize', level='loud')
+
+    def test_a_ready_result_lands_as_proposals_and_the_draft_is_unchanged(self):
+        before = self.draft()
+        job = self.ready(
+            self.queue('humanize', level='light'),
+            {
+                'suggestions': [
+                    {
+                        'part': self.first,
+                        'before': 'We leverage a robust parser.',
+                        'after': 'We use a sturdy parser.',
+                        'why': 'Stock words.',
+                    },
+                    {'part': self.first, 'before': 'Not in the text.', 'after': 'X.', 'why': ''},
+                    {'part': 'zzzzzzzz', 'before': 'Second text.', 'after': 'Y.', 'why': ''},
+                    {'part': self.second, 'before': 'Second text.', 'after': 'Second text.'},
+                ]
+            },
+        )
+        self.assertTrue(job['applied'])
+        self.assertEqual(self.draft()['revision'], before['revision'])
+        shown = self.shown('humanize')
+        self.assertEqual(shown['level'], 'light')
+        self.assertEqual(shown['dropped'], 3)
+        self.assertEqual(
+            [(i['before'], i['after'], i['flag']) for i in shown['items']],
+            [('We leverage a robust parser.', 'We use a sturdy parser.', '')],
+        )
+
+    def test_a_changed_number_or_name_is_flagged(self):
+        self.ready(
+            self.queue('humanize', level='strong'),
+            {
+                'suggestions': [
+                    {
+                        'part': self.first,
+                        'before': 'It reads 12 files in 3 seconds at Acme Labs.',
+                        'after': 'It reads 15 files in 3 seconds at Acme Labs.',
+                    },
+                    {
+                        'part': self.first,
+                        'before': 'We leverage a robust parser.',
+                        'after': 'We at Beta Works use a parser.',
+                    },
+                ]
+            },
+        )
+        flags = [i['flag'] for i in self.shown('humanize')['items']]
+        self.assertIn('a number', flags[0])
+        self.assertEqual(flags[1], '')
+        self.assertIn('a name', desk_finish.changes_facts('Ask Acme Labs.', 'Ask the lab.'))
+
+    def test_a_result_that_is_not_the_json_asked_for_is_refused_readably(self):
+        job = self.ready(self.queue('humanize', level='light'), 'Here are my thoughts.')
+        self.assertFalse(job['applied'])
+        self.assertEqual(job['error'], desk_finish.UNREADABLE)
+        self.assertNotIn('humanize', desk_jobs.view(self.root, self.ident)['finishing'])
+
+    def test_a_humanize_job_leaves_every_card_editable_and_the_outline_open(self):
+        self.queue('humanize', level='light')
+        shown = desk_jobs.view(self.root, self.ident)
+        self.assertEqual(shown['working']['part'], 'finishing')
+        desk.save(self.root, self.ident, self.seen, self.second, 'Typed while it works.')
+        desk.outline_save(
+            self.root,
+            self.ident,
+            self.seen + 1,
+            [
+                {'id': self.second, 'heading': 'Renamed', 'brief': ''},
+                {'id': self.first, 'heading': 'First part', 'brief': ''},
+            ],
+        )
+        with self.assertRaisesRegex(ValueError, 'already working'):
+            desk_jobs.section(self.root, self.ident, self.seen + 2, self.first, 'More.')
+
+    def test_nothing_written_yet_is_refused(self):
+        made = desk.create(self.root, {'title': 'Empty', 'way': 'topic', 'point': 'A point.'})
+        with self.assertRaisesRegex(ValueError, 'Write the draft first'):
+            desk_jobs.finish(self.root, made['id'], 1, 'humanize', 'light')
+
+    def test_a_fake_worker_runs_it_end_to_end_and_apply_keeps_a_version(self):
+        calls = []
+
+        def worker(engine, payload, guidance, **options):
+            calls.append(options)
+            return {
+                'content': json.dumps(
+                    {
+                        'suggestions': [
+                            {
+                                'part': self.first,
+                                'before': 'We leverage a robust parser.',
+                                'after': 'We use a sturdy parser.',
+                                'why': 'Stock words.',
+                            }
+                        ]
+                    }
+                ),
+                'notes': '',
+            }
+
+        job = self.queue('humanize', level='light')
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        self.assertEqual(calls[0]['web'], False)
+        self.assertTrue(tool_jobs.read(self.root, job['id'])['settled_at'])
+        self.act('apply', seen=self.seen, job=job['id'], items=[{'id': 'p1'}])
+        self.assertTrue(self.draft()['sections'][0]['text'].startswith('We use a sturdy parser.'))
+        kept = desk.versions(self.root, self.ident, self.first)[0]
+        self.assertEqual(kept['source'], 'finishing')
+        self.assertTrue(kept['text'].startswith('We leverage'))
 
 
 if __name__ == '__main__':

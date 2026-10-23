@@ -22,6 +22,11 @@ KINDS = {
     'desk-research',
     'desk-outline',
     'desk-draft',
+    # Finishing on the desk: proposals to preview, then apply, edit or skip.
+    'finish-humanize',
+    'finish-facts',
+    'finish-headline',
+    'finish-feedback',
 }
 DESK = (
     'desk-section',
@@ -32,6 +37,10 @@ DESK = (
     'desk-research',
     'desk-outline',
     'desk-draft',
+    'finish-humanize',
+    'finish-facts',
+    'finish-headline',
+    'finish-feedback',
 )
 
 

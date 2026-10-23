@@ -27,7 +27,13 @@ KINDS = (
     'desk-research',
     'desk-outline',
     'desk-draft',
+    # Finishing (desk_finish.py): each proposes changes the person applies, edits or skips.
+    'finish-humanize',
+    'finish-facts',
+    'finish-headline',
+    'finish-feedback',
 )  # A blog's own desk jobs; desk-angles runs before there is a blog.
+FINISH = ('finish-humanize', 'finish-facts', 'finish-headline', 'finish-feedback')
 ACTIVE = ('queued', 'working')
 ACTIONS = {
     'rephrase': 'Rewrite the passage in fresh words with the same meaning.',
@@ -1256,6 +1262,26 @@ def _start_view(root, ident, rows):
     }
 
 
+def finish(root, ident, seen, tool, level=None):
+    """Queue a finishing tool. It writes no part, so no card waits for it and no form is
+    refused for it; its proposals are read against the draft when they come back."""
+    import desk_finish
+
+    draft = desk.read(root, ident)
+    kind, payload, guidance, meta = desk_finish.request(root, ident, draft, tool, level)
+    return _queue(
+        root,
+        ident,
+        draft,
+        seen,
+        kind,
+        payload,
+        guidance,
+        {'part': 'finishing', 'action': tool, **meta},
+        parts=[],
+    )
+
+
 FIRST_PASSES = ('tighten', 'reshape', 'leave')
 
 
@@ -1365,6 +1391,11 @@ def _apply(root, ident, draft, job):
     if not isinstance(content, str) or not content.strip():
         raise ValueError('The result was empty. Run it again.')
     kind = job['kind']
+    if kind in FINISH:
+        import desk_finish
+
+        desk_finish.settle(root, ident, draft, job)
+        return None  # Proposals only: nothing changes until the person applies them.
     if kind == 'desk-research':
         return None  # Its findings are in the blog's folder; the next step reads them.
     if kind == 'desk-outline':
@@ -1473,6 +1504,8 @@ def _settle(root, job):
         _next(root, job)
     if (job['metadata'].get('desk') or {}).get('start'):
         _advance(root, job)
+    if job['kind'] in FINISH:
+        return None  # Its proposals wait on this computer: nothing for the team to record.
     return ident
 
 

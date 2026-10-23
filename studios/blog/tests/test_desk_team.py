@@ -99,6 +99,43 @@ class DeskTeamTests(TeamCase):
             management.view(self.root, 'desk', {'id': [self.made['id']]})['title'], 'After settle'
         )
 
+    def test_finishing_suggestions_wait_here_and_only_apply_is_shared(self):
+        import json
+
+        ident = self.made['id']
+        queued = management.dispatch(
+            self.root, 'desk-finish', {'id': ident, 'seen': 1, 'tool': 'humanize', 'level': 'light'}
+        )
+        suggestion = {'part': self.part, 'before': 'First text.', 'after': 'The first text.'}
+
+        def worker(engine, payload, guidance, **options):
+            return {'content': json.dumps({'suggestions': [suggestion]}), 'notes': ''}
+
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        self.assertEqual(gitstate.changed(self.found), [])
+        remote = self.remote_commits()
+        job = queued['working']['id']
+        management.dispatch(self.root, 'desk-skip', {'id': ident, 'job': job, 'items': ['p1']})
+        self.assertEqual(self.remote_commits(), remote)
+        self.assertEqual(gitstate.changed(self.found), [])
+        # A second set, applied: a decision, recorded and shared.
+        management.dispatch(
+            self.root, 'desk-finish', {'id': ident, 'seen': 1, 'tool': 'humanize', 'level': 'light'}
+        )
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        shown = management.view(self.root, 'desk', {'id': [ident]})
+        second = shown['finishing']['humanize']['job']
+        management.dispatch(
+            self.root,
+            'desk-apply',
+            {'id': ident, 'seen': shown['revision'], 'job': second, 'items': [{'id': 'p1'}]},
+        )
+        self.assertEqual(self.remote_commits(), self.local_commits())
+        self.assertIn(
+            'The first text.',
+            support.git(self.remote, 'show', 'main:blogs/' + ident + '/DRAFT.md'),
+        )
+
     def save(self, seen, text, session='c' * 16):
         return management.dispatch(
             self.root,
