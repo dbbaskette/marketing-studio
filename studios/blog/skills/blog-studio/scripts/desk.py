@@ -7,6 +7,7 @@ pre-publish check read the same text as before.
 import json
 import re
 import secrets
+import textwrap
 from types import SimpleNamespace
 
 import studio
@@ -18,11 +19,35 @@ LIMIT = 200_000  # characters in one part
 ON_DESK = 'This blog is on the desk. Edit it there.'
 LENGTHS = ('style', 'short', 'deep')  # as blog_runner.LENGTHS: usual, short, in depth
 CREATE = frozenset(
-    {'title', 'manuscript', 'source', 'article', 'style', 'tone', 'length', 'sources', 'library'}
+    {
+        'title',
+        'manuscript',
+        'source',
+        'article',
+        'style',
+        'tone',
+        'length',
+        'sources',
+        'library',
+        # A start (Phase 2): the way of working, and what the person brings for it.
+        'way',
+        'point',
+        'audience',
+        'outline',
+        'outline_source',
+        'research_from',
+    }
 )
+# What the person brings: a draft (edit), a topic (author), an outline written from or an
+# outline shaped with them first (co-author).
+WAYS = ('draft', 'topic', 'outline', 'shape')
 FENCE = re.compile(r' {0,3}(`{3,}|~{3,})')
 TITLE = re.compile(r'# (?!#)(.*\S)\s*')
 HEADING = re.compile(r'## (?!#)(.*\S)\s*')
+ANY_HEADING = re.compile(r'(#{1,6})\s+(.*?\S)\s*#*\s*')
+ITEM = re.compile(r'(?:[-*+]|\d{1,3}[.)])\s+(\S.*)')
+SECTIONS = 60  # sections in one outline
+BRIEF = 4000  # characters in one section's brief
 
 
 def _id(taken):
@@ -93,6 +118,74 @@ def has_heading(text):
         if fence is None and HEADING.fullmatch(line):
             return True
     return False
+
+
+def outline_from(text):
+    """The outline a person pasted, as a title, an opening brief and sections with briefs,
+    or None when it is notes without structure.
+
+    Headings outside code (at the shallowest level used) start sections; without headings,
+    top-level list items do, and the lines indented under each are its brief. Text before
+    the first section is the opening brief. Fewer than two sections is not an outline."""
+    lines = (text or '').replace('\r\n', '\n').strip('\n').split('\n')
+    title = ''
+    found = TITLE.fullmatch(lines[0]) if lines and lines[0] else None
+    if found:
+        title, lines = found.group(1), lines[1:]
+    headings, items, fence = [], [], None
+    for at, line in enumerate(lines):
+        marker = FENCE.match(line)
+        if marker:
+            if fence is None:
+                fence = marker.group(1)
+            elif marker.group(1).startswith(fence[0] * len(fence)):
+                fence = None
+            continue
+        if fence is not None:
+            continue
+        heading = ANY_HEADING.fullmatch(line)
+        if heading:
+            headings.append((at, len(heading.group(1)), heading.group(2)))
+        elif ITEM.fullmatch(line) and not line[:1].isspace():
+            items.append((at, ITEM.fullmatch(line).group(1)))
+    if headings:
+        level = min(depth for _, depth, _ in headings)
+        cuts = [(at, words) for at, depth, words in headings if depth == level]
+    else:
+        cuts = items
+    if not 2 <= len(cuts) <= SECTIONS:
+        return None
+    sections, taken = [], set()
+    for number, (at, words) in enumerate(cuts):
+        end = cuts[number + 1][0] if number + 1 < len(cuts) else len(lines)
+        body = '\n'.join(lines[at + 1 : end])
+        words = words.strip()
+        if not headings:
+            body = textwrap.dedent(body)
+            lead, colon, rest = words.partition(': ')
+            if colon and len(lead) <= 100:
+                words, body = lead, rest + ('\n' + body if body.strip() else '')
+        heading = ' '.join(words.rstrip(':').split())[:200] or 'Section ' + str(number + 1)
+        sections.append(
+            {
+                'id': _id(taken),
+                'heading': heading,
+                'brief': _tidy(body.split('\n'))[:BRIEF],
+                'text': '',
+            }
+        )
+    return {
+        'title': title.strip()[:500],
+        'opening_brief': _tidy(lines[: cuts[0][0]])[:BRIEF],
+        'sections': sections,
+    }
+
+
+def _title_line(text):
+    """The `# ` title on the first line of a pasted outline or notes, or ''."""
+    first = (text or '').replace('\r\n', '\n').strip('\n').split('\n')[0]
+    found = TITLE.fullmatch(first)
+    return found.group(1).strip()[:500] if found else ''
 
 
 def join(draft):
@@ -196,6 +289,19 @@ def create(root, data):
         raise ValueError('Choose a listed kind of post.')
     if style:
         studio.style_check(root, style)  # Refused when retired or unknown; writes nothing.
+    way = data.get('way', 'draft')
+    if way not in WAYS:
+        raise ValueError('Choose a topic, an outline or notes, or a draft.')
+    if way != 'draft':
+        if given:
+            raise ValueError('A start from a topic or an outline brings no draft. Choose A draft.')
+        return _start(root, data, way, title.strip(), tone, length, style)
+    if data.get('research_from'):
+        raise ValueError('Research runs before new writing. A draft you bring is edited as it is.')
+    if data.get('outline') or data.get('outline_source') or data.get('point'):
+        raise ValueError(
+            'A draft you bring takes no outline or point. Choose a topic or an outline.'
+        )
     existing = None
     if given == ['article']:
         directory, existing = studio.item(root, 'articles', data['article'])
@@ -273,6 +379,169 @@ def create(root, data):
     studio.persist(directory, 'articles', record)
     studio.write_json(studio.inside(root, '.active-article.json'), {'id': ident})
     return draft
+
+
+START = 'start.json'
+# About how long each step of a start takes, for "in about N minutes"; a draft by length.
+MINUTES = {'research': 10, 'outline': 1, 'draft': {'short': 2, 'style': 3, 'deep': 5}}
+
+
+def estimate(steps, length):
+    return sum(
+        MINUTES['draft'].get(length, 3) if step == 'draft' else MINUTES[step] for step in steps
+    )
+
+
+def _research_choice(root, chosen, record):
+    """Where research before the writing may look: your sites and the public web, both off
+    by default, with your documents counted when readable ones are given. None: no research."""
+    import blog_runner
+    import synthesis_research
+    from studio_core import research_contract, research_sites
+
+    if chosen is None:
+        return None
+    if (
+        not isinstance(chosen, dict)
+        or set(chosen) - {'sites', 'web'}
+        or type(chosen.get('web', False)) is not bool
+        or not isinstance(chosen.get('sites', []), list)
+    ):
+        raise ValueError('Choose whether to search your sites and the web.')
+    sites = research_sites.sites(chosen.get('sites') or [])
+    if not sites and not chosen.get('web'):
+        return None
+    if not chosen.get('web') and research_contract.snapshot() is None:
+        raise ValueError(blog_runner.NEEDS_HARNESS_RESEARCH)
+    given = False
+    for entry in record['sources']:
+        _, source = studio.item(root, 'sources', entry['source_id'])
+        given = given or synthesis_research.offered({**source, 'purposes': entry['purposes']})
+    return research_sites.effective(
+        {'documents': True, 'sites': sites, 'web': chosen.get('web', False)}, given
+    )
+
+
+def _start(root, data, way, title, tone, length, style):
+    """A new desk blog whose draft is written for the person: from a topic and its point,
+    from their outline, or from an outline shaped with them first. The draft record holds
+    what is known so far; desk/start.json the steps that write the rest, with no stops."""
+    from studio_core import research_contract
+
+    point, audience = data.get('point') or '', data.get('audience') or ''
+    if not isinstance(point, str) or len(point) > 2000:
+        raise ValueError('Say the point to make in up to 2,000 characters.')
+    if not isinstance(audience, str) or len(audience) > 500:
+        raise ValueError('Say who it is for in up to 500 characters.')
+    point, audience = point.strip(), audience.strip()
+    if way == 'topic' and not point:
+        raise ValueError('Say the point to make, or pick an angle.')
+    notes = ''
+    if way in ('outline', 'shape'):
+        if data.get('outline') and data.get('outline_source'):
+            raise ValueError('Paste or upload your outline, not both.')
+        if data.get('outline_source'):
+            notes = _source_text(root, data['outline_source'])
+        else:
+            notes = data.get('outline') or ''
+        if not isinstance(notes, str) or not notes.strip():
+            raise ValueError('Paste or upload your outline or notes.')
+        if len(notes) > LIMIT:
+            raise ValueError('Use an outline up to 200,000 characters.')
+    parsed = outline_from(notes) if way == 'outline' else None
+    title = (title or _title_line(notes))[:500]
+    if not title:
+        raise ValueError('Give the blog a title.')
+    args = SimpleNamespace(
+        action='create',
+        id=None,
+        title=title,
+        mode='first-draft',
+        profile=None,
+        author=None,
+        voice='tone',
+        tone=tone,
+        audience=audience or None,
+        blog_type=None,
+        review_folder=None,
+        stop='review',
+        research='supplied-only',
+    )
+    ident = studio.new_id(title)
+    record = studio.article_record(root, args, ident)
+    record['voice'] = {'mode': 'tone', 'tone': tone}  # Tone only, whatever the defaults say.
+    record['flow'] = 'desk'
+    _attach(root, data, record)
+    found = _research_choice(root, data.get('research_from'), record)
+    record['research_policy'] = 'web-allowed' if found else 'supplied-only'
+    record['research_from'] = found
+    if style:
+        record['style'] = studio.style_pin(root, style)
+    steps = (['research'] if found else []) + {
+        'topic': ['outline', 'draft'],
+        'outline': ['draft'] if parsed else ['outline', 'draft'],
+        'shape': ['outline'],
+    }[way]
+    now = studio.now()
+    draft = {
+        'schema': 1,
+        'id': ident,
+        'revision': 1,
+        'title': title,
+        'opening': '',
+        'sections': parsed['sections'] if parsed else [],
+        'brief': {'point': point, 'audience': audience},
+        'opening_brief': parsed['opening_brief'] if parsed else '',
+        'style': record.get('style') if style else None,
+        'tone': tone,
+        'length': length,
+        'sources': _citable(record['sources']),
+        'gaps': [],
+        'created_at': now,
+        'updated_at': now,
+    }
+    start = {
+        'schema': 1,
+        'way': way,
+        'steps': steps,
+        'step': steps[0],
+        'job': None,
+        'started_at': now,
+        'ended_at': None,
+        'problem': '',
+        'open': 'outline' if way == 'shape' else 'draft',
+        'minutes': estimate(steps, length),
+        'notes': notes,
+        'research_from': found,
+        # Research keeps the Harness Research version it starts with, as a run does.
+        'contract': research_contract.snapshot() if found else None,
+        'phase': '',
+    }
+    directory = studio.inside(root, 'articles', ident)
+    directory.mkdir()
+    studio.write_json(studio.inside(directory, DESK, 'draft.json'), draft)
+    studio.write_json(studio.inside(directory, DESK, START), start)
+    studio.persist(directory, 'articles', record)
+    studio.write_json(studio.inside(root, '.active-article.json'), {'id': ident})
+    return draft
+
+
+def _start_path(root, ident):
+    directory, _ = _paths(root, ident)
+    return studio.inside(directory, DESK, START)
+
+
+def read_start(root, ident):
+    """The start that writes this blog's draft, or None for a blog brought as a draft."""
+    target = _start_path(root, ident)
+    if not target.is_file() or target.is_symlink():
+        return None
+    return studio.read_json(target)
+
+
+def write_start(root, ident, start):
+    _require_lock()
+    studio.write_json(_start_path(root, ident), start)
 
 
 def _citable(sources):
@@ -534,6 +803,8 @@ def _create(root, data):
     choice = data.pop('first_pass', 'leave')
     if choice not in desk_jobs.FIRST_PASSES:
         raise ValueError('Choose tighten, reshape or leave it as it is.')
+    if data.get('way', 'draft') != 'draft' and choice != 'leave':
+        raise ValueError('A first pass is for a draft you bring.')
     if choice == 'reshape' and not data.get('style'):
         raise ValueError('Choose a kind of post to reshape the draft to.')
     path = studio.inside(root, '.blog-runs', 'desk-creations', operation + '.json')
