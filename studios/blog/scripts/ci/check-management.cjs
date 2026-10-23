@@ -3127,10 +3127,11 @@ async function deskJourneys(){
   assert.deepEqual(JSON.parse(f.run("JSON.stringify(diffWords('one two three','one 2 three'))")).map(p=>p.op),['same','removed','added','same']);
 }
 async function deskLeaveShares(){
-  const requests=[];const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});if(url.startsWith('/api/desk?'))return deskView();return {items:[],total:0,settings:{defaults:{}},sources:[]};});
+  const requests=[];const f=fixture((url,options)=>{requests.push({url,options,data:options?.body?JSON.parse(options.body):null});if(url.startsWith('/api/desk?'))return deskView();return {items:[],total:0,settings:{defaults:{}},sources:[]};});
   f.loadRunner();await f.run("sRoute('desk','desk-blog')");
   await f.run("sRoute('blogs')");await new Promise(r=>setImmediate(r));
-  assert.deepEqual(requests.find(r=>r.url==='/api/desk-share')?.data,{id:'desk-blog'});
+  const share=requests.find(r=>r.url==='/api/desk-share');
+  assert.deepEqual(share?.data,{id:'desk-blog'});assert.equal(share.options.keepalive,true);assert.equal(share.options.method,'POST');
 }
 async function deskReturnAndGoogle(){
   const requests=[],timers=[];let view=deskView();

@@ -246,7 +246,8 @@ function sDeskStale(held){
 }
 
 // Leaving the desk, or hiding its tab, shares the edits typing kept on this computer.
-async function sDeskShare(held){if(!held)return;try{await sDeskFlush(held);await api('desk-share',{id:held.id});}catch(_){/* Shared with the next change instead. */}}
+// keepalive lets the request finish while the tab goes away.
+async function sDeskShare(held){if(!held)return;try{await sDeskFlush(held);await fetch('/api/desk-share',{method:'POST',keepalive:true,headers:{'X-Blog-Studio-Token':token,'Content-Type':'application/json'},body:JSON.stringify({id:held.id})});}catch(_){/* Shared with the next change instead. */}}
 
 // Notes and selection edits start a job; the desk follows it until it ends.
 async function sDeskJob(held,button,route,data,done){
