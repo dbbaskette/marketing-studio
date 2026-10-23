@@ -70,6 +70,8 @@ A site is a canonical `https://host[/path]`:
 - the host is a public name: no IP literal that is private, loopback, link-local or
   reserved, no `localhost`, no single-label name, no `.local`, `.localhost`, `.internal`,
   `.lan`, `.home.arpa` or `.test`;
+- no name whose last label is digits or 0x-hex (`127.1`, `0x7f.1`), which resolvers read
+  as an address; a Unicode name is kept in its punycode form;
 - the host is lowercased, the path keeps its case, loses its trailing slash and may not
   hold `.` or `..` segments;
 - the list is deduplicated, keeps its order and holds at most 50.
@@ -91,10 +93,17 @@ Each studio's research control reads the same way:
 
 > Research from: ☑ your documents ☑ your sites (3) ☐ the public web
 
-- "your documents" appears only where documents can be given, and is checked by default
-  when they are;
-- "your sites (N)" opens the shared list prefilled, a checkbox per site, and an
-  "Add a site for this piece of work" field that does not change the shared list;
+- each studio keeps its previous default: Presentation Studio document decks start with
+  your documents only (and say "With your documents only, nothing about them is searched
+  for on the public web."); Presentation Studio decks from scratch and Training Studio start
+  with the public web; Blog Studio keeps its research policy default;
+- "your sites (N)" is off until the person ticks it, even when a shared list exists. Ticked,
+  it shows the shared list prefilled, a checkbox per site, and an "Add a site for this
+  piece of work" field that does not change the shared list. The page says plainly that
+  site searches go through the assistant's web search tool and only pages under your sites
+  are saved;
+- a site typed into any form is checked by the server when it is added
+  (`research_sites.site`), so the page and the save use one rule;
 - with nothing that applies checked, the form says "Choose where research may look: your
   documents, your sites or the public web." and does not start.
 
@@ -110,7 +119,9 @@ Every place a research job saves or fetches a page asks
   host equals a listed site's host exactly (case-insensitive, no subdomain or lookalike
   such as `blogs.vmware.com.evil.example`), and its decoded path equals the site's path or
   continues it at a segment boundary (`/tanzu/x` is under `/tanzu`; `/tanzu-other/` is
-  not). A path holding `.`/`..` segments or an encoded slash is refused;
+  not). A path holding `.`/`..` segments (also as `..;x`), an encoded slash, whitespace,
+  or two `#` is refused. Fetchers check and request `research_sites.fetchable(url)`, the
+  address without its fragment, so a `#` can never hide a path from the check;
 - with the public web on, any public URL is allowed;
 - the existing private-address refusals stay in every case.
 
@@ -143,7 +154,13 @@ them in `research_from`.
 ## The research gate
 
 When a capture was refused, the research gate and the refusal copy name the sites
-("2 pages were outside your sites (blogs.vmware.com/tanzu) and were not saved").
+("2 pages were outside your sites (blogs.vmware.com/tanzu) and were not saved"), worded
+once by `research_sites.outside(count, sites)`.
+
+Blog Studio never gives a worker the open web for a sites-only choice: with your sites
+on, the public web off and no Harness Research on the computer, a new blog is refused with
+a sentence that points to Status. Training Studio reads an intake's "Sites:" line
+case-insensitively and never falls back to the public web when it cannot read it.
 
 ## Out of scope
 
