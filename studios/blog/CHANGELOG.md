@@ -5,6 +5,10 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Delete a blog from Home.** Each blog under **Needs you**, **In progress**, **Finished
+  drafts** and **Saved drafts** has **Delete** beside its way in, with the same typed-title
+  confirmation as its card on **Blogs**. Home is drawn again without it, and it is kept for
+  30 days under **Recently deleted**.
 - **Learning a voice or a style reads up to twenty samples**, up from ten, and up to
   800,000 characters of them in one job; a sample may be up to 200,000 characters. When
   the chosen samples are longer than one job takes, each long one is cut to a fair share
