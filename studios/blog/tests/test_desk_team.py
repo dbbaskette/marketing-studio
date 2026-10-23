@@ -138,6 +138,33 @@ class DeskTeamTests(unittest.TestCase):
             support.git(self.remote, 'show', 'main:blogs/' + self.made['id'] + '/DRAFT.md'),
         )
 
+    def test_a_share_that_failed_is_committed_by_the_next_desk_request(self):
+        management.dispatch(
+            self.root,
+            'desk-note',
+            {'id': self.made['id'], 'seen': 1, 'part': self.part, 'note': 'More.'},
+        )
+
+        def worker(engine, payload, guidance, **options):
+            return {'content': 'Settled.', 'notes': '', 'gaps': []}
+
+        with patch.object(
+            teams, 'saved', side_effect=support.WorkspaceError('Busy. Retry shortly.')
+        ):
+            tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        self.assertTrue(gitstate.changed(self.found))
+        shown = management.view(self.root, 'desk', {'id': [self.made['id']]})
+        management.dispatch(
+            self.root,
+            'desk-note',
+            {'id': self.made['id'], 'seen': shown['revision'], 'part': self.part, 'note': 'Again.'},
+        )
+        self.assertEqual(gitstate.changed(self.found), [])
+        self.assertIn(
+            'Settled.',
+            support.git(self.remote, 'show', 'main:blogs/' + self.made['id'] + '/DRAFT.md'),
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

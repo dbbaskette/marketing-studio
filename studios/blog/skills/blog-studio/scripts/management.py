@@ -2054,6 +2054,11 @@ def dispatch(root, route, data):
             result = save_memory(root, data)
             result['team_sync'] = saved(root)
             return result
+        if route.startswith('desk-') and route != 'desk-create':
+            # A desk result whose share failed after it settled is committed first.
+            from team_workspace import keep_desk
+
+            keep_desk(root, data.get('id'))
         if route == 'desk-save':
             # Typing is an edit, not a decision: no fetch, only the driver check.
             from team_workspace import guard

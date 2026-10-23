@@ -268,6 +268,24 @@ def saved(root, ident=None, message='Keep Blog Studio decision'):
     )
 
 
+def keep_desk(root, ident):
+    """Commit what a desk result left under a blog this computer drives, when sharing it
+    after the worker settled it did not get that far (desk_jobs.share). The next desk
+    request calls this before refreshing, so a failed share never jams the desk."""
+    found = space(root)
+    if not found or not isinstance(ident, str):
+        return False
+    folder = root / studio.identifier(ident)
+    if not (folder / 'desk' / 'draft.json').is_file() or not (folder / 'run.json').is_file():
+        return False
+    with support.locked(found.repo / '.git/blog-studio.lock'):
+        try:
+            guard(root, ident)
+        except ValueError:
+            return False  # Another computer drives it: nothing here is ours to record.
+        return gitstate.commit(found, 'Keep a desk change', [ident])
+
+
 def kept_locally(root, ident, session):
     """A desk autosave: an edit, not a decision. It is committed on this computer only, one
     commit per editing session (the page's session token), and shared with the next decision
