@@ -1611,6 +1611,7 @@ def view(root, ident):
 
     draft = desk.read(root, ident)
     directory, record = studio.item(root, 'articles', ident)
+    sendable = desk_finish.google_ready(record)
     rows = [_row(job) for job in jobs(root, ident)][-60:]
     style_name = None
     if draft.get('style'):
@@ -1633,13 +1634,13 @@ def view(root, ident):
     last = rows[-1] if rows else None
     chain = None
     if last and last['chain']:
-        record = chain_record(root, last['chain']) or {}
+        tally = chain_record(root, last['chain']) or {}  # Not the blog's record, used below.
         chain = {
-            'total': record.get('total', last['total']),
-            'revised': record.get('revised', 0),
-            'ended': bool(record.get('ended')),
+            'total': tally.get('total', last['total']),
+            'revised': tally.get('revised', 0),
+            'ended': bool(tally.get('ended')),
             'working': bool(last['busy']),
-            'problems': record.get('problems', []),
+            'problems': tally.get('problems', []),
         }
     return {
         **draft,
@@ -1666,6 +1667,8 @@ def view(root, ident):
         'start': _start_view(root, ident, rows),
         # Finishing: the newest suggestions from each tool, waiting on this computer.
         'finishing': desk_finish.summary(root, ident, draft),
+        # Whether the blog's Google Doc can take the desk's wording as suggestions.
+        'google_suggestions': sendable,
         # The blog record's version, for Mark as published and Delete.
         'expected': studio.digest((directory / 'session.json').read_bytes()),
     }

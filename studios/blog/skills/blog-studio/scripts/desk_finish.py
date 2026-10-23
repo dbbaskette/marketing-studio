@@ -767,3 +767,156 @@ def settle(root, ident, draft, job):
     if meta.get('level'):
         extra['level'] = meta['level']
     return keep(root, ident, job['id'], job['kind'], items, dropped=dropped, **extra)
+
+
+# Before publishing: repurpose into new desk blogs, and send the desk's wording to the
+# blog's Google Doc as suggestions. The pre-publish check reads DRAFT.md, which every desk
+# write keeps in step.
+MARKS = frozenset('[]*`<>')
+NO_DOC = (
+    'This blog has no Google Doc to send suggestions to. A blog started from a Google Doc can '
+    'send its desk changes back to that Doc.'
+)
+
+
+def google_changes(baseline, body):
+    """The desk's wording changes against the Google Doc as quoted suggestions, and how many
+    changed paragraphs cannot be one (added, removed, split or formatted)."""
+    import difflib
+    import json
+
+    import manuscript_editor
+
+    before, after = baseline.splitlines(), body.splitlines()
+    found, left = [], 0
+    for tag, a, b, c, d in difflib.SequenceMatcher(
+        None, before, after, autojunk=False
+    ).get_opcodes():
+        if tag == 'equal':
+            continue
+        if tag != 'replace' or b - a != d - c:
+            left += max(
+                sum(1 for line in before[a:b] if line.strip()),
+                sum(1 for line in after[c:d] if line.strip()),
+            )
+            continue
+        for offset, (old, new) in enumerate(zip(before[a:b], after[c:d], strict=True)):
+            quoted, replacement = manuscript_editor.changed_span(old, new)
+            if (
+                not old.strip()
+                or not new.strip()
+                or not quoted.strip()
+                or any(mark in quoted + replacement for mark in MARKS)
+            ):
+                left += 1
+                continue
+            item = {
+                'id': 'desk-'
+                + studio.digest(json.dumps([a + offset, quoted, replacement]).encode())[:16],
+                'kind': 'edit',
+                'before': quoted,
+                'after': replacement,
+                'reason': 'Wording changed on the writing desk.',
+            }
+            if baseline.count(quoted) > 1 and old.count(quoted) == 1 and not MARKS & set(old):
+                item['context'] = old  # The paragraph, so the quote is found in the right place.
+            found.append(manuscript_editor.proposal(item))
+    return found, left
+
+
+def _google_base(root, ident):
+    directory, record = studio.item(root, 'articles', ident)
+    base = (record.get('google') or {}).get('baselines', {}).get('draft') or {}
+    if not base.get('document') or not base.get('transfer'):
+        raise ValueError(NO_DOC)
+    return directory, record, base
+
+
+def google_ready(record):
+    base = (record.get('google') or {}).get('baselines', {}).get('draft') or {}
+    return bool(base.get('document') and base.get('transfer'))
+
+
+def _google_expected(root, ident):
+    directory, record, base = _google_base(root, ident)
+    import json
+
+    body = (directory / 'DRAFT.md').read_bytes() if (directory / 'DRAFT.md').is_file() else b''
+    return studio.digest(body + json.dumps(base, sort_keys=True).encode())
+
+
+def google_plan(root, ident, mode):
+    """Check the desk's latest wording against the Google Doc as suggestions; nothing is sent."""
+    import google_drive as drive
+    from google_workflow import snapshot_path
+
+    import manuscript_editor
+
+    directory, _, base = _google_base(root, ident)
+    if mode not in ('auto', 'native', 'comments'):
+        raise ValueError('Choose suggestions, comments or suggestions with comments fallback.')
+    baseline = snapshot_path(directory, base['transfer'], 'document').read_text()
+    proposals, left = google_changes(baseline, (directory / 'DRAFT.md').read_text())
+    if not proposals:
+        raise ValueError(
+            'Nothing to send: the desk’s wording matches the Google Doc'
+            + (
+                ', apart from paragraphs added, removed or formatted, which suggestions cannot carry.'
+                if left
+                else '.'
+            )
+        )
+    if len(proposals) > 100:
+        raise ValueError(
+            'More than 100 wording changes to send at once. Send fewer, or share the draft.'
+        )
+    client = drive.Client(drive.account_for(root))
+    plan = manuscript_editor.google_plan(
+        client, root, ident, proposals, mode, _google_expected(root, ident), base['document']['url']
+    )
+    return {**plan, 'left': left}
+
+
+def google_send(root, ident, data):
+    """Send a confirmed plan through the existing ledger, once, while the desk text is as
+    it was when the plan was made."""
+    import google_drive as drive
+
+    import manuscript_editor
+
+    expected = _google_expected(root, ident)
+    client = drive.Client(drive.account_for(root))
+    return manuscript_editor.google_send(client, root, ident, data, expected)
+
+
+def repurpose(root, ident, job_id, title, content):
+    """Make a repurpose job's output a new desk blog, once: the job's receipt names it."""
+    import tool_jobs
+
+    job = tool_jobs.read(root, job_id)
+    if job.get('kind') != 'repurpose' or (job.get('metadata') or {}).get('article') != ident:
+        raise ValueError('Choose prepared copy from this blog.')
+    if job.get('applied'):
+        made = job['applied'].get('desk') if isinstance(job['applied'], dict) else None
+        if made:
+            return made
+        raise ValueError('This copy was already saved. Prepare it again for a new blog.')
+    if job.get('status') != 'ready':
+        raise ValueError('Wait for the prepared copy before making it a blog.')
+    if not isinstance(content, str) or not content.strip() or len(content) > desk.LIMIT:
+        raise ValueError('Keep the prepared copy, up to 200,000 characters.')
+    if not isinstance(title, str) or not title.strip() or '\n' in title.strip() or len(title) > 500:
+        raise ValueError('Give the new blog a title of one line, up to 500 characters.')
+    source = desk.read(root, ident)
+    data = {'title': title.strip(), 'manuscript': content, 'tone': source.get('tone') or ''}
+    if source.get('style'):
+        try:
+            studio.style_check(root, source['style']['style_id'])
+            data['style'] = source['style']['style_id']
+        except (ValueError, KeyError, TypeError):
+            pass  # A retired kind of post: the copy is a blog of no particular kind.
+    made = desk.create(root, data)
+    job['applied'] = {'desk': {'id': made['id'], 'title': made['title']}, 'posted': False}
+    job['saved_content'] = content
+    tool_jobs.write(root, job)
+    return job['applied']['desk']

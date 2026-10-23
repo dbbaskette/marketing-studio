@@ -654,5 +654,128 @@ class FeedbackTests(ToolCase):
         )
 
 
+class BeforePublishingTests(ToolCase):
+    def test_the_prepublish_check_reads_the_desks_latest_text(self):
+        import prepublish
+
+        desk.save(self.root, self.ident, self.seen, self.second, 'Still to do: TODO add a link.')
+        found = prepublish.report(self.root, self.ident)
+        self.assertIn('unfinished-note', [f['code'] for f in found['findings']])
+
+    def repurposed(self):
+        import article_tools
+
+        desk.save(self.root, self.ident, self.seen, self.second, 'Typed just now on the desk.')
+        return article_tools.request(
+            self.root,
+            {
+                'kind': 'repurpose',
+                'id': self.ident,
+                'operation': secrets.token_hex(16),
+                'format': 'linkedin',
+                'words': 100,
+            },
+        )
+
+    def test_a_repurpose_job_reads_the_desks_latest_text(self):
+        job = tool_jobs.read(self.root, self.repurposed()['id'])
+        self.assertIn('Typed just now on the desk.', job['payload']['source'])
+        self.assertEqual(job['payload']['voice']['mode'], 'tone')
+
+    def test_a_repurpose_result_becomes_a_new_desk_blog_once(self):
+        job = tool_jobs.read(self.root, self.repurposed()['id'])
+        with self.assertRaisesRegex(ValueError, 'Wait for the prepared copy'):
+            self.act('repurpose', job=job['id'], title='Copy', content='Text.')
+        job.update(status='ready', result={'content': 'A short post.', 'notes': ''})
+        tool_jobs.write(self.root, job)
+        shown = self.act(
+            'repurpose', job=job['id'], title='Parser post', content='A short post, edited.'
+        )
+        made = shown['made']
+        self.assertEqual(shown['id'], self.ident)
+        new = desk.read(self.root, made['id'])
+        self.assertEqual(new['title'], 'Parser post')
+        self.assertEqual(new['opening'], 'A short post, edited.')
+        self.assertEqual(new['tone'], self.draft()['tone'])
+        again = self.act('repurpose', job=job['id'], title='Other', content='Other.')['made']
+        self.assertEqual(again, made)
+        self.assertEqual(tool_jobs.read(self.root, job['id'])['applied']['desk']['id'], made['id'])
+
+    def test_repurpose_takes_only_this_blogs_copy(self):
+        other = desk.create(self.root, {'title': 'Other', 'manuscript': DRAFT})
+        job = self.repurposed()
+        with self.assertRaisesRegex(ValueError, 'from this blog'):
+            desk.dispatch(
+                self.root,
+                'repurpose',
+                {'id': other['id'], 'job': job['id'], 'title': 'X', 'content': 'Y'},
+            )
+
+    def test_a_blog_without_a_google_doc_is_refused_readably(self):
+        with self.assertRaisesRegex(ValueError, 'no Google Doc'):
+            self.act('google-plan', mode='auto')
+        self.assertFalse(desk_jobs.view(self.root, self.ident)['google_suggestions'])
+
+    def test_wording_changes_become_quoted_suggestions_and_the_rest_is_counted(self):
+        baseline = '## Heading\n\nThe delay is long.\n\nKeep it.\n\nGone soon.\n'
+        body = '# Title\n\n## Heading\n\nThe wait is long.\n\nKeep **it**.\n'
+        found, left = desk_finish.google_changes(baseline, body)
+        self.assertEqual([(f['before'], f['after']) for f in found], [('delay', 'wait')])
+        self.assertEqual(left, 3)  # The title line added, a formatting change, a paragraph cut.
+
+
+import google_drive  # noqa: E402
+import test_google_start  # noqa: E402
+
+
+class DeskGoogleTests(unittest.TestCase):
+    start = test_google_start.GoogleStartTests.start
+
+    def setUp(self):
+        test_google_start.GoogleStartTests.setUp(self)
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+        ident = self.start()['id']
+        held = studio._HELD.set(True)
+        self.addCleanup(studio._HELD.reset, held)
+        self.made = desk.create(self.root, {'article': ident})
+        self.ident = self.made['id']
+        self.part = self.made['sections'][0]['id']
+
+    def act(self, action, **data):
+        from unittest.mock import patch
+
+        with patch.object(google_drive, 'Client', return_value=self.client):
+            return desk.dispatch(self.root, action, {'id': self.ident, **data})
+
+    def test_the_desks_latest_wording_is_sent_as_suggestions(self):
+        self.assertTrue(desk_jobs.view(self.root, self.ident)['google_suggestions'])
+        text = self.made['sections'][0]['text']
+        desk.save(self.root, self.ident, 1, self.part, text.replace('slow', 'late'))
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual(plan['count'], 1)
+        self.assertEqual([(p['before'], p['after']) for p in plan['proposals']], [('slow', 'late')])
+        self.assertEqual(plan['left'], 1)  # The title line the desk adds is not a suggestion.
+        self.assertEqual(self.client.writes, 0)
+        result = self.act('google-send', plan=plan['plan'], confirmed=True)
+        self.assertEqual(result['status'], 'verified-pending')
+        writes = self.client.writes
+        self.act('google-send', plan=plan['plan'], confirmed=True)
+        self.assertEqual(self.client.writes, writes)
+
+    def test_a_send_after_the_desk_changed_is_refused(self):
+        text = self.made['sections'][0]['text']
+        desk.save(self.root, self.ident, 1, self.part, text.replace('slow', 'late'))
+        plan = self.act('google-plan', mode='auto')
+        desk.save(self.root, self.ident, 2, self.part, text.replace('slow', 'later'))
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            self.act('google-send', plan=plan['plan'], confirmed=True)
+        with self.assertRaisesRegex(ValueError, 'confirm'):
+            self.act('google-send', plan=plan['plan'], confirmed=False)
+
+    def test_nothing_changed_is_said(self):
+        with self.assertRaisesRegex(ValueError, 'Nothing to send'):
+            self.act('google-plan', mode='auto')
+
+
 if __name__ == '__main__':
     unittest.main()

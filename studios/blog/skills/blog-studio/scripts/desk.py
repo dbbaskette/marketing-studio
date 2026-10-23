@@ -994,6 +994,10 @@ ROUTES = {
     'finish': {'id', 'seen', 'tool', 'level'},
     'apply': {'id', 'seen', 'job', 'items'},
     'skip': {'id', 'job', 'items'},
+    # Before publishing: a repurpose result as a new blog, and Google suggestions.
+    'repurpose': {'id', 'job', 'title', 'content'},
+    'google-plan': {'id', 'mode'},
+    'google-send': {'id', 'plan', 'confirmed'},
 }
 SESSION = re.compile(r'[a-f0-9]{16,64}')
 
@@ -1114,6 +1118,19 @@ def dispatch(root, action, data):
         desk_jobs.draft_job(root, ident, seen)
     elif action == 'sources':
         add_sources(root, ident, data)
+    elif action in ('google-plan', 'google-send'):
+        import desk_finish
+
+        if action == 'google-plan':
+            return desk_finish.google_plan(root, ident, data.get('mode', 'auto'))
+        return desk_finish.google_send(root, ident, data)
+    elif action == 'repurpose':
+        import desk_finish
+
+        made = desk_finish.repurpose(
+            root, ident, data.get('job'), data.get('title'), data.get('content')
+        )
+        return {**desk_jobs.view(root, ident), 'made': made}
     elif action == 'finish':
         desk_jobs.finish(root, ident, seen, data.get('tool'), data.get('level'))
     elif action in ('apply', 'skip'):

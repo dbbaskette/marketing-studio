@@ -2117,7 +2117,12 @@ DESK_LOCAL = ('desk-save', 'desk-skip')
 def dispatch(root, route, data):
     from team_workspace import space, before, saved, status, refresh, action, join
 
-    if route in ('editor-google-plan', 'editor-google-send'):
+    if route in (
+        'editor-google-plan',
+        'editor-google-send',
+        'desk-google-plan',
+        'desk-google-send',
+    ):
         return _dispatch(root, route, data)
     if (
         route == 'google-preview'
@@ -2220,6 +2225,8 @@ def dispatch(root, route, data):
             # A tool result may be a job or a profile, whose IDs are not blogs: the blog
             # a tool worked on is the one the request named.
             ident = data.get('id')
+        elif route == 'desk-repurpose':
+            ident = result['made']['id']  # The new blog; the source changed nothing shared.
         elif route.startswith(('run-', 'editor-', 'desk-')) or route in (
             'schedule',
             'google-start',
