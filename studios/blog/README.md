@@ -68,19 +68,21 @@ Once the page is open, use its controls to drive the work:
    tone, research choice, and step time limit. You can change these later in
    **Settings**. Under **Brand skill**, enter its repository and release or choose
    an installed skill, just as in Training Studio. See [brand setup](docs/runner.md#your-brand-skill).
-2. **Choose New blog.** Choose **Polish a document**, **Write from a brief**, **Use my
-   outline**, **Outline only**, **Revise or review a draft**, **Explore ideas**, **New blog from my files** or **Interview me**; give
-   the topic and audience, then **Write as** (whose
-   voice) and **Kind of post** (the shape of the piece); then upload files or select
-   saved references, and set the tone, author and an optional brand. To revise or review, supply the manuscript.
-   To start from your own documents, choose **New blog from my files** on Home: upload
-   them or paste Google Doc links and say what each is for: facts that may be quoted,
-   approved messaging (a messaging document, launch brief or release notes, written as
-   the product's own claims), or an example of the kind of post you want (its shape,
-   never its facts). **Length** asks for the usual length, short or in depth. Then pick one
-   of three suggested angles, or give the title, the point and the reader yourself, and
-   the usual outline and draft follow. **Write as** chooses the voice there too: your
-   default voice, a saved profile, or no particular voice with a tone.
+2. **Choose New blog.** A new blog starts on the writing desk in three steps. **What
+   are you writing?** picks the kind of post. **What do you have?** is **Just a topic**
+   (the title, who it is for and the point; **Suggest three angles** offers three editable
+   cards on the same screen), **An outline or notes** (**Write from my outline**, or
+   **Shape an outline with me first**, which opens the outline on the desk) or **A draft**
+   (pasted, uploaded or a Google Doc, with an optional first pass). **Sources and
+   settings** adds files, links, Google Docs and team library posts, each with what it is
+   for: facts that may be quoted, approved messaging (a messaging document, launch brief or
+   release notes, written as the product's own claims), or an example of the kind of post
+   you want (its shape, never its facts). **Search my sites** and **Search the web too**
+   (both off) research before the writing; **Length** asks for the usual length, short or
+   in depth; **Tone** says how it sounds. After **Start** nothing is needed from you: the
+   page shows each step and opens the draft on the desk when it is ready. The desk's
+   **Outline** tab renames, reorders, adds and removes sections and writes the draft or
+   one section from it; **Add a source** takes more sources at any time.
    A Doc is read with this computer's Google sign-in, so it does not need to be shared.
    The files land in the **team library** unless you untick **Keep**; then they stay
    on this computer, though the blog's outline and draft may quote them and are
@@ -188,6 +190,6 @@ change, the page names the full rerun, its last recorded cost and the saved stag
 
 ### Finish from the page
 
-Home includes **Outline only** and **Revise or review a draft**, with a manuscript upload and a choice to improve it or give feedback only. Developing an idea continues through outline, draft, review and handoff. Done offers pre-publish checks, repurposing and **Open as a Google Doc**. Confirming the latter creates one private Doc of the approved draft; another press reopens it or reconciles an uncertain upload before trying anything else.
+Home starts a blog from a topic, an outline or notes, or a draft, on the writing desk. Blogs started step by step before the desk continue through outline, draft, review and handoff. Done offers pre-publish checks, repurposing and **Open as a Google Doc**. Confirming the latter creates one private Doc of the approved draft; another press reopens it or reconciles an uncertain upload before trying anything else.
 
 At review, **Apply the review's findings** preserves the current draft, then runs draft, review and handoff again after confirmation. Review notes open beside the text, with actual voice, repetition, example and preservation checks. Each uploaded file can be kept in the team library or returned to this blog's material before it is shared or pinned by a run.

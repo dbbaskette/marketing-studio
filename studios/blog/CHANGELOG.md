@@ -5,6 +5,27 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Author and co-author starts.** New blogs start on the desk in three steps: the kind
+  of post; what you have (**Just a topic**, with **Suggest three angles** offering three
+  editable cards on the same screen; **An outline or notes**, with **Write from my
+  outline** or **Shape an outline with me first**; or **A draft**); and sources and
+  settings for every way (files, links, Google Docs and team library posts with their
+  roles, **Search my sites** and **Search the web too**, both off, length and tone). After
+  **Start** nothing stops for you: research (when ticked), the outline and the draft run
+  one after another, the page says "Nothing needed from you" with the step under way and
+  one clock, offers Stop and Retry, and opens the draft (or, for Shape, the outline) on its
+  own. The desk gains an **Outline** tab (rename, reorder, add and remove sections, edit
+  their briefs, **Write the draft**, **Write this section**) and **Add a source** in its
+  sources panel. Home, New blog and the library's Write a blog from these open the new
+  start; blogs already started step by step keep their wizard and run.
+- **For maintainers:** `desk.create` takes `way` (`topic`, `outline`, `shape`) with
+  `desk/start.json` beside the draft; new tool job kinds `desk-angles` (before a blog
+  exists, keyed by the page operation), `desk-research` (the research plan, then Harness
+  Research or one web research job, with no gate), `desk-outline` and `desk-draft`;
+  `references/modules/desk-write.md`; routes `desk-angles` (and `GET /api/desk-angles`),
+  `desk-retry`, `desk-outline-save`, `desk-draft` and `desk-sources`.
+  `blog_runner.FROM_OUTLINE`, `WRITING_NOTES` and `GAPS_OPEN` name sentences runs already
+  used, unchanged.
 - **The writing desk.** Blogs can be edited on the desk: notes per section and for the
   whole draft, selection edits, and versions with compare and restore. **Polish a
   document** and **Revise or review a draft** bring a pasted, uploaded or Google Doc draft
