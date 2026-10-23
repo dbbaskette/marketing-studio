@@ -651,15 +651,18 @@ class SelectionTests(RunnerCase):
             if path.is_file()
         }
 
-    def test_a_learn_selection_takes_ten_readable_items_and_names_the_rest(self):
-        ready = self.items(*['post%d.md' % n for n in range(11)], author='Avery')
+    def test_a_learn_selection_takes_twenty_readable_items_and_names_the_rest(self):
+        # An upload takes at most twenty files, so the twenty-one posts go up in two.
+        ready = self.items(*['post%d.md' % n for n in range(20)], author='Avery') + self.items(
+            'post20.md', author='Avery', operation='8'
+        )
         with patch.object(library.shutil, 'which', return_value=None):
             scan = self.items('scan.pdf', author='Avery', operation='9')
         result = management.dispatch(
             self.root, 'library-selection', {'action': 'style-learn', 'ids': scan + ready}
         )
-        self.assertEqual([c['id'] for c in result['candidates']], ready[:10])
-        self.assertEqual(result['left_out'], [{'id': ready[10], 'name': 'post10'}])
+        self.assertEqual([c['id'] for c in result['candidates']], ready[:20])
+        self.assertEqual(result['left_out'], [{'id': ready[20], 'name': 'post20'}])
         self.assertEqual(
             result['skipped'],
             [{'id': scan[0], 'name': 'scan', 'reason': 'It has no readable text yet.'}],

@@ -96,3 +96,8 @@
 .gap-items>li{padding:.45rem 0;min-width:0;overflow-wrap:anywhere;line-height:1.45}
 .gap-items>li+li{border-top:1px solid var(--hair)}
 .gap-items>li::marker{color:var(--yours)}
+
+/* Voices and styles: a long name or summary wraps as lines beside a short button, never a letter a line. */
+.sample-row { flex-wrap: wrap; }
+.sample-row > .row-text { flex: 1 1 16rem; }
+.sample-row > .button { flex: 0 0 auto; }

@@ -29,16 +29,21 @@ def fingerprint(value):
     return studio.digest(json.dumps(value, sort_keys=True).encode())
 
 
+LEARN_LIMIT = 20  # samples one learning job reads
+# Twenty full posts can outgrow a job; past this many characters each is cut to a fair share.
+LEARN_BUDGET = 800_000
+
+
 def samples(root, selected, purpose='voice-sample'):
     if (
         not isinstance(selected, list)
-        or not 1 <= len(selected) <= 10
+        or not 1 <= len(selected) <= LEARN_LIMIT
         or len(set(selected)) != len(selected)
     ):
         raise ValueError(
-            'Choose one to ten different authored voice samples.'
+            'Choose one to twenty different authored voice samples.'
             if purpose == 'voice-sample'
-            else 'Choose one to ten different examples of this kind of writing.'
+            else 'Choose one to twenty different examples of this kind of writing.'
         )
     if purpose == 'voice-sample':
         studio.validate_samples(root, selected)
@@ -52,14 +57,42 @@ def samples(root, selected, purpose='voice-sample'):
     for ident in selected:
         folder, record = studio.item(root, 'sources', ident)
         body = text_only((folder / 'content.md').read_text())
-        if len(body) > 80_000:
+        if len(body) > 200_000:
             raise ValueError(
                 'Use shorter authored voice samples for learning.'
                 if purpose == 'voice-sample'
                 else 'Use shorter examples for learning.'
             )
         found.append({'id': ident, 'revision': record['revision'], 'record': record, 'text': body})
-    return found
+    return shared(found)
+
+
+def shared(found, budget=LEARN_BUDGET):
+    """Samples within one job's budget: short ones whole, long ones cut to a fair share at a
+    paragraph, marked so the worker knows. The same samples always cut the same way."""
+    if sum(len(entry['text']) for entry in found) <= budget:
+        return found
+    shares, left = {}, budget
+    ordered = sorted(found, key=lambda entry: len(entry['text']))
+    for position, entry in enumerate(ordered):
+        shares[entry['id']] = min(len(entry['text']), left // (len(ordered) - position))
+        left -= shares[entry['id']]
+    result = []
+    for entry in found:
+        keep = shares[entry['id']]
+        if len(entry['text']) <= keep:
+            result.append(entry)
+            continue
+        cut = entry['text'][:keep]
+        cut = cut[: cut.rfind('\n\n')] if cut.rfind('\n\n') > keep // 2 else cut
+        result.append(
+            {
+                **entry,
+                'text': cut + '\n\n[Cut here to fit one job: the rest of this sample is not read.]',
+                'excerpted': True,
+            }
+        )
+    return result
 
 
 def background(root, ident):
@@ -531,8 +564,8 @@ def save_profile(root, data):
     guide = text(data.get('guide'), 'a reviewed voice guide', 40_000)
     name = text(data.get('name', (current or {}).get('name')), 'a profile name', 200)
     chosen = data.get('samples', (current or {}).get('sample_ids', []))
-    if not isinstance(chosen, list) or len(chosen) > 10:
-        raise ValueError('Choose up to ten authored samples.')
+    if not isinstance(chosen, list) or len(chosen) > LEARN_LIMIT:
+        raise ValueError('Choose up to twenty authored samples.')
     studio.validate_samples(root, chosen)
     with tempfile.TemporaryDirectory(prefix='blog-voice-profile-') as scratch:
         file = Path(scratch) / 'VOICE.md'

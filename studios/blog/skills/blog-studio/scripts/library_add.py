@@ -440,7 +440,7 @@ def groups_of(rows):
             group['samples'].append(row['id'])
     for group in groups:
         group['count'] = len(group['ids'])
-        group['learnable'] = group['samples'][:10]
+        group['learnable'] = group['samples'][:LEARN_LIMIT]
     groups.sort(key=lambda g: (-g['count'], g['author'].casefold()))
     return groups, held
 
@@ -476,7 +476,7 @@ def status(root, operation, sync=True, changed=(), problems=None):
         )
     elif any(g['learnable'] for g in groups):
         words.append(
-            'Learn a voice from a group: choose up to ten samples, then confirm they may be analyzed.'
+            'Learn a voice from a group: choose up to twenty samples, then confirm they may be analyzed.'
         )
     if counts['failed']:
         words.append('Try the failed links again: only they are fetched, once more.')
@@ -585,14 +585,14 @@ def mark_samples(root, data):
 SELECTION_ACTIONS = ('style-learn', 'voice-learn', 'blog')
 
 
-LEARN_LIMIT = 10  # What a learn sheet takes, and a learning job reads.
+LEARN_LIMIT = 20  # What a learn sheet takes, and a learning job reads.
 
 
 def selection(root, data):
     """The library screen's three actions on a selection. Nothing is saved, marked or shared
     here, and nothing starts a job (a Team Hub row is checked out to be read, as a library
     import does). style-learn and voice-learn return the readable items as candidates for
-    the learn sheet, the first ten, naming those left out and those without text; the
+    the learn sheet, the first twenty, naming those left out and those without text; the
     purposes are added only when the learning job is confirmed. voice-learn needs whose
     writing it is: the items' own author when every item names the same one, else an
     explicit author; one item's author is never given to another. blog returns the items

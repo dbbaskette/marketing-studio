@@ -5,6 +5,12 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Learning a voice or a style reads up to twenty samples**, up from ten, and up to
+  800,000 characters of them in one job; a sample may be up to 200,000 characters. When
+  the chosen samples are longer than one job takes, each long one is cut to a fair share
+  at a paragraph and marked, and short ones are read whole.
+- **Voices and styles lists a long style name as a line**, beside a short "Read and
+  manage" button, instead of one letter a line.
 - **Small things put right.** **Checked for you** now also catches `[TODO]`, `[TBD]` and
   `[Placeholder: …]` in any case, and no longer mistakes a link's own text, such as
   `[source-available](https://…)`, for a source ID. `source add --purpose messaging` on
