@@ -143,15 +143,21 @@ claiming that its check accepted it.
 web: the form's **Research from** offers *your documents* (a deck from a document, on by
 default), *your sites* (the shared list from Shared settings, prefilled, a tick for each site
 and **Add a site for this piece of work**, which does not change the shared list) and *the
-public web*. At least one that applies must be on. With no sites in the shared list a deck
-from an idea starts with the public web; with sites, with your sites. The deck keeps the
+public web*. At least one that applies must be on. A deck from a document starts with your
+documents only ("With your documents only, nothing about them is searched for on the public
+web."), one from an idea with the public web; your sites stay off until they are ticked.
+Your sites are searched with the assistant's own web search tool, and only pages from under
+them are saved. A site added for one deck is checked by the runner (`/api/research-site`)
+with the same rules as the shared list, and its refusal is said beside the box. The deck keeps the
 choice as `research_from` (`{"documents", "sites", "web"}`) in its form, with the exact list
 it started with, and its stops line says it: "Research from your documents and 2 of your
 sites (…)". A deck saved before this reads its `research_sources` as before: `documents` is
 your documents, `both` your documents and the public web, and research with neither, the
 public web (with a document's own documents).
 
-Every page a research job saves is checked on every hop, redirects included. With your
+Every page a research job saves is checked on every hop, redirects included, and each hop
+is checked and asked for without its fragment, so a `#` cannot carry a path past the check.
+With your
 sites on and the public web off, a page is saved only when it is https on a listed site's
 own host (no subdomain or lookalike) and under its path at a segment boundary; any other
 page is refused with a sentence naming the sites, and the research stop says how many were

@@ -2851,7 +2851,8 @@ class Engine(Jobs, Researching):
                     [{'id': i, 'question': q} for i, q in self._questions(root).items()]) if contract else None,
                 # Where the research looked, with the sites named, and what it could not save.
                 'research_from': 'Research ' + research_sites.summary(looks),
-                'outside': self._outside_words(record, looks)}
+                'outside': research_sites.outside(
+                    len((record.get('research') or {}).get('outside') or []), looks['sites'])}
 
     def storyboard(self, path, edited, expected: str) -> dict:
         """Preview the current or unsaved outline without saving or approving it."""

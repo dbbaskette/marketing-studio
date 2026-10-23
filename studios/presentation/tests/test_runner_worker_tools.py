@@ -562,6 +562,43 @@ class ResearchSiteTests(JobCase):
         url = self.web.page('https://elsewhere.example.com/page', PAGE)
         self.assertTrue(self.ok(tools.save_source(url)).startswith('Saved as s1'))
 
+    def test_what_is_asked_of_a_site_never_leaves_its_path(self):
+        """The request is what urllib sends: a '#' (which a URL parser splits at the first
+        and urllib at the last) or a '..;' segment cannot carry it outside the site."""
+        import urllib.request
+        sent = []
+
+        def opener(url, address, limit):
+            request = urllib.request.Request(url)
+            sent.append((request.host, request.selector))
+            return self.web.opener(url, address, limit)
+
+        for url in (BLOG, BLOG + '/post', BLOG + '/new', 'https://blog.example.com/admin',
+                    'https://blog.example.com/platform/x/..;/..;/admin'):
+            self.web.page(url, PAGE + url)
+        self.web.page(BLOG + '/moved', '', status=302,
+                      headers={'location': BLOG + '/new#/../../admin#z'})
+        tools = self.research()
+        tools.opener = opener
+        for url in (BLOG + '#/x/../../admin#z', BLOG + '/post#section', BLOG + '/moved',
+                    'https://blog.example.com/admin',
+                    'https://blog.example.com/platform/x/..;/..;/admin'):
+            with self.subTest(url):
+                tools.save_source(url)
+        self.assertTrue(sent)
+        for host, selector in sent:
+            self.assertEqual(host, 'blog.example.com')
+            self.assertNotIn('#', selector)
+            self.assertTrue(selector == '/platform' or selector.startswith('/platform/'),
+                            selector)
+        self.assertNotIn(('blog.example.com', '/admin'), sent)
+        self.assertIn(('blog.example.com', '/platform/post'), sent)
+        saved = {entry['url'] for entry in worker_tools.collect(self.job)['sources']}
+        self.assertEqual(saved, {BLOG, BLOG + '/post', BLOG + '/new'})
+        refused = [entry['url'] for entry in worker_tools.collect(self.job)['outside']]
+        self.assertEqual(refused, ['https://blog.example.com/admin',
+                                   'https://blog.example.com/platform/x/..;/..;/admin'])
+
 
 class SourceTests(JobCase):
     def saved(self, body=PAGE, **page):

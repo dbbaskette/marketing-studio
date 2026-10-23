@@ -276,10 +276,12 @@ class Researching:
                         'a presentation', form.get('goal') or 'explain this topic',
                         'Prioritize key messages, evidence worth explaining visually, and '
                         'counterarguments.'),
-                    # Where research may look, sites named: the run's research_from.
+                    # Where research may look, sites named, for a deck that saved its
+                    # research_from; an older deck keeps its scope word for word.
                     'scope': 'Evidence, limitations and alternatives for the presentation goal: '
                              + (form.get('goal') or record.get('title') or 'explain the topic')
-                             + '. ' + research_sites.scope_text(looks),
+                             + ('. ' + research_sites.scope_text(looks)
+                                if 'research_from' in form else ''),
                     'planning_questions': plan.get('items', []),
                     'notes': form.get('notes') or '',
                     'requested_changes': record.get('gates', {}).get('gate:research', {}),
@@ -417,7 +419,8 @@ class Researching:
                 + (f'Search words to start from: {query}\n' if query else '')
                 + ('The documents the person supplied are saved for you already. Read them'
                    + (' as well as the web.\n' if fetch else '.\n') if offered else '')
-                + f'Where research may look: {research_sites.scope_text(looks)}\n'
+                + (f'Where research may look: {research_sites.scope_text(looks)}\n'
+                   if 'research_from' in (record.get('form') or {}) else '')
                 + f'\nThe presentation:\n{self._about(record)}')
         if told:
             task += f'\n\n{told}'
@@ -542,18 +545,6 @@ class Researching:
             record['research'] = {**research, 'outside': kept}
             self._store(root, record)
             self._commit(root, 'note the pages research could not save from outside your sites')
-
-    @staticmethod
-    def _outside_words(record: dict, looks: dict) -> str | None:
-        """'2 pages were outside your sites (a, b) and were not saved.', or None."""
-        count = len((record.get('research') or {}).get('outside') or [])
-        if not count or not looks['sites']:
-            return None
-        names = [research_sites.shown(site) for site in looks['sites']]
-        named = ', '.join(names[:research_sites.SHOWN]) + (
-            f' and {len(names) - research_sites.SHOWN} more' if len(names) > research_sites.SHOWN else '')
-        return (f"{count} page{'s were' if count > 1 else ' was'} outside your sites ({named}) "
-                f"and {'were' if count > 1 else 'was'} not saved.")
 
     @staticmethod
     def _about(record: dict) -> str:

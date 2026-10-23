@@ -44,7 +44,8 @@ POSTS = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decid
          '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
          '/api/versions', '/api/computer', '/api/brand', '/api/brand/install',
          '/api/shared', '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
-         '/api/note', '/api/review-level', '/api/picture', '/api/picture-remove')
+         '/api/note', '/api/review-level', '/api/research-site', '/api/picture',
+         '/api/picture-remove')
 BOTH = ('/api/setup', '/api/decks', '/api/run', '/api/delete', '/api/computer', '/api/storyboard')
 LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None,
            'about': 'Previous generation workhorse model.', 'default_level': 'medium',

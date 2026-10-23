@@ -638,6 +638,26 @@ class SynthesisBriefTests(DeckCase):
                     self.assertIn('Allowed sites: blog.example.com/platform, docs.example.com.',
                                   captured[0]['scope'])
 
+    def test_an_older_deck_keeps_its_exact_research_scope(self):
+        from runner.engine import Engine
+        from studio_core import research_contract
+        self.write('research/plan.json', json.dumps({**PLAN, 'scope': 'public-web'}))
+        for form in ({'goal': 'Explain rolling restarts'},
+                     {'goal': 'Explain rolling restarts', 'route': 'document', 'research': True,
+                      'research_sources': 'both'}):
+            captured = []
+
+            def native(engine, root, run, task, sources, product):
+                captured.append(task)
+                raise RuntimeError('captured before workers')
+            record = {'research_contract': {'schema': 2}, 'form': form}
+            with mock.patch.object(research_contract, 'native', side_effect=native), \
+                    mock.patch.object(Engine, '_load', return_value=record):
+                with self.assertRaisesRegex(RuntimeError, 'captured before workers'):
+                    Engine()._research(self.root, None, None)
+            self.assertEqual(captured[0]['scope'], 'Evidence, limitations and alternatives for '
+                                                   'the presentation goal: Explain rolling restarts')
+
     def test_a_job_that_saves_pages_is_kept_to_the_sites_and_told_how_to_search(self):
         from runner.engine import Engine
         from runner.steps import Work

@@ -1661,6 +1661,13 @@ class WorkerTools:
         """A page's final address, headers and body, with every hop on the way checked."""
         came_from = None
         for _ in range(MAX_HOPS + 1):
+            # Each hop is checked and asked for without its fragment, which is never sent:
+            # parsers split at the first '#' and urllib at the last, so a fragment left in
+            # could carry a path the check never saw.
+            try:
+                url = research_sites.fetchable(url)
+            except ValueError:
+                raise Refusal('That is not a web address.') from None
             status, headers, data = self._ask(url, self._checked(url, came_from))
             if status in REDIRECTS and headers.get('location'):
                 came_from, url = url, urllib.parse.urljoin(url, headers['location'])

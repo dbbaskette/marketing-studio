@@ -166,6 +166,18 @@ def describe(engine) -> dict:
                                                   needs['brand'].get('brands'))}}
 
 
+def research_site(sent) -> dict:
+    """A site the start form adds for one deck, checked as research_sites checks every site,
+    and as the page shows it (host/path). Nothing is saved: the shared list is changed in
+    Shared settings, and the deck keeps its own list when it starts."""
+    if not isinstance(sent, dict) or set(sent) != {'site'}:
+        raise WorkspaceError('Send the site to add.')
+    try:
+        return {'site': research_sites.shown(research_sites.site(sent['site']))}
+    except ValueError as error:
+        raise WorkspaceError(str(error)) from None
+
+
 def review_choice(sent) -> tuple:
     """The level Settings' Where new work stops sent, and the one the page read."""
     if not isinstance(sent, dict) or set(sent) != {'level', 'seen'}:

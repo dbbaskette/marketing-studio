@@ -2979,13 +2979,13 @@ function siteShown(site) {
 }
 
 // The draft's choice, made the first time research is switched on: your documents for a
-// deck from a document, your sites when the shared list has any, else the public web.
+// deck from a document, the public web for one from an idea. Your sites stay off until they
+// are ticked, with the shared list ready under them.
 function looksOf(draft) {
   if (!draft.looks) {
-    const shared = sharedSites();
-    draft.looks = { documents: draft.route === 'document', sitesOn: shared.length > 0,
-      sites: shared.map((url) => ({ url, on: true })),
-      web: draft.route !== 'document' && !shared.length, adding: '' };
+    draft.looks = { documents: draft.route === 'document', sitesOn: false,
+      sites: sharedSites().map((url) => ({ url, on: true })),
+      web: draft.route !== 'document', adding: '', checking: false };
   }
   return draft.looks;
 }
@@ -3023,34 +3023,30 @@ function researchProblem(draft) {
   return from.documents || from.sites.length || from.web ? '' : RESEARCH_EMPTY;
 }
 
-// A site typed for this deck, as the page keeps it (host/path), or why it cannot be one.
-// The runner checks it again, makes it https and refuses a private or local one.
-function siteOf(typed) {
-  const said = String(typed || '').trim();
-  if (!said) return [null, 'Type the site first, such as docs.example.com/guide.'];
-  const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(said);
-  if (scheme && scheme[1].toLowerCase() !== 'https') {
-    return [null, '“' + said + '”: research sites use https only.'];
-  }
-  const found = /^([a-z0-9-]+(?:\.[a-z0-9-]+)+)\.?(\/[^\s?#]*)?$/i
-    .exec(scheme ? said.slice(scheme[0].length) : said);
-  if (!found) {
-    return [null, '“' + said + '” is not a web address. Give one such as '
-      + 'docs.example.com/guide.'];
-  }
-  return [found[1].toLowerCase() + (found[2] || '').replace(/\/+$/, ''), ''];
-}
-
-function addSite(draft) {
+// A site typed for this deck is checked by the runner, as every site is (research_sites),
+// and comes back as the page keeps it: host/path. Nothing is saved; the shared list is
+// changed in Shared settings, and the deck keeps its own list when it starts.
+async function addSite(draft) {
   const looks = looksOf(draft);
-  const [url, why] = siteOf(looks.adding);
-  if (!url) {
-    refuse('research-site', why);
+  if (looks.checking) return;
+  if (!String(looks.adding || '').trim()) {
+    refuse('research-site', 'Type the site first, such as docs.example.com/guide.');
     return;
   }
-  const known = looks.sites.find((one) => one.url === url);
+  looks.checking = true;
+  let found;
+  try {
+    found = await send('research-site', { site: looks.adding });
+  } catch (failure) {
+    looks.checking = false;
+    if (view.draft === draft) refuse('research-site', failure.message);
+    return;
+  }
+  looks.checking = false;
+  if (view.draft !== draft) return;
+  const known = looks.sites.find((one) => one.url === found.site);
   if (known) known.on = true;
-  else looks.sites.push({ url, on: true });
+  else looks.sites.push({ url: found.site, on: true });
   looks.adding = '';
   paintNew(false);
   focusKey('research-site');
@@ -3097,10 +3093,16 @@ function researchFromField(draft) {
     add(make('div', 'bar'), capsule('Add the site', 'quiet', () => addSite(draft),
       'research-site-add')));
   }
-  const summary = researchSummary(researchFromOf(draft));
+  const from = researchFromOf(draft);
+  const summary = researchSummary(from);
   return add(make('div', 'field'), make('p', 'field-label', 'Research from'), row, sites,
     alertLine('research-from-problem'),
-    make('p', 'quiet field-hint', summary ? summary + '.' : RESEARCH_EMPTY));
+    make('p', 'quiet field-hint', summary ? summary + '.' : RESEARCH_EMPTY),
+    from.documents && !from.sites.length && !from.web ? make('p', 'quiet field-hint',
+      'With your documents only, nothing about them is searched for on the public web.')
+      : null,
+    looks.sitesOn ? make('p', 'quiet field-hint', 'Your sites are searched with your '
+      + 'assistant’s own web search tool, and only pages from under them are saved.') : null);
 }
 
 function aboutStep(draft) {
