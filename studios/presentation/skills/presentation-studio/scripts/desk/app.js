@@ -4253,6 +4253,7 @@ function pictureParts(gate, one, title) {
   if (given && !open) {
     // Taking a picture off: the deck is drawn without it, and one can be given again.
     const failed = make('p', 'problem');
+    failed.setAttribute('role', 'alert');   // read out, as focus stays on the button
     failed.hidden = true;
     const off = capsule('Remove the picture', 'quiet', async () => {
       say(failed, '');
@@ -4276,6 +4277,7 @@ function pictureParts(gate, one, title) {
   if (!open) return found;
   const fill = held.picture || (held.picture = { alt: '', source: '', file: null });
   const problem = make('p', 'problem');
+  problem.setAttribute('role', 'alert');
   problem.hidden = true;
   const send_ = capsule('Add the picture', '', async () => {
     say(problem, '');

@@ -2338,6 +2338,35 @@ class MaterialUploadTests(Fixture):
                 'article', 'attach', '--id', ident, '--source', kept['id'], '--purpose', 'messaging'
             )
         self.command('article', 'attach', '--id', ident, '--source', kept['id'])
+        # The upload route refuses it too, before anything is saved.
+        files = self.files(('brief.md', b'The gateway retries twice.'))
+        before = sorted(p.name for p in (self.root / 'sources').iterdir())
+        with patch.object(library.shutil, 'which', return_value=None):
+            with self.assertRaisesRegex(ValueError, r'^Approved messaging is a role.*saved\.$'):
+                management.dispatch(
+                    self.root,
+                    'upload',
+                    {
+                        'operation': '7' * 32,
+                        'purpose': 'messaging',
+                        'analyze': False,
+                        'files': files,
+                    },
+                )
+        self.assertEqual(sorted(p.name for p in (self.root / 'sources').iterdir()), before)
+        # Refused before the upload was begun, so the same upload, put right, goes through.
+        with patch.object(library.shutil, 'which', return_value=None):
+            done = management.dispatch(
+                self.root,
+                'upload',
+                {
+                    'operation': '7' * 32,
+                    'purpose': 'material',
+                    'analyze': False,
+                    'files': self.files(('brief.md', b'The gateway retries twice.')),
+                },
+            )
+        self.assertEqual(len(done['files']), 1)
 
     def test_source_role_switches_among_facts_example_and_messaging(self):
         with patch.object(library.shutil, 'which', return_value=None):

@@ -589,8 +589,12 @@ def record_picture(root, slides, slide: str, file: Path, alt: str, source: str,
             if refused.codes != ['asset-conflict']:
                 raise
     else:
+        # The count tried is kept, so the picture given again tries the next names. A picture
+        # the slide already shows stays shown.
+        held[slide] = {**(held.get(slide) or {}), 'n': count}
+        home.write_json(root / PICTURED, held)
         raise WorkspaceError('The slides tool already holds every name tried for this '
-                             'picture. Remove the picture, then give it again.')
+                             'picture. Give it again, and the next names are tried.')
     held[slide] = {'asset': ident, 'alt': alt, 'source': source, 'name': name,
                    'kind': kind, 'title': title, 'at': home.now(), 'n': count}
     home.write_json(root / PICTURED, held)

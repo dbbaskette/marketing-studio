@@ -1555,6 +1555,30 @@ class SuppliedPictureTests(StudioCase):
         self.assertEqual(made['asset'], f"pic-{content['id']}-2")
         self.assertEqual(build.pictures(root)[content['id']]['asset'], f"pic-{content['id']}-2")
 
+    def test_names_the_slides_tool_holds_are_passed_by_and_not_tried_twice(self):
+        from runner import slides as slides_tool
+        from runner.steps import build
+        root, gate, slides = self.at_outline()
+        content = next(slide for slide in slides if slide.get('kind') == 'content')
+        taken = slides_tool.Refused(['Asset taken'], {'problems': [{'code': 'asset-conflict'}]})
+        tried = []
+
+        def holds_every_name(tool, project, file, ident, *args, **kwargs):
+            tried.append(ident)
+            raise taken
+
+        with mock.patch.object(type(self.slides), 'asset_supplied', autospec=True,
+                               side_effect=holds_every_name):
+            with self.assertRaises(WorkspaceError) as refused:
+                self.add(root, gate, content['id'])
+        self.assertEqual(len(tried), build.PICTURE_TRIES)
+        self.assertEqual(str(refused.exception), 'The slides tool already holds every name '
+                         'tried for this picture. Give it again, and the next names are tried.')
+        self.assertEqual(build.pictures(root), {}, 'nothing is shown as given')
+        # Given again, the next names are tried, and the first free one is taken.
+        made = self.add(root, gate, content['id'])
+        self.assertEqual(made['asset'], f"pic-{content['id']}-{build.PICTURE_TRIES + 1}")
+
     def test_alt_and_source_text_may_begin_with_a_dash(self):
         from runner.steps import build
         root, gate, slides = self.at_outline()

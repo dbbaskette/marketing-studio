@@ -3692,6 +3692,11 @@ class ReaderFacingNotesTests(RunnerCase):
             ],
             ['[source-abc123]'],
         )
+        # Two notes side by side are two notes, not link text and its reference.
+        self.assertEqual(
+            [f['target'] for f in reader_facing_notes('It retries [source-1][Source-2][TBD].')],
+            ['[source-1]', '[Source-2]', '[TBD]'],
+        )
 
     def test_the_gate_check_fails_on_a_note_in_the_draft(self):
         found = self.at_draft()
