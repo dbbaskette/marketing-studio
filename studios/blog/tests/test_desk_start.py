@@ -583,5 +583,108 @@ class ChainTests(RouteCase):
             self.post('desk-retry', {'id': made['id']})
 
 
+class OutlineTabTests(RouteCase):
+    def setUp(self):
+        super().setUp()
+        made = self.post(
+            'desk-create', {'operation': 'e' * 32, 'title': 'Synthetic', 'manuscript': WRITTEN}
+        )
+        self.ident = made['id']
+        self.ids = [s['id'] for s in made['sections']]
+
+    def rows(self, view=None):
+        view = view or self.get('desk', id=self.ident)
+        return [
+            {'id': s['id'], 'heading': s['heading'], 'brief': s['brief']} for s in view['sections']
+        ]
+
+    def save(self, rows, seen=None):
+        seen = seen or self.get('desk', id=self.ident)['revision']
+        return self.post('desk-outline-save', {'id': self.ident, 'seen': seen, 'sections': rows})
+
+    def test_reordering_keeps_ids_and_text(self):
+        rows = self.rows()
+        saved = self.save([rows[2], rows[0], rows[1]])
+        self.assertEqual(
+            [s['id'] for s in saved['sections']], [self.ids[2], self.ids[0], self.ids[1]]
+        )
+        self.assertEqual(saved['sections'][1]['text'], 'Usually a timeout.')
+        self.assertIn('## A last word\n\nTry it.\n\n## Why jobs stop', saved['markdown'])
+
+    def test_rename_and_brief_save_and_an_outdated_form_is_refused(self):
+        rows = self.rows()
+        rows[0] = {**rows[0], 'heading': 'Why work is lost', 'brief': 'The causes.'}
+        saved = self.save(rows, seen=1)
+        self.assertEqual(saved['sections'][0]['heading'], 'Why work is lost')
+        self.assertEqual(saved['sections'][0]['brief'], 'The causes.')
+        rows[0] = {**rows[0], 'heading': 'Stale rename'}
+        with self.assertRaisesRegex(ValueError, 'changed since'):
+            self.save(rows, seen=1)
+
+    def test_typing_in_one_section_does_not_refuse_renaming_another(self):
+        self.post('desk-save', {'id': self.ident, 'seen': 1, 'part': self.ids[0], 'text': 'Typed.'})
+        rows = self.rows()
+        rows[1] = {**rows[1], 'heading': 'Renamed'}
+        self.assertEqual(self.save(rows, seen=1)['sections'][1]['heading'], 'Renamed')
+
+    def test_adding_and_removing_sections(self):
+        rows = self.rows()
+        saved = self.save([rows[0], {'heading': 'A new part', 'brief': 'Say more.'}, rows[2]])
+        self.assertEqual(len(saved['sections']), 3)
+        added = saved['sections'][1]
+        self.assertRegex(added['id'], '^[a-f0-9]{8}$')
+        self.assertNotIn(added['id'], self.ids)
+        self.assertEqual(added['text'], '')
+        self.assertNotIn('The retry resumes.', saved['markdown'])
+
+    def test_a_heading_is_one_line_without_marks_and_ids_are_known(self):
+        rows = self.rows()
+        for row, said in (
+            ({**rows[0], 'heading': ''}, 'heading of one line'),
+            ({**rows[0], 'heading': 'Two\nlines'}, 'heading of one line'),
+            ({**rows[0], 'heading': '## Marked'}, 'Leave out the #'),
+            ({**rows[0], 'id': 'ffffffff'}, 'does not have'),
+        ):
+            with self.subTest(row=row), self.assertRaisesRegex(ValueError, said):
+                self.save([row, *rows[1:]])
+
+    def test_the_outline_cannot_change_while_the_draft_is_written(self):
+        written = self.post('desk-draft', {'id': self.ident, 'seen': 1})
+        self.assertEqual(written['working']['kind'], 'desk-draft')
+        rows = self.rows(written)
+        rows[0] = {**rows[0], 'brief': 'Later.'}
+        with self.assertRaisesRegex(ValueError, 'being written'):
+            self.save(rows)
+
+    def test_write_this_section_starts_from_its_brief(self):
+        rows = self.rows()
+        rows[1] = {**rows[1], 'brief': 'Explain the checkpoint.'}
+        saved = self.save(rows, seen=1)
+        job = self.post(
+            'desk-note',
+            {'id': self.ident, 'seen': saved['revision'], 'part': self.ids[1], 'note': ''},
+        )['working']
+        payload = tool_jobs.read(self.root, job['id'])['payload']
+        self.assertEqual(payload['part']['brief'], 'Explain the checkpoint.')
+
+    def test_a_source_added_on_the_desk_is_read_by_later_rewrites(self):
+        fact = self.source('A new synthetic fact.')
+        added = self.post('desk-sources', {'id': self.ident, 'sources': [fact]})
+        self.assertEqual([entry['source_id'] for entry in added['sources']], [fact])
+        self.assertEqual(added['source_names'][0]['name'], 'Synthetic source')
+        record = studio.read_json(self.folder(self.ident) / 'session.json')
+        self.assertIn(fact, [entry['source_id'] for entry in record['sources']])
+        job = self.post(
+            'desk-note',
+            {'id': self.ident, 'seen': added['revision'], 'part': self.ids[0], 'note': 'Use it.'},
+        )['working']
+        payload = tool_jobs.read(self.root, job['id'])['payload']
+        self.assertEqual(payload['sources'][0]['text'], 'A new synthetic fact.')
+
+    def test_adding_nothing_is_refused(self):
+        with self.assertRaisesRegex(ValueError, 'Choose a source to add'):
+            self.post('desk-sources', {'id': self.ident, 'sources': []})
+
+
 if __name__ == '__main__':
     unittest.main()

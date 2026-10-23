@@ -696,6 +696,86 @@ def save(root, ident, seen, part, text, source='save', session=None):
     return _write(root, ident, draft, [part])
 
 
+# Kinds that write every section or plan the outline: the outline waits while they work.
+WHOLE_DRAFT = ('desk-outline', 'desk-draft', 'desk-research', 'desk-first-pass', 'desk-revise-all')
+
+
+def outline_save(root, ident, seen, rows):
+    """Rename, reorder, add and remove sections and edit their briefs, from the Outline tab.
+    Ids are kept; a section without one is new. A form older than a section it changes, or
+    than the outline's order, is refused."""
+    import desk_jobs
+
+    draft = read(root, ident)
+    if not isinstance(rows, list) or len(rows) > SECTIONS:
+        raise ValueError('Keep the outline to 60 sections.')
+    current = {section['id']: section for section in draft['sections']}
+    taken, named, out, touched, added = set(current), set(), [], [], False
+    for row in rows:
+        if not isinstance(row, dict) or set(row) - {'id', 'heading', 'brief'}:
+            raise ValueError('Each section needs its heading and brief.')
+        heading, brief = row.get('heading'), row.get('brief', '')
+        if not isinstance(heading, str) or not heading.strip() or '\n' in heading.strip():
+            raise ValueError('Give each section a heading of one line, up to 200 characters.')
+        heading = heading.strip()
+        if len(heading) > 200:
+            raise ValueError('Give each section a heading of one line, up to 200 characters.')
+        if heading.startswith('#'):
+            raise ValueError('Leave out the # marks; the desk adds them.')
+        if not isinstance(brief, str) or len(brief) > BRIEF:
+            raise ValueError('Keep each brief to 4,000 characters.')
+        brief = brief.strip()
+        part = row.get('id')
+        if part is None:
+            part, added = _id(taken), True
+            out.append({'id': part, 'heading': heading, 'brief': brief, 'text': ''})
+            continue
+        if part not in current or part in named:
+            raise ValueError(
+                'This outline names a section this draft does not have. Reload to see the latest.'
+            )
+        named.add(part)
+        section = current[part]
+        if section['heading'] != heading or section.get('brief', '') != brief:
+            touched.append(part)
+        out.append({**section, 'heading': heading, 'brief': brief})
+    removed = [part for part in current if part not in named]
+    reordered = [s['id'] for s in out if s['id'] in current] != [
+        s['id'] for s in draft['sections'] if s['id'] in named
+    ]
+    structure = ['outline'] if added or removed or reordered else []
+    if not touched and not structure:
+        return draft
+    checked(draft, seen, touched + removed + structure)
+    if any(
+        job['kind'] in WHOLE_DRAFT and desk_jobs.busy(job) for job in desk_jobs.jobs(root, ident)
+    ):
+        raise ValueError(
+            'The draft is being written from this outline. Wait for it, or stop it, then change '
+            'the outline.'
+        )
+    draft['sections'] = out
+    return _write(
+        root, ident, draft, touched + [s['id'] for s in out if s['id'] not in current] + structure
+    )
+
+
+def add_sources(root, ident, data):
+    """Pin more sources (uploaded files, Google Docs, library items with a role) on a desk
+    blog at any time; later rewrites and checks read them."""
+    chosen, library = data.get('sources') or [], data.get('library') or []
+    if not chosen and not library:
+        raise ValueError('Choose a source to add.')
+    directory, record = studio.item(root, 'articles', ident)
+    draft = read(root, ident)
+    _attach(root, {'sources': chosen, 'library': library}, record)
+    if len(record['sources']) > 50:
+        raise ValueError('A blog reads at most 50 sources.')
+    studio.persist(directory, 'articles', record)
+    draft['sources'] = _citable(record['sources'])
+    return _write(root, ident, draft, ['sources'])
+
+
 PART = re.compile(r'[a-f0-9]{8}')
 SOURCES = (
     'save',
@@ -799,6 +879,9 @@ ROUTES = {
     'open': {'id'},
     'angles': {'operation', 'title', 'point', 'audience', 'style', 'tone', 'sources', 'library'},
     'retry': {'id'},
+    'outline-save': {'id', 'seen', 'sections'},
+    'draft': {'id', 'seen'},
+    'sources': {'id', 'sources', 'library'},
 }
 SESSION = re.compile(r'[a-f0-9]{16,64}')
 
@@ -892,4 +975,10 @@ def dispatch(root, action, data):
         )
     elif action == 'first-pass':
         desk_jobs.first_pass(root, ident, seen, data.get('choice'))
+    elif action == 'outline-save':
+        outline_save(root, ident, seen, data.get('sections'))
+    elif action == 'draft':
+        desk_jobs.draft_job(root, ident, seen)
+    elif action == 'sources':
+        add_sources(root, ident, data)
     return desk_jobs.view(root, ident)
