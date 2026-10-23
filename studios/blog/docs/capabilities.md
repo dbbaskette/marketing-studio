@@ -9,6 +9,9 @@ it does not claim every low-level CLI flag is a browser control.
 | --- | --- | --- |
 | Write, outline, explore ideas, use an outline | Home | Guided runs, `run` |
 | New blog from files: each file's role, three angles or the point, Write as | Home → New blog from my files | `upload` entries with `purpose`, `source-role`, `run create --mode from-files [--point]`, `examples` in the worker payload, the `from-example` check |
+| Approved messaging written as the product's own claims | Your files → Used as: Approved messaging; Upload → Use this file as | Purpose `messaging`; `stance: messaging` on the payload's sources; `run create --messaging <id>` |
+| Writing without source IDs or placeholders; what the author must still supply | Gate → Checked for you; Needs you before publishing | `evidence` and `gaps` beside a draft or handoff (`derived/blog-<stage>-notes.json`), the `reader-facing-note` check, `run submit --gap` |
+| How long the post runs | New blog → Length; Your files → Length | `run create --length style\|short\|deep` |
 | Import Google Doc, local Word/Markdown/text | Polish a document | Google start/capture, source/article intake |
 | Polish, proofread, humanize, fact check, revise | Manuscript → Polish | Located editor review, article reviews |
 | Choose/adjust edits and comments; save locally | Choose changes → Finish | Version-bound editor proposals and draft save |

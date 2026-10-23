@@ -41,11 +41,12 @@ wait for review; changed source inputs prevent applying older output. Submitted
 answers/results persist on this computer; unfinished browser text is retained
 while navigating tools but is not a cross-computer transcript or backup.
 
-**New blog from my files** on Home takes each upload with its role, facts or an
-example of the kind of post (changeable per file until Start), asks whether to find
-three angles or start from the point the person knows, and chooses the voice with
-**Write as** and the shape with **Kind of post**. The Upload dialog's **Use this file
-as** offers the same example role.
+**New blog from my files** on Home takes each upload with its role, facts, approved
+messaging or an example of the kind of post (changeable per file until Start), asks
+whether to find three angles or start from the point the person knows, and chooses the
+voice with **Write as**, the shape with **Kind of post** and the depth with **Length**.
+The Upload dialog's **Use this file as** offers the same roles. A draft's gate lists
+what the writing left for the author under **Needs you before publishing**.
 
 **The team library** (Blogs → Library and team tools → Team library) holds every
 finished blog, kept file, link and Google Doc, each with a role, author and kind of

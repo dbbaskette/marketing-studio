@@ -5,6 +5,20 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Announcements that read like announcements.** A file can be **Approved messaging
+  (the product's own claims)**, beside facts and examples: a messaging document, launch
+  brief or release notes is written in the product's voice and the present tense, with
+  only the limits it marks itself (preview, planned). A draft and a handoff keep source
+  IDs and editorial placeholders out of the writing: each claim's source goes to the
+  notes, and what you must still supply appears under **Needs you before publishing**;
+  **Checked for you** fails a draft that still has one. A limitation is stated once,
+  each capability gets what it does, how, what you can now do and an example, and
+  **Length** asks for the style's own length, short or in depth. For maintainers:
+  purpose and library role `messaging`, `stance` on payload sources (only when a run has
+  messaging, so pins hold), the `writing-with-notes` response with `evidence` and `gaps`,
+  `text_checks.reader_facing_notes`, `run create --messaging --length` and `run submit
+  --gap`. Blog Studio 4.6.0; guidance needs runtime 4.6.0.
+
 - **The companions, fully used.** A blog's brand export now carries the chosen author
   voice (`--voice-profile`), so the brand's `VOICE.md` names it; a tone-only run passes
   none, and a brand that refuses the voice is shown in its own words before anything is
