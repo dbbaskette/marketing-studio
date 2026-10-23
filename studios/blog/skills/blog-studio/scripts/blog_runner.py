@@ -2674,10 +2674,34 @@ def engine(root):
 
 
 def catalog(root):
+    import desk_jobs
+
     rows = []
+    working = desk_jobs.active(root)
     for path in sorted(studio.inside(root, 'articles').glob('*/session.json')):
         ident = path.parent.name
         try:
+            # A blog on the writing desk, including a finished run opened there, lists as one.
+            on_desk = studio.inside(path.parent, 'desk', 'draft.json')
+            if on_desk.is_file() and not on_desk.is_symlink():
+                draft = studio.read_json(on_desk)
+                busy = working.get(ident, 0)
+                rows.append(
+                    {
+                        'id': ident,
+                        'title': draft['title'],
+                        'status': 'working' if busy else 'desk',
+                        'touched': draft['updated_at'],
+                        'flow': 'desk',
+                        'jobs': busy,
+                        'complete': False,
+                        'stages': [],
+                        'next': None,
+                        'error': '',
+                        'mode': 'desk',
+                    }
+                )
+                continue
             if studio.inside(path.parent, STATE).is_file():
                 found = engine(root).describe(ident, listing=True)
                 rows.append(

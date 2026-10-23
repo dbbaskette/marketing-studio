@@ -307,7 +307,7 @@ class VersionTests(DeskCase):
         self.assertEqual(desk.read(self.root, made['id'])['title'], 'A synthetic title')
 
 
-class RouteTests(DeskCase):
+class RouteCase(DeskCase):
     def setUp(self):
         super().setUp()
         import blog_runner
@@ -330,6 +330,8 @@ class RouteTests(DeskCase):
             {'operation': 'a' * 32, 'title': 'Synthetic', 'manuscript': DRAFT, **extra},
         )
 
+
+class RouteTests(RouteCase):
     def test_create_then_save_through_the_page_routes(self):
         made = self.start()
         self.assertEqual(made['revision'], 1)
@@ -438,6 +440,32 @@ class RouteTests(DeskCase):
     def test_a_blog_not_on_the_desk_has_no_desk_view(self):
         with self.assertRaisesRegex(ValueError, 'Choose a blog'):
             self.get('desk')
+
+
+class ListingTests(RouteCase):
+    def test_a_desk_blog_is_listed_with_the_others(self):
+        import blog_runner
+
+        made = self.start(first_pass='tighten')
+        rows = blog_runner.catalog(self.root)['items']
+        row = next(row for row in rows if row['id'] == made['id'])
+        self.assertEqual(
+            (row['flow'], row['status'], row['jobs'], row['title']),
+            ('desk', 'working', 1, 'A synthetic title'),
+        )
+        self.post('desk-stop', {'id': made['id'], 'job': made['working']['id']})
+        row = blog_runner.catalog(self.root)['items'][0]
+        self.assertEqual((row['status'], row['jobs']), ('desk', 0))
+
+    def test_a_deleted_desk_blog_is_not_listed(self):
+        import blog_runner
+
+        made = self.start()
+        self.post(
+            'blog-delete', {'id': made['id'], 'expected': made['expected'], 'title': made['title']}
+        )
+        self.assertEqual(blog_runner.catalog(self.root)['items'], [])
+        self.assertEqual(blog_runner.catalog(self.root)['deleted'][0]['id'], made['id'])
 
 
 if __name__ == '__main__':

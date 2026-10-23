@@ -72,6 +72,21 @@ def jobs(root, ident):
     return sorted(found, key=lambda value: value.get('created_at') or '')
 
 
+def active(root):
+    """{blog id: queued or working desk jobs}, read in one pass for the blog list."""
+    folder = studio.inside(root, '.blog-runs', 'tools')
+    found = {}
+    for target in folder.glob('*.json') if folder.is_dir() else []:
+        try:
+            value = tool_jobs.read(root, target.stem)
+        except (ValueError, OSError):
+            continue
+        article = (value.get('metadata') or {}).get('article')
+        if value.get('kind') in KINDS and value.get('status') in ACTIVE and article:
+            found[article] = found.get(article, 0) + 1
+    return found
+
+
 def _busy(root, ident):
     if any(job['status'] in ACTIVE for job in jobs(root, ident)):
         raise ValueError('A desk job is already working on this blog. Wait or stop it.')
