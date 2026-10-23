@@ -11,6 +11,7 @@ import unittest
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
+from interpreter import python_path  # noqa: E402  python3 is the Python running the tests
 sys.path.insert(0, str(ROOT / 'scripts'))
 import sync_repos
 
@@ -244,7 +245,7 @@ class SyncConfigTests(unittest.TestCase):
                              'new-repo = https://example.invalid/new-repo.git\n')
         environment = {**os.environ, 'HOME': str(self.home), 'GIT_CONFIG_GLOBAL': os.devnull,
                        'GIT_CONFIG_NOSYSTEM': '1',
-                       'PATH': str(Path(sys.executable).parent) + ':/usr/bin:/bin'}
+                       'PATH': python_path(self.base, '/usr/bin', '/bin')}
         done = subprocess.run(['bash', str(ROOT / 'sync.sh'), '--config', str(config), '--dry-run'],
                               cwd=self.base, env=environment, capture_output=True, text=True, timeout=20)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)

@@ -10,6 +10,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+from interpreter import python_path  # noqa: E402  python3 is the Python running the tests
 sys.path.insert(0, str(ROOT / 'core'))
 from studio_core import bundles
 
@@ -25,7 +26,7 @@ class ShellInstallerTests(unittest.TestCase):
         home = self.root / 'disposable home'
         home.mkdir()
         self.env = {'HOME': str(home), 'STUDIOS_CONFIG': str(home / 'settings.json'),
-                    'PATH': str(Path(sys.executable).parent) + ':/usr/bin:/bin',
+                    'PATH': python_path(self.root, '/usr/bin', '/bin'),
                     'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1'}
 
     def logging_helper(self, suite):
