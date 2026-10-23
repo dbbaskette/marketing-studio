@@ -193,6 +193,25 @@ SCHEMA = {
     'properties': {'content': {'type': 'string'}, 'notes': {'type': 'string'}},
     'required': ['content', 'notes'],
 }
+# A draft or handoff returns its writing clean, and its notes apart: each claim's source and
+# passage for the review and fact check, and what the author must supply before publishing.
+EVIDENCE = {
+    'type': 'object',
+    'additionalProperties': False,
+    'properties': {name: {'type': 'string'} for name in ('claim', 'source', 'passage')},
+    'required': ['claim', 'source', 'passage'],
+}
+WRITING_SCHEMA = {
+    'type': 'object',
+    'additionalProperties': False,
+    'properties': {
+        'content': {'type': 'string'},
+        'notes': {'type': 'string'},
+        'evidence': {'type': 'array', 'maxItems': 200, 'items': EVIDENCE},
+        'gaps': {'type': 'array', 'maxItems': 50, 'items': {'type': 'string'}},
+    },
+    'required': ['content', 'notes', 'evidence', 'gaps'],
+}
 REVIEW_SCHEMA = {
     'type': 'object',
     'additionalProperties': False,
@@ -251,6 +270,12 @@ POLICY += (
 
 POLICY += "\nWhen documents['claims-map'] is supplied, it lists the claims the author's own material makes and where. State those claims as the material does, and add no claim it does not make."
 
+POLICY += (
+    '\nIn a draft or handoff, source IDs and editorial placeholders are notes for the author, '
+    "never in the words a reader reads: put each claim's source and passage in evidence and "
+    'what the author must supply before publishing in gaps, when the schema asks for them.'
+)
+
 POLICY += """\nA source with stance 'messaging' is the team's approved messaging: its claims are this
 post's own. State them in the product's voice and the present tense, without attribution hedges
 such as "is described as", "is designed to" or "the messaging says". Keep a limit the document
@@ -288,10 +313,13 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
     except (OSError, ValueError) as error:
         raise cannot_start(engine) from error
     review = payload.get('response_kind') == 'editing-review'
-    response_schema = REVIEW_SCHEMA if review else SCHEMA
+    response_schema = schema_for(payload)
     output_guidance = (
         'Return summary, findings and notes directly in the required schema. Do not wrap the review in a content string or Markdown fences.'
         if review
+        else 'The content field holds the requested Markdown document, clean of notes; evidence '
+        'and gaps hold the notes.'
+        if response_schema is WRITING_SCHEMA
         else 'The content field holds the requested Markdown document.'
     )
     prompt = POLICY + '\n' + output_guidance + '\n\nJOB GUIDANCE:\n' + guidance
@@ -456,9 +484,44 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                 reported(*spent)
 
 
+def schema_for(payload):
+    """The response schema a job's payload asks for."""
+    kind = payload.get('response_kind')
+    return (
+        REVIEW_SCHEMA
+        if kind == 'editing-review'
+        else WRITING_SCHEMA
+        if kind == 'writing-with-notes'
+        else SCHEMA
+    )
+
+
 def validate(result):
-    if not isinstance(result, dict) or set(result) != {'content', 'notes'}:
+    if not isinstance(result, dict) or not {'content', 'notes'} <= set(result) <= {
+        'content',
+        'notes',
+        'evidence',
+        'gaps',
+    }:
         raise ValueError('A worker must return content and notes only.')
+    evidence, gaps = result.get('evidence', []), result.get('gaps', [])
+    if (
+        not isinstance(evidence, list)
+        or len(evidence) > 200
+        or any(
+            not isinstance(row, dict)
+            or set(row) != {'claim', 'source', 'passage'}
+            or not all(isinstance(value, str) and len(value) <= 4000 for value in row.values())
+            for row in evidence
+        )
+    ):
+        raise ValueError('The worker returned invalid evidence notes.')
+    if (
+        not isinstance(gaps, list)
+        or len(gaps) > 50
+        or any(not isinstance(gap, str) or not gap.strip() or len(gap) > 1000 for gap in gaps)
+    ):
+        raise ValueError('The worker returned invalid gap notes.')
     if not isinstance(result['content'], str) or not 1 <= len(result['content'].strip()) <= 200_000:
         raise ValueError('The worker returned an empty or oversized document.')
     if not isinstance(result['notes'], str) or len(result['notes']) > 8000:

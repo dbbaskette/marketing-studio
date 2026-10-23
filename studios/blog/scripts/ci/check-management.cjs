@@ -1612,6 +1612,13 @@ async function filesJourney(){
   const items=nodes().filter(e=>e.className==='check-detail quiet');
   assert.equal(items.length,1,'one detail list for the failing check');
   assert.deepEqual(items[0].children.map(e=>e.textContent),['42 percent','https://example.invalid/launch']);
+  // What the author must supply before publishing is its own part of the aside, never in the writing.
+  assert.ok(!text().includes('Needs you before publishing'),'no gaps, no heading');
+  f.set('gapped',{...shown,gaps:['The confirmed release date.','A launch link.']});
+  f.run("sGate(waiting,gapped)");
+  const needs=nodes().find(e=>e.tagName==='h2'&&e.textContent==='Needs you before publishing');
+  assert.ok(needs,'the gaps have their own heading: '+text().join('|'));
+  assert.deepEqual(nodes().find(e=>e.className==='gap-items')?.children.map(e=>e.textContent),['The confirmed release date.','A launch link.']);
   f.run("sGate(waiting,shown)");
   assert.ok(!actions().some(t=>/Save ideas|Use this|Finish/.test(t)),actions().join('|'));
   assert.ok(text().some(t=>/notes was excerpted|excerpted/.test(t)),'the gate says which files were excerpted: '+text().join('|'));

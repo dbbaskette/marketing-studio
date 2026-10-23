@@ -24,6 +24,8 @@ Measure actual words/characters using `scripts/text_checks.py count`. Make one
 focused correction if outside a requested range; report a remaining mismatch
 honestly. Save derived artifacts separately from the original manuscript.
 This operation prepares copy; posting or sending requires separate authorization.
+A handoff lists what the author must still supply under `## Needs you before
+publishing`; its titles, excerpt and description carry no source IDs.
 
 Adapted from BlogForge `generate/repurpose.py`. Existing [copywriting](copywriting.md)
 and [content strategy](content-strategy.md) can supply detail when actually needed.

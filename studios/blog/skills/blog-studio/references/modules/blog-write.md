@@ -49,8 +49,8 @@ of public queries. Supplied-only work stays within supplied evidence.
 
 For a material claim, inspect the supporting passage and retain its source ID or
 verified URL. Keep population, period, units, method, uncertainty, and causal limits
-intact. Place reader-facing citations near the supported assertion in the chosen
-publication style. Use exact quotes only when available; paraphrase faithfully.
+intact. Source IDs and passages go in the evidence notes and missing material in
+gaps, never in the writing; a reader-facing citation is a public link near its claim. Use exact quotes only when available; paraphrase faithfully.
 A summary or linked title is not proof that the underlying passage was read.
 
 Separate source findings from your interpretation. Explain how the evidence leads

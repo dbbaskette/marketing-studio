@@ -1439,6 +1439,13 @@ def submit(root, ident, stage, result, expected, page=False):
                 path.read_bytes(),
             )
         studio.atomic(path, result['content'].encode())
+    if stage in NOTED:
+        noted = notes_path(directory, stage)
+        if result.get('evidence') or result.get('gaps'):
+            kept = {'evidence': result.get('evidence', []), 'gaps': result.get('gaps', [])}
+            studio.atomic(noted, (json.dumps(kept, indent=2) + '\n').encode())
+        else:
+            noted.unlink(missing_ok=True)  # A new version without notes keeps none.
     previous = run['stages'].get(stage, {})
     run['stages'][stage] = {
         'status': 'draft',
@@ -1463,6 +1470,29 @@ def submit(root, ident, stage, result, expected, page=False):
         shutil.rmtree(directory / RESEARCH_DRAFT, ignore_errors=True)
     save(root, directory, record, run, 'Submitted ' + stage)
     return survey(root, ident)
+
+
+# A draft's and a handoff's notes for the author, saved beside the stage: each claim's source
+# and passage, and what the author must supply before publishing. Never in the writing.
+NOTED = ('draft', 'package')
+
+
+def notes_path(directory, stage):
+    return studio.inside(directory, 'derived', 'blog-' + stage + '-notes.json')
+
+
+def stage_notes(directory, stage):
+    path = notes_path(directory, stage)
+    found = studio.read_json(path) if path.is_file() else {}
+    return {'evidence': found.get('evidence', []), 'gaps': found.get('gaps', [])}
+
+
+def gaps(directory, stage):
+    """What the author must supply before publishing: a handoff keeps the draft's too."""
+    found = list(stage_notes(directory, stage)['gaps'])
+    if stage == 'package':
+        found += [gap for gap in stage_notes(directory, 'draft')['gaps'] if gap not in found]
+    return found
 
 
 def _accept(directory, run, stage, by):
@@ -1813,6 +1843,9 @@ def job(root, ident):
         payload['mechanical_checks'] = lint(writing, rules or {})
         copied = carried(directory, run, {**payload, 'sources': evidence}, writing)
         payload['mechanical_checks']['findings'] += copied
+        from text_checks import reader_facing_notes
+
+        payload['mechanical_checks']['findings'] += reader_facing_notes(writing)
         if copied and stage == 'review':
             guidance += (
                 '\nmechanical_checks lists, under rule from-example, passages the draft carried '
@@ -1837,6 +1870,21 @@ def job(root, ident):
         guidance += '\nReturn three distinct blog angles with audience, thesis, evidence needed and tradeoffs. Stop for the author to choose; do not draft the blog.'
     if run.get('mode') == 'from-outline':
         guidance += '\nUse the supplied outline as authoritative structure. Preserve headings and order unless explicitly asked to restructure.'
+    if stage in NOTED:
+        payload['response_kind'] = 'writing-with-notes'
+        guidance += (
+            '\nReturn the writing in content and your notes apart from it: in evidence, each '
+            'material claim with its source ID and exact passage; in gaps, each thing the author '
+            'must supply before publishing, such as a release date or a link. Source IDs and '
+            'editorial placeholders go there, never in content.'
+        )
+    if stage == 'package':
+        payload['gaps'] = gaps(directory, 'draft')
+        guidance += (
+            "\nList the draft's gaps (in gaps) and any new ones under a "
+            '`## Needs you before publishing` heading. The titles, excerpt and description are '
+            'reader-facing: no source IDs or placeholders.'
+        )
     if stage == 'review' and run.get('editor_check'):
         payload['response_kind'] = 'editing-review'
         guidance += (
@@ -2583,6 +2631,18 @@ def gate_checks(stage, content, rules, copied, preservation):
                     (f'line {line}: ' if line is not None else '') + match['target'][:160]
                 )
             rows.append({'label': f'{len(matches)} {label}', 'passed': False, 'detail': detail})
+        from text_checks import reader_facing_notes
+
+        noted = reader_facing_notes(content)
+        rows.append(
+            {
+                'label': 'Source IDs or editorial notes in the writing'
+                if noted
+                else 'No source IDs or editorial notes in the writing',
+                'passed': not noted,
+                'detail': [f'line {item["line"]}: ' + item['target'][:160] for item in noted[:5]],
+            }
+        )
         rows.append(
             {
                 'label': f'{len(repeated)} paragraphs repeat'
@@ -2720,6 +2780,7 @@ def document(root, ident, stage):
         'notes': notes,
         'expected': found['expected'],
         'checks': gate_checks(stage, checked_text, rules, copied, preservation),
+        'gaps': gaps(directory, stage) if stage in NOTED else [],
         'id': ident,
         'title': found['title'],
     }
@@ -3029,6 +3090,12 @@ def add_parser(groups):
             cmd.add_argument('--stage', choices=tuple(STAGES), required=True)
             cmd.add_argument('--file', required=True)
             cmd.add_argument('--notes', default='')
+            cmd.add_argument(
+                '--gap',
+                action='append',
+                default=[],
+                help='With a draft or handoff: something the author must supply before publishing',
+            )
         if name == 'changes':
             cmd.add_argument('--request', required=True)
             cmd.add_argument('--stage', choices=tuple(STAGES))
@@ -3058,7 +3125,11 @@ def command(root, args):
                 root,
                 args.id,
                 args.stage,
-                {'content': Path(args.file).read_text(), 'notes': args.notes},
+                {
+                    'content': Path(args.file).read_text(),
+                    'notes': args.notes,
+                    **({'gaps': args.gap} if args.gap else {}),
+                },
                 args.expected,
             )
         if args.action == 'choose':

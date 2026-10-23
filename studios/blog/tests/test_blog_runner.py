@@ -3620,3 +3620,129 @@ class MessagingTests(FilesCase):
         _, payload, guidance = runner.job(self.root, found['id'])
         self.assertEqual([s['stance'] for s in payload['sources']], ['messaging'])
         self.assertIn('stance `messaging`', guidance)
+
+
+class ReaderFacingNotesTests(RunnerCase):
+    """Source IDs and editorial notes stay out of the reader's text."""
+
+    EVIDENCE = [
+        {'claim': 'Retries twice', 'source': 'source-abc', 'passage': 'retries a failed call twice'}
+    ]
+    GAPS = ['The confirmed release version and date.']
+
+    def at_draft(self, page=False):
+        found = self.approve(self.submit(self.create(page=page), page=page), page=page)
+        self.assertEqual(found['next'], 'draft')
+        return found
+
+    def test_reader_facing_notes_finds_source_ids_and_placeholders(self):
+        from text_checks import reader_facing_notes
+
+        text = (
+            'Gateway Prime retries twice [source-abc123].\n\n'
+            '[Editorial placeholder: add the confirmed release version.]\n'
+        )
+        found = reader_facing_notes(text)
+        self.assertEqual([f['rule'] for f in found], ['reader-facing-note'] * 2)
+        self.assertEqual(
+            [f['target'] for f in found],
+            ['[source-abc123]', '[Editorial placeholder: add the confirmed release version.]'],
+        )
+        self.assertEqual(reader_facing_notes('A clean paragraph about sources.'), [])
+
+    def test_the_gate_check_fails_on_a_note_in_the_draft(self):
+        found = self.at_draft()
+        found = self.submit(found, '# Draft\n\nIt retries twice [source-abc123].\n')
+        row = next(
+            c
+            for c in runner.document(self.root, found['id'], 'draft')['checks']
+            if 'editorial notes' in c['label']
+        )
+        self.assertEqual(
+            (row['label'], row['passed']), ('Source IDs or editorial notes in the writing', False)
+        )
+        self.assertEqual(row['detail'], ['line 3: [source-abc123]'])
+        # The review and the handoff check the draft too, and a clean draft passes.
+        found = self.submit(
+            runner.decide(
+                self.root, found['id'], found['expected'], 'changes', 'Clean it.', target='draft'
+            ),
+            '# Draft\n\nIt retries twice.\n',
+        )
+        row = next(
+            c
+            for c in runner.document(self.root, found['id'], 'draft')['checks']
+            if 'editorial notes' in c['label']
+        )
+        self.assertEqual(
+            (row['label'], row['passed']),
+            ('No source IDs or editorial notes in the writing', True),
+        )
+
+    def test_a_draft_job_asks_for_evidence_and_gaps_apart_from_the_writing(self):
+        found = self.at_draft()
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(payload['response_kind'], 'writing-with-notes')
+        self.assertIn('never in content', guidance)
+        schema = blog_worker.schema_for(payload)
+        self.assertEqual(schema['required'], ['content', 'notes', 'evidence', 'gaps'])
+        self.assertIs(blog_worker.schema_for({}), blog_worker.SCHEMA)
+        result = {'content': 'x', 'notes': '', 'evidence': self.EVIDENCE, 'gaps': self.GAPS}
+        self.assertEqual(blog_worker.validate(result), result)
+        for bad in ({'gaps': 'one'}, {'gaps': [3]}, {'evidence': [{'claim': 'x'}]}):
+            with self.assertRaisesRegex(ValueError, 'notes'):
+                blog_worker.validate({**result, **bad})
+        self.assertIn('never in the words a reader reads', blog_worker.POLICY)
+
+    def test_notes_are_saved_beside_the_stage_shown_and_handed_off(self):
+        found = self.at_draft(page=True)
+        calls = []
+
+        def worker(engine, payload, guidance, **options):
+            calls.append(payload)
+            return {
+                'content': '# Draft\n\nGateway Prime retries a failed call twice.\n',
+                'notes': 'Judgment.',
+                'evidence': self.EVIDENCE,
+                'gaps': self.GAPS,
+            }
+
+        engine = runner.Engine(self.root, worker=worker)
+        self.addCleanup(engine.close)
+        engine.keep_local(found['id'], {'enabled': True})
+        engine.once(found['id'])
+        self.assertEqual(engine.describe(found['id'])['status'], 'waiting-for-approval')
+        directory, _, _ = runner.load(self.root, found['id'])
+        saved = json.loads((directory / 'derived/blog-draft-notes.json').read_text())
+        self.assertEqual(saved, {'evidence': self.EVIDENCE, 'gaps': self.GAPS})
+        self.assertNotIn('[source-', (directory / 'DRAFT.md').read_text())
+        shown = runner.document(self.root, found['id'], 'draft')
+        self.assertEqual(shown['gaps'], self.GAPS)
+        found = runner.survey(self.root, found['id'])
+        found = self.approve(found, page=True)  # draft
+        found = self.approve(self.submit(found, page=True), page=True)  # review
+        self.assertEqual(found['next'], 'package')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(payload['gaps'], self.GAPS)
+        self.assertIn('## Needs you before publishing', guidance)
+        # The handoff shows the draft's gaps until it returns its own.
+        found = self.submit(found, '# Handoff\n\nTitle.', page=True)
+        self.assertEqual(runner.document(self.root, found['id'], 'package')['gaps'], self.GAPS)
+        # A chat submission names its gaps with --gap; one without them keeps none.
+        chat = self.at_draft()
+        self.file.write_text('# Draft\n\nGateway Prime retries a failed call twice.\n')
+        args = studio.parser().parse_args(
+            ['--root', str(self.root), 'run', 'submit', '--id', chat['id']]
+            + ['--expected', chat['expected'], '--stage', 'draft', '--file', str(self.file)]
+            + ['--gap', 'A launch link.']
+        )
+        chat = runner.command(self.root, args)
+        self.assertEqual(
+            runner.document(self.root, chat['id'], 'draft')['gaps'], ['A launch link.']
+        )
+        self.submit(
+            runner.decide(
+                self.root, chat['id'], chat['expected'], 'changes', 'Again.', target='draft'
+            )
+        )
+        self.assertEqual(runner.document(self.root, chat['id'], 'draft')['gaps'], [])

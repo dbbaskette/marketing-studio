@@ -8,7 +8,7 @@ Generated from `studio.py`; use `--help` on a listed command for required inputs
 | `studio.py run create` | `--title`, `--author`, `--audience`, `--goal`, `--tone`, `--profile`, `--style`, `--id`, `--brand`, `--variant`, `--research`, `--stop`, `--engine`, `--seconds`, `--source`, `--example`, `--messaging`, `--mode`, `--manuscript`, `--outline-text`, `--point` |
 | `studio.py run list` | — |
 | `studio.py run status` | `--id` |
-| `studio.py run submit` | `--id`, `--expected`, `--stage`, `--file`, `--notes` |
+| `studio.py run submit` | `--id`, `--expected`, `--stage`, `--file`, `--notes`, `--gap` |
 | `studio.py run approve` | `--id`, `--expected` |
 | `studio.py run changes` | `--id`, `--expected`, `--request`, `--stage` |
 | `studio.py run handoff` | `--id`, `--expected` |
