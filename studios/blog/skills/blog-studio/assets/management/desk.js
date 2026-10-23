@@ -5,7 +5,7 @@
 const DESK_FIRST_PASSES=[['tighten','Tighten and proofread'],['reshape','Reshape to fit this kind of post'],['leave','Leave it as it is']];
 const DESK_SELECTION=[['rephrase','Rephrase'],['shorten','Shorten'],['expand','Expand'],['fix','Fix']];
 const DESK_SOURCES={save:'Before your edit',rewrite:'Before a rewrite','revise-all':'Before a whole-draft revision',selection:'Before a selection edit','first-pass':'Before the first pass',finishing:'Before a finishing change',restore:'Before a restore',draft:'Before the draft was written'};
-const DESK_DOING={'desk-section':'Rewriting','desk-revise-all':'Revising the whole draft','desk-selection':'Editing a passage','desk-first-pass':'Working on the first pass','desk-outline':'Outlining','desk-draft':'Writing the draft','desk-research':'Researching'};
+const DESK_DOING={'desk-section':'Rewriting','desk-revise-all':'Revising the whole draft','desk-selection':'Editing a passage','desk-first-pass':'Working on the first pass','desk-outline':'Outlining','desk-draft':'Writing the draft','desk-research':'Researching','finish-humanize':'Finding sentences to humanize','finish-facts':'Checking facts against your sources','finish-headline':'Suggesting headlines and openings','finish-feedback':'Reading the draft for feedback'};
 // A start's steps, as the progress screen names them.
 const DESK_STEPS={research:'Researching',outline:'Outlining',draft:'Drafting'};
 const DESK_SAVE_WAIT=1000,DESK_POLL=3000,DESK_DIFF_LIMIT=4000;
@@ -304,7 +304,7 @@ function sDeskToolbar(held){
   const download=sButton('Download',()=>sDownload({content:held.view.markdown,name:'DRAFT.md'}));
   const google=view.google?.url?link(view.google.url,'Google Doc ↗'):null;if(google)google.className='button';
   const publish=sButton(view.publication?'Published':'Mark as published',()=>sDeskPublish(held));publish.disabled=!editable;
-  const finishing=sButton('Finishing',()=>{});finishing.disabled=true;finishing.title='Finishing tools arrive in a later update.';
+  const finishing=sButton('Finishing',()=>held.finish?sDeskFinishClose(held):sDeskFinishOpen(held));finishing.setAttribute('aria-pressed',String(!!held.finish));
   const stop=held.view.working?sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{const before=held.view;held.view=await api('desk-stop',{id:held.id,job:held.view.working.id});sDeskRefresh(held,before);});}):null;
   sFrame(view.title,sFold([stop,copy,download,google,publish,finishing]),held.view.working?sDeskStatusWords(held):'On the desk',()=>sRoute('blogs'));
 }
@@ -323,14 +323,17 @@ function sDeskRender(held){
     if(!view.sections.length)column.append(sCard('No sections yet',sNode('p','','This draft has no ## headings, so it is one opening. Add headings in the text, or add sections on the Outline tab.')));
   }
   held.bar=sDeskSelectionBar(held);held.aside=sDeskAside(held);
+  // Finishing sits beside the draft in place of the sources; on a phone it is a full-screen sheet.
+  const finishing=!!held.finish,sheet=finishing&&sNarrow();
+  held.panel=finishing?sDeskPanel(held):null;held.panelKey=finishing?sDeskPanelKey(held):null;
   const lede=held.tab==='outline'?'Rename, reorder, add and remove sections and say what each must do. Write the draft from the outline, or one section at a time.':'Edit any part in place, give a section a note to rewrite it, or select text for a quick change. Every change keeps the earlier text in History.';
-  sPage(sNode('p','lede',lede),status,sDeskTabs(held),sAdd(sNode('div','desk-layout'),column,held.aside),held.bar);
+  sPage(sNode('p','lede',lede),status,sDeskTabs(held),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
 }
 // After a job starts, moves on or ends: redraw only the cards it changed, so the part the
 // person is typing in keeps its focus and caret.
 function sDeskRefresh(held,before){
   const view=held.view,order=found=>(found?.sections||[]).map(section=>section.id).join(',');
-  if(held.tab==='outline'||held.shownTab!==held.tab){if(held.outlineTimer&&sDeskCurrent(held)){sDeskToolbar(held);const aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;return;}held.outline=null;return sDeskRender(held);}
+  if(held.tab==='outline'||held.shownTab!==held.tab){if(held.outlineTimer&&sDeskCurrent(held)){sDeskToolbar(held);const aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;sDeskPanelSync(held);return;}held.outline=null;return sDeskRender(held);}
   if(!held.cards||!before||order(before)!==order(view)||!sDeskCurrent(held))return sDeskRender(held);
   sDeskToolbar(held);
   held.problemSlot.replaceChildren(...[sDeskProblem(held)].filter(Boolean));
@@ -338,11 +341,12 @@ function sDeskRefresh(held,before){
   const focused=typeof document.activeElement==='object'?document.activeElement:null;
   for(const part of Object.keys(held.cards)){
     const was=sDeskWorkingIn(before,part),now=sDeskWorking(held,part),old=held.cards[part];
-    const changed=was!==now||deskTextOf(before,part)!==deskTextOf(view,part)||(before.versions||{})[part]!==(view.versions||{})[part];
+    const changed=was!==now||deskTextOf(before,part)!==deskTextOf(view,part)||(before.versions||{})[part]!==(view.versions||{})[part]||sDeskCommentKey(before,part)!==sDeskCommentKey(view,part);
     const typing=focused&&typeof old.contains==='function'&&old.contains(focused);
     if(changed&&(!typing||was||now)){const card=sDeskPart(held,part);old.replaceWith(card);held.cards[part]=card;}
   }
   const aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;
+  sDeskPanelSync(held);
 }
 // What the last job left: a result not applied, or a job that failed.
 function sDeskProblem(held){
@@ -350,7 +354,8 @@ function sDeskProblem(held){
   const chain=held.view.chain;
   if(last.chain&&chain){if(chain.working||!chain.problems.length)return null;return sAdd(sNode('div','decision-notice desk-problem'),sAdd(sNode('div',''),sNode('p','','Revised '+chain.revised+' of '+chain.total+' sections for your note. These were not:'),sAdd(sNode('ul','gap-items'),...chain.problems.map(problem=>sNode('li','','“'+problem.heading+'”: '+problem.error)))),sButton('Dismiss',()=>{held.dismissed=last.id;sDeskRender(held);}));}
   const failed=last.status==='failed'||last.status==='ready'&&last.applied===false;if(!failed||!last.error)return null;
-  return sAdd(sNode('div','decision-notice desk-problem'),sNode('p','',(last.status==='failed'?'The last change could not finish: ':'The last change was not applied: ')+last.error),sButton('Dismiss',()=>{held.dismissed=last.id;sDeskRender(held);}));
+  const tool=DESK_TOOLS.find(([key])=>'finish-'+key===last.kind);
+  return sAdd(sNode('div','decision-notice desk-problem'),sNode('p','',(tool?tool[1]+' did not finish: ':last.status==='failed'?'The last change could not finish: ':'The last change was not applied: ')+last.error),sButton('Dismiss',()=>{held.dismissed=last.id;sDeskRender(held);}));
 }
 function sDeskWhole(held){
   const card=sCard('Note for the whole draft');
@@ -374,6 +379,7 @@ function sDeskPart(held,part){
   if(part!=='title'){for(const kind of ['select','mouseup','keyup'])input.addEventListener(kind,()=>sDeskSelected(held,part,input));}
   else input.addEventListener('select',()=>sDeskSelected(held,part,input));
   card.append(input);
+  const comments=sDeskComments(held,part);if(comments)card.append(comments);
   if(working){const note=sNode('p','desk-working-note','Working on this section');note.setAttribute('role','status');card.append(note);if(view.working.note)card.append(sNode('p','quiet','Your note: '+view.working.note));}
   if(section){
     const typed=(held.notes||{})[part]||'',row=sNode('div','desk-note');
@@ -453,7 +459,7 @@ function sDeskWatch(held){
     if(!sDeskCurrent(held)){held.watching=false;return;}
     try{await sDeskFlush(held);const view=await api('desk?id='+encodeURIComponent(held.id));if(!sDeskCurrent(held)){held.watching=false;return;}
       const ended=!view.working,before=held.view;held.view=view;sDeskRefresh(held,before);
-      if(ended){held.watching=false;const last=(view.jobs||[]).at(-1);if(last?.applied)sToast('Done. The earlier text is in History.');return;}
+      if(ended){held.watching=false;const last=(view.jobs||[]).at(-1);if(last?.applied)sToast(/^finish-/.test(last.kind)?'Suggestions are ready in Finishing.':'Done. The earlier text is in History.');if(held.finish?.tool==='proofread'&&!/^finish-/.test(last?.kind||''))await sDeskProofread(held);return;}
     }catch(error){if(held.status)held.status.textContent=error.message;}
     setTimeout(follow,DESK_POLL);
   };
@@ -574,4 +580,279 @@ async function sDeskWriteDraft(held,button){
   if(!sDeskHasText(held.view))return go(button);
   const confirm=sButton('Write the draft',async pressed=>{sCloseSheet();await go(pressed);},'filled');
   sOpenSheet('Write the whole draft?',sNode('p','','Every section is written from its brief, and the opening too. The text there now is kept in History first.'),sAdd(sNode('div','bar'),confirm,sButton('Cancel',sCloseSheet)));
+}
+
+// Finishing: an optional side panel of tools that propose. Each proposal is previewed before
+// and after, side by side, then applied, edited or skipped; nothing changes until Apply, and
+// each Apply keeps the earlier text in History. On a phone the panel is a full-screen sheet.
+const DESK_TOOLS=[
+  ['humanize','Humanize','Sentences that read as machine-written, each with a rewrite. Numbers, names, quotes and links are kept.'],
+  ['proofread','Proofread','Dashes, words that often read as machine-written, and repetition, checked at once with no assistant.'],
+  ['facts','Check facts against sources','Each claim marked supported, not in your sources, or contradicted, with the passage.'],
+  ['headline','Headline and opening','Alternatives for the title and the opening, to use or adjust.'],
+  ['feedback','Feedback without a rewrite','Comments on shape, argument, audience and claims. Nothing in the text changes.'],
+  ['publish','Before publishing','The pre-publish check, Repurpose, and Send to Google Doc as suggestions.'],
+];
+const DESK_LEVELS=[['light','Light'],['medium','Medium'],['strong','Strong']];
+const DESK_RUN={humanize:['Find sentences','Finding sentences that read as machine-written…'],facts:['Check facts','Checking each claim against your sources…'],headline:['Suggest alternatives','Suggesting headlines and openings…'],feedback:['Get feedback','Reading the draft for feedback…']};
+const DESK_VERDICTS={supported:'Supported','not-in-sources':'Not in your sources',contradicted:'Contradicted'};
+const DESK_ASPECTS={shape:'Shape',argument:'Argument',audience:'Audience',claims:'Claims'};
+const DESK_FORMATS=[['linkedin','LinkedIn feed copy'],['newsletter','Newsletter introduction'],['email','Announcement email'],['summary','Short summary'],['thread','Short thread']];
+function sDeskFinishOpen(held,tool=null){held.finish=held.finish||{tool:null,level:'light',editing:{},noted:{}};held.finish.tool=tool;sDeskRender(held);if(tool==='proofread')return sDeskProofread(held);}
+function sDeskFinishClose(held){held.finish=null;sDeskRender(held);}
+function sDeskFinishTool(held,tool){held.finish.tool=tool;sDeskPanelShow(held);if(tool==='proofread'&&!held.finish.proof)return sDeskProofread(held);}
+function sDeskPanel(held){
+  const f=held.finish,tool=DESK_TOOLS.find(([key])=>key===f.tool);
+  const panel=sNode('aside','desk-finish'+(sNarrow()?' desk-finish-sheet':''));panel.setAttribute('aria-label','Finishing');
+  const head=sNode('div','desk-finish-head glass');
+  if(tool)head.append(sButton('All tools',()=>{f.tool=null;sDeskPanelShow(held);}));
+  head.append(sNode('h2','desk-finish-title',tool?tool[1]:'Finishing'),sButton('Close',()=>sDeskFinishClose(held)));
+  const body=sNode('div','desk-finish-body');body.append(...(tool?sDeskToolView(held,f.tool):sDeskToolList(held)));
+  return sAdd(panel,head,body);
+}
+// What the panel shows, so a poll redraws it only when that changed.
+function sDeskPanelKey(held){const view=held.view,f=held.finish||{};return JSON.stringify([f.tool,view.finishing||{},view.working&&[view.working.id,view.working.kind,view.working.status],(view.jobs||[]).filter(job=>/^finish-/.test(job.kind)).slice(-4).map(job=>[job.id,job.status,job.error]),view.google_suggestions,view.revision,view.source_names?.length]);}
+function sDeskPanelShow(held){if(!held.finish||!held.panel)return;const panel=sDeskPanel(held);held.panel.replaceWith(panel);held.panel=panel;held.panelKey=sDeskPanelKey(held);}
+function sDeskPanelSync(held){
+  if(!held.finish||!held.panel||sDeskPanelKey(held)===held.panelKey)return;
+  // Never while the person types in the panel: an edited suggestion keeps its caret.
+  const focused=typeof document.activeElement==='object'?document.activeElement:null;
+  if(focused&&['INPUT','TEXTAREA','input','textarea'].includes(focused.tagName)&&typeof held.panel.contains==='function'&&held.panel.contains(focused))return;
+  sDeskPanelShow(held);
+}
+function sDeskToolList(held){
+  const list=sNode('div','pick-cards desk-finish-tools');
+  for(const [key,name,says] of DESK_TOOLS){const card=sPickCard(name,sDeskToolSays(held,key)||says,()=>sDeskFinishTool(held,key));list.append(card);}
+  const voice=sPickCard('Apply a voice','Arrives with voice guides.',()=>{});voice.disabled=true;list.append(voice);
+  return [sNode('p','quiet','Each tool proposes changes. Preview each one, then apply, edit or skip it. Nothing changes until you apply, and the earlier text stays in History.'),list];
+}
+function sDeskToolSays(held,key){
+  const job=held.view.working;if(job&&job.kind==='finish-'+key)return 'Working on it…';
+  const set=(held.view.finishing||{})[key];if(!set)return '';
+  const open=set.items.filter(item=>item.state==='open').length;
+  return open?open+(open===1?' to review.':' to review.'):'Nothing left to review.';
+}
+function sDeskToolView(held,key){
+  if(key==='proofread')return sDeskProofView(held);
+  if(key==='publish')return sDeskPublishView(held);
+  const view=held.view,f=held.finish,kind='finish-'+key,set=(view.finishing||{})[key],working=view.working,[label,doing]=DESK_RUN[key];
+  const parts=[sNode('p','quiet',DESK_TOOLS.find(([name])=>name===key)[2])];
+  if(key==='humanize')parts.push(sChoice('Intensity',DESK_LEVELS,f,'level'));
+  if(key==='facts'&&!(view.source_names||[]).length){const add=sButton('Add a source',()=>sDeskSourcesSheet(held));add.disabled=!access.actions.edit;parts.push(sAdd(sNode('div','decision-notice desk-problem'),sNode('p','','Facts are checked against your sources, and this draft has none yet.'),add));}
+  const run=sButton(set?label+' again':label,button=>sDeskJob(held,button,'desk-finish',{tool:key,...(key==='humanize'?{level:f.level}:{})}),'filled');run.disabled=!access.actions.edit||!!working;
+  parts.push(sAdd(sNode('div','bar'),run));
+  if(working&&working.kind===kind){const note=sNode('p','desk-working-note',doing);note.setAttribute('role','status');parts.push(note);}
+  else if(working)parts.push(sNode('p','quiet','Another change is under way. This can run when it ends.'));
+  const last=(view.jobs||[]).filter(job=>job.kind===kind).at(-1);
+  if(last&&!last.busy&&last.error&&(!set||set.job!==last.id))parts.push(sNode('p','problem',last.error));
+  if(set)parts.push(...sDeskProposals(held,key,set));
+  return parts;
+}
+function sDeskProposals(held,key,set){
+  const items=set.items,open=items.filter(item=>item.state==='open'),out=[];
+  if(key==='feedback'){
+    if(set.summary)out.push(sCard('Overall',sNode('p','',set.summary)));
+    if(!items.length)out.push(sNode('p','','No comments.'));
+    const order=['whole','title','opening',...(held.view.sections||[]).map(section=>section.id)];
+    for(const item of [...items].sort((a,b)=>order.indexOf(a.part)-order.indexOf(b.part)))out.push(sDeskComment(held,set,item,true));
+    return out;
+  }
+  const said=[items.length+(items.length===1?' suggestion':' suggestions'),open.length+' to review'];
+  if(set.dropped)said.push(set.dropped+' left out because '+(set.dropped===1?'it did not':'they did not')+' match the text');
+  out.push(sNode('p','quiet',said.join(' · ')+'.'));
+  if(!items.length){out.push(sNode('p','',key==='facts'?'No claims to check.':'Nothing to change at this level.'));return out;}
+  // Apply all: every open proposal that still fits; flagged ones wait to be checked one by one.
+  const ready=open.filter(item=>item.present&&!item.flag&&'after' in item);
+  if(key!=='headline'&&ready.length>1){
+    const flagged=open.filter(item=>item.flag).length;
+    const all=sButton('Apply all ('+ready.length+')',button=>sDeskApply(held,set,ready.map(item=>({id:item.id})),button));all.disabled=!access.actions.edit||!!held.view.working;
+    out.push(sAdd(sNode('div','bar'),all),flagged?sNode('p','quiet',flagged+(flagged===1?' flagged suggestion is':' flagged suggestions are')+' left for you to check one by one.'):null);
+  }
+  if(key==='headline'){
+    for(const [part,name] of [['title','Title'],['opening','Opening']]){const group=items.filter(item=>item.part===part);if(group.length)out.push(sNode('h3','sheet-part',name+' alternatives'),...group.map(item=>sDeskProposal(held,set,item,key)));}
+    return out.filter(Boolean);
+  }
+  const supported=items.filter(item=>item.verdict==='supported');
+  out.push(...items.filter(item=>item.verdict!=='supported').map(item=>sDeskProposal(held,set,item,key)));
+  if(supported.length)out.push(disclosure('Supported ('+supported.length+')',...supported.map(item=>sDeskProposal(held,set,item,key))));
+  return out.filter(Boolean);
+}
+// Before and after side by side: struck words only before, marked words only after.
+function deskSides(before,after){
+  const found=diffWords(before,after),box=sNode('div','desk-sides');
+  const side=(title,words)=>sAdd(sNode('div','paper desk-side'),sNode('h4','sheet-part',title),words);
+  const was=sNode('p','desk-plain'),now=sNode('p','desk-plain');
+  if(!found){was.textContent=before;now.textContent=after;}
+  else{let a=0,b=0;for(const piece of found){
+    if(piece.op!=='added'){if(a++)was.append(document.createTextNode(' '));was.append(piece.op==='removed'?sNode('del','diff-remove',piece.text):sNode('span','',piece.text));}
+    if(piece.op!=='removed'){if(b++)now.append(document.createTextNode(' '));now.append(piece.op==='added'?sNode('ins','diff-add',piece.text):sNode('span','',piece.text));}
+  }}
+  if(!String(before).trim())was.textContent='(Nothing yet)';
+  if(!String(after).trim())now.textContent='(Removed)';
+  return sAdd(box,side('Before',was),side('After',now));
+}
+function sDeskProposal(held,set,item,key){
+  const f=held.finish,card=sNode('section','card desk-proposal');card.dataset.item=item.id;
+  const head=sAdd(sNode('div','desk-part-head'),sNode('h3','row-title',key==='headline'?'Alternative':'In '+deskPartName(held.view,item.part)));
+  if(item.verdict)head.append(sNode('span','tag',DESK_VERDICTS[item.verdict]));
+  card.append(head);
+  if(item.flag)card.append(sNode('p','decision-notice',item.flag));
+  const editing=f.editing[item.id],hasAfter='after' in item;
+  let sides=null;
+  if(hasAfter||editing!==undefined){sides=deskSides(item.before,editing!==undefined?editing:item.after);card.append(sides);}
+  else card.append(sNode('blockquote','desk-quote',item.before));
+  if(item.note)card.append(sNode('p','quiet',item.note));
+  if(item.verdict&&item.verdict!=='supported'&&!item.passage)card.append(sNode('p','quiet','No passage in your sources says this.'));
+  if(item.passage)card.append(sNode('p','quiet','From '+(item.source||'your sources')+': “'+item.passage+'”'));
+  if(item.state!=='open'){card.append(sNode('p','quiet',item.state==='applied'?'Applied. The earlier text is in History.':item.verdict?'Kept as it is.':'Skipped.'));return card;}
+  const skip=sButton(item.verdict?'Keep it':'Skip',button=>sDeskSkip(held,set,[item.id],button));skip.disabled=!access.actions.edit;
+  if(!item.present){card.append(sNode('p','quiet','The text changed since this was suggested, so it no longer fits.'),sAdd(sNode('div','bar'),skip));return card;}
+  if(item.verdict==='supported')return card;
+  const editable=access.actions.edit&&!held.view.working;
+  if(editing!==undefined){
+    const box=sNode('textarea','input desk-edit');box.id='desk-edit-'+item.id;box.rows=Math.min(12,Math.max(3,Math.ceil(editing.length/60)));box.value=editing;box.setAttribute('aria-label','Your wording');
+    box.addEventListener('input',()=>{f.editing[item.id]=box.value;const next=deskSides(item.before,box.value);if(sides)sides.replaceWith(next);sides=next;});
+    const use=sButton('Apply this',button=>sDeskApply(held,set,[{id:item.id,after:f.editing[item.id]}],button),'filled');use.disabled=!editable;
+    card.append(box,sAdd(sNode('div','bar'),use,sButton('Cancel',()=>{delete f.editing[item.id];sDeskPanelShow(held);})));
+    return card;
+  }
+  const edit=sButton(hasAfter?'Edit':'Fix the wording',()=>{f.editing[item.id]=hasAfter?item.after:item.before;sDeskPanelShow(held);});edit.disabled=!editable;
+  const apply=hasAfter?sButton(key==='headline'?'Use this':'Apply',button=>sDeskApply(held,set,[{id:item.id}],button),'filled'):null;if(apply)apply.disabled=!editable;
+  const source=item.verdict?sButton('Add a source',()=>sDeskSourcesSheet(held)):null;if(source)source.disabled=!access.actions.edit;
+  card.append(sAdd(sNode('div','bar'),apply,edit,source,skip));
+  return card;
+}
+async function sDeskApply(held,set,items,button){
+  await busy(button,'Applying…',async()=>{try{
+    await sDeskFlush(held);if(held.stale)return;
+    const before=held.view;held.view=await api('desk-apply',{id:held.id,seen:held.view.revision,job:set.job,items});
+    for(const item of items)delete held.finish.editing[item.id];
+    const done=held.view.finished||{applied:items.length,left:[]},left=(done.left||[]).length;
+    sToast((done.applied===1?'Applied.':'Applied '+done.applied+'.')+' The earlier text is in History.'+(left?' '+left+(left===1?' no longer fits and is':' no longer fit and are')+' left for you.':''));
+    sDeskRefresh(held,before);sDeskPanelShow(held);
+  }catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}});
+}
+async function sDeskSkip(held,set,ids,button){
+  await busy(button,'Setting aside…',async()=>{try{const before=held.view;held.view=await api('desk-skip',{id:held.id,job:set.job,items:ids});sDeskRefresh(held,before);sDeskPanelShow(held);}catch(error){notice(error.message,true);}});
+}
+// Feedback: comments shown in the panel and in their section cards, each a note in one click.
+function sDeskCommentKey(view,part){const set=(view?.finishing||{}).feedback;return set?JSON.stringify(set.items.filter(item=>item.part===part&&item.state==='open').map(item=>item.id)):'';}
+function sDeskComments(held,part){
+  const set=(held.view.finishing||{}).feedback;if(!set)return null;
+  const items=set.items.filter(item=>item.part===part&&item.state==='open');if(!items.length)return null;
+  const box=sNode('div','desk-comments');box.setAttribute('aria-label','Feedback on this part');
+  box.append(sNode('h3','sheet-part','Feedback'),...items.map(item=>sDeskComment(held,set,item,false)));
+  return box;
+}
+function sDeskComment(held,set,item,inPanel){
+  const card=sNode(inPanel?'section':'div',inPanel?'card desk-proposal desk-comment':'desk-comment');card.dataset.item=item.id;
+  if(inPanel)card.append(sAdd(sNode('div','desk-part-head'),sNode('h3','row-title',item.part==='whole'?'The whole draft':'In '+deskPartName(held.view,item.part)),sNode('span','tag',DESK_ASPECTS[item.aspect]||'Shape')));
+  if(item.quote)card.append(sNode('blockquote','desk-quote',item.quote));
+  card.append(sNode('p','',item.comment));
+  if(item.state!=='open'){card.append(sNode('p','quiet','Dismissed.'));return card;}
+  const section=(held.view.sections||[]).some(found=>found.id===item.part),noted=(held.finish?.noted||{})[item.id];
+  const make=sButton(noted?'In the note':section?'Make it a note':'Make it the whole-draft note',()=>sDeskToNote(held,item));make.disabled=!access.actions.edit;
+  const dismiss=sButton('Dismiss',button=>sDeskSkip(held,set,[item.id],button));dismiss.disabled=!access.actions.edit;
+  card.append(sAdd(sNode('div','bar'),make,dismiss));
+  return card;
+}
+function sDeskToNote(held,item){
+  const section=(held.view.sections||[]).find(found=>found.id===item.part);
+  const text=(item.comment+(item.quote?' (About: “'+item.quote+'”)':'')).slice(0,4000);
+  if(section){held.notes=held.notes||{};held.notes[item.part]=text;}else held.wholeNote=text;
+  if(held.finish)held.finish.noted[item.id]=true;
+  if(held.finish&&sNarrow())held.finish=null;  // On a phone the sheet steps aside for the note.
+  if(held.tab!=='draft'||!held.cards||(section&&!held.cards[item.part])||sNarrow()){held.tab='draft';sDeskRender(held);}
+  else{
+    if(section){const card=sDeskPart(held,item.part);held.cards[item.part].replaceWith(card);held.cards[item.part]=card;}
+    else{const whole=sDeskWhole(held);held.wholeCard.replaceWith(whole);held.wholeCard=whole;}
+    sDeskPanelShow(held);
+  }
+  const target=section?held.cards?.[item.part]?.querySelector('input'):held.wholeCard?.querySelector('textarea');
+  if(target){target.focus();if(typeof target.scrollIntoView==='function')target.scrollIntoView({block:'center'});}
+  sToast(section?'Now the note for “'+section.heading+'”. Choose Rewrite when you are ready.':'Now the note for the whole draft. Choose Revise the draft when you are ready.');
+}
+// Proofread: in place, at once; Fix rewrites only the sentence a finding is in.
+async function sDeskProofread(held,button){
+  const go=async()=>{try{await sDeskFlush(held);const found=await api('desk-proofread?'+new URLSearchParams({id:held.id}));if(!held.finish)return;held.finish.proof=found;held.finish.proofProblem='';}catch(error){if(held.finish)held.finish.proofProblem=error.message;}sDeskPanelShow(held);};
+  if(button)await busy(button,'Checking…',go);else await go();
+}
+function sDeskProofView(held){
+  const f=held.finish,found=f.proof;
+  const again=sButton(found?'Check again':'Check now',button=>sDeskProofread(held,button),'filled');
+  const parts=[sNode('p','quiet',DESK_TOOLS[1][2]+' Fix rewrites only the sentence a finding is in, and keeps the earlier text in History.'),sAdd(sNode('div','bar'),again)];
+  if(f.proofProblem)parts.push(sNode('p','problem',f.proofProblem));
+  if(!found)return parts;
+  if(found.revision!==held.view.revision)parts.push(sNode('p','quiet','The draft changed since this check. Check again for the latest.'));
+  if(!found.findings.length){parts.push(sNode('p','','Nothing found by these checks.'));return parts;}
+  parts.push(sNode('p','quiet',found.findings.length+(found.findings.length===1?' finding':' findings')+(found.more?', and '+found.more+' more':'')+'. '+found.limitations));
+  for(const finding of found.findings)parts.push(sDeskFinding(held,finding));
+  return parts;
+}
+function sDeskFinding(held,finding){
+  const card=sNode('section','card desk-proposal');
+  card.append(sAdd(sNode('div','desk-part-head'),sNode('h3','row-title','In '+deskPartName(held.view,finding.part))),sNode('p','',finding.label));
+  const said=sNode('p','desk-plain desk-quote'),at=finding.at-finding.start;
+  if(at>=0&&finding.sentence.slice(at,at+finding.target.length)===finding.target)said.append(document.createTextNode(finding.sentence.slice(0,at)),sNode('mark','',finding.target),document.createTextNode(finding.sentence.slice(at+finding.target.length)));
+  else said.textContent=finding.sentence;
+  const still=deskTextOf(held.view,finding.part).slice(finding.start,finding.start+finding.sentence.length)===finding.sentence;
+  const fix=sButton('Fix',button=>sDeskJob(held,button,'desk-selection',{part:finding.part,text:finding.sentence,start:finding.start,action:'fix',instruction:finding.fix}));fix.disabled=!access.actions.edit||!!held.view.working||!still;
+  return sAdd(card,said,sAdd(sNode('div','bar'),fix),still?null:sNode('p','quiet','This sentence changed since the check.'));
+}
+// Before publishing: the pre-publish check, Repurpose into new blogs, and Google suggestions,
+// each reading the desk's latest text.
+function sDeskPublishView(held){
+  const f=held.finish,p=f.publish||(f.publish={check:null,checkProblem:'',copy:{format:'linkedin',words:'150',audience:'',url:''},job:null,content:null,title:'',made:null,copyProblem:'',google:{mode:'auto'},plan:null,sent:null,googleProblem:''});
+  return [sDeskPrepublishCard(held,p),sDeskRepurposeCard(held,p),sDeskGoogleCard(held,p)];
+}
+function sDeskPrepublishCard(held,p){
+  const run=sButton(p.check?'Check again':'Run the check',async button=>{await busy(button,'Checking…',async()=>{try{await sDeskFlush(held);p.check=await api('prepublish?id='+encodeURIComponent(held.id));p.checkProblem='';}catch(error){p.checkProblem=error.message;}sDeskPanelShow(held);});},'filled');
+  const card=sCard('Pre-publish check',sNode('p','quiet','Headings, placeholders, links and evidence references in the latest text. Report only: nothing changes.'),sAdd(sNode('div','bar'),run));
+  if(p.checkProblem)card.append(sNode('p','problem',p.checkProblem));
+  if(p.check){const list=sNode('ul','look');for(const item of p.check.findings)list.append(sNode('li','','Line '+item.line+': '+item.detail));card.append(p.check.findings.length?list:sNode('p','','No findings from these checks.'),sNode('p','quiet',p.check.coverage||''));}
+  return card;
+}
+function sDeskRepurposeCard(held,p){
+  const card=sCard('Repurpose',sNode('p','quiet','Prepare channel copy from the latest text; each copy you keep becomes a new blog on the desk. Nothing is posted.'));
+  if(p.copyProblem)card.append(sNode('p','problem',p.copyProblem));
+  if(p.made){card.append(sNode('p','','Made “'+p.made.title+'” as a new blog on the desk.'),sAdd(sNode('div','bar'),sButton('Open it',()=>sRoute('desk',p.made.id),'filled'),sButton('Prepare another',()=>{Object.assign(p,{job:null,content:null,title:'',made:null,copyProblem:''});sDeskPanelShow(held);})));return card;}
+  const job=p.job;
+  if(job&&['queued','working'].includes(job.status)){const note=sNode('p','desk-working-note','Preparing the copy…');note.setAttribute('role','status');card.append(note,sAdd(sNode('div','bar'),sButton('Cancel',async button=>{await busy(button,'Cancelling…',async()=>{try{p.job=await api('tool-action',{action:'job-control',job:job.id,control:'cancel'});}catch(error){p.copyProblem=error.message;}sDeskPanelShow(held);});})));sDeskRepurposeFollow(held,p);return card;}
+  if(job&&job.status==='ready'){
+    if(p.content===null)p.content=job.result?.content||'';
+    if(!p.title)p.title=held.view.title+' ('+((DESK_FORMATS.find(([key])=>key===job.metadata?.format)||[])[1]||'copy')+')';
+    const make=sButton('Make it a new blog',async button=>{await busy(button,'Making…',async()=>{try{const shown=await api('desk-repurpose',{id:held.id,job:job.id,title:p.title.trim(),content:p.content});p.made=shown.made;p.copyProblem='';held.view=shown;sToast('Made a new blog on the desk. Nothing was posted.');}catch(error){p.copyProblem=error.message;}sDeskPanelShow(held);});},'filled');make.disabled=!access.actions.edit;
+    sAdd(card,sField('desk-copy','The prepared copy',p,'content',{long:true,max:200000}),sField('desk-copy-title','Title for the new blog',p,'title',{max:500}),job.result?.notes?sNode('p','quiet',job.result.notes):null,sAdd(sNode('div','bar'),make,sButton('Discard',()=>{Object.assign(p,{job:null,content:null,title:''});sDeskPanelShow(held);})));
+    return card;
+  }
+  if(job&&job.error)card.append(sNode('p','problem',job.error));
+  const prepare=sButton('Prepare copy',async button=>{await busy(button,'Starting…',async()=>{try{await sDeskFlush(held);p.job=await api('tool-action',{action:'job-create',kind:'repurpose',id:held.id,operation:operationId(),format:p.copy.format,words:Number(p.copy.words),audience:p.copy.audience,url:p.copy.url});p.content=null;p.title='';p.copyProblem='';}catch(error){p.copyProblem=error.message;}sDeskPanelShow(held);});},'filled');prepare.disabled=!access.actions.edit;
+  card.append(sField('desk-copy-format','Copy format',p.copy,'format',{options:DESK_FORMATS}),sField('desk-copy-words','Target words',p.copy,'words',{type:'number',min:30,maximum:1500}),sField('desk-copy-reader','Reader (optional)',p.copy,'audience',{max:2000}),sField('desk-copy-url','Article URL (optional)',p.copy,'url',{max:2000}),sAdd(sNode('div','bar'),prepare));
+  return card;
+}
+function sDeskRepurposeFollow(held,p){
+  if(p.following)return;p.following=true;
+  setTimeout(async()=>{
+    p.following=false;if(!sDeskCurrent(held)||held.finish?.publish!==p||!p.job)return;
+    try{p.job=await api('tool-job?job='+encodeURIComponent(p.job.id));}catch(error){p.copyProblem=error.message;}
+    if(held.finish?.tool==='publish')sDeskPanelShow(held);
+  },DESK_POLL);
+}
+function sDeskGoogleCard(held,p){
+  const view=held.view,card=sCard('Send to Google Doc as suggestions');
+  if(!view.google_suggestions){card.append(sNode('p','','This blog has no Google Doc to send to. A blog started from a Google Doc can send its desk changes back to that Doc as suggestions for its owner to accept.'));return card;}
+  card.append(sNode('p','quiet','Your desk wording goes to the Google Doc as suggestions its owner accepts or rejects. Paragraphs added or removed stay here.'));
+  if(view.google?.url){const doc=link(view.google.url,'Open the Google Doc ↗');card.append(sAdd(sNode('p',''),doc));}
+  if(p.googleProblem)card.append(sNode('p','problem',p.googleProblem));
+  const check=sButton(p.plan?'Check again':'Check what would be sent',async button=>{await busy(button,'Checking…',async()=>{try{await sDeskFlush(held);p.plan=await api('desk-google-plan',{id:held.id,mode:p.google.mode});p.sent=null;p.googleProblem='';}catch(error){p.plan=null;p.googleProblem=error.message;}sDeskPanelShow(held);});},p.plan?'quiet':'filled');check.disabled=!access.actions.edit;
+  if(p.sent){card.append(sStatus(['verified-pending','verified-comments'].includes(p.sent.status)?'done':'late',p.sent.message));}
+  if(p.plan&&!p.sent){
+    const changes=sNode('ul','look');for(const item of p.plan.proposals||[])changes.append(sNode('li','','“'+item.before+'” → “'+item.after+'”'));
+    const send=sButton('Send to Google Doc',async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:result.status==='verified-pending'?'Suggestions are ready for the Doc’s owner to accept or reject.':result.status==='verified-comments'?'Comments were added to the Google Doc.':'The result is not yet verified. Check delivery before trying anything else.'};p.googleProblem='';}catch(error){p.googleProblem=error.message;if(/changed/.test(error.message))p.plan=null;}sDeskPanelShow(held);});},'filled');send.disabled=!access.actions.edit;
+    card.append(sNode('p','',p.plan.count+(p.plan.count===1?' wording change':' wording changes')+' checked against the Google Doc.'+(p.plan.left?' '+p.plan.left+(p.plan.left===1?' changed paragraph cannot be a suggestion and stays':' changed paragraphs cannot be suggestions and stay')+' on the desk.':'')),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,check));
+    return card;
+  }
+  if(p.sent&&!['verified-pending','verified-comments'].includes(p.sent.status)&&p.plan){card.append(sAdd(sNode('div','bar'),sButton('Check delivery',async button=>{await busy(button,'Checking…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:result.status==='verified-pending'?'Suggestions are ready for the Doc’s owner to accept or reject.':result.status==='verified-comments'?'Comments were added to the Google Doc.':'The result is not yet verified. Check delivery before trying anything else.'};}catch(error){p.googleProblem=error.message;}sDeskPanelShow(held);});},'filled')));return card;}
+  card.append(sField('desk-google-mode','Send as',p.google,'mode',{options:[['auto','Suggestions, with comments fallback'],['native','Suggestions only'],['comments','Comments only']]}),sAdd(sNode('div','bar'),check));
+  return card;
 }

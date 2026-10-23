@@ -206,3 +206,23 @@ input.desk-text{min-height:44px}
    role and buttons whenever the card is too narrow for all of them side by side. */
 .file-row{flex-wrap:wrap}
 .file-row>.row-text{flex:1 1 14rem}
+/* Finishing: a side panel beside the draft. Its header is transient chrome on the shared
+   material; its body and every proposal stay opaque. A drawer on a narrower screen, and a
+   full-screen sheet on a phone. */
+@media(min-width:1100px){.desk-layout.desk-finishing{grid-template-columns:minmax(0,1fr) minmax(22rem,28rem)}}
+.desk-finish{display:grid;align-content:start;min-width:0;background:var(--paper);border:1px solid var(--paper-line);border-radius:var(--card-round);overflow:hidden}
+@media(min-width:1100px){.desk-finish{position:sticky;top:5rem;max-height:calc(100vh - 6rem);overflow-y:auto}}
+@media(max-width:1099px) and (min-width:52.01rem){.desk-finish{position:fixed;top:5rem;right:var(--gutter);bottom:1rem;width:min(28rem,calc(100vw - 2 * var(--gutter)));z-index:25;overflow-y:auto;box-shadow:var(--lift)}}
+.desk-finish.desk-finish-sheet{position:fixed;inset:0;z-index:40;border:0;border-radius:0;overflow-y:auto;padding-bottom:env(safe-area-inset-bottom)}
+.desk-finish-head{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:.6rem;padding:.6rem .8rem;border-bottom:1px solid var(--hair);flex-wrap:wrap}
+.desk-finish-title{flex:1 1 8rem;min-width:0;margin:0;font-size:1.05rem}
+.desk-finish-body{display:grid;gap:1.1rem;padding:1rem;min-width:0}
+.desk-finish-tools{grid-template-columns:minmax(0,1fr)}
+.desk-proposal{display:grid;gap:.6rem;min-width:0}
+.desk-sides{display:grid;gap:.6rem;grid-template-columns:repeat(auto-fit,minmax(min(100%,10rem),1fr))}
+.desk-side{display:grid;gap:.4rem;align-content:start;padding:.7rem;min-width:0}
+.desk-quote{margin:0;padding-left:.8rem;border-left:3px solid var(--hair);white-space:pre-wrap;overflow-wrap:anywhere}
+.desk-quote mark{background:var(--yours-wash);color:inherit}
+.desk-edit{width:100%;max-width:none;box-sizing:border-box;resize:vertical}
+.desk-comments{display:grid;gap:.6rem;margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--hair)}
+.desk-comment{display:grid;gap:.4rem;min-width:0}

@@ -124,8 +124,9 @@ async function check(){
   await deskProgress();
   await deskOutlineTab();
   await deskAddSource();
+  await deskFinishing();
   pageDefinesEveryElement();
-  const checks=['desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
+  const checks=['Finishing on the desk: every tool listed, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Proofread with Fix, facts with Add a source and Keep it, headline alternatives, feedback in place and made a note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send, and a full-screen sheet on a phone','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
     'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','one name for each thing','copy that says what the form and gates do','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','research from your documents, your sites and/or the public web: the shared list prefilled, a site for one blog checked by the server, the shared sentences, and the sites named at the research gate','element ids'];
@@ -3376,6 +3377,166 @@ async function deskOutlineTab(){
   assert.ok(t.nodes().some(n=>n.textContent==='Removed sections'));
   await t.nodes().find(n=>n.attributes['aria-label']==='Bring back An old part').listeners.click();
   assert.deepEqual(t.requests.find(r=>r.url==='/api/desk-unremove').data,{id:'desk-blog',seen:view.revision-1,index:0});
+}
+function finishSet(kind,items,extra={}){return {job:kind+'job'.padEnd(28,'0'),kind:'finish-'+kind,blog:'desk-blog',made_at:'x',dropped:0,...extra,items:items.map((item,index)=>({id:'p'+(index+1),state:'open',present:true,flag:'',note:'',...item}))};}
+async function deskFinishing(){
+  let view=deskView({source_names:[]}),job=0;
+  const t=deskStartFixture((url,data)=>{
+    if(url.startsWith('/api/desk?'))return view;
+    if(url==='/api/desk-finish'){view={...view,working:{id:'f'+(++job),kind:'finish-'+data.tool,status:'queued',busy:true,part:'finishing',action:data.tool}};return view;}
+    if(url==='/api/desk-apply'){view={...view,revision:view.revision+1,finished:{applied:data.items.length,left:[]}};return view;}
+    if(url==='/api/desk-skip'){const tool=Object.keys(view.finishing).find(key=>view.finishing[key].job===data.job);view={...view,finishing:{...view.finishing,[tool]:{...view.finishing[tool],items:view.finishing[tool].items.map(item=>data.items.includes(item.id)?{...item,state:'skipped'}:item)}},finished:{skipped:data.items.length}};return view;}
+    if(url.startsWith('/api/desk-proofread?'))return {id:'desk-blog',revision:view.revision,more:0,limitations:'Mechanical matches only.',findings:[{part:'aaaaaaaa',rule:'banished:here',label:'“here” often reads as machine-written.',fix:'Say it without “here”, in plain words.',target:'here',sentence:'First text here.',start:0,at:11}]};
+    if(url==='/api/desk-selection'){view={...view,working:{id:'s1',kind:'desk-selection',status:'queued',busy:true,part:data.part}};return view;}
+    if(url.startsWith('/api/prepublish?'))return {findings:[{line:3,code:'unfinished-note',detail:'Resolve the unfinished editorial note or placeholder.'}],coverage:'Local checks only.'};
+    if(url==='/api/tool-action')return {id:'r'.repeat(32),kind:'repurpose',status:'ready',metadata:{article:'desk-blog',format:'linkedin'},result:{content:'A short post.',notes:''}};
+    if(url==='/api/desk-repurpose'){view={...view,made:{id:'copy-blog',title:data.title}};return view;}
+    if(url==='/api/desk-google-plan')return {plan:'g'.repeat(32),mode:'auto',count:1,left:1,target:'https://docs.google.com/document/d/x/edit',proposals:[{id:'desk-1',kind:'edit',before:'slow',after:'late',reason:'Wording changed on the writing desk.'}]};
+    if(url==='/api/desk-google-send')return {status:'verified-pending'};
+    if(url==='/api/desk-stop'){view={...view,working:null};return view;}
+    return null;
+  });
+  const {f,requests,nodes,tick,sheet}=t;
+  const panel=()=>nodes().find(n=>/(^| )desk-finish( |$)/.test(n.className));
+  const inPanel=label=>descendants(panel()).find(n=>n.textContent===label&&n.listeners.click);
+  const item=id=>descendants(panel()).find(n=>n.dataset?.item===id);
+  const inItem=(id,label)=>descendants(item(id)).find(n=>n.textContent===label&&n.listeners.click);
+  const card=part=>nodes().find(n=>n.dataset?.part===part);
+  const last=url=>requests.filter(r=>r.url===url).at(-1)?.data;
+  await f.run("sRoute('desk','desk-blog')");
+  // 1. Finishing opens beside the draft and lists every tool; Apply a voice waits for Phase 4.
+  const opener=descendants(f.get('actions')).find(n=>n.textContent==='Finishing');
+  assert.equal(opener.disabled,false);
+  await opener.listeners.click();
+  assert.ok(panel(),'the panel is open');
+  assert.match(nodes().find(n=>/desk-layout/.test(n.className)).className,/desk-finishing/);
+  assert.match(descendants(panel()).find(n=>/desk-finish-head/.test(n.className)).className,/\bglass\b/,'transient chrome uses the material');
+  assert.deepEqual(descendants(panel()).filter(n=>n.className==='pick-card').map(n=>n.textContent),['Humanize','Proofread','Check facts against sources','Headline and opening','Feedback without a rewrite','Before publishing','Apply a voice']);
+  assert.equal(descendants(panel()).find(n=>n.textContent==='Apply a voice').disabled,true);
+  // 2. Humanize at medium: one job that writes no part, so every card stays editable.
+  await inPanel('Humanize').listeners.click();
+  await inPanel('Medium').listeners.click();
+  await inPanel('Find sentences').listeners.click();
+  assert.deepEqual(last('/api/desk-finish'),{id:'desk-blog',seen:1,tool:'humanize',level:'medium'});
+  assert.equal(descendants(card('aaaaaaaa')).find(n=>n.tagName==='textarea').readOnly,false);
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Finding sentences that read as machine-written…'));
+  // The suggestions land; the card being typed in is not redrawn.
+  const typing=card('bbbbbbbb');
+  view={...view,working:null,jobs:[{id:'f1',kind:'finish-humanize',status:'ready',applied:true,error:''}],finishing:{humanize:finishSet('humanize',[
+    {part:'aaaaaaaa',before:'First text here.',after:'The first text here.',note:'Stock wording.'},
+    {part:'bbbbbbbb',before:'Second text.',after:'The second text.'},
+    {part:'cccccccc',before:'Third text.',after:'Third text, 3 times.',flag:'Check the facts: this changes a number.'},
+  ],{level:'medium'})}};
+  await tick();
+  assert.equal(card('bbbbbbbb'),typing,'cards the suggestions did not change keep focus and caret');
+  const first=item('p1');assert.ok(first,'each suggestion is shown');
+  assert.deepEqual(descendants(first).filter(n=>n.tagName==='h4').map(n=>n.textContent),['Before','After']);
+  assert.ok(descendants(first).some(n=>n.tagName==='del'&&n.textContent==='First'));
+  assert.ok(descendants(first).some(n=>n.tagName==='ins'&&n.textContent==='The first'));
+  assert.ok(descendants(item('p3')).some(n=>n.textContent==='Check the facts: this changes a number.'),'a changed fact is flagged');
+  // Apply all applies every open, unflagged suggestion; the flagged one waits.
+  assert.ok(inPanel('Apply all (2)'));
+  // 3. Apply, Edit then Apply this, and Skip.
+  await inItem('p1','Apply').listeners.click();
+  assert.deepEqual(last('/api/desk-apply'),{id:'desk-blog',seen:1,job:view.finishing.humanize.job,items:[{id:'p1'}]});
+  view={...view,finishing:{humanize:{...view.finishing.humanize,items:view.finishing.humanize.items.map(i=>i.id==='p1'?{...i,state:'applied'}:i)}}};
+  f.set('next',view);await f.run('studio.desk.view=next;sDeskPanelShow(studio.desk)');
+  assert.ok(descendants(item('p1')).some(n=>n.textContent==='Applied. The earlier text is in History.'));
+  await inItem('p2','Edit').listeners.click();
+  const box=descendants(item('p2')).find(n=>n.tagName==='textarea');assert.equal(box.value,'The second text.');
+  box.value='My second text.';box.listeners.input();
+  assert.ok(descendants(item('p2')).some(n=>n.tagName==='ins'&&/My/.test(n.textContent)),'the After side follows the edit');
+  // A poll while the person types in the panel leaves it as it is.
+  f.set('focused',box);f.run('document.activeElement=focused');const shownPanel=panel();
+  f.set('next',{...view,revision:view.revision});await f.run('studio.desk.view={...next,jobs:[{id:"f9",kind:"finish-facts",status:"failed",error:"x"}]};sDeskPanelSync(studio.desk)');
+  assert.equal(panel(),shownPanel,'typing in an edited suggestion keeps its caret');
+  f.run('document.activeElement=null;studio.desk.view=next');
+  await inItem('p2','Apply this').listeners.click();
+  assert.deepEqual(last('/api/desk-apply').items,[{id:'p2',after:'My second text.'}]);
+  await inItem('p3','Skip').listeners.click();
+  assert.deepEqual(last('/api/desk-skip'),{id:'desk-blog',job:view.finishing.humanize.job,items:['p3']});
+  // Apply all: a fresh set, one flagged.
+  view={...view,finishing:{humanize:finishSet('humanize',[{part:'aaaaaaaa',before:'A.',after:'B.'},{part:'bbbbbbbb',before:'C.',after:'D.'},{part:'cccccccc',before:'E.',after:'F 2.',flag:'Check the facts: this changes a number.'}])}};
+  f.set('next',view);await f.run('studio.desk.view=next;sDeskPanelShow(studio.desk)');
+  await inPanel('Apply all (2)').listeners.click();
+  assert.deepEqual(last('/api/desk-apply').items,[{id:'p1'},{id:'p2'}]);
+  assert.ok(descendants(panel()).some(n=>n.textContent==='1 flagged suggestion is left for you to check one by one.'));
+  // 4. Proofread: at once, no job; Fix rewrites only the sentence.
+  await inPanel('All tools').listeners.click();
+  await inPanel('Proofread').listeners.click();
+  assert.ok(requests.some(r=>r.url==='/api/desk-proofread?id=desk-blog'));
+assert.ok(descendants(panel()).some(n=>n.tagName==='mark'&&n.textContent==='here'),'the finding is marked in its sentence');
+  await inPanel('Fix').listeners.click();
+  assert.deepEqual(last('/api/desk-selection'),{id:'desk-blog',seen:view.revision,part:'aaaaaaaa',text:'First text here.',start:0,action:'fix',instruction:'Say it without “here”, in plain words.'});
+  view={...view,working:null};f.set('next',view);await f.run('studio.desk.view=next;sDeskRender(studio.desk)');
+  // 5. Facts: with no sources the panel offers Add a source; each claim keeps its passage.
+  await inPanel('All tools').listeners.click();
+  await inPanel('Check facts against sources').listeners.click();
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Facts are checked against your sources, and this draft has none yet.'));
+  view={...view,source_names:[{id:'s1',name:'Notes',purposes:['reference']}],finishing:{...view.finishing,facts:finishSet('facts',[
+    {part:'aaaaaaaa',before:'First text here.',verdict:'contradicted',passage:'The text is elsewhere.',source:'Notes'},
+    {part:'bbbbbbbb',before:'Second text.',verdict:'not-in-sources',passage:'',after:'A second text.'},
+    {part:'cccccccc',before:'Third text.',verdict:'supported',passage:'Third text.',source:'Notes'},
+  ])}};
+  f.set('next',view);await f.run('studio.desk.view=next;sDeskPanelShow(studio.desk)');
+  assert.ok(descendants(item('p1')).some(n=>n.textContent==='Contradicted'));
+  assert.ok(descendants(item('p1')).some(n=>n.textContent==='From Notes: “The text is elsewhere.”'));
+  assert.ok(descendants(panel()).some(n=>n.tagName==='summary'&&n.textContent==='Supported (1)'));
+  await inItem('p1','Add a source').listeners.click();
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Add a source','Add a source opens the sources sheet');
+  f.run('sCloseSheet()');
+  await inItem('p1','Fix the wording').listeners.click();
+  const wording=descendants(item('p1')).find(n=>n.tagName==='textarea');wording.value='First text, as Notes says.';wording.listeners.input();
+  await inItem('p1','Apply this').listeners.click();
+  assert.deepEqual(last('/api/desk-apply').items,[{id:'p1',after:'First text, as Notes says.'}]);
+  await inItem('p2','Keep it').listeners.click();
+  assert.deepEqual(last('/api/desk-skip').items,['p2']);
+  // 6. Headline and opening: alternatives to use.
+  await inPanel('All tools').listeners.click();await inPanel('Headline and opening').listeners.click();
+  view={...view,finishing:{...view.finishing,headline:finishSet('headline',[{part:'title',before:'A synthetic title',after:'A sharper title',whole:true,group:'title'},{part:'opening',before:'An opening paragraph.',after:'A new opening.',whole:true,group:'opening'}])}};
+  f.set('next',view);await f.run('studio.desk.view=next;sDeskPanelShow(studio.desk)');
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Title alternatives'));
+  assert.ok(!inPanel('Apply all (2)'),'alternatives are chosen one at a time');
+  await inItem('p1','Use this').listeners.click();
+  assert.deepEqual(last('/api/desk-apply').items,[{id:'p1'}]);
+  // 7. Feedback: comments in place, each a section note in one click; nothing applied.
+  await inPanel('All tools').listeners.click();await inPanel('Feedback without a rewrite').listeners.click();
+  view={...view,finishing:{...view.finishing,feedback:finishSet('feedback',[{part:'bbbbbbbb',quote:'Second text.',aspect:'argument',comment:'Say why this matters.'},{part:'whole',quote:'',aspect:'shape',comment:'The ending trails off.'}],{summary:'A clear start.'})}};
+  f.set('next',view);await f.run('studio.desk.view=next;sDeskRender(studio.desk)');
+  assert.ok(descendants(panel()).some(n=>n.textContent==='A clear start.'));
+  const inCard=descendants(card('bbbbbbbb')).find(n=>n.textContent==='Make it a note'&&n.listeners.click);
+  assert.ok(inCard,'the comment is shown in its section card');
+  const posts=requests.length;await inCard.listeners.click();
+  assert.equal(descendants(card('bbbbbbbb')).find(n=>n.tagName==='input').value,'Say why this matters. (About: “Second text.”)');
+  assert.equal(requests.length,posts,'a note is not sent until Rewrite');
+  await inItem('p2','Make it the whole-draft note').listeners.click();
+  assert.equal(nodes().find(n=>n.id==='desk-whole-note').value,'The ending trails off.');
+  // 8. Before publishing: the check, a repurposed copy as a new blog, and the Google send.
+  view={...view,google_suggestions:true,google:{url:'https://docs.google.com/document/d/x/edit'}};f.set('next',view);await f.run('studio.desk.view=next');
+  await inPanel('All tools').listeners.click();await inPanel('Before publishing').listeners.click();
+  await inPanel('Run the check').listeners.click();
+  assert.ok(requests.some(r=>r.url==='/api/prepublish?id=desk-blog'));
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Line 3: Resolve the unfinished editorial note or placeholder.'));
+  await inPanel('Prepare copy').listeners.click();
+  const made=last('/api/tool-action');assert.equal(made.action,'job-create');assert.equal(made.kind,'repurpose');assert.equal(made.id,'desk-blog');assert.equal(made.format,'linkedin');
+  assert.equal(descendants(panel()).find(n=>n.id==='desk-copy').value,'A short post.');
+  await inPanel('Make it a new blog').listeners.click();
+  assert.deepEqual(last('/api/desk-repurpose'),{id:'desk-blog',job:'r'.repeat(32),title:'A synthetic title (LinkedIn feed copy)',content:'A short post.'});
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Made “A synthetic title (LinkedIn feed copy)” as a new blog on the desk.'));
+  await inPanel('Check what would be sent').listeners.click();
+  assert.deepEqual(last('/api/desk-google-plan'),{id:'desk-blog',mode:'auto'});
+  assert.ok(descendants(panel()).some(n=>n.textContent==='“slow” → “late”'));
+  await inPanel('Send to Google Doc').listeners.click();
+  assert.deepEqual(last('/api/desk-google-send'),{id:'desk-blog',plan:'g'.repeat(32),confirmed:true});
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Suggestions are ready for the Doc’s owner to accept or reject.'));
+  // 9. On a phone the panel is a full-screen sheet over the desk.
+  f.run("window.matchMedia=()=>({matches:true})");
+  await inPanel('Close').listeners.click();assert.ok(!panel());
+  const folded=descendants(f.get('actions')).find(n=>n.textContent==='Finishing');assert.ok(folded,'Finishing is in the phone toolbar menu');
+  await folded.listeners.click();
+  assert.match(panel().className,/desk-finish-sheet/);
+  assert.equal(panel().parent,f.get('studio-page'),'the sheet sits over the page, not in the layout');
+  f.run("window.matchMedia=undefined");
 }
 async function deskAddSource(){
   let view=deskView();
