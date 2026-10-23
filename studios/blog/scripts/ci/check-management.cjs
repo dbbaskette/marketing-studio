@@ -30,7 +30,7 @@ function fixture(responder=()=>({items:[],total:0})){
   const source=fs.readFileSync('skills/blog-studio/assets/management/app.js','utf8').split("for(const b of document.querySelectorAll('[data-view]'))")[0];
   vm.runInContext(source,context);
   vm.runInContext("access={status:'local-only',message:'Local only',actions:{edit:true,memory:false,refresh:false}}",context);
-  return {get,nodes,run:code=>vm.runInContext(code,context),set:(name,value)=>{context[name]=value;},loadRunner:()=>{vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/markdown.js','utf8'),context);vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/runner.js','utf8').split('// Keep initialization below this marker')[0],context);}};
+  return {get,nodes,run:code=>vm.runInContext(code,context),set:(name,value)=>{context[name]=value;},loadRunner:()=>{vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/markdown.js','utf8'),context);vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/runner.js','utf8').split('// Keep initialization below this marker')[0],context);vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/desk.js','utf8'),context);}};
 }
 async function check(){
   const lan=fixture();
@@ -113,8 +113,10 @@ async function check(){
   await skipResearch();
   await finishEveryLevel();
   await failureRecovery();
+  await deskJourneys();
+  await deskOpenFinished();
   pageDefinesEveryElement();
-  const checks=['keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: Outline only, Revise or review a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
+  const checks=['the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: Outline only, Revise or review a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
     'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','one name for each thing','copy that says what the form and gates do','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','research from your documents, your sites and/or the public web: the shared list prefilled, a site for one blog checked by the server, the shared sentences, and the sites named at the research gate','element ids'];
@@ -407,7 +409,11 @@ async function phase4Starts(){
   f.loadRunner();f.run('sHome()');
   const nodes=()=>descendants(f.get('studio-page'));
   for(const title of ['Outline only','Revise or review a draft'])assert.ok(nodes().some(n=>n.textContent===title));
+  // A draft the person brings opens on the writing desk; the step-by-step revise start stays
+  // for blogs already on it.
   await nodes().find(n=>n.textContent==='Revise or review a draft').listeners.click();
+  assert.equal(f.run('studio.screen'),'desk-start');
+  await f.run("newBlog('',null,'revise')");
   assert.ok(nodes().some(n=>n.attributes['aria-label']==='Upload a manuscript'),nodes().map(n=>n.textContent).join(' | '));
   await nodes().find(n=>n.textContent==='Give feedback only').listeners.click();
   assert.equal(f.run('studio.draft.mode'),'review');
@@ -448,6 +454,8 @@ async function taskJourneys(){
   assert.ok(nodes().some(e=>e.textContent==='Set up before you write'),'Home offers setting up before writing');
   for(const label of ['Voices and styles','Team library'])assert.ok(nodes().some(e=>e.className==='pick-card'&&descendants(e).some(d=>d.textContent===label)||e.textContent===label),label);
   await nodes().find(e=>e.textContent==='Polish a document').listeners.click();
+  assert.equal(f.run('studio.screen'),'desk-start');
+  await f.run("sRoute('polish')");
   assert.ok(nodes().some(e=>e.textContent==='Google Doc'));assert.ok(nodes().some(e=>e.textContent==='Upload a file'));
   await nodes().find(e=>e.textContent==='Paste text').listeners.click();
   for(const [id,value] of [['draft-title','Pasted draft'],['draft-content','Café draft.']]){field(id).value=value;field(id).listeners.input();}
@@ -1291,7 +1299,7 @@ async function authorClarify(){
 function pageDefinesEveryElement(){
   // The fixture creates any element on demand, so check the real page defines every id the script asks for.
   const base='skills/blog-studio/assets/management/';
-  const script=fs.readFileSync(base+'app.js','utf8')+fs.readFileSync(base+'runner.js','utf8'),page=fs.readFileSync(base+'index.html','utf8');
+  const script=fs.readFileSync(base+'app.js','utf8')+fs.readFileSync(base+'runner.js','utf8')+fs.readFileSync(base+'desk.js','utf8'),page=fs.readFileSync(base+'index.html','utf8');
   const defined=new Set([...page.matchAll(/id="([^"]+)"/g)].map(m=>m[1]));
   const wanted=new Set([...script.matchAll(/\$\('([a-z0-9-]+)'\)/g)].map(m=>m[1]));
   for(const prefix of ['upload','import'])for(const m of script.matchAll(/\$\(prefix\+'(-[a-z-]+)'\)/g))wanted.add(prefix+m[1]);
@@ -3005,4 +3013,113 @@ async function phase3ClaimsMap(){const f=fixture();f.loadRunner();
   const role=descendants(f.get('studio-page')).find(node=>node.id==='files-role-owned');
   role.value='inspiration';await role.listeners.change();
   assert.equal(stops.textContent.includes('claims in your material'),false,'changing a file to an example refreshes the predicted stops');
+}
+
+function deskView(extra={}){
+  return {id:'desk-blog',revision:1,title:'A synthetic title',opening:'An opening paragraph.',sections:[{id:'aaaaaaaa',heading:'First part',brief:'',text:'First text here.'},{id:'bbbbbbbb',heading:'Second part',brief:'',text:'Second text.'},{id:'cccccccc',heading:'Third part',brief:'',text:'Third text.'}],tone:'Plain',gaps:[],markdown:'# A synthetic title\n',jobs:[],working:null,versions:{},run:false,google:null,publication:null,style_name:null,source_names:[],expected:'session-v1',...extra};
+}
+async function deskJourneys(){
+  const requests=[],timers=[];let view=deskView(),refuse=false;
+  const f=fixture((url,options)=>{
+    const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''}},sources:[],profiles:[],styles:[{id:'how-to',name:'How-to and tutorial',status:'confirmed',kind:'seed'}],agents:{codex:true}};
+    if(url==='/api/desk-create')return {...view,first_pass_problem:null};
+    if(url.startsWith('/api/desk?'))return view;
+    if(url==='/api/desk-save'){if(refuse)return {__http:409,error:'This draft changed since you opened it. Reload to see the latest.'};view={...view,revision:view.revision+1,versions:{[data.part]:1},sections:view.sections.map(s=>s.id===data.part?{...s,text:data.text}:s)};return view;}
+    if(url==='/api/desk-note'){view={...view,working:{id:'j1',kind:'desk-section',status:'working',part:data.part,note:data.note}};return view;}
+    if(url==='/api/desk-selection'){view={...view,working:{id:'j2',kind:'desk-selection',status:'queued',part:data.part}};return view;}
+    if(url==='/api/desk-revise'){view={...view,working:{id:'j3',kind:'desk-revise-all',status:'queued',part:'sections'}};return view;}
+    if(url==='/api/desk-stop'){view={...view,working:null};return view;}
+    if(url.startsWith('/api/desk-versions?'))return {id:'desk-blog',part:'aaaaaaaa',versions:[{at:new Date().toISOString(),source:'rewrite',text:'First old text here.',words:4}]};
+    if(url==='/api/desk-restore'){view={...view,revision:view.revision+1,sections:view.sections.map(s=>s.id===data.part?{...s,text:'First old text here.'}:s)};return view;}
+    return {items:[],total:0};
+  });
+  f.loadRunner();f.set('setTimeout',fn=>{timers.push(fn);return timers.length;});f.set('clearTimeout',()=>{});
+  const nodes=()=>descendants(f.get('studio-page')),tick=async()=>{for(const fn of timers.splice(0))await fn();};
+  const card=part=>nodes().find(n=>n.dataset?.part===part),inside=(node,test)=>descendants(node).find(test);
+  // 1. A pasted draft starts on the desk, with a card for the title, the opening and each section.
+  await f.run("sRoute('desk-start')");
+  assert.equal(f.get('title').textContent,'Edit a draft');
+  const paste=nodes().find(n=>n.id==='desk-manuscript');paste.value='# A synthetic title\n\nAn opening paragraph.\n\n## First part\n\nFirst text here.';paste.listeners.input();
+  await nodes().find(n=>n.tagName==='form').listeners.submit({preventDefault(){}});
+  const created=requests.find(r=>r.url==='/api/desk-create').data;
+  assert.match(created.operation,/^[0-9a-f]{32}$/);assert.equal(created.first_pass,'leave');assert.equal(created.tone,'Clear');assert.match(created.manuscript,/## First part/);
+  assert.equal(f.run('studio.screen'),'desk');
+  assert.equal(nodes().filter(n=>n.className.split(' ').includes('desk-part')).length,5);
+  assert.equal(nodes().filter(n=>n.className==='card-title').map(n=>n.textContent).slice(1,-1).join('|'),'Title|Opening|First part|Second part|Third part');
+  // 2. Typing saves a second later, against the revision seen and this editing session.
+  const text=inside(card('aaaaaaaa'),n=>n.tagName==='textarea');text.value='First text here, edited.';text.listeners.input();
+  assert.match(nodes().find(n=>/desk-save-state/.test(n.className)).textContent,/Saving/);
+  await tick();
+  const saved=requests.find(r=>r.url==='/api/desk-save').data;
+  assert.deepEqual([saved.part,saved.seen,saved.text],['aaaaaaaa',1,'First text here, edited.']);assert.match(saved.session,/^[0-9a-f]{32}$/);
+  assert.equal(nodes().find(n=>/desk-save-state/.test(n.className)).textContent,'Saved.');
+  // 3. A note rewrites the section; its card says it is working until the result lands.
+  const note=inside(card('bbbbbbbb'),n=>n.tagName==='input');const rewrite=()=>inside(card('bbbbbbbb'),n=>n.tagName==='button'&&['Rewrite','Write again'].includes(n.textContent));
+  assert.equal(rewrite().textContent,'Write again');
+  note.value='Add an example.';note.listeners.input();assert.equal(rewrite().textContent,'Rewrite');
+  await rewrite().listeners.click();
+  assert.deepEqual(requests.find(r=>r.url==='/api/desk-note').data,{id:'desk-blog',seen:2,part:'bbbbbbbb',note:'Add an example.'});
+  assert.ok(descendants(card('bbbbbbbb')).some(n=>n.textContent==='Working on this section'));
+  assert.ok(descendants(card('bbbbbbbb')).some(n=>n.textContent==='Your note: Add an example.'));
+  assert.equal(inside(card('bbbbbbbb'),n=>n.tagName==='textarea').readOnly,true);
+  assert.equal(inside(card('aaaaaaaa'),n=>n.tagName==='textarea').readOnly,false);
+  assert.match(f.get('above').textContent,/Rewriting “Second part”/);
+  view={...view,revision:3,working:null,jobs:[{id:'j1',kind:'desk-section',status:'ready',applied:true,error:''}],sections:view.sections.map(s=>s.id==='bbbbbbbb'?{...s,text:'Second text, for example.'}:s),versions:{aaaaaaaa:1,bbbbbbbb:1}};
+  await tick();
+  assert.equal(inside(card('bbbbbbbb'),n=>n.tagName==='textarea').value,'Second text, for example.');
+  assert.ok(!descendants(card('bbbbbbbb')).some(n=>n.textContent==='Working on this section'));
+  // 4. Selecting text shows the bar; Shorten sends the exact passage.
+  const first=inside(card('aaaaaaaa'),n=>n.tagName==='textarea');first.selectionStart=0;first.selectionEnd=10;first.listeners.select();
+  const bar=nodes().find(n=>/desk-selection/.test(n.className));assert.equal(bar.hidden,false);
+  assert.deepEqual(bar.children.map(n=>n.textContent),['Rephrase','Shorten','Expand','Fix','Ask…']);
+  await bar.children.find(n=>n.textContent==='Ask…').listeners.click();
+  assert.equal(bar.children[0].tagName,'input');
+  await bar.children.find(n=>n.textContent==='Cancel').listeners.click();
+  first.listeners.select();
+  await bar.children.find(n=>n.textContent==='Shorten').listeners.click();
+  assert.deepEqual(requests.find(r=>r.url==='/api/desk-selection').data,{id:'desk-blog',seen:3,part:'aaaaaaaa',text:'First text',action:'shorten'});
+  await f.run('sDeskRender(studio.desk)');
+  await descendants(f.get('actions')).find(n=>n.textContent==='Stop').listeners.click();
+  assert.equal(requests.at(-1).url,'/api/desk-stop');
+  // 5. History lists the kept versions; Compare marks what changed; Restore posts it.
+  const history=inside(card('aaaaaaaa'),n=>n.tagName==='button'&&/^History/.test(n.textContent));assert.equal(history.textContent,'History (1)');
+  await history.listeners.click();
+  const sheet=()=>descendants(f.get('sheet'));
+  assert.ok(sheet().some(n=>n.textContent==='Before a rewrite'));
+  await sheet().find(n=>n.textContent==='Compare').listeners.click();
+  assert.equal(sheet().find(n=>n.tagName==='del').textContent.trim(),'old');
+  assert.ok(sheet().some(n=>n.tagName==='ins'&&/edited/.test(n.textContent)));
+  await sheet().find(n=>n.textContent==='Restore').listeners.click();
+  assert.deepEqual(requests.find(r=>r.url==='/api/desk-restore').data,{id:'desk-blog',seen:3,part:'aaaaaaaa',index:0});
+  assert.equal(inside(card('aaaaaaaa'),n=>n.tagName==='textarea').value,'First old text here.');
+  // 6. A save refused as outdated says so and offers Reload.
+  refuse=true;const third=inside(card('cccccccc'),n=>n.tagName==='textarea');third.value='Changed elsewhere.';third.listeners.input();await tick();
+  const state=nodes().find(n=>/desk-save-state/.test(n.className));
+  assert.match(descendants(state).map(n=>n.textContent).join(' '),/This draft changed/);
+  assert.ok(descendants(state).some(n=>n.textContent==='Reload'));
+  refuse=false;await descendants(state).find(n=>n.textContent==='Reload').listeners.click();
+  // 7. A note for the whole draft revises it.
+  const whole=nodes().find(n=>n.id==='desk-whole-note');whole.value='Tighten throughout.';whole.listeners.input();
+  await nodes().find(n=>n.textContent==='Revise the draft').listeners.click();
+  assert.deepEqual(requests.find(r=>r.url==='/api/desk-revise').data,{id:'desk-blog',seen:view.revision,note:'Tighten throughout.'});
+  for(const card of nodes().filter(n=>n.className.split(' ').includes('desk-part')&&/^[a-c]{8}$/.test(n.dataset.part)))assert.match(card.className,/desk-working/);
+  // The page-wide poll leaves the desk to its own: it never redraws another screen over it.
+  const before=f.get('studio-page').children.length;await f.run('sPoll()');assert.equal(f.get('studio-page').children.length,before);assert.equal(f.get('title').textContent,'A synthetic title');
+  // Word comparison: a long text falls back to the two texts side by side.
+  assert.equal(f.run("diffWords('a '.repeat(5000),'b')"),null);
+  assert.deepEqual(JSON.parse(f.run("JSON.stringify(diffWords('one two three','one 2 three'))")).map(p=>p.op),['same','removed','added','same']);
+}
+async function deskOpenFinished(){
+  const requests=[];const found={id:'finished',title:'Finished run',stages:[{stage:'draft'}],complete:true,desk_open:true,on_desk:false};
+  const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});if(url==='/api/desk-open')return deskView({id:'finished',run:true});if(url.startsWith('/api/desk?'))return deskView({id:'finished',run:true});return {items:[]};});
+  f.loadRunner();f.set('done',found);f.run("studio.screen='run';studio.id=done.id;sPage(sDoneCard(done))");
+  const nodes=()=>descendants(f.get('studio-page'));
+  const open=nodes().find(n=>n.textContent==='Open on the desk');assert.ok(open,'a finished run offers Open on the desk');
+  await open.listeners.click();
+  assert.deepEqual(requests.find(r=>r.url==='/api/desk-open').data,{id:'finished'});
+  assert.equal(f.run('studio.screen'),'desk');
+  assert.ok(nodes().some(n=>n.textContent==='Open the step-by-step run'));
+  f.set('later',{...found,desk_open:false});f.run("studio.screen='run';sPage(sDoneCard(later))");
+  assert.ok(!nodes().some(n=>n.textContent==='Open on the desk'));
 }

@@ -169,3 +169,28 @@
 .author-row{flex-direction:column;align-items:stretch}
 .author-clarify{display:grid;gap:.4rem;margin-left:2rem;min-width:0}
 .author-clarify .bar{gap:.4rem}
+/* The writing desk: one opaque card per part beside its sources; the selection bar is the
+   only material, a transient control above the page. */
+.desk-layout{display:grid;gap:1.1rem;grid-template-columns:minmax(0,1fr)}
+@media(min-width:1100px){.desk-layout{grid-template-columns:minmax(0,1fr) 18rem;align-items:start}.desk-aside{position:sticky;top:5rem}}
+.desk-column{display:grid;gap:1.1rem;min-width:0}
+.desk-aside{display:grid;gap:1.1rem;min-width:0}
+.desk-part-head{display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap}
+.desk-text{width:100%;max-width:none;min-height:3rem;margin-top:.6rem;resize:vertical;box-sizing:border-box}
+input.desk-text{min-height:44px}
+.desk-note{display:flex;gap:.6rem;margin-top:.6rem;flex-wrap:wrap}
+.desk-note>.input{flex:1 1 16rem;min-width:0;max-width:none}
+.desk-working{border-color:var(--yours)}
+.desk-working-note{margin-top:.6rem;color:var(--yours)}
+.desk-problem{display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap}
+.desk-stale{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.desk-save-state{min-height:1.4rem}
+.desk-selection{position:fixed;left:50%;bottom:1.2rem;transform:translateX(-50%);z-index:30;display:flex;gap:.4rem;flex-wrap:wrap;justify-content:center;padding:.5rem;border-radius:14px;max-width:calc(100vw - 2rem);box-sizing:border-box}
+.desk-selection>.input{flex:1 1 14rem;min-width:0}
+.desk-versions{display:grid;gap:.6rem}
+.desk-version{display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap;padding:.6rem 0;border-bottom:1px solid var(--hair)}
+.desk-compare-area{margin-top:1.1rem}
+.desk-compare{display:grid;gap:.6rem;padding:1rem;max-height:50vh;overflow:auto}
+.desk-plain{white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+.desk-plain del{color:var(--late)}.desk-plain ins{color:var(--done)}
+@media(max-width:52rem){.desk-selection{bottom:calc(5rem + env(safe-area-inset-bottom))}}

@@ -487,6 +487,8 @@ def _row(job):
         'status': job['status'],
         'part': meta.get('part'),
         'action': meta.get('action'),
+        # The person's own note, shown on the card while the job works on it.
+        'note': (job.get('payload') or {}).get('note') or '',
         'applied': job.get('applied'),
         'error': job.get('error') or '',
         'created_at': job.get('created_at'),
