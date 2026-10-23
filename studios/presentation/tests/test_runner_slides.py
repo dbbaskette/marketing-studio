@@ -237,6 +237,14 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(ran, [['node', '/opt/harness-slides/scripts/harness-slides.mjs',
                                 '--version']])
 
+    def test_compile_names_the_asset_project_only_when_given_one(self):
+        self.slides.compile(Path('/d/composition.json'), Path('/d/brand.json'))
+        self.assertNotIn('--asset-project', self.ran[-1])
+        self.slides.compile(Path('/d/composition.json'), Path('/d/brand.json'),
+                            assets=Path('/d/work/assets'))
+        self.assertEqual(self.ran[-1][self.ran[-1].index('--asset-project') + 1],
+                         '/d/work/assets')
+
     def test_each_command_is_run_as_the_command_line_takes_it(self):
         deck = self.slides
         self.assertEqual(deck.outline_check(Path('/d/outline.json'), Path('/d/brand.json')),
