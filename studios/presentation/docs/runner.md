@@ -174,6 +174,10 @@ rerunning research. The full reviewed bundle stays intact.
   picture of your own: a PNG or JPEG of up to 20 MB, what it shows and where it came from.
   It is recorded in the deck's asset project with the slides tool's `assets add-supplied`,
   drawn by its asset ID, and checked again before the deck stop. No picture is generated.
+  "Remove the picture" takes it off its slide (`/api/picture-remove`); the tool's record
+  stays, so a picture given again, or a retry after a record that failed part way, takes a
+  new asset ID. What it shows and where it came from go joined to `--alt=` and `--source=`,
+  so words that begin with "-" are kept.
 - **Previews.** Previews through Google Drive, on a slides tool with a preview pool, run side
   by side, up to `HARNESS_PREVIEW_POOL_SIZE` (4 when unset); LibreOffice renders one at a
   time.

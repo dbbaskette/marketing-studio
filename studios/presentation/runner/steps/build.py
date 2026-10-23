@@ -555,6 +555,7 @@ def brand_for_workers(root, brand: Path) -> dict:
 ASSETS = Path('work') / 'assets'            # the deck's asset project, for pictures given
 PICTURED = ASSETS / 'pictures.json'         # {slide id: {'asset', 'alt', 'source', ...}}
 PICTURE_KINDS = ('cover', 'section', 'content')
+PICTURE_TRIES = 20                          # asset IDs tried past ones the tool already holds
 
 
 def pictures(root) -> dict:
@@ -576,14 +577,46 @@ def record_picture(root, slides, slide: str, file: Path, alt: str, source: str,
     root = Path(root)
     project = root / ASSETS
     project.mkdir(parents=True, exist_ok=True)
-    kept = pictures(root)
-    count = int((kept.get(slide) or {}).get('n') or 0) + 1
-    ident = f'pic-{slide}' if count == 1 else f'pic-{slide}-{count}'
-    slides.asset_supplied(project, Path(file), ident, alt, source)
-    kept[slide] = {'asset': ident, 'alt': alt, 'source': source, 'name': name,
+    held = _picture_record(root)
+    count = int((held.get(slide) or {}).get('n') or 0)
+    # An ID the slides tool already holds, from a record that failed part way, is passed by.
+    for count in range(count + 1, count + 1 + PICTURE_TRIES):
+        ident = f'pic-{slide}' if count == 1 else f'pic-{slide}-{count}'
+        try:
+            slides.asset_supplied(project, Path(file), ident, alt, source)
+            break
+        except slides_tool.Refused as refused:
+            if refused.codes != ['asset-conflict']:
+                raise
+    else:
+        raise WorkspaceError('The slides tool already holds every name tried for this '
+                             'picture. Remove the picture, then give it again.')
+    held[slide] = {'asset': ident, 'alt': alt, 'source': source, 'name': name,
                    'kind': kind, 'title': title, 'at': home.now(), 'n': count}
-    home.write_json(root / PICTURED, kept)
+    home.write_json(root / PICTURED, held)
     return {'asset': ident, 'slide': slide}
+
+
+def remove_picture(root, slide: str) -> dict:
+    """Take a picture the person gave off its slide. The slides tool keeps its record, which
+    is never rewritten, so the count stays and a picture given again takes a new asset ID.
+    Returns {'slide'}."""
+    root = Path(root)
+    held = _picture_record(root)
+    entry = held.get(slide)
+    if not isinstance(entry, dict) or not isinstance(entry.get('asset'), str):
+        raise KeyError(slide)
+    held[slide] = {'n': entry.get('n'), 'removed': home.now()}
+    home.write_json(root / PICTURED, held)
+    return {'slide': slide}
+
+
+def _picture_record(root) -> dict:
+    """PICTURED as it is kept, with the count left by a picture taken off."""
+    found = home.read_json(Path(root) / PICTURED, {})
+    return {ident: entry for ident, entry in found.items()
+            if isinstance(ident, str) and isinstance(entry, dict)} \
+        if isinstance(found, dict) else {}
 
 
 def pictures_for(root, outline: dict) -> dict:

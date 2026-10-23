@@ -2091,11 +2091,13 @@ class AssetTests(Deck):
         self.assertEqual(asked, [
             ['assets', 'status', '--project', project, '--json'],
             ['assets', 'check', '--project', project, '--brand', str(self.contract), '--json'],
+            # The person's words go joined to their option, so words that begin with "-"
+            # stay words.
             ['assets', 'icon', 'ex-database', '--project', project, '--id', 'icon_data',
-             '--alt', 'Data', '--brand', str(self.contract), '--json'],
+             '--alt=Data', '--brand', str(self.contract), '--json'],
             ['assets', 'add-supplied', str(picture), '--project', project, '--id',
-             'console_view', '--alt', 'A console', '--source', 'Course author', '--kind',
-             'screenshot', '--restrictions', 'Internal only', '--json'],
+             'console_view', '--alt=A console', '--source=Course author', '--kind',
+             'screenshot', '--restrictions=Internal only', '--json'],
             ['images', 'status', '--json'],
             ['images', 'generate', '--project', project, '--id', 'hero_art', '--prompt-file',
              brief, '--output', 'assets/generated/hero_art.png', '--design-project', project,

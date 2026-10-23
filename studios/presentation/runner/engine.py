@@ -2977,6 +2977,31 @@ class Engine(Jobs, Researching):
             self._commit(root, f'give slide {slide} a picture')
         return made
 
+    def remove_picture(self, path, slide: str, expected: str | None) -> dict:
+        """Take the picture the person gave a slide off it, while the outline waits for them.
+        The deck is drawn without it; the slides tool's record of it stays, as a recorded
+        asset is never rewritten. `expected` is the outline gate's `expected`, as the page
+        read it. Returns {'slide'}."""
+        root = self._held(path)
+        with self.files:
+            record = self._load(root)
+            gate = self._gate_view(root, record)
+            if not gate or gate.get('name') != 'gate:outline':
+                raise WorkspaceError('Remove a picture while the outline is waiting for you.')
+            if gate.get('expected') != expected:
+                raise WorkspaceError('The outline changed. Reload it before removing a '
+                                     'picture.')
+            titles = {one.get('id'): one.get('title') for one in gate.get('slides') or ()
+                      if isinstance(one, dict)}
+            if slide not in titles:
+                raise WorkspaceError(f'{slide} is not a slide of this outline.')
+            try:
+                made = build.remove_picture(root, slide)
+            except KeyError:
+                raise WorkspaceError(f'“{titles[slide]}” has no picture to remove.') from None
+            self._commit(root, f'take the picture off slide {slide}')
+        return made
+
     def _show_look(self, root: Path, record: dict) -> dict:
         """What the look gate shows, and the direction review with it: the brand's looks as
         the shared look picker takes them, or why none could be rendered, with how they

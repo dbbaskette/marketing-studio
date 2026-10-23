@@ -672,16 +672,17 @@ class Slides:
         """Record the brand icon `icon`, a library ID, as the asset `ident`. With `brand` the
         ID is checked against the brand's hashed icon index."""
         return self._json('assets', 'icon', icon, '--project', str(project), '--id', ident,
-                          *(['--alt', alt] if alt else []),
+                          *([f'--alt={alt}'] if alt else []),
                           *(['--brand', str(brand)] if brand else []), '--json')
 
     def asset_supplied(self, project: Path, file: Path, ident: str, alt: str, source: str,
                        kind: str = 'supplied', restrictions: str | None = None) -> dict:
         """Record a picture the person gave as the asset `ident`. A file from outside the
-        project is copied into it; one inside is recorded as it is now."""
+        project is copied into it; one inside is recorded as it is now. The person's words
+        go joined to their option (`--alt=…`), so words that begin with "-" stay words."""
         return self._json('assets', 'add-supplied', str(file), '--project', str(project),
-                          '--id', ident, '--alt', alt, '--source', source, '--kind', kind,
-                          *(['--restrictions', restrictions] if restrictions else []),
+                          '--id', ident, f'--alt={alt}', f'--source={source}', '--kind', kind,
+                          *([f'--restrictions={restrictions}'] if restrictions else []),
                           '--json')
 
     def images_status(self) -> dict:
@@ -700,7 +701,7 @@ class Slides:
             return self._json('images', 'generate', '--project', str(project), '--id', ident,
                               '--prompt-file', str(brief), '--output', output,
                               '--design-project', str(project), '--slide', slide,
-                              *(['--alt', alt] if alt else []), '--json')
+                              *([f'--alt={alt}'] if alt else []), '--json')
 
     # --- the design-bound review of a composition ---
 

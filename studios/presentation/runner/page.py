@@ -61,6 +61,8 @@ What a caller needs to know
     picture of the person's own (PNG or JPEG, `content` in base64) for a cover, section or
     content slide while the outline waits; answers {"asset", "slide"}. It may carry up to
     PICTURE_LIMIT bytes, and only with the key.
+  - `/api/picture-remove` {"path", "slide", "expected"}: take that picture off its slide
+    while the outline waits; answers {"slide"}.
   - `/api/note` {"path", "expected", "text"}: a note for the next step, which goes with
     the next job that starts and stops nothing; `expected` is the view's `note.expected`.
   - `/api/share` {}, `/api/fetch` {}, `/api/drive` {"path", "action": take|hand-over},
@@ -114,7 +116,7 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/deci
           '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
           '/api/versions', '/api/brand', '/api/brand/install', '/api/shared',
           '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
-          '/api/note', '/api/review-level', '/api/picture')
+          '/api/note', '/api/review-level', '/api/picture', '/api/picture-remove')
 PNG = 'image/png'
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
@@ -353,6 +355,10 @@ class RunnerPage(server.Page):
             return server.as_json(HTTPStatus.OK, self.decide(sent))
         if path == PICTURE:
             return server.as_json(HTTPStatus.OK, self.picture_given(sent))
+        if path == '/api/picture-remove':
+            return server.as_json(HTTPStatus.OK, self.engine.remove_picture(
+                self.deck(server.text(sent, 'path')), server.text(sent, 'slide'),
+                server.text(sent, 'expected', needed=False)))
         if path == '/api/answer':
             return server.as_json(HTTPStatus.OK, self.answered(sent))
         if path == '/api/note':
