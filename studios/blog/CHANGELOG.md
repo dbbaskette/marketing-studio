@@ -13,15 +13,22 @@ changes for authors first, then what changes for maintainers.
   note rewrites only what it asks for, keeping the rest word for word; selected text can
   be rephrased, shortened, expanded, fixed or changed as asked. Every change keeps the
   earlier text in History (the last twenty per part), and a form that is out of date is
-  refused rather than overwriting newer text. A finished step-by-step blog offers **Open
-  on the desk**; its run stays readable. Desk blogs write with their tone only.
+  refused rather than overwriting newer text. A note for the whole draft revises each
+  section in turn ("Revising section 2 of 5"); a section that fails is named and the rest
+  still go ahead. A finished step-by-step blog offers **Open on the desk**; its run is then
+  kept as it ended, to read, and the manuscript editor and run steps leave a desk blog to
+  the desk. In a team workspace, typing on the desk is kept on this computer, one commit
+  per editing session, and shared with the next change or when you leave the desk. Desk
+  blogs write with their tone only.
 - **For maintainers:** `scripts/desk.py` (the desk record under `desk/draft.json` and
   `desk/versions/<part>.jsonl`, with `DRAFT.md` kept in step), `scripts/desk_jobs.py` (the
   `desk-section`, `desk-revise-all`, `desk-selection` and `desk-first-pass` tool job kinds
   and how a ready result settles), `references/modules/desk-edit.md`, `POST
   /api/desk-<action>`, `GET /api/desk` and `GET /api/desk-versions`, and
   `blog_runner.shared_guidance` (the house guide, kind of post and length runs already
-  used, unchanged for runs).
+  used, unchanged for runs). The worker settles a desk result as soon as it is ready and
+  records it as a team decision; reading the desk never writes. `POST /api/desk-share`
+  shares a desk's locally kept edits.
 - **Select all in the Team library.** Tick **Select all on this page**, or, once anything
   is ticked, **Select all N matching** to tick every item the filters match. Ticks stay as
   you page and change the filters; the selection bar says how many are out of view. A
