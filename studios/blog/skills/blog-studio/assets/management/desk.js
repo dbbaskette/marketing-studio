@@ -657,7 +657,9 @@ function sDeskProposals(held,key,set){
     for(const item of [...items].sort((a,b)=>order.indexOf(a.part)-order.indexOf(b.part)))out.push(sDeskComment(held,set,item,true));
     return out;
   }
-  const said=[items.length+(items.length===1?' suggestion':' suggestions'),open.length+' to review'];
+  const facts=key==='facts',checked=facts?open.filter(item=>item.verdict!=='supported'):open;
+  const said=[items.length+(facts?(items.length===1?' claim checked':' claims checked'):items.length===1?' suggestion':' suggestions'),checked.length+' to review'];
+  if(set.level)said.unshift('Found at '+set.level);
   if(set.dropped)said.push(set.dropped+' left out because '+(set.dropped===1?'it did not':'they did not')+' match the text');
   out.push(sNode('p','quiet',said.join(' · ')+'.'));
   if(!items.length){out.push(sNode('p','',key==='facts'?'No claims to check.':'Nothing to change at this level.'));return out;}
