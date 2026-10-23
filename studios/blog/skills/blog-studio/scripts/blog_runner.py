@@ -1069,6 +1069,9 @@ def note_decision(directory, run, event):
 
 
 def save(root, directory, record, run, event):
+    import desk
+
+    desk.refuse_on_desk(directory)  # A blog on the desk keeps its run as it was, read-only.
     note_decision(directory, run, event)
     record['next_step'] = (
         'Continue the guided blog on the page.'
@@ -2295,6 +2298,13 @@ class Engine:
                 # Pages your sites kept out of the last attempt, named for the gate.
                 'outside': outside_words(saved.get('outside')),
             }
+        on_desk = (Path(found['directory']) / 'desk' / 'draft.json').is_file()
+        if on_desk:
+            # Opened on the desk once finished: the run is read as it ended, with nothing to
+            # resume, approve or redo; desk saves never make it look paused or stale.
+            found.update(complete=True, next=None, awaits=None)
+            found['stages'] = [{**row, 'status': 'approved'} for row in found['stages']]
+            status = 'on-desk'
         return {
             **{key: value for key, value in found.items() if key != 'research_tie'},
             'team': bool(space(self.root) and space(self.root).address),
@@ -2315,7 +2325,7 @@ class Engine:
             'desk_open': bool(
                 found['complete'] and (Path(found['directory']) / 'DRAFT.md').is_file()
             ),
-            'on_desk': (Path(found['directory']) / 'desk' / 'draft.json').is_file(),
+            'on_desk': on_desk,
             'enabled': local.get('enabled', False),
             'observation': 'Saved locally. Workers use your selected CLI sign-in. Public research links need review; no publishing is automatic.',
         }
@@ -2330,6 +2340,12 @@ class Engine:
     def _once(self, ident):
         if not self.local(ident).get('enabled'):
             return
+        try:
+            directory, _ = studio.item(self.root, 'articles', ident)
+        except ValueError:
+            return
+        if (directory / 'desk' / 'draft.json').is_file():
+            return  # On the desk: its run never starts another step.
         from team_workspace import before
 
         preview = survey(self.root, ident)
@@ -3088,6 +3104,10 @@ def dispatch(root, action, data):
         studio.write_json(path, {'id': found['id'], 'fingerprint': fingerprint})
         return runner.control(found['id'], 'resume')
     ident = data.get('id')
+    if isinstance(ident, str):
+        import desk
+
+        desk.refuse_on_desk(studio.item(root, 'articles', ident)[0])
     if (
         set(data)
         - {'id', 'expected', 'request', 'stage'}

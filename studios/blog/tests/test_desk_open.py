@@ -63,6 +63,34 @@ class OpenOnTheDeskTests(RunnerCase):
             studio.inside(runner.load(self.root, found['id'])[0], 'desk', 'draft.json').exists()
         )
 
+    def test_once_on_the_desk_the_run_is_read_only_and_reads_as_it_ended(self):
+        found = self.finished()
+        management.dispatch(self.root, 'desk-open', {'id': found['id']})
+        management.dispatch(
+            self.root,
+            'desk-save',
+            {
+                'id': found['id'],
+                'seen': 1,
+                'part': 'opening',
+                'text': 'Changed on desk.',
+                'session': 'a' * 16,
+            },
+        )
+        shown = runner.engine(self.root).describe(found['id'])
+        self.assertEqual(
+            (shown['complete'], shown['status'], shown['next']), (True, 'on-desk', None)
+        )
+        self.assertEqual({row['status'] for row in shown['stages']}, {'approved'})
+        for action in ('changes', 'resume', 'apply-review'):
+            with self.assertRaisesRegex(ValueError, 'on the desk. Edit it there'):
+                management.dispatch(
+                    self.root, 'run-' + action, {'id': found['id'], 'expected': shown['expected']}
+                )
+        directory, record, run = runner.load(self.root, found['id'])
+        with self.assertRaisesRegex(ValueError, 'on the desk'):
+            runner.save(self.root, directory, record, run, 'A late decision')
+
 
 if __name__ == '__main__':
     unittest.main()

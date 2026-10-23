@@ -573,5 +573,54 @@ class ListingTests(RouteCase):
         self.assertEqual(blog_runner.catalog(self.root)['deleted'][0]['id'], made['id'])
 
 
+class OtherWritersTests(RouteCase):
+    """While a blog is on the desk, only the desk writes its DRAFT.md."""
+
+    def test_the_manuscript_editor_and_its_tools_are_refused(self):
+        made = self.start()
+        expected = studio.digest(b'x')
+        for route, data in (
+            ('editor-save', {'id': made['id'], 'expected': expected, 'content': 'Elsewhere.'}),
+            ('tool-action', {'action': 'restore', 'id': made['id'], 'expected': expected}),
+            ('tool-action', {'action': 'voice-apply', 'id': made['id'], 'expected': expected}),
+            (
+                'tool-action',
+                {
+                    'action': 'google-accept',
+                    'id': made['id'],
+                    'expected': expected,
+                    'confirmed': True,
+                },
+            ),
+        ):
+            with self.subTest(route=route, action=data.get('action')):
+                with self.assertRaisesRegex(ValueError, 'on the desk. Edit it there'):
+                    self.post(route, data)
+        self.assertNotIn('Elsewhere.', (self.folder(made['id']) / 'DRAFT.md').read_text())
+
+    def test_a_drifted_DRAFT_md_is_kept_before_a_desk_save(self):
+        made = self.start()
+        directory = self.folder(made['id'])
+        (directory / 'DRAFT.md').write_text(DRAFT.replace('Second text.', 'CHANGED OUTSIDE.'))
+        self.post(
+            'desk-save',
+            {
+                'id': made['id'],
+                'seen': 1,
+                'part': 'title',
+                'text': 'New title',
+                'session': 'a' * 16,
+            },
+        )
+        self.assertNotIn('CHANGED OUTSIDE.', (directory / 'DRAFT.md').read_text())
+        kept = [path.read_text() for path in (directory / 'history').glob('draft-*.md')]
+        self.assertTrue(any('CHANGED OUTSIDE.' in text for text in kept))
+        record = studio.read_json(directory / 'session.json')
+        self.assertEqual(
+            record['artifact_events'][-1]['label'],
+            'Changed outside the desk; kept before a desk save',
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

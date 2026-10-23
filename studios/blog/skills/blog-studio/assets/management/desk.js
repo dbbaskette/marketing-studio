@@ -271,3 +271,13 @@ function sDeskPublish(held){
   const save=sButton('Mark as published',async button=>{const url=draft.url.trim();if(!/^https:\/\/\S+$/.test(url)){problem.textContent='Add the public https address where it was published.';return;}await busy(button,'Saving…',async()=>{try{await sDeskFlush(held);await api('schedule',{id:held.id,expected:held.view.expected,stage:'published',confirm_stage:true,publication_url:url});sCloseSheet();sToast('Recorded as published. Nothing was posted anywhere.');await sDesk(held.id);}catch(error){problem.textContent=error.message;}});},'filled');
   sOpenSheet('Mark as published',sNode('p','','Record where this blog was published. The current text is the published one.'),sField('desk-publication','Public address',draft,'url',{max:2000,required:true}),problem,sAdd(sNode('div','bar'),save,sButton('Cancel',sCloseSheet)));
 }
+
+// A finished step-by-step blog once it is on the desk: its run is read as it ended, with
+// nothing to resume, approve or ask for; the desk is where it is edited now.
+function sRunOnDesk(found){
+  studio.found=found;studio.signature=JSON.stringify(found);
+  const open=sButton('Open on the desk',()=>sRoute('desk',found.id),'filled');
+  sFrame(found.title,[open],'Writing run',()=>sRoute('blogs'));
+  const steps=sNode('ol','rows');for(const row of found.stages||[])steps.append(sAdd(sNode('li','row step'),sBead('done'),sAdd(sNode('div','row-text'),sNode('h3','step-name',row.label))));
+  sPage(sCard('This blog is on the writing desk',sNode('p','','It was finished here and then opened on the desk, where its notes, selection edits and versions are. This run is kept as it ended, to read.'),sAdd(sNode('div','bar'),sButton('Open on the desk',()=>sRoute('desk',found.id),'filled'))),disclosure('How it was written',steps));
+}

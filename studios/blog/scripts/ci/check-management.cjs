@@ -3123,4 +3123,9 @@ async function deskOpenFinished(){
   assert.ok(nodes().some(n=>n.textContent==='Open the step-by-step run'));
   f.set('later',{...found,desk_open:false});f.run("studio.screen='run';sPage(sDoneCard(later))");
   assert.ok(!nodes().some(n=>n.textContent==='Open on the desk'));
+  // Once on the desk, the run page reads as it ended: Open on the desk and nothing to act on.
+  f.set('onDesk',{...found,on_desk:true,status:'on-desk',stages:[{stage:'draft',label:'Draft',status:'approved'}]});f.run("studio.screen='run';sRun(onDesk)");
+  const shown=[...nodes(),...descendants(f.get('actions'))].map(n=>n.textContent);
+  assert.ok(shown.includes('Open on the desk'));
+  for(const label of ['Resume','Try again','Polish or edit the draft','Edit manuscript','Tools','Ask for changes','Continue'])assert.ok(!shown.includes(label),label);
 }

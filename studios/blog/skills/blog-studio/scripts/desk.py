@@ -15,6 +15,7 @@ DESK = 'desk'
 KEEP = 20  # versions kept per part
 PARTS = ('title', 'opening')  # plus each section id
 LIMIT = 200_000  # characters in one part
+ON_DESK = 'This blog is on the desk. Edit it there.'
 LENGTHS = ('style', 'short', 'deep')  # as blog_runner.LENGTHS: usual, short, in depth
 CREATE = frozenset(
     {'title', 'manuscript', 'source', 'article', 'style', 'tone', 'length', 'sources', 'library'}
@@ -94,6 +95,16 @@ def join(draft):
 # The desk record. Every function below expects the caller to hold the studio lock, as the
 # page's dispatch and views do (management.py) and the job worker does when it settles a
 # result (tool_jobs.once); none of them takes it again, and every writer checks it is held.
+
+
+def on_desk(directory):
+    """Whether a blog's folder holds a desk draft: then only the desk writes its DRAFT.md."""
+    return (directory / DESK / 'draft.json').is_file()
+
+
+def refuse_on_desk(directory):
+    if on_desk(directory):
+        raise ValueError(ON_DESK)
 
 
 def _require_lock():
@@ -329,8 +340,26 @@ def _write(root, ident, draft, parts=()):
     for part in parts:
         changed[part] = draft['revision']
     body = join(draft)
+    current = studio.inside(directory, 'DRAFT.md')
+    if current.is_file() and studio.digest(current.read_bytes()) != record['artifact_hashes'].get(
+        'draft'
+    ):
+        # Something other than the desk changed DRAFT.md: keep that text before replacing it.
+        stamp = studio.now().replace(':', '').replace('-', '').replace('+', '')[:20]
+        kept = 'draft-' + stamp + '-' + secrets.token_hex(4) + '.md'
+        studio.atomic(studio.inside(directory, 'history', kept), current.read_bytes())
+        record.setdefault('artifact_events', []).append(
+            {
+                'kind': 'draft',
+                'before': kept,
+                'after_sha256': studio.digest(body.encode()),
+                'label': 'Changed outside the desk; kept before a desk save',
+                'at': studio.now(),
+            }
+        )
+        record['artifact_events'] = record['artifact_events'][-100:]
     studio.write_json(target, draft)
-    studio.atomic(studio.inside(directory, 'DRAFT.md'), body.encode())
+    studio.atomic(current, body.encode())
     record['artifact_hashes']['draft'] = studio.digest(body.encode())
     record['stage'] = 'draft'
     record['title'] = draft['title']

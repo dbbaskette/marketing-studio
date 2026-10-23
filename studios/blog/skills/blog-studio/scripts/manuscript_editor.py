@@ -82,6 +82,9 @@ def guard(root, data):
     from team_workspace import guard as team_guard
 
     team_guard(root, data.get('id'))
+    import desk
+
+    desk.refuse_on_desk(studio.item(root, 'articles', data.get('id'))[0])
     current = read(root, data.get('id'))
     if not data.get('expected') or data['expected'] != current['expected']:
         raise ValueError(
