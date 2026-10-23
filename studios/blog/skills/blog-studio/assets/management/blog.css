@@ -194,3 +194,11 @@ input.desk-text{min-height:44px}
 .desk-plain{white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
 .desk-plain del{color:var(--late)}.desk-plain ins{color:var(--done)}
 @media(max-width:52rem){.desk-selection{bottom:calc(5rem + env(safe-area-inset-bottom))}}
+/* Desk starts: three angle cards side by side where they fit, the picked one marked as a
+   choice is; the progress card's steps; the Outline tab's cards. All opaque. */
+.desk-angles{display:grid;gap:1.1rem;grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr))}
+.desk-angle{display:grid;gap:.6rem;align-content:start}
+.desk-angle-picked{border-color:var(--focus);box-shadow:inset 0 0 0 1px var(--focus)}
+.desk-steps{margin-top:.6rem}
+.desk-clock{margin-top:.6rem}
+.desk-outline-part{display:grid;gap:.6rem}

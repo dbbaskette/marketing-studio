@@ -139,7 +139,7 @@ function sToast(message){const toast=sNode('p','toast glass',message);$('toasts'
 function sRoute(screen,id=null,stage=null,replace=false){const query=new URLSearchParams({screen});if(id)query.set('id',id);if(stage)query.set('stage',stage);history[replace?'replaceState':'pushState'](null,'',location.pathname+'?'+query);return studioNavigate(screen,id,stage);}
 async function studioNavigate(screen,id=null,stage=null){
   if(studio.screen==='desk'&&(screen!=='desk'||id!==studio.id)&&typeof sDeskShare==='function')sDeskShare(studio.desk);
-  if(!['home','blogs','voices','status','settings','setup','new','google','draft','polish','run','gate','editor','editorial','desk','desk-start'].includes(screen))screen='home';if(screen==='editorial')return sLegacy(id||'board',false);const sameWork=studio.id===id&&['editor','run','gate'].includes(screen)&&['editor','run','gate'].includes(studio.screen);sTop();sCloseSheet();studio.screen=screen;studio.id=id;studio.stage=stage;studio.turn++;studio.signature='';const turn=studio.turn;if(!sameWork){sFrame(screen==='new'?'New blog':screen==='desk'?'Writing desk':screen==='desk-start'?'Edit a draft':screen==='gate'?'Review':screen==='run'?'Writing run':screen==='setup'?'Set up Blog Studio':screen==='voices'?'Voices and styles':screen[0].toUpperCase()+screen.slice(1));sPage(sNode('p','studio-loading','Reading saved work…'));}else{for(const node of [...$('actions').querySelectorAll('button'),...$('studio-page').querySelectorAll('button')])node.disabled=true;}$('studio-page').setAttribute('aria-busy','true');
+  if(!['home','blogs','voices','status','settings','setup','new','google','draft','polish','run','gate','editor','editorial','desk','desk-start'].includes(screen))screen='home';if(screen==='editorial')return sLegacy(id||'board',false);const sameWork=studio.id===id&&['editor','run','gate'].includes(screen)&&['editor','run','gate'].includes(studio.screen);sTop();sCloseSheet();studio.screen=screen;studio.id=id;studio.stage=stage;studio.turn++;studio.signature='';const turn=studio.turn;if(!sameWork){sFrame(screen==='new'?'New blog':screen==='desk'?'Writing desk':screen==='desk-start'?'New blog':screen==='gate'?'Review':screen==='run'?'Writing run':screen==='setup'?'Set up Blog Studio':screen==='voices'?'Voices and styles':screen[0].toUpperCase()+screen.slice(1));sPage(sNode('p','studio-loading','Reading saved work…'));}else{for(const node of [...$('actions').querySelectorAll('button'),...$('studio-page').querySelectorAll('button')])node.disabled=true;}$('studio-page').setAttribute('aria-busy','true');
   try{
     if(['home','blogs','status'].includes(screen)){await sReadList(turn);if(turn!==studio.turn)return;if(screen==='home')sHome();else if(screen==='blogs')sBlogs();else {const computer=await api('computer');if(turn!==studio.turn)return;studio.computer=computer;studio.brand=computer.brand;sStatusPage();}}
     else if(['settings','setup'].includes(screen)){const [team,settings,brand,options]=await Promise.all([api('team'),api('run-settings'),api('brand'),studio.options||api('run-options')]);if(turn===studio.turn){studio.team=team;studio.settings=settings;studio.brand=brand;studio.options=options;sSettings(screen==='setup');}}
@@ -158,7 +158,7 @@ async function studioNavigate(screen,id=null,stage=null){
 }
 async function sReadList(turn=studio.turn){const results=await Promise.all([api('runs'),api('board?limit=20'),api('run-options'),api('team')]);if(turn!==studio.turn)return false;studio.listing=results[0].items;studio.deleted=results[0].deleted||[];const guided=new Set(studio.listing.map(row=>row.id));studio.ordinary=results[1].items.filter(row=>!guided.has(row.id));studio.total=results[1].total;studio.options=results[2];studio.settings=results[2].settings;studio.brand=results[2].brand;studio.team=results[3];return true;}
 function sTop(){if(typeof window.scrollTo==='function')window.scrollTo({top:0,behavior:'instant'});}
-function sNewButton(kind='filled'){const b=sButton('New blog',()=>newBlog(),kind);b.disabled=!access.actions.edit;return b;}
+function sNewButton(kind='filled'){const b=sButton('New blog',()=>sDeskBegin(),kind);b.disabled=!access.actions.edit;return b;}
 function sGoogleButton(draft=null){
   const button=sButton('Open Google Doc',()=>{studio.google={url:'',preview:null,confirmed:false,draft};return sRoute('google');});
   button.disabled=!access.actions.edit;return button;
@@ -242,7 +242,7 @@ async function openBlogRun(ident){try{await api('run?id='+encodeURIComponent(ide
 async function openRun(ident){return sRoute('run',ident);}
 function STAGE_LABEL(found,stage){return found.stages.find(row=>row.stage===stage)?.label||stage||'Finished';}
 function sWizard(){
-  if(!studio.draft){newBlog();return;}
+  if(!studio.draft){sDeskBegin();return;}
   if(!studio.draft.mode){sFrame('New blog',[sButton('Interview me',sNewInterview),sButton('Tools',()=>sMoreTools())],'New writing',()=>sRoute('home'));sPage(sStartTasks());return;}
   if(studio.draft.mode==='from-files'){sFilesScreen(studio.draft);return;}
   const draft=studio.draft,title={write:'Write from a brief','from-outline':'Use my outline',ideas:'Explore ideas',outline:'Create an outline',revise:'Revise a draft',review:'Review a draft'}[draft.mode]||'New blog',form=sNode('form','narrow'),problem=sNode('p','problem');problem.setAttribute('role','alert');
@@ -415,7 +415,9 @@ function sSetupTasks(){
 }
 function sStartTasks(){
   const list=sNode('div','pick-cards');
-  const tasks=[['Polish a document','Use a Google Doc, paste text or upload a file. It opens on the writing desk, with an optional tighten and proofread first.',()=>sRoute('desk-start')],['Write from a brief','Turn your point of view into an outline and draft.',()=>newBlog('',null,'write')],['Use my outline','Draft from the headings and structure you already have.',()=>newBlog('',null,'from-outline')],['Outline only','Work out the argument and stop before drafting.',()=>newBlog('',null,'outline')],['Revise or review a draft','Bring your draft to the writing desk: notes per section, selection edits and versions.',()=>sRoute('desk-start')],['Explore ideas','Get three angles, choose one, then develop it.',()=>newBlog('',null,'ideas')],['New blog from my files','Upload what you have and say what each file is for; then find angles, or give the point.',()=>newBlog('',null,'from-files')]];
+  // Every new blog starts on the writing desk's start; the step-by-step wizard stays for
+  // blogs that already have a run.
+  const tasks=[['Write about a topic','Give the point, or get three angles to choose from. The outline and draft are written for you.',()=>sDeskBegin({have:'topic'})],['Work from my outline or notes','Write the draft from your outline, or shape an outline together first.',()=>sDeskBegin({have:'outline'})],['Edit or polish a draft','Paste, upload or bring a Google Doc to the writing desk: notes per section, selection edits and versions.',()=>sDeskBegin({have:'draft'})]];
   for(const [title,description,action] of tasks){const button=sPickCard(title,description,action);button.disabled=!access.actions.edit;list.append(button);}return sCard('What would you like to do?',list);
 }
 function sPolishIntake(initial='google'){
@@ -1123,7 +1125,7 @@ async function sLibrarySelection(action,ids,author=null){
     form.append(sField('library-voice-author','Whose writing are these?',held,'author',{required:true,max:200,hint:'Items without an author become this author’s voice samples, but only once you confirm the learning. An item by someone else is not.'}),problem,go);
     form.addEventListener('submit',async event=>{event.preventDefault();if(!held.author.trim())return;await busy(go,'Checking…',async()=>{try{await sLibrarySelection(action,ids,held.author.trim());}catch(failure){problem.textContent=failure.message;}});});
     sOpenSheet('Learn a voice from these',form,sButton('Cancel',sCloseSheet));return;}
-  if(action==='blog'){librarySelection.clear();await newBlog('',null,'from-files');if(!studio.draft)return;studio.draft.files=result.files.map(file=>({...file,note:'',link:'',kept:true}));sWizard();return;}
+  if(action==='blog'){librarySelection.clear();await sDeskBegin({files:result.files.map(file=>({...file,note:'',link:'',kept:true}))});return;}
   // Nothing is marked yet: the learn sheet shows the items ticked, and marks them when confirmed.
   const words=[result.left_out?.length?sSeries(result.left_out.map(item=>item.name))+(result.left_out.length===1?' is':' are')+' left out: a learning reads up to twenty.':'',result.skipped?.length?sSeries(result.skipped.map(item=>item.name))+(result.skipped.length===1?' has':' have')+' no readable text yet, so '+(result.skipped.length===1?'it is':'they are')+' skipped.':''].filter(Boolean).join(' '),ids_=result.candidates.map(item=>item.id);
   if(action==='style-learn'){sLearnStyle(await api('styles'),null,ids_,'',result.candidates,words);return;}

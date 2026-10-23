@@ -57,7 +57,7 @@ function savedNotice(result) {if(result.team_sync){notice(result.team_sync.share
 function legacyActions() {
   const made=[];
   const add=(id,text,action,cls='button',ready=true)=>{const b=button(text,action,cls);b.id=id;b.disabled=!ready;made.push(b);return b;};
-  if(view==='board')add('new-blog','New blog',()=>newBlog(),'button button-filled',access.actions.edit);
+  if(view==='board')add('new-blog','New blog',()=>sDeskBegin(),'button button-filled',access.actions.edit);
   if(view==='library'){
     add('library-add-open','Add to library',()=>sLibraryAdd(),'button button-filled',access.actions.edit);
     // A secondary action of this view: under the lede, so the toolbar keeps one primary.
