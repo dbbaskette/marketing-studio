@@ -599,5 +599,60 @@ class HeadlineTests(ToolCase):
             )
 
 
+class FeedbackTests(ToolCase):
+    def test_guidance_asks_for_comments_and_no_rewrite(self):
+        import manuscript_editor
+
+        job = self.queue('feedback')
+        self.assertEqual(job['kind'], 'finish-feedback')
+        self.assertIn('without rewriting it', job['guidance'])
+        self.assertIn('Do not rewrite the draft.', job['guidance'])
+        self.assertIn(manuscript_editor.CHECKS['shape'], job['guidance'])
+        self.assertIn('Structure feedback', job['guidance'])
+
+    def test_comments_land_by_part_and_a_quote_not_in_the_text_is_dropped(self):
+        before = self.draft()
+        self.ready(
+            self.queue('feedback'),
+            {
+                'summary': 'A clear start.',
+                'comments': [
+                    {
+                        'part': self.first,
+                        'quote': 'We leverage a robust parser.',
+                        'aspect': 'claims',
+                        'comment': 'Which evidence says robust?',
+                    },
+                    {
+                        'part': self.second,
+                        'quote': 'Not in the text.',
+                        'aspect': 'audience',
+                        'comment': 'Who needs this?',
+                    },
+                    {'part': 'zzzzzzzz', 'aspect': 'odd', 'comment': 'Overall it wanders.'},
+                    {'part': self.first, 'comment': ''},
+                ],
+            },
+        )
+        shown = self.shown('feedback')
+        self.assertEqual(shown['summary'], 'A clear start.')
+        self.assertEqual(
+            [(i['part'], i['quote'], i['aspect']) for i in shown['items']],
+            [
+                (self.first, 'We leverage a robust parser.', 'claims'),
+                (self.second, '', 'audience'),
+                ('whole', '', 'shape'),
+            ],
+        )
+        self.assertEqual(self.draft(), before)
+        job = shown['job']
+        with self.assertRaisesRegex(ValueError, 'Make it a note'):
+            self.act('apply', seen=self.seen, job=job, items=[{'id': 'p1'}])
+        self.act('skip', job=job, items=['p2'])
+        self.assertEqual(
+            [i['state'] for i in self.shown('feedback')['items']], ['open', 'skipped', 'open']
+        )
+
+
 if __name__ == '__main__':
     unittest.main()
