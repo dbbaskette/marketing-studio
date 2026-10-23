@@ -548,8 +548,8 @@ class GivenTests(WholeCase):
         self.assertEqual(first['design guidance'].strip(), told['design guidance'].strip())
         writer = [spec for kind, _, spec in self.workers.jobs if kind == 'outline'][-1]
         self.assertEqual([entry['name'] for entry in writer['inputs']], [
-            'handoff', 'outline contract', 'drafting guidance', 'blueprint', 'learner guide',
-            'research findings', 'naming rules'])
+            'handoff', 'outline contract', 'drafting guidance', 'brand design', 'blueprint',
+            'learner guide', 'research findings', 'naming rules'])
         reviewer = [spec for kind, _, spec in self.workers.jobs if kind == 'review'][-1]
         self.assertEqual([entry['name'] for entry in reviewer['inputs']], ['the review'])
 

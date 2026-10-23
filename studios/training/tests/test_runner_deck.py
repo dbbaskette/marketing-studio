@@ -1629,7 +1629,7 @@ class FlowTests(DeckCase):
         jobs = {kind: (job, spec) for kind, job, spec in self.workers.jobs}
         job, spec = jobs['outline']
         self.assertEqual([entry['name'] for entry in spec['inputs']], [
-            'handoff', 'outline contract', 'drafting guidance', 'blueprint',
+            'handoff', 'outline contract', 'drafting guidance', 'brand design', 'blueprint',
             'learner guide', 'research findings', 'naming rules'])
         self.assertEqual(job.guidance, briefs.guidance('deck-outline'))
         job, spec = jobs['section']
