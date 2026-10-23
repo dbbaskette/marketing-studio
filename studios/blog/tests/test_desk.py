@@ -419,21 +419,100 @@ class RouteTests(RouteCase):
         self.assertRegex(made['first_pass_problem'], 'section by section')
         self.assertEqual(made['opening'], 'Just prose.')
 
-    def test_reading_the_desk_settles_a_ready_job(self):
+    def finish(self, job_id, content):
         import tool_jobs
 
+        job = tool_jobs.read(self.root, job_id)
+        job.update(status='ready', result={'content': content, 'notes': '', 'gaps': []})
+        tool_jobs.write(self.root, job)
+
+    def test_reading_the_desk_never_writes_and_a_ready_result_reads_as_working(self):
         made = self.start()
         part = made['sections'][0]['id']
         queued = self.post(
             'desk-note', {'id': made['id'], 'seen': 1, 'part': part, 'note': 'More.'}
         )
-        job = tool_jobs.read(self.root, queued['working']['id'])
-        job.update(status='ready', result={'content': 'First text, more.', 'notes': '', 'gaps': []})
-        tool_jobs.write(self.root, job)
+        self.finish(queued['working']['id'], 'First text, more.')
+        directory = self.folder(made['id'])
+        before = (directory / 'desk' / 'draft.json').read_bytes()
         shown = self.get('desk', id=made['id'])
-        self.assertEqual(shown['sections'][0]['text'], 'First text, more.')
-        self.assertIsNone(shown['working'])
-        self.assertIs(shown['jobs'][-1]['applied'], True)
+        self.assertEqual((directory / 'desk' / 'draft.json').read_bytes(), before)
+        self.assertEqual(shown['working']['id'], queued['working']['id'])
+        self.assertEqual(shown['sections'][0]['text'], 'First text.')
+
+    def test_the_next_desk_request_settles_a_result_an_older_process_left(self):
+        made = self.start()
+        part = made['sections'][0]['id']
+        queued = self.post(
+            'desk-note', {'id': made['id'], 'seen': 1, 'part': part, 'note': 'More.'}
+        )
+        self.finish(queued['working']['id'], 'First text, more.')
+        # The page still shows the job working, so typing goes to another part.
+        saved = self.post(
+            'desk-save',
+            {'id': made['id'], 'seen': 1, 'part': 'title', 'text': 'Typed', 'session': 'a' * 16},
+        )
+        self.assertEqual(saved['sections'][0]['text'], 'First text, more.')
+        self.assertIsNone(saved['working'])
+        self.assertIs(saved['jobs'][-1]['applied'], True)
+        self.assertEqual(saved['title'], 'Typed')
+
+    def test_a_save_while_a_result_waits_does_not_lose_the_rewrite(self):
+        made = self.start()
+        part = made['sections'][0]['id']
+        queued = self.post(
+            'desk-note', {'id': made['id'], 'seen': 1, 'part': part, 'note': 'More.'}
+        )
+        self.finish(queued['working']['id'], 'First text, more.')
+        # A form that saw the section before the rewrite cannot overwrite it.
+        with self.assertRaisesRegex(ValueError, 'changed since'):
+            self.post(
+                'desk-save',
+                {
+                    'id': made['id'],
+                    'seen': 1,
+                    'part': part,
+                    'text': 'Typed over.',
+                    'session': 'a' * 16,
+                },
+            )
+        self.assertEqual(
+            self.get('desk', id=made['id'])['sections'][0]['text'], 'First text, more.'
+        )
+
+    def test_stop_sets_a_ready_result_aside(self):
+        made = self.start()
+        part = made['sections'][0]['id']
+        queued = self.post(
+            'desk-note', {'id': made['id'], 'seen': 1, 'part': part, 'note': 'More.'}
+        )
+        self.finish(queued['working']['id'], 'Landed anyway.')
+        stopped = self.post('desk-stop', {'id': made['id'], 'job': queued['working']['id']})
+        self.assertIsNone(stopped['working'])
+        self.assertEqual(stopped['sections'][0]['text'], 'First text.')
+        self.assertRegex(stopped['jobs'][-1]['error'], 'set aside')
+        saved = self.post(
+            'desk-save',
+            {'id': made['id'], 'seen': 1, 'part': 'title', 'text': 'T2', 'session': 'a' * 16},
+        )
+        self.assertEqual(saved['sections'][0]['text'], 'First text.')
+
+    def test_a_desk_job_is_not_retried_outside_the_desk(self):
+        made = self.start()
+        part = made['sections'][0]['id']
+        one = self.post('desk-note', {'id': made['id'], 'seen': 1, 'part': part, 'note': 'One.'})
+        self.post('desk-stop', {'id': made['id'], 'job': one['working']['id']})
+        self.post('desk-note', {'id': made['id'], 'seen': 1, 'part': part, 'note': 'Two.'})
+        with self.assertRaisesRegex(ValueError, 'from the desk'):
+            self.post(
+                'tool-action',
+                {
+                    'action': 'job-control',
+                    'job': one['working']['id'],
+                    'control': 'retry',
+                    'id': made['id'],
+                },
+            )
 
     def test_a_selection_and_a_whole_draft_note_go_through_the_routes(self):
         made = self.start()

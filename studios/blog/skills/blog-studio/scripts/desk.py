@@ -520,6 +520,11 @@ def dispatch(root, action, data):
         open_run(root, ident)
         return desk_jobs.view(root, ident)
     read(root, ident)
+    if action == 'stop':
+        desk_jobs.stop(root, ident, data.get('job'))
+        return desk_jobs.view(root, ident)
+    # A result an older process finished lands before anything else changes the draft.
+    desk_jobs.settle(root, ident)
     seen = data.get('seen')
     if action == 'save':
         session = data.get('session')
@@ -544,11 +549,4 @@ def dispatch(root, action, data):
         )
     elif action == 'first-pass':
         desk_jobs.first_pass(root, ident, seen, data.get('choice'))
-    elif action == 'stop':
-        import blog_runner
-        import tool_jobs
-
-        if not any(job['id'] == data.get('job') for job in desk_jobs.jobs(root, ident)):
-            raise ValueError('Choose a job on this blog.')
-        tool_jobs.control(root, data['job'], 'cancel', blog_runner.engine(root))
     return desk_jobs.view(root, ident)

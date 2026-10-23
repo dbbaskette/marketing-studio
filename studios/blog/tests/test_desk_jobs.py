@@ -312,10 +312,31 @@ class SettleTests(DeskJobCase):
         desk_jobs.section(self.root, self.ident, 1, self.part, 'Add a sentence.')
         tool_jobs.once(engine)
         self.assertEqual(len(calls), 1)
-        desk_jobs.settle(self.root, self.ident)
+        # Settled by the worker as soon as it was ready: nothing reads the desk first.
         self.assertEqual(
             desk.read(self.root, self.ident)['sections'][0]['text'], 'First text. Added.'
         )
+        self.assertTrue(desk_jobs.jobs(self.root, self.ident)[-1]['settled_at'])
+
+    def test_an_overlong_result_is_refused_readably(self):
+        def worker(engine, payload, guidance, **options):
+            return {'content': 'x' * 200_001, 'notes': '', 'gaps': []}
+
+        job = desk_jobs.section(self.root, self.ident, 1, self.part, 'Longer.')
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        saved = self.saved(job)
+        self.assertEqual(saved['status'], 'failed')
+        self.assertRegex(saved['error'], 'longer than 200,000 characters')
+
+    def test_a_result_for_a_blog_driven_elsewhere_is_left_for_that_computer(self):
+        from unittest.mock import patch
+
+        job = desk_jobs.section(self.root, self.ident, 1, self.part, 'Shorter.')
+        self.ready(job, 'First.')
+        with patch('team_workspace.guard', side_effect=ValueError('Another computer drives it.')):
+            self.assertEqual(desk_jobs.settle(self.root, self.ident), [])
+        self.assertIsNone(self.saved(job).get('settled_at'))
+        self.assertEqual(desk_jobs.settle(self.root, self.ident), [job['id']])
 
 
 class SharedGuidanceTests(unittest.TestCase):

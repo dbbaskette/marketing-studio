@@ -2232,7 +2232,8 @@ def view(root, name, query):
                     'part': arg('part'),
                     'versions': desk.versions(root, ident, arg('part')),
                 }
-            desk_jobs.settle(root, arg('id'))
+            # Reading never writes: the worker settles results, and so does the next desk
+            # request for one an older process left.
             return desk_jobs.view(root, arg('id'))
     if name == 'manuscript':
         import manuscript_editor

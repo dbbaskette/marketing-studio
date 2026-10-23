@@ -1,9 +1,11 @@
 """Desk work on the single-worker tool job queue: queue it, then settle the result.
 
 Each job carries the part it changes and that part's text fingerprint when it was asked
-for. A ready result lands only while that text is unchanged, with the text it replaces
-kept as a version first. Like desk.py, every function expects the caller to hold the
-studio lock.
+for. The worker settles a result as soon as it is ready (tool_jobs.once calls `ended`): it
+lands only while that text is unchanged, with the text it replaces kept as a version first,
+and in a team workspace it is then recorded as a decision (`share`). A result an older
+process finished is settled by the next desk request. Like desk.py, every function except
+`share` expects the caller to hold the studio lock.
 """
 
 import json
@@ -87,8 +89,17 @@ def active(root):
     return found
 
 
+def unsettled(job):
+    """A ready result not yet landed in the draft: still the blog's job under way."""
+    return job.get('status') == 'ready' and not job.get('settled_at')
+
+
+def busy(job):
+    return job.get('status') in ACTIVE or unsettled(job)
+
+
 def _busy(root, ident):
-    if any(job['status'] in ACTIVE for job in jobs(root, ident)):
+    if any(busy(job) for job in jobs(root, ident)):
         raise ValueError('A desk job is already working on this blog. Wait or stop it.')
 
 
@@ -460,22 +471,71 @@ def _apply(root, ident, draft, job):
     return desk._write(root, ident, draft, list(changes))
 
 
+def _settle(root, job):
+    """Land one ready job; the blog it changed, or None when it is left for later."""
+    from team_workspace import guard
+
+    ident = (job.get('metadata') or {}).get('article')
+    try:
+        guard(root, ident)  # A blog another computer drives settles there, not here.
+        draft = desk.read(root, ident)
+    except ValueError:
+        return None
+    try:
+        _apply(root, ident, draft, job)
+        job.update(applied=True, error='')
+    except ValueError as error:
+        job.update(applied=False, error=str(error)[:1000])
+    job['settled_at'] = studio.now()
+    tool_jobs.write(root, job)
+    return ident
+
+
+def ended(root, job):
+    """The worker's hook when a desk job ends, under the studio lock: settle a ready one.
+    Returns the blog to record as a team decision once the lock is released, or None."""
+    if unsettled(job):
+        return _settle(root, job)
+    return None
+
+
+def share(root, ident):
+    """Record a settled desk change as a team decision. Runs outside the studio lock, which
+    is not reentrant. Best effort: the next desk decision commits whatever is left."""
+    from team_workspace import saved, space
+
+    if not ident or not space(root):
+        return
+    try:
+        saved(root, ident, 'Keep a desk change')
+    except Exception:  # noqa: BLE001 - a sharing problem never takes the worker down.
+        pass
+
+
 def settle(root, ident):
-    """Land each ready desk job of this blog once. A result whose part changed meanwhile,
-    or that cannot be read, is kept unapplied with a readable problem."""
+    """Land each ready desk job of this blog that an older process left unsettled. A result
+    whose part changed meanwhile, or that cannot be read, is kept unapplied with a readable
+    problem."""
     landed = []
     for job in jobs(root, ident):
-        if job.get('status') != 'ready' or job.get('settled_at'):
-            continue
-        try:
-            _apply(root, ident, desk.read(root, ident), job)
-            job.update(applied=True, error='')
+        if unsettled(job) and _settle(root, job) and job.get('applied'):
             landed.append(job['id'])
-        except ValueError as error:
-            job.update(applied=False, error=str(error)[:1000])
-        job['settled_at'] = studio.now()
-        tool_jobs.write(root, job)
     return landed
+
+
+def stop(root, ident, job_id):
+    """Stop this blog's desk work: a job under way is cancelled, and a result that is ready
+    but not yet landed is set aside."""
+    found = jobs(root, ident)
+    if not any(job['id'] == job_id for job in found):
+        raise ValueError('Choose a job on this blog.')
+    for job in found:
+        if job['status'] in ACTIVE:
+            tool_jobs.control(root, job['id'], 'cancel', blog_runner.engine(root))
+        elif unsettled(job):
+            job.update(applied=False, error='Stopped. Its result was set aside.')
+            job['settled_at'] = studio.now()
+            tool_jobs.write(root, job)
 
 
 def _row(job):
@@ -485,6 +545,7 @@ def _row(job):
         'id': job['id'],
         'kind': job['kind'],
         'status': job['status'],
+        'busy': busy(job),
         'part': meta.get('part'),
         'action': meta.get('action'),
         # The person's own note, shown on the card while the job works on it.
@@ -527,7 +588,7 @@ def view(root, ident):
         **draft,
         'markdown': desk.join(draft),
         'jobs': rows,
-        'working': next((row for row in reversed(rows) if row['status'] in ACTIVE), None),
+        'working': next((row for row in reversed(rows) if row['busy']), None),
         'versions': desk.counts(root, ident),
         'run': studio.inside(directory, blog_runner.STATE).is_file(),
         'google': editorial.doc_link(record),

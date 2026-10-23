@@ -18,6 +18,7 @@ KINDS = {
     'desk-selection',
     'desk-first-pass',
 }
+DESK = ('desk-section', 'desk-revise-all', 'desk-selection', 'desk-first-pass')
 
 
 def path(root, ident):
@@ -126,6 +127,8 @@ def control(root, ident, action, engine):
             if engine.current == 'tool:' + ident:
                 engine.stop.set()
     elif action == 'retry':
+        if saved['kind'] in DESK:
+            raise ValueError('Run it again from the desk, where the draft it changes is shown.')
         if saved['status'] not in ('failed', 'cancelled') or saved['attempts'] >= 3:
             raise ValueError(
                 'This task cannot be retried. Start a new task after reviewing its inputs.'
@@ -197,6 +200,16 @@ def once(engine):
             model_selection=choice,
         )
         if (
+            saved['kind'] in DESK
+            and isinstance(result, dict)
+            and isinstance(result.get('content'), str)
+            and len(result['content']) > 200_000
+        ):
+            raise ValueError(
+                'The rewrite came back longer than 200,000 characters, more than one part of '
+                'a draft holds. Nothing was changed; run it again with a narrower note.'
+            )
+        if (
             not isinstance(result, dict)
             or not isinstance(result.get('content'), str)
             or not result['content'].strip()
@@ -211,14 +224,35 @@ def once(engine):
                 return
             current.update(status='ready', result=result, finished_at=studio.now())
             write(root, current)
+            shared = _ended(root, current)
+        _share(root, shared)
     except Exception as error:
+        shared = None
         with studio.locked(root):
             current = _working(root, ident)
             if current is not None:
                 current.update(status='failed', error=str(error)[:1000], finished_at=studio.now())
                 write(root, current)
+                shared = _ended(root, current)
+        _share(root, shared)
     finally:
         engine.current = None
+
+
+def _ended(root, job):
+    """A desk job settles into its draft as soon as it ends, under the lock already held."""
+    if job['kind'] not in DESK:
+        return None
+    import desk_jobs
+
+    return desk_jobs.ended(root, job)
+
+
+def _share(root, ident):
+    if ident:
+        import desk_jobs
+
+        desk_jobs.share(root, ident)
 
 
 def _working(root, ident):
