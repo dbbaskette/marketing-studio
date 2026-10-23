@@ -36,7 +36,7 @@ default. Select an installed brand with `--brand ID --variant VARIANT`, or
 `--brand ''` for no brand. `--example <id>` reads a team library item as an example of
 the kind of post for this blog only, `--messaging <id>` as the product's approved
 messaging (`--source` reads one with its library role). `--length short|deep` halves or
-doubles the style's own length; in depth adds an example or proof point per capability.
+doubles the usual length of new writing; in depth adds an example or proof point per point.
 Approving the last stage keeps the draft in the team library as a reference and an
 example, once per blog. Read its pinned guides in `derived/blog-run.json`;
 keep its naming rules separate from the author voice. `--mode write` is the default; `outline` stops at outline. Use

@@ -9,7 +9,11 @@ changes for authors first, then what changes for maintainers.
   `[Placeholder: …]` in any case, and no longer mistakes a link's own text, such as
   `[source-available](https://…)`, for a source ID. `source add --purpose messaging` on
   its own is refused in a plain sentence, because approved messaging marks a library
-  reference or one blog's file and on its own would never be read.
+  reference or one blog's file and on its own would never be read. **Length** is offered
+  only for new writing (write, outline, from an outline, from your files), reads "The usual
+  length", "Short (about half)" and "In depth (about twice)", and names no style or
+  capability that may not apply; `run create --length` for a review, a revision or ideas is
+  refused.
 
 - **Announcements that read like announcements.** A file can be **Approved messaging
   (the product's own claims)**, beside facts and examples: a messaging document, launch

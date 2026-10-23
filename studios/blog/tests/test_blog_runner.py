@@ -3820,6 +3820,45 @@ class LengthAndQualificationTests(RunnerCase):
         chat = runner.command(self.root, args)
         self.assertEqual(runner.load(self.root, chat['id'])[2]['length'], 'deep')
 
+    def test_length_names_only_what_applies(self):
+        # No kind of post is chosen here: the guidance names no style and no capability.
+        _, guidance = self.guidance_at('draft', length='deep', title='Deep')
+        self.assertIn('about twice the usual length for this kind of post', guidance)
+        self.assertIn('for each main point', guidance)
+        line = next(p for p in guidance.split('\n') if p.startswith('Length:'))
+        self.assertNotIn('style', line)
+        self.assertNotIn('capabilit', line)
+        _, outline = self.guidance_at('outline', length='short', title='Short')
+        line = next(p for p in outline.split('\n') if p.startswith('Length:'))
+        self.assertIn('about half the usual length for this kind of post', line)
+        self.assertNotIn('capabilit', line)
+
+    def test_length_is_refused_where_it_has_no_effect(self):
+        # A review, a revision and three ideas write no new outline or draft to a length.
+        source = self.source('# A supplied manuscript\nA fictional gateway routes requests.')
+        for mode, extra in (
+            ('review', {'manuscript': source['id']}),
+            ('revise', {'manuscript': source['id']}),
+            ('ideas', {}),
+        ):
+            with self.subTest(mode=mode):
+                before = sorted((self.root / 'articles').iterdir())
+                with self.assertRaisesRegex(
+                    ValueError,
+                    r'^Length is for new writing, so a review, a revision or three ideas '
+                    r'takes none\. Nothing was started\.$',
+                ):
+                    self.create(mode=mode, length='deep', title='No ' + mode, **extra)
+                self.assertEqual(sorted((self.root / 'articles').iterdir()), before)
+                # The usual length is accepted, as the page sends nothing for it.
+                self.create(mode=mode, length='style', title='Usual ' + mode, **extra)
+        args = studio.parser().parse_args(
+            ['--root', str(self.root), 'run', 'create', '--audience', 'A', '--goal', 'G']
+            + ['--title', 'Ideas', '--mode', 'ideas', '--length', 'short']
+        )
+        with self.assertRaisesRegex(ValueError, 'Length is for new writing'):
+            runner.command(self.root, args)
+
     def test_the_writer_qualifies_once_and_builds_each_capability(self):
         _, guidance = self.guidance_at('draft')
         self.assertIn('State a limitation once', guidance)
