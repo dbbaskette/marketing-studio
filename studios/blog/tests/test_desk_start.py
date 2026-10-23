@@ -422,5 +422,166 @@ class DraftJobTests(WritingJobCase):
         self.assertIn('\n' + blog_runner.GAPS_OPEN, guidance)
 
 
+class ChainTests(RouteCase):
+    """A start runs on its own, step after step, through the single tool worker."""
+
+    def setUp(self):
+        super().setUp()
+        self.calls = []
+        self.failing = {}
+
+    def worker(self, engine, payload, guidance, **options):
+        kind = (
+            'outline'
+            if '"opening_brief"' in guidance and 'outline' not in payload
+            else 'draft'
+            if 'outline' in payload
+            else 'plan'
+            if 'research questions' in guidance
+            else 'research'
+        )
+        self.calls.append({'kind': kind, 'payload': payload, 'web': options.get('web')})
+        if kind in self.failing:
+            raise self.failing.pop(kind)
+        if kind == 'outline':
+            return {'content': json.dumps(OUTLINE_RESULT), 'notes': '', 'evidence': [], 'gaps': []}
+        if kind == 'draft':
+            return {'content': WRITTEN, 'notes': '', 'evidence': [], 'gaps': []}
+        if kind == 'plan':
+            return {'content': '1. What stops jobs?', 'notes': ''}
+        return {'content': '# Findings\n\nTimeouts stop most jobs.', 'notes': ''}
+
+    def run_jobs(self, count):
+        engine = blog_runner.Engine(self.root, worker=self.worker)
+        for _ in range(count):
+            tool_jobs.once(engine)
+
+    def begin(self, **extra):
+        return self.post(
+            'desk-create',
+            {
+                'operation': 'd' * 32,
+                'title': 'A synthetic topic',
+                'way': 'topic',
+                'point': 'Retries save work.',
+                **extra,
+            },
+        )
+
+    def test_a_topic_start_outlines_then_drafts_with_no_stops(self):
+        made = self.begin()
+        self.assertEqual(made['start']['step'], 'outline')
+        self.assertEqual(made['working']['kind'], 'desk-outline')
+        self.assertEqual(made['start']['doing'], 'Outlining')
+        self.run_jobs(1)
+        middle = self.get('desk', id=made['id'])
+        self.assertEqual(middle['start']['step'], 'draft')
+        self.assertEqual(middle['working']['kind'], 'desk-draft')
+        self.run_jobs(1)
+        done = self.get('desk', id=made['id'])
+        self.assertIsNotNone(done['start']['ended_at'])
+        self.assertIsNone(done['working'])
+        self.assertEqual(done['sections'][1]['text'], 'The retry resumes.')
+        self.assertEqual([call['kind'] for call in self.calls], ['outline', 'draft'])
+        self.assertNotIn('notes', done['start'])
+
+    def test_with_the_web_ticked_research_comes_first_and_the_outline_reads_it(self):
+        made = self.begin(research_from={'sites': [], 'web': True})
+        self.assertEqual(made['working']['kind'], 'desk-research')
+        self.run_jobs(3)
+        self.assertEqual(
+            [(call['kind'], call['web']) for call in self.calls],
+            [('plan', False), ('research', True), ('outline', False), ('draft', False)],
+        )
+        self.assertEqual(
+            self.calls[1]['payload']['documents']['research-plan'], '1. What stops jobs?'
+        )
+        self.assertIn('Timeouts stop most jobs.', self.calls[2]['payload']['research'])
+        report = self.folder(made['id']) / 'derived' / 'blog-research.md'
+        self.assertIn('Timeouts', report.read_text())
+
+    def test_reviewed_research_is_published_in_the_blog_and_read_as_a_bundle(self):
+        from unittest.mock import patch
+
+        import synthesis_fixture
+        import synthesis_research
+        from studio_core import research_contract
+
+        def generate(directory, run, payload, worker, **options):
+            self.assertEqual(run['research_contract'], {'schema': 2})
+            synthesis_fixture.published_bundle(directory / research_contract.CASE / 'research')
+            return {'content': '# Report\n', 'notes': 'Checked.'}
+
+        with patch.object(research_contract, 'snapshot', return_value={'schema': 2}):
+            made = self.begin(research_from={'sites': ['https://docs.example.com'], 'web': False})
+        with patch.object(synthesis_research, 'generate', side_effect=generate):
+            self.run_jobs(2)
+        self.assertTrue((self.folder(made['id']) / 'research' / 'output.json').is_file())
+        outline = [call for call in self.calls if call['kind'] == 'outline'][0]
+        self.assertEqual(outline['payload']['research_bundle']['digest'], 'synthetic-digest')
+
+    def test_a_failed_research_stops_the_start_readably_and_retry_runs_it_again(self):
+        self.failing['research'] = ValueError('The assistant stopped.')
+        made = self.begin(research_from={'sites': [], 'web': True})
+        first = made['working']['id']
+        self.run_jobs(1)
+        stopped = self.get('desk', id=made['id'])
+        self.assertEqual(stopped['start']['problem'], 'The assistant stopped.')
+        self.assertEqual(stopped['start']['step'], 'research')
+        self.assertIsNone(stopped['working'])
+        again = self.post('desk-retry', {'id': made['id']})
+        self.assertEqual(again['start']['problem'], '')
+        self.assertEqual(again['working']['kind'], 'desk-research')
+        self.assertNotEqual(again['working']['id'], first)
+        with self.assertRaisesRegex(ValueError, 'Nothing to retry'):
+            self.post('desk-retry', {'id': made['id']})
+
+    def test_stop_ends_the_start_with_a_retry(self):
+        made = self.begin()
+        stopped = self.post('desk-stop', {'id': made['id'], 'job': made['working']['id']})
+        self.assertRegex(stopped['start']['problem'], '^Stopped')
+        self.assertIsNone(stopped['working'])
+        self.assertEqual(
+            self.post('desk-retry', {'id': made['id']})['working']['kind'], 'desk-outline'
+        )
+
+    def test_documents_only_go_straight_into_the_outline(self):
+        fact = self.source('A synthetic fact.')
+        made = self.begin(sources=[fact])
+        self.assertEqual(made['start']['steps'], ['outline', 'draft'])
+        self.run_jobs(1)
+        self.assertEqual(self.calls[0]['payload']['sources'][0]['text'], 'A synthetic fact.')
+
+    def test_shape_ends_on_the_outline(self):
+        made = self.begin(way='shape', outline=OUTLINE, point='')
+        self.run_jobs(1)
+        done = self.get('desk', id=made['id'])
+        self.assertIsNotNone(done['start']['ended_at'])
+        self.assertEqual(done['start']['open'], 'outline')
+        self.assertEqual(len(done['sections']), 2)
+        self.assertTrue(all(not s['text'] for s in done['sections']))
+
+    def test_a_step_interrupted_by_closing_blog_studio_can_be_retried(self):
+        made = self.begin()
+        tool_jobs.recover(self.root)  # As at the next launch: a working job is interrupted.
+        job = tool_jobs.read(self.root, made['working']['id'])
+        job['status'] = 'working'
+        tool_jobs.write(self.root, job)
+        tool_jobs.recover(self.root)
+        shown = self.get('desk', id=made['id'])
+        self.assertRegex(shown['start']['problem'], 'interrupted')
+        listed = blog_runner.catalog(self.root)['items'][0]
+        self.assertEqual(listed['status'], 'failed')
+        self.assertRegex(listed['error'], 'interrupted')
+        self.assertEqual(
+            self.post('desk-retry', {'id': made['id']})['working']['kind'], 'desk-outline'
+        )
+
+    def test_a_retry_needs_a_stopped_start(self):
+        made = self.begin()
+        with self.assertRaisesRegex(ValueError, 'Nothing to retry'):
+            self.post('desk-retry', {'id': made['id']})
+
+
 if __name__ == '__main__':
     unittest.main()

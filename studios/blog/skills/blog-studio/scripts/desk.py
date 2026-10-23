@@ -798,6 +798,7 @@ ROUTES = {
     'stop': {'id', 'job'},
     'open': {'id'},
     'angles': {'operation', 'title', 'point', 'audience', 'style', 'tone', 'sources', 'library'},
+    'retry': {'id'},
 }
 SESSION = re.compile(r'[a-f0-9]{16,64}')
 
@@ -827,6 +828,9 @@ def _create(root, data):
     made = create(root, data)
     studio.write_json(path, {'id': made['id'], 'fingerprint': fingerprint})
     problem = None
+    if read_start(root, made['id']):
+        desk_jobs.begin(root, made['id'])  # A problem is kept on the start, with Retry.
+        return {**desk_jobs.view(root, made['id']), 'first_pass_problem': None}
     try:
         desk_jobs.first_pass(root, made['id'], 1, choice)
     except ValueError as error:
@@ -856,6 +860,10 @@ def dispatch(root, action, data):
     read(root, ident)
     if action == 'stop':
         desk_jobs.stop(root, ident, data.get('job'))
+        return desk_jobs.view(root, ident)
+    if action == 'retry':
+        desk_jobs.settle(root, ident)
+        desk_jobs.retry(root, ident)
         return desk_jobs.view(root, ident)
     # A result an older process finished lands before anything else changes the draft.
     desk_jobs.settle(root, ident)

@@ -2711,6 +2711,7 @@ def engine(root):
 
 
 def catalog(root):
+    import desk
     import desk_jobs
 
     rows = []
@@ -2727,18 +2728,26 @@ def catalog(root):
                 published = (studio.read_json(path).get('editorial') or {}).get(
                     'stage'
                 ) == 'published' and not busy
+                # A start that stopped (a failed research, a Stop) needs the person.
+                stopped = '' if busy else desk_jobs.stalled(root, desk.read_start(root, ident))
                 rows.append(
                     {
                         'id': ident,
                         'title': draft['title'],
-                        'status': 'working' if busy else 'complete' if published else 'desk',
+                        'status': 'working'
+                        if busy
+                        else 'failed'
+                        if stopped
+                        else 'complete'
+                        if published
+                        else 'desk',
                         'touched': draft['updated_at'],
                         'flow': 'desk',
                         'jobs': busy,
                         'complete': published,
                         'stages': [],
                         'next': None,
-                        'error': '',
+                        'error': stopped,
                         'mode': 'desk',
                     }
                 )

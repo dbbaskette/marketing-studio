@@ -220,15 +220,21 @@ def once(engine):
         engine.current = 'tool:' + ident
         engine.stop.clear()
     try:
-        result = engine.worker(
-            saved['engine'],
-            saved['payload'],
-            saved['guidance'],
-            seconds=saved['seconds'],
-            web=False,
-            stop=engine.stop,
-            model_selection=choice,
-        )
+        if saved['kind'] == 'desk-research':
+            import desk_jobs
+
+            # Research before a desk start's writing: a plan, then research, as runs do.
+            result = desk_jobs.research_run(engine, saved)
+        else:
+            result = engine.worker(
+                saved['engine'],
+                saved['payload'],
+                saved['guidance'],
+                seconds=saved['seconds'],
+                web=False,
+                stop=engine.stop,
+                model_selection=choice,
+            )
         if (
             saved['kind'] in DESK
             and isinstance(result, dict)

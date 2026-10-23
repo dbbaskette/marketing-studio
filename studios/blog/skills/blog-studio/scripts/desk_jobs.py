@@ -11,6 +11,8 @@ process finished is settled by the next desk request. Like desk.py, every functi
 import json
 import re
 import secrets
+import tempfile
+from pathlib import Path
 
 import blog_runner
 import desk
@@ -809,6 +811,260 @@ def _apply_draft(root, ident, draft, job, result):
     return desk._write(root, ident, draft, [s['id'] for s in merged] + ['opening', 'outline'])
 
 
+# A start: its steps run one after another with no stops; a problem stops it for Retry.
+STEP_WORDS = {'research': 'Researching', 'outline': 'Outlining', 'draft': 'Drafting'}
+STOPPED_START = 'Stopped. Choose Retry to start this step again.'
+
+
+def research_job(root, ident):
+    """The research before the writing, as a run researches with no gate: the plan of
+    research questions, then the research itself (research_run), in one job."""
+    draft = desk.read(root, ident)
+    start = desk.read_start(root, ident) or {}
+    _, record = studio.item(root, 'articles', ident)
+    brief = draft.get('brief') or {}
+    run = {
+        'brief': {
+            'goal': brief.get('point') or draft['title'],
+            'audience': brief.get('audience') or 'Blog readers',
+        }
+    }
+    payload = {**blog_runner.inputs(root, record, run), 'documents': {}, 'changes': ''}
+    payload['refresh'] = False
+    stage = blog_runner.STAGES['research-plan']
+    guidance = (
+        stage[2]
+        + '\n\n'
+        + (blog_runner.REFERENCES / blog_runner.GUIDES['research-plan']).read_text()
+        + '\n\n'
+        + blog_runner.house_guide()
+    )
+    return _queue(
+        root,
+        ident,
+        draft,
+        draft['revision'],
+        'desk-research',
+        payload,
+        guidance,
+        {
+            'part': 'research',
+            'action': 'research',
+            'start': True,
+            'contract': start.get('contract'),
+        },
+        parts=[],
+    )
+
+
+def _note_phase(root, job, words):
+    """Say what research is doing on the start. Best effort: a busy workspace skips it."""
+    try:
+        with studio.locked(root):
+            ident = job['metadata']['article']
+            start = desk.read_start(root, ident)
+            if start and start.get('job') == job['id']:
+                start['phase'] = words[:200]
+                desk.write_start(root, ident, start)
+    except (ValueError, OSError):
+        pass
+
+
+def _round_words(event):
+    from studio_core import research_contract
+
+    if 'round' not in event:
+        return None
+    if not event['round']:
+        return 'Finding public sources'
+    phase = {'author': 'writing the report', 'review': 'the independent check'}
+    return (
+        'Round '
+        + str(event['round'])
+        + ' of '
+        + str(research_contract.ROUNDS)
+        + (', ' + phase[event.get('phase')] if event.get('phase') in phase else '')
+    )
+
+
+def research_run(engine, job):
+    """Run a start's research job outside the lock: the plan, then reviewed research through
+    Harness Research when the start pinned it, published into the blog's research folder; or
+    one research job with the assistant's web search, kept as derived/blog-research.md."""
+    from studio_core import model_profiles, research_contract
+
+    root, stop, seconds = engine.root, engine.stop, job['seconds']
+    ident = job['metadata']['article']
+    directory, _ = studio.item(root, 'articles', ident)
+
+    def ask(data, guidance, step, web=False):
+        if stop.is_set():
+            raise ValueError('Research stopped.')
+        selection = model_profiles.route(job, 'Blog Studio', step, purpose='research')
+        return engine.worker(
+            job['engine'],
+            data,
+            guidance,
+            seconds=seconds,
+            web=web,
+            stop=stop,
+            model_selection=selection,
+        )
+
+    _note_phase(root, job, 'Planning the research')
+    plan = ask(job['payload'], job['guidance'], 'research-plan')['content']
+    payload = {**job['payload'], 'documents': {'research-plan': plan}}
+    contract = job['metadata']['desk'].get('contract')
+    if contract:
+        import synthesis_research
+
+        run = {
+            'engine': job['engine'],
+            'brief': payload['brief'],
+            'research_contract': contract,
+            'model_profiles': job.get('model_profiles'),
+        }
+        with tempfile.TemporaryDirectory(prefix='blog-desk-research-') as scratch:
+            target = Path(scratch)
+            result = synthesis_research.generate(
+                target,
+                run,
+                payload,
+                engine.worker,
+                seconds=seconds,
+                stop=stop,
+                progress=lambda event: (
+                    _note_phase(root, job, _round_words(event)) if _round_words(event) else None
+                ),
+            )
+            with studio.locked(root):
+                if tool_jobs._working(root, job['id']) is not None and not stop.is_set():
+                    research_contract.copy_case(
+                        target / research_contract.CASE, directory / research_contract.CASE
+                    )
+                    research_contract.publish(
+                        target / research_contract.CASE, directory / 'research'
+                    )
+        return {'content': result['content'][:200_000], 'notes': result['notes'][:10_000]}
+    _note_phase(root, job, 'Researching')
+    stage = blog_runner.STAGES['research']
+    guidance = (
+        stage[2]
+        + '\n\n'
+        + (blog_runner.REFERENCES / blog_runner.GUIDES['research']).read_text()
+        + '\n\n'
+        + blog_runner.house_guide()
+    )
+    result = ask(payload, guidance, 'research', web=blog_runner.searches_web(payload))
+    with studio.locked(root):
+        if tool_jobs._working(root, job['id']) is not None and not stop.is_set():
+            studio.atomic(
+                studio.inside(directory, blog_runner.STAGES['research'][1]),
+                result['content'].encode(),
+            )
+    return result
+
+
+def _queue_step(root, ident, step):
+    """Queue one step of a start and say so on it."""
+    if step == 'research':
+        job = research_job(root, ident)
+    elif step == 'outline':
+        job = outline_job(root, ident, start=True)
+    else:
+        job = draft_job(root, ident, desk.read(root, ident)['revision'], start=True)
+    start = desk.read_start(root, ident)
+    start.update(job=job['id'], problem='', phase='')
+    desk.write_start(root, ident, start)
+    return job
+
+
+def _start_problem(root, ident, problem):
+    start = desk.read_start(root, ident)
+    if start and not start.get('ended_at'):
+        start['problem'] = (problem or 'This step did not finish.')[:1000]
+        desk.write_start(root, ident, start)
+
+
+def begin(root, ident):
+    """Queue a new start's first step. A problem queuing it is kept on the start, where the
+    page shows it with Retry; the blog is made either way."""
+    start = desk.read_start(root, ident)
+    if not start or start.get('ended_at') or start.get('job'):
+        return None
+    try:
+        _queue_step(root, ident, start['step'])
+    except ValueError as error:
+        _start_problem(root, ident, str(error))
+        return str(error)
+    return None
+
+
+def stalled(root, start):
+    """Why a start that has not ended is not moving, or '' while its step is under way. A
+    step interrupted when Blog Studio closed, or whose job is gone, stops it too."""
+    if not start or start.get('ended_at'):
+        return ''
+    job = None
+    if start.get('job'):
+        try:
+            job = tool_jobs.read(root, start['job'])
+        except (ValueError, OSError):
+            job = None
+    if job is not None and busy(job):
+        return ''
+    return (
+        start.get('problem')
+        or (job or {}).get('error')
+        or 'This step stopped. Choose Retry to start it again.'
+    )
+
+
+def retry(root, ident):
+    """Run the step a start stopped at again, in a new job."""
+    start = desk.read_start(root, ident)
+    if not stalled(root, start):
+        raise ValueError('Nothing to retry: this start is under way or done.')
+    _busy(root, ident)
+    _queue_step(root, ident, start['step'])
+
+
+def _advance(root, job):
+    """After a start's step settles: the next step, or the end of the start."""
+    ident = job['metadata']['article']
+    start = desk.read_start(root, ident)
+    if not start or start.get('job') != job['id'] or start.get('ended_at'):
+        return
+    if not job.get('applied'):
+        _start_problem(root, ident, job.get('error'))
+        return
+    at = start['steps'].index(start['step'])
+    if at + 1 >= len(start['steps']):
+        start.update(step=None, ended_at=studio.now(), problem='', phase='')
+        desk.write_start(root, ident, start)
+        return
+    start.update(step=start['steps'][at + 1], phase='')
+    desk.write_start(root, ident, start)
+    try:
+        _queue_step(root, ident, start['step'])
+    except Exception as error:  # noqa: BLE001 - the start stops readably, never silently.
+        _start_problem(root, ident, str(error)[:1000] or type(error).__name__)
+
+
+def _start_view(root, ident, rows):
+    start = desk.read_start(root, ident)
+    if not start:
+        return None
+    job = next((row for row in rows if row['id'] == start.get('job')), None)
+    return {
+        **{key: value for key, value in start.items() if key not in ('notes', 'contract')},
+        'problem': stalled(root, start),
+        'busy': bool(job and job['busy']),
+        'status': job['status'] if job else None,
+        'doing': STEP_WORDS.get(start.get('step') or '', ''),
+    }
+
+
 FIRST_PASSES = ('tighten', 'reshape', 'leave')
 
 
@@ -918,6 +1174,8 @@ def _apply(root, ident, draft, job):
     if not isinstance(content, str) or not content.strip():
         raise ValueError('The result was empty. Run it again.')
     kind = job['kind']
+    if kind == 'desk-research':
+        return None  # Its findings are in the blog's folder; the next step reads them.
     if kind == 'desk-outline':
         return _apply_outline(root, ident, draft, job, result)
     if kind == 'desk-draft':
@@ -1022,6 +1280,8 @@ def _settle(root, job):
     if job['kind'] == 'desk-revise-all':
         _chain_note(root, job, applied=job['applied'], problem=job['error'] or None)
         _next(root, job)
+    if (job['metadata'].get('desk') or {}).get('start'):
+        _advance(root, job)
     return ident
 
 
@@ -1032,6 +1292,13 @@ def ended(root, job):
         return _settle_angles(root, job) if unsettled(job) else None
     if unsettled(job):
         return _settle(root, job)
+    if job.get('status') == 'failed' and (job['metadata'].get('desk') or {}).get('start'):
+        try:
+            _guard(root, job['metadata']['article'])
+            _start_problem(root, job['metadata']['article'], job.get('error'))
+        except ValueError:
+            pass
+        return None
     if job.get('status') == 'failed' and job['kind'] == 'desk-revise-all':
         try:
             _guard(root, job['metadata']['article'])
@@ -1073,10 +1340,13 @@ def stop(root, ident, job_id):
     found = jobs(root, ident)
     if not any(job['id'] == job_id for job in found):
         raise ValueError('Choose a job on this blog.')
+    start = desk.read_start(root, ident)
     for job in found:
         if job['status'] in ACTIVE or unsettled(job):
             if job['kind'] == 'desk-revise-all':
                 _chain_note(root, job, ended=True)
+            if start and start.get('job') == job['id']:
+                _start_problem(root, ident, STOPPED_START)
         if job['status'] in ACTIVE:
             tool_jobs.control(root, job['id'], 'cancel', blog_runner.engine(root))
         elif unsettled(job):
@@ -1158,6 +1428,8 @@ def view(root, ident):
         'publication': (record.get('editorial') or {}).get('publication_url') or None,
         'style_name': style_name,
         'source_names': names,
+        # A start under way: the page shows its progress until the draft (or outline) opens.
+        'start': _start_view(root, ident, rows),
         # The blog record's version, for Mark as published and Delete.
         'expected': studio.digest((directory / 'session.json').read_bytes()),
     }
