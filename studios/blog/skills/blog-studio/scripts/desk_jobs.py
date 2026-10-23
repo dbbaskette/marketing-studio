@@ -122,6 +122,60 @@ def active(root):
     return found
 
 
+def _guard(root, ident):
+    """Refuse a blog another computer drives in a team workspace."""
+    from team_workspace import guard
+
+    guard(root, ident)
+
+
+CHAIN = re.compile(r'[a-f0-9]{16}')
+
+
+def _chain_path(root, chain):
+    if not isinstance(chain, str) or not CHAIN.fullmatch(chain):
+        raise ValueError('Choose a whole-draft note.')
+    return studio.inside(root, '.blog-runs', 'desk-chains', chain + '.json')
+
+
+def chain_record(root, chain):
+    target = _chain_path(root, chain)
+    if not target.is_file() or target.is_symlink():
+        return None
+    try:
+        return studio.read_json(target)
+    except (ValueError, OSError):
+        return None
+
+
+def _chain_note(root, job, applied=False, problem=None, ended=False):
+    """Keep a whole-draft note's own tally: how many sections were revised, which were not
+    and why, and whether it has ended. It does not depend on how many jobs are listed."""
+    meta = job['metadata']['desk']
+    record = chain_record(root, meta['chain']) or {
+        'article': job['metadata']['article'],
+        'total': len(meta['order']),
+        'revised': 0,
+        'problems': [],
+        'ended': False,
+    }
+    if applied:
+        record['revised'] += 1
+    if problem:
+        heading = ''
+        try:
+            found = desk._part(desk.read(root, job['metadata']['article']), meta['part'])
+            heading = found['heading'] if found else ''
+        except (ValueError, OSError):
+            pass
+        record['problems'] = (
+            record['problems'] + [{'part': meta['part'], 'heading': heading, 'error': problem}]
+        )[-200:]
+    if ended:
+        record['ended'] = True
+    studio.write_json(_chain_path(root, meta['chain']), record)
+
+
 def unsettled(job):
     """A ready result not yet landed in the draft: still the blog's job under way."""
     return job.get('status') == 'ready' and not job.get('settled_at')
@@ -379,15 +433,23 @@ def revise_all(root, ident, seen, note):
 
 
 def _next(root, job):
-    """After one section of a whole-draft note, queue the next written section, if any."""
+    """After one section of a whole-draft note, queue the next written section, if any. A
+    problem queuing it ends the note, said on the note's own record."""
+    try:
+        if not _queue_next(root, job):
+            _chain_note(root, job, ended=True)
+    except Exception as error:  # noqa: BLE001 - the note ends readably, never silently.
+        message = str(error)[:1000] or type(error).__name__
+        _chain_note(root, job, problem='The rest of the note stopped: ' + message, ended=True)
+
+
+def _queue_next(root, job):
     meta = job['metadata']['desk']
     ident = job['metadata']['article']
-    try:
-        draft = desk.read(root, ident)
-    except ValueError:
-        return
+    _guard(root, ident)  # Another computer may have taken the blog meanwhile.
+    draft = desk.read(root, ident)
     if any(busy(other) for other in jobs(root, ident) if other['id'] != job['id']):
-        return  # Something else is under way; the chain ends here.
+        return False  # Something else is under way; the note ends here.
     for part in meta['order'][meta['index'] + 1 :]:
         try:
             section = desk._part(draft, part)
@@ -405,7 +467,8 @@ def _next(root, job):
                 guidance,
                 {**step, 'seen': draft['revision']},
             )
-            return
+            return True
+    return False
 
 
 FIRST_PASSES = ('tighten', 'reshape', 'leave')
@@ -593,12 +656,11 @@ def _apply(root, ident, draft, job):
 
 
 def _settle(root, job):
-    """Land one ready job; the blog it changed, or None when it is left for later."""
-    from team_workspace import guard
-
+    """Land one ready job; the blog it changed, or None when it is left for later. Whatever
+    goes wrong, the job is settled with a readable problem, so it never holds up the desk."""
     ident = (job.get('metadata') or {}).get('article')
     try:
-        guard(root, ident)  # A blog another computer drives settles there, not here.
+        _guard(root, ident)  # A blog another computer drives settles there, not here.
         draft = desk.read(root, ident)
     except ValueError:
         return None
@@ -607,9 +669,16 @@ def _settle(root, job):
         job.update(applied=True, error='')
     except ValueError as error:
         job.update(applied=False, error=str(error)[:1000])
+    except Exception as error:  # noqa: BLE001 - e.g. a full disk: said, never stuck.
+        job.update(
+            applied=False,
+            error=('This result could not be saved: ' + str(error))[:1000]
+            + ' Nothing was changed; run it again.',
+        )
     job['settled_at'] = studio.now()
     tool_jobs.write(root, job)
     if job['kind'] == 'desk-revise-all':
+        _chain_note(root, job, applied=job['applied'], problem=job['error'] or None)
         _next(root, job)
     return ident
 
@@ -620,19 +689,19 @@ def ended(root, job):
     if unsettled(job):
         return _settle(root, job)
     if job.get('status') == 'failed' and job['kind'] == 'desk-revise-all':
-        from team_workspace import guard
-
         try:
-            guard(root, job['metadata']['article'])
+            _guard(root, job['metadata']['article'])
         except ValueError:
             return None
+        _chain_note(root, job, problem=job.get('error') or 'This section could not be revised.')
         _next(root, job)  # A section that failed is reported; the others still go ahead.
     return None
 
 
 def share(root, ident):
     """Record a settled desk change as a team decision. Runs outside the studio lock, which
-    is not reentrant. Best effort: the next desk decision commits whatever is left."""
+    is not reentrant. Best effort: when it cannot, the next desk request first commits what
+    was left under the blog (team_workspace.keep_desk), so nothing jams."""
     from team_workspace import saved, space
 
     if not ident or not space(root):
@@ -661,6 +730,9 @@ def stop(root, ident, job_id):
     if not any(job['id'] == job_id for job in found):
         raise ValueError('Choose a job on this blog.')
     for job in found:
+        if job['status'] in ACTIVE or unsettled(job):
+            if job['kind'] == 'desk-revise-all':
+                _chain_note(root, job, ended=True)
         if job['status'] in ACTIVE:
             tool_jobs.control(root, job['id'], 'cancel', blog_runner.engine(root))
         elif unsettled(job):
@@ -722,21 +794,13 @@ def view(root, ident):
     last = rows[-1] if rows else None
     chain = None
     if last and last['chain']:
-        steps = [row for row in rows if row['chain'] == last['chain']]
-        headings = {s['id']: s['heading'] for s in draft['sections']}
+        record = chain_record(root, last['chain']) or {}
         chain = {
-            'total': last['total'],
-            'revised': sum(1 for row in steps if row['applied']),
-            'working': any(row['busy'] for row in steps),
-            'problems': [
-                {
-                    'part': row['part'],
-                    'heading': headings.get(row['part'], ''),
-                    'error': row['error'],
-                }
-                for row in steps
-                if row['error'] and not row['busy']
-            ],
+            'total': record.get('total', last['total']),
+            'revised': record.get('revised', 0),
+            'ended': bool(record.get('ended')),
+            'working': bool(last['busy']),
+            'problems': record.get('problems', []),
         }
     return {
         **draft,

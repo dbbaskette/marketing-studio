@@ -172,6 +172,22 @@ def once(engine):
             return
         saved = min(values, key=lambda value: value['created_at'])
         ident = saved['id']
+        if saved['kind'] in DESK:
+            import team_workspace
+
+            try:
+                team_workspace.guard(root, saved['metadata'].get('article'))
+            except ValueError as error:
+                # Another computer took the blog since this was queued: it never runs here.
+                saved.update(
+                    status='cancelled',
+                    error=(
+                        'Another computer drives this blog now, so this did not run. ' + str(error)
+                    )[:1000],
+                    finished_at=studio.now(),
+                )
+                write(root, saved)
+                return
         from studio_core import model_profiles
 
         try:

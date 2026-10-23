@@ -426,6 +426,83 @@ class SettleTests(DeskJobCase):
         self.assertEqual(desk_jobs.settle(self.root, self.ident), [job['id']])
 
 
+class RobustSettleTests(DeskJobCase):
+    """What a settle does when something other than the draft goes wrong."""
+
+    ready = SettleTests.ready
+
+    def test_an_unexpected_error_settles_the_job_with_a_readable_problem(self):
+        from unittest.mock import patch
+
+        job = desk_jobs.section(self.root, self.ident, 1, self.part, 'More.')
+        self.ready(job, 'First text, more.')
+        with patch.object(desk_jobs, '_apply', side_effect=OSError('The disk is full.')):
+            desk_jobs.settle(self.root, self.ident)
+        saved = self.saved(job)
+        self.assertTrue(saved['settled_at'])
+        self.assertIs(saved['applied'], False)
+        self.assertRegex(saved['error'], 'could not be saved: The disk is full')
+        self.assertIsNone(desk_jobs.view(self.root, self.ident)['working'])
+
+    def test_a_chain_that_cannot_queue_its_next_step_says_so_and_still_shares(self):
+        from unittest.mock import patch
+
+        job = desk_jobs.revise_all(self.root, self.ident, 1, 'Warmer.')
+        self.ready(job, 'Warm first.')
+        with patch.object(
+            desk_jobs,
+            '_create',
+            side_effect=ValueError('Use smaller selected excerpts for this task.'),
+        ):
+            self.assertEqual(desk_jobs.ended(self.root, self.saved(job)), self.ident)
+        chain = desk_jobs.view(self.root, self.ident)['chain']
+        self.assertEqual((chain['revised'], chain['working'], chain['ended']), (1, False, True))
+        self.assertRegex(chain['problems'][-1]['error'], 'smaller selected excerpts')
+
+    def test_a_chain_stops_when_another_computer_takes_the_blog(self):
+        from unittest.mock import patch
+
+        job = desk_jobs.revise_all(self.root, self.ident, 1, 'Warmer.')
+        self.ready(job, 'Warm first.')
+        desk_jobs.settle(self.root, self.ident)
+        queued = desk_jobs.jobs(self.root, self.ident)[-1]
+        self.assertEqual(queued['status'], 'queued')
+        calls = []
+        engine = blog_runner.Engine(self.root, worker=lambda *a, **k: calls.append(1))
+        with patch('team_workspace.guard', side_effect=ValueError('Another computer drives it.')):
+            tool_jobs.once(engine)
+        self.assertEqual(calls, [])
+        saved = self.saved(queued)
+        self.assertEqual(saved['status'], 'cancelled')
+        self.assertRegex(saved['error'], 'Another computer')
+
+    def test_next_checks_who_drives_the_blog(self):
+        from unittest.mock import patch
+
+        job = desk_jobs.revise_all(self.root, self.ident, 1, 'Warmer.')
+        self.ready(job, 'Warm first.')
+        with patch.object(desk_jobs, '_guard', side_effect=[None, ValueError('Taken.')]):
+            desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(len(desk_jobs.jobs(self.root, self.ident)), 1)
+        chain = desk_jobs.view(self.root, self.ident)['chain']
+        self.assertTrue(chain['ended'])
+        self.assertRegex(chain['problems'][-1]['error'], 'Taken')
+
+    def test_a_long_chain_counts_every_section(self):
+        sections = ''.join('## Part %d\n\nText %d.\n\n' % (n, n) for n in range(70))
+        made = desk.create(self.root, {'title': 'Long', 'manuscript': sections})
+
+        def worker(engine, payload, guidance, **options):
+            return {'content': payload['part']['text'] + ' Warm.', 'notes': '', 'gaps': []}
+
+        engine = blog_runner.Engine(self.root, worker=worker)
+        desk_jobs.revise_all(self.root, made['id'], 1, 'Warmer.')
+        for _ in range(70):
+            tool_jobs.once(engine)
+        chain = desk_jobs.view(self.root, made['id'])['chain']
+        self.assertEqual((chain['revised'], chain['total'], chain['ended']), (70, 70, True))
+
+
 class SharedGuidanceTests(unittest.TestCase):
     def test_desk_guidance_is_the_tone_the_house_guide_the_kind_of_post_then_the_length(self):
         style = {'name': 'How-to', 'guide': 'Steps.'}
