@@ -895,7 +895,7 @@ class SourcesStayWithTheBlogTests(RouteCase):
                     'analyze': False,
                 },
             )
-        self.assertEqual(fetched.call_args.args[1], 'https://docs.example.com/')
+        self.assertEqual(fetched.call_args.args[1].site, 'example.com')
         return found['files'][0]
 
     def library(self):
@@ -943,3 +943,128 @@ class SourcesStayWithTheBlogTests(RouteCase):
                     'analyze': False,
                 },
             )
+
+
+class SecondReviewTests(SourcesStayWithTheBlogTests):
+    """The re-review: angles ids, keeping on a successful create, and reading one link."""
+
+    test_a_link_is_read_and_kept_with_the_blog_unless_ticked = None
+    test_a_ticked_link_reaches_the_library_only_when_kept_on_start = None
+    test_a_link_must_be_a_public_https_page = None
+
+    def create(self, operation='a' * 32, **extra):
+        return self.post(
+            'desk-create',
+            {'operation': operation, 'title': 'T', 'way': 'topic', 'point': 'P.', **extra},
+        )
+
+    def blogs(self):
+        return sorted(studio.inside(self.root, 'articles').glob('*/session.json'))
+
+    def test_a_bad_angles_id_is_refused_before_the_blog_is_made(self):
+        with self.assertRaisesRegex(ValueError, 'Angles need their page operation ID'):
+            self.create(angles='not-an-id')
+        self.assertEqual(self.blogs(), [])
+
+    def test_letting_angles_go_never_fails_a_made_blog(self):
+        from unittest.mock import patch
+
+        with patch.object(desk_jobs, 'forget_angles', side_effect=OSError('disk')):
+            made = self.create(angles='1' * 32)
+        self.assertTrue(made['id'])
+        with patch.object(desk_jobs, 'prune_angles', side_effect=OSError('disk')):
+            self.assertTrue(self.create(operation='b' * 32)['id'])
+
+    def test_a_ticked_source_is_kept_only_once_the_blog_is_made(self):
+        row = self.add_link()
+        ident = row['source']['id']
+        with self.assertRaisesRegex(ValueError, 'Say the point'):
+            self.create(point='', sources=[ident], keep=[ident])
+        self.assertNotIn(ident, self.library())
+        made = self.create(sources=[ident], keep=[ident])
+        self.assertIn(ident, self.library())
+        record = studio.read_json(self.folder(made['id']) / 'session.json')
+        self.assertEqual(record['material'], [])
+        self.assertIn('reference', record['sources'][0]['purposes'])
+        self.assertNotIn('material', record['sources'][0]['purposes'])
+        # The same request again returns the same blog and keeps nothing twice.
+        self.assertEqual(self.create(sources=[ident], keep=[ident])['id'], made['id'])
+        job = tool_jobs.read(self.root, made['working']['id'])
+        self.assertIn('retry budget', job['payload']['sources'][0]['text'])
+
+    def test_keep_names_only_sources_of_this_request(self):
+        row = self.add_link()
+        with self.assertRaisesRegex(ValueError, 'Keep only sources you are adding'):
+            self.create(keep=[row['source']['id']])
+
+    def test_a_source_added_on_the_desk_is_kept_when_ticked(self):
+        made = self.create()
+        row = self.add_link()
+        added = self.post(
+            'desk-sources',
+            {'id': made['id'], 'sources': [row['source']['id']], 'keep': [row['source']['id']]},
+        )
+        self.assertIn(row['source']['id'], self.library())
+        self.assertEqual(added['sources'][0]['source_id'], row['source']['id'])
+
+    def read_link(self, link, fetched=None):
+        from unittest.mock import patch
+
+        import blog_library
+
+        with patch.object(
+            blog_library,
+            'fetch',
+            side_effect=fetched or (lambda *a, **k: (self.PAGE, link, 'text/html')),
+        ):
+            return self.post(
+                'upload',
+                {
+                    'operation': desk_jobs.secrets.token_hex(16),
+                    'files': [{'link': link, 'purpose': 'material'}],
+                    'purpose': 'material',
+                    'keep': False,
+                    'analyze': False,
+                },
+            )
+
+    def test_a_refused_link_speaks_of_a_link(self):
+        import blog_library
+
+        for said, words in (
+            (blog_library.CREDENTIALS, 'Use a public https link without a password or port.'),
+            (blog_library.PRIVATE, 'That link points to a private address, so it cannot be read.'),
+        ):
+
+            def fetched(*args, said=said, **options):
+                raise ValueError(said)
+
+            with self.subTest(said=said), self.assertRaisesRegex(ValueError, '^' + words + '$'):
+                self.read_link('https://docs.example.com/guide', fetched)
+
+    def test_a_redirect_may_stay_on_the_site_and_no_further(self):
+        import management
+
+        scope = management.LinkScope('https://example.com/guide')
+        self.assertIsNone(scope.refuse('https://www.example.com/guide'))
+        self.assertRegex(scope.refuse('https://elsewhere.test/page'), 'elsewhere.test')
+        british = management.LinkScope('https://www.example.co.uk/a')
+        self.assertIsNone(british.refuse('https://shop.example.co.uk/b'))
+        self.assertTrue(british.refuse('https://other.co.uk/b'))
+
+    def test_the_page_title_loses_its_markup(self):
+        self.PAGE = b'<html><head><title>A <b>bold</b> &amp; plain title</title></head><body><p>Text here.</p></body></html>'
+        row = self.read_link('https://docs.example.com/guide')['files'][0]
+        self.assertEqual(row['filename'], 'A bold & plain title')
+
+    def test_a_link_is_read_before_the_studio_lock_is_taken(self):
+        held = studio._HELD.set(False)
+        self.addCleanup(studio._HELD.reset, held)
+        seen = []
+
+        def fetched(*args, **options):
+            seen.append(studio.lock_held())
+            return self.PAGE, 'https://docs.example.com/guide', 'text/html'
+
+        self.read_link('https://docs.example.com/guide', fetched)
+        self.assertEqual(seen, [False])

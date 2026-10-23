@@ -26,7 +26,9 @@ changes for authors first, then what changes for maintainers.
   Research or one web research job, with no gate), `desk-outline` and `desk-draft`;
   `references/modules/desk-write.md`; routes `desk-angles` (and `GET /api/desk-angles`),
   `desk-retry`, `desk-outline-save`, `desk-unremove`, `desk-draft` and `desk-sources`; an
-  `upload` entry may be a `link` read through the library's fetch. A start's phase and
+  `upload` entry may be a `link` read through the library's fetch (kept on its own site, and
+  read with Google Docs before the studio lock is taken); `desk-create` and `desk-sources`
+  take `keep`, the sources the server moves to the team library once the blog is made. A start's phase and
   problem stay on this computer (`.blog-runs/desk-starts/`), and a decision first commits
   desk leftovers under any blog this computer drives.
   `blog_runner.FROM_OUTLINE`, `WRITING_NOTES` and `GAPS_OPEN` name sentences runs already

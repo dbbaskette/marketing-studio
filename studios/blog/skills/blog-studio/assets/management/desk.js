@@ -136,8 +136,9 @@ function sDeskTopic(held){
 }
 function sDeskLibraryPicks(files){return files.filter(file=>file.library&&file.state==='ready').map(file=>({id:file.id,role:FILE_ROLES[file.role]||'facts',...(file.location==='hub'?{location:'hub'}:{})}));}
 function sDeskUploads(files){return [...new Set(files.filter(file=>!file.library&&file.state==='ready').map(file=>file.id))];}
-// Files with Keep ticked go to the team library only now, at Start or Add.
-async function sDeskKeep(files){for(const file of files.filter(file=>!file.library&&file.kept&&file.state==='ready'&&!file.inLibrary)){await api('source-keep',{id:file.id,keep:true});file.inLibrary=true;}}
+// Files with Keep ticked: the server moves them to the team library once the blog is made
+// (or the source is added), never before, and a repeated request keeps nothing twice.
+function sDeskKept(files){const kept=sDeskUploads(files.filter(file=>file.kept));return kept.length?{keep:kept}:{};}
 async function sDeskAskAngles(held,button){
   const operation=operationId(),replaces=held.angleOp;held.angleOp=operation;held.anglesProblem='';
   await busy(button,'Asking…',async()=>{try{
@@ -182,7 +183,7 @@ async function sDeskReadGoogle(held){
   if(found?.status==='already-linked'&&found.id){
     // The Doc is already a blog here: open it on the desk, or bring it there.
     let made=null;try{made=await api('desk?id='+encodeURIComponent(found.id));}catch(_){made=null;}
-    if(!made){await sDeskKeep(held.files);made=await api('desk-create',{operation:held.operation,style:held.kind||'',tone:held.tone,first_pass:held.first_pass,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),article:found.id});}
+    if(!made)made=await api('desk-create',{operation:held.operation,style:held.kind||'',tone:held.tone,first_pass:held.first_pass,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),article:found.id});
     if(turn!==studio.turn)return;studio.deskStart=null;studio.desk={id:made.id,view:made,session:operationId()};return sRoute('desk',made.id);
   }
   held.preview=sGooglePreview(found);if(!held.title.trim())held.title=found.title;sDeskStart();
@@ -190,8 +191,7 @@ async function sDeskReadGoogle(held){
 async function sDeskGo(held){
   if(held.kind===null){held.step=0;sDeskStart();throw new Error('Choose a kind of post first.');}
   const turn=studio.turn;
-  await sDeskKeep(held.files);
-  const common={operation:held.operation,style:held.kind||'',tone:held.tone,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...(held.title.trim()?{title:held.title.trim()}:{})};
+  const common={operation:held.operation,style:held.kind||'',tone:held.tone,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),...(held.title.trim()?{title:held.title.trim()}:{})};
   let made;
   if(held.have==='draft'){
     const settings={...common,first_pass:held.first_pass};
@@ -220,6 +220,7 @@ async function sDeskGo(held){
   }
   if(turn!==studio.turn)return;studio.deskStart=null;
   if(made.first_pass_problem)sToast('The first pass did not start: '+made.first_pass_problem);
+  if(made.keep_problem)sToast(made.keep_problem);
   studio.desk={id:made.id,view:made,session:operationId()};await sRoute('desk',made.id);
 }
 
@@ -232,7 +233,7 @@ function sDeskSourcesSheet(held){
   const files=sFilesCard(adding,problem,()=>sDeskSourcesSheet(held),locked=>{if(done)done.disabled=locked||!access.actions.edit;},{desk:true,keepWhen:'Ticked ones go to the team library when you add them.'});
   done=sButton('Add to this draft',async button=>{
     const ready=adding.files.filter(file=>file.state==='ready');if(!ready.length){problem.textContent='Add a file, a link, a Google Doc or a library post with text first.';return;}
-    await busy(button,'Adding…',async()=>{try{await sDeskFlush(held);await sDeskKeep(ready);const before=held.view;held.view=await api('desk-sources',{id:held.id,sources:sDeskUploads(ready),library:sDeskLibraryPicks(ready)});held.adding=null;sCloseSheet();sToast(ready.length===1?'Added. Later rewrites read it.':'Added. Later rewrites read them.');sDeskRefresh(held,before);}catch(error){problem.textContent=error.message;}});
+    await busy(button,'Adding…',async()=>{try{await sDeskFlush(held);const before=held.view;held.view=await api('desk-sources',{id:held.id,sources:sDeskUploads(ready),library:sDeskLibraryPicks(ready),...sDeskKept(ready)});held.adding=null;sCloseSheet();sToast(ready.length===1?'Added. Later rewrites read it.':'Added. Later rewrites read them.');sDeskRefresh(held,before);}catch(error){problem.textContent=error.message;}});
   },'filled');
   done.disabled=!access.actions.edit;
   sOpenSheet('Add a source',sNode('p','quiet','Later rewrites read it; nothing already written changes.'),files,problem,sAdd(sNode('div','bar'),done,sButton('Cancel',sCloseSheet)));

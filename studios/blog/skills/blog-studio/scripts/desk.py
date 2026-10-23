@@ -813,12 +813,52 @@ def unremove(root, ident, seen, index):
     return _write(root, ident, draft, [part, 'outline'])
 
 
+def _kept_ids(keep, sources):
+    if not isinstance(keep, list) or any(not isinstance(item, str) for item in keep):
+        raise ValueError('Keep only sources you are adding, by their IDs.')
+    if set(keep) - set(sources if isinstance(sources, list) else []):
+        raise ValueError('Keep only sources you are adding, by their IDs.')
+    return sorted(set(keep))
+
+
+def keep_in_library(root, ident, kept):
+    """Move the sources the person ticked into the team library, now that the blog that
+    reads them is made, and move this blog's own pins with them. Returns a readable problem,
+    or None; the blog stands either way."""
+    if not kept:
+        return None
+    import management
+
+    try:
+        directory, record = studio.item(root, 'articles', ident)
+        for source in kept:
+            management.source_keep(root, {'id': source, 'keep': True}, blog=ident)
+            for entry in record['sources']:
+                if entry['source_id'] == source:
+                    entry['purposes'] = [
+                        'reference' if purpose == 'material' else purpose
+                        for purpose in entry['purposes']
+                    ]
+        record['material'] = [
+            entry['source_id'] for entry in record['sources'] if 'material' in entry['purposes']
+        ]
+        studio.persist(directory, 'articles', record)
+        _, target = _paths(root, ident)
+        draft = read(root, ident)
+        draft['sources'] = _citable(record['sources'])
+        studio.write_json(target, draft)
+    except (ValueError, OSError) as error:
+        return 'Not kept in the team library: ' + str(error)[:500]
+    return None
+
+
 def add_sources(root, ident, data):
     """Pin more sources (uploaded files, Google Docs, library items with a role) on a desk
     blog at any time; later rewrites and checks read them."""
     chosen, library = data.get('sources') or [], data.get('library') or []
     if not chosen and not library:
         raise ValueError('Choose a source to add.')
+    kept = _kept_ids(data.get('keep', []), chosen)
     directory, record = studio.item(root, 'articles', ident)
     draft = read(root, ident)
     _attach(root, {'sources': chosen, 'library': library}, record)
@@ -826,7 +866,11 @@ def add_sources(root, ident, data):
         raise ValueError('A blog reads at most 50 sources.')
     studio.persist(directory, 'articles', record)
     draft['sources'] = _citable(record['sources'])
-    return _write(root, ident, draft, ['sources'])
+    written = _write(root, ident, draft, ['sources'])
+    problem = keep_in_library(root, ident, kept)
+    if problem:
+        raise ValueError(problem + ' The source was added to this blog only.')
+    return written
 
 
 PART = re.compile(r'[a-f0-9]{8}')
@@ -921,7 +965,7 @@ def restore(root, ident, seen, part, index):
 
 # The page's desk routes (POST /api/desk-<action>), under management's studio lock.
 ROUTES = {
-    'create': CREATE | {'operation', 'first_pass', 'angles'},
+    'create': CREATE | {'operation', 'first_pass', 'angles', 'keep'},
     'save': {'id', 'seen', 'part', 'text', 'session'},
     'restore': {'id', 'seen', 'part', 'index'},
     'note': {'id', 'seen', 'part', 'note'},
@@ -945,7 +989,7 @@ ROUTES = {
     'retry': {'id'},
     'outline-save': {'id', 'seen', 'sections'},
     'draft': {'id', 'seen'},
-    'sources': {'id', 'sources', 'library'},
+    'sources': {'id', 'sources', 'library', 'keep'},
 }
 SESSION = re.compile(r'[a-f0-9]{16,64}')
 
@@ -959,6 +1003,9 @@ def _create(root, data):
     if not isinstance(operation, str) or not re.fullmatch('[a-f0-9]{32}', operation):
         raise ValueError('A new blog needs its page operation ID. Reload and retry.')
     picked = data.pop('angles', None)  # The angles this start came from, let go once made.
+    if picked is not None:
+        desk_jobs._angles_path(root, picked)  # A bad ID is refused before anything is made.
+    kept = _kept_ids(data.pop('keep', []), data.get('sources') or [])
     choice = data.pop('first_pass', 'leave')
     if choice not in desk_jobs.FIRST_PASSES:
         raise ValueError('Choose tighten, reshape or leave it as it is.')
@@ -967,7 +1014,7 @@ def _create(root, data):
     if choice == 'reshape' and not data.get('style'):
         raise ValueError('Choose a kind of post to reshape the draft to.')
     path = studio.inside(root, '.blog-runs', 'desk-creations', operation + '.json')
-    fingerprint = studio.digest(json.dumps([data, choice], sort_keys=True).encode())
+    fingerprint = studio.digest(json.dumps([data, choice, kept], sort_keys=True).encode())
     if path.exists():
         prior = studio.read_json(path)
         if prior['fingerprint'] != fingerprint:
@@ -975,18 +1022,30 @@ def _create(root, data):
         return desk_jobs.view(root, prior['id'])
     made = create(root, data)
     studio.write_json(path, {'id': made['id'], 'fingerprint': fingerprint})
-    desk_jobs.prune_angles(root)
-    if picked:
-        desk_jobs.forget_angles(root, picked)
+    keep_problem = keep_in_library(root, made['id'], kept)
+    try:
+        desk_jobs.prune_angles(root)
+        if picked:
+            desk_jobs.forget_angles(root, picked)
+    except Exception:  # noqa: BLE001 - letting angles go never fails a blog just made.
+        pass
     problem = None
     if read_start(root, made['id']):
         desk_jobs.begin(root, made['id'])  # A problem is kept on the start, with Retry.
-        return {**desk_jobs.view(root, made['id']), 'first_pass_problem': None}
+        return {
+            **desk_jobs.view(root, made['id']),
+            'first_pass_problem': None,
+            'keep_problem': keep_problem,
+        }
     try:
         desk_jobs.first_pass(root, made['id'], 1, choice)
     except ValueError as error:
         problem = str(error)  # The blog is on the desk either way; the page says why.
-    return {**desk_jobs.view(root, made['id']), 'first_pass_problem': problem}
+    return {
+        **desk_jobs.view(root, made['id']),
+        'first_pass_problem': problem,
+        'keep_problem': keep_problem,
+    }
 
 
 def dispatch(root, action, data):

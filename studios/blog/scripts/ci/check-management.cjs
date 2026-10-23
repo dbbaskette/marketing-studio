@@ -3272,11 +3272,10 @@ async function deskTopicStart(){
   assert.equal(t.requests.filter(r=>r.url==='/api/desk-angles').at(-1).data.replaces,asked.operation,'the earlier angles are let go');
   await t.tick();await descendants(t.nodes().filter(n=>/\bdesk-angle\b/.test(n.className))[1]).find(n=>n.textContent==='Use this angle').listeners.click();
   await t.submit();
-  assert.deepEqual(t.requests.find(r=>r.url==='/api/source-keep').data,{id:'s1',keep:true},'a kept file goes to the library at Start');
-  assert.ok(t.requests.findIndex(r=>r.url==='/api/source-keep')<t.requests.findIndex(r=>r.url==='/api/desk-create'));
+  assert.ok(!t.requests.some(r=>r.url==='/api/source-keep'),'the server keeps a ticked file once the blog is made, not the page before');
   const made=t.requests.find(r=>r.url==='/api/desk-create').data;
   const latest=t.requests.filter(r=>r.url==='/api/desk-angles').at(-1).data.operation;
-  assert.deepEqual({...made,operation:undefined},{operation:undefined,style:'how-to',tone:'Warm',sources:['s1'],library:[],title:'Why jobs stop',way:'topic',length:'deep',research_from:{sites:['https://docs.example.com'],web:true},angles:latest,point:'Most stops are timeouts.',audience:'Developers'});
+  assert.deepEqual({...made,operation:undefined},{operation:undefined,style:'how-to',tone:'Warm',sources:['s1'],library:[],keep:['s1'],title:'Why jobs stop',way:'topic',length:'deep',research_from:{sites:['https://docs.example.com'],web:true},angles:latest,point:'Most stops are timeouts.',audience:'Developers'});
   assert.equal(t.f.run('studio.screen'),'desk');
 }
 async function deskOutlineStarts(){
@@ -3399,8 +3398,8 @@ async function deskAddSource(){
   assert.deepEqual(asked.files,[{link:'https://docs.example.com/guide',purpose:'material'}]);assert.equal(asked.keep,false);assert.equal(asked.purpose,'material');
   assert.ok(t.sheet().some(n=>/^Link · /.test(n.textContent)),'the row says it is a link');
   await t.click('Add to this draft');
-  assert.deepEqual(t.requests.filter(r=>r.url==='/api/source-keep').map(r=>r.data),[{id:'s1',keep:true}],'only the ticked file goes to the library, on Add');
-  assert.deepEqual(t.requests.find(r=>r.url==='/api/desk-sources').data,{id:'desk-blog',sources:['s1','link1'],library:[{id:'lib1',role:'messaging',location:'hub'}]});
+  assert.ok(!t.requests.some(r=>r.url==='/api/source-keep'));
+  assert.deepEqual(t.requests.find(r=>r.url==='/api/desk-sources').data,{id:'desk-blog',sources:['s1','link1'],library:[{id:'lib1',role:'messaging',location:'hub'}],keep:['s1']},'only the ticked file is kept, by the server, on Add');
   assert.equal(t.f.get('sheet').hidden,true);
   assert.ok(t.nodes().some(n=>n.textContent==='Notes'),'the sources panel names the new source');
   // On a phone the start still runs in its three steps.

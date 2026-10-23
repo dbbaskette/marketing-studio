@@ -408,19 +408,66 @@ def checked_google(root, entry):
     }
 
 
+# Two-part endings under which a site's own name is the third label from the right.
+SHARED_SUFFIXES = frozenset({'co', 'com', 'net', 'org', 'gov', 'ac', 'edu', 'ltd', 'plc'})
+
+
+def _site_of(host):
+    """The registrable part of a host, near enough without a public suffix list:
+    www.example.com and docs.example.com are example.com; shop.example.co.uk is
+    example.co.uk."""
+    labels = (host or '').lower().rstrip('.').split('.')
+    keep = 3 if len(labels) > 2 and len(labels[-1]) == 2 and labels[-2] in SHARED_SUFFIXES else 2
+    return '.'.join(labels[-keep:])
+
+
+class LinkScope:
+    """Where one added link may go: its own site, such as example.com to www.example.com,
+    and nowhere else. The fetch checks the address is public on every hop."""
+
+    def __init__(self, link):
+        from urllib.parse import urlsplit
+
+        self.site = _site_of(urlsplit(link).hostname)
+
+    def refuse(self, url, redirected_from=None):
+        from urllib.parse import urlsplit
+
+        host = (urlsplit(url).hostname or '').lower()
+        if _site_of(host) == self.site:
+            return None
+        return (
+            'That link moves to another site, '
+            + (host or 'an unknown address')
+            + ', so it was not read. Add that page’s own link instead.'
+        )
+
+
+LINK_WORDS = {
+    blog_library.CREDENTIALS: 'Use a public https link without a password or port.',
+    blog_library.CREDENTIALS_IN_QUERY: 'Use a public https link without a password or port.',
+    blog_library.PRIVATE: 'That link points to a private address, so it cannot be read.',
+    blog_library.REDIRECTS: 'That link redirects too many times, so it was not read.',
+}
+
+
 def checked_link(root, entry):
     """A public web page as one more file: read now through the library's fetch (public
-    addresses only, a deadline, redirects checked), saved like an upload beside the files."""
+    addresses only on every hop, a deadline, redirects kept on its own site), saved like
+    an upload beside the files. Reads the network: call it before taking the studio lock."""
     import html
     import re
     from urllib.parse import urlsplit
 
     link = entry.get('link') if set(entry) == {'link'} else None
     if not isinstance(link, str) or not re.fullmatch(r'https://\S{4,2000}', link.strip()):
-        raise ValueError('Add a public https link, such as https://docs.example.com/guide.')
+        raise ValueError('Use a public https link without a password or port.')
     link = link.strip()
     parts = urlsplit(link)
-    content, origin, kind = blog_library.fetch(link, parts.scheme + '://' + parts.netloc + '/')
+    try:
+        content, origin, kind = blog_library.fetch(link, LinkScope(link))
+    except ValueError as error:
+        raise ValueError(LINK_WORDS.get(str(error), str(error))) from None
     suffix = '.html' if 'html' in kind else '.txt' if kind.startswith('text/') else ''
     if not suffix:
         raise ValueError('This page has no readable text version. Save it as a file and upload it.')
@@ -434,9 +481,8 @@ def checked_link(root, entry):
         if suffix == '.html'
         else None
     )
-    title = (
-        ' '.join(html.unescape(found.group(1).decode('utf-8', 'replace')).split()) if found else ''
-    )
+    title = found.group(1).decode('utf-8', 'replace') if found else ''
+    title = ' '.join(html.unescape(re.sub(r'<[^>]*>', ' ', title)).split())
     title = (title or (parts.netloc + parts.path).rstrip('/'))[:300]
     try:
         filename = clean_filename(title + suffix)
@@ -481,7 +527,25 @@ def save_upload(root, staging, checked, purpose, author=None, analyze=True, libr
         )
 
 
-def upload_files(root, data, staging, ledger, fingerprint):
+def read_ahead(root, data):
+    """Read the links and Google Docs of a files upload before the studio lock is taken,
+    so a slow page or Doc never holds the workspace. {position: checked entry}."""
+    files = data.get('files')
+    if not isinstance(files, list) or len(files) > MAX_UPLOAD_FILES:
+        return {}
+    found = {}
+    for at, entry in enumerate(files):
+        if not isinstance(entry, dict) or 'linkedin' in entry:
+            return {}  # An export expands into several entries: read it all under the lock.
+        bare = {key: value for key, value in entry.items() if key != 'purpose'}
+        if 'link' in entry:
+            found[at] = checked_link(root, bare)
+        elif 'google' in entry:
+            found[at] = checked_google(root, bare)
+    return found
+
+
+def upload_files(root, data, staging, ledger, fingerprint, prepared=None):
     """Several files under one operation. Material is pinned by a run and stays out of
     the reference library and the Team Hub unless the person keeps it. A LinkedIn export
     expands into its About text and its articles, and an author named for the request is
@@ -529,7 +593,7 @@ def upload_files(root, data, staging, ledger, fingerprint):
                 found['purposes'] = [found.get('purpose', purpose)]
                 checked.append(found)
         else:
-            found = (
+            found = (prepared or {}).get(len(checked)) or (
                 checked_google
                 if 'google' in entry
                 else checked_link
@@ -720,8 +784,9 @@ def source_shared(root, ident):
     return False
 
 
-def source_keep(root, data):
-    """Move an unpinned upload without changing its ID, bytes, original or example role."""
+def source_keep(root, data, blog=None):
+    """Move an unpinned upload without changing its ID, bytes, original or example role.
+    `blog` is a desk blog made in the same request that keeps it: its own pin is moved too."""
     if set(data) - {'id', 'keep'} or type(data.get('keep')) is not bool:
         raise ValueError('Choose whether to keep this file in the team library.')
     directory, record = studio.item(root, 'sources', str(data.get('id', '')))
@@ -733,6 +798,8 @@ def source_keep(root, data):
         return {'id': record['id'], 'kept': keep}
     for path in studio.inside(root, 'articles').glob('*/session.json'):
         article = studio.read_json(path)
+        if blog and article.get('id') == blog:
+            continue
         if record['id'] in article.get('material', []) or any(
             selected.get('source_id') == record['id'] for selected in article.get('sources', [])
         ):
@@ -787,7 +854,7 @@ def source_keep(root, data):
     return result
 
 
-def upload(root, data):
+def upload(root, data, prepared=None):
     if set(data) - {
         'operation',
         'filename',
@@ -822,7 +889,7 @@ def upload(root, data):
             'This upload has an uncertain result. Inspect retained work before retrying; do not create a duplicate.'
         )
     if 'files' in data:
-        return upload_files(root, data, staging, ledger, fingerprint)
+        return upload_files(root, data, staging, ledger, fingerprint, prepared)
     checked = checked_upload(root, data)
     text, status, title = checked['text'], checked['status'], checked['title']
     purpose = data.get('purpose', 'reference')
@@ -1832,6 +1899,8 @@ def _dispatch(root, route, data):
         import blog_delete
 
         return blog_delete.delete(root, data)
+    # A page or Google Doc added to a files upload is read before the lock is taken.
+    prepared = read_ahead(root, data) if route == 'upload' else None
     with studio.locked(root):
         if route == 'run-settings':
             from blog_runner import settings
@@ -1920,7 +1989,7 @@ def _dispatch(root, route, data):
         if route == 'retry-sync':
             return retry_receipt(root, adapter, data)
         if route == 'upload':
-            return upload(root, data)
+            return upload(root, data, prepared)
         if route == 'source-keep':
             return source_keep(root, data)
         if route == 'source-role':
