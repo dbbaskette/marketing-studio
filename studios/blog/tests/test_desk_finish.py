@@ -541,5 +541,63 @@ class FactsTests(ToolCase):
         self.assertEqual(self.draft()['sections'][1]['text'], 'Second text, as the source says.')
 
 
+class HeadlineTests(ToolCase):
+    def alternatives(self):
+        return {
+            'titles': [
+                {'text': 'How the parser reads twelve files', 'why': 'Concrete.'},
+                {'text': '# A parser worth knowing', 'why': 'Shorter.'},
+                {'text': 'Two\nlines', 'why': ''},
+                {'text': 'A synthetic title', 'why': 'Same as now.'},
+            ],
+            'openings': [
+                {'text': 'Twelve files, three seconds.', 'why': 'Starts with the number.'},
+                {'text': 'Intro\n\n## Extra', 'why': ''},
+            ],
+        }
+
+    def test_guidance_is_the_headline_lab_and_the_brief(self):
+        job = self.queue('headline')
+        self.assertEqual(job['kind'], 'finish-headline')
+        self.assertIn('Headline and hook lab', job['guidance'])
+        self.assertIn('"titles"', job['guidance'])
+        self.assertEqual(job['payload']['title'], 'A synthetic title')
+
+    def test_alternatives_land_grouped_by_part_and_odd_ones_are_dropped(self):
+        self.ready(self.queue('headline'), self.alternatives())
+        shown = self.shown('headline')
+        self.assertEqual(shown['dropped'], 3)
+        self.assertEqual(
+            [(i['group'], i['after']) for i in shown['items']],
+            [
+                ('title', 'How the parser reads twelve files'),
+                ('title', 'A parser worth knowing'),
+                ('opening', 'Twelve files, three seconds.'),
+            ],
+        )
+        self.assertTrue(all(i['whole'] and i['present'] for i in shown['items']))
+
+    def test_applying_one_alternative_skips_the_others_for_that_part(self):
+        self.ready(self.queue('headline'), self.alternatives())
+        job = self.shown('headline')['job']
+        self.act('apply', seen=self.seen, job=job, items=[{'id': 'p2'}])
+        self.assertEqual(self.draft()['title'], 'A parser worth knowing')
+        self.assertEqual(
+            desk.versions(self.root, self.ident, 'title')[0]['text'], 'A synthetic title'
+        )
+        states = [i['state'] for i in self.shown('headline')['items']]
+        self.assertEqual(states, ['skipped', 'applied', 'open'])
+
+    def test_a_part_changed_since_makes_its_alternatives_no_longer_fit(self):
+        self.ready(self.queue('headline'), self.alternatives())
+        desk.save(self.root, self.ident, self.seen, 'opening', 'Typed a new opening.')
+        items = self.shown('headline')['items']
+        self.assertEqual([i['present'] for i in items], [True, True, False])
+        with self.assertRaisesRegex(ValueError, 'no longer in this part'):
+            self.act(
+                'apply', seen=self.seen + 1, job=self.shown('headline')['job'], items=[{'id': 'p3'}]
+            )
+
+
 if __name__ == '__main__':
     unittest.main()
