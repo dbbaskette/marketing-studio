@@ -3028,7 +3028,7 @@ async function deskJourneys(){
     if(url==='/api/desk-save'){if(refuse)return {__http:409,error:'This draft changed since you opened it. Reload to see the latest.'};view={...view,revision:view.revision+1,versions:{[data.part]:1},sections:view.sections.map(s=>s.id===data.part?{...s,text:data.text}:s)};return view;}
     if(url==='/api/desk-note'){view={...view,working:{id:'j1',kind:'desk-section',status:'working',part:data.part,note:data.note}};return view;}
     if(url==='/api/desk-selection'){view={...view,working:{id:'j2',kind:'desk-selection',status:'queued',part:data.part}};return view;}
-    if(url==='/api/desk-revise'){view={...view,working:{id:'j3',kind:'desk-revise-all',status:'queued',part:'sections'}};return view;}
+    if(url==='/api/desk-revise'){view={...view,working:{id:'j3',kind:'desk-revise-all',status:'queued',busy:true,part:'aaaaaaaa',chain:'c1',index:0,total:3}};return view;}
     if(url==='/api/desk-stop'){view={...view,working:null};return view;}
     if(url.startsWith('/api/desk-versions?'))return {id:'desk-blog',part:'aaaaaaaa',versions:[{at:new Date().toISOString(),source:'rewrite',text:'First old text here.',words:4}]};
     if(url==='/api/desk-restore'){view={...view,revision:view.revision+1,sections:view.sections.map(s=>s.id===data.part?{...s,text:'First old text here.'}:s)};return view;}
@@ -3104,7 +3104,14 @@ async function deskJourneys(){
   const whole=nodes().find(n=>n.id==='desk-whole-note');whole.value='Tighten throughout.';whole.listeners.input();
   await nodes().find(n=>n.textContent==='Revise the draft').listeners.click();
   assert.deepEqual(requests.find(r=>r.url==='/api/desk-revise').data,{id:'desk-blog',seen:view.revision,note:'Tighten throughout.'});
-  for(const card of nodes().filter(n=>n.className.split(' ').includes('desk-part')&&/^[a-c]{8}$/.test(n.dataset.part)))assert.match(card.className,/desk-working/);
+  // Section by section: the one being revised works, and the toolbar says which of how many.
+  assert.match(card('aaaaaaaa').className,/desk-working/);assert.doesNotMatch(card('bbbbbbbb').className,/desk-working/);
+  assert.equal(f.get('above').textContent,'Revising section 1 of 3…');
+  // A section that failed is named once the note is done; the others were revised.
+  view={...view,working:null,jobs:[{id:'j3',kind:'desk-revise-all',status:'failed',chain:'c1',index:0,total:3,error:'The assistant stopped.'},{id:'j4',kind:'desk-revise-all',status:'ready',chain:'c1',index:1,total:3,applied:true,error:''}],chain:{total:3,revised:2,working:false,problems:[{part:'aaaaaaaa',heading:'First part',error:'The assistant stopped.'}]}};
+  f.set('next',view);await f.run('studio.desk.view=next;sDeskRender(studio.desk)');
+  assert.ok(nodes().some(n=>n.textContent==='Revised 2 of 3 sections for your note. These were not:'));
+  assert.ok(nodes().some(n=>n.textContent==='“First part”: The assistant stopped.'));
   // The page-wide poll leaves the desk to its own: it never redraws another screen over it.
   const before=f.get('studio-page').children.length;await f.run('sPoll()');assert.equal(f.get('studio-page').children.length,before);assert.equal(f.get('title').textContent,'A synthetic title');
   // Word comparison: a long text falls back to the two texts side by side.

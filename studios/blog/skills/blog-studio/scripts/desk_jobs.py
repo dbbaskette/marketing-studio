@@ -31,11 +31,17 @@ WRITE_AGAIN = (
     'sources. Keep the kind of post and the tone. Return only the section text.'
 )
 WHOLE = (
-    'Revise every section in sections for this note, with the full draft as context. Return '
+    'Revise every section in sections for this pass, with the full draft as context. Return '
     'JSON in content: a list of {"id": ..., "text": ...} for every section in sections, in '
-    'order, ids unchanged, each text without its heading. Return a section the note does not '
+    'order, ids unchanged, each text without its heading. Return a section the pass does not '
     'touch exactly as it was.'
 )
+REVISE_ONE = (
+    'The author left a note for the whole draft. The draft is revised one section at a time, '
+    'in order: revise part.text, this section only, for the note. The whole draft is in '
+    "sections for context; return only this section's text, without its heading."
+)
+FIRST_PASS_LIMIT = 180_000  # The whole draft as JSON must come back in one result.
 TIGHTEN = (
     'Tighten and proofread the draft, section by section. Fix spelling, grammar, '
     'punctuation and consistency, and cut needless words; change nothing else.'
@@ -162,26 +168,30 @@ def _request(label, text, scope):
     )
 
 
-def _queue(root, ident, draft, seen, kind, payload, guidance, meta):
-    parts = (
-        [section['id'] for section in draft['sections']]
-        if meta['part'] == 'sections'
-        else [meta['part']]
-    )
-    desk.checked(draft, seen, parts)
-    _busy(root, ident)
-    meta = {**meta, 'seen': seen}
+def _create(root, ident, kind, payload, guidance, meta):
     result = tool_jobs.create(
         root,
         secrets.token_hex(16),
         kind,
         payload,
         guidance,
-        basis={'desk': seen},
+        basis=None,
         metadata={'article': ident, 'desk': meta},
     )
     blog_runner.engine(root).wake.set()
     return result
+
+
+def _queue(root, ident, draft, seen, kind, payload, guidance, meta, parts=None):
+    if parts is None:
+        parts = (
+            [section['id'] for section in draft['sections']]
+            if meta['part'] == 'sections'
+            else [meta['part']]
+        )
+    desk.checked(draft, seen, parts)
+    _busy(root, ident)
+    return _create(root, ident, kind, payload, guidance, {**meta, 'seen': seen})
 
 
 def section(root, ident, seen, part, note):
@@ -299,33 +309,75 @@ def _whole_payload(draft, extra, note=''):
     }
 
 
+def _revise_one(root, ident, draft, section, note, chain, order):
+    """Queue the whole-draft note's job for one section, with the whole draft as context."""
+    extra, shared = _context(root, draft)
+    payload = {**_whole_payload(draft, extra, note), 'part': section}
+    guidance = _guide('desk-edit.md') + '\n\n' + REVISE_ONE + '\n\n' + shared + '\n' + RETURN
+    guidance += _request(
+        'NOTE FOR THE WHOLE DRAFT',
+        note,
+        'Apply it to part.text as a surgical edit and change nothing it does not require.',
+    )
+    meta = {
+        'part': section['id'],
+        'action': 'revise',
+        'basis': fingerprint(section['text']),
+        'chain': chain,
+        'order': order,
+        'index': order.index(section['id']),
+    }
+    return draft, payload, guidance, meta
+
+
 def revise_all(root, ident, seen, note):
-    """One job that revises every written section for a note on the whole draft."""
+    """A note for the whole draft: each written section revised in order, one job each, with
+    the whole draft as context. The next is queued when one settles; a section that fails is
+    reported and the rest still go ahead; Stop ends it."""
     if not isinstance(note, str) or len(note) > 4000:
         raise ValueError('Keep the note to 4,000 characters.')
     note = note.strip()
     if not note:
         raise ValueError('Write the note for the whole draft.')
     draft = desk.read(root, ident)
-    if not any(s['text'] for s in draft['sections']):
+    order = [s['id'] for s in draft['sections'] if s['text']]
+    if not order:
         raise ValueError('This draft has no written sections to revise.')
-    extra, shared = _context(root, draft)
-    guidance = _guide('desk-edit.md') + '\n\n' + WHOLE + '\n\n' + shared + '\n' + RETURN
-    guidance += _request(
-        'NOTE FOR THE WHOLE DRAFT',
-        note,
-        'Apply it to each section as a surgical edit and change nothing it does not require.',
+    first = desk._part(draft, order[0])
+    _, payload, guidance, meta = _revise_one(
+        root, ident, draft, first, note, secrets.token_hex(8), order
     )
-    return _queue(
-        root,
-        ident,
-        draft,
-        seen,
-        'desk-revise-all',
-        _whole_payload(draft, extra, note),
-        guidance,
-        {'part': 'sections', 'action': 'revise', 'basis': _sections_basis(draft)},
-    )
+    return _queue(root, ident, draft, seen, 'desk-revise-all', payload, guidance, meta, order)
+
+
+def _next(root, job):
+    """After one section of a whole-draft note, queue the next written section, if any."""
+    meta = job['metadata']['desk']
+    ident = job['metadata']['article']
+    try:
+        draft = desk.read(root, ident)
+    except ValueError:
+        return
+    if any(busy(other) for other in jobs(root, ident) if other['id'] != job['id']):
+        return  # Something else is under way; the chain ends here.
+    for part in meta['order'][meta['index'] + 1 :]:
+        try:
+            section = desk._part(draft, part)
+        except ValueError:
+            continue  # A section removed meanwhile is skipped.
+        if section['text']:
+            _, payload, guidance, step = _revise_one(
+                root, ident, draft, section, job['payload']['note'], meta['chain'], meta['order']
+            )
+            _create(
+                root,
+                ident,
+                'desk-revise-all',
+                payload,
+                guidance,
+                {**step, 'seen': draft['revision']},
+            )
+            return
 
 
 FIRST_PASSES = ('tighten', 'reshape', 'leave')
@@ -345,6 +397,12 @@ def first_pass(root, ident, seen, choice):
         )
     if choice == 'reshape' and not draft.get('style'):
         raise ValueError('Choose a kind of post to reshape the draft to.')
+    written = [{'id': s['id'], 'text': s['text']} for s in draft['sections'] if s['text']]
+    if len(json.dumps(written, ensure_ascii=False)) > FIRST_PASS_LIMIT:
+        raise ValueError(
+            'This draft is too long for one first pass. Edit it section by section: a note '
+            'on each section, or a note for the whole draft.'
+        )
     import manuscript_editor
 
     extra, shared = _context(root, draft, length=choice == 'reshape')
@@ -353,7 +411,7 @@ def first_pass(root, ident, seen, choice):
         if choice == 'tighten'
         else RESHAPE
     )
-    guidance = rule + '\n\n' + WHOLE.replace('for this note', 'for this pass') + '\n\n'
+    guidance = rule + '\n\n' + WHOLE + '\n\n'
     guidance += shared + '\n' + RETURN
     return _queue(
         root,
@@ -423,7 +481,7 @@ def _apply(root, ident, draft, job):
     if not isinstance(content, str) or not content.strip():
         raise ValueError('The result was empty. Run it again.')
     kind = job['kind']
-    if kind == 'desk-section':
+    if kind in ('desk-section', 'desk-revise-all'):
         part = meta['part']
         try:
             section = desk._part(draft, part)
@@ -433,7 +491,13 @@ def _apply(root, ident, draft, job):
             raise ValueError(STALE)
         text = _clean(content, section['heading'])
         desk.checked_text(part, text)
-        desk.keep(root, ident, part, section['text'], 'rewrite')
+        desk.keep(
+            root,
+            ident,
+            part,
+            section['text'],
+            'rewrite' if kind == 'desk-section' else 'revise-all',
+        )
         section['text'] = text
         _merge_gaps(draft, result)
         return desk._write(root, ident, draft, [part])
@@ -466,7 +530,7 @@ def _apply(root, ident, draft, job):
         desk._set(draft, part, updated)
         _merge_gaps(draft, result)
         return desk._write(root, ident, draft, [part])
-    # The whole draft: every section as it was asked about, and every returned id known.
+    # The first pass: every section as it was asked about, and every returned id known.
     if _sections_basis(draft) != meta.get('basis'):
         raise ValueError(STALE)
     found = _section_texts(content)
@@ -482,9 +546,8 @@ def _apply(root, ident, draft, job):
             continue
         desk.checked_text(item['id'], text)
         changes[item['id']] = text
-    source = 'revise-all' if kind == 'desk-revise-all' else 'first-pass'
     for part, text in changes.items():
-        desk.keep(root, ident, part, sections[part]['text'], source)
+        desk.keep(root, ident, part, sections[part]['text'], 'first-pass')
         sections[part]['text'] = text
     _merge_gaps(draft, result)
     return desk._write(root, ident, draft, list(changes))
@@ -507,6 +570,8 @@ def _settle(root, job):
         job.update(applied=False, error=str(error)[:1000])
     job['settled_at'] = studio.now()
     tool_jobs.write(root, job)
+    if job['kind'] == 'desk-revise-all':
+        _next(root, job)
     return ident
 
 
@@ -515,6 +580,14 @@ def ended(root, job):
     Returns the blog to record as a team decision once the lock is released, or None."""
     if unsettled(job):
         return _settle(root, job)
+    if job.get('status') == 'failed' and job['kind'] == 'desk-revise-all':
+        from team_workspace import guard
+
+        try:
+            guard(root, job['metadata']['article'])
+        except ValueError:
+            return None
+        _next(root, job)  # A section that failed is reported; the others still go ahead.
     return None
 
 
@@ -567,6 +640,10 @@ def _row(job):
         'busy': busy(job),
         'part': meta.get('part'),
         'action': meta.get('action'),
+        # A whole-draft note: which section of how many, and the run of jobs it belongs to.
+        'chain': meta.get('chain'),
+        'index': meta.get('index'),
+        'total': len(meta['order']) if meta.get('order') else None,
         # The person's own note, shown on the card while the job works on it.
         'note': (job.get('payload') or {}).get('note') or '',
         'applied': job.get('applied'),
@@ -584,7 +661,7 @@ def view(root, ident):
 
     draft = desk.read(root, ident)
     directory, record = studio.item(root, 'articles', ident)
-    rows = [_row(job) for job in jobs(root, ident)][-10:]
+    rows = [_row(job) for job in jobs(root, ident)][-60:]
     style_name = None
     if draft.get('style'):
         try:
@@ -603,10 +680,30 @@ def view(root, ident):
             )
         except (ValueError, OSError, KeyError):
             names.append({'id': entry['source_id'], 'name': 'Unavailable source', 'purposes': []})
+    last = rows[-1] if rows else None
+    chain = None
+    if last and last['chain']:
+        steps = [row for row in rows if row['chain'] == last['chain']]
+        headings = {s['id']: s['heading'] for s in draft['sections']}
+        chain = {
+            'total': last['total'],
+            'revised': sum(1 for row in steps if row['applied']),
+            'working': any(row['busy'] for row in steps),
+            'problems': [
+                {
+                    'part': row['part'],
+                    'heading': headings.get(row['part'], ''),
+                    'error': row['error'],
+                }
+                for row in steps
+                if row['error'] and not row['busy']
+            ],
+        }
     return {
         **draft,
         'markdown': desk.join(draft),
         'jobs': rows,
+        'chain': chain,
         'working': next((row for row in reversed(rows) if row['busy']), None),
         'versions': desk.counts(root, ident),
         'run': studio.inside(directory, blog_runner.STATE).is_file(),

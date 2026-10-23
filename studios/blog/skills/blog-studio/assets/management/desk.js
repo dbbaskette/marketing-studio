@@ -100,7 +100,7 @@ async function sDesk(ident){
 function sDeskCurrent(held){return studio.screen==='desk'&&studio.desk===held;}
 // Whether the job under way changes this part: its own section, or every section.
 function sDeskWorking(held,part){const job=held.view.working;if(!job)return false;return job.part===part||job.part==='sections'&&part!=='title'&&part!=='opening';}
-function sDeskStatusWords(held){const job=held.view.working;if(!job)return '';return (DESK_DOING[job.kind]||'Working')+(job.kind==='desk-section'||job.kind==='desk-selection'?' '+deskPartName(held.view,job.part):'')+'…';}
+function sDeskStatusWords(held){const job=held.view.working;if(!job)return '';if(job.kind==='desk-revise-all'&&job.total)return 'Revising section '+(job.index+1)+' of '+job.total+'…';return (DESK_DOING[job.kind]||'Working')+(job.kind==='desk-section'||job.kind==='desk-selection'?' '+deskPartName(held.view,job.part):'')+'…';}
 function sDeskRender(held){
   const view=held.view,editable=access.actions.edit;
   const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');await navigator.clipboard.writeText(held.view.markdown);sToast('Markdown copied.');});
@@ -123,6 +123,8 @@ function sDeskRender(held){
 // What the last job left: a result not applied, or a job that failed.
 function sDeskProblem(held){
   const last=(held.view.jobs||[]).at(-1);if(!last||held.dismissed===last.id)return null;
+  const chain=held.view.chain;
+  if(last.chain&&chain){if(chain.working||!chain.problems.length)return null;return sAdd(sNode('div','decision-notice desk-problem'),sAdd(sNode('div',''),sNode('p','','Revised '+chain.revised+' of '+chain.total+' sections for your note. These were not:'),sAdd(sNode('ul','gap-items'),...chain.problems.map(problem=>sNode('li','','“'+problem.heading+'”: '+problem.error)))),sButton('Dismiss',()=>{held.dismissed=last.id;sDeskRender(held);}));}
   const failed=last.status==='failed'||last.status==='ready'&&last.applied===false;if(!failed||!last.error)return null;
   return sAdd(sNode('div','decision-notice desk-problem'),sNode('p','',(last.status==='failed'?'The last change could not finish: ':'The last change was not applied: ')+last.error),sButton('Dismiss',()=>{held.dismissed=last.id;sDeskRender(held);}));
 }

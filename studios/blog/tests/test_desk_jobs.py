@@ -129,18 +129,21 @@ class DeskJobTests(DeskJobCase):
 
 
 class WholeDraftTests(DeskJobCase):
-    def test_a_whole_draft_note_sends_every_section_and_the_note(self):
+    def test_a_whole_draft_note_starts_with_the_first_section_and_the_whole_draft(self):
         job = desk_jobs.revise_all(self.root, self.ident, 1, 'Tighten throughout.')
         saved = self.saved(job)
         self.assertEqual(saved['kind'], 'desk-revise-all')
         self.assertEqual(
             [s['text'] for s in saved['payload']['sections']], ['First text.', 'Second text.']
         )
+        self.assertEqual(saved['payload']['part']['id'], self.part)
         self.assertEqual(saved['payload']['opening'], 'An opening paragraph.')
         self.assertEqual(saved['payload']['note'], 'Tighten throughout.')
-        self.assertIn('ids unchanged', saved['guidance'])
+        self.assertIn('this section only', saved['guidance'])
         self.assertIn('verbatim', saved['guidance'])
         self.assertIn('"""\nTighten throughout.\n"""', saved['guidance'])
+        meta = saved['metadata']['desk']
+        self.assertEqual((meta['index'], len(meta['order'])), (0, 2))
 
     def test_an_empty_whole_draft_note_is_refused(self):
         with self.assertRaisesRegex(ValueError, 'Write the note for the whole draft'):
@@ -280,21 +283,57 @@ class SettleTests(DeskJobCase):
         )
         self.assertIs(self.saved(job)['applied'], False)
 
-    def test_a_whole_draft_revision_lands_in_one_revision_with_a_version_each(self):
-        job = desk_jobs.revise_all(self.root, self.ident, 1, 'Tighten.')
+    def run_chain(self, results):
+        """Run a whole-draft note through a fake worker: one result per section, in order;
+        an exception stands for a section that failed."""
+        calls = []
+
+        def worker(engine, payload, guidance, **options):
+            calls.append(payload['part']['id'])
+            found = results[len(calls) - 1]
+            if isinstance(found, Exception):
+                raise found
+            return {'content': found, 'notes': '', 'gaps': []}
+
+        engine = blog_runner.Engine(self.root, worker=worker)
+        desk_jobs.revise_all(self.root, self.ident, 1, 'Tighten.')
+        for _ in results:
+            tool_jobs.once(engine)
+        return calls
+
+    def test_a_whole_draft_note_revises_each_section_in_order(self):
         ids = [s['id'] for s in self.made['sections']]
-        self.ready(
-            job,
-            '```json\n'
-            + json.dumps([{'id': ids[0], 'text': 'One.'}, {'id': ids[1], 'text': 'Second text.'}])
-            + '\n```',
-        )
-        desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(self.run_chain(['One.', 'Two.']), ids)
         draft = desk.read(self.root, self.ident)
-        self.assertEqual([s['text'] for s in draft['sections']], ['One.', 'Second text.'])
-        self.assertEqual(draft['revision'], 2)
+        self.assertEqual([s['text'] for s in draft['sections']], ['One.', 'Two.'])
         self.assertEqual(self.versions(ids[0])[0]['source'], 'revise-all')
-        self.assertEqual(self.versions(ids[1]), [])  # Unchanged: no version.
+        self.assertEqual(self.versions(ids[1])[0]['text'], 'Second text.')
+        shown = desk_jobs.view(self.root, self.ident)
+        self.assertEqual((shown['chain']['revised'], shown['chain']['total']), (2, 2))
+        self.assertIsNone(shown['working'])
+
+    def test_a_section_that_fails_leaves_the_others_done(self):
+        ids = [s['id'] for s in self.made['sections']]
+        self.assertEqual(self.run_chain([ValueError('The assistant stopped.'), 'Two.']), ids)
+        draft = desk.read(self.root, self.ident)
+        self.assertEqual([s['text'] for s in draft['sections']], ['First text.', 'Two.'])
+        chain = desk_jobs.view(self.root, self.ident)['chain']
+        self.assertEqual(chain['revised'], 1)
+        self.assertEqual(chain['problems'][0]['heading'], 'First part')
+        self.assertRegex(chain['problems'][0]['error'], 'assistant stopped')
+
+    def test_progress_says_which_section_of_how_many(self):
+        desk_jobs.revise_all(self.root, self.ident, 1, 'Tighten.')
+        working = desk_jobs.view(self.root, self.ident)['working']
+        self.assertEqual((working['index'], working['total']), (0, 2))
+
+    def test_stop_ends_a_whole_draft_note(self):
+        job = desk_jobs.revise_all(self.root, self.ident, 1, 'Tighten.')
+        desk_jobs.stop(self.root, self.ident, job['id'])
+        self.assertEqual(
+            [j['status'] for j in desk_jobs.jobs(self.root, self.ident)], ['cancelled']
+        )
+        self.assertIsNone(desk_jobs.view(self.root, self.ident)['working'])
 
     def test_a_first_pass_keeps_first_pass_versions(self):
         job = desk_jobs.first_pass(self.root, self.ident, 1, 'tighten')
@@ -302,8 +341,8 @@ class SettleTests(DeskJobCase):
         desk_jobs.settle(self.root, self.ident)
         self.assertEqual(self.versions()[0]['source'], 'first-pass')
 
-    def test_a_whole_draft_result_with_an_unknown_id_changes_nothing(self):
-        job = desk_jobs.revise_all(self.root, self.ident, 1, 'Tighten.')
+    def test_a_first_pass_result_with_an_unknown_id_changes_nothing(self):
+        job = desk_jobs.first_pass(self.root, self.ident, 1, 'tighten')
         self.ready(
             job, json.dumps([{'id': self.part, 'text': 'One.'}, {'id': 'ffffffff', 'text': 'X'}])
         )
@@ -313,11 +352,22 @@ class SettleTests(DeskJobCase):
         self.assertEqual(draft['sections'][0]['text'], 'First text.')
         self.assertRegex(self.saved(job)['error'], 'sections this draft does not have')
 
-    def test_a_malformed_whole_draft_result_is_refused_readably(self):
-        job = desk_jobs.revise_all(self.root, self.ident, 1, 'Tighten.')
+    def test_a_malformed_first_pass_result_is_refused_readably(self):
+        job = desk_jobs.first_pass(self.root, self.ident, 1, 'tighten')
         self.ready(job, 'Here is your draft!')
         desk_jobs.settle(self.root, self.ident)
         self.assertRegex(self.saved(job)['error'], 'list of sections')
+
+    def test_a_first_pass_over_one_result_is_refused_up_front(self):
+        made = desk.create(
+            self.root,
+            {
+                'title': 'Long',
+                'manuscript': '## A\n\n' + 'word ' * 20_000 + '\n\n## B\n\n' + 'more ' * 20_000,
+            },
+        )
+        with self.assertRaisesRegex(ValueError, 'too long for one first pass'):
+            desk_jobs.first_pass(self.root, made['id'], 1, 'tighten')
 
     def test_gaps_become_the_drafts_gaps_once(self):
         job = desk_jobs.section(self.root, self.ident, 1, self.part, 'Add the date.')
