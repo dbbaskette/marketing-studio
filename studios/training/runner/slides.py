@@ -232,7 +232,7 @@ COUNTED = re.compile(r'^\d+ problems to fix:$')
 NOISE = re.compile(r'^\((?:node:\d+\)|Use `node )')   # Node's own warnings, not the tool's
 LEFT = re.compile(r'The (?:preview|review) deck is in Drive \((\S+)\); retry with '
                   r'(?:--renderer google )?--file-id (\S+?)\.$')
-PREVIEWING = threading.Lock()   # one preview at a time, whoever asks
+PREVIEWING = threading.Lock()   # one LibreOffice render at a time, whoever asks
 GUIDES = {'design guidance': 'design.md', 'composition guidance': 'compositions.md',
           'drafting guidance': 'draft.md', 'gallery': 'gallery.md',
           'review guidance': 'review.md'}   # under REFERENCES
@@ -241,6 +241,26 @@ GALLERY = REFERENCES / 'gallery'    # one drawn slide for each relation, as JSON
 READ_MOST = 60_000      # characters of one guidance file that are handed on
 RELATIONS = ('order', 'dependency', 'hierarchy', 'membership', 'contrast', 'parallel',
              'overlap', 'quantity', 'none')   # what a slide can show, as the tool names them
+
+
+POOL = 4   # the Google preview decks Harness Slides keeps, unless HARNESS_PREVIEW_POOL_SIZE says
+_POOLS: dict = {}
+_POOLS_HELD = threading.Lock()
+
+
+def pool_size() -> int:
+    """How many Google previews the slides tool's pool takes at once: its own
+    HARNESS_PREVIEW_POOL_SIZE when that is a whole number of 1 or more, else POOL."""
+    try:
+        size = int(os.environ.get('HARNESS_PREVIEW_POOL_SIZE') or POOL)
+    except ValueError:
+        return POOL
+    return size if size >= 1 else POOL
+
+
+def _pooled(size: int) -> threading.BoundedSemaphore:
+    with _POOLS_HELD:
+        return _POOLS.setdefault(size, threading.BoundedSemaphore(size))
 
 
 class TooOld(WorkspaceError):
@@ -415,6 +435,17 @@ class Slides:
                                  'JSON it should. Check that it is installed whole.')
         return found
 
+    @contextlib.contextmanager
+    def turn(self, renderer: str):
+        """This process's turn at a renderer: LibreOffice renders one at a time under one
+        profile, and so does Google Drive for a tool without a preview pool; one with
+        `google-preview-pool` renders up to `pool_size()` at once, each in a deck of its
+        pool."""
+        held = _pooled(pool_size()) if renderer == 'drive' \
+            and self.has('google-preview-pool') else PREVIEWING
+        with held:
+            yield
+
     def version(self) -> str:
         """The runtime's version, as it states it."""
         return self._call('--version').strip().rpartition(' ')[2]
@@ -494,7 +525,7 @@ class Slides:
         # A tool with a preview pool reuses its own few preview decks: no file is named.
         named = bool(file_id) and renderer == 'drive' and not self.has('google-preview-pool')
         rest = [*(['--slide', slide] if slide else []), *_bound(design, section)]
-        with PREVIEWING, _new(folder):
+        with self.turn(renderer), _new(folder):
             try:
                 shown = self._json(*args, *(['--file-id', file_id] if named else []), *rest)
             except Refused as refusal:
@@ -755,7 +786,7 @@ class Slides:
                 '--design-project', str(design)]
         if renderer == 'drive':
             args += ['--renderer', 'google', *(['--file-id', file_id] if file_id else [])]
-        with PREVIEWING:
+        with self.turn(renderer or 'local'):
             made = self._json(*args, '--json')
         return {**made, 'fileId': made.get('fileId'), 'url': made.get('url')}
 

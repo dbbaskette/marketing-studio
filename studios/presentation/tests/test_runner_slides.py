@@ -225,6 +225,8 @@ class CommandTests(unittest.TestCase):
         self.ran.clear()
 
     def pretend(self, command, cwd=None):
+        if command[2:] == ['version']:   # what it can do: nothing listed, and not counted
+            return 0, '{}', ''
         self.ran.append(command)
         if command[2:] == ['--version']:
             return 0, f'Harness Slides {slides.MINIMUM}\n', ''
@@ -315,9 +317,10 @@ class CommandTests(unittest.TestCase):
 
     def test_a_tool_with_a_preview_pool_is_never_told_which_drive_file_to_reuse(self):
         shown = {'deck': '/d/p/deck.pptx', 'deckSha256': 'abc', 'slides': []}
-        self.answers = [(0, json.dumps({'version': '0.17.0',
-                                        'capabilities': ['google-preview-pool']}), ''),
-                        (0, json.dumps(shown), '')]
+        self.answers = [(0, json.dumps(shown), '')]
+        # What its `version` listed: the preview pool.
+        self.slides._capabilities = frozenset({'google-preview-pool'})
+        self.slides._asked_capabilities = True
         self.slides.preview('/d/c', '/d/p', 'drive', file_id='file-1')
         self.assertEqual(self.ran[-1][2:], ['compose', 'preview', '--file', '/d/c', '--output',
                                             '/d/p', '--renderer', 'google'])
@@ -587,6 +590,74 @@ class PreviewsOneAtATimeTests(Deck):
         for thread in threads:
             thread.join()
         return failures
+
+    def pooled(self):
+        """The slides tool lists its Google preview pool."""
+        self.tool.extra = {'google-preview-pool'}
+        self.slides._capabilities, self.slides._asked_capabilities = None, False
+        self.assertTrue(self.slides.has('google-preview-pool'))
+
+    def by_renderer(self) -> dict:
+        """The most renders in progress together, for each renderer, as the tool saw them."""
+        busy, most, guard, run = {}, {}, threading.Lock(), self.slides.run
+
+        def counted(command, cwd=None):
+            renderer = command[command.index('--renderer') + 1] \
+                if '--renderer' in command else None
+            with guard:
+                busy[renderer] = busy.get(renderer, 0) + 1
+                most[renderer] = max(most.get(renderer, 0), busy[renderer])
+            try:
+                return run(command, cwd)
+            finally:
+                with guard:
+                    busy[renderer] -= 1
+        self.slides.run = counted
+        return most
+
+    def test_google_previews_overlap_on_a_pool(self):
+        self.pooled()
+        self.tool.pause = 0.2
+
+        def pooled_preview(compiled, folder):
+            return self.slides.preview(compiled, folder, 'drive')
+
+        self.assertEqual(self.side_by_side(pooled_preview), [])
+        self.assertEqual(self.tool.at_once, 4)
+        self.tool.at_once = 0
+
+        def smaller_pool(compiled, folder):
+            return self.slides.preview(compiled, folder, 'drive')
+
+        with mock.patch.dict(os.environ, {'HARNESS_PREVIEW_POOL_SIZE': '2'}):
+            self.assertEqual(self.side_by_side(smaller_pool), [])
+        self.assertEqual(self.tool.at_once, 2)
+        for wrong in ('0', '-3', 'many', ''):
+            with mock.patch.dict(os.environ, {'HARNESS_PREVIEW_POOL_SIZE': wrong}):
+                self.assertEqual(slides.pool_size(), slides.POOL, wrong)
+        self.assertEqual(slides.POOL, 4)
+
+    def test_local_renders_never_overlap(self):
+        self.pooled()
+        self.tool.pause = 0.15
+        most = self.by_renderer()
+
+        def mixed(compiled, folder):
+            number = int(str(folder).rpartition('-')[2])
+            return self.slides.preview(compiled, folder, 'local' if number % 2 else 'drive')
+
+        self.assertEqual(self.side_by_side(mixed), [])
+        self.assertEqual(most.get('local'), 1, most)
+        self.assertEqual(most.get('google'), 2, most)
+
+    def test_without_a_pool_drive_is_one_at_a_time(self):
+        self.tool.pause = 0.05
+
+        def unpooled(compiled, folder):
+            return self.slides.preview(compiled, folder, 'drive')
+
+        self.assertEqual(self.side_by_side(unpooled), [])
+        self.assertEqual(self.tool.at_once, 1)
 
     def test_two_previews_at_once_never_overlap(self):
         self.tool.pause = 0.05
