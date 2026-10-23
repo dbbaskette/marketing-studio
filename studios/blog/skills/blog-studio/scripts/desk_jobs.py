@@ -461,3 +461,62 @@ def settle(root, ident):
         job['settled_at'] = studio.now()
         tool_jobs.write(root, job)
     return landed
+
+
+def _row(job):
+    """A desk job as the page shows it: what it works on and how it went."""
+    meta = (job.get('metadata') or {}).get('desk') or {}
+    return {
+        'id': job['id'],
+        'kind': job['kind'],
+        'status': job['status'],
+        'part': meta.get('part'),
+        'action': meta.get('action'),
+        'applied': job.get('applied'),
+        'error': job.get('error') or '',
+        'created_at': job.get('created_at'),
+        'started_at': job.get('started_at'),
+        'finished_at': job.get('finished_at'),
+    }
+
+
+def view(root, ident):
+    """The desk as the page reads it: the draft, its Markdown, its jobs and version counts."""
+    import editorial
+    import styles
+
+    draft = desk.read(root, ident)
+    directory, record = studio.item(root, 'articles', ident)
+    rows = [_row(job) for job in jobs(root, ident)][-10:]
+    style_name = None
+    if draft.get('style'):
+        try:
+            style_name = styles.pinned(root, draft['style'])['name']
+        except (ValueError, OSError, KeyError):
+            style_name = None
+    names = []
+    for entry in draft.get('sources', []):
+        try:
+            names.append(
+                {
+                    'id': entry['source_id'],
+                    'name': studio.item(root, 'sources', entry['source_id'])[1]['name'],
+                    'purposes': entry['purposes'],
+                }
+            )
+        except (ValueError, OSError, KeyError):
+            names.append({'id': entry['source_id'], 'name': 'Unavailable source', 'purposes': []})
+    return {
+        **draft,
+        'markdown': desk.join(draft),
+        'jobs': rows,
+        'working': next((row for row in reversed(rows) if row['status'] in ACTIVE), None),
+        'versions': desk.counts(root, ident),
+        'run': studio.inside(directory, blog_runner.STATE).is_file(),
+        'google': editorial.doc_link(record),
+        'publication': (record.get('editorial') or {}).get('publication_url') or None,
+        'style_name': style_name,
+        'source_names': names,
+        # The blog record's version, for Mark as published and Delete.
+        'expected': studio.digest((directory / 'session.json').read_bytes()),
+    }

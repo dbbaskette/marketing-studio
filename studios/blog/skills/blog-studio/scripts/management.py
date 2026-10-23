@@ -1836,6 +1836,10 @@ def _dispatch(root, route, data):
             import manuscript_editor
 
             return manuscript_editor.dispatch(root, route[7:], data)
+        if route.startswith('desk-'):
+            import desk
+
+            return desk.dispatch(root, route[5:], data)
         if route.startswith('run-'):
             from blog_runner import dispatch as run_dispatch
 
@@ -2044,8 +2048,8 @@ def dispatch(root, route, data):
         before(
             root,
             data.get('id')
-            if route.startswith(('run-', 'editor-'))
-            and route != 'run-create'
+            if route.startswith(('run-', 'editor-', 'desk-'))
+            and route not in ('run-create', 'desk-create')
             or route in ('schedule', 'tool-action', 'blog-delete', 'google-open')
             else None,
         )
@@ -2055,7 +2059,7 @@ def dispatch(root, route, data):
             # A tool result may be a job or a profile, whose IDs are not blogs: the blog
             # a tool worked on is the one the request named.
             ident = data.get('id')
-        elif route.startswith(('run-', 'editor-')) or route in (
+        elif route.startswith(('run-', 'editor-', 'desk-')) or route in (
             'schedule',
             'google-start',
             'google-open',
@@ -2214,6 +2218,21 @@ def view(root, name, query):
 
                 return prepublish.report(root, arg('id'), whole(arg('title_limit', 80)))
             return advanced_tools.overview(root, arg('id'), whole(arg('offset', 0)))
+    if name in ('desk', 'desk-versions'):
+        import desk
+        import desk_jobs
+
+        with studio.locked(root):
+            if name == 'desk-versions':
+                ident = arg('id')
+                desk.read(root, ident)
+                return {
+                    'id': ident,
+                    'part': arg('part'),
+                    'versions': desk.versions(root, ident, arg('part')),
+                }
+            desk_jobs.settle(root, arg('id'))
+            return desk_jobs.view(root, arg('id'))
     if name == 'manuscript':
         import manuscript_editor
 

@@ -307,5 +307,138 @@ class VersionTests(DeskCase):
         self.assertEqual(desk.read(self.root, made['id'])['title'], 'A synthetic title')
 
 
+class RouteTests(DeskCase):
+    def setUp(self):
+        super().setUp()
+        import blog_runner
+
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+
+    def post(self, route, data):
+        import management
+
+        return management.dispatch(self.root, route, data)
+
+    def get(self, name, **query):
+        import management
+
+        return management.view(self.root, name, {key: [value] for key, value in query.items()})
+
+    def start(self, **extra):
+        return self.post(
+            'desk-create',
+            {'operation': 'a' * 32, 'title': 'Synthetic', 'manuscript': DRAFT, **extra},
+        )
+
+    def test_create_then_save_through_the_page_routes(self):
+        made = self.start()
+        self.assertEqual(made['revision'], 1)
+        self.assertEqual(made['markdown'], DRAFT)
+        self.assertIsNone(made['first_pass_problem'])
+        part = made['sections'][0]['id']
+        saved = self.post(
+            'desk-save',
+            {'id': made['id'], 'seen': 1, 'part': part, 'text': 'Typed.', 'session': 'b' * 16},
+        )
+        self.assertEqual(saved['revision'], 2)
+        self.assertEqual(saved['versions'], {part: 1})
+        shown = self.get('desk-versions', id=made['id'], part=part)
+        self.assertEqual(shown['versions'][0]['text'], 'First text.')
+        restored = self.post(
+            'desk-restore', {'id': made['id'], 'seen': 2, 'part': part, 'index': 0}
+        )
+        self.assertEqual(restored['sections'][0]['text'], 'First text.')
+
+    def test_the_same_create_returns_the_same_blog(self):
+        first, again = self.start(), self.start()
+        self.assertEqual(first['id'], again['id'])
+        with self.assertRaisesRegex(ValueError, 'request changed'):
+            self.start(tone='Other')
+
+    def test_unknown_fields_are_refused(self):
+        made = self.start()
+        with self.assertRaisesRegex(ValueError, 'does not take'):
+            self.post(
+                'desk-save', {'id': made['id'], 'seen': 1, 'part': 'title', 'text': 'x', 'voice': 1}
+            )
+        with self.assertRaisesRegex(ValueError, 'does not take'):
+            self.start(profile='someone')
+        with self.assertRaisesRegex(ValueError, 'Unknown desk action'):
+            self.post('desk-publish', {'id': made['id']})
+
+    def test_a_first_pass_is_queued_on_create(self):
+        made = self.start(first_pass='tighten')
+        self.assertEqual(made['working']['kind'], 'desk-first-pass')
+        with self.assertRaisesRegex(ValueError, 'already working'):
+            self.post(
+                'desk-note',
+                {'id': made['id'], 'seen': 1, 'part': made['sections'][0]['id'], 'note': 'x'},
+            )
+        stopped = self.post('desk-stop', {'id': made['id'], 'job': made['working']['id']})
+        self.assertIsNone(stopped['working'])
+        self.assertEqual(stopped['jobs'][0]['status'], 'cancelled')
+
+    def test_a_first_pass_that_cannot_run_still_opens_the_desk(self):
+        made = self.post(
+            'desk-create',
+            {
+                'operation': 'c' * 32,
+                'title': 'Flat',
+                'manuscript': 'Just prose.',
+                'first_pass': 'tighten',
+            },
+        )
+        self.assertRegex(made['first_pass_problem'], 'section by section')
+        self.assertEqual(made['opening'], 'Just prose.')
+
+    def test_reading_the_desk_settles_a_ready_job(self):
+        import tool_jobs
+
+        made = self.start()
+        part = made['sections'][0]['id']
+        queued = self.post(
+            'desk-note', {'id': made['id'], 'seen': 1, 'part': part, 'note': 'More.'}
+        )
+        job = tool_jobs.read(self.root, queued['working']['id'])
+        job.update(status='ready', result={'content': 'First text, more.', 'notes': '', 'gaps': []})
+        tool_jobs.write(self.root, job)
+        shown = self.get('desk', id=made['id'])
+        self.assertEqual(shown['sections'][0]['text'], 'First text, more.')
+        self.assertIsNone(shown['working'])
+        self.assertIs(shown['jobs'][-1]['applied'], True)
+
+    def test_a_selection_and_a_whole_draft_note_go_through_the_routes(self):
+        made = self.start()
+        part = made['sections'][0]['id']
+        shown = self.post(
+            'desk-selection',
+            {'id': made['id'], 'seen': 1, 'part': part, 'text': 'First', 'action': 'shorten'},
+        )
+        self.assertEqual(shown['working']['kind'], 'desk-selection')
+        self.post('desk-stop', {'id': made['id'], 'job': shown['working']['id']})
+        shown = self.post('desk-revise', {'id': made['id'], 'seen': 1, 'note': 'Warmer.'})
+        self.assertEqual(shown['working']['kind'], 'desk-revise-all')
+
+    def test_a_job_on_another_blog_cannot_be_stopped_here(self):
+        made, other = (
+            self.start(),
+            self.post(
+                'desk-create',
+                {
+                    'operation': 'd' * 32,
+                    'title': 'Other',
+                    'manuscript': DRAFT,
+                    'first_pass': 'tighten',
+                },
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, 'Choose a job on this blog'):
+            self.post('desk-stop', {'id': made['id'], 'job': other['working']['id']})
+
+    def test_a_blog_not_on_the_desk_has_no_desk_view(self):
+        with self.assertRaisesRegex(ValueError, 'Choose a blog'):
+            self.get('desk')
+
+
 if __name__ == '__main__':
     unittest.main()

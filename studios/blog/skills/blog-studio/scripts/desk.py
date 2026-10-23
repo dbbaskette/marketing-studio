@@ -96,6 +96,8 @@ def join(draft):
 
 
 def _paths(root, ident):
+    if not isinstance(ident, str):
+        raise ValueError('Choose a blog on the desk.')
     directory, _ = studio.item(root, 'articles', ident)
     return directory, studio.inside(directory, DESK, 'draft.json')
 
@@ -403,3 +405,96 @@ def restore(root, ident, seen, part, index):
     if type(index) is not int or not 0 <= index < len(found):
         raise ValueError('Choose a saved version.')
     return save(root, ident, seen, part, found[index]['text'], source='restore')
+
+
+# The page's desk routes (POST /api/desk-<action>), under management's studio lock.
+ROUTES = {
+    'create': CREATE | {'operation', 'first_pass'},
+    'save': {'id', 'seen', 'part', 'text', 'session'},
+    'restore': {'id', 'seen', 'part', 'index'},
+    'note': {'id', 'seen', 'part', 'note'},
+    'revise': {'id', 'seen', 'note'},
+    'selection': {'id', 'seen', 'part', 'text', 'action', 'instruction'},
+    'first-pass': {'id', 'seen', 'choice'},
+    'stop': {'id', 'job'},
+}
+SESSION = re.compile(r'[a-f0-9]{16,64}')
+
+
+def _create(root, data):
+    """Create once per page operation: the same request again returns the same blog."""
+    import desk_jobs
+
+    data = dict(data)
+    operation = data.pop('operation', '')
+    if not isinstance(operation, str) or not re.fullmatch('[a-f0-9]{32}', operation):
+        raise ValueError('A new blog needs its page operation ID. Reload and retry.')
+    choice = data.pop('first_pass', 'leave')
+    if choice not in desk_jobs.FIRST_PASSES:
+        raise ValueError('Choose tighten, reshape or leave it as it is.')
+    if choice == 'reshape' and not data.get('style'):
+        raise ValueError('Choose a kind of post to reshape the draft to.')
+    path = studio.inside(root, '.blog-runs', 'desk-creations', operation + '.json')
+    fingerprint = studio.digest(json.dumps([data, choice], sort_keys=True).encode())
+    if path.exists():
+        prior = studio.read_json(path)
+        if prior['fingerprint'] != fingerprint:
+            raise ValueError('This creation request changed. Open a new form.')
+        return desk_jobs.view(root, prior['id'])
+    made = create(root, data)
+    studio.write_json(path, {'id': made['id'], 'fingerprint': fingerprint})
+    problem = None
+    try:
+        desk_jobs.first_pass(root, made['id'], 1, choice)
+    except ValueError as error:
+        problem = str(error)  # The blog is on the desk either way; the page says why.
+    return {**desk_jobs.view(root, made['id']), 'first_pass_problem': problem}
+
+
+def dispatch(root, action, data):
+    import desk_jobs
+    from team_workspace import guard
+
+    if action not in ROUTES:
+        raise ValueError('Unknown desk action.')
+    if not isinstance(data, dict) or set(data) - ROUTES[action]:
+        raise ValueError('This request has fields the desk does not take.')
+    if action == 'create':
+        return _create(root, data)
+    ident = data.get('id')
+    if not isinstance(ident, str):
+        raise ValueError('Choose a blog on the desk.')
+    read(root, ident)
+    guard(root, ident)
+    seen = data.get('seen')
+    if action == 'save':
+        session = data.get('session')
+        if session is not None and (not isinstance(session, str) or not SESSION.fullmatch(session)):
+            raise ValueError('Reload the desk to start a new editing session.')
+        save(root, ident, seen, data.get('part'), data.get('text'), session=session)
+    elif action == 'restore':
+        restore(root, ident, seen, data.get('part'), data.get('index'))
+    elif action == 'note':
+        desk_jobs.section(root, ident, seen, data.get('part'), data.get('note', ''))
+    elif action == 'revise':
+        desk_jobs.revise_all(root, ident, seen, data.get('note', ''))
+    elif action == 'selection':
+        desk_jobs.selection(
+            root,
+            ident,
+            seen,
+            data.get('part'),
+            data.get('text'),
+            data.get('action'),
+            data.get('instruction', ''),
+        )
+    elif action == 'first-pass':
+        desk_jobs.first_pass(root, ident, seen, data.get('choice'))
+    elif action == 'stop':
+        import blog_runner
+        import tool_jobs
+
+        if not any(job['id'] == data.get('job') for job in desk_jobs.jobs(root, ident)):
+            raise ValueError('Choose a job on this blog.')
+        tool_jobs.control(root, data['job'], 'cancel', blog_runner.engine(root))
+    return desk_jobs.view(root, ident)
