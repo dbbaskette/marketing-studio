@@ -60,12 +60,7 @@ RESHAPE = (
     'name, quotation and link, and the author’s stance. Add no claim the sources do not '
     'support.'
 )
-RETURN = (
-    'Return the writing in content and your notes apart from it: in evidence, each material '
-    'claim with its source ID and exact passage; in gaps, each thing the author must supply '
-    'before publishing, such as a release date or a link. Source IDs and editorial '
-    'placeholders go there, never in content.'
-)
+RETURN = blog_runner.WRITING_NOTES  # Evidence and gaps in notes, never in the prose.
 STALE = 'The draft changed while this was being written. Run it again.'
 GAPS = 50
 
@@ -305,7 +300,18 @@ def section(root, ident, seen, part, note):
         **extra,
     }
     edit = bool(note and found['text'])
-    guidance = (_guide('desk-edit.md') if edit else WRITE_AGAIN) + '\n\n' + shared
+    if edit:
+        rule = _guide('desk-edit.md')
+    else:
+        # Written from its brief: the desk's writing rule, then the article guide.
+        rule = _guide('desk-write.md') + '\n\n' + WRITE_AGAIN
+        if found.get('brief'):
+            rule += ' part.brief says what this section must do.'
+        rule += '\n\n' + _guide('blog-write.md')
+        research, said = _research_extra(root, ident)
+        payload.update(research)
+        rule += said
+    guidance = rule + '\n\n' + shared
     guidance += '\n' + RETURN
     if note:
         guidance += _request(
@@ -611,6 +617,198 @@ def angles_view(root, operation):
     }
 
 
+# A start's outline and draft, written from the brief, the sources and any research.
+OUTLINE_JSON = (
+    'Return JSON in content: {"title": ..., "opening_brief": ..., "sections": [{"heading": '
+    '..., "brief": ...}]}, with at most 60 sections, each heading one line.'
+)
+SHAPE = (
+    'Shape an outline with the author from their notes in notes: propose the sections the '
+    'post needs, keeping their points, and their order where it works.'
+)
+DRAFT_TASK = (
+    'Write the whole draft from outline: the opening, then a `## ` heading for each outline '
+    'section, in order, each followed by its text. Return the Markdown in content.'
+)
+UNREADABLE_OUTLINE = 'The outline came back in a shape Blog Studio cannot read. Run it again.'
+
+
+def _research_extra(root, ident):
+    """What research before the writing found, for the payload, and a line saying so: the
+    reviewed bundle as runs read it, or a plain research report."""
+    from studio_core import research_contract
+
+    directory, _ = studio.item(root, 'articles', ident)
+    if (directory / 'research' / 'output.json').is_file():
+        facts, manifest = research_contract.read_bundle(directory / 'research')
+        return {
+            'research_bundle': {
+                'digest': manifest['digest'],
+                'brief': (directory / 'research' / 'brief.md').read_text(),
+                'findings': facts['findings'],
+                'facts': facts['facts'],
+                'sources': facts['sources'],
+            }
+        }, ''
+    report = studio.inside(directory, 'derived', 'blog-research.md')
+    if report.is_file():
+        return {'research': report.read_text()}, (
+            '\nThe research findings are in research: use them as they cite their sources.'
+        )
+    return {}, ''
+
+
+def _outline_basis(draft):
+    return fingerprint(
+        [draft['opening']]
+        + [[s['id'], s['heading'], s.get('brief', ''), s['text']] for s in draft['sections']]
+    )
+
+
+def outline_job(root, ident, start=False):
+    """Plan the post: a title, an opening brief and sections with briefs, from the point,
+    the sources, any research, and the author's own outline or notes."""
+    draft = desk.read(root, ident)
+    begun = desk.read_start(root, ident) or {}
+    notes = begun.get('notes') or ''
+    extra, shared = _context(root, draft, length=True)
+    research, said = _research_extra(root, ident)
+    payload = {
+        'title': draft['title'],
+        'brief': draft.get('brief') or {'point': '', 'audience': ''},
+        'notes': notes,
+        **extra,
+        **research,
+    }
+    task = ''
+    if notes and begun.get('way') == 'shape':
+        task = SHAPE
+    elif notes:
+        task = 'The author’s own outline or notes are in notes. ' + blog_runner.FROM_OUTLINE
+    guidance = _guide('desk-write.md') + ('\n\n' + task if task else '') + '\n\n'
+    guidance += _guide('blog-argument-outline.md') + '\n\n' + shared + said
+    guidance += '\n' + RETURN + '\n' + OUTLINE_JSON
+    return _queue(
+        root,
+        ident,
+        draft,
+        draft['revision'],
+        'desk-outline',
+        payload,
+        guidance,
+        {'part': 'sections', 'action': 'outline', 'basis': _outline_basis(draft), 'start': start},
+        parts=[],
+    )
+
+
+def draft_job(root, ident, seen, start=False):
+    """Write the whole draft from the outline: the opening and every section."""
+    draft = desk.read(root, ident)
+    if not draft['sections']:
+        raise ValueError('Make the outline first: add its sections on the Outline tab.')
+    extra, shared = _context(root, draft, length=True)
+    research, said = _research_extra(root, ident)
+    payload = {
+        'title': draft['title'],
+        'brief': draft.get('brief') or {'point': '', 'audience': ''},
+        'opening_brief': draft.get('opening_brief', ''),
+        'outline': [
+            {'heading': s['heading'], 'brief': s.get('brief', '')} for s in draft['sections']
+        ],
+        **extra,
+        **research,
+    }
+    guidance = _guide('desk-write.md') + '\n\n' + DRAFT_TASK + '\n\n'
+    guidance += _guide('blog-write.md') + '\n\n' + shared + said
+    guidance += '\n' + RETURN + '\n' + blog_runner.GAPS_OPEN
+    return _queue(
+        root,
+        ident,
+        draft,
+        seen,
+        'desk-draft',
+        payload,
+        guidance,
+        {'part': 'sections', 'action': 'draft', 'basis': _outline_basis(draft), 'start': start},
+    )
+
+
+def _read_outline(content):
+    try:
+        found = json.loads(_unfenced(content))
+    except ValueError:
+        raise ValueError(UNREADABLE_OUTLINE) from None
+    sections = found.get('sections') if isinstance(found, dict) else None
+    if not isinstance(sections, list) or not 1 <= len(sections) <= desk.SECTIONS:
+        raise ValueError(UNREADABLE_OUTLINE)
+    title, opening = found.get('title') or '', found.get('opening_brief') or ''
+    if not isinstance(title, str) or not isinstance(opening, str):
+        raise ValueError(UNREADABLE_OUTLINE)
+    rows = []
+    for item in sections:
+        heading = item.get('heading') if isinstance(item, dict) else None
+        brief = item.get('brief') or '' if isinstance(item, dict) else ''
+        if not isinstance(heading, str) or not heading.strip() or not isinstance(brief, str):
+            raise ValueError(UNREADABLE_OUTLINE)
+        rows.append(
+            {'heading': ' '.join(heading.split())[:200], 'brief': brief.strip()[: desk.BRIEF]}
+        )
+    return {
+        'title': ' '.join(title.split())[:500],
+        'opening_brief': opening.strip()[: desk.BRIEF],
+        'sections': rows,
+    }
+
+
+def _apply_outline(root, ident, draft, job, result):
+    if _outline_basis(draft) != job['metadata']['desk'].get('basis'):
+        raise ValueError('The draft changed while the outline was being made. Run it again.')
+    found = _read_outline(result.get('content') or '')
+    taken = {s['id'] for s in draft['sections']}
+    draft['sections'] = [{'id': desk._id(taken), **row, 'text': ''} for row in found['sections']]
+    draft['opening_brief'] = found['opening_brief']
+    draft['title'] = draft['title'] or found['title'] or 'Untitled'
+    _merge_gaps(draft, result)
+    return desk._write(root, ident, draft, [s['id'] for s in draft['sections']] + ['outline'])
+
+
+def _apply_draft(root, ident, draft, job, result):
+    if _outline_basis(draft) != job['metadata']['desk'].get('basis'):
+        raise ValueError(
+            'The outline or draft changed while the draft was being written. Write it again.'
+        )
+    text = (result.get('content') or '').replace('\r\n', '\n').strip()
+    found = desk.split(text)
+    if not found['sections']:
+        raise ValueError('The draft came back without its ## sections. Write it again.')
+    outline, taken = draft['sections'], {s['id'] for s in draft['sections']}
+    merged = []
+    for at, written in enumerate(found['sections']):
+        desk.checked_text('opening', written['text'])
+        planned = outline[at] if at < len(outline) else None
+        merged.append(
+            {
+                'id': planned['id'] if planned else desk._id(taken),
+                'heading': written['heading'][:200],
+                'brief': planned.get('brief', '') if planned else '',
+                'text': written['text'],
+            }
+        )
+    merged += outline[len(found['sections']) :]  # Left out: they stay as they were.
+    before = {s['id']: s['text'] for s in outline}
+    for section in merged:
+        if before.get(section['id']) and before[section['id']] != section['text']:
+            desk.keep(root, ident, section['id'], before[section['id']], 'draft')
+    if found['opening']:
+        desk.checked_text('opening', found['opening'])
+        if draft['opening'] and draft['opening'] != found['opening']:
+            desk.keep(root, ident, 'opening', draft['opening'], 'draft')
+        draft['opening'] = found['opening']
+    draft['sections'] = merged
+    _merge_gaps(draft, result)
+    return desk._write(root, ident, draft, [s['id'] for s in merged] + ['opening', 'outline'])
+
+
 FIRST_PASSES = ('tighten', 'reshape', 'leave')
 
 
@@ -720,6 +918,10 @@ def _apply(root, ident, draft, job):
     if not isinstance(content, str) or not content.strip():
         raise ValueError('The result was empty. Run it again.')
     kind = job['kind']
+    if kind == 'desk-outline':
+        return _apply_outline(root, ident, draft, job, result)
+    if kind == 'desk-draft':
+        return _apply_draft(root, ident, draft, job, result)
     if kind in ('desk-section', 'desk-revise-all'):
         part = meta['part']
         try:

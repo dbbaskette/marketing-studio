@@ -244,5 +244,183 @@ class AnglesTests(RouteCase):
             self.get('desk-angles', operation='c' * 32)
 
 
+OUTLINE_RESULT = {
+    'title': 'Suggested title',
+    'opening_brief': 'Say why stops cost work.',
+    'sections': [
+        {'heading': 'Why jobs stop', 'brief': 'The usual causes.'},
+        {'heading': 'Retry from a checkpoint', 'brief': 'How the retry keeps work.'},
+    ],
+}
+WRITTEN = """# Ignored title
+
+Jobs stop. Work should not.
+
+## Why jobs stop
+
+Usually a timeout.
+
+## Retry from a checkpoint
+
+The retry resumes.
+
+## A last word
+
+Try it.
+"""
+
+
+class WritingJobCase(StartCase):
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+
+    def saved(self, job):
+        return tool_jobs.read(self.root, job['id'])
+
+    def finish(self, job, content, **result):
+        saved = self.saved(job)
+        saved.update(
+            status='ready', result={'content': content, 'notes': '', **result}, finished_at='x'
+        )
+        tool_jobs.write(self.root, saved)
+        desk_jobs.ended(self.root, saved)
+        return self.saved(job)
+
+
+class OutlineJobTests(WritingJobCase):
+    def test_an_outline_reads_the_brief_the_outline_guide_the_length_and_the_notes_rule(self):
+        made = self.start(way='topic', point='Retries save work.', length='deep')
+        saved = self.saved(desk_jobs.outline_job(self.root, made['id']))
+        self.assertEqual(saved['kind'], 'desk-outline')
+        self.assertEqual(saved['payload']['brief']['point'], 'Retries save work.')
+        guidance = saved['guidance']
+        self.assertIn(desk_jobs._guide('desk-write.md'), guidance)
+        self.assertIn(desk_jobs._guide('blog-argument-outline.md'), guidance)
+        self.assertIn(blog_runner.LENGTHS['deep'], guidance)
+        self.assertIn(blog_runner.WRITING_NOTES, guidance)
+        self.assertIn('"opening_brief"', guidance)
+        self.assertNotIn('verbatim', guidance)
+
+    def test_notes_are_the_authors_structure_and_shape_is_proposed_from_them(self):
+        made = self.start(way='outline', outline='Some notes.\n\nMore notes.\n')
+        saved = self.saved(desk_jobs.outline_job(self.root, made['id']))
+        self.assertEqual(saved['payload']['notes'], 'Some notes.\n\nMore notes.\n')
+        self.assertIn(blog_runner.FROM_OUTLINE, saved['guidance'])
+        shaped = self.start(way='shape', outline=OUTLINE, title='Shaped')
+        guidance = self.saved(desk_jobs.outline_job(self.root, shaped['id']))['guidance']
+        self.assertIn('Shape an outline', guidance)
+        self.assertNotIn(blog_runner.FROM_OUTLINE, guidance)
+
+    def test_a_ready_outline_lands_as_sections_with_briefs(self):
+        made = self.start(way='topic', point='P.')
+        job = desk_jobs.outline_job(self.root, made['id'])
+        self.assertTrue(self.finish(job, json.dumps(OUTLINE_RESULT))['applied'])
+        draft = desk.read(self.root, made['id'])
+        self.assertEqual(draft['title'], 'A synthetic topic')  # The person's own title stays.
+        self.assertEqual(draft['opening_brief'], 'Say why stops cost work.')
+        self.assertEqual([s['brief'] for s in draft['sections']][1], 'How the retry keeps work.')
+        self.assertTrue(all(s['text'] == '' for s in draft['sections']))
+        self.assertIn('## Why jobs stop', (self.folder(made['id']) / 'DRAFT.md').read_text())
+
+    def test_a_malformed_outline_is_refused_readably(self):
+        for value in ({'sections': []}, {'sections': [{'heading': ' ', 'brief': 'x'}]}, 'Prose'):
+            with self.subTest(value=value):
+                made = self.start(way='topic', point='P.', title='T ' + str(len(str(value))))
+                job = desk_jobs.outline_job(self.root, made['id'])
+                content = value if isinstance(value, str) else json.dumps(value)
+                saved = self.finish(job, content)
+                self.assertFalse(saved['applied'])
+                self.assertRegex(saved['error'], 'outline came back')
+                self.assertEqual(desk.read(self.root, made['id'])['sections'], [])
+
+
+class DraftJobTests(WritingJobCase):
+    def outlined(self):
+        return desk.create(self.root, {'way': 'outline', 'outline': OUTLINE})
+
+    def test_a_draft_reads_the_outline_the_write_guide_and_the_open_gaps(self):
+        made = self.outlined()
+        saved = self.saved(desk_jobs.draft_job(self.root, made['id'], 1))
+        self.assertEqual(saved['kind'], 'desk-draft')
+        self.assertEqual(
+            saved['payload']['outline'][0],
+            {'heading': 'The problem', 'brief': 'Readers lose work when the job stops.'},
+        )
+        self.assertEqual(saved['payload']['opening_brief'], 'Why this matters.')
+        self.assertIn(desk_jobs._guide('blog-write.md'), saved['guidance'])
+        self.assertIn(blog_runner.GAPS_OPEN, saved['guidance'])
+        self.assertEqual(saved['metadata']['desk']['part'], 'sections')
+
+    def test_a_draft_keeps_the_outline_ids_and_briefs_by_order(self):
+        made = self.outlined()
+        before = desk.read(self.root, made['id'])['sections']
+        job = desk_jobs.draft_job(self.root, made['id'], 1)
+        self.assertTrue(self.finish(job, WRITTEN, gaps=['A release date.'])['applied'])
+        draft = desk.read(self.root, made['id'])
+        self.assertEqual([s['id'] for s in draft['sections']][:2], [s['id'] for s in before])
+        self.assertEqual(draft['sections'][0]['heading'], 'Why jobs stop')
+        self.assertEqual(draft['sections'][0]['brief'], before[0]['brief'])
+        self.assertEqual(draft['sections'][1]['text'], 'The retry resumes.')
+        self.assertEqual(draft['sections'][2]['brief'], '')  # An added section is kept.
+        self.assertEqual(draft['opening'], 'Jobs stop. Work should not.')
+        self.assertEqual(draft['title'], 'A synthetic outline')
+        self.assertEqual(draft['gaps'], ['A release date.'])
+
+    def test_a_section_the_draft_left_out_stays_as_it_was(self):
+        made = self.outlined()
+        job = desk_jobs.draft_job(self.root, made['id'], 1)
+        self.finish(job, '## Only one\n\nText.\n')
+        draft = desk.read(self.root, made['id'])
+        self.assertEqual([s['heading'] for s in draft['sections']], ['Only one', 'The fix'])
+
+    def test_writing_the_draft_again_keeps_each_text_it_replaces(self):
+        made = self.outlined()
+        part = made['sections'][0]['id']
+        desk.save(self.root, made['id'], 1, part, 'My own words.')
+        job = desk_jobs.draft_job(self.root, made['id'], 2)
+        self.finish(job, WRITTEN)
+        kept = desk.versions(self.root, made['id'], part)
+        self.assertEqual(kept[0]['text'], 'My own words.')
+        self.assertEqual(kept[0]['source'], 'draft')
+
+    def test_a_draft_needs_an_outline(self):
+        made = self.start(way='topic', point='P.')
+        with self.assertRaisesRegex(ValueError, 'Make the outline first'):
+            desk_jobs.draft_job(self.root, made['id'], 1)
+
+    def test_a_draft_without_sections_is_refused_readably(self):
+        made = self.outlined()
+        saved = self.finish(desk_jobs.draft_job(self.root, made['id'], 1), 'Just prose.')
+        self.assertFalse(saved['applied'])
+        self.assertRegex(saved['error'], 'without its ## sections')
+
+    def test_writing_a_section_from_its_brief(self):
+        made = self.outlined()
+        part = made['sections'][1]['id']
+        saved = self.saved(desk_jobs.section(self.root, made['id'], 1, part, ''))
+        self.assertIn(desk_jobs._guide('desk-write.md'), saved['guidance'])
+        self.assertIn('part.brief says what this section must do', saved['guidance'])
+        self.assertEqual(saved['payload']['part']['brief'], 'Retry from the last checkpoint.')
+
+    def test_a_run_from_an_outline_keeps_its_own_guidance(self):
+        found = blog_runner.create(
+            self.root,
+            {
+                'title': 'A run',
+                'goal': 'Explain.',
+                'audience': 'Readers',
+                'mode': 'from-outline',
+                'outline_text': OUTLINE,
+                'research': 'none',
+            },
+            approval='page',
+        )
+        _, _, guidance = blog_runner.job(self.root, found['id'])
+        self.assertIn('\n' + blog_runner.FROM_OUTLINE, guidance)
+        self.assertIn('\n' + blog_runner.WRITING_NOTES, guidance)
+        self.assertIn('\n' + blog_runner.GAPS_OPEN, guidance)
+
+
 if __name__ == '__main__':
     unittest.main()

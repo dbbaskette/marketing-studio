@@ -697,7 +697,16 @@ def save(root, ident, seen, part, text, source='save', session=None):
 
 
 PART = re.compile(r'[a-f0-9]{8}')
-SOURCES = ('save', 'rewrite', 'revise-all', 'selection', 'first-pass', 'finishing', 'restore')
+SOURCES = (
+    'save',
+    'rewrite',
+    'revise-all',
+    'selection',
+    'first-pass',
+    'finishing',
+    'restore',
+    'draft',
+)
 
 
 def _versions_path(root, ident, part):

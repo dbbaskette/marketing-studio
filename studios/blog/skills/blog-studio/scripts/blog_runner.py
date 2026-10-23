@@ -1892,6 +1892,18 @@ def carried(directory, run, payload, writing):
 
 
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'
+# Sentences a run's writing steps and the desk's writing jobs share.
+FROM_OUTLINE = (
+    'Use the supplied outline as authoritative structure. Preserve headings and order unless '
+    'explicitly asked to restructure.'
+)
+WRITING_NOTES = (
+    'Return the writing in content and your notes apart from it: in evidence, each material '
+    'claim with its source ID and exact passage; in gaps, each thing the author must supply '
+    'before publishing, such as a release date or a link. Source IDs and editorial '
+    'placeholders go there, never in content.'
+)
+GAPS_OPEN = 'The gaps already noted are in gaps: return those still open with any new ones.'
 
 
 def house_guide():
@@ -2093,21 +2105,14 @@ def job(root, ident):
     if run.get('mode') == 'ideas' and stage == 'outline':
         guidance += '\nReturn three distinct blog angles with audience, thesis, evidence needed and tradeoffs. Stop for the author to choose; do not draft the blog.'
     if run.get('mode') == 'from-outline':
-        guidance += '\nUse the supplied outline as authoritative structure. Preserve headings and order unless explicitly asked to restructure.'
+        guidance += '\n' + FROM_OUTLINE
     if stage in NOTED:
         payload['response_kind'] = 'writing-with-notes'
-        guidance += (
-            '\nReturn the writing in content and your notes apart from it: in evidence, each '
-            'material claim with its source ID and exact passage; in gaps, each thing the author '
-            'must supply before publishing, such as a release date or a link. Source IDs and '
-            'editorial placeholders go there, never in content.'
-        )
+        guidance += '\n' + WRITING_NOTES
     if stage in NOTED:
         payload['gaps'] = gaps(directory, stage)
         if stage == 'draft':
-            guidance += (
-                '\nThe gaps already noted are in gaps: return those still open with any new ones.'
-            )
+            guidance += '\n' + GAPS_OPEN
     if stage == 'package':
         guidance += (
             '\nList the gaps (in gaps) and any new ones under a '
