@@ -1126,12 +1126,16 @@ async function sLibrarySelection(action,ids,author=null){
 // readable posts make a voice, so an author with fewer is listed, unticked, with the reason;
 // an author who has a voice gets a new provisional revision of it. One permission for the
 // batch queues one learning job per ticked author; the sheet then follows each job.
+// Authors whose voice from an earlier batch on this page is still waiting or being learned.
+function sQueuedAuthors(){return new Set([...(studio.voiceBatch?.jobs||[]),...(studio.voicesQueued?.jobs||[])].filter(row=>['queued','working'].includes(row.job.status)).map(row=>row.author));}
 function sInBatch(ident){return !!studio.voiceBatch?.jobs?.some(row=>row.job.id===ident);}
 async function sVoicesForAuthors(listing=null){
   if(!listing&&studio.voiceBatch?.jobs?.length)return sVoicesBatch();
   const found=listing||await sTaskRead('Create voices for every author','library-authors');if(!found)return;
+  // An earlier batch's jobs are read again, so an author whose learning finished can be ticked.
+  for(const row of studio.voicesQueued?.jobs||[])if(['queued','working'].includes(row.job.status)){try{row.job=await api('tool-job?job='+row.job.id);}catch(error){/* shown as it was */}}
   // A batch names at most the server's limit: the first that many ready authors are ticked.
-  const most=found.batch_limit||100,ready=found.authors.filter(row=>row.ready);
+  const most=found.batch_limit||100,queued=sQueuedAuthors(),ready=found.authors.filter(row=>row.ready&&!queued.has(row.author));
   const held={operation:operationId(),ticked:new Set(ready.slice(0,most).map(row=>row.author))};
   const form=sNode('form','create-flow'),problem=sNode('p','problem'),list=sNode('ul','rows author-rows');problem.setAttribute('role','alert');
   const submit=sNode('button','button button-filled','Create voices');submit.type='submit';
@@ -1139,9 +1143,9 @@ async function sVoicesForAuthors(listing=null){
     if(chosen.length>most){submit.textContent='Tick at most '+most+' authors';submit.disabled=true;return;}
     submit.textContent=!chosen.length?'Create voices':fresh&&updates?'Create '+fresh+(fresh===1?' voice':' voices')+' and update '+updates:fresh?'Create '+fresh+(fresh===1?' voice':' voices'):'Update '+updates+(updates===1?' voice':' voices');submit.disabled=!chosen.length;};
   found.authors.forEach((row,n)=>{
-    const box=sNode('input','');box.type='checkbox';box.id='voices-author-'+n;box.value=row.author;box.checked=held.ticked.has(row.author);box.disabled=!row.ready;
+    const box=sNode('input','');box.type='checkbox';box.id='voices-author-'+n;box.value=row.author;box.checked=held.ticked.has(row.author);box.disabled=!row.ready||queued.has(row.author);
     box.addEventListener('change',()=>{if(box.checked)held.ticked.add(row.author);else held.ticked.delete(row.author);words();});
-    const label=sNode('label','check author-pick');label.htmlFor=box.id;label.append(box,sAdd(sNode('span','row-text'),sNode('strong','row-title',row.profile?'Update '+row.profile.name+'’s voice':row.author),sNode('span','row-says',row.posts+(row.posts===1?' post':' posts')+' · '+row.readable+' readable'+(row.ready?' · reads '+Math.min(row.readable,20)+', newest first':' · '+row.reason))));
+    const label=sNode('label','check author-pick');label.htmlFor=box.id;label.append(box,sAdd(sNode('span','row-text'),sNode('strong','row-title',row.profile?'Update '+row.profile.name+'’s voice':row.author),sNode('span','row-says',row.posts+(row.posts===1?' post':' posts')+' · '+row.readable+' readable'+(queued.has(row.author)?' · Queued: its voice is already being learned':row.ready?' · reads '+Math.min(row.readable,20)+', newest first':' · '+row.reason))));
     list.append(sAdd(sNode('li','row author-row'+(row.ready?'':' row-needs')),label,(row.suggestions||[]).length?sAuthorClarify(row):null));});
   words();
   const check=sNode('input');check.type='checkbox';check.id='voices-permission';const confirm=sNode('label','check');confirm.append(check,sNode('span','','I have permission to analyze this writing with my selected assistant.'));
@@ -1162,7 +1166,7 @@ function sAuthorClarify(row){
   const says=row.suggestions.map(other=>other.name+(other.voice?' (a voice)':' ('+other.posts+(other.posts===1?' post)':' posts)'))),problem=sNode('p','problem');problem.setAttribute('role','alert');
   const same=other=>sButton('Same person as '+other.name,()=>sOpenSheet('Same person?',sNode('p','','Name '+other.name+' as the author of '+row.author+'’s '+row.posts+(row.posts===1?' post':' posts')+'? '+(row.posts===1?'It then counts':'They then count')+' toward '+other.name+'’s voice.'),sNode('p','quiet','Each post’s author can be changed back in its Review details on the Team library.'),problem,
     sAdd(sNode('div','bar create-foot'),sButton('Yes, same person',async button=>busy(button,'Saving…',async()=>{try{const listing=await api('library-author-same',{author:row.author,into:other.name,expected:row.expected});sToast(row.author+'’s posts now name '+other.name+'.');await sVoicesForAuthors(listing);}catch(error){problem.textContent=error.message;}}),'filled'),sButton('Cancel',()=>sVoicesForAuthors()))));
-  const different=sButton('Different person',async button=>busy(button,'Saving…',async()=>{let listing=null;try{for(const other of row.suggestions)listing=await api('library-author-different',{author:row.author,other:other.name});await sVoicesForAuthors(listing);}catch(error){problem.textContent=error.message;}}));
+  const different=sButton('Different person',async button=>busy(button,'Saving…',async()=>{try{await sVoicesForAuthors(await api('library-author-different',{author:row.author,others:row.suggestions.map(other=>other.name)}));}catch(error){problem.textContent=error.message;}}));
   return sAdd(sNode('div','author-clarify'),sNode('p','quiet','Might be the same person as '+(says.length<2?says.join(''):says.slice(0,-1).join(', ')+' or '+says[says.length-1])+'.'),sAdd(sNode('div','bar'),...row.suggestions.map(same),different),problem);
 }
 function sJobWords(job){if(job.applied)return 'Saved: '+job.applied.status;return {queued:'Waiting to start',working:'Working with your selected assistant',ready:'Ready for your review',failed:'Stopped: '+(job.error||'something went wrong'),cancelled:'Cancelled'}[job.status]||job.status;}
@@ -1170,14 +1174,14 @@ async function sVoicesBatch(){
   const batch=studio.voiceBatch;if(!batch)return sVoicesForAuthors();
   for(const row of batch.jobs)if(!row.job.applied){try{row.job=await api('tool-job?job='+row.job.id);}catch(error){/* shown as it was */}}
   const list=sNode('ul','rows'),paint=()=>{list.replaceChildren();for(const row of batch.jobs){const job=row.job,open=['queued','working'].includes(job.status);
-    const item=sAdd(sNode('li','row'),sBead(job.applied?'done':job.status==='ready'?'review':['failed','cancelled'].includes(job.status)?'late':job.status==='working'?'current':'none'),sAdd(sNode('div','row-text'),sNode('h3','row-title',row.update?'Update '+(row.profile?.name||row.author)+'’s voice':row.author),sNode('p','row-says',sJobWords(job)+' · '+row.samples+(row.samples===1?' post':' posts'))));
+    const item=sAdd(sNode('li','row'),sBead(job.applied?'done':job.status==='ready'?'review':['failed','cancelled'].includes(job.status)?'late':job.status==='working'?'current':'none'),sAdd(sNode('div','row-text'),sNode('h3','row-title',row.update?'Update '+(row.profile?.name||row.author)+'’s voice':row.author),sNode('p','row-says',sJobWords(job)+' · '+row.samples+(row.samples===1?' post':' posts')+(row.already?' · from an earlier batch':''))));
     if(!open)item.append(sButton(job.status==='ready'&&!job.applied?'Review '+row.author+'’s voice':'Open',async()=>sToolJob(await api('tool-job?job='+job.id)),job.status==='ready'&&!job.applied?'filled':'quiet'));
     list.append(item);}};
   paint();
   const failed=(batch.failed||[]).length?sAdd(sNode('div','context-note batch-failed'),sNode('p','problem',(batch.jobs.length?'Queued: '+sSeries(batch.jobs.map(row=>row.author))+'. ':'Nothing was queued. ')+'Not queued:'),sAdd(sNode('ul','rows'),...batch.failed.map(row=>sAdd(sNode('li','row'),sAdd(sNode('div','row-text'),sNode('h3','row-title',row.author),sNode('p','row-says',row.reason)))))):null;
   sOpenSheet('Create voices for every author',sNode('p','','Each voice is learned in its own job. Review each one when it is ready: save it as provisional, or confirm it.'),failed,list,
     sNode('p','quiet','You can close this sheet; the jobs keep their place in the queue. Reopen it from Create voices for every author.'),
-    sAdd(sNode('div','bar create-foot'),sButton('Start another batch',()=>{studio.voiceBatch=null;return sVoicesForAuthors();}),sButton('Close',sCloseSheet)));
+    sAdd(sNode('div','bar create-foot'),sButton('Start another batch',()=>{const batch=studio.voiceBatch;studio.voiceBatch=null;studio.voicesQueued=batch;return sVoicesForAuthors(null);}),sButton('Close',sCloseSheet)));
   // Follow the jobs in place while this sheet stays open.
   const owner=studio.sheet,follow=async()=>{if(studio.sheet!==owner||!batch.jobs.some(row=>['queued','working'].includes(row.job.status)))return;try{for(const row of batch.jobs)if(['queued','working'].includes(row.job.status))row.job=await api('tool-job?job='+row.job.id);if(studio.sheet===owner){paint();setTimeout(follow,2000);}}catch(error){}};
   setTimeout(follow,2000);

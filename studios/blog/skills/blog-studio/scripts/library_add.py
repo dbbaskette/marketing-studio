@@ -656,7 +656,8 @@ def _newest(row):
     return (
         str(metadata.get('published') or ''),
         str(record.get('retrieved_at') or record.get('created_at') or ''),
-        str(row['id']),
+        # The Team Hub item where there is one, so a checkout keeps the item's place.
+        str((row.get('binding') or {}).get('item') or row['id']),
     )
 
 
@@ -744,9 +745,9 @@ def _suggestions(group, groups, voices, different):
         if key != group['key'] and words < set(key.split()):
             if _pair(group['key'], key) not in different:
                 found.append({'name': other['author'], 'posts': len(other['rows']), 'voice': None})
-    known = {s['name'] for s in found} | {g['author'] for g in groups}
+    known = {name_key(s['name']) for s in found} | {g['key'] for g in groups}
     for key, voice in voices.items():
-        if key != group['key'] and words < set(key.split()) and voice['name'] not in known:
+        if key != group['key'] and words < set(key.split()) and key not in known:
             if _pair(group['key'], key) not in different:
                 found.append(
                     {
@@ -836,15 +837,26 @@ def same_person(root, author, into, expected):
     return group, chosen['name']
 
 
-def mark_different(root, author, other):
-    """Remember that two suggested names are different people, so the pair is not suggested
-    again. Nothing about the posts changes."""
-    if not isinstance(author, str) or not isinstance(other, str):
-        raise ValueError('Name the two authors.')
-    group, chosen = _suggested(root, author, other)
-    if chosen is None:
-        raise ValueError(' '.join(other.split()) + ' is not suggested for ' + group['author'] + '.')
-    pairs = _different(root) | {_pair(group['key'], chosen['name'])}
+def mark_different(root, author, others):
+    """Remember that an author is a different person from each of the suggested names, so
+    those pairs are not suggested again. Every name is checked first and the pairs are saved
+    in one write: all of them or none. Nothing about the posts changes."""
+    if (
+        not isinstance(author, str)
+        or not isinstance(others, list)
+        or not others
+        or any(not isinstance(v, str) for v in others)
+    ):
+        raise ValueError('Name the author and the names they are not.')
+    added = set()
+    for other in others:
+        group, chosen = _suggested(root, author, other)
+        if chosen is None:
+            raise ValueError(
+                ' '.join(other.split()) + ' is not suggested for ' + group['author'] + '.'
+            )
+        added.add(_pair(group['key'], chosen['name']))
+    pairs = _different(root) | added
     studio.write_json(_pairs_path(root), {'schema': 1, 'different': sorted(map(list, pairs))})
     _pairs_path(root).chmod(0o600)
 
@@ -983,6 +995,24 @@ def create_voices(root, data):
     jobs, failed = [], []
     for group, rows in chosen:
         voice = group['voice']
+        profile = (
+            {key: voice.get(key) for key in ('id', 'name', 'status', 'revision')} if voice else None
+        )
+        # An author whose voice is already waiting or being learned keeps that one job: another
+        # batch shows it rather than queueing a second learning and a second revision.
+        learning = _learning(root, group['key'])
+        if learning is not None:
+            jobs.append(
+                {
+                    'author': group['author'],
+                    'update': bool(voice),
+                    'profile': profile,
+                    'samples': len((learning.get('metadata') or {}).get('samples') or []),
+                    'job': learning,
+                    'already': True,
+                }
+            )
+            continue
         try:
             samples = [blog_library.local_item(root, row['id'], row['location']) for row in rows]
             job = article_tools.request(
@@ -1004,14 +1034,34 @@ def create_voices(root, data):
             {
                 'author': group['author'],
                 'update': bool(voice),
-                'profile': {key: voice.get(key) for key in ('id', 'name', 'status', 'revision')}
-                if voice
-                else None,
+                'profile': profile,
                 'samples': len(samples),
                 'job': job,
+                'already': False,
             }
         )
     return {'operation': operation, 'jobs': jobs, 'failed': failed}
+
+
+def _learning(root, key):
+    """The voice-learn job waiting or working for the author of this name key, if any."""
+    import tool_jobs
+
+    folder = studio.inside(root, '.blog-runs', 'tools')
+    if not folder.is_dir():
+        return None
+    for target in sorted(folder.glob('*.json')):
+        try:
+            job = tool_jobs.read(root, target.stem)
+        except (ValueError, OSError):
+            continue
+        if (
+            job.get('kind') == 'voice-learn'
+            and job.get('status') in ('queued', 'working')
+            and name_key((job.get('metadata') or {}).get('name')) == key
+        ):
+            return tool_jobs.public(job)
+    return None
 
 
 def selection(root, data):

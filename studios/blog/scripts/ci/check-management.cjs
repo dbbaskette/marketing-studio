@@ -1147,6 +1147,15 @@ async function voicesForEveryAuthor(){
   // Reopening the action shows the batch until another is started.
   f.run('sCloseSheet()');await f.run('sVoicesForAuthors()');assert.ok(find('Start another batch'));
   await find('Start another batch').listeners.click();assert.ok(sheet().some(e=>e.id==='voices-permission'),'a new batch asks again');
+  // An author still queued from the earlier batch is not ticked again; it says Queued.
+  status='queued';f.run("studio.voiceBatch=null;studio.voicesQueued={jobs:[{author:'Avery Quinn',samples:8,job:{id:'"+'a'.repeat(32)+"',status:'queued'}}]}");
+  f.run('sCloseSheet()');await f.run('sVoicesForAuthors()');
+  const again=sheet().filter(e=>e.type==='checkbox'&&e.id.startsWith('voices-author-'));
+  assert.deepEqual(again.map(e=>[e.value,e.checked,e.disabled]),[['Avery Quinn',false,true],['Sam Rivera',true,false],['Jordan Lee',false,true]]);
+  assert.ok(text().some(t=>/Queued: its voice is already being learned/.test(t)));
+  assert.equal(sheet().find(e=>e.type==='submit').textContent,'Update 1 voice');
+  status='ready';f.run('sCloseSheet()');await f.run('sVoicesForAuthors()');
+  assert.equal(sheet().find(e=>e.value==='Avery Quinn').checked,true,'once its learning is ready, it can be ticked again');
 }
 
 // Create a voice: every source lands in the same samples list, ticked, for the named author.
@@ -1268,7 +1277,7 @@ async function authorClarify(){
   // Different person, from a fresh list.
   state='suggest';await f.run('sVoicesForAuthors()');
   await find('Different person').listeners.click();
-  assert.deepEqual(requests.filter(r=>r.url==='/api/library-author-different').map(r=>r.data),[{author:'Dan',other:'Dan Smith'},{author:'Dan',other:'Dan Baskette'}]);
+  assert.deepEqual(requests.filter(r=>r.url==='/api/library-author-different').map(r=>r.data),[{author:'Dan',others:['Dan Smith','Dan Baskette']}],'one request, saved all at once');
   assert.equal(text().some(t=>/Might be the same person/.test(t)),false,'the suggestion stops');
   // Review details: the author is a field, sent only when it changes.
   f.set('item',{id:'d1',location:'local',title:'d1'});await f.run('curate(item)');

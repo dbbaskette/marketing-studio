@@ -60,7 +60,9 @@ when it is too small to learn alone, with **Same person as …** for each and **
 person**. Same person asks for confirmation, then names each of that author's posts by the
 chosen name through the reference curation path (`curate` with `author`: a new source
 revision, the same lock, Team Hub and conflict rules), after checking the author's posts
-are as the sheet showed them; the sheet then regroups. Different person is kept in
+are as the sheet showed them; the sheet then regroups. Should a post fail partway (a
+conflict, the Team Hub, the disk), the message says how many posts already took the new name.
+Different person names every suggested name in one request, saved together in
 `.library/author-pairs.json` and the pair is not suggested again. No author is ever changed
 without that choice, and **Review details** gains an Author field, so a post's author can be
 changed back. Create a voice reads the corrected author like any other.
@@ -86,7 +88,9 @@ same before marking. Should a job still fail after the checks (a disk or Team Hu
 between), the others are queued and the sheet names who was queued and who was not. The
 operation is idempotent: the batch
 operation plus the author names each job's operation, so sending again returns the same
-jobs. The sheet then shows each author's job status (Waiting to start, Working, Ready for
+jobs. An author whose voice-learn job is still queued or working keeps that job: a later
+batch returns it (marked `already`) instead of queueing a second learning, and the sheet
+leaves that author unticked, marked Queued, until the learning is ready. The sheet then shows each author's job status (Waiting to start, Working, Ready for
 your review, Stopped) and, when ready, "Review <name>'s voice", which opens the usual job
 sheet: save it as provisional or confirm it. Saving returns to the batch.
 

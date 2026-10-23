@@ -16,14 +16,17 @@ changes for authors first, then what changes for maintainers.
   batch); an existing voice of exactly that name is updated rather than duplicated. One
   permission for the batch; every author is checked before anything is marked or queued, so
   a refusal for one changes nothing. Then one learning job per author on the usual queue,
-  each reviewed and confirmed as before. A learning from library items now checks the same
-  before it marks any item as a sample.
+  each reviewed and confirmed as before. An author whose voice is still waiting or being
+  learned keeps that one job: another batch shows it as Queued instead of starting a
+  second learning. A learning from library items now checks the same before it marks any
+  item as a sample.
 - **Is "Dan" Dan Smith?** In Create voices for every author, a name whose words all appear
   in a fuller author name or voice ("Dan" in "Dan Smith" or "Dan Baskette") shows "Might be
   the same person as …", even when it is too small to learn alone. **Same person as Dan
   Smith**, once confirmed, names that author's posts Dan Smith, one reference at a time, so
   they count toward that voice; a list that changed since it was shown is refused.
-  **Different person** is remembered and the suggestion stops. Nothing is merged without
+  **Different person** is remembered for every suggested name at once, and the suggestion
+  stops. Nothing is merged without
   the person's choice, and **Review details** now has an Author field, so any post's author
   can be corrected or changed back.
 - **Create a voice** and **Create a style** replace Learn a voice from samples, Import a

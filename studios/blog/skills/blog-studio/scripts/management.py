@@ -1714,17 +1714,17 @@ def clarify_author(root, adapter, route, data):
     import library_add
 
     if route == 'library-author-different':
-        if set(data) != {'author', 'other'}:
-            raise ValueError('Name the two authors.')
-        library_add.mark_different(root, data['author'], data['other'])
+        if set(data) != {'author', 'others'}:
+            raise ValueError('Name the author and the names they are not.')
+        library_add.mark_different(root, data['author'], data['others'])
         return library_add.authors(root)
     if set(data) != {'author', 'into', 'expected'}:
         raise ValueError('Name the author, who they are, and the version shown.')
     group, into = library_add.same_person(root, data['author'], data['into'], data['expected'])
     changed, receipts = 0, []
     for row in group['rows']:
-        current = source_detail(root, row['id'], row['location'])
         try:
+            current = source_detail(root, row['id'], row['location'])
             result = curate_source(
                 root,
                 adapter,
@@ -1736,9 +1736,11 @@ def clarify_author(root, adapter, route, data):
                     'author': into,
                 },
             )
-        except ValueError as error:
-            raise type(error)(
-                '%d of %d posts now name %s. %s' % (changed, len(group['rows']), into, error)
+        except (ValueError, HubError, OSError) as error:
+            # Say how far it got, whatever stopped it; the renamed posts keep their new name.
+            words = '%d of %d posts now name %s. %s' % (changed, len(group['rows']), into, error)
+            raise (type(error) if isinstance(error, (ValueError, HubError)) else ValueError)(
+                words
             ) from None
         changed += 1
         receipts += result.get('receipts', [])
