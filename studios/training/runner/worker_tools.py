@@ -49,7 +49,9 @@ checked here before anything is kept. Each job has a folder that only the runner
   redirect off the sites is refused too; the refusal names the sites, and `collect` lists
   each refused address under `outside`. With the public web on, any public page may be
   saved. A job prepared without `research`, as older ones were, may save any public page.
-  The private-address refusals above hold whatever is chosen.
+  The private-address refusals above hold whatever is chosen. Every address is checked
+  and sent without its fragment, so a '#' cannot hide a path from the checks, and at most
+  MAX_SOURCES refused addresses are listed.
 - A draft or a finding can be handed back SUBMISSIONS times. After that, treat the job as
   failed: `collect(folder)['problems']` says why the last one was refused.
 - A question (`ask_person`) ends the job: every later call is refused. Pass `ask=False`
@@ -1844,7 +1846,9 @@ class WorkerTools:
         if not self.job['fetch']:
             raise Refusal('This job cannot fetch pages. Work from what you were given.')
         url, index = str(url).strip(), self._index()
-        known = next((item for item in index if url in (item['url'], item.get('asked'))), None)
+        sent = self._sendable(url)   # the same page, whatever fragment it is asked with
+        known = next((item for item in index if url in (item['url'], item.get('asked'))
+                      or sent == item['url']), None)
         if known:
             return True, self._shown(known, 'Already saved')
         if len(index) >= MAX_SOURCES:
@@ -1886,7 +1890,8 @@ class WorkerTools:
             said = research_sites.refused(url, chosen, redirected_from)
             if said:
                 state = self._state()
-                state['outside'] = list(dict.fromkeys([*state.get('outside', []), url]))
+                state['outside'] = list(dict.fromkeys(
+                    [*state.get('outside', []), url]))[:MAX_SOURCES]
                 home.write_json(self.folder / 'state.json', state)
                 raise Refusal(said)
         try:
@@ -1902,6 +1907,9 @@ class WorkerTools:
         """A page's final address, headers and body, with every hop on the way checked."""
         before = None
         for _ in range(MAX_HOPS + 1):
+            # Asked, checked and sent without its fragment, so a '#' cannot hide a path
+            # from the checks: parsers and urllib split at different '#'.
+            url = self._sendable(url)
             status, headers, data = self._ask(url, self._checked(url, before))
             if status in REDIRECTS and headers.get('location'):
                 before, url = url, urllib.parse.urljoin(url, headers['location'])
@@ -1916,6 +1924,14 @@ class WorkerTools:
                               'not saved. Look for a smaller page that says the same.')
             return url, headers, data
         raise Refusal('That address redirected too many times. It was not saved.')
+
+    @staticmethod
+    def _sendable(url: str) -> str:
+        """An address as it is sent: without its fragment, which a browser never sends."""
+        try:
+            return research_sites.fetchable(url)
+        except ValueError:
+            raise Refusal('That is not a web address.')
 
     def _ask(self, url: str, addresses: list[str]) -> tuple[int, dict, bytes]:
         """One request, trying each of the host's addresses until one connects."""

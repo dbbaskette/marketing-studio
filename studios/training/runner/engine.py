@@ -441,16 +441,8 @@ def spent(record: dict) -> tuple[float | None, int | None]:
 def outside_words(record: dict) -> str | None:
     """What the research stop says of the pages its tools refused for being outside your
     sites, naming the sites: None when none was."""
-    refused = len(record.get('outside') or ())
-    sites = pipeline.research_of(record).get('sites') or []
-    if not refused or not sites:
-        return None
-    named = [research_sites.shown(site) for site in sites]
-    if len(named) > research_sites.SHOWN:
-        named = named[:research_sites.SHOWN] + [f'{len(sites) - research_sites.SHOWN} more']
-    were = 'was' if refused == 1 else 'were'
-    return (f"{refused} page{'' if refused == 1 else 's'} {were} outside your sites "
-            f"({', '.join(named)}) and {were} not saved.")
+    return research_sites.outside(len(record.get('outside') or ()),
+                                  pipeline.research_of(record).get('sites') or [])
 
 
 def last_error(record: dict, step: str) -> str | None:
@@ -3817,9 +3809,10 @@ class Engine(Reviewing):
                 self._store(root, record)
                 self._commit(root, (f'the documents are all added: {len(readable)} to '
                                     'research from') if readable else
-                             'no documents were added; research uses ' + research_sites.summary(
-                                 research_sites.effective(pipeline.research_of(record), False))
-                             .removeprefix('from '))
+                             'no documents were added; ' + pipeline.research_words(record)
+                             .replace('Research from', 'research uses')
+                             .replace('No research: no documents were added', 'no research')
+                             .rstrip('.'))
         if action == 'done':
             self.wake(root)
         return self.view(root)
@@ -4501,7 +4494,7 @@ class Engine(Reviewing):
         """Where this training's research may look, as the page says it: the choice with
         its exact sites, the line that names them, and what was refused outside them."""
         looks = pipeline.research_of(record)
-        return {**looks, 'summary': 'Research ' + research_sites.summary(looks) + '.',
+        return {**looks, 'summary': pipeline.research_words(record),
                 'outside': outside_words(record)}
 
     def research_from(self, path) -> dict | None:

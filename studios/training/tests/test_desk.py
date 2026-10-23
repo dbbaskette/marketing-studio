@@ -4991,18 +4991,25 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     def test_your_sites_start_from_the_shared_list_and_one_added_is_for_this_training(self):
         self.started()
         tanzu, docs = 'https://blogs.vmware.com/tanzu', 'https://docs.example.com'
+        learn = 'https://learn.example.com/guides'
         shared = {**SET_UP, 'shared': {'research': {'sites': [tanzu, docs]}},
                   'shared_problem': None}
         going = 'Drafting the research questions.'
+        refused = '"ftp://files.example.com": research sites use https only.'
         answers = self.answers(shared, **{
             'GET /api/trainings': [ok({'trainings': [], 'needs': 0}),
                                    self.listed('working', going)],
+            # The runner checks each site added, the way every studio does.
+            'POST /api/research-site': [{'status': 400, 'body': {'error': refused}},
+                                        ok({'site': learn, 'shown': 'learn.example.com/guides'})],
             'POST /api/trainings': [ok({'path': str(self.root), 'id': 'rolling-restarts',
                                         'gates': 5})],
             'GET /api/run': [a_run('working', going, steps=steps('done', 'working'))],
             'GET /api/training': [self.detail('working', going)]})
         result = self.run_page(answers, [
-            *self.to_the_last_step(), {'snapshot': 'shared'},
+            *self.to_the_last_step(), {'snapshot': 'default'},
+            {'click': 'Your sites (2)'}, {'snapshot': 'shared'},
+            {'click': 'The public web'}, {'snapshot': 'only'},
             {'fill': 'Add a site for this training', 'value': 'ftp://files.example.com'},
             {'click': 'Add the site'}, {'snapshot': 'wrong'},
             {'fill': 'Add a site for this training', 'value': 'Learn.Example.com/guides/'},
@@ -5016,15 +5023,30 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'blogs.vmware.com/tanzu'}, {'click': 'The public web'},
             {'snapshot': 'ready'}, {'click': 'Start the training'}])
         shots = result['snapshots']
-        # The shared list is there, every site on, and research keeps to it.
-        self.assertEqual(shots['shared']['chosen'],
-                         ['Your sites (2)', 'blogs.vmware.com/tanzu', 'docs.example.com'])
+        # Your sites stay off until they are ticked: research looks at the public web.
+        self.assertEqual(shots['default']['chosen'], ['The public web'])
+        self.assertIn('Research from the public web.', shots['default']['text'])
+        self.assertNotIn('blogs.vmware.com/tanzu', shots['default']['buttons'])
+        # Ticked, every shared site is on; with the public web too, it only fills gaps.
+        self.assertEqual(shots['shared']['chosen'], ['Your sites (2)', 'The public web',
+                                                     'blogs.vmware.com/tanzu', 'docs.example.com'])
         self.assertIn('Research from 2 of your sites (blogs.vmware.com/tanzu, '
-                      'docs.example.com).', shots['shared']['text'])
-        self.assertIn('Your sites: it searches them first and saves pages only from under '
-                      'them.', shots['shared']['text'])
+                      'docs.example.com) and the public web.', shots['shared']['text'])
+        self.assertIn('Your sites: they are searched first, through the assistant’s web search '
+                      'tool with site: searches. The public web fills what they leave open.',
+                      shots['shared']['text'])
+        self.assertNotIn('only pages from under your sites are saved', shots['shared']['text'])
         self.assertIn('your shared list of sites stays as it is', shots['shared']['text'])
+        self.assertIn('Your sites: they are searched through the assistant’s web search tool, '
+                      'with site: searches, and only pages from under your sites are saved.',
+                      shots['only']['text'])
+        # The runner's own sentence, beside the box.
         self.assertEqual(shots['wrong']['invalid'], ['Add a site for this training'])
+        self.assertIn(refused, shots['wrong']['text'])
+        self.assertEqual([body for address, body in self.posts(result)
+                          if address == '/api/research-site'],
+                         [{'site': 'ftp://files.example.com'},
+                          {'site': 'Learn.Example.com/guides/'}])
         added = shots['added']
         self.assertEqual(added['chosen'], ['Your sites (3)', 'blogs.vmware.com/tanzu',
                                            'docs.example.com', 'learn.example.com/guides'])
@@ -5034,10 +5056,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       shots['refused']['text'])
         self.assertIn('Choose where research may look: your documents, your sites or the '
                       'public web.', shots['nowhere']['text'])
-        chosen = {'documents': False, 'sites': [tanzu, 'https://learn.example.com/guides'],
-                  'web': True}
+        chosen = {'documents': False, 'sites': [tanzu, learn], 'web': True}
         self.assertIn('Research ' + research_sites.summary(chosen) + '.', shots['ready']['text'])
-        (address, sent), = self.posts(result)
+        (address, sent), = [post for post in self.posts(result) if post[0] == '/api/trainings']
         self.assertEqual(sent['research_from'], chosen)
 
     def test_documents_are_added_refused_removed_and_then_that_is_all_of_them(self):

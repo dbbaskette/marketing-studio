@@ -184,16 +184,17 @@ const RESEARCH_FROM = [['documents', 'Your documents'], ['sites', 'Your sites'],
 const RESEARCH_SAYS = {
   documents: 'Your documents: it reads the documents you give it. You add them right after '
     + 'starting, and they stay on this computer.',
-  sites: 'Your sites: it searches them first and saves pages only from under them.',
+  // Said one way with the public web off, another with it on.
+  sites: 'Your sites: they are searched through the assistant’s web search tool, with site: '
+    + 'searches, and only pages from under your sites are saved.',
+  sitesAndWeb: 'Your sites: they are searched first, through the assistant’s web search tool '
+    + 'with site: searches. The public web fills what they leave open.',
   web: 'The public web: it searches for pages anyone can read, and keeps every page it quotes '
     + 'with the training.',
 };
 const RESEARCH_EMPTY = 'Choose where research may look: your documents, your sites or the '
   + 'public web.';
 const RESEARCH_NO_SITES = 'Choose at least one of your sites, or turn your sites off.';
-const RESEARCH_NOT_A_SITE = 'Give a site as an https address such as docs.example.com/guide, '
-  + 'with nothing after ? or #.';
-const SECURE = 'https';   // the one kind of address a site may be
 const SITES_NAMED = 5;   // sites a summary names before "and N more"
 // A training where the run has made everything it can, and the deck is all that is left.
 const DECK_LEFT = 'Everything but the slide deck is made: make the deck with your assistant, '
@@ -4281,26 +4282,17 @@ function sharedSites() {
   return list((sharedOf().research || {}).sites).filter((site) => typeof site === 'string');
 }
 
-// A new form's choice. With sites shared, research keeps to them; without, it searches the
-// public web, as it always has. Documents are a choice: they are added after the start.
+// A new form's choice: the public web, as it always was. Your sites are off until they are
+// ticked, and then every shared one is ticked. Documents are a choice: they are added after
+// the start.
 function newResearch() {
   const sites = sharedSites();
-  return { documents: false, sites: sites.length > 0, web: !sites.length,
+  return { documents: false, sites: false, web: true,
     listed: sites.slice(), picked: sites.slice(), adding: '' };
 }
 
 function shownSite(site) {
   return site.replace(/^[a-z]+:\/\//, '');
-}
-
-// What a person typed as a site, as the runner keeps it: an https address of a host and a
-// path, the host in lower case and no slash at the end. Null for what is plainly not one;
-// the runner checks the rest when the training starts.
-function siteOf(typed) {
-  const given = typed.trim().includes('://') ? typed.trim() : SECURE + '://' + typed.trim();
-  const parts = /^([a-z]+):\/\/([a-z0-9.-]+\.[a-z0-9-]+)\.?(?::443)?(\/[^?#\s]*)?$/i.exec(given);
-  return parts && parts[1].toLowerCase() === SECURE
-    ? SECURE + '://' + parts[2].toLowerCase() + (parts[3] || '').replace(/\/+$/, '') : null;
 }
 
 // The choice as the form sends it: the sites ticked, in their order, none with your sites off.
@@ -4337,7 +4329,7 @@ function researchFields(draft, changed) {
   const research = draft.research;
   const node = make('div', 'fields');
   const fill = () => {
-    const ticked = researchChoice(draft).sites.length;
+    const ticked = research.listed.filter((site) => research.picked.includes(site)).length;
     const row = make('div', 'chips');
     row.setAttribute('role', 'group');
     row.setAttribute('aria-label', 'Research from');
@@ -4352,7 +4344,8 @@ function researchFields(draft, changed) {
       }, 'research ' + id));
     }
     const means = bullets(RESEARCH_FROM.filter(([id]) => research[id])
-      .map(([id]) => RESEARCH_SAYS[id]), 'reasons meanings');
+      .map(([id]) => RESEARCH_SAYS[id === 'sites' && research.web ? 'sitesAndWeb' : id]),
+    'reasons meanings');
     node.replaceChildren();
     add(node, add(make('div', 'field'), make('p', 'field-label', 'Research from'), row), means);
     if (!research.sites) return;
@@ -4369,14 +4362,23 @@ function researchFields(draft, changed) {
         changed();
       }, 'site ' + site));
     }
-    const added = () => {
-      const site = siteOf(research.adding || '');
-      if (!site) {
-        refuse('new-site', RESEARCH_NOT_A_SITE);
+    // The runner checks a site the way every studio does, and keeps it nowhere: it is
+    // sent with this training's choice when the training starts.
+    const added = async () => {
+      const typed = (research.adding || '').trim();
+      if (!typed || research.checking) return;
+      research.checking = true;
+      let found;
+      try {
+        found = await send('research-site', { site: typed });
+      } catch (failure) {
+        research.checking = false;
+        refuse('new-site', failure.message);
         return;
       }
-      if (!research.listed.includes(site)) research.listed.push(site);
-      if (!research.picked.includes(site)) research.picked.push(site);
+      research.checking = false;
+      if (!research.listed.includes(found.site)) research.listed.push(found.site);
+      if (!research.picked.includes(found.site)) research.picked.push(found.site);
       research.adding = '';
       fill();
       focusKey('new-site');

@@ -527,21 +527,46 @@ def sources_words(chosen: dict) -> str:
 
 def intake_research(said: str | None) -> dict:
     """The choice intake.md's Source scope says, read back for a training brought in from
-    a conversation. Anything it cannot read is the public web, as before."""
+    a conversation, without regard to case. Intake that says nothing, or names neither
+    documents, sites nor the web, is the public web, as it always was. Intake that names
+    sites or documents is never widened to the web for want of reading it: a site that
+    cannot be used, or sites named with none listed, is refused with a sentence."""
     said = (said or '').strip()
-    named = next((name for name, label in SOURCES.items() if label == said), None)
+    named = next((name for name, label in SOURCES.items() if label.lower() == said.lower()),
+                 None)
     if named is not None:
         return research_sites.effective(research_sites.legacy(named), named != SCOPE)
-    first, _, rest = said.partition('\n')
-    listed = [line[len(SITES_LINE):] for line in rest.splitlines()
-              if line.startswith(SITES_LINE)]
-    try:
-        return research_sites.choice({
-            'documents': 'your documents' in first.lower(),
-            'sites': [site.strip() for site in ', '.join(listed).split(',') if site.strip()],
-            'web': 'public web' in first.lower()})
-    except ValueError:
+    lines = said.splitlines()
+    first = lines[0].lower() if lines else ''
+    listed = [line.strip()[len(SITES_LINE):] for line in lines[1:]
+              if line.strip().lower().startswith(SITES_LINE.lower())]
+    documents = 'document' in first or first == 'both'
+    sites = 'sites' in first or bool(listed)
+    web = 'web' in first or 'internet' in first or first == 'both'
+    if not (documents or sites or web):
         return dict(WEB_ONLY)
+    fix = ' Correct Source scope in intake.md and bring the training in again.'
+    given = [site.strip() for site in ', '.join(listed).split(',') if site.strip()]
+    if sites and not given:
+        raise WorkspaceError('Source scope in intake.md names your sites but names no site '
+                             f'on a line "{SITES_LINE.strip()} host/path".' + fix)
+    try:
+        return research_sites.choice({'documents': documents, 'web': web,
+                                      'sites': research_sites.sites(given)})
+    except ValueError as error:
+        raise WorkspaceError(str(error) + fix) from None
+
+
+def research_words(run: dict | None) -> str:
+    """Where a training's research looks, as a sentence for the page: your documents only
+    once they have been added, so documents alone with none added say there is no research."""
+    looks = research_of(run)
+    given = (run or {}).get('documents') or {}
+    if given.get('done') and not given.get('count'):
+        looks = research_sites.effective(looks, False)
+    if not (looks['documents'] or looks['sites'] or looks['web']):
+        return 'No research: no documents were added.'
+    return 'Research ' + research_sites.summary(looks) + '.'
 
 
 def check_form(sent: dict, brands=None) -> dict:

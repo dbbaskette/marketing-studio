@@ -8,6 +8,7 @@ network: pages come from a pretend web, and settings are a disposable studios co
 """
 import json
 import unittest
+import urllib.request
 from dataclasses import replace
 from unittest import mock
 
@@ -53,6 +54,40 @@ class FormTests(unittest.TestCase):
                 # A training brought in from a conversation reads it back from intake.md.
                 self.assertEqual(pipeline.intake_research(words), form['research_from'])
         self.assertEqual(pipeline.intake_research('Something else'), WEB)
+        self.assertEqual(pipeline.intake_research(''), WEB)   # no answer: as before
+
+    def test_row_129_intake_is_read_without_regard_to_case_and_never_widens_to_the_web(self):
+        documents = {'documents': True, 'sites': [], 'web': False}
+        for said, chosen in (
+                ('Your sites\nsites: blogs.vmware.com/tanzu', SITES),
+                ('your documents and your sites\nSITES: blogs.vmware.com/tanzu',
+                 {**SITES, 'documents': True}),
+                ('YOUR SITES AND THE PUBLIC WEB\nSites: blogs.vmware.com/tanzu', {**SITES, 'web': True}),
+                ('Supplied documents only', documents), ('your documents only', documents)):
+            with self.subTest(said):
+                self.assertEqual(pipeline.intake_research(said), chosen)
+        # A site that cannot be used, or sites named with none listed, is refused: the
+        # research is never widened to the public web for want of reading them.
+        for said, named in (('Your sites\nSites: http://blogs.vmware.com/tanzu', 'https only'),
+                            ('Your sites\nSites: blogs.vmware.com/../admin', '".." parts'),
+                            ('Your documents and your sites\nSites: localhost/docs',
+                             'not a public site'),
+                            ('Your sites', 'names no site')):
+            with self.subTest(said), self.assertRaises(WorkspaceError) as caught:
+                pipeline.intake_research(said)
+            self.assertIn(named, str(caught.exception))
+            self.assertIn('Source scope', str(caught.exception))
+
+    def test_documents_alone_with_none_added_say_there_is_no_research(self):
+        none = {'documents': {'scope': 'supplied-only', 'done': '2026-10-23', 'count': 0},
+                'research_from': {'documents': True, 'sites': [], 'web': False}}
+        self.assertEqual(pipeline.research_words(none), 'No research: no documents were added.')
+        both = {'documents': {'scope': 'both', 'done': '2026-10-23', 'count': 0},
+                'research_from': {'documents': True, 'sites': [], 'web': True}}
+        self.assertEqual(pipeline.research_words(both), 'Research from the public web.')
+        waiting = {**both, 'documents': {'scope': 'both', 'done': None, 'count': 0}}
+        self.assertEqual(pipeline.research_words(waiting),
+                         'Research from your documents and the public web.')
 
     def test_row_129_nothing_that_applies_or_a_site_that_is_not_one_is_refused(self):
         for chosen, said in (
@@ -149,6 +184,59 @@ class CaptureTests(JobCase):
         self.assertTrue(self.ok(self.research({**SITES, 'web': True}).save_source(url))
                         .startswith('Saved as s1'))
 
+    def recorded(self, chosen):
+        """Tools whose opener records each request as urllib sends it: (host, selector)."""
+        self.research(chosen)
+        sent = []
+
+        def opener(url, address, limit):
+            request = urllib.request.Request(url)
+            sent.append((request.host, request.selector))
+            return self.web.opener(url, address, limit)
+
+        return sent, worker_tools.WorkerTools(self.job, opener=opener, resolver=self.web.resolver)
+
+    def test_row_130_a_fragment_never_hides_a_path_outside_the_sites(self):
+        for url in (TANZU, TANZU + '/page', 'https://blogs.vmware.com/admin'):
+            self.web.page(url, PAGE)
+        sent, tools = self.recorded(SITES)
+        for url in (TANZU + '#/x/../../admin#z', TANZU + '/x/..;/..;/admin',
+                    'https://blogs.vmware.com/admin', TANZU + '#/../../admin'):
+            with self.subTest(url):
+                tools.save_source(url)
+        self.assertTrue(self.ok(tools.save_source(TANZU + '/page#section')).startswith('Saved'))
+        self.assertTrue(sent)
+        for host, selector in sent:
+            self.assertEqual(host, 'blogs.vmware.com')
+            self.assertNotIn('#', selector)
+            self.assertTrue(selector == '/tanzu' or selector.startswith('/tanzu/'), selector)
+        self.assertIn(('blogs.vmware.com', '/tanzu/page'), sent)
+        self.assertNotIn(TANZU + '/page#section',
+                         [entry['url'] for entry in worker_tools.collect(self.job)['sources']])
+
+    def test_row_130_a_redirect_with_a_fragment_is_checked_without_it(self):
+        self.web.page(TANZU, PAGE)
+        self.web.page('https://blogs.vmware.com/admin', 'secret')
+        url = self.web.page(TANZU + '/old', '', status=302,
+                            headers={'location': 'https://blogs.vmware.com/admin#/tanzu'})
+        sent, tools = self.recorded(SITES)
+        self.assertIn('redirected to blogs.vmware.com/admin', self.refused(tools.save_source(url)))
+        self.assertEqual(sent, [('blogs.vmware.com', '/tanzu/old')])
+
+    def test_a_fragment_is_never_sent_with_the_public_web_either(self):
+        self.web.page(OTHER, PAGE)
+        sent, tools = self.recorded(WEB)
+        self.assertTrue(self.ok(tools.save_source(OTHER + '#part')).startswith('Saved'))
+        self.assertEqual(sent, [('elsewhere.example.com', '/rolling-restarts')])
+
+    def test_the_addresses_refused_outside_the_sites_are_capped(self):
+        tools = self.research(SITES)
+        with mock.patch.object(worker_tools, 'MAX_SOURCES', 3):
+            for number in range(6):
+                tools.save_source(f'https://elsewhere.example.com/{number}')
+        self.assertEqual(worker_tools.collect(self.job)['outside'],
+                         [f'https://elsewhere.example.com/{number}' for number in range(3)])
+
     def test_private_addresses_are_refused_on_the_sites_too(self):
         url = self.web.page(TANZU + '/admin', PAGE, addresses=['10.0.0.5'])
         self.assertIn('not on the public internet', self.refused(self.research(SITES).save_source(url)))
@@ -203,7 +291,8 @@ class RunTests(StudioCase):
                 self.assertIn('Allowed sites: docs.example.com.', job.task)
         self.assertEqual(tried, [(False, research_sites.refused(OTHER, {'sites': [DOCS]}))])
         self.assertNotIn(OTHER, [asked for asked, _ in self.web.asked])
-        said = '1 page was outside your sites (docs.example.com) and was not saved.'
+        said = research_sites.outside(1, [DOCS])
+        self.assertEqual(said, '1 page was outside your sites (docs.example.com) and was not saved.')
         self.assertEqual(self.view(root)['research_from']['outside'], said)
         self.assertEqual(page.RunnerPage(8765, self.engine).gate(str(root), 'research')['outside'],
                          said)
@@ -251,6 +340,30 @@ class RunTests(StudioCase):
                       'anywhere else on the public web are not allowed.', seen[0]['scope'])
         self.assertIn('The wider public web may fill gaps', seen[1]['scope'])
         self.assertIn('Use the supplied documents.', seen[2]['scope'])
+
+    def test_a_run_saved_before_the_choice_keeps_its_research_task_scope(self):
+        seen = []
+
+        def native(engine, root, run, task, offered, product):
+            seen.append(task)
+            raise WorkspaceError('Stopped here by the test.')
+
+        contract = {'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'}
+        with mock.patch.object(research_contract, 'snapshot', return_value=contract), \
+                mock.patch.object(research_contract, 'native', native):
+            root = self.start(source_scope='public-web')
+            with self.engine.files:   # as a run record written before the choice was saved
+                record = self.engine._load(root)
+                record.pop('research_from')
+                self.engine._store(root, record)
+            self.to_gate(root, 'research-plan')
+            self.decide(root, 'research-plan')
+        task, = seen
+        self.assertEqual(task['source_mode'], 'public')
+        self.assertNotIn(research_sites.scope_text(WEB), task['scope'])
+        self.assertTrue(task['scope'].startswith('Topic: '))
+        # The scope it was always researched under: what the training is about, and no more.
+        self.assertTrue(task['scope'].splitlines()[-1].startswith('Selected materials:'))
 
 
 if __name__ == '__main__':
