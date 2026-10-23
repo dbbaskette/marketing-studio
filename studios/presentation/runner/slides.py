@@ -231,7 +231,7 @@ class TooOld(WorkspaceError):
 
     def __init__(self, version: str):
         super().__init__(f'harness-slides {version} is installed, and a deck needs '
-                         f'{MINIMUM} or newer. Update it, then try again.')
+                         f'{MINIMUM} or newer. Update Harness Slides, then try again.')
         self.version = version
 
 

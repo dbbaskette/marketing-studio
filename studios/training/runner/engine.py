@@ -1497,7 +1497,7 @@ class Engine(Reviewing):
         if not said or not version or not older(version, slides_tool.MINIMUM):
             return said
         name = self.brought_by(version)
-        before, cut, after = said.rpartition('Update it')
+        before, cut, after = said.rpartition('Update Harness Slides')
         return f"{before}{name}'s own installer brings {version}. {cut}{after}" \
             if name and cut else said
 
@@ -1514,7 +1514,7 @@ class Engine(Reviewing):
         brand, renders = seen['brand'], None
         dated = None if seen['tool'] or not older(seen['version'], slides_tool.MINIMUM) else (
             f"The slides tool on this computer is version {seen['version']}, and a deck "
-            f'needs {slides_tool.MINIMUM} or newer. Update it.')
+            f'needs {slides_tool.MINIMUM} or newer. Update Harness Slides.')
         dated = self._with_installer(dated, seen)
         seen = {**seen, 'tool': self._with_installer(seen['tool'], seen)}
         lacks = [] if seen['tool'] or dated else [slides_tool.NAMES.get(name, name)

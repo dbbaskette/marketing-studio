@@ -774,14 +774,14 @@ class OlderSlidesToolTests(StudioCase):
         with self.too_old():
             missing = self.engine.deck_needs(fresh=True)['missing']
         self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
-                      "Acme Brand's own installer brings 0.15.1. Update it, then try again.",
+                      "Acme Brand's own installer brings 0.15.1. Update Harness Slides, then try again.",
                       missing)
         self.assertEqual(self.engine.brought_by('0.15.1'), 'Acme Brand')
         self.brand_bringing('0.16.0')
         with self.too_old():
             missing = self.engine.deck_needs(fresh=True)['missing']
         self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
-                      'Update it, then try again.', missing)
+                      'Update Harness Slides, then try again.', missing)
         self.assertIsNone(self.engine.brought_by('0.15.1'))
 
     def test_a_brand_skill_older_than_the_floor_is_said_and_holds_a_new_deck(self):
@@ -824,7 +824,7 @@ class OlderSlidesToolTests(StudioCase):
             view = self.view(root)
         self.assertIn(view['state'], ('stopped', 'failed'))
         self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
-                      'Update it, then try again.', json.dumps(view))
+                      'Update Harness Slides, then try again.', json.dumps(view))
         after = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
         self.assertLessEqual(set(before), set(after), 'nothing it had is lost')
 

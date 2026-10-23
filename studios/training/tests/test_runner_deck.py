@@ -3489,20 +3489,20 @@ class TroubleTests(DeckCase):
         with mock.patch.object(Slides, 'VERSION', '0.15.1'):
             missing = self.engine.deck_needs(fresh=True)['missing']
         self.assertIn('The slides tool on this computer is version 0.15.1, and a deck needs '
-                      "0.16.0 or newer. Acme Brand's own installer brings 0.15.1. Update it.",
+                      "0.16.0 or newer. Acme Brand's own installer brings 0.15.1. Update Harness Slides.",
                       missing)
         self.acme_brand('0.16.0')
         with mock.patch.object(Slides, 'VERSION', '0.15.1'):
             missing = self.engine.deck_needs(fresh=True)['missing']
         self.assertIn('The slides tool on this computer is version 0.15.1, and a deck needs '
-                      '0.16.0 or newer. Update it.', missing)
+                      '0.16.0 or newer. Update Harness Slides.', missing)
         self.acme_brand('0.15.1')
         refusal = slides_tool.TooOld('0.15.1')
         with mock.patch.object(self.engine, 'slides',
                                mock.Mock(side_effect=refusal)):
             missing = self.engine.deck_needs(fresh=True)['missing']
         self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
-                      "Acme Brand's own installer brings 0.15.1. Update it, then try again.",
+                      "Acme Brand's own installer brings 0.15.1. Update Harness Slides, then try again.",
                       missing)
 
     def test_a_deck_begun_on_an_older_tool_stops_at_its_next_step_and_keeps_its_files(self):
@@ -3517,7 +3517,7 @@ class TroubleTests(DeckCase):
         self.assertEqual(view['state'], 'done')
         self.assertEqual(view['deck_left']['says'], left(
             pipeline.DECK_LEFT, 'harness-slides 0.15.1 is installed, and a deck needs 0.16.0 '
-            'or newer. Update it, then try again.'))
+            'or newer. Update Harness Slides, then try again.'))
         after = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
         self.assertLessEqual(set(before), set(after), 'nothing it had is lost')
 
@@ -3617,7 +3617,7 @@ class TroubleTests(DeckCase):
         with mock.patch.object(Slides, 'VERSION', '0.12.9'):
             self.assertEqual(missing(pictures=True), [
                 'The slides tool on this computer is version 0.12.9, and a deck needs '
-                f'{slides_tool.MINIMUM} or newer. Update it.'])
+                f'{slides_tool.MINIMUM} or newer. Update Harness Slides.'])
         self.brand = None
         self.assertEqual(missing(), [NO_BRAND_SKILL])
 

@@ -1252,7 +1252,7 @@ class Engine(Jobs, Researching):
         if not said or not version or not self._older(version, slides_tool.MINIMUM):
             return said
         name = self.brought_by(version)
-        before, cut, after = said.rpartition('Update it')
+        before, cut, after = said.rpartition('Update Harness Slides')
         return f"{before}{name}'s own installer brings {version}. {cut}{after}" \
             if name and cut else said
 
@@ -1269,7 +1269,7 @@ class Engine(Jobs, Researching):
         dated = None if seen['tool'] or not seen['version'] \
             or not self._older(seen['version'], slides_tool.MINIMUM) else (
             f"The slides tool on this computer is version {seen['version']}, and a deck needs "
-            f'{slides_tool.MINIMUM} or newer. Update it.')
+            f'{slides_tool.MINIMUM} or newer. Update Harness Slides.')
         dated = self._with_installer(dated, seen)
         seen = {**seen, 'tool': self._with_installer(seen['tool'], seen)}
         # The brand skill is not a need of drawing: a deck without one stops at its brand.
