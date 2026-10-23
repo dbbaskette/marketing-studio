@@ -1757,7 +1757,7 @@ def _dispatch(root, route, data):
             return library_import(root, data)
         if route in ('voice-links-preview', 'voice-links-import'):
             return voice_links_route(root, route, data)
-        if route.startswith('library-add') or route == 'library-selection':
+        if route.startswith('library-add') or route in ('library-selection', 'library-voices'):
             import library_add
 
             return library_add.route(root, route, data)
@@ -2198,6 +2198,20 @@ def view(root, name, query):
         from planning import report
 
         return report(root, arg('topic', ''))
+    if name in ('library-matching', 'library-authors'):
+        import library_add
+
+        if name == 'library-authors':
+            return library_add.authors(root)
+        return library_add.matching(
+            root,
+            arg('query', ''),
+            arg('collection'),
+            arg('author'),
+            arg('status'),
+            arg('role'),
+            arg('kind'),
+        )
     if name == 'library':
         import styles
 

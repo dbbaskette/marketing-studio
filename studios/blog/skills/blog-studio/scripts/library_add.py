@@ -586,6 +586,191 @@ SELECTION_ACTIONS = ('style-learn', 'voice-learn', 'blog')
 
 
 LEARN_LIMIT = 20  # What a learn sheet takes, and a learning job reads.
+MATCH_LIMIT = 500  # What Select all matching ticks, and a learn selection may hold.
+AUTHOR_MINIMUM = 2  # Readable posts an author needs before a voice is learned for them.
+
+
+def matching(root, query='', collection=None, author=None, status=None, role=None, kind=None):
+    """Every item the library screen's filters match, up to MATCH_LIMIT, for its Select all
+    matching: the catalog's own search, a page at a time, with the same filters. Reads only."""
+    items, offset = [], 0
+    while True:
+        found = blog_library.catalog(
+            root,
+            query or '',
+            collection or None,
+            author or None,
+            limit=50,
+            offset=offset,
+            include_retired=status == 'retired',
+            status=status or None,
+            role=role or None,
+            kind=kind or None,
+        )
+        for entry in found['items']:
+            items.append(
+                {
+                    'id': entry['id'],
+                    'location': entry.get('location') or 'local',
+                    'title': entry.get('title') or entry['id'],
+                }
+            )
+        offset += 50
+        if offset >= found['total'] or len(items) >= MATCH_LIMIT or not found['items']:
+            return {
+                'items': items[:MATCH_LIMIT],
+                'total': found['total'],
+                'capped': found['total'] > MATCH_LIMIT,
+            }
+
+
+def _readable(row):
+    """A library post with text a learning job can read, here or in the Team Hub."""
+    if row['record'].get('status') != 'ready':
+        return False
+    if row['location'] == 'local':
+        path = row['path']
+        return path.is_file() and bool(path.read_text(encoding='utf-8').strip())
+    body = row.get('body') or ''
+    return bool(body.strip())
+
+
+def _newest(row):
+    record = row['record']
+    metadata = record.get('library') or {}
+    return (
+        str(metadata.get('published') or ''),
+        str(
+            record.get('retrieved_at') or record.get('updated_at') or record.get('created_at') or ''
+        ),
+    )
+
+
+def authors(root):
+    """Every author in the team library, for Create voices for every author: their posts,
+    the readable ones (up to twenty, newest first, become the samples), the voice they
+    already have, and whether a voice can be learned. Authors fold by the same name rule
+    as an add's author groups. Retired items and posts without an author count for nobody."""
+    import article_tools
+
+    groups, unnamed = [], 0
+    for row in blog_library.source_rows(root):
+        record = row['record']
+        if (record.get('library') or {}).get('curation') == 'retired':
+            continue
+        name = (record.get('author') or '').strip()
+        if not name:
+            unnamed += 1
+            continue
+        group = next((g for g in groups if voice_links.same_author(name, g['author'])), None)
+        if group is None:
+            group = {'author': name, 'rows': []}
+            groups.append(group)
+        group['rows'].append(row)
+    profiles = [
+        profile
+        for profile in article_tools.voices(root)['profiles']
+        if profile.get('status') != 'retired' and profile.get('name')
+    ]
+    shown = []
+    for group in groups:
+        readable = sorted((r for r in group['rows'] if _readable(r)), key=_newest, reverse=True)
+        voice = next(
+            (p for p in profiles if voice_links.same_author(p['name'], group['author'])), None
+        )
+        ready = len(readable) >= AUTHOR_MINIMUM
+        reason = (
+            ''
+            if ready
+            else 'No readable posts yet.'
+            if not readable
+            else 'Only 1 readable post; a voice needs at least %d.' % AUTHOR_MINIMUM
+        )
+        shown.append(
+            {
+                'author': group['author'],
+                'posts': len(group['rows']),
+                'readable': len(readable),
+                'samples': [{'id': r['id'], 'location': r['location']} for r in readable][
+                    :LEARN_LIMIT
+                ],
+                'profile': {key: voice.get(key) for key in ('id', 'name', 'status', 'revision')}
+                if voice
+                else None,
+                'ready': ready,
+                'reason': reason,
+            }
+        )
+    shown.sort(key=lambda g: (not g['ready'], -g['readable'], g['author'].casefold()))
+    return {'authors': shown, 'unnamed': unnamed, 'minimum': AUTHOR_MINIMUM}
+
+
+def create_voices(root, data):
+    """Create voices for every author: one voice-learn job per named author on the existing
+    queue, confirmed once for the batch. Each reads up to twenty of the author's readable
+    posts, newest first, which become their voice samples only now. An author who has a
+    voice gets a new provisional revision of it, never a second voice. Every author is
+    checked before any job is queued, so a refusal queues nothing. The batch operation and
+    the author name each job's operation: sending the batch again returns the same jobs."""
+    import article_tools
+
+    if set(data) - {'operation', 'authors', 'confirmed'}:
+        raise ValueError('Unknown voice field.')
+    operation = data.get('operation')
+    if not isinstance(operation, str) or not re.fullmatch(r'[a-f0-9]{32}', operation):
+        raise ValueError('A create-voices operation ID is required.')
+    wanted = data.get('authors')
+    if (
+        not isinstance(wanted, list)
+        or not 1 <= len(wanted) <= 100
+        or any(not isinstance(v, str) or not v.strip() for v in wanted)
+        or len({v.strip().casefold() for v in wanted}) != len(wanted)
+    ):
+        raise ValueError('Tick the authors to create voices for.')
+    if data.get('confirmed') is not True:
+        raise ValueError(
+            'Confirm you have permission to analyze these authors’ writing before creating '
+            'their voices.'
+        )
+    listed = authors(root)['authors']
+    chosen = []
+    for name in wanted:
+        group = next((g for g in listed if g['author'] == name.strip()), None) or next(
+            (g for g in listed if voice_links.same_author(g['author'], name)), None
+        )
+        if group is None:
+            raise ValueError(name.strip() + ' has no posts in the team library.')
+        if not group['ready']:
+            raise ValueError(group['author'] + ': ' + group['reason'])
+        if group in chosen:
+            raise ValueError('Tick each author once.')
+        chosen.append(group)
+    jobs = []
+    for group in chosen:
+        samples = [blog_library.local_item(root, s['id'], s['location']) for s in group['samples']]
+        voice = group['profile']
+        job = article_tools.request(
+            root,
+            {
+                'kind': 'voice-learn',
+                'operation': studio.digest((operation + '\0' + group['author']).encode())[:32],
+                'name': voice['name'] if voice else group['author'],
+                'samples': samples,
+                'profile': voice['id'] if voice else None,
+                'confirmed': True,
+                'mark': True,
+            },
+        )
+        jobs.append(
+            {
+                'author': group['author'],
+                'update': bool(voice),
+                'profile': voice,
+                'samples': len(samples),
+                'job': job,
+            }
+        )
+    return {'operation': operation, 'jobs': jobs}
 
 
 def selection(root, data):
@@ -600,8 +785,14 @@ def selection(root, data):
     if set(data) - {'action', 'ids', 'author'} or data.get('action') not in SELECTION_ACTIONS:
         raise ValueError('Choose a library action: learn a style, learn a voice, or start a blog.')
     entries = data.get('ids')
-    if not isinstance(entries, list) or not 1 <= len(entries) <= 50:
-        raise ValueError('Select one to fifty library items.')
+    # A blog takes up to fifty examples; learning reads twenty of up to MATCH_LIMIT ticked.
+    most, words = (
+        (50, 'Select one to fifty library items.')
+        if data['action'] == 'blog'
+        else (MATCH_LIMIT, 'Select one to %d library items to learn from.' % MATCH_LIMIT)
+    )
+    if not isinstance(entries, list) or not 1 <= len(entries) <= most:
+        raise ValueError(words)
     ids = []
     for entry in entries:
         # A local item by its ID, or {id, location} for a row the catalog lists from the Hub.
@@ -612,7 +803,7 @@ def selection(root, data):
         else:
             raise ValueError('Choose a local or shared library item.')
     if len(set(ids)) != len(ids):
-        raise ValueError('Select one to fifty library items.')
+        raise ValueError(words)
     rows = []
     for ident in ids:
         directory, record = studio.item(root, 'sources', ident)
@@ -752,4 +943,6 @@ def route(root, name, data):
         return set_author(root, data)
     if name == 'library-add-samples':
         return mark_samples(root, data)
+    if name == 'library-voices':
+        return create_voices(root, data)
     raise ValueError('Unknown management action.')

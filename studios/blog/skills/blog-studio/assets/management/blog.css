@@ -17,11 +17,19 @@
 .studio-loading{padding:2rem;color:var(--quiet)}
 #studio-page>*+*{margin-top:1.1rem}
 /* The reference library and team tools keep their existing operations in the same shell. */
-#editorial-screen>header{display:flex;justify-content:space-between;align-items:start;gap:1rem;margin-bottom:1rem}
+#editorial-screen>.view-head{margin-bottom:1.1rem;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem 1.5rem}
+#editorial-screen>.view-head>.lede{flex:1 1 28rem;min-width:0;margin:0}
+.view-actions:empty{display:none}
+.filters-toggle{display:none}
 .editorial-title{font-size:1.4rem;font-weight:650}
-#editorial-screen .actions,.filter-bar,.access-panel,.access-lines{display:flex;gap:.7rem;flex-wrap:wrap}
-.filter-bar{align-items:end;margin:1rem 0}
-.filter-bar .search{flex:1;min-width:12rem}
+.filter-bar,.access-panel,.access-lines{display:flex;gap:.7rem;flex-wrap:wrap}
+/* One filter row: search takes the room, each choice a fixed share; rarely used filters fold. */
+.filter-bar{align-items:end;margin:0 0 1rem}
+.filter-bar .search{flex:2 1 14rem;min-width:12rem}
+.filter-bar>.field:not(.search){flex:1 1 9rem;min-width:8rem}
+.more-filters{flex-basis:100%;min-width:0}
+.more-filters>summary{min-height:44px;display:list-item;padding-top:.65rem}
+.more-filters>.field{max-width:20rem;margin-top:.4rem}
 .access-panel{padding:1rem 0;justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--hair)}
 .access-lines{flex-direction:column;max-width:70ch}
 .desk-panel{overflow:hidden}
@@ -42,7 +50,7 @@
 .import-post-list label{display:flex;align-items:start;gap:.7rem}.import-post-list input{width:auto}.import-post-list a{display:block}
 .import-selection-tools,.import-actions{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:1rem 0}
 @media(min-width:1100px){.gate{grid-template-columns:minmax(0,1fr) 18rem}}
-@media(max-width:600px){#editorial-screen>header{flex-wrap:wrap}#editorial-screen .actions{width:100%}.wizard-foot>*{flex:1}.pagination{flex-wrap:wrap}}
+@media(max-width:600px){.wizard-foot>*{flex:1}.pagination{flex-wrap:wrap}}
 
 .manuscript-input { width:100%; min-height:22rem; resize:vertical; font:inherit; line-height:1.6; box-sizing:border-box; }
 .manuscript-original { white-space:pre-wrap; overflow-wrap:anywhere; max-height:24rem; overflow:auto; }
@@ -110,3 +118,50 @@
 .site-choices{display:grid;gap:.6rem;margin-top:.75rem;padding:.75rem;border:1px solid var(--hair);border-radius:12px;background:var(--paper)}
 .site-choices .check span{overflow-wrap:anywhere}
 .research-from .research-scope{margin-top:.6rem}
+
+/* The library's selection bar: the toolbar's material, shown only while something is ticked.
+   It stays in view below the toolbar; on a phone it sits above the bar of screens. */
+.library-selection{position:sticky;top:calc(4.2rem + .6rem);z-index:4;display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1rem;margin:0 0 1rem;padding:.6rem .8rem;border-radius:16px}
+.library-selection .selection-count{flex:1 1 12rem;min-width:0;margin:0}
+.library-selection .bar{gap:.45rem}
+.panel-heading .select-page{font-size:.95rem;min-height:44px}
+.access-actions{gap:.5rem}
+.view-library .pick-cell{width:2.2rem}
+.view-library .pick-cell input{width:1.15rem;height:1.15rem}
+.view-library .item-title{display:block;font-weight:650;overflow-wrap:anywhere}
+.view-library td:nth-last-child(2){white-space:nowrap}
+@media(max-width:52rem){
+  .library-selection{position:fixed;top:auto;left:max(var(--gutter),env(safe-area-inset-left));right:max(var(--gutter),env(safe-area-inset-right));bottom:calc(4.4rem + env(safe-area-inset-bottom));z-index:6;margin:0}
+  .library-selection{gap:.4rem .6rem;padding:.55rem .65rem}
+  .library-selection .bar{flex:1 1 100%}
+  .library-selection .selection-actions{display:grid;grid-template-columns:1fr 1fr;gap:.4rem}
+  .library-selection .selection-actions>.button-filled{grid-column:1 / -1}
+  .library-selection .button{padding-inline:.6rem;min-width:0;white-space:normal}
+  /* On a phone the search leads; the other filters open under Filters. */
+  .filters-toggle{display:inline-flex}
+  .filter-bar:not(.filters-open)>.field:not(.search),.filter-bar:not(.filters-open)>.more-filters{display:none}
+  .filter-bar .search{flex-basis:100%}
+  #editorial-screen:has(.library-selection:not([hidden])) .footnote{padding-bottom:12rem}
+  .view-library tr{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:.75rem;align-items:start}
+  .view-library .pick-cell{grid-column:1;grid-row:1 / span 5;width:auto;padding-top:.2rem}
+  .view-library td:not(.pick-cell){grid-column:2}
+  .view-library td:nth-last-child(2){white-space:normal}
+  .more-filters>.field{max-width:none}
+}
+
+/* A create sheet: numbered steps in the order a person works, each on the sheet's surface. */
+.create-flow>*+*{margin-top:1rem}
+.create-step{padding-top:.9rem;border-top:1px solid var(--hair)}
+.create-step:first-child{padding-top:0;border-top:0}
+.create-step>*+*{margin-top:.6rem}
+.create-foot{justify-content:flex-start}
+.sample-picks{border:0;margin:0;padding:0;min-width:0;display:grid;gap:.35rem}
+.sample-picks legend{padding:0;margin-bottom:.3rem;font-weight:600}
+.sample-count{margin-top:.3rem}
+.library-candidates{margin-top:.5rem}
+.author-rows .row{padding-block:.55rem}
+.author-pick{align-items:flex-start;width:100%}
+.author-pick input{margin-top:.2rem}
+.author-pick .row-text{display:grid;gap:.15rem}
+.more-ways .button{flex:0 0 auto}
+.settings-part{margin-top:2rem}

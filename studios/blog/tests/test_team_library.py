@@ -786,6 +786,111 @@ class SelectionTests(RunnerCase):
         with self.assertRaisesRegex(ValueError, 'not a library item'):
             act(action='blog', ids=[material])
 
+    def test_select_all_matching_returns_every_match_and_a_learn_selection_takes_more(self):
+        ones = self.items(*['a%d.md' % n for n in range(20)], author='Avery')
+        twos = self.items(*['b%d.md' % n for n in range(20)], author='Avery', operation='b')
+        threes = self.items(*['c%d.md' % n for n in range(20)], author='Avery', operation='c')
+        jordan = self.items('j.md', author='Jordan', operation='d')
+        everything = management.view(self.root, 'library-matching', {})
+        self.assertEqual(everything['total'], 61, 'more than one page of fifty')
+        self.assertEqual(
+            sorted(row['id'] for row in everything['items']), sorted(ones + twos + threes + jordan)
+        )
+        self.assertEqual({row['location'] for row in everything['items']}, {'local'})
+        self.assertFalse(everything['capped'])
+        filtered = management.view(self.root, 'library-matching', {'author': ['Jordan']})
+        self.assertEqual([row['id'] for row in filtered['items']], jordan)
+        # More than fifty ticked can still be learned from; the first twenty are read.
+        many = [row['id'] for row in everything['items']]
+        learned = management.dispatch(
+            self.root, 'library-selection', {'action': 'style-learn', 'ids': many}
+        )
+        self.assertEqual(len(learned['candidates']), 20)
+        self.assertEqual(len(learned['left_out']), 41)
+        with self.assertRaisesRegex(ValueError, 'one to fifty'):
+            management.dispatch(
+                self.root, 'library-selection', {'action': 'blog', 'ids': many[:51]}
+            )
+
+
+class VoicesForEveryAuthorTests(RunnerCase):
+    """Create voices for every author: one learning job per ticked author, confirmed once."""
+
+    items = SelectionTests.items
+
+    def jobs(self):
+        folder = self.root / '.blog-runs' / 'tools'
+        return sorted(path.stem for path in folder.glob('*.json')) if folder.is_dir() else []
+
+    def test_authors_are_listed_with_counts_and_two_readable_posts_make_a_voice(self):
+        self.items('one.md', 'two.md', 'three.md', author='Avery Quinn')
+        self.items('solo.md', author='Jordan Lee', operation='b')
+        self.items('nobody.md', operation='c')
+        with patch.object(library.shutil, 'which', return_value=None):
+            self.items('scan.pdf', author='Avery Quinn', operation='d')
+        found = management.view(self.root, 'library-authors', {})
+        self.assertEqual(found['unnamed'], 1)
+        self.assertEqual(found['minimum'], 2)
+        avery, jordan = found['authors']
+        self.assertEqual(
+            (avery['author'], avery['posts'], avery['readable'], avery['ready'], avery['reason']),
+            ('Avery Quinn', 4, 3, True, ''),
+            'a scan without text is not readable',
+        )
+        self.assertEqual(len(avery['samples']), 3)
+        self.assertIsNone(avery['profile'])
+        self.assertEqual((jordan['author'], jordan['ready']), ('Jordan Lee', False))
+        self.assertEqual(jordan['reason'], 'Only 1 readable post; a voice needs at least 2.')
+
+    def test_one_confirmation_queues_one_job_per_author_and_updates_an_existing_voice(self):
+        avery = self.items('one.md', 'two.md', author='Avery Quinn')
+        sam = self.items('s1.md', 's2.md', 's3.md', author='Sam Rivera', operation='b')
+        self.items('solo.md', author='Jordan Lee', operation='c')
+        self.file.write_text('Short direct sentences.')
+        existing = self.command(
+            'profile', 'create', '--name', 'Sam Rivera', '--guide-file', str(self.file),
+            '--status', 'confirmed',
+        )
+        listed = {row['author']: row for row in management.view(self.root, 'library-authors', {})[
+            'authors'
+        ]}
+        self.assertEqual(listed['Sam Rivera']['profile']['id'], existing['id'])
+        create = lambda **data: management.dispatch(self.root, 'library-voices', data)  # noqa: E731
+        before = self.jobs()
+        with self.assertRaisesRegex(ValueError, 'permission'):
+            create(operation='a' * 32, authors=['Avery Quinn', 'Sam Rivera'])
+        with self.assertRaisesRegex(ValueError, 'Jordan Lee: Only 1 readable post'):
+            create(operation='a' * 32, authors=['Avery Quinn', 'Jordan Lee'], confirmed=True)
+        self.assertEqual(self.jobs(), before, 'a refusal queues nothing')
+        for ident in avery:
+            self.assertNotIn(
+                'voice-sample', studio.item(self.root, 'sources', ident)[1]['purposes'],
+                'and marks nothing',
+            )
+        result = create(operation='a' * 32, authors=['Avery Quinn', 'Sam Rivera'], confirmed=True)
+        self.assertEqual([row['author'] for row in result['jobs']], ['Avery Quinn', 'Sam Rivera'])
+        self.assertEqual(len(self.jobs()), 2, 'one job per ticked author')
+        first, second = result['jobs']
+        self.assertEqual((first['update'], first['samples']), (False, 2))
+        self.assertEqual((second['update'], second['profile']['id']), (True, existing['id']))
+        for row in result['jobs']:
+            self.assertEqual((row['job']['kind'], row['job']['status']), ('voice-learn', 'queued'))
+        import tool_jobs
+
+        saved = tool_jobs.read(self.root, second['job']['id'])
+        self.assertEqual(saved['metadata']['profile'], existing['id'], 'an update, not a new voice')
+        self.assertEqual(sorted(saved['metadata']['samples']), sorted(sam))
+        self.assertIsNone(tool_jobs.read(self.root, first['job']['id'])['metadata']['profile'])
+        for ident in avery + sam:
+            self.assertIn('voice-sample', studio.item(self.root, 'sources', ident)[1]['purposes'])
+        again = create(operation='a' * 32, authors=['Avery Quinn', 'Sam Rivera'], confirmed=True)
+        self.assertEqual(
+            [row['job']['id'] for row in again['jobs']],
+            [row['job']['id'] for row in result['jobs']],
+            'sending the batch again returns the same jobs',
+        )
+        self.assertEqual(len(self.jobs()), 2)
+
 
 class LibraryPickTests(RunnerCase):
     """Task 6: a run reads library items with a role for this blog only."""
