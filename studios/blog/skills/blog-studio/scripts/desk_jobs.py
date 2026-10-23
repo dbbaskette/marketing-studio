@@ -7,6 +7,7 @@ studio lock.
 """
 
 import json
+import re
 import secrets
 
 import blog_runner
@@ -136,7 +137,12 @@ def _request(label, text, scope):
 
 
 def _queue(root, ident, draft, seen, kind, payload, guidance, meta):
-    desk.checked(draft, seen)
+    parts = (
+        [section['id'] for section in draft['sections']]
+        if meta['part'] == 'sections'
+        else [meta['part']]
+    )
+    desk.checked(draft, seen, parts)
     _busy(root, ident)
     meta = {**meta, 'seen': seen}
     result = tool_jobs.create(
@@ -324,3 +330,134 @@ def first_pass(root, ident, seen, choice):
         guidance,
         {'part': 'sections', 'action': choice, 'basis': _sections_basis(draft)},
     )
+
+
+# Settling: a ready result lands in the draft, once, with the replaced text kept first.
+
+
+def _merge_gaps(draft, result):
+    found = result.get('gaps')
+    if not isinstance(found, list):
+        return
+    gaps = list(draft.get('gaps') or [])
+    for gap in found:
+        if isinstance(gap, str) and gap.strip() and gap.strip()[:1000] not in gaps:
+            gaps.append(gap.strip()[:1000])
+    draft['gaps'] = gaps[-GAPS:]
+
+
+def _clean(text, heading=None):
+    """The returned writing without a repeated heading or wrapping blank lines."""
+    text = text.replace('\r\n', '\n').strip()
+    if heading is not None:
+        first, _, rest = text.partition('\n')
+        if re.fullmatch(r'#{1,6}\s+' + re.escape(heading) + r'\s*', first.strip()):
+            text = rest.strip()
+    return text
+
+
+def _section_texts(content):
+    """[{id, text}] from a whole-draft result, refused readably when malformed."""
+    text = content.strip()
+    fenced = re.fullmatch(r'```(?:json)?\s*\n(.*)\n```', text, re.S)
+    if fenced:
+        text = fenced.group(1)
+    try:
+        found = json.loads(text)
+    except ValueError:
+        raise ValueError(
+            'The result was not the list of sections asked for. Run it again.'
+        ) from None
+    if (
+        not isinstance(found, list)
+        or len(found) > 500
+        or any(
+            not isinstance(item, dict)
+            or not isinstance(item.get('id'), str)
+            or not isinstance(item.get('text'), str)
+            for item in found
+        )
+    ):
+        raise ValueError('The result was not the list of sections asked for. Run it again.')
+    return found
+
+
+def _apply(root, ident, draft, job):
+    meta, result = job['metadata']['desk'], job.get('result') or {}
+    content = result.get('content')
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError('The result was empty. Run it again.')
+    kind = job['kind']
+    if kind == 'desk-section':
+        part = meta['part']
+        try:
+            section = desk._part(draft, part)
+        except ValueError:
+            raise ValueError(STALE) from None
+        if fingerprint(section['text']) != meta.get('basis'):
+            raise ValueError(STALE)
+        text = _clean(content, section['heading'])
+        desk.checked_text(part, text)
+        desk.keep(root, ident, part, section['text'], 'rewrite')
+        section['text'] = text
+        _merge_gaps(draft, result)
+        return desk._write(root, ident, draft, [part])
+    if kind == 'desk-selection':
+        part, passage = meta['part'], meta.get('selection') or ''
+        try:
+            whole = desk.text_of(draft, part)
+        except ValueError:
+            raise ValueError(STALE) from None
+        if not passage or whole.count(passage) != 1:
+            raise ValueError(
+                'The selected passage changed while this was being written. Select it again.'
+            )
+        replacement = _clean(content)
+        if part == 'title':
+            replacement = ' '.join(replacement.split())
+        updated = whole.replace(passage, replacement, 1)
+        desk.checked_text(part, updated)
+        desk.keep(root, ident, part, whole, 'selection')
+        desk._set(draft, part, updated)
+        _merge_gaps(draft, result)
+        return desk._write(root, ident, draft, [part])
+    # The whole draft: every section as it was asked about, and every returned id known.
+    if _sections_basis(draft) != meta.get('basis'):
+        raise ValueError(STALE)
+    found = _section_texts(content)
+    sections = {section['id']: section for section in draft['sections']}
+    ids = [item['id'] for item in found]
+    if len(set(ids)) != len(ids) or any(name not in sections for name in ids):
+        raise ValueError('The result named sections this draft does not have. Run it again.')
+    changes = {}
+    for item in found:
+        section = sections[item['id']]
+        text = _clean(item['text'], section['heading'])
+        if not text or text == section['text']:
+            continue
+        desk.checked_text(item['id'], text)
+        changes[item['id']] = text
+    source = 'revise-all' if kind == 'desk-revise-all' else 'first-pass'
+    for part, text in changes.items():
+        desk.keep(root, ident, part, sections[part]['text'], source)
+        sections[part]['text'] = text
+    _merge_gaps(draft, result)
+    return desk._write(root, ident, draft, list(changes))
+
+
+def settle(root, ident):
+    """Land each ready desk job of this blog once. A result whose part changed meanwhile,
+    or that cannot be read, is kept unapplied with a readable problem."""
+    landed = []
+    for job in jobs(root, ident):
+        if job.get('status') != 'ready' or job.get('settled_at'):
+            continue
+        try:
+            _apply(root, ident, desk.read(root, ident), job)
+            job.update(applied=True, error='')
+            landed.append(job['id'])
+        except ValueError as error:
+            job.update(applied=False, error=str(error)[:1000])
+        job['settled_at'] = studio.now()
+        tool_jobs.write(root, job)
+    return landed

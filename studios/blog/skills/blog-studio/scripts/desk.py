@@ -267,12 +267,16 @@ def _set(draft, part, text):
         section['text'] = text.strip()
 
 
-def _write(root, ident, draft):
-    """Keep the draft, DRAFT.md and the blog's record in step, one revision on."""
+def _write(root, ident, draft, parts=()):
+    """Keep the draft, DRAFT.md and the blog's record in step, one revision on. Each part
+    in `parts` records the revision it last changed at, for the stale check."""
     directory, target = _paths(root, ident)
     record = studio.read_json(studio.metadata_path(directory, 'articles'))
     draft['revision'] += 1
     draft['updated_at'] = studio.now()
+    changed = draft.setdefault('changed', {})
+    for part in parts:
+        changed[part] = draft['revision']
     body = join(draft)
     studio.write_json(target, draft)
     studio.atomic(studio.inside(directory, 'DRAFT.md'), body.encode())
@@ -283,8 +287,20 @@ def _write(root, ident, draft):
     return draft
 
 
-def checked(draft, seen):
-    if type(seen) is not int or draft['revision'] != seen:
+def checked(draft, seen, parts=None):
+    """Refuse a form older than the parts it changes.
+
+    With no parts named, the whole draft must be as the form saw it. With parts, a form
+    that saw revision `seen` may still change a part nothing else changed after it, so a
+    rewrite landing in one section never refuses typing in another."""
+    if type(seen) is not int or not 1 <= seen <= draft['revision']:
+        raise ValueError('This draft changed since you opened it. Reload to see the latest.')
+    if parts is None:
+        stale = seen != draft['revision']
+    else:
+        changed = draft.get('changed') or {}
+        stale = any(changed.get(part, 1) > seen for part in parts)
+    if stale:
         raise ValueError('This draft changed since you opened it. Reload to see the latest.')
 
 
@@ -300,13 +316,13 @@ def save(root, ident, seen, part, text, source='save', session=None):
     """Save one part the form last saw at revision `seen`; an outdated form is refused."""
     checked_text(part, text)
     draft = read(root, ident)
-    checked(draft, seen)
     before = text_of(draft, part)
+    checked(draft, seen, [part])
     if before == text.strip():
         return draft
     keep(root, ident, part, before, source, session)
     _set(draft, part, text)
-    return _write(root, ident, draft)
+    return _write(root, ident, draft, [part])
 
 
 PART = re.compile(r'[a-f0-9]{8}')

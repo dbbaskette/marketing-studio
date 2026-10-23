@@ -1,6 +1,7 @@
 """Desk jobs: what each kind sends, one job per blog, and how a result lands."""
 
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
+import json
 import unittest
 
 import blog_runner
@@ -177,6 +178,144 @@ class WholeDraftTests(DeskJobCase):
         made = desk.create(self.root, {'title': 'Flat', 'manuscript': 'Just prose.'})
         with self.assertRaisesRegex(ValueError, 'section by section'):
             desk_jobs.first_pass(self.root, made['id'], 1, 'tighten')
+
+
+class SettleTests(DeskJobCase):
+    def ready(self, job, content, **result):
+        saved = self.saved(job)
+        saved.update(
+            status='ready', result={'content': content, 'notes': '', **result}, finished_at='x'
+        )
+        tool_jobs.write(self.root, saved)
+        return saved
+
+    def versions(self, part=None):
+        return desk.versions(self.root, self.ident, part or self.part)
+
+    def test_a_note_result_lands_in_the_section_and_keeps_the_old_text(self):
+        job = desk_jobs.section(self.root, self.ident, 1, self.part, 'Add an example.')
+        self.ready(job, '## First part\n\nFirst text, for example this one.')
+        self.assertEqual(desk_jobs.settle(self.root, self.ident), [job['id']])
+        draft = desk.read(self.root, self.ident)
+        self.assertEqual(draft['sections'][0]['text'], 'First text, for example this one.')
+        self.assertEqual(draft['revision'], 2)
+        self.assertEqual(self.versions()[0]['text'], 'First text.')
+        self.assertEqual(self.versions()[0]['source'], 'rewrite')
+        self.assertTrue(self.saved(job)['applied'])
+        # Settled once: reading again changes nothing.
+        self.assertEqual(desk_jobs.settle(self.root, self.ident), [])
+        self.assertEqual(desk.read(self.root, self.ident)['revision'], 2)
+
+    def test_typing_in_another_part_does_not_stop_a_rewrite(self):
+        job = desk_jobs.section(self.root, self.ident, 1, self.part, 'Shorter.')
+        other = self.made['sections'][1]['id']
+        desk.save(self.root, self.ident, 1, other, 'Typed meanwhile.')
+        self.ready(job, 'First.')
+        desk_jobs.settle(self.root, self.ident)
+        texts = [s['text'] for s in desk.read(self.root, self.ident)['sections']]
+        self.assertEqual(texts, ['First.', 'Typed meanwhile.'])
+        # The page saw revision 2 before the rewrite landed; typing in the other part holds.
+        desk.save(self.root, self.ident, 2, other, 'Typed again.')
+        with self.assertRaisesRegex(ValueError, 'changed since'):
+            desk.save(self.root, self.ident, 2, self.part, 'Over the rewrite.')
+
+    def test_a_result_for_a_changed_part_is_not_applied_and_says_why(self):
+        job = desk_jobs.section(self.root, self.ident, 1, self.part, 'Shorter.')
+        desk.save(self.root, self.ident, 1, self.part, 'Edited meanwhile.')
+        self.ready(job, 'First.')
+        desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(
+            desk.read(self.root, self.ident)['sections'][0]['text'], 'Edited meanwhile.'
+        )
+        saved = self.saved(job)
+        self.assertIs(saved['applied'], False)
+        self.assertEqual(saved['error'], desk_jobs.STALE)
+        self.assertTrue(saved['settled_at'])
+
+    def test_a_selection_replaces_only_its_passage(self):
+        desk.save(self.root, self.ident, 1, self.part, 'Keep this. Change this part. Keep that.')
+        job = desk_jobs.selection(self.root, self.ident, 2, self.part, 'Change this part.', 'fix')
+        self.ready(job, 'Changed.')
+        desk_jobs.settle(self.root, self.ident)
+        draft = desk.read(self.root, self.ident)
+        self.assertEqual(draft['sections'][0]['text'], 'Keep this. Changed. Keep that.')
+        self.assertEqual(self.versions()[0]['source'], 'selection')
+
+    def test_a_selection_whose_passage_now_occurs_twice_is_not_applied(self):
+        job = desk_jobs.selection(self.root, self.ident, 1, self.part, 'First', 'fix')
+        desk.save(self.root, self.ident, 1, self.part, 'First text. First again.')
+        self.ready(job, 'Primary')
+        desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(
+            desk.read(self.root, self.ident)['sections'][0]['text'], 'First text. First again.'
+        )
+        self.assertIs(self.saved(job)['applied'], False)
+
+    def test_a_whole_draft_revision_lands_in_one_revision_with_a_version_each(self):
+        job = desk_jobs.revise_all(self.root, self.ident, 1, 'Tighten.')
+        ids = [s['id'] for s in self.made['sections']]
+        self.ready(
+            job,
+            '```json\n'
+            + json.dumps([{'id': ids[0], 'text': 'One.'}, {'id': ids[1], 'text': 'Second text.'}])
+            + '\n```',
+        )
+        desk_jobs.settle(self.root, self.ident)
+        draft = desk.read(self.root, self.ident)
+        self.assertEqual([s['text'] for s in draft['sections']], ['One.', 'Second text.'])
+        self.assertEqual(draft['revision'], 2)
+        self.assertEqual(self.versions(ids[0])[0]['source'], 'revise-all')
+        self.assertEqual(self.versions(ids[1]), [])  # Unchanged: no version.
+
+    def test_a_first_pass_keeps_first_pass_versions(self):
+        job = desk_jobs.first_pass(self.root, self.ident, 1, 'tighten')
+        self.ready(job, json.dumps([{'id': self.part, 'text': 'Tight.'}]))
+        desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(self.versions()[0]['source'], 'first-pass')
+
+    def test_a_whole_draft_result_with_an_unknown_id_changes_nothing(self):
+        job = desk_jobs.revise_all(self.root, self.ident, 1, 'Tighten.')
+        self.ready(
+            job, json.dumps([{'id': self.part, 'text': 'One.'}, {'id': 'ffffffff', 'text': 'X'}])
+        )
+        desk_jobs.settle(self.root, self.ident)
+        draft = desk.read(self.root, self.ident)
+        self.assertEqual(draft['revision'], 1)
+        self.assertEqual(draft['sections'][0]['text'], 'First text.')
+        self.assertRegex(self.saved(job)['error'], 'sections this draft does not have')
+
+    def test_a_malformed_whole_draft_result_is_refused_readably(self):
+        job = desk_jobs.revise_all(self.root, self.ident, 1, 'Tighten.')
+        self.ready(job, 'Here is your draft!')
+        desk_jobs.settle(self.root, self.ident)
+        self.assertRegex(self.saved(job)['error'], 'list of sections')
+
+    def test_gaps_become_the_drafts_gaps_once(self):
+        job = desk_jobs.section(self.root, self.ident, 1, self.part, 'Add the date.')
+        self.ready(job, 'First text, on a date.', gaps=['The release date.', 'The release date.'])
+        desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(desk.read(self.root, self.ident)['gaps'], ['The release date.'])
+
+    def test_a_cancelled_job_settles_nothing(self):
+        job = desk_jobs.section(self.root, self.ident, 1, self.part, 'Shorter.')
+        tool_jobs.control(self.root, job['id'], 'cancel', blog_runner.engine(self.root))
+        self.assertEqual(desk_jobs.settle(self.root, self.ident), [])
+
+    def test_a_fake_worker_runs_a_queued_job_end_to_end(self):
+        calls = []
+
+        def worker(engine, payload, guidance, **options):
+            calls.append(payload)
+            return {'content': payload['part']['text'] + ' Added.', 'notes': '', 'gaps': []}
+
+        engine = blog_runner.Engine(self.root, worker=worker)
+        desk_jobs.section(self.root, self.ident, 1, self.part, 'Add a sentence.')
+        tool_jobs.once(engine)
+        self.assertEqual(len(calls), 1)
+        desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(
+            desk.read(self.root, self.ident)['sections'][0]['text'], 'First text. Added.'
+        )
 
 
 class SharedGuidanceTests(unittest.TestCase):
