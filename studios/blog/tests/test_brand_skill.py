@@ -34,6 +34,18 @@ else if (args[0] === 'brands') console.log(JSON.stringify([
 ]));
 else if (args[0] === 'contract' && args[1] === 'export') {
   if (get('--medium') !== 'blog' || args.includes('--delivery')) process.exit(2);
+  if (args.includes('--voice-profile')) {
+    const file = get('--voice-profile'), v = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!v.id || typeof v.guide !== 'string' || !v.guide.trim()
+        || !['provisional','confirmed'].includes(v.status)) {
+      console.error('Portable voice needs id, guide and explicit provisional|confirmed status');
+      process.exit(1);
+    }
+    if (process.env.SYNTHETIC_VOICE_SEEN) fs.writeFileSync(process.env.SYNTHETIC_VOICE_SEEN,
+      JSON.stringify({voice: v, mode: fs.statSync(file).mode & 0o777}));
+  } else if (process.env.SYNTHETIC_VOICE_SEEN) {
+    fs.writeFileSync(process.env.SYNTHETIC_VOICE_SEEN, JSON.stringify({voice: null}));
+  }
   const folder = get('--output'); fs.mkdirSync(folder, {recursive:true});
   fs.writeFileSync(path.join(folder,'brand-contract.json'), JSON.stringify({
     schema:1, medium:'blog',brand:get('--brand'),variant:get('--variant'),revision:'synthetic-v1'}));
@@ -169,6 +181,99 @@ class BrandSkillTests(unittest.TestCase):
         other = self.base / 'another-computer'
         shutil.copytree(self.root, other)
         self.assertEqual(blog_runner.job(other, run['id'])[1]['brand'], payload['brand'])
+
+    def profile(self, guide='Short direct sentences.', status='confirmed'):
+        file = self.base / f'guide-{status}.md'
+        file.write_text(guide)
+        args = studio.parser().parse_args(
+            [
+                '--root',
+                str(self.root),
+                'profile',
+                'create',
+                '--name',
+                f'Avery {status}',
+                '--guide-file',
+                str(file),
+                '--status',
+                status,
+            ]
+        )
+        return studio.profile_command(self.root, args)
+
+    def seen(self):
+        return json.loads((self.base / 'voice-seen.json').read_text())
+
+    def test_export_passes_the_voice_profile(self):
+        self.skill()
+        made = self.profile()
+        voice = studio.voice_handoff(self.root, made['id'], 1)
+        self.assertEqual(
+            voice,
+            {
+                'id': made['id'],
+                'revision': 1,
+                'guide': 'Short direct sentences.',
+                'status': 'confirmed',
+            },
+        )
+        with patch.dict(os.environ, {'SYNTHETIC_VOICE_SEEN': str(self.base / 'voice-seen.json')}):
+            brands.snapshot('fictional', 'dark', voice)
+            self.assertEqual(self.seen(), {'voice': voice, 'mode': 0o600})
+            brands.snapshot('fictional', 'dark')
+            self.assertEqual(self.seen(), {'voice': None})
+        leftovers = list(Path(tempfile.gettempdir()).glob('blog-brand-contract-*'))
+        self.assertFalse(any((folder / 'voice-profile.json').exists() for folder in leftovers))
+
+    def test_run_with_a_voice_exports_it_to_the_brand(self):
+        self.skill()
+        made = self.profile(status='provisional')
+        start = {
+            'title': 'Synthetic article',
+            'goal': 'Explain a fictional system',
+            'audience': 'Authors',
+            'research': 'none',
+            'brand': 'fictional',
+            'variant': 'dark',
+        }
+        with patch.dict(os.environ, {'SYNTHETIC_VOICE_SEEN': str(self.base / 'voice-seen.json')}):
+            blog_runner.create(self.root, {**start, 'profile': made['id']})
+            self.assertEqual(self.seen()['voice']['status'], 'provisional')
+            self.assertEqual(self.seen()['voice']['id'], made['id'])
+            blog_runner.create(
+                self.root, {**start, 'title': 'Tone only', 'tone': 'Plain and personal'}
+            )
+            self.assertEqual(self.seen(), {'voice': None}, 'a tone-only run passes none')
+
+    def test_brand_refusal_of_a_profile_is_shown(self):
+        self.skill()
+        made = self.profile(guide='', status='provisional')
+        start = {
+            'title': 'Refused voice',
+            'goal': 'Explain a fictional system',
+            'audience': 'Authors',
+            'research': 'none',
+            'brand': 'fictional',
+            'variant': 'dark',
+            'profile': made['id'],
+        }
+        before = (
+            sorted(path.name for path in (self.root / 'articles').glob('*'))
+            if (self.root / 'articles').exists()
+            else []
+        )
+        with self.assertRaises(ValueError) as refused:
+            blog_runner.create(self.root, start)
+        self.assertIn(
+            'Portable voice needs id, guide and explicit provisional|confirmed status',
+            str(refused.exception),
+        )
+        after = (
+            sorted(path.name for path in (self.root / 'articles').glob('*'))
+            if (self.root / 'articles').exists()
+            else []
+        )
+        self.assertEqual(after, before, 'no blog folder is made')
 
     def test_no_brand_keeps_writing_available_and_shared_default_is_optional(self):
         self.assertIsNone(brands.snapshot(''))

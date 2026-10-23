@@ -277,9 +277,16 @@ class Brand:
         return listed
 
     def export(
-        self, folder: Path, brand_id: str, variant: str | None, delivery: str = 'reading'
+        self,
+        folder: Path,
+        brand_id: str,
+        variant: str | None,
+        delivery: str = 'reading',
+        voice_profile: Path | None = None,
     ) -> dict:
-        """Export one brand's contract for a blog into a new folder."""
+        """Export one brand's contract for a blog into a new folder. With `voice_profile`, a
+        JSON file of the chosen author voice ({id, revision, guide, status}), the brand
+        writes that voice beside its own naming rules."""
         if delivery not in DELIVERIES:
             raise WorkspaceError(
                 f'A brand is exported for {DELIVERIES[0]} or '
@@ -303,6 +310,7 @@ class Brand:
                 *_variant(variant),
                 '--output',
                 str(folder),
+                *(['--voice-profile', str(voice_profile)] if voice_profile else []),
             )
             if not all(path.is_file() for path in made.values()):
                 raise WorkspaceError(

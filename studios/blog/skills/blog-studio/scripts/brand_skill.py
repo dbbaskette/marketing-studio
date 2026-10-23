@@ -3,6 +3,7 @@
 from contextlib import contextmanager
 import fcntl
 import json
+import os
 from pathlib import Path
 import re
 import tempfile
@@ -342,8 +343,11 @@ def _install(kept, lease):
         lease.close()
 
 
-def snapshot(brand_id, variant=''):
-    """Resolve only an explicit identity; keep guides, without local runtime paths."""
+def snapshot(brand_id, variant='', voice=None):
+    """Resolve only an explicit identity; keep guides, without local runtime paths. `voice`
+    is the run's pinned author voice as `studio.voice_handoff` gives it, handed to the brand's
+    export as its `--voice-profile` in a file of the temporary folder, readable by this user
+    alone and never kept. A tone-only or preserved voice passes none."""
     if not isinstance(brand_id, str) or not isinstance(variant, str):
         raise ValueError('Choose a listed brand and variant.')
     if not brand_id:
@@ -360,8 +364,17 @@ def snapshot(brand_id, variant=''):
         if not selected or variant not in selected['variants']:
             raise ValueError('Choose a brand and variant offered by the selected brand skill.')
         with tempfile.TemporaryDirectory(prefix='blog-brand-contract-') as temporary:
+            profile = None
+            if voice:
+                profile = Path(temporary) / 'voice-profile.json'
+                handle = os.open(profile, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                with os.fdopen(handle, 'w', encoding='utf-8') as stream:
+                    json.dump(
+                        {key: voice.get(key) for key in ('id', 'revision', 'guide', 'status')},
+                        stream,
+                    )
             exported = brand.Brand(runtime=Path(found['runtime'])).export(
-                Path(temporary) / 'contract', brand_id, variant
+                Path(temporary) / 'contract', brand_id, variant, voice_profile=profile
             )
             documents = {
                 name: Path(path).read_text(encoding='utf-8') for name, path in exported.items()

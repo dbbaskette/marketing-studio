@@ -1133,7 +1133,15 @@ def create(root, data, approval='conversation'):
     }
     import brand_skill
 
-    selected_brand = brand_skill.snapshot(data.get('brand', ''), data.get('variant', ''))
+    # The brand writes the chosen author voice beside its own naming rules, so the voice is
+    # read first. A tone-only run gives it none.
+    chosen_profile, chosen_revision = data.get('profile') or None, data.get('revision')
+    handoff = (
+        studio.voice_handoff(root, chosen_profile, chosen_revision)
+        if chosen_profile and (chosen_revision is None or type(chosen_revision) is int)
+        else None
+    )
+    selected_brand = brand_skill.snapshot(data.get('brand', ''), data.get('variant', ''), handoff)
     title = text(
         data.get('title', ''), 'title', 500, required=not data.get('id') and not angles_first
     )

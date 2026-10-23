@@ -251,6 +251,22 @@ def voice_pin(root, profile_id, revision=None):
     return {'profile_id': profile_id, 'revision': version}
 
 
+def voice_handoff(root, profile_id, revision=None):
+    """The pinned revision of a voice profile as a brand takes an author's voice: {id,
+    revision, guide, status}, from that revision's record and guide."""
+    pinned = voice_pin(root, profile_id, revision)
+    directory, _ = item(root, 'profiles', profile_id)
+    saved = inside(directory, 'revisions', str(pinned['revision']))
+    record = read_json(saved / 'record.json')
+    guide = saved / 'VOICE.md'
+    return {
+        'id': profile_id,
+        'revision': pinned['revision'],
+        'guide': guide.read_text(encoding='utf-8') if guide.is_file() else '',
+        'status': record.get('status'),
+    }
+
+
 def style_pin(root, style_id, revision=None):
     import styles
 
