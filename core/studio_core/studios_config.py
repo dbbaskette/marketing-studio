@@ -19,7 +19,8 @@ STRICT_GROUPS = globals().get("STRICT_GROUPS", False)
 
 SCHEMA = 1
 PATH = Path.home() / '.config' / 'studios-config.json'
-GROUPS = ('team', 'person', 'assistant', 'brand', 'local', 'render', 'models', 'review')   # keys whose value is an object
+GROUPS = ('team', 'person', 'assistant', 'brand', 'local', 'render', 'models', 'review',
+          'research')   # keys whose value is an object
 WORDS = ('output', 'share')                         # keys whose value is a word
 SECRET = ('That address carries a password or token. Give the address without it; git '
           'signs in with your own credentials.')
@@ -106,6 +107,13 @@ def _check(changes) -> None:
             from studio_core.review_policy import check
             try:
                 check(value)
+            except ValueError as error:
+                raise WorkspaceError(str(error)) from error
+            continue
+        if key == 'research':
+            from studio_core.research_sites import check_shared
+            try:
+                check_shared(value)
             except ValueError as error:
                 raise WorkspaceError(str(error)) from error
             continue

@@ -197,9 +197,59 @@ function fill() {
     input.value = value;
   }
   form.elements.storage.value = shared.team?.repository ? 'remote' : 'local';
+  researchSites = [...(shared.research?.sites || [])]; renderSites();
   efforts(shared.assistant?.effort); storage(); fillProfiles();
   for (const picker of modelPickers.values()) renderModelPicker(picker);
 }
+// Research sites: canonical https://host[/path], shown as host/path. The server checks
+// each again (core/studio_core/research_sites.py) and refuses what it cannot use.
+let researchSites = [];
+const MOST_SITES = 50;
+function siteShown(site) { return site.replace(/^https:\/\//, ''); }
+function canonicalSite(typed) {
+  const given = typed.trim();
+  if (!given || /\s/.test(given)) throw new Error('Give a site as an https address, such as docs.example.com/guide.');
+  const text = given.includes('://') ? given : 'https://' + given;
+  let url;
+  try { url = new URL(text); } catch (error) { throw new Error(`“${given}” is not a web address.`); }
+  if (url.protocol !== 'https:') throw new Error(`“${given}”: research sites use https only.`);
+  if (url.username || url.password) throw new Error(`“${given}” carries a name or password. Give the address without them.`);
+  if (url.search || url.hash || /[?#]$/.test(given)) throw new Error(`“${given}”: leave out the part after ? or #. A site is a host and an optional path.`);
+  if (url.port) throw new Error(`“${given}”: research sites use the standard https port.`);
+  const host = url.hostname.toLowerCase().replace(/\.$/, '');
+  const privateName = host === 'localhost' || !host.includes('.') || /\.(local|localhost|internal|lan|home\.arpa|test|intranet|corp|private)$/.test(host);
+  const privateAddress = /^(10|127|0)\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) || host.startsWith('[');
+  if (privateName || privateAddress) throw new Error(`“${given}” is not a public site. Research never reads this computer or a private network.`);
+  if (url.pathname.split('/').some(part => part === '.' || part === '..') || /%2f|%5c/i.test(url.pathname)) throw new Error(`“${given}”: the path may not hold "." or ".." parts or encoded slashes.`);
+  return 'https://' + host + url.pathname.replace(/\/+$/, '');
+}
+function renderSites() {
+  const list = $('#research-site-list'); list.replaceChildren();
+  researchSites.forEach((site, index) => {
+    const row = element('li', '', 'site-row'), remove = element('button', 'Remove', 'button button-quiet');
+    remove.type = 'button'; remove.setAttribute('aria-label', `Remove ${siteShown(site)}`);
+    remove.addEventListener('click', () => {
+      researchSites.splice(index, 1); renderSites();
+      $('#research-site-hint').textContent = `${siteShown(site)} removed. Save settings to keep the list.`;
+      (list.querySelectorAll('.site-row .button')[Math.min(index, researchSites.length - 1)] || $('#research-site-input')).focus();
+    });
+    row.append(element('span', siteShown(site)), remove); list.append(row);
+  });
+  $('#research-site-empty').hidden = researchSites.length > 0;
+}
+function addSite() {
+  const input = $('#research-site-input');
+  try {
+    const site = canonicalSite(input.value);
+    if (researchSites.includes(site)) throw new Error(`${siteShown(site)} is already in your list.`);
+    if (researchSites.length >= MOST_SITES) throw new Error(`Keep at most ${MOST_SITES} research sites.`);
+    researchSites.push(site); renderSites(); input.value = '';
+    $('#research-site-hint').textContent = `${siteShown(site)} added. Save settings to keep the list.`;
+  } catch (error) { $('#research-site-hint').textContent = error.message; }
+  input.focus();
+}
+$('#research-site-add').addEventListener('click', addSite);
+$('#research-site-input').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); addSite(); } });
 const profileNames = ['quick', 'main', 'complex'];
 function profileLevels(select, selected, model = null) {
   const levels = catalogModel(model)?.levels || snapshot.efforts[form.elements['assistant.agent'].value];
@@ -386,11 +436,15 @@ function changesForStep() {
     wanted.output = value('output');
     wanted.render = {previews: value('render.previews')};
   }
+  // Research sites are kept in Shared settings, not in first-run setup.
+  if (!setup) wanted.research = {sites: [...researchSites]};
   // Send just the leaves changed from what this form was shown.
   function changed(wanted, seen) {
     const result = {};
     for (const [key, value] of Object.entries(wanted)) {
-      if (value !== null && typeof value === 'object') {
+      if (Array.isArray(value)) {
+        if (JSON.stringify(value) !== JSON.stringify(seen?.[key] ?? [])) result[key] = value;
+      } else if (value !== null && typeof value === 'object') {
         const inner = changed(value, seen?.[key]);
         if (Object.keys(inner).length) result[key] = inner;
       } else if (value !== (seen?.[key] ?? null)) result[key] = value;
