@@ -1107,6 +1107,7 @@ function sLibraryAddResult(held){
 // which still asks for permission before any analysis.
 async function sLibrarySelection(action,ids,author=null){
   if(!ids.length)throw new Error('Tick some library items first.');
+  if(ids.length>LIBRARY_SELECTION_LIMIT)throw new Error('A selection holds at most '+LIBRARY_SELECTION_LIMIT+' items, and '+ids.length+' are ticked. Clear some first.');
   if(action==='blog'&&ids.length>50)throw new Error('A blog takes up to 50 examples, and '+ids.length+' are ticked. Clear some, or learn a voice or a style from them.');
   let result;
   try{result=await api('library-selection',{action,ids,...(author?{author}:{})});}
@@ -1129,10 +1130,13 @@ function sInBatch(ident){return !!studio.voiceBatch?.jobs?.some(row=>row.job.id=
 async function sVoicesForAuthors(){
   if(studio.voiceBatch?.jobs?.length)return sVoicesBatch();
   const found=await sTaskRead('Create voices for every author','library-authors');if(!found)return;
-  const held={operation:operationId(),ticked:new Set(found.authors.filter(row=>row.ready).map(row=>row.author))};
+  // A batch names at most the server's limit: the first that many ready authors are ticked.
+  const most=found.batch_limit||100,ready=found.authors.filter(row=>row.ready);
+  const held={operation:operationId(),ticked:new Set(ready.slice(0,most).map(row=>row.author))};
   const form=sNode('form','create-flow'),problem=sNode('p','problem'),list=sNode('ul','rows author-rows');problem.setAttribute('role','alert');
   const submit=sNode('button','button button-filled','Create voices');submit.type='submit';
   const words=()=>{const chosen=found.authors.filter(row=>held.ticked.has(row.author)),fresh=chosen.filter(row=>!row.profile).length,updates=chosen.length-fresh;
+    if(chosen.length>most){submit.textContent='Tick at most '+most+' authors';submit.disabled=true;return;}
     submit.textContent=!chosen.length?'Create voices':fresh&&updates?'Create '+fresh+(fresh===1?' voice':' voices')+' and update '+updates:fresh?'Create '+fresh+(fresh===1?' voice':' voices'):'Update '+updates+(updates===1?' voice':' voices');submit.disabled=!chosen.length;};
   found.authors.forEach((row,n)=>{
     const box=sNode('input','');box.type='checkbox';box.id='voices-author-'+n;box.value=row.author;box.checked=held.ticked.has(row.author);box.disabled=!row.ready;
@@ -1143,6 +1147,7 @@ async function sVoicesForAuthors(){
   const check=sNode('input');check.type='checkbox';check.id='voices-permission';const confirm=sNode('label','check');confirm.append(check,sNode('span','','I have permission to analyze this writing with my selected assistant.'));
   sAdd(form,sNode('p','','A voice for each ticked author, from up to 20 of their readable posts in the team library, newest first. Those posts become the author’s voice samples. Each voice stays provisional until you review and confirm it.'),
     found.authors.length?list:sNode('p','quiet','No post in the team library names its author yet. Add posts with Add to library: each post’s own author is read from its byline.'),
+    ready.length>most?sNode('p','quiet',ready.length+' authors can have a voice; a batch takes '+most+', so the first '+most+' are ticked. Create voices for the rest in another batch.'):null,
     found.unnamed?sNode('p','quiet',found.unnamed+(found.unnamed===1?' post has':' posts have')+' no author and '+(found.unnamed===1?'is':'are')+' not counted. Set an author in Add to library to include '+(found.unnamed===1?'it':'them')+'.'):null,
     sNode('p','quiet','One job runs at a time, with your selected assistant and time limit.'),confirm,problem,sAdd(sNode('div','bar create-foot'),submit,sButton('Cancel',sCloseSheet)));
   form.addEventListener('submit',async event=>{event.preventDefault();if(!held.ticked.size)return;if(!check.checked){problem.textContent='Confirm you have permission to analyze this writing before creating the voices.';return;}
@@ -1158,7 +1163,8 @@ async function sVoicesBatch(){
     if(!open)item.append(sButton(job.status==='ready'&&!job.applied?'Review '+row.author+'’s voice':'Open',async()=>sToolJob(await api('tool-job?job='+job.id)),job.status==='ready'&&!job.applied?'filled':'quiet'));
     list.append(item);}};
   paint();
-  sOpenSheet('Create voices for every author',sNode('p','','Each voice is learned in its own job. Review each one when it is ready: save it as provisional, or confirm it.'),list,
+  const failed=(batch.failed||[]).length?sAdd(sNode('div','context-note batch-failed'),sNode('p','problem',(batch.jobs.length?'Queued: '+sSeries(batch.jobs.map(row=>row.author))+'. ':'Nothing was queued. ')+'Not queued:'),sAdd(sNode('ul','rows'),...batch.failed.map(row=>sAdd(sNode('li','row'),sAdd(sNode('div','row-text'),sNode('h3','row-title',row.author),sNode('p','row-says',row.reason)))))):null;
+  sOpenSheet('Create voices for every author',sNode('p','','Each voice is learned in its own job. Review each one when it is ready: save it as provisional, or confirm it.'),failed,list,
     sNode('p','quiet','You can close this sheet; the jobs keep their place in the queue. Reopen it from Create voices for every author.'),
     sAdd(sNode('div','bar create-foot'),sButton('Start another batch',()=>{studio.voiceBatch=null;return sVoicesForAuthors();}),sButton('Close',sCloseSheet)));
   // Follow the jobs in place while this sheet stays open.

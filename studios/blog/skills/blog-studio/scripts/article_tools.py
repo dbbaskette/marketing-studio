@@ -219,6 +219,12 @@ def request(root, data):
             else:
                 text(data.get('name'), 'a style name', 200)
                 refuse_retired_style(root, {'style': data.get('style')})
+            # Everything the job would refuse is checked before any item is marked.
+            library_add.check_for_learning(root, data)
+            if kind == 'voice-learn' and data.get('profile'):
+                profile(root, data['profile'])
+            if kind == 'voice-learn' and data.get('background'):
+                background(root, data['background'])
             library_add.mark_for_learning(root, data)
     if kind == 'voice-learn':
         if data.get('confirmed') is not True:

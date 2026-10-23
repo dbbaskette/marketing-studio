@@ -624,94 +624,193 @@ def matching(root, query='', collection=None, author=None, status=None, role=Non
             }
 
 
-def _readable(row):
-    """A library post with text a learning job can read, here or in the Team Hub."""
-    if row['record'].get('status') != 'ready':
-        return False
+AUTHOR_BATCH_LIMIT = 100  # Authors one Create voices for every author may name.
+SAMPLE_CHARACTERS = 200_000  # The longest sample a learning job reads, as article_tools.samples.
+PAYLOAD_LIMIT = 1_000_000  # What one tool job's payload may hold, as tool_jobs.create.
+
+
+def name_key(name):
+    """An author's name as Create voices for every author compares it: case and spacing
+    folded, nothing else. "Dan" and "Dan Smith" are different people."""
+    return ' '.join(str(name or '').split()).casefold()
+
+
+def _row_text(row):
     if row['location'] == 'local':
         path = row['path']
-        return path.is_file() and bool(path.read_text(encoding='utf-8').strip())
+        return path.read_text(encoding='utf-8') if path.is_file() else ''
     body = row.get('body') or ''
-    return bool(body.strip())
+    return body.decode('utf-8', 'replace') if isinstance(body, bytes) else body
+
+
+def _readable(row):
+    """A library post with text a learning job can read, here or in the Team Hub."""
+    return row['record'].get('status') == 'ready' and bool(_row_text(row).strip())
 
 
 def _newest(row):
+    """Newest first by the published date, then by when it was read in. A source's
+    updated_at is left out: marking a post as a sample must not reorder an author's posts."""
     record = row['record']
     metadata = record.get('library') or {}
     return (
         str(metadata.get('published') or ''),
-        str(
-            record.get('retrieved_at') or record.get('updated_at') or record.get('created_at') or ''
-        ),
+        str(record.get('retrieved_at') or record.get('created_at') or ''),
+        str(row['id']),
     )
 
 
-def authors(root):
-    """Every author in the team library, for Create voices for every author: their posts,
-    the readable ones (up to twenty, newest first, become the samples), the voice they
-    already have, and whether a voice can be learned. Authors fold by the same name rule
-    as an add's author groups. Retired items and posts without an author count for nobody."""
+def _author_groups(root):
+    """The library's authors by exact name, each with their rows and readable rows (newest
+    first), the voice of the same name, and whether a voice can be learned."""
     import article_tools
 
-    groups, unnamed = [], 0
+    groups, unnamed = {}, 0
     for row in blog_library.source_rows(root):
         record = row['record']
         if (record.get('library') or {}).get('curation') == 'retired':
             continue
-        name = (record.get('author') or '').strip()
-        if not name:
+        key = name_key(record.get('author'))
+        if not key:
             unnamed += 1
             continue
-        group = next((g for g in groups if voice_links.same_author(name, g['author'])), None)
-        if group is None:
-            group = {'author': name, 'rows': []}
-            groups.append(group)
-        group['rows'].append(row)
-    profiles = [
-        profile
-        for profile in article_tools.voices(root)['profiles']
-        if profile.get('status') != 'retired' and profile.get('name')
-    ]
-    shown = []
-    for group in groups:
-        readable = sorted((r for r in group['rows'] if _readable(r)), key=_newest, reverse=True)
-        voice = next(
-            (p for p in profiles if voice_links.same_author(p['name'], group['author'])), None
+        groups.setdefault(
+            key, {'author': ' '.join(record['author'].split()), 'key': key, 'rows': []}
+        )['rows'].append(row)
+    voices = {}
+    for profile in article_tools.voices(root)['profiles']:
+        if profile.get('status') != 'retired' and name_key(profile.get('name')):
+            voices.setdefault(name_key(profile['name']), profile)
+    for group in groups.values():
+        group['readable'] = sorted(
+            (r for r in group['rows'] if _readable(r)), key=_newest, reverse=True
         )
-        ready = len(readable) >= AUTHOR_MINIMUM
-        reason = (
+        group['voice'] = voices.get(group['key'])
+        group['ready'] = len(group['readable']) >= AUTHOR_MINIMUM
+        group['reason'] = (
             ''
-            if ready
+            if group['ready']
             else 'No readable posts yet.'
-            if not readable
+            if not group['readable']
             else 'Only 1 readable post; a voice needs at least %d.' % AUTHOR_MINIMUM
         )
-        shown.append(
-            {
-                'author': group['author'],
-                'posts': len(group['rows']),
-                'readable': len(readable),
-                'samples': [{'id': r['id'], 'location': r['location']} for r in readable][
-                    :LEARN_LIMIT
-                ],
-                'profile': {key: voice.get(key) for key in ('id', 'name', 'status', 'revision')}
-                if voice
-                else None,
-                'ready': ready,
-                'reason': reason,
+    return list(groups.values()), unnamed
+
+
+def authors(root):
+    """Every author in the team library, for Create voices for every author: their posts,
+    the readable ones (up to twenty, newest first, become the samples), the voice of the
+    same name they already have, and whether a voice can be learned. Authors are grouped by
+    exact name, case and spacing aside. Retired items and posts without an author count
+    for nobody."""
+    groups, unnamed = _author_groups(root)
+    shown = [
+        {
+            'author': group['author'],
+            'posts': len(group['rows']),
+            'readable': len(group['readable']),
+            'samples': [{'id': r['id'], 'location': r['location']} for r in group['readable']][
+                :LEARN_LIMIT
+            ],
+            'profile': {
+                key: group['voice'].get(key) for key in ('id', 'name', 'status', 'revision')
             }
-        )
+            if group['voice']
+            else None,
+            'ready': group['ready'],
+            'reason': group['reason'],
+        }
+        for group in groups
+    ]
     shown.sort(key=lambda g: (not g['ready'], -g['readable'], g['author'].casefold()))
-    return {'authors': shown, 'unnamed': unnamed, 'minimum': AUTHOR_MINIMUM}
+    return {
+        'authors': shown,
+        'unnamed': unnamed,
+        'minimum': AUTHOR_MINIMUM,
+        'batch_limit': AUTHOR_BATCH_LIMIT,
+    }
+
+
+def _learnable(texts, voice):
+    """The refusal a learning job would give these sample texts, before anything is
+    marked: a sample too long to read, or a job too large to queue."""
+    import json
+
+    from article_tools import shared
+    from manuscript_preview import text_only
+
+    found = []
+    for ident, text in texts:
+        body = text_only(text)
+        if len(body) > SAMPLE_CHARACTERS:
+            raise ValueError(
+                'Use shorter authored voice samples for learning.'
+                if voice
+                else 'Use shorter examples for learning.'
+            )
+        found.append({'id': ident, 'text': body})
+    if len(json.dumps(shared(found))) > PAYLOAD_LIMIT:
+        raise ValueError('Use smaller selected excerpts for this task.')
+
+
+def _config_problem():
+    import studios_config
+
+    _, problem = studios_config.read()
+    if problem:
+        raise ValueError(problem)
+
+
+def check_for_learning(root, data):
+    """Everything a confirmed learning job with `mark` would refuse, checked before any item
+    is marked as a sample: each item exists, is a library item with readable text, is by the
+    voice's author, and is short enough, and the job fits and can be queued. Changes nothing."""
+    purpose = 'voice-sample' if data.get('kind') == 'voice-learn' else 'style-sample'
+    samples, name = data.get('samples'), data.get('name')
+    if (
+        not isinstance(samples, list)
+        or not 1 <= len(samples) <= LEARN_LIMIT
+        or any(not isinstance(v, str) for v in samples)
+        or len(set(samples)) != len(samples)
+    ):
+        return  # The learning job refuses the list itself, with its own words.
+    texts = []
+    for ident in samples:
+        directory, record = studio.item(root, 'sources', ident)
+        content = directory / 'content.md'
+        text = content.read_text(encoding='utf-8') if content.is_file() else ''
+        if purpose not in record.get('purposes', []):
+            if studio.is_material(root, directory, record):
+                raise ValueError('A file uploaded for one blog is not a library item.')
+            saved = (record.get('author') or '').strip()
+            if (
+                purpose == 'voice-sample'
+                and saved
+                and not voice_links.same_author(saved, name or '')
+            ):
+                raise ValueError(
+                    record['name'] + ' is by ' + saved + '. Learn ' + saved + '’s voice from '
+                    'it, or untick it.'
+                )
+        if record.get('status') != 'ready' or not text.strip():
+            raise ValueError(record['name'] + ' has no readable text to learn from yet.')
+        texts.append((ident, text))
+    _learnable(texts, purpose == 'voice-sample')
+    _config_problem()
 
 
 def create_voices(root, data):
     """Create voices for every author: one voice-learn job per named author on the existing
     queue, confirmed once for the batch. Each reads up to twenty of the author's readable
     posts, newest first, which become their voice samples only now. An author who has a
-    voice gets a new provisional revision of it, never a second voice. Every author is
-    checked before any job is queued, so a refusal queues nothing. The batch operation and
-    the author name each job's operation: sending the batch again returns the same jobs."""
+    voice of the same name gets a new provisional revision of it, never a second voice.
+
+    Every named author is checked completely first, from what is saved, with nothing
+    marked, checked out or queued, so a refusal for any of them changes nothing. Only then
+    is each author's job requested; should one still fail (a disk or Team Hub failure in
+    between), the others are queued and the result names who was queued and who was not.
+    The batch operation and the author name each job's operation: sending the batch again
+    returns the same jobs."""
     import article_tools
 
     if set(data) - {'operation', 'authors', 'confirmed'}:
@@ -722,55 +821,79 @@ def create_voices(root, data):
     wanted = data.get('authors')
     if (
         not isinstance(wanted, list)
-        or not 1 <= len(wanted) <= 100
-        or any(not isinstance(v, str) or not v.strip() for v in wanted)
-        or len({v.strip().casefold() for v in wanted}) != len(wanted)
+        or not wanted
+        or any(not isinstance(v, str) or not name_key(v) for v in wanted)
     ):
         raise ValueError('Tick the authors to create voices for.')
+    if len(wanted) > AUTHOR_BATCH_LIMIT:
+        raise ValueError(
+            'Create voices for at most %d authors at a time; %d are ticked.'
+            % (AUTHOR_BATCH_LIMIT, len(wanted))
+        )
+    if len({name_key(v) for v in wanted}) != len(wanted):
+        raise ValueError('Tick each author once.')
     if data.get('confirmed') is not True:
         raise ValueError(
             'Confirm you have permission to analyze these authors’ writing before creating '
             'their voices.'
         )
-    listed = authors(root)['authors']
+    # 1. Check every author, with no side effects.
+    groups = {group['key']: group for group in _author_groups(root)[0]}
     chosen = []
     for name in wanted:
-        group = next((g for g in listed if g['author'] == name.strip()), None) or next(
-            (g for g in listed if voice_links.same_author(g['author'], name)), None
-        )
+        group = groups.get(name_key(name))
         if group is None:
-            raise ValueError(name.strip() + ' has no posts in the team library.')
+            raise ValueError(' '.join(name.split()) + ' has no posts in the team library.')
         if not group['ready']:
             raise ValueError(group['author'] + ': ' + group['reason'])
-        if group in chosen:
-            raise ValueError('Tick each author once.')
-        chosen.append(group)
-    jobs = []
-    for group in chosen:
-        samples = [blog_library.local_item(root, s['id'], s['location']) for s in group['samples']]
-        voice = group['profile']
-        job = article_tools.request(
-            root,
-            {
-                'kind': 'voice-learn',
-                'operation': studio.digest((operation + '\0' + group['author']).encode())[:32],
-                'name': voice['name'] if voice else group['author'],
-                'samples': samples,
-                'profile': voice['id'] if voice else None,
-                'confirmed': True,
-                'mark': True,
-            },
-        )
+        rows = group['readable'][:LEARN_LIMIT]
+        if any(row['location'] == 'hub' for row in rows):
+            from hub_workspace import active
+
+            if active(root) is None:
+                raise ValueError(
+                    group['author'] + ': some posts are shared in a Team Hub. Select that '
+                    'Team Hub to use them.'
+                )
+        try:
+            _learnable([(row['id'], _row_text(row)) for row in rows], True)
+        except ValueError as error:
+            raise ValueError(group['author'] + ': ' + str(error)) from None
+        chosen.append((group, rows))
+    _config_problem()
+    # 2. Request each author's job. Each request checks again before it marks anything.
+    jobs, failed = [], []
+    for group, rows in chosen:
+        voice = group['voice']
+        try:
+            samples = [blog_library.local_item(root, row['id'], row['location']) for row in rows]
+            job = article_tools.request(
+                root,
+                {
+                    'kind': 'voice-learn',
+                    'operation': studio.digest((operation + '\0' + group['key']).encode())[:32],
+                    'name': voice['name'] if voice else group['author'],
+                    'samples': samples,
+                    'profile': voice['id'] if voice else None,
+                    'confirmed': True,
+                    'mark': True,
+                },
+            )
+        except (ValueError, OSError, HubError) as error:
+            failed.append({'author': group['author'], 'reason': str(error)})
+            continue
         jobs.append(
             {
                 'author': group['author'],
                 'update': bool(voice),
-                'profile': voice,
+                'profile': {key: voice.get(key) for key in ('id', 'name', 'status', 'revision')}
+                if voice
+                else None,
                 'samples': len(samples),
                 'job': job,
             }
         )
-    return {'operation': operation, 'jobs': jobs}
+    return {'operation': operation, 'jobs': jobs, 'failed': failed}
 
 
 def selection(root, data):

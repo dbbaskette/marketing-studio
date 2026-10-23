@@ -898,6 +898,145 @@ class VoicesForEveryAuthorTests(RunnerCase):
             'sending the batch again returns the same jobs',
         )
         self.assertEqual(len(self.jobs()), 2)
+        self.assertEqual(again['failed'], [])
+
+    def big(self, names, author, operation):
+        """Posts longer than a learning job reads, each about 250,000 characters."""
+        result = management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': operation * 32,
+                'purpose': 'material',
+                'keep': True,
+                'analyze': False,
+                'author': author,
+                'files': [encoded_file(name, ('word ' * 50_000).encode()) for name in names],
+            },
+        )
+        return [row['source']['id'] for row in result['files']]
+
+    def purposes(self, idents):
+        return [studio.item(self.root, 'sources', ident)[1]['purposes'] for ident in idents]
+
+    def test_a_refusal_for_any_author_queues_nothing_and_marks_nothing(self):
+        avery = self.items('a1.md', 'a2.md', author='Avery Quinn')
+        bob = self.big(['b1.md', 'b2.md'], 'Bob Stone', 'b')
+        before = self.purposes(avery + bob)
+        with self.assertRaisesRegex(ValueError, 'Bob Stone: Use shorter authored voice samples'):
+            management.dispatch(
+                self.root,
+                'library-voices',
+                {'operation': 'c' * 32, 'authors': ['Avery Quinn', 'Bob Stone'], 'confirmed': True},
+            )
+        self.assertEqual(self.jobs(), [], 'not even the author checked first is queued')
+        self.assertEqual(self.purposes(avery + bob), before, 'and nobody’s posts are marked')
+
+    def test_one_voice_from_the_library_marks_nothing_when_its_learning_is_refused(self):
+        bob = self.big(['b1.md', 'b2.md'], 'Bob Stone', 'b')
+        before = self.purposes(bob)
+        with self.assertRaisesRegex(ValueError, 'shorter authored voice samples'):
+            management.dispatch(
+                self.root,
+                'tool-action',
+                {
+                    'action': 'job-create',
+                    'kind': 'voice-learn',
+                    'operation': 'd' * 32,
+                    'name': 'Bob Stone',
+                    'samples': bob,
+                    'confirmed': True,
+                    'mark': True,
+                },
+            )
+        self.assertEqual((self.jobs(), self.purposes(bob)), ([], before))
+
+    def test_a_failure_after_the_checks_says_which_authors_were_queued(self):
+        self.items('a1.md', 'a2.md', author='Avery Quinn')
+        self.items('s1.md', 's2.md', author='Sam Rivera', operation='b')
+        import article_tools
+
+        real = article_tools.request
+
+        def flaky(root, data):
+            if data['name'] == 'Sam Rivera':
+                raise OSError('The disk is full.')
+            return real(root, data)
+
+        with patch.object(article_tools, 'request', flaky):
+            result = management.dispatch(
+                self.root,
+                'library-voices',
+                {
+                    'operation': 'e' * 32,
+                    'authors': ['Avery Quinn', 'Sam Rivera'],
+                    'confirmed': True,
+                },
+            )
+        self.assertEqual([row['author'] for row in result['jobs']], ['Avery Quinn'])
+        self.assertEqual(
+            result['failed'], [{'author': 'Sam Rivera', 'reason': 'The disk is full.'}]
+        )
+        self.assertEqual(len(self.jobs()), 1)
+
+    def test_authors_group_and_match_voices_only_by_their_exact_name(self):
+        self.items('d1.md', author='Dan', operation='d')
+        smith = self.items('s1.md', author='Dan Smith', operation='e') + self.items(
+            's2.md', author='  dan   SMITH ', operation='f'
+        )
+        self.file.write_text('Short direct sentences.')
+        self.command(
+            'profile',
+            'create',
+            '--name',
+            'Dan Baskette',
+            '--guide-file',
+            str(self.file),
+            '--status',
+            'confirmed',
+        )
+        groups = management.view(self.root, 'library-authors', {})['authors']
+        self.assertEqual(
+            [(g['author'], g['posts'], g['profile']) for g in groups],
+            [('Dan Smith', 2, None), ('Dan', 1, None)],
+            'a first name is not someone else’s full name, and no voice matches by a part of it',
+        )
+        result = management.dispatch(
+            self.root,
+            'library-voices',
+            {'operation': 'f' * 32, 'authors': ['Dan Smith'], 'confirmed': True},
+        )
+        import tool_jobs
+
+        saved = tool_jobs.read(self.root, result['jobs'][0]['job']['id'])
+        self.assertEqual(
+            (saved['metadata']['name'], saved['metadata']['profile']), ('Dan Smith', None)
+        )
+        self.assertEqual(sorted(saved['metadata']['samples']), sorted(smith))
+        with self.assertRaisesRegex(ValueError, 'Dan: Only 1 readable post'):
+            management.dispatch(
+                self.root,
+                'library-voices',
+                {'operation': '9' * 32, 'authors': ['Dan'], 'confirmed': True},
+            )
+
+    def test_a_batch_names_at_most_the_limit_of_authors(self):
+        import library_add
+
+        names = ['Author %d' % n for n in range(library_add.AUTHOR_BATCH_LIMIT + 1)]
+        with self.assertRaisesRegex(
+            ValueError, 'at most %d authors' % library_add.AUTHOR_BATCH_LIMIT
+        ):
+            management.dispatch(
+                self.root,
+                'library-voices',
+                {'operation': 'a' * 32, 'authors': names, 'confirmed': True},
+            )
+        self.assertEqual(
+            management.view(self.root, 'library-authors', {})['batch_limit'],
+            library_add.AUTHOR_BATCH_LIMIT,
+            'the page is told the same limit',
+        )
 
 
 class LibraryPickTests(RunnerCase):

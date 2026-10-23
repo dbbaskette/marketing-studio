@@ -267,7 +267,7 @@ function librarySelectionBar() {
   $('library-selection-count').textContent=count+' selected';
   $('library-selection-hidden').textContent=hidden?(hidden===1?'1 of them is':hidden+' of them are')+' not in this view.':'';
   $('library-select-shown').textContent='Select all '+shown.length+' on this page';$('library-select-shown').hidden=!shown.length||ticked===shown.length;
-  $('library-select-matching').textContent='Select all '+total+' matching';$('library-select-matching').hidden=view!=='library'||total<=shown.length||count>=total;
+  $('library-select-matching').textContent='Select all '+total+' matching';$('library-select-matching').hidden=view!=='library'||total<=shown.length||allMatchingTicked();
   $('library-select-page').hidden=view!=='library'||!shown.length||!access.actions.edit;
   const box=$('library-select-page-box');box.checked=!!shown.length&&ticked===shown.length;box.indeterminate=ticked>0&&ticked<shown.length;
 }
@@ -277,10 +277,24 @@ function tickLibrary(items,on) {
   for(const pick of document.querySelectorAll('.library-pick'))pick.checked=librarySelection.has(pick.dataset.key);
   librarySelectionBar();
 }
+// What the last Select all matching ticked, under which filters: the button hides only
+// while every one of those matches is still ticked, not when the selection is merely large.
+let libraryMatched=null;
+const LIBRARY_SELECTION_LIMIT=500;
+function allMatchingTicked(){
+  const state=renderedState;if(!libraryMatched||!state||libraryMatched.filters!==filterArgs(state).toString())return false;
+  return libraryMatched.keys.every(key=>librarySelection.has(key));
+}
 async function selectAllMatching(control) {
   // Every item the same filters match, through the server, up to its limit.
   const state=renderedState;if(!state||state.view!=='library')return;
   const found=await busy(control,'Selecting…',()=>api('library-matching?'+filterArgs(state)));
+  const fresh=found.items.filter(item=>!librarySelection.has(libraryKey(item))).length;
+  if(librarySelection.size+fresh>LIBRARY_SELECTION_LIMIT){
+    notice('That would tick '+(librarySelection.size+fresh)+' items, and a selection holds at most '+LIBRARY_SELECTION_LIMIT+'. Clear the selection or narrow the filters first.',true);
+    return;
+  }
+  libraryMatched={filters:filterArgs(state).toString(),keys:found.items.map(libraryKey)};
   tickLibrary(found.items,true);
   if(found.capped)notice('Selected the first '+found.items.length+' of '+found.total+' matching items. Narrow the filters to choose the rest.');
 }

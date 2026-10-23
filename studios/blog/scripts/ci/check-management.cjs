@@ -98,6 +98,7 @@ async function check(){
   await libraryScreen();
   await librarySelectAll();
   await voicesForEveryAuthor();
+  await voicesBatchLimit();
   await createVoiceSources();
   await movedControls();
   await libraryPicker();
@@ -115,7 +116,7 @@ async function check(){
   const checks=['keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: Outline only, Revise or review a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','one name for each thing','copy that says what the form and gates do','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','research from your documents, your sites and/or the public web: the shared list prefilled, a site for one blog checked by the server, the shared sentences, and the sites named at the research gate','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','one name for each thing','copy that says what the form and gates do','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','research from your documents, your sites and/or the public web: the shared list prefilled, a site for one blog checked by the server, the shared sentences, and the sites named at the research gate','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -1077,11 +1078,25 @@ async function librarySelectAll(){
   assert.equal(f.get('library-selection-count').textContent,'61 selected');assert.equal(f.get('library-select-matching').hidden,true);
   assert.equal(f.get('library-selection-hidden').textContent,'41 of them are not in this view.','the bar says what the filters hide');
   f.get('library-author').value='';await f.run('load()');assert.equal(f.get('library-selection-count').textContent,'61 selected','changing the filters keeps the ticks');
+  // Under other filters the matches are not all ticked, however large the selection: the button offers them.
+  assert.equal(f.get('library-select-matching').hidden,false,'other filters offer their own matches');
+  f.get('library-author').value='Avery';await f.run('load()');assert.equal(f.get('library-select-matching').hidden,true,'back under the same filters, all of them are ticked');
+  f.run("librarySelection.delete('local:p59');librarySelectionBar()");assert.equal(f.get('library-select-matching').hidden,false,'untick one match and the button is back');
+  f.run("tickLibrary([{id:'p59'}],true)");
   await assert.rejects(f.run("sLibrarySelection('blog',[...librarySelection.values()])"),/up to 50 examples, and 61 are ticked/);
   assert.equal(requests.some(r=>r.url==='/api/library-selection'),false,'nothing is sent for too many examples');
   await f.run("sLibrarySelection('style-learn',[...librarySelection.values()])");
   const sent=requests.find(r=>r.url==='/api/library-selection').data;assert.equal(sent.ids.length,61,'learning takes the whole selection; the server reads twenty');
-  assert.deepEqual(sent.ids.at(-1),{id:'p60',location:'hub'},'a Team Hub item keeps its location');
+  assert.deepEqual(sent.ids.filter(e=>typeof e==='object'),[{id:'p60',location:'hub'}],'a Team Hub item keeps its location');
+  // A selection holds at most 500: another Select all matching that would pass it is stopped on the page.
+  f.run("for(let n=0;n<460;n++)librarySelection.set('local:x'+n,'x'+n);libraryMatched=null;librarySelectionBar()");
+  f.get('library-author').value='';await f.run('load()');
+  const before=requests.filter(r=>r.url.startsWith('/api/library-matching?')).length;
+  await f.run("selectAllMatching(document.getElementById('library-select-matching'))");
+  assert.equal(requests.filter(r=>r.url.startsWith('/api/library-matching?')).length,before+1);
+  assert.equal(f.run('librarySelection.size'),521,'nothing is added');
+  assert.match(f.get('notice').textContent,/at most 500/);
+  await assert.rejects(f.run("sLibrarySelection('style-learn',[...librarySelection.values()])"),/at most 500 items, and 521 are ticked/);
   f.run("librarySelection.clear();librarySelectionBar()");assert.equal(bar.hidden,true);
 }
 
@@ -1125,12 +1140,27 @@ async function voicesForEveryAuthor(){
   await find('Save provisional voice guide').listeners.click();
   assert.equal(requests.filter(r=>r.url==='/api/tool-action').at(-1).data.action,'job-apply');
   assert.equal(f.get('sheet').children[0].children[0].textContent,'Create voices for every author','saving returns to the batch');
+  // An author not queued after the checks is named, beside who was.
+  f.run("studio.voiceBatch={operation:'o',jobs:[studio.voiceBatch.jobs[0]],failed:[{author:'Sam Rivera',reason:'The disk is full.'}]}");await f.run('sVoicesBatch()');
+  assert.ok(text().includes('Queued: Avery Quinn. Not queued:'),text().join('|'));assert.ok(text().includes('The disk is full.'));
   // Reopening the action shows the batch until another is started.
   f.run('sCloseSheet()');await f.run('sVoicesForAuthors()');assert.ok(find('Start another batch'));
   await find('Start another batch').listeners.click();assert.ok(sheet().some(e=>e.id==='voices-permission'),'a new batch asks again');
 }
 
 // Create a voice: every source lands in the same samples list, ticked, for the named author.
+// A batch names at most the server's limit: the page ticks that many and says why.
+async function voicesBatchLimit(){
+  const authors=Array.from({length:3},(_,n)=>({author:'Author '+n,posts:2,readable:2,samples:[],profile:null,ready:true,reason:''}));
+  const f=fixture(url=>url==='/api/library-authors'?{authors,unnamed:0,minimum:2,batch_limit:2}:{items:[],total:0});f.loadRunner();
+  await f.run('sVoicesForAuthors()');
+  const sheet=()=>descendants(f.get('sheet'));
+  assert.deepEqual(sheet().filter(e=>e.type==='checkbox'&&e.id.startsWith('voices-author-')).map(e=>e.checked),[true,true,false]);
+  assert.ok(sheet().some(e=>/3 authors can have a voice; a batch takes 2, so the first 2 are ticked/.test(e.textContent)));
+  const third=sheet().find(e=>e.id==='voices-author-2');third.checked=true;third.listeners.change();
+  const submit=sheet().find(e=>e.type==='submit');assert.equal(submit.textContent,'Tick at most 2 authors');assert.equal(submit.disabled,true);
+}
+
 async function createVoiceSources(){
   const requests=[];const samples=[{id:'mine',name:'Old post',author:'Avery Quinn'},{id:'other',name:'Not theirs',author:'Sam Rivera'}];
   const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});

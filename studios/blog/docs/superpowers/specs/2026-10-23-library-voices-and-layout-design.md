@@ -25,7 +25,8 @@ the tab bar on a phone. It holds:
 The matching rule. A tick is a tick: ticked rows stay ticked when you page and when you
 change the filters, and the count includes rows you cannot currently see. "Select all M
 matching" ticks what the filters match at that moment; changing the filters afterwards
-neither adds to nor removes from the selection. Clear empties it. The bar says this in one
+neither adds to nor removes from the selection. Clear empties it. A selection holds at most 500 items; a Select all matching that would
+pass that is stopped on the page with a message. The bar says this in one
 quiet line when ticked rows are hidden by the filters ("2 of them are not in this view").
 
 Learning reads up to twenty readable items (the server names the rest, as today), so the
@@ -46,8 +47,11 @@ an editable blog from it (the existing upload dialog, which replaces "Upload").
 
 **Create voices for every author** is a new action, offered under the Team library's lede,
 on the Voices screen, and on the result of an Add to library. Its sheet lists every author in
-the library (local and Team Hub items, retired items left out, authors folded with the same
-name rules as the add's author groups) with their post count and readable count:
+the library (local and Team Hub items, retired items left out) with their post count and
+readable count. Authors are grouped by their exact name, case and spacing aside: "Dan" and
+"Dan Smith" are two people, and a group is linked to an existing voice only of exactly its
+name. A batch names at most 100 authors; with more ready, the first 100 are ticked and the
+sheet says so:
 
 - an author with two or more readable posts is ticked;
 - an author with fewer than two readable posts is listed, unticked and not tickable, with
@@ -61,7 +65,12 @@ assistant") and one button ("Create 2 voices and update 1") confirm the whole ba
 `POST /api/library-voices` then queues one `voice-learn` tool job per ticked author on the
 existing single-worker queue, each reading up to 20 of that author's readable posts, newest
 first. The posts become that author's voice samples only at this confirmation, as the
-library selection's learning does (`mark`). The operation is idempotent: the batch
+library selection's learning does (`mark`). Every ticked author is checked completely first
+(readable posts, sample length, job size, Team Hub, shared settings) with nothing marked or
+queued, so a refusal for one author changes nothing; a learning job with `mark` checks the
+same before marking. Should a job still fail after the checks (a disk or Team Hub failure in
+between), the others are queued and the sheet names who was queued and who was not. The
+operation is idempotent: the batch
 operation plus the author names each job's operation, so sending again returns the same
 jobs. The sheet then shows each author's job status (Waiting to start, Working, Ready for
 your review, Stopped) and, when ready, "Review <name>'s voice", which opens the usual job

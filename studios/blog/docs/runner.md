@@ -188,10 +188,12 @@ byline check. From a terminal, `library voice-links` does the same work; see
 them for a guide you write yourself.
 
 **Create voices for every author** is for a whole team library at once. It lists every
-author whose posts are in the library, with their post count. An author with two or more
+author whose posts are in the library, by exact name ("Dan" and "Dan Smith" are two
+people), with their post count, up to 100 ticked in one batch. An author with two or more
 readable posts is ticked; one with fewer is listed, unticked, with the reason; one who
 already has a voice is shown as **Update** their voice and gets a new provisional
-revision of it rather than a second voice. One permission confirms the batch, and one
+revision of it rather than a second voice. Every ticked author is checked before anything is marked or queued, so a
+refusal for one changes nothing. One permission confirms the batch, and one
 learning job per ticked author joins the queue, each reading up to twenty of the
 author's posts, newest first, which then become their voice samples. The sheet follows
 each job; **Review** opens a ready voice to save as provisional or confirm. It is offered
@@ -277,7 +279,7 @@ summarizes and tags a file or starts an editable blog from it.
 Filters sit in one row (search, role, kind of post, author, status), with the collection
 under **More filters**; on a phone, **Filters** opens them. Tick rows, or **Select all on
 this page**; the selection bar then appears with **Select all N matching**, which ticks
-every item the filters match, through the server. Ticks stay as you page and change the
+every item the filters match, through the server, up to 500 in a selection. Ticks stay as you page and change the
 filters, and the bar says how many are out of view. The bar's actions learn a style or a
 voice from the ticked items (up to twenty are read) or start a blog with them as
 examples (up to fifty). **Clear** empties the selection.

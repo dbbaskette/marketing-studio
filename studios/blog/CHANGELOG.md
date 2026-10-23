@@ -7,13 +7,17 @@ changes for authors first, then what changes for maintainers.
 
 - **Select all in the Team library.** Tick **Select all on this page**, or, once anything
   is ticked, **Select all N matching** to tick every item the filters match. Ticks stay as
-  you page and change the filters; the selection bar says how many are out of view. Learning
-  a style or a voice reads twenty of up to 500 ticked items; a blog takes up to fifty.
+  you page and change the filters; the selection bar says how many are out of view. A
+  selection holds up to 500 items. Learning a style or a voice reads twenty of them; a blog
+  takes up to fifty.
 - **Create voices for every author.** From the Team library, the Voices screen or the
-  result of Add to library: every author in the library with their post count, ticked when
-  they have two readable posts, an existing voice updated rather than duplicated, one
-  permission for the batch, then one learning job per author on the usual queue, each
-  reviewed and confirmed as before.
+  result of Add to library: every author in the library by exact name, case and spacing
+  aside, with their post count, ticked when they have two readable posts (up to 100 in a
+  batch); an existing voice of exactly that name is updated rather than duplicated. One
+  permission for the batch; every author is checked before anything is marked or queued, so
+  a refusal for one changes nothing. Then one learning job per author on the usual queue,
+  each reviewed and confirmed as before. A learning from library items now checks the same
+  before it marks any item as a sample.
 - **Create a voice** and **Create a style** replace Learn a voice from samples, Import a
   LinkedIn export, Add links to posts, Upload an authored sample, Learn a style from
   examples, Add links to examples and Upload an example. One sheet each, in order: the
