@@ -2547,6 +2547,17 @@ async function phase3ResearchDefaults(){
     f.set('draft',{mode:'write',research,sources,stop:'package'});
     assert.equal(f.run('sResearchWords(draft)'),want,'Ready to start says what research will run');
   }
+  // Blog Studio's own default: your sites stay off until ticked, even with a shared list, on
+  // the start screens, the files screen and Settings.
+  const usual=fixture(url=>url==='/api/run-options'?{settings:{defaults:{...defaults,research:{documents:true,sites:false,web:false}},review_level:'balanced',research_sites:sites,research_words:words},sources:[],profiles:[],agents:{codex:true}}:{items:[],total:0});
+  usual.loadRunner();
+  for(const entry of ['write','outline','from-outline','from-files']){
+    await usual.run(`newBlog('',null,'${entry}')`);
+    assert.deepEqual(JSON.parse(usual.run('JSON.stringify(sResearchPayload(studio.draft))')),{research_from:{documents:true,sites:[],web:false}},'your sites are off by default: '+entry);
+  }
+  usual.run("studio.settings={defaults:{...studio.options.settings.defaults},workspace:'/synthetic',shared_before:{},review_level:'balanced',research_sites:studio.options.settings.research_sites};studio.team={};studio.brand=null;studio.screen='settings';sSettings()");
+  assert.equal(descendants(usual.get('studio-page')).find(e=>e.id==='settings-research-sites').checked,false,'Settings keeps your sites off by default');
+  assert.ok(descendants(usual.get('studio-page')).some(e=>/only pages under them are saved/.test(e.textContent)),'Settings says how your sites are searched');
   // More than five sites are named five at a time, as research_sites.summary() names them.
   assert.equal(f.run("sResearchSummary({documents:false,sites:['https://a.example/1','https://b.example','https://c.example','https://d.example','https://e.example','https://f.example','https://g.example'],web:false})"),'from 7 of your sites (a.example/1, b.example, c.example, d.example, e.example and 2 more)');
 }
@@ -2574,6 +2585,9 @@ async function researchFromJourney(){
   assert.deepEqual(['documents','sites','web'].map(key=>byId('new-research-'+key).checked),[true,true,false]);
   assert.ok(text().includes('your sites (2)'),text().join('|'));
   assert.deepEqual([0,1].map(at=>byId('new-research-site-'+at).checked),[true,true],'the shared list is prefilled');
+  const searching=()=>nodes().find(e=>e.className==='quiet site-search');
+  assert.equal(searching().textContent,'Your sites are searched with the assistant’s web search; only pages under them are saved.');
+  assert.equal(searching().parent.hidden,false,'said while your sites are ticked');
   assert.ok(text().includes('blogs.vmware.com/tanzu')&&text().includes('docs.example.com'));
   assert.ok(said().length>=2&&said().every(line=>line==='Research from 2 of your sites (blogs.vmware.com/tanzu, docs.example.com).'),said().join('|'));
   // Ticking a reference brings your documents in.
@@ -2598,6 +2612,7 @@ async function researchFromJourney(){
   // Nothing ticked, or your sites with none ticked: the shared sentences, and nothing starts.
   for(const key of ['documents','sites']){byId('new-research-'+key).checked=false;byId('new-research-'+key).listeners.change();}
   assert.ok(said().every(line=>line===words.empty),said().join('|'));
+  assert.equal(searching().parent.hidden,true,'folded away with your sites off');
   await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   assert.ok(text().includes(words.empty));assert.equal(requests.some(r=>r.url==='/api/run-create'),false,'nothing chosen starts nothing');
   byId('new-research-sites').checked=true;byId('new-research-sites').listeners.change();

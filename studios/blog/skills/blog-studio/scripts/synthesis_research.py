@@ -34,14 +34,6 @@ def research_from(payload):
     return research_sites.effective(chosen or {})
 
 
-def outside(count, listed):
-    """What the research gate says about the pages your sites kept out."""
-    named = ', '.join(research_sites.shown(site) for site in listed)
-    if count == 1:
-        return f'1 page was outside your sites ({named}) and was not saved.'
-    return f'{count} pages were outside your sites ({named}) and were not saved.'
-
-
 def grouped(case):
     """What the last saved check objected to, grouped by kind and verdict: each group's
     count, its first note and a few of its IDs, largest first within a kind, then the
@@ -222,8 +214,12 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
             ),
             'scope': 'Evidence, objections and qualifications for the blog goal: '
             + (brief.get('goal') or 'explain the topic')
-            + '. '
-            + research_sites.scope_text(chosen),
+            # Where it may look, for a run that saved its choice; older runs keep their words.
+            + (
+                '. ' + research_sites.scope_text(chosen)
+                if isinstance(payload.get('research_from'), dict)
+                else ''
+            ),
             'brief': brief,
             'manuscript': payload['documents'].get('manuscript'),
             'planning_document': payload['documents'].get('research-plan'),

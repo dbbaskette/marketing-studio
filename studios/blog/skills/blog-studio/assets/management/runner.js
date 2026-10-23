@@ -9,6 +9,8 @@ const LEVEL_CHOICES=Object.entries(REVIEW_WORDS);
 // Where research may look, said one way wherever it is chosen: your documents, your sites
 // (the shared list in Shared settings) and/or the public web. Older words read as they meant.
 const OLD_RESEARCH={none:{documents:false,sites:false,web:false},'supplied-only':{documents:true,sites:false,web:false},'web-allowed':{documents:true,sites:false,web:true}};
+// How your sites are searched, said wherever they are ticked.
+const SITE_SEARCH='Your sites are searched with the assistant’s web search; only pages under them are saved.';
 // The editor's research words, for a check on a saved manuscript.
 const EDITOR_RESEARCH=[['supplied-only','Your documents'],['web-allowed','Your documents and the public web']];
 // A file's role on the files screen, as the server names it.
@@ -93,10 +95,10 @@ function sSitePicker(from,id,changed){
   const adding=async button=>{const typed=held.site.trim();if(!typed||button.disabled)return;await busy(button,'Checking…',async()=>{try{const found=await api('research-site',{site:typed});if(!sSiteList(from).includes(found.site))from.added.push(found.site);if(!from.picked.includes(found.site))from.picked.push(found.site);held.site='';input.value='';problem.textContent='';draw();changed();}catch(error){problem.textContent=error.message;}});},add=sButton('Add the site',adding);
   // Return adds the site; it never starts the piece of work.
   input.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();adding(add);}});
-  draw();return sAdd(node,list,field,sAdd(sNode('div','bar'),add),problem);
+  draw();return sAdd(node,sNode('p','quiet site-search',SITE_SEARCH),list,field,sAdd(sNode('div','bar'),add),problem);
 }
 // Settings: where research looks for a new blog, as three ticks; none ticked is no research.
-function sResearchDefault(held){const ticks={...(OLD_RESEARCH[held.research]||held.research||OLD_RESEARCH['supplied-only'])},count=sSharedSites().length;held.research={documents:!!ticks.documents,sites:!!ticks.sites,web:!!ticks.web};const group=sNode('fieldset','research-choices');sAdd(group,sNode('legend','field-label','Research for new blogs from:'),...[['documents','your documents'],['sites','your sites ('+count+')'],['web','the public web']].map(([key,label])=>{const row=sNode('label','check'),input=sNode('input','');input.type='checkbox';input.id='settings-research-'+key;input.checked=held.research[key];input.addEventListener('change',()=>{held.research[key]=input.checked;});row.append(input,sNode('span','',label));return row;}));return sAdd(sNode('div','field research-from'),group,sNode('p','quiet field-hint','A new blog starts with research from what is ticked, and with no research when nothing is. Your sites are the list in Shared settings; a new blog can tick fewer or add one of its own.'));}
+function sResearchDefault(held){const ticks={...(OLD_RESEARCH[held.research]||held.research||OLD_RESEARCH['supplied-only'])},count=sSharedSites().length;held.research={documents:!!ticks.documents,sites:!!ticks.sites,web:!!ticks.web};const group=sNode('fieldset','research-choices');sAdd(group,sNode('legend','field-label','Research for new blogs from:'),...[['documents','your documents'],['sites','your sites ('+count+')'],['web','the public web']].map(([key,label])=>{const row=sNode('label','check'),input=sNode('input','');input.type='checkbox';input.id='settings-research-'+key;input.checked=held.research[key];input.addEventListener('change',()=>{held.research[key]=input.checked;});row.append(input,sNode('span','',label));return row;}));return sAdd(sNode('div','field research-from'),group,sNode('p','quiet field-hint','A new blog starts with research from what is ticked, and with no research when nothing is. Your sites are the list in Shared settings; a new blog can tick fewer or add one of its own. '+SITE_SEARCH));}
 function sResearchSays(draft){return sResearchWords(draft);}
 
 // One line under the beads: how many steps are left, where the run next stops for the person

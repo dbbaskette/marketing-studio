@@ -28,7 +28,8 @@ where research may look and requested stop. Then use:
 `--research-from` takes any of `documents`, `sites` and `web`, comma separated: the
 selected sources, your sites (the shared list, or each `--site <https address>` for
 this blog only) and the public web. With sites and not web, pages are saved only from
-under the sites. `--research none` omits research; documents with no selected sources
+under the sites; that needs Harness Research, and without it sites alone are refused
+and no job gets web search for them. `--research none` omits research; documents with no selected sources
 also omit it. The older `supplied-only` and `web-allowed` still work. Add `--source <id>` for each chosen source.
 Without `--profile` the settings' default voice applies, and a revise or review of a
 `--manuscript` keeps that manuscript's own voice; `--profile <id>` pins a saved voice

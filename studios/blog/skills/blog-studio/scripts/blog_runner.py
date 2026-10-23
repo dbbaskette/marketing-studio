@@ -217,14 +217,10 @@ def fitted(said, then='', limit=500):
 
 def outside_words(outside):
     """'2 pages were outside your sites (...) and were not saved.', or None."""
-    import synthesis_research
-
     if not isinstance(outside, dict) or type(outside.get('count')) is not int:
         return None
     listed = [site for site in outside.get('sites') or () if isinstance(site, str)]
-    if outside['count'] < 1 or not listed:
-        return None
-    return synthesis_research.outside(outside['count'], listed)
+    return research_sites.outside(max(0, outside['count']), listed)
 
 
 def research_refusal(refusal, case):
@@ -359,6 +355,22 @@ RESEARCH_DEFAULT = (
 )
 # The words research used before it had three parts, for a writing default saved then.
 OLD_RESEARCH = ('none', 'supplied-only', 'web-allowed')
+# Only Harness Research checks each saved page against your sites. Without it, research
+# would be one job with the assistant's open web search, so your sites alone are refused.
+NEEDS_HARNESS_RESEARCH = (
+    'Research from your sites needs Harness Research, which this computer does not have. '
+    'Open Status to see how to add it, or tick the public web.'
+)
+
+
+def searches_web(payload):
+    """Whether a plain research job may use the assistant's web search: only when its
+    research may look on the public web. Your sites alone never open it; a run saved before
+    research_from keeps its policy."""
+    if payload.get('research_policy') != 'web-allowed':
+        return False
+    chosen = payload.get('research_from')
+    return bool(chosen.get('web')) if isinstance(chosen, dict) else 'research_from' not in payload
 
 
 def research_default(value):
@@ -1379,6 +1391,8 @@ def create(root, data, approval='conversation'):
     found = research_sites.effective(chosen, given) if chosen else None
     if found and not (found['documents'] or found['sites'] or found['web']):
         found = None  # Only your documents, and none were given: no research, as before.
+    if found and found['sites'] and not found['web'] and research_contract.snapshot() is None:
+        raise ValueError(NEEDS_HARNESS_RESEARCH)
     research = (
         'none'
         if found is None
@@ -2390,7 +2404,7 @@ class Engine:
                     payload,
                     guidance,
                     seconds=found['seconds'],
-                    web=found['next'] == 'research' and payload['research_policy'] == 'web-allowed',
+                    web=found['next'] == 'research' and searches_web(payload),
                     stop=self.stop,
                     model_selection=found.get('model_selection'),
                 )

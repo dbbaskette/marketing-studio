@@ -18,7 +18,12 @@ changes for authors first, then what changes for maintainers.
   Discovery searches your sites first with `site:` queries. Settings → Writing
   preferences has the same three ticks for new blogs; none ticked is no research. Saved
   blogs and settings keep their meaning: supplied sources read as your documents, public
-  research as your documents and the public web.
+  research as your documents and the public web. Your sites stay unticked until you tick
+  them, and the form says how they are searched: "Your sites are searched with the
+  assistant's web search; only pages under them are saved." Research from your sites
+  alone needs Harness Research, which does that check; without it the blog is not
+  started, and Status says whether Harness Research is installed. No research job is
+  given web search unless the public web is ticked.
 - **For maintainers:** `run create --research-from documents,sites,web` and a repeatable
   `--site`, with `--research none|supplied-only|web-allowed` still read. A run saves
   `research_from` (`{"documents", "sites", "web"}`) on its record; `research_policy`

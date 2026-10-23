@@ -196,7 +196,10 @@ leaving the shared list as it is. The line below says it: "Research from your do
 and 2 of your sites (blogs.vmware.com/tanzu, docs.example.com)." With nothing ticked, or
 your sites with none ticked, the form says what to choose and does not start. Your
 documents with no source selected skip the research steps. The blog keeps the exact
-sites it started with. Pick
+sites it started with. Your sites stay unticked until you tick them, here and in
+Settings. They are searched with the assistant's web search, and only pages under them
+are saved. That check is Harness Research's, so without it (see Status) your sites alone
+are refused; tick the public web too to research without it. Pick
 Codex or Claude Code, already installed and signed in, and a time limit for each
 step. The runner uses your CLI account. It does not hold an API key. It has no
 spending limit; your account's usage charges or limits still apply.

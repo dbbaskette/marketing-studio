@@ -21,6 +21,8 @@ import synthesis_research
 from studio_core import research_contract, research_sites
 
 SITES = ['https://blogs.vmware.com/tanzu', 'https://docs.example.com']
+# A synthetic Harness Research version, so a run may research from your sites.
+CONTRACT = {'schema': 2, 'version': '1.0.0', 'digest': 'a' * 64}
 PUBLIC = [(2, 1, 6, '', ('8.8.8.8', 443))]
 
 
@@ -47,6 +49,10 @@ class SharedSitesCase(RunnerCase):
         held['research'] = {'sites': list(SITES)}
         held['person'] = {'name': 'Synthetic Author'}
         self.config.write_text(json.dumps(held, indent=2) + '\n')
+        # Research from your sites needs Harness Research; this computer has a synthetic one.
+        helper = patch.object(runner.research_contract, 'snapshot', return_value=dict(CONTRACT))
+        self.helper = helper.start()
+        self.addCleanup(helper.stop)
 
     def shared(self):
         return self.config.read_bytes()
@@ -463,6 +469,57 @@ class CaptureTests(unittest.TestCase):
                 address=[(2, 1, 6, '', ('10.0.0.8', 443))],
             )
 
+    def test_a_fragment_or_a_parameter_dot_segment_never_escapes_the_site(self):
+        # The reviewer's addresses: a '#' that hides '..' from one parser, and '..;' segments
+        # that servers dropping ;-parameters read as '..'.
+        for url in (
+            'https://blogs.vmware.com/tanzu#/x/../../admin#z',
+            'https://blogs.vmware.com/tanzu/x/..;/..;/admin',
+            'https://blogs.vmware.com/tanzu/x/..;jsessionid=1/admin',
+        ):
+            with self.subTest(url=url):
+                with self.assertRaises(blog_library.Outside) as caught:
+                    self.fetch(url, self.SITES_ONLY, page())
+                caught.exception.resolve.assert_not_called()
+                caught.exception.connect.assert_not_called()
+
+    def test_the_request_target_never_carries_a_fragment_or_leaves_the_site(self):
+        sent = []  # (host, request target) of every request a stubbed connection received
+
+        def fetch(url, *, location=None):
+            sent.clear()
+            pages = iter([page(302, location=location)] if location else [])
+
+            def make(host, address):
+                made = next(pages, None) or page()
+                made.request.side_effect = lambda method, target, **_: sent.append((host, target))
+                return made
+
+            with (
+                patch.object(blog_library.socket, 'getaddrinfo', return_value=PUBLIC),
+                patch.object(blog_library, 'PinnedHTTPS', side_effect=make),
+            ):
+                return blog_library.fetch(url, self.SITES_ONLY)
+
+        found = fetch('https://blogs.vmware.com/tanzu/post#section-2')
+        self.assertEqual(sent, [('blogs.vmware.com', '/tanzu/post')])
+        self.assertEqual(found[1], 'https://blogs.vmware.com/tanzu/post')
+        # A redirect's own fragment is dropped before it is checked and requested.
+        fetch('https://blogs.vmware.com/tanzu/old', location='/tanzu/new#/../../admin')
+        self.assertEqual(
+            sent, [('blogs.vmware.com', '/tanzu/old'), ('blogs.vmware.com', '/tanzu/new')]
+        )
+        for location in ('/tanzu/x/..;/..;/admin', '/tanzu#/../admin#z', '/admin#/tanzu'):
+            with self.subTest(location=location), self.assertRaises(blog_library.Outside):
+                fetch('https://blogs.vmware.com/tanzu/old', location=location)
+            self.assertTrue(
+                all(
+                    host == 'blogs.vmware.com' and target.startswith('/tanzu/')
+                    for host, target in sent
+                ),
+                sent,
+            )
+
     def test_a_collection_scope_keeps_its_behaviour(self):
         with self.assertRaisesRegex(ValueError, 'outside the approved collection scope'):
             self.fetch('https://team.example/other', 'https://team.example/blog', page())
@@ -596,6 +653,11 @@ class DiscoveryTests(unittest.TestCase):
     def test_an_old_web_allowed_run_researches_as_before(self):
         seen = self.research(None, self.URLS[:2], [self.SOURCE])
         self.assertEqual(seen['task']['source_mode'], 'mixed')
+        # A run saved before research_from keeps its exact scope text.
+        self.assertEqual(
+            seen['task']['scope'],
+            'Evidence, objections and qualifications for the blog goal: Explain retries',
+        )
         self.assertEqual(len(seen['review']['sources']), 3)
         self.assertNotIn('site:', seen['discovery']['guidance'])
         self.assertFalse(any('outside' in event for event in seen['events']))
@@ -620,6 +682,84 @@ class GateTests(SharedSitesCase):
         )
         engine.note_research(found['id'], {'outside': {'count': 0, 'sites': SITES}})
         self.assertIsNone(engine.describe(found['id'])['research']['outside'])
+
+
+class WithoutHarnessResearchTests(SharedSitesCase):
+    """Your sites never become the open web: without Harness Research, research from your
+    sites alone is refused, and no worker is given web search for it."""
+
+    def setUp(self):
+        super().setUp()
+        self.helper.return_value = None
+
+    def test_your_sites_alone_need_harness_research(self):
+        for chosen in (
+            {'documents': False, 'sites': SITES[:1], 'web': False},
+            {'documents': True, 'sites': SITES, 'web': False},
+        ):
+            with self.subTest(chosen=chosen), self.assertRaises(ValueError) as caught:
+                self.start(sources=[self.source()['id']], research_from=chosen)
+            self.assertEqual(str(caught.exception), runner.NEEDS_HARNESS_RESEARCH)
+            self.assertIn('Open Status', str(caught.exception))
+        self.assertEqual(list((self.root / 'articles').iterdir()), [], 'nothing was started')
+        # With the public web ticked too, the run starts on the older research path.
+        found = self.start(research_from={'documents': False, 'sites': SITES[:1], 'web': True})
+        _, record, run = runner.load(self.root, found['id'])
+        self.assertNotIn('research_contract', run)
+        self.assertEqual(run['pipeline'][:2], ['research-plan', 'research'])
+        self.assertEqual(record['research_from']['web'], True)
+
+    def test_status_says_whether_harness_research_is_here(self):
+        import computer
+
+        found = next(
+            row for row in computer.report(sign_in=False)['checks'] if row['key'] == 'research'
+        )
+        self.assertEqual(found['status'], 'optional')
+        self.assertTrue(found['optional'])
+        self.assertIn('Research from your sites needs it', found['detail'])
+        with patch.object(computer, 'harness_research', return_value=True):
+            found = next(
+                row for row in computer.report(sign_in=False)['checks'] if row['key'] == 'research'
+            )
+        self.assertEqual(found['status'], 'ready')
+
+    def research_job(self, change=None):
+        """The web search option the worker is given for a run's research stage."""
+        found = self.start(research_from={'documents': False, 'sites': SITES[:1], 'web': True})
+        if change is not None:
+            # A run saved this way, however it came to be: the worker must follow its choice.
+            directory, record, _ = runner.load(self.root, found['id'])
+            change(record)
+            studio.persist(directory, 'articles', record)
+            found = runner.survey(self.root, found['id'])
+        found = self.approve(self.submit(found, page=True), page=True)
+        self.assertEqual(found['next'], 'research')
+        seen = []
+
+        def worker(engine, payload, guidance, **options):
+            seen.append(options['web'])
+            return {'content': '# Research\nSynthetic findings.', 'notes': 'Synthetic.'}
+
+        engine = runner.Engine(self.root, worker)
+        self.addCleanup(engine.close)
+        engine.control(found['id'], 'resume')
+        engine._once(found['id'])
+        self.assertEqual(engine.describe(found['id'])['error'], '')
+        return seen
+
+    def test_no_worker_searches_the_web_for_your_sites_alone(self):
+        self.assertEqual(self.research_job(), [True], 'sites and the public web may search')
+
+        def sites_only(record):
+            record['research_from']['web'] = False
+
+        self.assertEqual(self.research_job(sites_only), [False])
+
+        def old(record):
+            record.pop('research_from')  # Saved before the choice: its policy says web-allowed.
+
+        self.assertEqual(self.research_job(old), [True])
 
 
 if __name__ == '__main__':
