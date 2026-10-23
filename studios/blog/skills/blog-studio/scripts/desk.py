@@ -78,6 +78,23 @@ def split(markdown, title=''):
     }
 
 
+def has_heading(text):
+    """Whether a part's text holds a `## ` heading outside code, which would start a new
+    section the next time DRAFT.md is read."""
+    fence = None
+    for line in text.replace('\r\n', '\n').split('\n'):
+        marker = FENCE.match(line)
+        if marker:
+            if fence is None:
+                fence = marker.group(1)
+            elif marker.group(1).startswith(fence[0] * len(fence)):
+                fence = None
+            continue
+        if fence is None and HEADING.fullmatch(line):
+            return True
+    return False
+
+
 def join(draft):
     """The Markdown the parts make, as DRAFT.md keeps it."""
     parts = []
@@ -200,8 +217,9 @@ def create(root, data):
             raise ValueError('Paste or upload a draft to start on the desk.')
     if not manuscript.strip():
         raise ValueError('Paste or upload a draft to start on the desk.')
-    if len(manuscript) > 1_000_000:
-        raise ValueError('Use a draft under one million characters.')
+    if len(manuscript) > LIMIT:
+        # As runs take, and as much as one part may hold or one job may return.
+        raise ValueError('Use a draft up to 200,000 characters.')
     draft = split(manuscript, title=title.strip())
     if not draft['title']:
         raise ValueError('Give the blog a title.')
@@ -389,6 +407,10 @@ def checked_text(part, text):
         raise ValueError('Keep one part under 200,000 characters.')
     if part == 'title' and (not text.strip() or '\n' in text.strip() or len(text.strip()) > 500):
         raise ValueError('Keep the title to one line, up to 500 characters.')
+    if part != 'title' and has_heading(text):
+        raise ValueError(
+            'A ## heading would start a new section. Use ### for a heading inside this part.'
+        )
     return text
 
 
@@ -397,9 +419,9 @@ def save(root, ident, seen, part, text, source='save', session=None):
     checked_text(part, text)
     draft = read(root, ident)
     before = text_of(draft, part)
-    checked(draft, seen, [part])
     if before == text.strip():
-        return draft
+        return draft  # The same text again, as from a retried save: nothing to refuse.
+    checked(draft, seen, [part])
     keep(root, ident, part, before, source, session)
     _set(draft, part, text)
     return _write(root, ident, draft, [part])

@@ -1899,8 +1899,19 @@ def house_guide():
     return (REFERENCES / 'style/house.md').read_text()
 
 
-def style_rule(name):
-    """How a selected kind of post sits beside the voice and the house guide."""
+def style_rule(name, voice=True):
+    """How a selected kind of post sits beside the voice and the house guide. A desk job has
+    no voice, only its tone and the draft's own voice, and is told so."""
+    if not voice:
+        return (
+            'SELECTED STYLE: '
+            + name
+            + '. Its guide is in style.guide. The style says the shape of this kind of '
+            'writing: structure, moves, length, headings and register. Keep the draft’s own '
+            'voice and the tone within that shape. The style invents no facts, experience or '
+            'sources. Where the style’s register differs from the house guide’s tone defaults, '
+            'the style wins; the house guide still decides mechanics.'
+        )
     return (
         'SELECTED STYLE: '
         + name
@@ -1921,7 +1932,7 @@ def shared_guidance(style=None, tone='', length=None):
     parts = ['No author voice is pinned; keep the draft’s own voice.' + tone_nudge({'tone': tone})]
     parts.append(house_guide())
     if style:
-        parts.append(style_rule(style['name']))
+        parts.append(style_rule(style['name'], voice=False))
     if LENGTHS.get(length):
         parts.append(LENGTHS[length])
     return '\n\n'.join(parts)
@@ -2707,15 +2718,19 @@ def catalog(root):
             if on_desk.is_file() and not on_desk.is_symlink():
                 draft = studio.read_json(on_desk)
                 busy = working.get(ident, 0)
+                # Marked as published: finished, out of In progress.
+                published = (studio.read_json(path).get('editorial') or {}).get(
+                    'stage'
+                ) == 'published' and not busy
                 rows.append(
                     {
                         'id': ident,
                         'title': draft['title'],
-                        'status': 'working' if busy else 'desk',
+                        'status': 'working' if busy else 'complete' if published else 'desk',
                         'touched': draft['updated_at'],
                         'flow': 'desk',
                         'jobs': busy,
-                        'complete': False,
+                        'complete': published,
                         'stages': [],
                         'next': None,
                         'error': '',

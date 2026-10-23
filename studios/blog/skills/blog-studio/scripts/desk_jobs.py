@@ -66,32 +66,59 @@ def _guide(name):
     return (blog_runner.REFERENCES / 'modules' / name).read_text().rstrip()
 
 
-def jobs(root, ident):
-    """Every desk job saved for one blog, oldest first."""
-    folder = studio.inside(root, '.blog-runs', 'tools')
+INDEXED = 60  # desk jobs a blog's index names, newest last
+
+
+def _index(root, ident):
+    """A small list of one blog's desk jobs, so a request reads only those."""
+    return studio.inside(root, '.blog-runs', 'desk-jobs', studio.identifier(ident) + '.json')
+
+
+def _indexed(root, ident):
+    target = _index(root, ident)
+    if not target.is_file() or target.is_symlink():
+        return []
+    try:
+        found = studio.read_json(target).get('jobs')
+    except (ValueError, OSError, AttributeError):
+        return []
+    return [name for name in found if isinstance(name, str)] if isinstance(found, list) else []
+
+
+def _note(root, ident, job_id):
+    studio.write_json(_index(root, ident), {'jobs': (_indexed(root, ident) + [job_id])[-INDEXED:]})
+
+
+def _read_jobs(root, ident, names):
     found = []
-    for target in folder.glob('*.json') if folder.is_dir() else []:
+    for name in names:
         try:
-            value = tool_jobs.read(root, target.stem)
+            value = tool_jobs.read(root, name)
         except (ValueError, OSError):
-            continue
+            continue  # Removed with a deleted blog, or never written.
         if value.get('kind') in KINDS and (value.get('metadata') or {}).get('article') == ident:
             found.append(value)
     return sorted(found, key=lambda value: value.get('created_at') or '')
 
 
+def jobs(root, ident):
+    """This blog's desk jobs, oldest first, from its index."""
+    return _read_jobs(root, ident, _indexed(root, ident))
+
+
 def active(root):
-    """{blog id: queued or working desk jobs}, read in one pass for the blog list."""
-    folder = studio.inside(root, '.blog-runs', 'tools')
+    """{blog id: desk jobs under way}, for the blog list. Only one runs per blog, so each
+    blog's newest few jobs are read."""
+    folder = studio.inside(root, '.blog-runs', 'desk-jobs')
     found = {}
-    for target in folder.glob('*.json') if folder.is_dir() else []:
+    for target in sorted(folder.glob('*.json')) if folder.is_dir() else []:
         try:
-            value = tool_jobs.read(root, target.stem)
-        except (ValueError, OSError):
+            ident = studio.identifier(target.stem)
+        except ValueError:
             continue
-        article = (value.get('metadata') or {}).get('article')
-        if value.get('kind') in KINDS and value.get('status') in ACTIVE and article:
-            found[article] = found.get(article, 0) + 1
+        count = sum(1 for job in _read_jobs(root, ident, _indexed(root, ident)[-3:]) if busy(job))
+        if count:
+            found[ident] = count
     return found
 
 
@@ -178,6 +205,7 @@ def _create(root, ident, kind, payload, guidance, meta):
         basis=None,
         metadata={'article': ident, 'desk': meta},
     )
+    _note(root, ident, result['id'])
     blog_runner.engine(root).wake.set()
     return result
 
@@ -449,6 +477,14 @@ def _clean(text, heading=None):
     return text
 
 
+def _no_heading(text):
+    """A result that would add a section is refused readably; the person adds sections."""
+    if desk.has_heading(text):
+        raise ValueError(
+            'The rewrite added a ## section heading, so it was not applied. Run it again.'
+        )
+
+
 def _section_texts(content):
     """[{id, text}] from a whole-draft result, refused readably when malformed."""
     text = content.strip()
@@ -490,6 +526,7 @@ def _apply(root, ident, draft, job):
         if fingerprint(section['text']) != meta.get('basis'):
             raise ValueError(STALE)
         text = _clean(content, section['heading'])
+        _no_heading(text)
         desk.checked_text(part, text)
         desk.keep(
             root,
@@ -525,6 +562,7 @@ def _apply(root, ident, draft, job):
         if part == 'title':
             replacement = ' '.join(replacement.split())
         updated = whole[:at] + lead + replacement + trail + whole[at + len(passage) :]
+        _no_heading(replacement)
         desk.checked_text(part, updated)
         desk.keep(root, ident, part, whole, 'selection')
         desk._set(draft, part, updated)
@@ -544,6 +582,7 @@ def _apply(root, ident, draft, job):
         text = _clean(item['text'], section['heading'])
         if not text or text == section['text']:
             continue
+        _no_heading(text)
         desk.checked_text(item['id'], text)
         changes[item['id']] = text
     for part, text in changes.items():

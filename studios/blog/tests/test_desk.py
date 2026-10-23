@@ -562,6 +562,34 @@ class ListingTests(RouteCase):
         row = blog_runner.catalog(self.root)['items'][0]
         self.assertEqual((row['status'], row['jobs']), ('desk', 0))
 
+    def test_a_published_desk_blog_is_finished(self):
+        import blog_runner
+
+        made = self.start()
+        self.post(
+            'schedule',
+            {
+                'id': made['id'],
+                'expected': made['expected'],
+                'stage': 'published',
+                'confirm_stage': True,
+                'publication_url': 'https://example.invalid/post',
+            },
+        )
+        row = blog_runner.catalog(self.root)['items'][0]
+        self.assertEqual((row['complete'], row['status']), (True, 'complete'))
+
+    def test_the_blog_list_reads_only_desk_jobs(self):
+        import blog_runner
+        import tool_jobs
+        from unittest.mock import patch
+
+        made = self.start(first_pass='tighten')
+        with patch.object(tool_jobs, 'read', wraps=tool_jobs.read) as read:
+            row = blog_runner.catalog(self.root)['items'][0]
+        self.assertEqual(row['jobs'], 1)
+        self.assertEqual({call.args[1] for call in read.call_args_list}, {made['working']['id']})
+
     def test_a_deleted_desk_blog_is_not_listed(self):
         import blog_runner
 
@@ -620,6 +648,32 @@ class OtherWritersTests(RouteCase):
             record['artifact_events'][-1]['label'],
             'Changed outside the desk; kept before a desk save',
         )
+
+
+class MoreRecordTests(DeskCase):
+    def test_the_same_text_again_is_not_refused_as_outdated(self):
+        made = self.make()
+        part = made['sections'][0]['id']
+        desk.save(self.root, made['id'], 1, part, 'Two.')
+        desk.save(self.root, made['id'], 2, 'title', 'Other title')
+        # A retried save from a form that saw revision 1, with the text now saved.
+        self.assertEqual(desk.save(self.root, made['id'], 1, part, 'Two.')['revision'], 3)
+
+    def test_a_section_heading_cannot_be_typed_into_a_part(self):
+        made = self.make()
+        part = made['sections'][0]['id']
+        with self.assertRaisesRegex(ValueError, 'would start a new section'):
+            desk.save(self.root, made['id'], 1, part, 'First.\n\n## Sneaky\n\nMore.')
+        with self.assertRaisesRegex(ValueError, 'would start a new section'):
+            desk.save(self.root, made['id'], 1, 'opening', '## Sneaky')
+        saved = desk.save(
+            self.root, made['id'], 1, part, 'First.\n\n### Detail\n\n```\n## code\n```'
+        )
+        self.assertEqual(len(desk.split(desk.join(saved))['sections']), 2)
+
+    def test_a_draft_longer_than_a_job_can_return_is_refused(self):
+        with self.assertRaisesRegex(ValueError, 'up to 200,000 characters'):
+            desk.create(self.root, {'title': 'T', 'manuscript': 'x' * 200_001})
 
 
 if __name__ == '__main__':

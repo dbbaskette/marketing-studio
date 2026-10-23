@@ -97,7 +97,8 @@ class DeskJobTests(DeskJobCase):
         job = desk_jobs.section(self.root, made['id'], 1, made['sections'][0]['id'], 'Shorter.')
         saved = self.saved(job)
         self.assertIn(blog_runner.house_guide(), saved['guidance'])
-        self.assertIn(blog_runner.style_rule('How-to and tutorial'), saved['guidance'])
+        self.assertIn(blog_runner.style_rule('How-to and tutorial', voice=False), saved['guidance'])
+        self.assertNotIn('voice wins', saved['guidance'])
         self.assertIn('Tone nudge: Warm.', saved['guidance'])
         self.assertEqual(saved['payload']['style']['name'], 'How-to and tutorial')
         self.assertNotIn('voice', saved['payload'])
@@ -363,11 +364,18 @@ class SettleTests(DeskJobCase):
             self.root,
             {
                 'title': 'Long',
-                'manuscript': '## A\n\n' + 'word ' * 20_000 + '\n\n## B\n\n' + 'more ' * 20_000,
+                'manuscript': '## A\n\n' + 'word ' * 18_500 + '\n\n## B\n\n' + 'more ' * 18_500,
             },
         )
         with self.assertRaisesRegex(ValueError, 'too long for one first pass'):
             desk_jobs.first_pass(self.root, made['id'], 1, 'tighten')
+
+    def test_a_rewrite_that_adds_a_section_is_refused_readably(self):
+        job = desk_jobs.section(self.root, self.ident, 1, self.part, 'Split it.')
+        self.ready(job, 'First half.\n\n## A new part\n\nSecond half.')
+        desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(desk.read(self.root, self.ident)['sections'][0]['text'], 'First text.')
+        self.assertRegex(self.saved(job)['error'], 'added a ## section heading')
 
     def test_gaps_become_the_drafts_gaps_once(self):
         job = desk_jobs.section(self.root, self.ident, 1, self.part, 'Add the date.')
@@ -419,16 +427,25 @@ class SettleTests(DeskJobCase):
 
 
 class SharedGuidanceTests(unittest.TestCase):
-    def test_it_is_the_same_text_runs_use(self):
+    def test_desk_guidance_is_the_tone_the_house_guide_the_kind_of_post_then_the_length(self):
         style = {'name': 'How-to', 'guide': 'Steps.'}
         text = blog_runner.shared_guidance(style, 'Plain', 'short')
-        self.assertTrue(text.startswith('No author voice is pinned'))
-        self.assertIn('Tone nudge: Plain.', text)
-        parts = [blog_runner.house_guide(), blog_runner.style_rule('How-to')]
-        parts.append(blog_runner.LENGTHS['short'])
-        positions = [text.index(part) for part in parts]
-        self.assertEqual(positions, sorted(positions))
+        self.assertEqual(
+            text,
+            'No author voice is pinned; keep the draft’s own voice. Tone nudge: Plain.\n\n'
+            + blog_runner.house_guide()
+            + '\n\n'
+            + blog_runner.style_rule('How-to', voice=False)
+            + '\n\n'
+            + blog_runner.LENGTHS['short'],
+        )
         self.assertNotIn(blog_runner.LENGTHS['short'], blog_runner.shared_guidance(style))
+
+    def test_a_desk_job_is_never_told_a_selected_voice_wins(self):
+        text = blog_runner.shared_guidance({'name': 'How-to', 'guide': 'Steps.'}, 'Plain')
+        self.assertNotIn('voice wins', text)
+        self.assertNotIn('selected voice', text)
+        self.assertIn('the voice wins', blog_runner.style_rule('How-to'))
 
 
 if __name__ == '__main__':
