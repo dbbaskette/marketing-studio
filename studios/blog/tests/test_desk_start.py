@@ -422,7 +422,7 @@ class DraftJobTests(WritingJobCase):
         self.assertIn('\n' + blog_runner.GAPS_OPEN, guidance)
 
 
-class ChainTests(RouteCase):
+class ChainCase(RouteCase):
     """A start runs on its own, step after step, through the single tool worker."""
 
     def setUp(self):
@@ -468,6 +468,8 @@ class ChainTests(RouteCase):
             },
         )
 
+
+class ChainTests(ChainCase):
     def test_a_topic_start_outlines_then_drafts_with_no_stops(self):
         made = self.begin()
         self.assertEqual(made['start']['step'], 'outline')
@@ -688,3 +690,256 @@ class OutlineTabTests(RouteCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ReviewFixTests(ChainCase):
+    """The Phase 2 review: estimates, the opening, reordered drafts, removed sections, angle
+    clean-up and research."""
+
+    def test_an_estimate_uses_recent_step_times_and_says_when_a_step_overruns(self):
+        import datetime
+
+        self.begin(operation='e' * 32)
+        self.run_jobs(2)
+        times = studio.read_json(studio.inside(self.root, '.blog-runs', 'desk-step-times.json'))
+        self.assertEqual(len(times['outline']), 1)
+        self.assertEqual(len(times['draft:style']), 1)
+        studio.write_json(
+            studio.inside(self.root, '.blog-runs', 'desk-step-times.json'),
+            {'outline': [120, 180, 240], 'draft:style': [600]},
+        )
+        made = self.begin()
+        self.assertEqual(made['start']['minutes_left'], 13)  # 3 for the outline, 10 to draft.
+        self.assertFalse(made['start']['over'])
+        job = tool_jobs.read(self.root, made['working']['id'])
+        long_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=9)
+        job.update(status='working', started_at=long_ago.isoformat())
+        tool_jobs.write(self.root, job)
+        shown = self.get('desk', id=made['id'])
+        self.assertTrue(shown['start']['over'])
+        self.assertEqual(shown['start']['minutes_left'], 10)
+
+    def test_typing_the_opening_while_the_draft_is_written_keeps_both(self):
+        made = self.post(
+            'desk-create', {'operation': 'f' * 32, 'title': 'T', 'manuscript': REORDER_DOC}
+        )
+        queued = self.post('desk-draft', {'id': made['id'], 'seen': 1})
+        self.post(
+            'desk-save',
+            {'id': made['id'], 'seen': queued['revision'], 'part': 'opening', 'text': 'Typed.'},
+        )
+
+        def worker(engine, payload, guidance, **options):
+            return {'content': 'Op.\n\n## A\n\nNew A.\n\n## B\n\nNew B.', 'notes': ''}
+
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        shown = self.get('desk', id=made['id'])
+        self.assertEqual([s['text'] for s in shown['sections']], ['New A.', 'New B.'])
+        self.assertEqual(shown['opening'], 'Typed.')
+        self.assertTrue(shown['jobs'][-1]['applied'])
+
+    def test_a_draft_in_another_order_keeps_each_sections_id_and_brief(self):
+        made = self.post(
+            'desk-create', {'operation': 'f' * 32, 'title': 'T', 'manuscript': REORDER_DOC}
+        )
+        ids = [s['id'] for s in made['sections']]
+        self.post(
+            'desk-outline-save',
+            {
+                'id': made['id'],
+                'seen': 1,
+                'sections': [
+                    {'id': ids[0], 'heading': 'A', 'brief': 'About A'},
+                    {'id': ids[1], 'heading': 'B', 'brief': 'About B'},
+                ],
+            },
+        )
+        self.post('desk-draft', {'id': made['id'], 'seen': 2})
+
+        def worker(engine, payload, guidance, **options):
+            return {'content': 'Op.\n\n## b\n\nNew B.\n\n## A.\n\nNew A.', 'notes': ''}
+
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        shown = self.get('desk', id=made['id'])
+        self.assertEqual(
+            [(s['id'], s['heading'], s['brief'], s['text']) for s in shown['sections']],
+            [(ids[1], 'b', 'About B', 'New B.'), (ids[0], 'A.', 'About A', 'New A.')],
+        )
+        self.assertEqual(desk.versions(self.root, made['id'], ids[1])[0]['text'], 'Beta.')
+
+    def test_a_removed_section_can_be_brought_back_with_its_history(self):
+        made = self.post(
+            'desk-create', {'operation': 'f' * 32, 'title': 'T', 'manuscript': REORDER_DOC}
+        )
+        ids = [s['id'] for s in made['sections']]
+        self.post('desk-save', {'id': made['id'], 'seen': 1, 'part': ids[1], 'text': 'Beta 2.'})
+        removed = self.post(
+            'desk-outline-save',
+            {
+                'id': made['id'],
+                'seen': 2,
+                'sections': [{'id': ids[0], 'heading': 'A', 'brief': ''}],
+            },
+        )
+        self.assertEqual([s['id'] for s in removed['sections']], [ids[0]])
+        self.assertEqual(removed['removed'][0]['heading'], 'B')
+        self.assertEqual(removed['removed'][0]['words'], 2)
+        back = self.post(
+            'desk-unremove', {'id': made['id'], 'seen': removed['revision'], 'index': 0}
+        )
+        self.assertEqual([s['id'] for s in back['sections']], ids)
+        self.assertEqual(back['sections'][1]['text'], 'Beta 2.')
+        self.assertEqual(back['removed'], [])
+        self.assertEqual(back['versions'][ids[1]], 1)  # Its History came back with it.
+
+    def test_angles_are_cleared_once_the_start_is_made_or_left_a_day(self):
+        import os
+        import time
+
+        asked = self.post('desk-angles', {'operation': '1' * 32, 'point': 'P.'})
+        older = self.post('desk-angles', {'operation': '2' * 32, 'point': 'Q.'})
+        stale = studio.inside(self.root, '.blog-runs', 'desk-angles', '2' * 32 + '.json')
+        tool_jobs.control(self.root, older['job'], 'cancel', blog_runner.engine(self.root))
+        day_ago = time.time() - 2 * 86400
+        os.utime(stale, (day_ago, day_ago))
+        self.begin(angles='1' * 32)
+        self.assertFalse(
+            studio.inside(self.root, '.blog-runs', 'desk-angles', '1' * 32 + '.json').exists()
+        )
+        with self.assertRaises(ValueError):
+            tool_jobs.read(self.root, asked['job'])
+        self.assertFalse(stale.exists())
+        with self.assertRaises(ValueError):
+            tool_jobs.read(self.root, older['job'])
+        replaced = self.post('desk-angles', {'operation': '3' * 32, 'point': 'R.'})
+        self.post('desk-angles', {'operation': '4' * 32, 'point': 'S.', 'replaces': '3' * 32})
+        with self.assertRaises(ValueError):
+            tool_jobs.read(self.root, replaced['job'])
+
+    def test_angle_jobs_stay_out_of_the_tools_list(self):
+        self.post('desk-angles', {'operation': '5' * 32, 'point': 'P.'})
+        self.assertEqual(tool_jobs.listing(self.root), [])
+
+    def test_research_saves_its_plan_and_shares_one_time_limit(self):
+        import time
+
+        limits = []
+
+        def worker(engine, payload, guidance, **options):
+            limits.append(options['seconds'])
+            if 'research questions' in guidance:
+                time.sleep(1.2)
+                return {'content': '1. What stops jobs?', 'notes': ''}
+            return {'content': '# Findings\n\nTimeouts.', 'notes': ''}
+
+        made = self.begin(research_from={'sites': [], 'web': True})
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        plan = self.folder(made['id']) / 'derived' / 'blog-research-plan.md'
+        self.assertEqual(plan.read_text(), '1. What stops jobs?')
+        self.assertGreaterEqual(limits[0], 598)
+        self.assertLess(limits[1], limits[0])
+
+    def test_an_overlong_research_report_is_refused_readably(self):
+        def worker(engine, payload, guidance, **options):
+            if 'research questions' in guidance:
+                return {'content': 'Plan.', 'notes': ''}
+            return {'content': 'x' * 200_001, 'notes': ''}
+
+        made = self.begin(research_from={'sites': [], 'web': True})
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        shown = self.get('desk', id=made['id'])
+        self.assertRegex(shown['start']['problem'], 'research report came back longer')
+        self.assertFalse((self.folder(made['id']) / 'derived' / 'blog-research.md').exists())
+
+    def test_the_outline_and_draft_are_told_to_read_the_reviewed_research(self):
+        from unittest.mock import patch
+
+        import synthesis_fixture
+        import synthesis_research
+        from studio_core import research_contract
+
+        def generate(directory, run, payload, worker, **options):
+            synthesis_fixture.published_bundle(directory / research_contract.CASE / 'research')
+            return {'content': '# Report\n', 'notes': ''}
+
+        with patch.object(research_contract, 'snapshot', return_value={'schema': 2}):
+            made = self.begin(research_from={'sites': [], 'web': True})
+        with patch.object(synthesis_research, 'generate', side_effect=generate):
+            self.run_jobs(1)
+        job = tool_jobs.read(self.root, self.get('desk', id=made['id'])['working']['id'])
+        self.assertIn('research_bundle', job['guidance'])
+        self.assertIn(research_contract.HANDOFF, job['guidance'])
+
+
+REORDER_DOC = '# T\n\nOpening.\n\n## A\n\nAlpha.\n\n## B\n\nBeta.\n'
+
+
+class SourcesStayWithTheBlogTests(RouteCase):
+    PAGE = b'<html><head><title>Synthetic gateway guide</title></head><body><h1>Guide</h1><p>The gateway keeps one retry budget per route.</p></body></html>'
+
+    def add_link(self, url='https://docs.example.com/guide', keep=False):
+        from unittest.mock import patch
+
+        import blog_library
+
+        with patch.object(
+            blog_library, 'fetch', return_value=(self.PAGE, url, 'text/html')
+        ) as fetched:
+            found = self.post(
+                'upload',
+                {
+                    'operation': desk_jobs.secrets.token_hex(16),
+                    'files': [{'link': url, 'purpose': 'material'}],
+                    'purpose': 'material',
+                    'keep': keep,
+                    'analyze': False,
+                },
+            )
+        self.assertEqual(fetched.call_args.args[1], 'https://docs.example.com/')
+        return found['files'][0]
+
+    def library(self):
+        import library_add
+
+        return [row['id'] for row in library_add.matching(self.root)['items']]
+
+    def test_a_link_is_read_and_kept_with_the_blog_unless_ticked(self):
+        row = self.add_link()
+        self.assertEqual(row['state'], 'ready')
+        self.assertEqual(row['link'], 'https://docs.example.com/guide')
+        self.assertEqual(row['filename'], 'Synthetic gateway guide')
+        self.assertNotIn(row['source']['id'], self.library())
+        made = self.post(
+            'desk-create',
+            {
+                'operation': 'a' * 32,
+                'title': 'T',
+                'way': 'topic',
+                'point': 'P.',
+                'sources': [row['source']['id']],
+            },
+        )
+        job = tool_jobs.read(self.root, made['working']['id'])
+        self.assertIn('one retry budget per route', job['payload']['sources'][0]['text'])
+        self.assertNotIn(row['source']['id'], self.library())
+
+    def test_a_ticked_link_reaches_the_library_only_when_kept_on_start(self):
+        row = self.add_link()
+        kept = self.post('source-keep', {'id': row['source']['id'], 'keep': True})
+        self.assertTrue(kept['kept'])
+        self.assertIn(row['source']['id'], self.library())
+        _, record = studio.item(self.root, 'sources', row['source']['id'])
+        self.assertEqual(record['library']['origin_kind'], 'link')
+
+    def test_a_link_must_be_a_public_https_page(self):
+        with self.assertRaisesRegex(ValueError, 'https'):
+            self.post(
+                'upload',
+                {
+                    'operation': 'c' * 32,
+                    'files': [{'link': 'http://docs.example.com/guide'}],
+                    'purpose': 'material',
+                    'keep': False,
+                    'analyze': False,
+                },
+            )

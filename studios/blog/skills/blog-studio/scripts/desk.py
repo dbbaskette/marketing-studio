@@ -508,14 +508,12 @@ def _start(root, data, way, title, tone, length, style):
         'job': None,
         'started_at': now,
         'ended_at': None,
-        'problem': '',
         'open': 'outline' if way == 'shape' else 'draft',
         'minutes': estimate(steps, length),
         'notes': notes,
         'research_from': found,
         # Research keeps the Harness Research version it starts with, as a run does.
         'contract': research_contract.snapshot() if found else None,
-        'phase': '',
     }
     directory = studio.inside(root, 'articles', ident)
     directory.mkdir()
@@ -755,9 +753,64 @@ def outline_save(root, ident, seen, rows):
             'the outline.'
         )
     draft['sections'] = out
+    now = studio.now()
+    order = list(current)
+    _keep_removed(
+        root, ident, [{**current[part], 'index': order.index(part), 'at': now} for part in removed]
+    )
     return _write(
         root, ident, draft, touched + [s['id'] for s in out if s['id'] not in current] + structure
     )
+
+
+REMOVED = 20  # removed sections kept to bring back
+
+
+def _removed_path(root, ident):
+    directory, _ = _paths(root, ident)
+    return studio.inside(directory, DESK, 'removed.json')
+
+
+def removed(root, ident):
+    """Sections taken out on the Outline tab, newest first, each with its text and brief."""
+    target = _removed_path(root, ident)
+    if not target.is_file() or target.is_symlink():
+        return []
+    try:
+        found = studio.read_json(target)
+    except (ValueError, OSError):
+        return []
+    return [item for item in found if isinstance(item, dict)] if isinstance(found, list) else []
+
+
+def _keep_removed(root, ident, sections):
+    if sections:
+        studio.write_json(_removed_path(root, ident), (sections + removed(root, ident))[:REMOVED])
+
+
+def unremove(root, ident, seen, index):
+    """Bring a removed section back where it was, with its id, so its History comes too."""
+    found = removed(root, ident)
+    if type(index) is not int or not 0 <= index < len(found):
+        raise ValueError('Choose a removed section.')
+    draft = read(root, ident)
+    checked(draft, seen, ['outline'])
+    if len(draft['sections']) >= SECTIONS:
+        raise ValueError('Keep the outline to 60 sections.')
+    item = found[index]
+    taken = {section['id'] for section in draft['sections']}
+    kept = str(item.get('id') or '')
+    part = kept if PART.fullmatch(kept) and kept not in taken else _id(taken)
+    section = {
+        'id': part,
+        'heading': ' '.join(str(item.get('heading') or 'Section').split())[:200],
+        'brief': str(item.get('brief') or '')[:BRIEF],
+        'text': str(item.get('text') or ''),
+    }
+    at = item.get('index') if type(item.get('index')) is int else len(draft['sections'])
+    draft['sections'].insert(max(0, min(at, len(draft['sections']))), section)
+    studio.write_json(_removed_path(root, ident), found[:index] + found[index + 1 :])
+    return _write(root, ident, draft, [part, 'outline'])
 
 
 def add_sources(root, ident, data):
@@ -868,7 +921,7 @@ def restore(root, ident, seen, part, index):
 
 # The page's desk routes (POST /api/desk-<action>), under management's studio lock.
 ROUTES = {
-    'create': CREATE | {'operation', 'first_pass'},
+    'create': CREATE | {'operation', 'first_pass', 'angles'},
     'save': {'id', 'seen', 'part', 'text', 'session'},
     'restore': {'id', 'seen', 'part', 'index'},
     'note': {'id', 'seen', 'part', 'note'},
@@ -877,7 +930,18 @@ ROUTES = {
     'first-pass': {'id', 'seen', 'choice'},
     'stop': {'id', 'job'},
     'open': {'id'},
-    'angles': {'operation', 'title', 'point', 'audience', 'style', 'tone', 'sources', 'library'},
+    'angles': {
+        'operation',
+        'title',
+        'point',
+        'audience',
+        'style',
+        'tone',
+        'sources',
+        'library',
+        'replaces',
+    },
+    'unremove': {'id', 'seen', 'index'},
     'retry': {'id'},
     'outline-save': {'id', 'seen', 'sections'},
     'draft': {'id', 'seen'},
@@ -894,6 +958,7 @@ def _create(root, data):
     operation = data.pop('operation', '')
     if not isinstance(operation, str) or not re.fullmatch('[a-f0-9]{32}', operation):
         raise ValueError('A new blog needs its page operation ID. Reload and retry.')
+    picked = data.pop('angles', None)  # The angles this start came from, let go once made.
     choice = data.pop('first_pass', 'leave')
     if choice not in desk_jobs.FIRST_PASSES:
         raise ValueError('Choose tighten, reshape or leave it as it is.')
@@ -910,6 +975,9 @@ def _create(root, data):
         return desk_jobs.view(root, prior['id'])
     made = create(root, data)
     studio.write_json(path, {'id': made['id'], 'fingerprint': fingerprint})
+    desk_jobs.prune_angles(root)
+    if picked:
+        desk_jobs.forget_angles(root, picked)
     problem = None
     if read_start(root, made['id']):
         desk_jobs.begin(root, made['id'])  # A problem is kept on the start, with Retry.
@@ -977,6 +1045,8 @@ def dispatch(root, action, data):
         desk_jobs.first_pass(root, ident, seen, data.get('choice'))
     elif action == 'outline-save':
         outline_save(root, ident, seen, data.get('sections'))
+    elif action == 'unremove':
+        unremove(root, ident, seen, data.get('index'))
     elif action == 'draft':
         desk_jobs.draft_job(root, ident, seen)
     elif action == 'sources':

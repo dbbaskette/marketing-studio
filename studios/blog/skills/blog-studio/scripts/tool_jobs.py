@@ -307,6 +307,8 @@ def listing(root, article=None):
     for target in folder.glob('*.json'):
         try:
             value = read(root, target.stem)
+            if value['kind'] == 'desk-angles':
+                continue  # Angles for a blog not yet made belong to its start page.
             if value['metadata'].get('article') == article:
                 values.append(
                     {key: value.get(key) for key in ('id', 'kind', 'status', 'created_at')}

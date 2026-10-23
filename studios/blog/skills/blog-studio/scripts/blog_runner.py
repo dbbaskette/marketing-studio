@@ -2729,7 +2729,9 @@ def catalog(root):
                     'stage'
                 ) == 'published' and not busy
                 # A start that stopped (a failed research, a Stop) needs the person.
-                stopped = '' if busy else desk_jobs.stalled(root, desk.read_start(root, ident))
+                stopped = (
+                    '' if busy else desk_jobs.stalled(root, ident, desk.read_start(root, ident))
+                )
                 rows.append(
                     {
                         'id': ident,

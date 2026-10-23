@@ -190,6 +190,7 @@ def before(root, ident=None):
     found = space(root)
     if found:
         _drop_stray_claims(root, found)
+        keep_desk_leftovers(root, found)
         report = refresh(root)
         if report.get('conflict'):
             raise ValueError(report['notice'])
@@ -284,6 +285,33 @@ def keep_desk(root, ident):
         except ValueError:
             return False  # Another computer drives it: nothing here is ours to record.
         return gitstate.commit(found, 'Keep a desk change', [ident])
+
+
+def keep_desk_leftovers(root, found=None):
+    """Commit what desk work left under any desk blog this computer drives, such as a start
+    step settled by the worker whose share did not get that far, so the next decision on any
+    blog is not refused for it. A blog another computer drives is left as it is."""
+    found = found or space(root)
+    if not found:
+        return []
+    with support.locked(found.repo / '.git/blog-studio.lock'):
+        changed = gitstate.changed(found)
+    prefix = found.folder.rstrip('/') + '/'
+    blogs = sorted(
+        {
+            path[len(prefix) :].split('/', 1)[0]
+            for path in changed
+            if path.startswith(prefix) and '/' in path[len(prefix) :]
+        }
+    )
+    kept = []
+    for ident in blogs:
+        try:
+            if keep_desk(root, ident):
+                kept.append(ident)
+        except ValueError:
+            continue
+    return kept
 
 
 def kept_locally(root, ident, session):

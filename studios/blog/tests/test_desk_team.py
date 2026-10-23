@@ -16,7 +16,7 @@ from studio_sync import gitstate, support
 from test_desk import DRAFT
 
 
-class DeskTeamTests(unittest.TestCase):
+class TeamCase(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix='desk-team-')
         self.addCleanup(temporary.cleanup)
@@ -67,6 +67,8 @@ class DeskTeamTests(unittest.TestCase):
     def local_commits(self):
         return int(support.git(self.found.repo, 'rev-list', '--count', 'HEAD'))
 
+
+class DeskTeamTests(TeamCase):
     def test_a_settled_result_is_recorded_and_the_next_request_works(self):
         queued = management.dispatch(
             self.root,
@@ -184,3 +186,68 @@ class DeskTeamTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DeskStartTeamTests(TeamCase):
+    """A desk start in a team workspace never leaves files outside a recorded decision."""
+
+    def note_elsewhere(self):
+        shown = management.view(self.root, 'desk', {'id': [self.made['id']]})
+        noted = management.dispatch(
+            self.root,
+            'desk-note',
+            {'id': self.made['id'], 'seen': shown['revision'], 'part': self.part, 'note': 'x'},
+        )
+        management.dispatch(
+            self.root, 'desk-stop', {'id': self.made['id'], 'job': noted['working']['id']}
+        )
+
+    def start(self):
+        return management.dispatch(
+            self.root,
+            'desk-create',
+            {
+                'operation': 'b' * 32,
+                'title': 'Topic',
+                'way': 'topic',
+                'point': 'P.',
+                'research_from': {'sites': [], 'web': True},
+            },
+        )
+
+    def test_a_research_phase_leaves_nothing_to_record_and_other_blogs_go_on(self):
+        made = self.start()
+        during = []
+
+        def worker(engine, payload, guidance, **options):
+            if not during:
+                during.append(gitstate.changed(self.found))
+                self.note_elsewhere()  # Another blog's decision while research works.
+                raise ValueError('Research ran out of time.')
+            return {'content': 'x', 'notes': ''}
+
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        self.assertEqual(during, [[]])
+        self.assertEqual(gitstate.changed(self.found), [])
+        shown = management.view(self.root, 'desk', {'id': [made['id']]})
+        self.assertEqual(shown['start']['problem'], 'Research ran out of time.')
+        # After the failed step: another blog's note and a new desk blog both work.
+        self.note_elsewhere()
+        management.dispatch(
+            self.root,
+            'desk-create',
+            {'operation': 'c' * 32, 'title': 'B', 'manuscript': '# B\n\n## S\n\nText.\n'},
+        )
+        retried = management.dispatch(self.root, 'desk-retry', {'id': made['id']})
+        self.assertEqual(retried['working']['kind'], 'desk-research')
+
+    def test_leftovers_under_any_desk_blog_are_kept_before_the_next_decision(self):
+        folder = self.root / self.made['id'] / 'desk'
+        (folder / 'start.json').write_text('{"left": true}')
+        other = management.dispatch(
+            self.root,
+            'desk-create',
+            {'operation': 'd' * 32, 'title': 'B', 'manuscript': '# B\n\n## S\n\nText.\n'},
+        )
+        self.assertTrue(other['id'])
+        self.assertEqual(gitstate.changed(self.found), [])

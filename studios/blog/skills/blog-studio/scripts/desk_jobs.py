@@ -515,9 +515,44 @@ def _words(data, key, limit, label):
     return value.strip()
 
 
+DAY = 86_400
+
+
+def forget_angles(root, operation):
+    """Remove one request's angles and their job: their payload holds source text."""
+    target = _angles_path(root, operation)
+    if not target.is_file() or target.is_symlink():
+        return
+    try:
+        ident = studio.read_json(target).get('job')
+        job = tool_jobs.read(root, ident)
+        if job['status'] in ACTIVE:
+            tool_jobs.control(root, ident, 'cancel', blog_runner.engine(root))
+        tool_jobs.path(root, ident).unlink(missing_ok=True)
+    except (ValueError, OSError, AttributeError):
+        pass
+    target.unlink(missing_ok=True)
+
+
+def prune_angles(root):
+    """Angles left more than a day are let go, with their jobs."""
+    import time
+
+    folder = studio.inside(root, '.blog-runs', 'desk-angles')
+    for target in sorted(folder.glob('*.json')) if folder.is_dir() else []:
+        try:
+            if time.time() - target.stat().st_mtime > DAY and OPERATION.fullmatch(target.stem):
+                forget_angles(root, target.stem)
+        except OSError:
+            continue
+
+
 def angles(root, data):
     """Queue three angles for a blog not yet made, from its title, point, audience, kind of
     post, tone and the sources chosen so far. Nothing is written to the library."""
+    prune_angles(root)
+    if data.get('replaces'):
+        forget_angles(root, data['replaces'])  # The page asked again: the earlier ones go.
     target = _angles_path(root, data.get('operation'))
     title = _words(data, 'title', 500, 'the title')
     brief = {
@@ -643,15 +678,19 @@ def _research_extra(root, ident):
     directory, _ = studio.item(root, 'articles', ident)
     if (directory / 'research' / 'output.json').is_file():
         facts, manifest = research_contract.read_bundle(directory / 'research')
-        return {
-            'research_bundle': {
-                'digest': manifest['digest'],
-                'brief': (directory / 'research' / 'brief.md').read_text(),
-                'findings': facts['findings'],
-                'facts': facts['facts'],
-                'sources': facts['sources'],
-            }
-        }, ''
+        return (
+            {
+                'research_bundle': {
+                    'digest': manifest['digest'],
+                    'brief': (directory / 'research' / 'brief.md').read_text(),
+                    'findings': facts['findings'],
+                    'facts': facts['facts'],
+                    'sources': facts['sources'],
+                }
+            },
+            '\nThe reviewed research for this post is in research_bundle. '
+            + research_contract.HANDOFF,
+        )
     report = studio.inside(directory, 'derived', 'blog-research.md')
     if report.is_file():
         return {'research': report.read_text()}, (
@@ -661,9 +700,11 @@ def _research_extra(root, ident):
 
 
 def _outline_basis(draft):
+    """The sections an outline or a draft is written over. The title and the opening are
+    not in it: typing there while the draft is written keeps what was typed (see
+    _apply_draft), so the draft is never thrown away for it."""
     return fingerprint(
-        [draft['opening']]
-        + [[s['id'], s['heading'], s.get('brief', ''), s['text']] for s in draft['sections']]
+        [[s['id'], s['heading'], s.get('brief', ''), s['text']] for s in draft['sections']]
     )
 
 
@@ -731,7 +772,13 @@ def draft_job(root, ident, seen, start=False):
         'desk-draft',
         payload,
         guidance,
-        {'part': 'sections', 'action': 'draft', 'basis': _outline_basis(draft), 'start': start},
+        {
+            'part': 'sections',
+            'action': 'draft',
+            'basis': _outline_basis(draft),
+            'opening': fingerprint(draft['opening']),
+            'start': start,
+        },
     )
 
 
@@ -774,6 +821,13 @@ def _apply_outline(root, ident, draft, job, result):
     return desk._write(root, ident, draft, [s['id'] for s in draft['sections']] + ['outline'])
 
 
+def _same_heading(one, other):
+    def plain(text):
+        return ' '.join(re.sub(r'[^\w\s]', ' ', text.lower()).split())
+
+    return plain(one) == plain(other)
+
+
 def _apply_draft(root, ident, draft, job, result):
     if _outline_basis(draft) != job['metadata']['desk'].get('basis'):
         raise ValueError(
@@ -784,24 +838,37 @@ def _apply_draft(root, ident, draft, job, result):
     if not found['sections']:
         raise ValueError('The draft came back without its ## sections. Write it again.')
     outline, taken = draft['sections'], {s['id'] for s in draft['sections']}
+    # Each written section goes with the outline section of the same heading, then with the
+    # one in its place, so its id, brief and History follow the right text.
+    planned, used = [None] * len(found['sections']), set()
+    for at, written in enumerate(found['sections']):
+        for section in outline:
+            if section['id'] not in used and _same_heading(section['heading'], written['heading']):
+                planned[at] = section
+                used.add(section['id'])
+                break
+    for at in range(len(found['sections'])):
+        if planned[at] is None and at < len(outline) and outline[at]['id'] not in used:
+            planned[at] = outline[at]
+            used.add(outline[at]['id'])
     merged = []
     for at, written in enumerate(found['sections']):
         desk.checked_text('opening', written['text'])
-        planned = outline[at] if at < len(outline) else None
         merged.append(
             {
-                'id': planned['id'] if planned else desk._id(taken),
+                'id': planned[at]['id'] if planned[at] else desk._id(taken),
                 'heading': written['heading'][:200],
-                'brief': planned.get('brief', '') if planned else '',
+                'brief': planned[at].get('brief', '') if planned[at] else '',
                 'text': written['text'],
             }
         )
-    merged += outline[len(found['sections']) :]  # Left out: they stay as they were.
+    merged += [s for s in outline if s['id'] not in used]  # Left out: they stay as they were.
     before = {s['id']: s['text'] for s in outline}
     for section in merged:
         if before.get(section['id']) and before[section['id']] != section['text']:
             desk.keep(root, ident, section['id'], before[section['id']], 'draft')
-    if found['opening']:
+    typed = fingerprint(draft['opening']) != job['metadata']['desk'].get('opening')
+    if found['opening'] and not typed:  # An opening typed meanwhile is the person's.
         desk.checked_text('opening', found['opening'])
         if draft['opening'] and draft['opening'] != found['opening']:
             desk.keep(root, ident, 'opening', draft['opening'], 'draft')
@@ -857,6 +924,26 @@ def research_job(root, ident):
     )
 
 
+def _transient_path(root, ident):
+    """What a start is doing now and why it stopped: kept on this computer, beside its jobs,
+    never in the blog's shared folder, so a phase note or a failure leaves nothing for the
+    team to record."""
+    return studio.inside(root, '.blog-runs', 'desk-starts', studio.identifier(ident) + '.json')
+
+
+def transient(root, ident):
+    target = _transient_path(root, ident)
+    try:
+        found = studio.read_json(target) if target.is_file() else {}
+    except (ValueError, OSError):
+        found = {}
+    return found if isinstance(found, dict) else {}
+
+
+def _keep_transient(root, ident, **values):
+    studio.write_json(_transient_path(root, ident), {**transient(root, ident), **values})
+
+
 def _note_phase(root, job, words):
     """Say what research is doing on the start. Best effort: a busy workspace skips it."""
     try:
@@ -864,8 +951,7 @@ def _note_phase(root, job, words):
             ident = job['metadata']['article']
             start = desk.read_start(root, ident)
             if start and start.get('job') == job['id']:
-                start['phase'] = words[:200]
-                desk.write_start(root, ident, start)
+                _keep_transient(root, ident, phase=words[:200])
     except (ValueError, OSError):
         pass
 
@@ -893,9 +979,27 @@ def research_run(engine, job):
     one research job with the assistant's web search, kept as derived/blog-research.md."""
     from studio_core import model_profiles, research_contract
 
-    root, stop, seconds = engine.root, engine.stop, job['seconds']
+    import time
+
+    import blog_worker
+
+    root, stop = engine.root, engine.stop
+    deadline = time.monotonic() + job['seconds']  # One limit for the plan and the research.
     ident = job['metadata']['article']
     directory, _ = studio.item(root, 'articles', ident)
+
+    def left():
+        remaining = int(deadline - time.monotonic())
+        if remaining <= 0:
+            raise blog_worker.WorkerFailure(
+                'Research ran out of the time a step may take.', 'time-limit'
+            )
+        return remaining
+
+    def keep(stage, text):
+        with studio.locked(root):
+            if tool_jobs._working(root, job['id']) is not None and not stop.is_set():
+                studio.atomic(studio.inside(directory, blog_runner.STAGES[stage][1]), text.encode())
 
     def ask(data, guidance, step, web=False):
         if stop.is_set():
@@ -905,7 +1009,7 @@ def research_run(engine, job):
             job['engine'],
             data,
             guidance,
-            seconds=seconds,
+            seconds=left(),
             web=web,
             stop=stop,
             model_selection=selection,
@@ -913,6 +1017,7 @@ def research_run(engine, job):
 
     _note_phase(root, job, 'Planning the research')
     plan = ask(job['payload'], job['guidance'], 'research-plan')['content']
+    keep('research-plan', plan)
     payload = {**job['payload'], 'documents': {'research-plan': plan}}
     contract = job['metadata']['desk'].get('contract')
     if contract:
@@ -931,7 +1036,7 @@ def research_run(engine, job):
                 run,
                 payload,
                 engine.worker,
-                seconds=seconds,
+                seconds=left(),
                 stop=stop,
                 progress=lambda event: (
                     _note_phase(root, job, _round_words(event)) if _round_words(event) else None
@@ -956,12 +1061,15 @@ def research_run(engine, job):
         + blog_runner.house_guide()
     )
     result = ask(payload, guidance, 'research', web=blog_runner.searches_web(payload))
-    with studio.locked(root):
-        if tool_jobs._working(root, job['id']) is not None and not stop.is_set():
-            studio.atomic(
-                studio.inside(directory, blog_runner.STAGES['research'][1]),
-                result['content'].encode(),
-            )
+    content = result.get('content') if isinstance(result, dict) else None
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError('The research came back empty. Retry it.')
+    if len(content) > 200_000:
+        raise ValueError(
+            'The research report came back longer than 200,000 characters, more than the '
+            'draft can read. Nothing was saved; retry it.'
+        )
+    keep('research', content)
     return result
 
 
@@ -974,16 +1082,16 @@ def _queue_step(root, ident, step):
     else:
         job = draft_job(root, ident, desk.read(root, ident)['revision'], start=True)
     start = desk.read_start(root, ident)
-    start.update(job=job['id'], problem='', phase='')
+    start['job'] = job['id']
     desk.write_start(root, ident, start)
+    _keep_transient(root, ident, phase='', problem='')
     return job
 
 
 def _start_problem(root, ident, problem):
     start = desk.read_start(root, ident)
     if start and not start.get('ended_at'):
-        start['problem'] = (problem or 'This step did not finish.')[:1000]
-        desk.write_start(root, ident, start)
+        _keep_transient(root, ident, problem=(problem or 'This step did not finish.')[:1000])
 
 
 def begin(root, ident):
@@ -1000,7 +1108,7 @@ def begin(root, ident):
     return None
 
 
-def stalled(root, start):
+def stalled(root, ident, start):
     """Why a start that has not ended is not moving, or '' while its step is under way. A
     step interrupted when Blog Studio closed, or whose job is gone, stops it too."""
     if not start or start.get('ended_at'):
@@ -1014,7 +1122,7 @@ def stalled(root, start):
     if job is not None and busy(job):
         return ''
     return (
-        start.get('problem')
+        transient(root, ident).get('problem')
         or (job or {}).get('error')
         or 'This step stopped. Choose Retry to start it again.'
     )
@@ -1023,10 +1131,58 @@ def stalled(root, start):
 def retry(root, ident):
     """Run the step a start stopped at again, in a new job."""
     start = desk.read_start(root, ident)
-    if not stalled(root, start):
+    if not stalled(root, ident, start):
         raise ValueError('Nothing to retry: this start is under way or done.')
     _busy(root, ident)
     _queue_step(root, ident, start['step'])
+
+
+TIMES = 20  # step durations kept per step, for the estimate
+
+
+def _times_path(root):
+    return studio.inside(root, '.blog-runs', 'desk-step-times.json')
+
+
+def _step_key(step, length):
+    return 'draft:' + (length or 'style') if step == 'draft' else step
+
+
+def _seconds(job):
+    from datetime import datetime
+
+    try:
+        return (
+            datetime.fromisoformat(job['finished_at']) - datetime.fromisoformat(job['started_at'])
+        ).total_seconds()
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _note_time(root, key, seconds):
+    """Keep how long a step took on this computer; best effort."""
+    try:
+        found = studio.read_json(_times_path(root)) if _times_path(root).is_file() else {}
+        found = found if isinstance(found, dict) else {}
+        kept = [value for value in found.get(key, []) if isinstance(value, (int, float))]
+        found[key] = (kept + [round(seconds, 1)])[-TIMES:]
+        studio.write_json(_times_path(root), found)
+    except (ValueError, OSError):
+        pass
+
+
+def expected_minutes(root, step, length):
+    """How long a step usually takes: the median of its recent runs here, else a guess."""
+    import statistics
+
+    try:
+        found = studio.read_json(_times_path(root)) if _times_path(root).is_file() else {}
+        recent = [v for v in found.get(_step_key(step, length), []) if isinstance(v, (int, float))]
+    except (ValueError, OSError, AttributeError):
+        recent = []
+    if recent:
+        return max(1, statistics.median(recent) / 60)
+    return desk.estimate([step], length)
 
 
 def _advance(root, job):
@@ -1038,12 +1194,17 @@ def _advance(root, job):
     if not job.get('applied'):
         _start_problem(root, ident, job.get('error'))
         return
+    took = _seconds(job)
+    if took is not None and took >= 0:
+        draft = desk.read(root, ident)
+        _note_time(root, _step_key(start['step'], draft.get('length')), took)
     at = start['steps'].index(start['step'])
     if at + 1 >= len(start['steps']):
-        start.update(step=None, ended_at=studio.now(), problem='', phase='')
+        start.update(step=None, ended_at=studio.now())
         desk.write_start(root, ident, start)
+        _keep_transient(root, ident, phase='', problem='')
         return
-    start.update(step=start['steps'][at + 1], phase='')
+    start['step'] = start['steps'][at + 1]
     desk.write_start(root, ident, start)
     try:
         _queue_step(root, ident, start['step'])
@@ -1051,14 +1212,38 @@ def _advance(root, job):
         _start_problem(root, ident, str(error)[:1000] or type(error).__name__)
 
 
+def _timing(root, ident, start, job):
+    """About how many minutes are left, and whether the step under way has overrun."""
+    from datetime import datetime, timezone
+
+    if start.get('ended_at') or not start.get('step'):
+        return {'minutes_left': 0, 'over': False}
+    length = desk.read(root, ident).get('length')
+    steps = start['steps'][start['steps'].index(start['step']) :]
+    now_expected = expected_minutes(root, steps[0], length)
+    later = sum(expected_minutes(root, step, length) for step in steps[1:])
+    began = (job or {}).get('started_at') or (job or {}).get('created_at')
+    try:
+        spent = (datetime.now(timezone.utc) - datetime.fromisoformat(began)).total_seconds() / 60
+    except (TypeError, ValueError):
+        spent = 0
+    return {
+        'minutes_left': max(1, round(max(0, now_expected - spent) + later)),
+        'over': bool(job and job.get('busy') and spent > now_expected),
+    }
+
+
 def _start_view(root, ident, rows):
     start = desk.read_start(root, ident)
     if not start:
         return None
     job = next((row for row in rows if row['id'] == start.get('job')), None)
+    timing = _timing(root, ident, start, job)
     return {
+        **timing,
         **{key: value for key, value in start.items() if key not in ('notes', 'contract')},
-        'problem': stalled(root, start),
+        'phase': transient(root, ident).get('phase') or '',
+        'problem': stalled(root, ident, start),
         'busy': bool(job and job['busy']),
         'status': job['status'] if job else None,
         'doing': STEP_WORDS.get(start.get('step') or '', ''),
@@ -1297,8 +1482,8 @@ def ended(root, job):
             _guard(root, job['metadata']['article'])
             _start_problem(root, job['metadata']['article'], job.get('error'))
         except ValueError:
-            pass
-        return None
+            return None
+        return job['metadata']['article']  # Shared, so nothing it touched is left behind.
     if job.get('status') == 'failed' and job['kind'] == 'desk-revise-all':
         try:
             _guard(root, job['metadata']['article'])
@@ -1428,6 +1613,15 @@ def view(root, ident):
         'publication': (record.get('editorial') or {}).get('publication_url') or None,
         'style_name': style_name,
         'source_names': names,
+        # Sections taken out on the Outline tab, to bring back.
+        'removed': [
+            {
+                'heading': item.get('heading') or '',
+                'words': len(str(item.get('text') or '').split()),
+                'at': item.get('at'),
+            }
+            for item in desk.removed(root, ident)
+        ],
         # A start under way: the page shows its progress until the draft (or outline) opens.
         'start': _start_view(root, ident, rows),
         # The blog record's version, for Mark as published and Delete.

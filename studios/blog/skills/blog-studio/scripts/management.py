@@ -408,6 +408,54 @@ def checked_google(root, entry):
     }
 
 
+def checked_link(root, entry):
+    """A public web page as one more file: read now through the library's fetch (public
+    addresses only, a deadline, redirects checked), saved like an upload beside the files."""
+    import html
+    import re
+    from urllib.parse import urlsplit
+
+    link = entry.get('link') if set(entry) == {'link'} else None
+    if not isinstance(link, str) or not re.fullmatch(r'https://\S{4,2000}', link.strip()):
+        raise ValueError('Add a public https link, such as https://docs.example.com/guide.')
+    link = link.strip()
+    parts = urlsplit(link)
+    content, origin, kind = blog_library.fetch(link, parts.scheme + '://' + parts.netloc + '/')
+    suffix = '.html' if 'html' in kind else '.txt' if kind.startswith('text/') else ''
+    if not suffix:
+        raise ValueError('This page has no readable text version. Save it as a file and upload it.')
+    if len(content) > blog_library.MAX_BINARY:
+        raise ValueError('This page is larger than one file may be.')
+    text, status, note = blog_library.extract_detail(root, content, suffix)
+    if text is not None and len(text.encode()) > blog_library.MAX_TEXT:
+        raise ValueError('This page has more text than one file may hold.')
+    found = (
+        re.search(rb'<title[^>]*>(.*?)</title>', content, re.I | re.S)
+        if suffix == '.html'
+        else None
+    )
+    title = (
+        ' '.join(html.unescape(found.group(1).decode('utf-8', 'replace')).split()) if found else ''
+    )
+    title = (title or (parts.netloc + parts.path).rstrip('/'))[:300]
+    try:
+        filename = clean_filename(title + suffix)
+    except ValueError:
+        filename = 'Web page' + suffix
+    return {
+        'filename': filename,
+        'shown': title,
+        'suffix': suffix,
+        'content': content,
+        'text': text,
+        'status': status,
+        'note': note,
+        'title': title,
+        'origin': origin,
+        'link': origin,
+    }
+
+
 def save_upload(root, staging, checked, purpose, author=None, analyze=True, library=None):
     with (
         tempfile.TemporaryDirectory(dir=staging) as temp,
@@ -481,7 +529,13 @@ def upload_files(root, data, staging, ledger, fingerprint):
                 found['purposes'] = [found.get('purpose', purpose)]
                 checked.append(found)
         else:
-            found = (checked_google if 'google' in entry else checked_upload)(root, entry)
+            found = (
+                checked_google
+                if 'google' in entry
+                else checked_link
+                if 'link' in entry
+                else checked_upload
+            )(root, entry)
             found['purposes'] = [purpose] + ([role] if role != 'material' else [])
             # Refused here, before the upload is begun, as `source add` refuses it.
             studio.lone_messaging(found['purposes'], 'Nothing was saved.')
@@ -497,7 +551,13 @@ def upload_files(root, data, staging, ledger, fingerprint):
             # A kept file is a library item: it says where it came from and its kind of post.
             fields = (
                 blog_library.library_fields(
-                    root, kind=kind, origin_kind='google-doc' if entry.get('link') else 'upload'
+                    root,
+                    kind=kind,
+                    origin_kind='google-doc'
+                    if (entry.get('link') or '').startswith('https://docs.google.com/')
+                    else 'link'
+                    if entry.get('link')
+                    else 'upload',
                 )
                 if chosen != 'material'
                 else None
@@ -708,6 +768,8 @@ def source_keep(root, data):
             {
                 'origin_kind': 'google-doc'
                 if record.get('origin', '').startswith('https://docs.google.com/')
+                else 'link'
+                if record.get('origin', '').startswith('https://')
                 else 'upload'
             },
         )
